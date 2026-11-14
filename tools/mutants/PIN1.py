@@ -37,6 +37,8 @@ TL7 = "test/core_lang/test_lb7_swipl.jl"
 TFB = "test/core_lang/test_firstboot_swipl.jl"
 TAT = "test/core_lang/test_atom_table.jl"
 TF = [TP, TS, TD]
+TAB = "src/pl-tabling.jl"
+TG = "test/core_lang/test_tabling_sdg_swipl.jl"
 TARGETS = TF + [TL7, TFB, TAT]               # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 P = "src/os/pl-prologflag.jl"
 INI = "src/pl-init.jl"
@@ -100,23 +102,24 @@ MUTANTS = [
          equivalent="DEFERRED KILL: owner TAB1 (the restraint check of tabling reads the size flags; docs/r2_owners.tsv has no flag: row for max_scc_subgoals, TAB1 named by PIN1 step C); unify_prolog_flag_value answers false for the unlimited sizes at src/os/pl-prologflag.jl:486 (_tbl_restraint_unlimited, defined :412, lists max_scc_subgoals) before it reads f.i, (lines re-read at wip/tb0 6d4bc882: unchanged by TB0) and no test reads the table's `i` of max_scc_subgoals: test_prolog_flag_swipl.jl:302-305 asks only `current_prolog_flag(gd, k) !== nothing` and TP:637 only counts keys",
          old='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, -1)\n',
          new='    setPrologFlag(gd, "max_scc_subgoals", FT_INTEGER, 0)\n'),
-    # ── _tbl_restraint_unlimited (pl-tabling.c tbl_get_restraint_flag: the sizes answer nothing at (size_t)-1) ──
+    # ── tbl_get_restraint_flag (pl-tabling.c: the sizes answer nothing at (size_t)-1; U1-U4 re-fitted by the TB8 merge, which replaced the
+    #    stand-in `_tbl_restraint_unlimited`: the kill claims below are the stand-in's, UNVERIFIED on the new code) ──
     dict(id="PIN1-U1 max_incomplete_subgoals is no longer an unlimited size: it answers -1 (KILL TP:637: keys1 is one longer; TP:260 t_e37; TP:305 and TP:303 oracle)",
-         file=P, targets=TF,
-         old='           name == "max_incomplete_subgoals" ||\n           name == "max_scc_subgoals"\nend\n',
-         new='           name == "max_scc_subgoals"\nend\n'),
+         file=TAB, targets=TF + [TG],
+         old='    elseif _tbl_is(key, :max_incomplete_subgoals)\n        return unify_restraint(ld, t, r.max_incomplete_subgoals)\n',
+         new='    elseif _tbl_is(key, :max_incomplete_subgoals)\n        return PL_unify_int64(ld, t, r.max_incomplete_subgoals)\n'),
     dict(id="PIN1-U2 max_scc_subgoals is no longer an unlimited size: it answers -1 (KILL TP:637: keys1 is one longer; TP:260 t_e38; TP:305 and TP:303 oracle)",
-         file=P, targets=TF,
-         old='           name == "max_answers_for_subgoal" ||\n           name == "max_incomplete_subgoals" ||\n           name == "max_scc_subgoals"\nend\n',
-         new='           name == "max_answers_for_subgoal" ||\n           name == "max_incomplete_subgoals"\nend\n'),
+         file=TAB, targets=TF + [TG],
+         old='    elseif _tbl_is(key, :max_scc_subgoals)\n        return unify_restraint(ld, t, r.max_scc_subgoals)\n',
+         new='    elseif _tbl_is(key, :max_scc_subgoals)\n        return PL_unify_int64(ld, t, r.max_scc_subgoals)\n'),
     dict(id="PIN1-U3 max_scc_subgoals_action is read as an unlimited size: no answer (KILL TP:637: keys1 is one shorter; TP:260 t_defaults, t_missing, t_count)",
-         file=P, targets=TF,
-         old='           name == "max_incomplete_subgoals" ||\n           name == "max_scc_subgoals"\nend\n',
-         new='           name == "max_incomplete_subgoals" ||\n           name == "max_scc_subgoals" ||\n           name == "max_scc_subgoals_action"\nend\n'),
+         file=TAB, targets=TF + [TG],
+         old='        return PL_unify_atom(ld, t, r.max_scc_subgoals_action)\n',
+         new='        return false\n'),
     dict(id="PIN1-U4 no flag is an unlimited size: every one of the eight answers its -1 (KILL TP:637: keys1 is eight longer; TP:260 t_e37, t_e38)",
          file=P, targets=TF,
-         old="    elseif _tbl_restraint_unlimited(key)\n        return false\n",
-         new="    elseif false\n        return false\n"),
+         old="    elseif tbl_is_restraint_flag(key)                   # pl-prologflag.c:2127\n        return tbl_get_restraint_flag(ld, val, key)\n",
+         new="    elseif false\n        return tbl_get_restraint_flag(ld, val, key)\n"),
     # ── tbl_is_restraint_flag (pl-tabling.c:11693): set_prolog_flag/2 refuses them as NotPortedError ──
     dict(id="PIN1-T1 max_incomplete_subgoals is no restraint flag: set_prolog_flag/2 is not refused (KILL TS:599: row (max_incomplete_subgoals, 5) of _SF_REFUSED)",
          file=P, targets=[TS, TP],

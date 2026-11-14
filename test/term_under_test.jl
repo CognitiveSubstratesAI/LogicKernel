@@ -82,21 +82,49 @@ which is the reference type's own convenience — `AltTerm`'s throws.
 """
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
 
+# A global cell that is not a variable's binding: a value table's box (`_is_box`) and, since TX1e, the undo list's cell
+# (`ld.undo_list`, the first global cell: `[]` on a fresh engine, as swipl's `init_undo_list`, pl-undo.c:42-52). Disclosed
+# change of this helper: swipl keeps that cell non-zero too, so the count of a fresh engine would be 1 without it.
+_lk_not_a_binding(ld, p)::Bool =
+    LogicKernel._is_box(ld, p) || (ld.undo_list != 0 && p == ld.undo_list)
+
 # The variables bound in an engine: every global cell up to `gTop` that is not 0 (since L1b stage C2 a
 # cell is a word, 0 when unbound) — a variable's binding, and the cells of every compound laid out — but
 # a value table's box, which is not a variable (`_is_box`). Until f3-3 also the keyed variables' entries
 # in the binding store, and a cell was told by its key (`gkey`); every position up to `gTop` that is not a
 # box is a cell (`allocGlobalCells!`), so the count is the same.
-lk_bound_count(ld)::Int =
-    count(p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), 1:(ld.gTop))
+#
+# NOT counted (TAB1 TB4, D-0083): EXACTLY the two non-zero cells of the engine's PERMANENT delay list `-([])` (`emptyStacks!` makes
+# it as upstream's `init_delay_list`, pl-setup.c:1558 / pl-tabling.c:1580; a fresh engine pays +2 slots, +4 global cells of which
+# these 2 are non-zero: audit D-0621 item 1; the helper returns the compound's p:p+1 and nothing else): a compound's functor and its `[]`, non-zero from the
+# first instruction and below every mark. They are the engine's own structure, as the permanent unbound cells of its term
+# references, not a binding a test made. Before TB4 a new engine counted 0, and every test that pins a count (the flatness
+# mark of test_rules_swipl.jl, `lk_no_bindings` after a case) reads it unchanged.
+function lk_base_cells(ld)::UnitRange{Int}
+    t = ld.tabling.delay_list
+    t == 0 && return 1:0
+    w = ld.slots[t + 1]
+    LogicKernel._is_gcompound(w) || return 1:0
+    p = LogicKernel.valPtr(w)
+    return p:(p + 1)
+end
+function lk_bound_count(ld)::Int
+    base = lk_base_cells(ld)
+    return count(
+        p -> ld.gstack[p] != 0 && !(p in base) && !_lk_not_a_binding(ld, p), 1:(ld.gTop)
+    )
+end
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 # The same, OUTSIDE the frozen region (L1e e5a; audit D-0036): a ball raised outside any query keeps its
 # cells below `frozen_bar` until the outermost query's close (upstream: until GC — pl-gvar.c resets the bar
 # only at the thread's end). Those cells are the ball, not a leak; a binding above the bar is.
-lk_bound_count_unfrozen(ld)::Int =
-    count(
-        p -> ld.gstack[p] != 0 && !LogicKernel._is_box(ld, p), (ld.frozen_bar + 1):(ld.gTop)
+function lk_bound_count_unfrozen(ld)::Int
+    base = lk_base_cells(ld)
+    return count(
+        p -> ld.gstack[p] != 0 && !(p in base) && !_lk_not_a_binding(ld, p),
+        (ld.frozen_bar + 1):(ld.gTop)
     )
+end
 lk_no_bindings_unfrozen(ld)::Bool = lk_bound_count_unfrozen(ld) == 0
 
 # THE ANSWER, as a test reads it (f3-2, audit D-0111 Q5): the value a term reference holds, read off the

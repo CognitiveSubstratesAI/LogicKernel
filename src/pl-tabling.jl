@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-vmi.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2017-2025, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -44,16 +45,16 @@ WL_IS_WORKLIST(wl::Integer)::Bool = wl != 0 && !WL_IS_SPECIAL(wl)
 
 # PORT: pl-tabling.c WLFS_FREE_NONE
 "`worklist_free` mode: free nothing (pl-tabling.c `WLFS_FREE_NONE`)."
-const WLFS_FREE_NONE = 0x0000
+const WLFS_FREE_NONE = Int(0x0000)
 # PORT: pl-tabling.c WLFS_KEEP_COMPLETE
 "`worklist_free` mode: keep the complete tables (pl-tabling.c `WLFS_KEEP_COMPLETE`)."
-const WLFS_KEEP_COMPLETE = 0x0001
+const WLFS_KEEP_COMPLETE = Int(0x0001)
 # PORT: pl-tabling.c WLFS_FREE_ALL
 "`worklist_free` mode: free every table (pl-tabling.c `WLFS_FREE_ALL`)."
-const WLFS_FREE_ALL = 0x0002
+const WLFS_FREE_ALL = Int(0x0002)
 # PORT: pl-tabling.c WLFS_DISCARD_INCOMPLETE
 "`worklist_free` mode: discard the incomplete tables (pl-tabling.c `WLFS_DISCARD_INCOMPLETE`)."
-const WLFS_DISCARD_INCOMPLETE = 0x0004
+const WLFS_DISCARD_INCOMPLETE = Int(0x0004)
 
 # PORT: pl-tabling.c DV_DELETED
 # DIVERGES: the sentinel is an INTEGER trie index (upstream `(trie*)0x1`): -1, because every table trie is registered in
@@ -185,6 +186,2418 @@ function setMonotonicMode(ld::PL_local_data{T}, a::T)::Bool where {T}
     return true
 end
 
+# TAB1 TB2 (worklists, components, completion; pl-tabling.c at 18168e629eab, in its order). The handle of a worklist or a
+# component that Prolog sees is an index into `ld.tabling.pointers` (DIVERGES: upstream the address, `PL_unify_pointer`).
+# Functions of later steps are named refusals (`NotPortedError`, owner TB3/TB4/TB5/TB6), never a wrong answer.
+
+# ORIGINAL (TAB1 TB2): upstream's `PL_unify_pointer(t, wl)` makes the ADDRESS an integer; the kernel gives the object a
+# handle, an index into `ld.tabling.pointers` (a freed slot is reused, as freed memory is).
+"The handle of the worklist or component `obj` that Prolog sees (upstream: its address)."
+function tbl_pointer!(
+    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
+)::Int where {T}
+    obj.ptr != 0 && return obj.ptr
+    tab = ld.tabling
+    if isempty(tab.free_pointers)
+        push!(tab.pointers, obj)
+        i = length(tab.pointers)
+    else
+        i = pop!(tab.free_pointers)
+        tab.pointers[i] = obj
+    end
+    obj.ptr = i
+
+    return i
+end
+
+# ORIGINAL (TAB1 TB2): the handle of a freed object is freed with it (upstream: the address of freed memory).
+"Free the handle of the worklist or component `obj` (upstream: its memory is freed)."
+function tbl_pointer_release!(
+    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
+)::Nothing where {T}
+    i = obj.ptr
+    i == 0 && return nothing
+    ld.tabling.pointers[i] = nothing
+    push!(ld.tabling.free_pointers, i)
+    obj.ptr = 0
+
+    return nothing
+end
+
+# ORIGINAL (TAB1 TB2): upstream's `PL_unify_pointer(t, obj)` (pl-fli.c) for a worklist or a component.
+"Unify `t` with the handle of the worklist or component `obj` (pl-fli.c `PL_unify_pointer`)."
+function tbl_unify_pointer(
+    ld::PL_local_data{T}, t::term_t, obj::Union{tbl_worklist{T}, tbl_component{T}}
+)::Bool where {T}
+    return PL_unify_int64(ld, t, tbl_pointer!(ld, obj))
+end
+
+# ORIGINAL (TAB1 TB2): upstream's `PL_get_pointer(t, &ptr)` (pl-fli.c:2461, an int64) followed by the cast; `nothing` when `t`
+# is no integer or names no live object (upstream: a garbage pointer).
+"The worklist or component whose handle is `t`, or `nothing` (pl-fli.c `PL_get_pointer`)."
+function tbl_get_pointer(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, tbl_worklist{T}, tbl_component{T}} where {T}
+    i = PL_get_int64(ld, t)
+    i === nothing && return nothing
+    1 <= i <= length(ld.tabling.pointers) || return nothing
+
+    return ld.tabling.pointers[i]
+end
+
+# ORIGINAL (TAB1 TB2): the answer trie of a worklist; upstream's `wl->table` is the pointer, the kernel's `wl.table` the trie's
+# number in `gd.tries` (TB1, evidence/TB1/handoff.md item 1).
+"The answer trie of the worklist `wl` (upstream `wl->table`)."
+wl_table(ld::PL_local_data{T}, wl::tbl_worklist{T}) where {T} =
+    _query_gd(ld).tries[wl.table]
+
+# ORIGINAL (TAB1 TB2): the memset of a reused component (upstream `new_component`: `memset(c, 0, sizeof(*c))`, then the magic).
+"Reset the reused component `c` to a new one (pl-tabling.c `new_component`'s memset)."
+function _zero_component!(c::tbl_component{T})::tbl_component{T} where {T}
+    c.magic = COMPONENT_MAGIC
+    c.status = SCC_ACTIVE
+    c.neg_status = SCC_NEG_NONE
+    c.simplifications = 0
+    c.parent = nothing
+    c.children = nothing
+    c.merged = nothing
+    c.worklist = nothing
+    c.created_worklists = nothing
+    c.delay_worklists = nothing
+    c.leader = 0
+    c.inferences = 0
+    c.drop_symbol = nothing
+    c.drop_size = 0
+    c.drop_gen_calls = UInt64(0)
+    c.drop_recompute = 0
+    c.ptr = 0
+
+    return c
+end
+
+# PORT: pl-tabling.c new_component
+# (pl-tabling.c:465-475 at the pin)
+"A new active component (pl-tabling.c `new_component`): reused from the freed ones or made; counts `active_components`."
+function new_component(ld::PL_local_data{T})::tbl_component{T} where {T}
+    r = tbl_alloc(ld, Val(TBL_FREE_COMPONENT))
+    c = r === nothing ? tbl_component{T}() : _zero_component!(r)    # memset; c->magic = COMPONENT_MAGIC
+    ld.tabling.active_components += 1
+
+    return c
+end
+
+# PORT: pl-tabling.c set_component_status
+# (pl-tabling.c:477-488 at the pin)
+"Set the status of `c`, keeping `active_components` the number of components with `SCC_ACTIVE` (pl-tabling.c)."
+function set_component_status(
+    ld::PL_local_data{T}, c::tbl_component{T}, status::Int
+)::Nothing where {T}
+    if c.status == SCC_ACTIVE && status != SCC_ACTIVE
+        ld.tabling.active_components -= 1           # assert(LD->tabling.active_components > 0)
+    elseif c.status != SCC_ACTIVE && status == SCC_ACTIVE
+        ld.tabling.active_components += 1
+    end
+    c.status = status
+
+    return nothing
+end
+
+# PORT: pl-tabling.c uncount_created_worklists
+# (pl-tabling.c:490-496 at the pin)
+"Take the worklists of `wls` off `incomplete_tables` (pl-tabling.c `uncount_created_worklists`)."
+function uncount_created_worklists(
+    ld::PL_local_data{T}, wls::worklist_set{tbl_worklist{T}}
+)::Nothing where {T}
+    ld.tabling.incomplete_tables -= length(wls.members)    # assert(ld->tabling.incomplete_tables >= n)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c FC_DESTROY
+"`free_components_set` frees the members too (pl-tabling.c `FC_DESTROY`)."
+const FC_DESTROY = Int(0x0001)
+# PORT: pl-tabling.c FC_CHILD
+"`free_component` of a child: it is not taken off its parent (pl-tabling.c `FC_CHILD`)."
+const FC_CHILD = Int(0x0002)
+
+# PORT: pl-tabling.c push_component_set
+# (pl-tabling.c:501-514 at the pin)
+# DIVERGES: the `segstack` is a vector; `PL_free(cs)` is emptying it (Julia's collector frees it).
+"Push the members of `cs` on `stack` and free the set (pl-tabling.c `push_component_set`)."
+function push_component_set(
+    stack::Vector{tbl_component{T}}, cs::component_set{tbl_component{T}}
+)::Nothing where {T}
+    append!(stack, cs.members)
+    empty!(cs.members)                              # discardBuffer(&cs->members); PL_free(cs)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c free_component
+# (pl-tabling.c:516-560 at the pin)
+# DIVERGES: `PL_unregister_atom(c->drop.symbol)` is not done (the kernel's atoms have no reference counts, audit D-0453
+# item 5); the handle of each freed component is freed (`tbl_pointer_release!`).
+"Free the component `c`, its children and merged components (pl-tabling.c `free_component`)."
+function free_component(
+    ld::PL_local_data{T}, c::tbl_component{T}, flags::Int
+)::Nothing where {T}
+    c.magic = 0                                     # assert(c->magic == COMPONENT_MAGIC)
+    if c === ld.tabling.component
+        ld.tabling.component = c.parent
+        if c.parent === nothing && ld.tabling.has_scheduling_component
+            ld.tabling.has_scheduling_component = false
+        end
+    end
+
+    stack = tbl_component{T}[c]                     # initSegStack(); pushSegStack(&stack, c)
+    while !isempty(stack)
+        c = pop!(stack)
+        cparent = c.parent                          # read once: the check and the call see the same parent
+        if (flags & FC_CHILD) == 0 && cparent !== nothing
+            del_child_component(cparent, c)
+        end
+        flags |= FC_CHILD                           # only for the first
+
+        cwl = c.worklist
+        cwl !== nothing && free_worklist_set(ld, cwl, Int(WLFS_FREE_NONE))
+        cdl = c.delay_worklists
+        cdl !== nothing && free_worklist_set(ld, cdl, Int(WLFS_FREE_NONE))
+        ccw = c.created_worklists
+        if ccw !== nothing
+            uncount_created_worklists(ld, ccw)
+            free_worklist_set(ld, ccw, Int(WLFS_FREE_ALL))
+        end
+        c.status == SCC_ACTIVE && set_component_status(ld, c, SCC_COMPLETED)
+        cch = c.children
+        cch !== nothing && push_component_set(stack, cch)
+        cme = c.merged
+        cme !== nothing && push_component_set(stack, cme)
+        tbl_pointer_release!(ld, c)
+        tbl_free(ld, Val(TBL_FREE_COMPONENT), c)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c add_child_component
+# (pl-tabling.c:563-574 at the pin)
+"Add `child` to the children of `parent` (pl-tabling.c `add_child_component`)."
+function add_child_component(
+    parent::tbl_component{T}, child::tbl_component{T}
+)::Nothing where {T}
+    cs = parent.children
+    if cs === nothing
+        cs = component_set{tbl_component{T}}()
+        parent.children = cs
+    end
+    push!(cs.members, child)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c del_child_component
+# (pl-tabling.c:576-591 at the pin)
+"Take `child` off the children of `parent`, if it is there (it can be merged; pl-tabling.c `del_child_component`)."
+function del_child_component(
+    parent::tbl_component{T}, child::tbl_component{T}
+)::Nothing where {T}
+    cs = parent.children
+    if cs !== nothing                               # can be merged
+        i = findfirst(m -> m === child, cs.members)
+        i === nothing || deleteat!(cs.members, i)   # memmove(); popBuffer()
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c free_components_set
+# (pl-tabling.c:593-605 at the pin)
+"Free the set `cs`; with `FC_DESTROY` its members too (pl-tabling.c `free_components_set`)."
+function free_components_set(
+    ld::PL_local_data{T}, cs::component_set{tbl_component{T}}, flags::Int
+)::Nothing where {T}
+    if (flags & FC_DESTROY) != 0
+        for m in cs.members
+            free_component(ld, m, flags)
+        end
+    end
+    empty!(cs.members)                              # discardBuffer(&cs->members); PL_free(cs)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wls_size
+# (pl-tabling.c:616-619 at the pin)
+"The number of worklists in `wls`, 0 for none (pl-tabling.c `wls_size`)."
+wls_size(wls::Union{Nothing, worklist_set}) = wls === nothing ? 0 : length(wls.members)
+
+# PORT: pl-tabling.c merge_component
+# (pl-tabling.c:622-636 at the pin)
+"Merge the active subcomponents of `c` into `c` and make `c` the component of their worklists (pl-tabling.c `merge_component`)."
+function merge_component(ld::PL_local_data{T}, c::tbl_component{T})::Nothing where {T}
+    s_global = wls_size(c.worklist)
+    s_created = wls_size(c.created_worklists)
+
+    c.children !== nothing && merge_children(ld, c, c)
+    wls_set_component(ld, c.worklist, s_global, c)
+    wls_set_component(ld, c.created_worklists, s_created, c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wl_set_component
+# (pl-tabling.c:639-654 at the pin)
+"Make `c` the component of `wl`; schedule it when it has work; a negative node makes `c` delay (pl-tabling.c `wl_set_component`)."
+function wl_set_component(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, c::tbl_component{T}
+)::Nothing where {T}
+    wl.component = c
+    wl.executing = false
+    if !wl.in_global_wl && wl_has_work(wl)
+        add_global_worklist(ld, wl)
+    end
+    if wl.negative
+        if c.neg_status == SCC_NEG_NONE
+            c.neg_status = SCC_NEG_DELAY
+        elseif c.neg_status == SCC_NEG_SIMPLIFY
+            c.neg_status = SCC_NEG_DELAY
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wls_set_component
+# (pl-tabling.c:657-675 at the pin; the non-O_DEBUG branch)
+# DIVERGES: an absent set (`nothing`) does nothing; upstream reads `wls->members` of it.
+"Make `c` the component of the worklists of `wls` after the first `size0` (pl-tabling.c `wls_set_component`)."
+function wls_set_component(
+    ld::PL_local_data{T}, wls::Union{Nothing, worklist_set{tbl_worklist{T}}}, size0::Int,
+    c::tbl_component{T}
+)::Nothing where {T}
+    wls === nothing && return nothing
+    members = wls.members
+    i = size0 + 1                                   # base += size0: skip old ones
+    while i <= length(members)
+        wl_set_component(ld, members[i], c)
+        i += 1
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c merge_component_sets
+# (pl-tabling.c:677-693 at the pin)
+# DIVERGES: upstream sets `*into` and clears `*from` through pointers; this returns the new `into`, the caller sets it and
+# clears `from` (it is NULL afterwards in every branch).
+"Move the members of `from` into `into`, the set that remains (pl-tabling.c `merge_component_sets`)."
+function merge_component_sets(
+    ld::PL_local_data{T}, into::Union{Nothing, component_set{tbl_component{T}}},
+    from::Union{Nothing, component_set{tbl_component{T}}}
+)::Union{Nothing, component_set{tbl_component{T}}} where {T}
+    if into !== nothing && from !== nothing
+        append!(into.members, from.members)         # addMultipleBuffer()
+        free_components_set(ld, from, 0)
+        return into
+    elseif from !== nothing
+        return from
+    end
+
+    return into
+end
+
+# PORT: pl-tabling.c merge_children
+# (pl-tabling.c:698-711 at the pin)
+"Merge the children of `m`, recursively, into `c` (pl-tabling.c `merge_children`)."
+function merge_children(
+    ld::PL_local_data{T}, c::tbl_component{T}, m::tbl_component{T}
+)::Nothing where {T}
+    cs = m.children
+    if cs !== nothing
+        for child in cs.members
+            merge_one_component(ld, c, child)
+        end
+        m.merged = merge_component_sets(ld, m.merged, m.children)  # merge_component_sets(&m->merged, &m->children)
+        m.children = nothing
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c merge_worklists
+# (pl-tabling.c:714-730 at the pin)
+# DIVERGES: as `merge_component_sets`: returns the new `into`; the caller clears `from`.
+"Move the worklists of `from` into `into`, the set that remains (pl-tabling.c `merge_worklists`)."
+function merge_worklists(
+    ld::PL_local_data{T}, into::Union{Nothing, worklist_set{tbl_worklist{T}}},
+    from::Union{Nothing, worklist_set{tbl_worklist{T}}}
+)::Union{Nothing, worklist_set{tbl_worklist{T}}} where {T}
+    if into !== nothing && from !== nothing
+        append!(into.members, from.members)         # addMultipleBuffer()
+        free_worklist_set(ld, from, Int(WLFS_FREE_NONE))
+        return into
+    elseif from !== nothing
+        return from
+    end
+
+    return into
+end
+
+# PORT: pl-tabling.c merge_one_component
+# (pl-tabling.c:733-753 at the pin)
+"Merge the active component `m` and its children into `c`; `m` becomes `SCC_MERGED` (pl-tabling.c `merge_one_component`)."
+function merge_one_component(
+    ld::PL_local_data{T}, c::tbl_component{T}, m::tbl_component{T}
+)::Nothing where {T}
+    # assert(m->magic == COMPONENT_MAGIC)
+    m.status != SCC_ACTIVE && return nothing
+
+    merge_children(ld, c, m)
+    c.worklist = merge_worklists(ld, c.worklist, m.worklist)
+    m.worklist = nothing
+    c.created_worklists = merge_worklists(ld, c.created_worklists, m.created_worklists)
+    m.created_worklists = nothing
+    c.delay_worklists = merge_worklists(ld, c.delay_worklists, m.delay_worklists)
+    m.delay_worklists = nothing
+    set_component_status(ld, m, SCC_MERGED)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c new_worklist_set
+# (pl-tabling.c:759-767 at the pin)
+"A new set holding the worklist `wl` (pl-tabling.c `new_worklist_set`)."
+function new_worklist_set(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}
+)::worklist_set{tbl_worklist{T}} where {T}
+    r = tbl_alloc(ld, Val(TBL_FREE_WORKLIST_SET))
+    wls = r === nothing ? worklist_set{tbl_worklist{T}}() : r
+    empty!(wls.members)                             # initBuffer(&wls->members)
+    push!(wls.members, wl)
+
+    return wls
+end
+
+# PORT: pl-tabling.c add_global_worklist
+# (pl-tabling.c:770-781 at the pin)
+"Schedule `wl` on the worklist of its component (pl-tabling.c `add_global_worklist`)."
+function add_global_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where {T}
+    c = wl.component::tbl_component{T}
+    wls = c.worklist
+    if wls === nothing
+        c.worklist = new_worklist_set(ld, wl)
+    else
+        push!(wls.members, wl)
+    end
+    wl.in_global_wl = true
+
+    return nothing
+end
+
+# PORT: pl-tabling.c add_delay_worklist
+# (pl-tabling.c:784-793 at the pin)
+"Add `wl` to the worklists of its component that need delays (pl-tabling.c `add_delay_worklist`)."
+function add_delay_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where {T}
+    c = wl.component::tbl_component{T}
+    wls = c.delay_worklists
+    if wls === nothing
+        c.delay_worklists = new_worklist_set(ld, wl)
+    else
+        push!(wls.members, wl)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c negative_worklist
+# (pl-tabling.c:803-846 at the pin; the non-O_DEBUG branch)
+# DIVERGES: `simplify_component` returns a Bool (`ok`, as TB4 ports it); the result is not read, as upstream's call is a statement.
+"The next suspended negation of `scc` to resume with an empty answer cluster, or `nothing` once all are done (pl-tabling.c `negative_worklist`)."
+function negative_worklist(
+    ld::PL_local_data{T}, scc::tbl_component{T}
+)::Union{Nothing, tbl_worklist{T}} where {T}
+    dwls = scc.delay_worklists
+    if dwls !== nothing
+        while !isempty(dwls.members)
+            wl = pop!(dwls.members)
+            if !wl.has_answers                      # we have an unconditional answers, so no delay
+                wl.neg_delayed = true
+                c = new_answer_cluster(ld, wl, answer(0))   # answer ans = {NULL}
+                wkl_append_left(wl, c)
+                wl.riac === nothing && (wl.riac = c)
+                return wl
+            end
+        end
+        scc.neg_status = SCC_NEG_SIMPLIFY
+    end
+
+    simplify_component(ld, scc)
+    return nothing
+end
+
+# PORT: pl-tabling.c wl_has_work
+# (pl-tabling.c:849-852 at the pin)
+"Whether `wl` has an answer cluster left of a suspension cluster (pl-tabling.c `wl_has_work`)."
+wl_has_work(wl::tbl_worklist{T}) where {T} =
+    (riac=wl.riac; riac !== nothing && riac.next !== nothing)
+
+# PORT: pl-tabling.c pop_worklist
+# (pl-tabling.c:855-870 at the pin)
+"The next scheduled worklist of `c` that has work, or `nothing` (pl-tabling.c `pop_worklist`)."
+function pop_worklist(
+    ld::PL_local_data{T}, c::tbl_component{T}
+)::Union{Nothing, tbl_worklist{T}} where {T}
+    wls = c.worklist
+    if wls !== nothing
+        while !isempty(wls.members)
+            wl = pop!(wls.members)
+            wl.in_global_wl = false
+            wl_has_work(wl) && return wl
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_global_worklist
+# (pl-tabling.c:873-881 at the pin)
+"Drop the scheduled worklists of `c` (pl-tabling.c `reset_global_worklist`)."
+function reset_global_worklist(
+    ld::PL_local_data{T}, c::Union{Nothing, tbl_component{T}}
+)::Nothing where {T}
+    if c !== nothing
+        wls = c.worklist
+        if wls !== nothing
+            c.worklist = nothing
+            free_worklist_set(ld, wls, Int(WLFS_FREE_NONE))
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c add_newly_created_worklist
+# (pl-tabling.c:884-899 at the pin)
+"Record `wl` as created by its component, an incomplete table (pl-tabling.c `add_newly_created_worklist`)."
+function add_newly_created_worklist(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}
+)::Nothing where {T}
+    c = wl.component::tbl_component{T}
+    ld.tabling.incomplete_tables += 1
+    wls = c.created_worklists
+    if wls === nothing
+        r = tbl_alloc(ld, Val(TBL_FREE_WORKLIST_SET))
+        wls = r === nothing ? worklist_set{tbl_worklist{T}}() : r
+        empty!(wls.members)                         # initBuffer(&wls->members)
+        c.created_worklists = wls
+    end
+    push!(wls.members, wl)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_newly_created_worklists
+# (pl-tabling.c:901-911 at the pin)
+"Drop the created worklists of `c`, freeing them as `flags` says (pl-tabling.c `reset_newly_created_worklists`)."
+function reset_newly_created_worklists(
+    ld::PL_local_data{T}, c::Union{Nothing, tbl_component{T}}, flags::Int
+)::Nothing where {T}
+    if c !== nothing
+        wls = c.created_worklists
+        if wls !== nothing
+            c.created_worklists = nothing
+            uncount_created_worklists(ld, wls)
+            free_worklist_set(ld, wls, flags)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c worklist_set_to_array
+# (pl-tabling.c:913-922 at the pin)
+# DIVERGES: returns the member vector (upstream: the base pointer through `wlp` and the count); empty for none.
+"The worklists of `wls`, none for an absent set (pl-tabling.c `worklist_set_to_array`)."
+function worklist_set_to_array(
+    wls::Union{Nothing, worklist_set{tbl_worklist{T}}}, ::Type{T}
+)::Vector{tbl_worklist{T}} where {T}
+    wls === nothing && return tbl_worklist{T}[]
+
+    return wls.members
+end
+
+# PORT: pl-tabling.c free_worklist_set
+# (pl-tabling.c:924-955 at the pin)
+# DIVERGES: `table_is_incomplete` and `destroy_answer_trie` are TB1's (pl-tabling.c:4368, :4472).
+"Free the set `wls`; `freewl` (WLFS_*) says which of its worklists are freed or their incomplete tables destroyed (pl-tabling.c `free_worklist_set`)."
+function free_worklist_set(
+    ld::PL_local_data{T}, wls::worklist_set{tbl_worklist{T}}, freewl::Int
+)::Nothing where {T}
+    if freewl != 0
+        for wl in wls.members
+            atrie = wl_table(ld, wl)
+            if (freewl & WLFS_FREE_ALL) != 0 || (atrie.flags & TRIE_COMPLETE) != 0
+                free_worklist(ld, wl)
+            elseif (freewl & WLFS_DISCARD_INCOMPLETE) != 0
+                if atrie.IDG !== nothing && atrie.IDG.reevaluating   # atrie->data.IDG && atrie->data.IDG->reevaluating
+                    atrie.worklist = nothing        # atrie->data.worklist = NULL
+                    free_worklist(ld, wl)
+                    reset_reevaluation(ld, atrie)
+                elseif table_is_incomplete(atrie)
+                    destroy_answer_trie(ld, atrie)
+                end
+            end
+        end
+    end
+    empty!(wls.members)                             # discardBuffer(&wls->members)
+    tbl_free(ld, Val(TBL_FREE_WORKLIST_SET), wls)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c SINDEX_MAX
+# (pl-tabling.c:79 at the pin)
+const SINDEX_MAX = 32
+# PORT: pl-tabling.c SINDEX_DEPTH
+# (pl-tabling.c:80 at the pin: `sizeof(unsigned)`, path levels, a byte each)
+const SINDEX_DEPTH = 4
+# PORT: pl-tabling.c SINDEX_ARGS
+# (pl-tabling.c:81 at the pin: last argument number in a path)
+const SINDEX_ARGS = Int(0xff)
+
+# ORIGINAL (TAB1 TB2): upstream's `(unsigned int)index_of_word(*a)` (pl-index.c `index_of_word`) on a dereferenced location:
+# the kernel's key of the location (`_index_key_loc`, src/pl-index.jl) cut to its low 32 bits, as upstream's cast does.
+"The 32-bit index key of a dereferenced location `(k, w, p)` (pl-index.c `index_of_word`, cast to `unsigned`)."
+_sindex_word_key(ld::PL_local_data{T}, k::UInt8, w::word, p::Int) where {T} =
+    (_index_key_loc(ld, k, w, p) % UInt32)
+
+# PORT: pl-tabling.c suspension_keys
+# (pl-tabling.c:3257-3312 at the pin)
+# DIVERGES: the keys are a vector, empty for none (upstream: a malloc'ed array ended by a key with path 0, NULL for none);
+# the queue holds the compound WORDS (upstream: their locations, read again by `valueTerm(*queue[qhead])`).
+"The index keys of the call-subsumption instance `instance`: breadth first, a key per nonvar argument down to `SINDEX_DEPTH` levels (pl-tabling.c `suspension_keys`)."
+function suspension_keys(
+    ld::PL_local_data{T}, instance::term_t
+)::Vector{sindex_key} where {T}
+    k, w, _ = _deref_loc(ld, -(instance + 1))       # p = valTermRef(instance); deRef(p)
+    keys = sindex_key[]
+    if k == DU_WORD && _is_gcompound(w)             # isTerm(*p)
+        queue = word[w]                             # compounds whose arguments are next
+        qpath = UInt32[0]
+        qlevel = Int[0]
+        qhead = 0
+        n = 0
+        while qhead < length(queue) && n < SINDEX_MAX - 1
+            fp = valPtr(queue[qhead + 1])           # Functor f = valueTerm(*queue[qhead])
+            path = qpath[qhead + 1]
+            level = qlevel[qhead + 1]
+            qhead += 1
+            arity = arityFunctor(ld.functors, ld.gstack[fp])
+            max = level == 0 ? SINDEX_MAX : SINDEX_ARGS
+            arity > max && (arity = max)
+            i = 0
+            while i < arity && n < SINDEX_MAX - 1
+                ak, aw, ap = _deref_loc(ld, fp + 1 + i)   # Word a = &f->arguments[i]; deRef(a)
+                key = _sindex_word_key(ld, ak, aw, ap)
+                if key != 0
+                    kpath = path | (UInt32(i + 1) << (8 * level))
+                    push!(keys, sindex_key(kpath, key))
+                    if ak == DU_WORD && _is_gcompound(aw) && level + 1 < SINDEX_DEPTH
+                        push!(queue, aw)
+                        push!(qpath, kpath)
+                        push!(qlevel, level + 1)
+                    end
+                    n += 1
+                end
+                i += 1
+            end
+        end
+    end
+
+    return keys
+end
+
+# PORT: pl-tabling.c AK_KEY
+# (pl-tabling.c:3319 at the pin: a nonvar there, whose key is returned)
+const AK_KEY = 0
+# PORT: pl-tabling.c AK_WILD
+# (pl-tabling.c:3320 at the pin: a variable there or above: any key)
+const AK_WILD = 1
+# PORT: pl-tabling.c AK_ABSENT
+# (pl-tabling.c:3321 at the pin: a nonvar above it lacks the argument)
+const AK_ABSENT = 2
+
+# PORT: pl-tabling.c answer_key
+# (pl-tabling.c:3329-3349 at the pin)
+# DIVERGES: returns `(how, key)` (upstream: the AK_* code, the key through `*key`).
+"How the answer `answer` meets the key path `path` (AK_*) and its key there (pl-tabling.c `answer_key`)."
+function answer_key(
+    ld::PL_local_data{T}, answer::term_t, path::UInt32
+)::Tuple{Int, UInt32} where {T}
+    loc = -(answer + 1)                             # Word p = valTermRef(answer)
+    while path != 0
+        argn = Int(path & 0xff)
+        k, w, _ = _deref_loc(ld, loc)
+        (k == DU_CELL || k == DU_ATTVAR) && return (AK_WILD, UInt32(0))    # canBind(*p)
+        (k == DU_WORD && _is_gcompound(w)) || return (AK_ABSENT, UInt32(0)) # !isTerm(*p)
+        fp = valPtr(w)
+        argn > arityFunctor(ld.functors, ld.gstack[fp]) && return (AK_ABSENT, UInt32(0))
+        loc = fp + argn                             # p = &f->arguments[argn-1]
+        path >>= 8
+    end
+    k, w, p = _deref_loc(ld, loc)
+    key = _sindex_word_key(ld, k, w, p)
+
+    return (key != 0 ? AK_KEY : AK_WILD, key)
+end
+
+# PORT: pl-tabling.c suspension_matches_index
+# (pl-tabling.c:3360-3390 at the pin)
+# DIVERGES: `skeys` is indexed by the skeleton's argument number (`skeys[path + 1]`, upstream `skeys[k->path]`, one based).
+"False if the instance of `susp` cannot unify with `answer` for a different key at one of its key paths (pl-tabling.c `suspension_matches_index`)."
+function suspension_matches_index(
+    ld::PL_local_data{T}, susp::suspension{T}, skeys::Vector{sindex_key}, answer::term_t
+)::Bool where {T}
+    for k in susp.keys                              # likely(susp->keys!=NULL); for(k=susp->keys; k->path; k++)
+        if k.path <= SINDEX_ARGS
+            ak = skeys[Int(k.path) + 1].key
+            (k.key != ak && ak != 0) && return false
+        else
+            how, ak = answer_key(ld, answer, k.path)
+            if how == AK_KEY
+                k.key != ak && return false
+            elseif how == AK_ABSENT
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c suspension_matches
+# (pl-tabling.c:3393-3418 at the pin; the DEBUG print is left out)
+"Whether the instance of `susp` unifies with `answer`: 1, 0, or -1 on an exception (pl-tabling.c `suspension_matches`)."
+function suspension_matches(
+    ld::PL_local_data{T}, answer::term_t, susp::suspension{T}
+)::Int where {T}
+    inst = susp.instance
+    inst === nothing && return -1                   # (a suspension without an instance is never matched upstream)
+    fid = PL_open_foreign_frame(ld)
+    tmp = PL_new_term_ref(ld)
+    if PL_recorded(ld, inst, tmp)
+        ok = PL_unify(ld, tmp, answer)
+        PL_discard_foreign_frame(ld, fid)
+        return ok ? 1 : (PL_exception(ld, 0) != 0 ? -1 : 0)
+    end
+
+    return -1
+end
+
+# PORT: pl-tabling.c suspension_key_at
+# (pl-tabling.c:3424-3436 at the pin)
+# DIVERGES: `keys` is a vector, not ended by a key with path 0.
+"The key of the suspension `sp` at `path`, 0 for none (pl-tabling.c `suspension_key_at`)."
+function suspension_key_at(sp::suspension{T}, path::UInt32)::UInt32 where {T}
+    for k in sp.keys
+        k.path == path && return k.key
+    end
+
+    return UInt32(0)
+end
+
+# PORT: pl-tabling.c sindex_free
+# (pl-tabling.c:3438-3452 at the pin)
+# DIVERGES: the tables and vectors are left to Julia's collector (`destroyHTable`, `free`).
+"Drop the index of the suspension cluster `c` (pl-tabling.c `sindex_free`)."
+function sindex_free(c::cluster{T})::Nothing where {T}
+    c.sindex = nothing
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sindex_add
+# (pl-tabling.c:3461-3496 at the pin)
+# DIVERGES: member numbers are upstream's (from 0, -1 for none), member `i` is at index `i + 1` of `prev` and `prev_all`;
+# `allocated` is `length(prev)`; a vector grows or fails with Julia's `OutOfMemoryError`, so the answer is always true.
+"Index member `i` (from 0) of a suspension cluster, the member after the last indexed, under the first path it has a key at (pl-tabling.c `sindex_add`)."
+function sindex_add(ix::sindex_table, sp::suspension{T}, i::Int)::Bool where {T}
+    allocated = length(ix.prev)
+    if i >= allocated
+        n = allocated != 0 ? allocated * 2 : 16
+        while n <= i
+            n *= 2
+        end
+        resize!(ix.prev, n)
+        resize!(ix.prev_all, n)
+    end
+
+    for j in 1:ix.npaths
+        ip = ix.paths[j]
+        key = suspension_key_at(sp, ip.path)
+        if key != 0
+            ix.prev[i + 1] = get(ip.heads, key, 0) - 1  # lookupHTable(ip->heads, key) - 1
+            ix.prev_all[i + 1] = ip.all
+            ip.heads[key] = i + 1                   # updateHTable(ip->heads, key, i+1)
+            ip.all = i
+            return true
+        end
+    end
+    ix.prev[i + 1] = ix.unkeyed
+    ix.unkeyed = i
+
+    return true
+end
+
+# PORT: pl-tabling.c sindex_extend
+# (pl-tabling.c:3503-3516 at the pin)
+"Index the members of the suspension cluster `c` from `from` (from 0) on, if it has an index (pl-tabling.c `sindex_extend`)."
+function sindex_extend(c::cluster{T}, from::Int)::Nothing where {T}
+    ix = c.sindex
+    if ix !== nothing
+        n = length(c.suspensions)
+        for i in from:(n - 1)
+            if !sindex_add(ix, c.suspensions[i + 1], i)
+                sindex_free(c)
+                break
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c init_cluster_index
+# (pl-tabling.c:3518-3523 at the pin)
+"A cluster without an index (pl-tabling.c `init_cluster_index`)."
+function init_cluster_index(c::cluster{T})::Nothing where {T}
+    c.sindex = nothing
+    c.sindex_tried = 0
+    c.paired = false
+
+    return nothing
+end
+
+# ORIGINAL (TAB1 TB2): a cluster of `type` for the worklist `wl`: the head of `wl.free_clusters`, else a freed one or a new
+# one with no members; the shared head of upstream's `new_answer_cluster` and `new_suspension_cluster` (pl-tabling.c:3529-3537,
+# :3637-3645), which are the same lines with another type.
+"A cluster of `type` for `wl`, reused when one is free (pl-tabling.c `new_answer_cluster`, `new_suspension_cluster`)."
+function _new_cluster(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, type::Int
+)::cluster{T} where {T}
+    c = wl.free_clusters
+    if c !== nothing
+        wl.free_clusters = c.next
+        c.type = type
+    else
+        r = tbl_alloc(ld, Val(TBL_FREE_CLUSTER))
+        c = r === nothing ? cluster{T}(type) : r
+        c.type = type
+        empty!(c.answers)                           # initBuffer(&c->members)
+        empty!(c.suspensions)
+    end
+    init_cluster_index(c)
+
+    return c
+end
+
+# PORT: pl-tabling.c new_answer_cluster
+# (pl-tabling.c:3525-3541 at the pin)
+"A new answer cluster of `wl` holding `ans` (pl-tabling.c `new_answer_cluster`)."
+function new_answer_cluster(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, ans::answer
+)::cluster{T} where {T}
+    c = _new_cluster(ld, wl, CLUSTER_ANSWERS)
+    push!(c.answers, ans.node)                      # addBuffer(&c->members, *ans, answer)
+
+    return c
+end
+
+# PORT: pl-tabling.c free_answer_cluster
+# (pl-tabling.c:3543-3547 at the pin)
+"Free the answer cluster `c` (pl-tabling.c `free_answer_cluster`)."
+function free_answer_cluster(ld::PL_local_data{T}, c::cluster{T})::Nothing where {T}
+    empty!(c.answers)                               # discardBuffer(&c->members)
+    tbl_free(ld, Val(TBL_FREE_CLUSTER), c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c add_to_answer_cluster
+# (pl-tabling.c:3549-3552 at the pin)
+"Add `ans` to the answer cluster `c` (pl-tabling.c `add_to_answer_cluster`)."
+function add_to_answer_cluster(c::cluster{T}, ans::answer)::Nothing where {T}
+    push!(c.answers, ans.node)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c merge_answer_clusters
+# (pl-tabling.c:3554-3562 at the pin)
+"Append the answers of `from` to `to` (pl-tabling.c `merge_answer_clusters`)."
+function merge_answer_clusters(to::cluster{T}, from::cluster{T})::Nothing where {T}
+    append!(to.answers, from.answers)               # addMultipleBuffer()
+
+    return nothing
+end
+
+# PORT: pl-tabling.c get_answer_from_cluster
+# (pl-tabling.c:3564-3567 at the pin)
+# DIVERGES: the answer by value (upstream: a pointer into the buffer); `index` from 0.
+"Answer `index` (from 0) of the answer cluster `c` (pl-tabling.c `get_answer_from_cluster`)."
+get_answer_from_cluster(c::cluster{T}, index::Int) where {T} = answer(c.answers[index + 1])
+
+# PORT: pl-tabling.c prune_answer_cluster
+# (pl-tabling.c:3569-3586 at the pin)
+# DIVERGES: `atrie` is the answer trie the nodes are in (upstream `prune_node(NULL, n)` reaches it through the node; here a
+# node is an id in its trie, TR1 `prune_node(gd, tr, nid)`).
+"Drop the answers of `c` whose node lost its value, pruning those nodes; the number dropped (pl-tabling.c `prune_answer_cluster`)."
+function prune_answer_cluster(
+    gd::PL_global_data{T}, atrie::trie{T}, c::cluster{T}
+)::Int where {T}
+    members = c.answers
+    top = length(members)
+    out = 0
+    for k in 1:top
+        n = members[k]
+        if atrie.nodes[n].value != 0
+            out += 1
+            members[out] = n                        # *out++ = *base
+        else
+            prune_node(gd, atrie, n)
+        end
+    end
+    resize!(members, out)                           # c->members.top = out
+
+    return top - out
+end
+
+# PORT: pl-tabling.c IS_TNOT
+# (pl-tabling.c:3598-3601 at the pin)
+# DIVERGES: the flag is the field `is_tnot` (upstream: bit 0 of the record pointer, set by `TNOT` and cleared by `UNTNOT`,
+# pl-tabling.c:3588-3596, which the kernel does not need).
+"Whether the suspension `s` is a tnot/1 one (pl-tabling.c `IS_TNOT`)."
+IS_TNOT(s::suspension{T}) where {T} = s.is_tnot
+
+# PORT: pl-tabling.c new_suspension
+# (pl-tabling.c:3604-3624 at the pin)
+# DIVERGES: returns the suspension (upstream fills `*sp`); `instance` 0 is NULL; `PL_record` cannot fail here (no
+# resource error: Julia's `OutOfMemoryError`), so neither the `false` answers nor the `PL_erase` of the first record.
+"A suspension of the dependency term `term`, with the call-subsumption filter `instance` when not 0 (pl-tabling.c `new_suspension`)."
+function new_suspension(
+    ld::PL_local_data{T}, term::term_t, is_tnot::Bool, instance::term_t
+)::suspension{T} where {T}
+    rterm = PL_record(ld, term)
+    if instance != 0                                # unlikely(instance)
+        rinst = PL_record(ld, instance)
+        keys = suspension_keys(ld, instance)
+    else
+        rinst = nothing
+        keys = sindex_key[]                         # sp->keys = NULL
+    end
+
+    return suspension{T}(rterm, rinst, keys, is_tnot)  # sp->term = TNOT(sp->term, is_tnot)
+end
+
+# PORT: pl-tabling.c new_suspension_cluster
+# (pl-tabling.c:3628-3649 at the pin)
+# DIVERGES: never `nothing` (as `new_suspension`).
+"A new suspension cluster of `wl` holding the suspension of `first` (pl-tabling.c `new_suspension_cluster`)."
+function new_suspension_cluster(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, first::term_t, is_tnot::Bool,
+    instance::term_t
+)::cluster{T} where {T}
+    s = new_suspension(ld, first, is_tnot, instance)
+    c = _new_cluster(ld, wl, CLUSTER_SUSPENSIONS)
+    push!(c.suspensions, s)                         # addBuffer(&c->members, s, suspension)
+
+    return c
+end
+
+# PORT: pl-tabling.c free_suspension_cluster
+# (pl-tabling.c:3651-3670 at the pin)
+"Free the suspension cluster `c`, erasing its records (pl-tabling.c `free_suspension_cluster`)."
+function free_suspension_cluster(ld::PL_local_data{T}, c::cluster{T})::Nothing where {T}
+    sindex_free(c)
+    for s in c.suspensions
+        PL_erase(s.term)                            # PL_erase(UNTNOT(s->term))
+        inst = s.instance
+        inst !== nothing && PL_erase(inst)
+    end
+    empty!(c.suspensions)                           # discardBuffer(&c->members)
+    tbl_free(ld, Val(TBL_FREE_CLUSTER), c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c add_to_suspension_cluster
+# (pl-tabling.c:3673-3684 at the pin)
+"Add the suspension of `sterm` to the cluster `c` and to its index (pl-tabling.c `add_to_suspension_cluster`)."
+function add_to_suspension_cluster(
+    ld::PL_local_data{T}, c::cluster{T}, sterm::term_t, is_tnot::Bool, instance::term_t
+)::Bool where {T}
+    s = new_suspension(ld, sterm, is_tnot, instance)
+    push!(c.suspensions, s)
+    sindex_extend(c, length(c.suspensions) - 1)
+
+    return true
+end
+
+# PORT: pl-tabling.c merge_suspension_cluster
+# (pl-tabling.c:3692-3708 at the pin)
+# DIVERGES: `PL_free(from)` is left to Julia's collector (the members are emptied).
+"Append the suspensions of `from` to `to`, extending the index of `to` and dropping that of `from` (pl-tabling.c `merge_suspension_cluster`)."
+function merge_suspension_cluster(
+    to::cluster{T}, from::cluster{T}, do_free::Bool
+)::Nothing where {T}
+    indexed = length(to.suspensions)
+    append!(to.suspensions, from.suspensions)       # addMultipleBuffer()
+    sindex_extend(to, indexed)
+    sindex_free(from)
+    init_cluster_index(from)
+    do_free && empty!(from.suspensions)             # discardBuffer(&from->members); PL_free(from)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c get_suspension_from_cluster
+# (pl-tabling.c:3711-3715 at the pin)
+# DIVERGES: `index` from 0; the suspension by value.
+"Suspension `index` (from 0) of the suspension cluster `c` (pl-tabling.c `get_suspension_from_cluster`)."
+get_suspension_from_cluster(c::cluster{T}, index::Int) where {T} = c.suspensions[index + 1]
+
+# PORT: pl-tabling.c free_cluster
+# (pl-tabling.c:3717-3723 at the pin)
+"Free the cluster `c` by its type (pl-tabling.c `free_cluster`)."
+function free_cluster(ld::PL_local_data{T}, c::cluster{T})::Nothing where {T}
+    if c.type == CLUSTER_ANSWERS
+        free_answer_cluster(ld, c)
+    else
+        free_suspension_cluster(ld, c)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c acp_size
+# (pl-tabling.c:3725-3728 at the pin)
+"The number of answers of the answer cluster `c` (pl-tabling.c `acp_size`)."
+acp_size(c::cluster{T}) where {T} = length(c.answers)
+
+# PORT: pl-tabling.c scp_size
+# (pl-tabling.c:3730-3733 at the pin)
+"The number of suspensions of the suspension cluster `c` (pl-tabling.c `scp_size`)."
+scp_size(c::cluster{T}) where {T} = length(c.suspensions)
+
+# PORT: pl-tabling.c sindex_choose
+# (pl-tabling.c:3755-3833 at the pin)
+# DIVERGES: the chosen paths are pushed onto the vector `chosen` (upstream: a `tmp_buffer`); the assessments are a vector in the
+# order their path was met plus a `Dict` path -> position (upstream: a buffer and a `Table`), so the first best one wins as
+# upstream; no allocation fails (Julia's `OutOfMemoryError`).
+"Choose greedily the paths to index the suspension cluster `c` on; false if no path saves a visit (pl-tabling.c `sindex_choose`)."
+function sindex_choose(c::cluster{T}, chosen::Vector{UInt32})::Bool where {T}
+    n = scp_size(c)
+    base = c.suspensions
+    placed = falses(n)
+    where_ = Dict{UInt32, Int}()                    # path -> assessment, plus 1
+    as = sindex_assessment[]
+    while true                                      # while ( placed )
+        best = 0
+        most = 1.0
+        for i in 1:n
+            (placed[i] || isempty(base[i].keys)) && continue
+            for k in base[i].keys
+                ai = get(where_, k.path, 0)
+                if ai == 0
+                    push!(as, sindex_assessment(k.path, 0, UInt64(0), Dict{UInt32, Int}()))
+                    ai = length(as)
+                    where_[k.path] = ai
+                end
+                a = as[ai]
+                count = get(a.counts, k.key, 0)
+                a.counts[k.key] = count + 1
+                a.squares += UInt64(2 * count + 1)
+                a.keyed += 1
+            end
+        end
+
+        for (j, a) in enumerate(as)
+            saved = Float64(a.keyed) - Float64(a.squares) / Float64(a.keyed)
+            if saved > most
+                most = saved
+                best = j
+            end
+        end
+        if best != 0
+            path = as[best].path
+            push!(chosen, path)
+            for i in 1:n
+                (!placed[i] && suspension_key_at(base[i], path) != 0) && (placed[i] = true)
+            end
+        end
+        empty!(as)                                  # destroyHTable(a->counts); seekBuffer(&as, 0)
+        empty!(where_)                              # clearHTable(where)
+        best == 0 && break
+    end
+
+    return !isempty(chosen)
+end
+
+# PORT: pl-tabling.c scp_index
+# (pl-tabling.c:3842-3884 at the pin)
+"The index of the suspension cluster `scp` about to meet `answers` answers, or `nothing` to scan it (pl-tabling.c `scp_index`)."
+function scp_index(
+    ld::PL_local_data{T}, scp::cluster{T}, answers::Int
+)::Union{Nothing, sindex_table} where {T}
+    again = scp.paired
+    n = scp_size(scp)
+    scp.paired = true
+    ix = scp.sindex
+    if ix !== nothing
+        n < 2 * ix.built && return ix
+        sindex_free(scp)
+    end
+    (
+        n < 2 || (!again && answers < 2) ||
+        (scp.sindex_tried != 0 && n < 2 * scp.sindex_tried)
+    ) && return nothing
+    chosen = UInt32[]
+    if !sindex_choose(scp, chosen)
+        scp.sindex_tried = n
+        return nothing
+    end
+    npaths = length(chosen)
+    paths = sindex_path[sindex_path(chosen[j], Dict{UInt32, Int}(), -1) for j in 1:npaths]
+    cursors = sindex_cursor[sindex_cursor(-1, Int[]) for _ in 1:(npaths + 1)]
+    scp.sindex = sindex_table(Int[], Int[], -1, n, cursors, npaths, paths)
+    sindex_extend(scp, 0)
+
+    return scp.sindex
+end
+
+# ---- TB2: the table worklist (pl-tabling.c:3881-4205 at the pin) ----
+
+# ORIGINAL (TAB1 TB2): the memset of a reused worklist (upstream `new_worklist`: `memset(wl, 0, sizeof(*wl))`, then the magic).
+"Reset the reused worklist `wl` to a new one (pl-tabling.c `new_worklist`'s memset)."
+function _zero_worklist!(wl::tbl_worklist{T})::tbl_worklist{T} where {T}
+    wl.head = nothing
+    wl.tail = nothing
+    wl.riac = nothing
+    wl.free_clusters = nothing
+    wl.magic = WORKLIST_MAGIC
+    wl.ground = false
+    wl.executing = false
+    wl.in_global_wl = false
+    wl.negative = false
+    wl.neg_delayed = false
+    wl.has_answers = false
+    wl.answer_completed = false
+    wl.depend_abolish = false
+    wl.needs_answer_gc = false
+    wl.undefined = 0
+    wl.component = nothing
+    wl.table = 0
+    wl.predicate = nothing
+    empty!(wl.delays)                               # initBuffer(&wl->delays)
+    empty!(wl.pos_undefined)                        # initBuffer(&wl->pos_undefined)
+    wl.ptr = 0
+
+    return wl
+end
+
+# PORT: pl-tabling.c new_worklist
+# (pl-tabling.c:3884-3899 at the pin)
+# DIVERGES: `wl.table` is the trie's number in `gd.tries` (`atrie.serial`, TB1); `atrie.worklist` holds a worklist, NULL
+# (`nothing`) or a sentinel (an `Int`, TB1's widening of TR1's field).
+"A new worklist for the answer trie `atrie`, which then points at it (pl-tabling.c `new_worklist`)."
+function new_worklist(ld::PL_local_data{T}, atrie::trie{T})::tbl_worklist{T} where {T}
+    r = tbl_alloc(ld, Val(TBL_FREE_WORKLIST))
+    wl = r === nothing ? tbl_worklist{T}() : _zero_worklist!(r)  # memset(wl, 0, sizeof(*wl)); wl->magic = WORKLIST_MAGIC
+    wl.table = atrie.serial
+    w = atrie.worklist
+    (w isa Int && w == WL_GROUND) && (wl.ground = true)
+    atrie.worklist = wl
+
+    return wl
+end
+
+# PORT: pl-tabling.c free_worklist
+# (pl-tabling.c:3902-3929 at the pin)
+# DIVERGES: the handle Prolog saw is freed with the worklist (`tbl_pointer_release!`); upstream's "Oops" print for a trie that
+# points elsewhere is an `@warn`.
+"Free the worklist `wl` and its clusters; its answer trie no longer points at it (pl-tabling.c `free_worklist`)."
+function free_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where {T}
+    @assert wl.magic == WORKLIST_MAGIC
+    wl.magic = 0
+
+    if wl.table != 0
+        atrie = wl_table(ld, wl)
+        w = atrie.worklist
+        if w !== nothing
+            if w === wl
+                atrie.worklist = nothing
+            else
+                @warn "Oops, worklist trie doesn't point back at me!"
+            end
+        end
+    end
+
+    c = wl.head
+    while c !== nothing
+        next = c.next
+        free_cluster(ld, c)
+        c = next
+    end
+    c = wl.free_clusters
+    while c !== nothing
+        next = c.next
+        free_cluster(ld, c)
+        c = next
+    end
+    empty!(wl.delays)                               # discardBuffer(&wl->delays)
+    empty!(wl.pos_undefined)                        # discardBuffer(&wl->pos_undefined)
+
+    tbl_pointer_release!(ld, wl)
+    tbl_free(ld, Val(TBL_FREE_WORKLIST), wl)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c clean_worklist
+# (pl-tabling.c:3932-3953 at the pin)
+"Free the clusters of `wl`, keeping the worklist (pl-tabling.c `clean_worklist`)."
+function clean_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where {T}
+    wl.riac = nothing
+    if wl.head !== nothing
+        c = wl.head
+        while c !== nothing
+            next = c.next
+            free_cluster(ld, c)
+            c = next
+        end
+        wl.head = nothing
+        wl.tail = nothing
+    end
+
+    if wl.free_clusters !== nothing
+        c = wl.free_clusters
+        while c !== nothing
+            next = c.next
+            free_cluster(ld, c)
+            c = next
+        end
+        wl.free_clusters = nothing
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c conditional_answer_node
+# (pl-tabling.c:3976-3980 at the pin)
+# DIVERGES: a node is its id in `atrie`; the answer is the id or 0 (upstream: the node or NULL); `answer_is_conditional`
+# (pl-tabling.c:982) is the delays step's (TB4).
+"The answer node `n` of `atrie` if it has a value and is conditional, else 0 (pl-tabling.c `conditional_answer_node`)."
+function conditional_answer_node(
+    ld::PL_local_data{T}, atrie::trie{T}, n::Int
+)::Int where {T}
+    return if (atrie.nodes[n].value != 0 && answer_is_conditional(_query_gd(ld), atrie, n))
+        n
+    else
+        0
+    end
+end
+
+# PORT: pl-tabling.c answer_nodes_discardable
+# (pl-tabling.c:3983-3995 at the pin)
+# DIVERGES: `map_trie_node(&atrie->root, conditional_answer_node, NULL)` is `map_trie_node(atrie, 1, closure)`: the callback
+# answers the node id of a conditional answer, `nothing` for none (upstream: the node or NULL).
+"Whether the nodes of the complete answer trie `atrie` may be discarded once it is compiled (pl-tabling.c `answer_nodes_discardable`)."
+function answer_nodes_discardable(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    def = atrie.predicate
+    idg = atrie.IDG
+    tp = def === nothing ? nothing : def.tabling
+
+    return (atrie.flags & (TRIE_ISMAP | TRIE_ISSHARED | TRIE_ISTRACKED)) == 0 &&
+           !(idg !== nothing && idg.monotonic) &&
+           tp !== nothing &&
+           (tp.flags & TP_VARIANT) != 0 &&
+           (tp.flags & TP_MONOTONIC) == 0 &&
+           !(
+               idg !== nothing &&
+               map_trie_node(
+                   atrie, 1,
+                   (tr, nid) ->
+                       (c = conditional_answer_node(ld, tr, nid)) != 0 ? c : nothing
+               ) !== nothing
+           )
+end
+
+# PORT: pl-tabling.c complete_worklist
+# (pl-tabling.c:3997-4020 at the pin; COMPLETE_WORKLIST without O_PLMT: the code alone, pl-tabling.c:383)
+"Complete the worklist `wl`: freed when `destroy`, else kept without clusters; its answer trie is complete (pl-tabling.c `complete_worklist`)."
+function complete_worklist(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, destroy::Bool
+)::Nothing where {T}
+    atrie = wl_table(ld, wl)
+
+    if tt_has_modified_dependencies(ld, atrie)
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+    end
+
+    if destroy
+        free_worklist(ld, wl)
+        atrie.worklist = nothing
+        answer_nodes_discardable(ld, atrie) && (atrie.flags |= TRIE_DISCARDABLE)
+        atrie.flags |= TRIE_COMPLETE
+    else
+        clean_worklist(ld, wl)
+        wl.component = nothing                      # (*)
+        atrie.flags |= TRIE_COMPLETE
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c worklist_negative
+# (pl-tabling.c:4023-4033 at the pin)
+"Mark `wl` a suspended negation, on its component's delay worklists (pl-tabling.c `worklist_negative`)."
+function worklist_negative(ld::PL_local_data{T}, wl::tbl_worklist{T})::Bool where {T}
+    if !wl.negative
+        wl.negative = true
+        add_delay_worklist(ld, wl)
+        c = wl.component::tbl_component{T}
+        c.neg_status == SCC_NEG_NONE && (c.neg_status = SCC_NEG_DELAY)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c prune_answers_worklist
+# (pl-tabling.c:4048-4061 at the pin; the DEBUG print is left out)
+"Drop the deleted answers from the answer clusters of `wl`; the number dropped (pl-tabling.c `prune_answers_worklist`)."
+function prune_answers_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Int where {T}
+    gd = _query_gd(ld)
+    atrie = wl_table(ld, wl)
+    gained = 0
+    c = wl.head
+    while c !== nothing
+        c.type == CLUSTER_ANSWERS && (gained += prune_answer_cluster(gd, atrie, c))
+        c = c.next
+    end
+
+    return gained
+end
+
+# PORT: pl-tabling.c worklist_work_done
+# (pl-tabling.c:4069-4072 at the pin)
+"Whether `wl` has no answer cluster or no suspension right of it (pl-tabling.c `worklist_work_done`)."
+worklist_work_done(wl::tbl_worklist{T}) where {T} =
+    (riac=wl.riac; riac === nothing || riac.next === nothing)
+
+# PORT: pl-tabling.c wkl_append_left
+# (pl-tabling.c:4075-4086 at the pin)
+"Put the cluster `c` at the head of `wl` (pl-tabling.c `wkl_append_left`)."
+function wkl_append_left(wl::tbl_worklist{T}, c::cluster{T})::Nothing where {T}
+    h = wl.head
+    if h !== nothing
+        c.prev = nothing
+        c.next = h
+        h.prev = c
+        wl.head = c
+    else
+        c.next = nothing
+        c.prev = nothing
+        wl.head = c
+        wl.tail = c
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wkl_append_right
+# (pl-tabling.c:4089-4100 at the pin)
+"Put the cluster `c` at the tail of `wl` (pl-tabling.c `wkl_append_right`)."
+function wkl_append_right(wl::tbl_worklist{T}, c::cluster{T})::Nothing where {T}
+    t = wl.tail
+    if t !== nothing
+        c.next = nothing
+        c.prev = t
+        t.next = c
+        wl.tail = c
+    else
+        c.next = nothing
+        c.prev = nothing
+        wl.head = c
+        wl.tail = c
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c update_riac
+# (pl-tabling.c:4103-4118 at the pin)
+"After moving the answer cluster `acp` right, set the rightmost inner answer cluster of `wl` (pl-tabling.c `update_riac`)."
+function update_riac(wl::tbl_worklist{T}, acp::cluster{T})::Nothing where {T}
+    nx = acp.next
+    if nx === nothing || nx.type == CLUSTER_ANSWERS
+        c = acp.prev
+        while c !== nothing
+            if c.type == CLUSTER_ANSWERS
+                wl.riac = c
+                return nothing
+            end
+            c = c.prev
+        end
+
+        wl.riac = nothing
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wkl_swap_clusters
+# (pl-tabling.c:4121-4138 at the pin; the DEBUG print is left out)
+"Swap the answer cluster `acp` with the suspension cluster `scp` right of it in `wl` (pl-tabling.c `wkl_swap_clusters`)."
+function wkl_swap_clusters(
+    wl::tbl_worklist{T}, acp::cluster{T}, scp::cluster{T}
+)::Nothing where {T}
+    a = acp.prev                                    # before the couple
+    z = scp.next                                    # after the couple
+
+    @assert acp.next === scp
+
+    if a !== nothing
+        a.next = scp
+    else
+        wl.head = scp
+    end
+    if z !== nothing
+        z.prev = acp
+    else
+        wl.tail = acp
+    end
+    scp.prev = a
+    acp.next = z
+    scp.next = acp
+    acp.prev = scp
+
+    update_riac(wl, acp)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c potentially_add_to_global_worklist
+# (pl-tabling.c:4141-4146 at the pin)
+"Schedule `wl` unless it is scheduled or executing (pl-tabling.c `potentially_add_to_global_worklist`)."
+function potentially_add_to_global_worklist(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}
+)::Nothing where {T}
+    (!wl.in_global_wl && !wl.executing) && add_global_worklist(ld, wl)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c wkl_add_answer
+# (pl-tabling.c:4149-4170 at the pin; the DEBUG print is left out)
+# DIVERGES: `an` is the answer's node id in the answer trie of `wl`; `answer_is_conditional` is TB4's (pl-tabling.c:982).
+"Add the answer node `an` to `wl`, scheduling it (pl-tabling.c `wkl_add_answer`)."
+function wkl_add_answer(ld::PL_local_data{T}, wl::tbl_worklist{T}, an::Int)::Bool where {T}
+    potentially_add_to_global_worklist(ld, wl)
+    ans = answer(an)
+
+    answer_is_conditional(_query_gd(ld), wl_table(ld, wl), an) || (wl.has_answers = true)
+
+    h = wl.head
+    if h !== nothing && h.type == CLUSTER_ANSWERS
+        add_to_answer_cluster(h, ans)
+    else
+        c = new_answer_cluster(ld, wl, ans)
+        wkl_append_left(wl, c)
+        wl.riac === nothing && (wl.riac = c)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c wkl_add_suspension
+# (pl-tabling.c:4173-4193 at the pin; the DEBUG print is left out)
+"Add the suspension `suspension` (a tnot/1 one when `is_tnot`, filtered by `inst` when not 0) to `wl`, scheduling it (pl-tabling.c `wkl_add_suspension`)."
+function wkl_add_suspension(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, suspension::term_t, is_tnot::Bool,
+    inst::term_t
+)::Bool where {T}
+    potentially_add_to_global_worklist(ld, wl)
+    t = wl.tail
+    if t !== nothing && t.type == CLUSTER_SUSPENSIONS
+        add_to_suspension_cluster(ld, t, suspension, is_tnot, inst) || return false
+    else
+        c = new_suspension_cluster(ld, wl, suspension, is_tnot, inst)
+        wkl_append_right(wl, c)
+        p = c.prev
+        (p !== nothing && p.type == CLUSTER_ANSWERS) && (wl.riac = p)
+    end
+
+    return true
+end
+
+# The `create` branch of unify_fresh (pl-tabling.c:4219-4259 at the pin; TB1 ports the function and its `create` false branch)
+# DIVERGES: the two pointers are handles (`tbl_pointer!`), so upstream's fast path that builds `fresh(SCC, WL)` from two tagged
+# integers on the global stack and its `PL_unify_term` fallback are one unification; `tripwire_incomplete_subgoals`
+# (pl-tabling.c:11943, TB8's port with the restraint) is below. TB1's `unify_fresh` calls it for `create`.
+"The `create` branch of `unify_fresh`: a component and a worklist for the new table `atrie`, `t` unified with `fresh(SCC, WL)` (pl-tabling.c)."
+function _unify_fresh_create(
+    ld::PL_local_data{T}, t::term_t, atrie::trie{T}, def::Union{Nothing, Definition{T}}
+)::Bool where {T}
+    tripwire_incomplete_subgoals(ld, def) || return false
+
+    scc = tbl_create_subcomponent(ld, atrie)
+    wl = tbl_add_worklist(ld, atrie, scc)
+
+    fname = (atrie.flags & TRIE_ISSHARED) != 0 ? :fresh_shared : :fresh
+    wl.predicate = def
+    PL_unify_functor(ld, t, mk_sym(T, fname), 2) || return false
+    a = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, t, a)
+    tbl_unify_pointer(ld, a, scc) || return false
+    _PL_get_arg(ld, 2, t, a)
+
+    return tbl_unify_pointer(ld, a, wl)
+end
+
+# PORT: pl-tabling.c get_scc
+# (pl-tabling.c:4392-4407 at the pin)
+# DIVERGES: the handle is read by `tbl_get_pointer`: no integer is `PL_get_pointer_ex`'s type_error(address, T); an integer
+# that names no live component (upstream: its magic differs) is the existence error. The component is returned, `nothing`
+# with the error raised (upstream: `*cp` and the truth value).
+"The component whose handle is `t`, or `nothing` after raising the error (pl-tabling.c `get_scc`)."
+function get_scc(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, tbl_component{T}} where {T}
+    if PL_get_int64(ld, t) === nothing              # PL_get_pointer_ex(t, &ptr)
+        PL_error(ld, ERR_TYPE, mk_sym(T, :address), t)
+        return nothing
+    end
+    c = tbl_get_pointer(ld, t)
+    if !(c isa tbl_component{T}) || c.magic != COMPONENT_MAGIC
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, Symbol("table component")), t)
+        return nothing
+    end
+
+    return c
+end
+
+# PORT: pl-tabling.c get_worklist
+# (pl-tabling.c:4409-4422 at the pin)
+# DIVERGES: a handle that names no live worklist (upstream: `assert(wl->magic == WORKLIST_MAGIC)` on the address) raises
+# type_error(worklist, T) as a non-integer does.
+"The worklist whose handle is `t`, or `nothing` after raising type_error(worklist, T) (pl-tabling.c `get_worklist`)."
+function get_worklist(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, tbl_worklist{T}} where {T}
+    wl = tbl_get_pointer(ld, t)
+    if wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC
+        return wl
+    end
+    PL_type_error(ld, "worklist", t)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tnot_get_worklist
+# (pl-tabling.c:4425-4453 at the pin)
+# DIVERGES: returns `(wl, is_tnot)`, `wl` `nothing` after raising type_error(worklist, T); a handle that names no live worklist
+# is that error (upstream: an assert).
+"The worklist of `t`, a handle or `tnot(Handle)`, and whether it is the tnot/1 form (pl-tabling.c `tnot_get_worklist`)."
+function tnot_get_worklist(
+    ld::PL_local_data{T}, t::term_t
+)::Tuple{Union{Nothing, tbl_worklist{T}}, Bool} where {T}
+    wl = tbl_get_pointer(ld, t)
+    (wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC) && return (wl, false)
+
+    if PL_is_functor(ld, t, mk_sym(T, :tnot), 1)
+        a = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, t, a)
+        wl = tbl_get_pointer(ld, a)
+        (wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC) && return (wl, true)
+    end
+    PL_type_error(ld, "worklist", t)
+
+    return (nothing, false)
+end
+
+# PORT: pl-tabling.c tbl_add_worklist
+# (pl-tabling.c:4455-4469 at the pin)
+# DIVERGES: `WL_IS_WORKLIST(atrie->data.worklist)` is `atrie.worklist isa tbl_worklist{T}` (the field holds a worklist, NULL
+# or a sentinel `Int`).
+"The worklist of `atrie` (made when it has none) in the component `scc`, scheduled and created there; the table is incomplete (pl-tabling.c `tbl_add_worklist`)."
+function tbl_add_worklist(
+    ld::PL_local_data{T}, atrie::trie{T}, scc::tbl_component{T}
+)::tbl_worklist{T} where {T}
+    w = atrie.worklist
+    wl = w isa tbl_worklist{T} ? w : new_worklist(ld, atrie)
+
+    wl.component = scc
+    add_global_worklist(ld, wl)
+    add_newly_created_worklist(ld, wl)
+    atrie.flags &= ~TRIE_COMPLETE
+
+    return wl
+end
+
+# PORT: pl-tabling.c frame_worklist
+# (pl-tabling.c:4914-4931 at the pin)
+# DIVERGES: `fr` is the frame's index in `ld.frames`; the handle in argument 4 is read by `get_worklist` alone (upstream: a
+# tagged integer cast to the address, `get_worklist` otherwise; both are a handle here).
+"The worklist of argument 4 of the `'\$tbl_reset'/6` frame `fr`, or `nothing` after raising the error (pl-tabling.c `frame_worklist`)."
+function frame_worklist(
+    ld::PL_local_data{T}, fr::Int
+)::Union{Nothing, tbl_worklist{T}} where {T}
+    return get_worklist(ld, argFrameP(ld.frames[fr].base, 3))
+end
+
+# PORT: pl-tabling.c tbl_reset_add_answer
+# (pl-tabling.c:4933-4975 at the pin; the O_PLMT assertion is left out)
+# DIVERGES: `fr` is the frame's index in `ld.frames`, which does not move when the foreign frame is opened (upstream reads it
+# again through `consTermRef(fr)`); a node is its id; `tbl_add_answer`, `tbl_add_answer_found` and `TBL_ANSWER_COMPLETE`
+# (pl-tabling.c:4750-4800) are the answers step's (TB3), `answer_is_conditional` (:982) the delays step's (TB4).
+"Add the answer in arguments 5 and 6 of the `'\$tbl_reset'/6` frame `fr` to its worklist; true if that completes the table (pl-tabling.c `tbl_reset_add_answer`)."
+function tbl_reset_add_answer(ld::PL_local_data{T}, fr::Int)::Bool where {T}
+    wl = frame_worklist(ld, fr)
+    wl === nothing && return false
+    atrie = wl_table(ld, wl)
+    base = ld.frames[fr].base
+
+    if (atrie.flags & TRIE_ISMAP) == 0
+        rc, node = trie_insert_flat(ld, atrie, -(argFrameP(base, 4) + 1))
+        if rc == 1 &&
+            atrie.nodes[node].value == ATOM_trienode &&
+            (atrie.nodes[node].flags & TN_IDG_DELETED) == 0 &&
+            !answer_is_conditional(_query_gd(ld), atrie, node)
+            return false                            # variant of an existing answer
+        end
+    else
+        rc = 0                                      # not used
+        node = 0
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    rcadd = if (atrie.flags & TRIE_ISMAP) != 0
+        tbl_add_answer(ld, wl, argFrameP(base, 4), argFrameP(base, 5))
+    else
+        tbl_add_answer_found(ld, wl, argFrameP(base, 4), argFrameP(base, 5), rc, node)
+    end
+    PL_close_foreign_frame(ld, fid)
+
+    return rcadd == TBL_ANSWER_COMPLETE
+end
+
+# ---- TB2b: the worklist predicates and '$tbl_wkl_work'/6 (pl-tabling.c:5260-6022 at the pin) ----
+
+# PORT: pl-tabling.c tbl_pop_worklist as pl_tbl_pop_worklist2_va
+# (pl-tabling.c:4686-4715 at the pin: PRED_IMPL("$tbl_pop_worklist", 2, tbl_pop_worklist, 0))
+# `O_AC_EAGER` is defined at the pin (pl-tabling.c:71), so the `scc->simplifications ||` test under `#ifndef O_AC_EAGER`
+# is left out as upstream's preprocessor leaves it out.
+"`'\$tbl_pop_worklist'(+SCC, -Worklist)`: pop the next worklist of the active component `SCC`, a negative one when no other is left (pl-tabling.c)."
+function pl_tbl_pop_worklist2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    scc = get_scc(ld, A1)
+
+    if scc !== nothing
+        if scc.status == SCC_ACTIVE
+            wl = pop_worklist(ld, scc)
+            wl !== nothing && return tbl_unify_pointer(ld, A2, wl) ? FTRUE : FFALSE
+
+            if scc.neg_status != SCC_NEG_NONE
+                wl = negative_worklist(ld, scc)
+                wl !== nothing && return tbl_unify_pointer(ld, A2, wl) ? FTRUE : FFALSE
+            end
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_add_suspension as pl_tbl_wkl_add_suspension2_va
+# (pl-tabling.c:5265-5276 at the pin: PRED_IMPL("$tbl_wkl_add_suspension", 2, tbl_wkl_add_suspension, 0))
+"`'\$tbl_wkl_add_suspension'(+Worklist, +Suspension)`: add `Suspension` to the worklist (pl-tabling.c)."
+function pl_tbl_wkl_add_suspension2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    wl, is_tnot = tnot_get_worklist(ld, A1)
+    wl !== nothing && return wkl_add_suspension(ld, wl, A2, is_tnot, 0) ? FTRUE : FFALSE
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_add_suspension as pl_tbl_wkl_add_suspension3_va
+# (pl-tabling.c:5283-5294 at the pin: PRED_IMPL("$tbl_wkl_add_suspension", 3, tbl_wkl_add_suspension, 0))
+"`'\$tbl_wkl_add_suspension'(+Worklist, +Instance, +Suspension)`: add `Suspension`, which takes only the answers that unify with `Instance` (call subsumption) (pl-tabling.c)."
+function pl_tbl_wkl_add_suspension3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    wl, is_tnot = tnot_get_worklist(ld, A1)
+    wl !== nothing && return wkl_add_suspension(ld, wl, A3, is_tnot, A2) ? FTRUE : FFALSE
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_make_follower as pl_tbl_wkl_make_follower1_va
+# (pl-tabling.c:5305-5353 at the pin: PRED_IMPL("$tbl_wkl_make_follower", 1, tbl_wkl_make_follower, 0))
+"`'\$tbl_wkl_make_follower'(+Worklist)`: a former leader merged into a parent component; its answer clusters move in front of its suspension clusters (pl-tabling.c)."
+function pl_tbl_wkl_make_follower1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    wl = get_worklist(ld, A1)
+    if wl !== nothing
+        scp = nothing
+        acp = nothing
+
+        c = wl.head
+        while c !== nothing
+            next = c.next
+
+            if c.type == CLUSTER_ANSWERS
+                if acp !== nothing
+                    merge_answer_clusters(acp, c)
+                    free_answer_cluster(ld, c)
+                else
+                    acp = c
+                    acp.prev = acp.next = nothing
+                end
+            else
+                if scp !== nothing
+                    merge_suspension_cluster(scp, c, true)
+                else
+                    scp = c
+                    scp.prev = scp.next = nothing
+                end
+            end
+            c = next
+        end
+
+        wl.head = wl.tail = nothing
+        if acp !== nothing
+            wkl_append_left(wl, acp)
+            wl.riac = acp
+        else
+            wl.riac = nothing
+        end
+        scp !== nothing && wkl_append_right(wl, scp)
+
+        (acp !== nothing && scp !== nothing) && add_global_worklist(ld, wl)
+
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_done as pl_tbl_wkl_done1_va
+# (pl-tabling.c:5361-5367 at the pin: PRED_IMPL("$tbl_wkl_done", 1, tbl_wkl_done, 0))
+"`'\$tbl_wkl_done'(+Worklist)`: true if the worklist has no work left (pl-tabling.c)."
+function pl_tbl_wkl_done1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    wl = get_worklist(ld, A1)
+
+    return (wl !== nothing && worklist_work_done(wl)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_answer_trie as pl_tbl_wkl_answer_trie2_va
+# (pl-tabling.c:5412-5419 at the pin: PRED_IMPL("$tbl_wkl_answer_trie", 2, tbl_wkl_answer_trie, 0))
+# DIVERGES: the trie's symbol is unified by TR1's `unify_trie` (upstream: `PL_unify_atom(A2, trie_symbol(wl->table))`).
+"`'\$tbl_wkl_answer_trie'(+Worklist, -Trie)`: `Trie` is the answer trie of the worklist (pl-tabling.c)."
+function pl_tbl_wkl_answer_trie2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    wl = get_worklist(ld, A1)
+
+    return if (wl !== nothing && unify_trie(_query_gd(ld), ld, A2, wl_table(ld, wl)))
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# ORIGINAL (TAB1 TB2): `tbl_unify_answer` (pl-tabling.c:5461), `unify_dependency` (:5480) and `idg_set_current_wl` (:8512),
+# which `'$tbl_wkl_work'/6` calls, are the answers step's (TB3, wip/tb3), with the signatures
+# `tbl_unify_answer(ld, atrie::trie{T}, node::Int, term::term_t)::Bool` and
+# `unify_dependency(ld, a0::term_t, dependency::term_t, wl::tbl_worklist{T}, answer::Int, unified::Bool)::Bool`.
+
+# PORT: pl-tabling.c sindex_candidates
+# (pl-tabling.c:5573-5605 at the pin)
+# DIVERGES: a cursor's `link` is the vector `ix.prev` or `ix.prev_all` itself, empty for NULL; `heads` holds member + 1, 0 for
+# none, so `get(..., 0) - 1` is upstream's `lookupHTable(...) - 1`.
+"Point the cursors of `ix` at the candidates of the answer `answer`; the first candidate, the highest member a cursor is at, or -1 (pl-tabling.c `sindex_candidates`)."
+function sindex_candidates(
+    ld::PL_local_data{T}, ix::sindex_table, answer::term_t
+)::Int where {T}
+    first = ix.unkeyed
+
+    for j in 1:ix.npaths
+        c = ix.cursors[j]
+        ip = ix.paths[j]
+        how, key = answer_key(ld, answer, ip.path)
+        if how == AK_KEY
+            c.at = get(ip.heads, key, 0) - 1
+            c.link = ix.prev
+        elseif how == AK_WILD
+            c.at = ip.all
+            c.link = ix.prev_all
+        else
+            c.at = -1
+            c.link = Int[]
+        end
+        c.at > first && (first = c.at)
+    end
+    c = ix.cursors[ix.npaths + 1]
+    c.at = ix.unkeyed
+    c.link = ix.prev
+
+    return first
+end
+
+# PORT: pl-tabling.c sindex_next
+# (pl-tabling.c:5612-5626 at the pin)
+"Move the cursor at member `i` down its chain; the next candidate, the highest member a cursor is at, or -1 (pl-tabling.c `sindex_next`)."
+function sindex_next(ix::sindex_table, i::Int)::Int
+    next = -1
+
+    for j in 1:(ix.npaths + 1)
+        c = ix.cursors[j]
+        c.at == i && (c.at = c.link[i + 1])
+        c.at > next && (next = c.at)
+    end
+
+    return next
+end
+
+# PORT: pl-tabling.c wkl_next_suspension
+# (pl-tabling.c:5632-5647 at the pin)
+"Move `state` to the next suspension to offer the current answer: the next keyed candidate, else the next one down; false when exhausted (pl-tabling.c `wkl_next_suspension`)."
+function wkl_next_suspension(state::wkl_step_state{T})::Bool where {T}
+    if state.candidates == CAND_KEYED
+        i = sindex_next(state.sindex::sindex_table, state.here)
+        if i >= 0
+            state.here = i
+            return true
+        end
+        state.candidates = CAND_ALL
+        state.here = 0                              # state->suspensions.here = state->suspensions.base
+    end
+    state.here -= 1
+
+    return state.here >= 0
+end
+
+# PORT: pl-tabling.c advance_wkl_state
+# (pl-tabling.c:5650-5712 at the pin; the DEBUG print is left out)
+# DIVERGES: upstream's `goto next` is the loop's `continue`, its `goto next_answer` (a jump into the else branch) the loop's
+# `break` to the lines after it; a cluster put on `free_clusters` is emptied by `empty!` (upstream: `seekBuffer(&c->members,
+# 0, ...)`).
+"Advance `state` to the next (answer, suspension) pair, moving to the next cluster pair of its worklist when one is exhausted; false when no work is left (pl-tabling.c `advance_wkl_state`)."
+function advance_wkl_state(ld::PL_local_data{T}, state::wkl_step_state{T})::Bool where {T}
+    while true                                      # next:
+        wkl_next_suspension(state) && return true
+        state.here = state.top
+        state.acp_index -= 1
+        state.acp_index != 0 && break               # else { next_answer: ... }
+
+        list = state.list::tbl_worklist{T}
+
+        # Merge adjacent suspension clusters
+        scp = state.scp::cluster{T}
+        sprev = scp.prev
+        if sprev !== nothing && sprev.type == CLUSTER_SUSPENSIONS
+            sprev.next = scp.next
+            (scp.next::cluster{T}).prev = sprev
+            merge_suspension_cluster(sprev, scp, false)
+            empty!(scp.suspensions)                 # seekBuffer(&scp->members, 0, record_t)
+            scp.next = list.free_clusters
+            list.free_clusters = scp
+        end
+        state.sindex = nothing
+
+        # Merge adjacent answer clusters
+        acp = state.acp::cluster{T}
+        anext = acp.next
+        if anext !== nothing && anext.type == CLUSTER_ANSWERS
+            (acp.prev::cluster{T}).next = anext
+            anext.prev = acp.prev
+            merge_answer_clusters(anext, acp)
+            empty!(acp.answers)                     # seekBuffer(&acp->members, 0, answer)
+            acp.next = list.free_clusters
+            list.free_clusters = acp
+        end
+
+        # If more work, re-initialize
+        racp = list.riac
+        rscp = racp === nothing ? nothing : racp.next
+        if racp !== nothing && rscp !== nothing
+            @assert racp.type == CLUSTER_ANSWERS
+            @assert rscp.type == CLUSTER_SUSPENSIONS
+            wkl_swap_clusters(list, racp, rscp)
+            state.acp = racp
+            state.scp = rscp
+            state.acp_index = acp_size(racp)
+
+            if state.acp_index > 0 && scp_size(rscp) > 0
+                state.top = scp_size(rscp) - 1
+                state.here = state.top
+                state.sindex = scp_index(ld, rscp, state.acp_index)
+                break                               # goto next_answer
+            else
+                continue                            # goto next
+            end
+        end
+
+        return false
+    end
+    # next_answer:
+    state.answer = get_answer_from_cluster(state.acp::cluster{T}, state.acp_index - 1).node
+    state.keys_inited = false
+    state.candidates = CAND_UNDECIDED
+
+    return true
+end
+
+# PORT: pl-tabling.c free_wkl_state
+# (pl-tabling.c:5715-5723 at the pin)
+# DIVERGES: `i` is the state's index in `ld.tabling.wkl_states` (upstream: the state, `freeForeignState`).
+"End the enumeration of the state at `i`: the worklist is no longer executing, its garbage answers are pruned (pl-tabling.c `free_wkl_state`)."
+function free_wkl_state(ld::PL_local_data{T}, i::Int)::Nothing where {T}
+    pool = ld.tabling.wkl_states
+    state = pool.states[i]
+    wl = state.list::tbl_worklist{T}
+
+    wl.executing = false
+    state.list = state.acp = state.scp = nothing
+    state.sindex = nothing
+    free_foreign_state!(pool, i)                    # freeForeignState(state, sizeof(*state))
+    wl.needs_answer_gc && prune_answers_worklist(ld, wl)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_wkl_work as pl_tbl_wkl_work6_va
+# (pl-tabling.c:5735-6022 at the pin: PRED_IMPL("$tbl_wkl_work", 6, tbl_wkl_work, PL_FA_NONDETERMINISTIC); DEBUG prints left out)
+# DIVERGES: the state is a record of `ld.tabling.wkl_states`, its index the REDO_PTR context (`PL_retry_address`); the mark
+# is a local `Mark(ld)` (upstream: `Mark(fli_context->mark)`), undone by `Undo!`; an answer is its node id in the answer trie
+# of the worklist (0: the NULL node of the negative dummy); the argument keys are read off the dereferenced arguments
+# (`_deref_loc`, as `indexOfWord` follows a reference); `UNTNOT(sp->term)` is `sp.term`, `IS_TNOT` `sp.is_tnot`;
+# `LD->attvar.attvars` is `ld.attvar_attvars`.
+"`'\$tbl_wkl_work'(+Worklist, -Answer, -Continuation, -TargetSkeleton, -TargetWorklist, -Delays)`: the next answer to try on a suspension of the worklist, nondeterministic (pl-tabling.c)."
+function pl_tbl_wkl_work6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    pool = ld.tabling.wkl_states
+    can = 0                                         # trie_node *can = NULL
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        wl = get_worklist(ld, A1)
+        wl === nothing && return FFALSE
+        acp = wl.riac
+        acp === nothing && return FFALSE
+        scp = acp.next
+        scp === nothing && return FFALSE            # if ( !(acp = wl->riac) || !(scp = acp->next) ) fail
+        sz_acp = acp_size(acp)
+        sz_scp = scp_size(scp)
+
+        wkl_swap_clusters(wl, acp, scp)
+
+        (sz_acp > 0 && sz_scp > 0) || return FFALSE
+        idx = alloc_foreign_state!(pool)            # state = allocForeignState(sizeof(*state))
+        state = pool.states[idx]
+        state.list = wl
+        state.acp = acp
+        state.scp = scp
+        state.acp_index = sz_acp
+        state.answer = get_answer_from_cluster(acp, sz_acp - 1).node
+        state.top = sz_scp - 1                      # state->suspensions.base = member 0
+        state.here = state.top
+        state.keys_inited = false
+        length(state.keys) == SINDEX_MAX + 1 || resize!(state.keys, SINDEX_MAX + 1)
+        state.sindex = scp_index(ld, scp, sz_acp)
+        state.candidates = CAND_UNDECIDED
+        wl.executing = true
+    elseif ctl == FRG_REDO
+        idx = PL_foreign_context_address(PL__ctx)   # state = CTX_PTR
+        state = pool.states[idx]
+    else                                            # FRG_CUTTED
+        free_wkl_state(ld, PL_foreign_context_address(PL__ctx))
+        return FTRUE
+    end
+
+    m = Mark(ld)                                    # Mark(fli_context->mark)
+    atrie = wl_table(ld, state.list::tbl_worklist{T})
+
+    while true                                      # do { ... } while ( advance_wkl_state(state) )
+        an = state.answer
+        scp = state.scp::cluster{T}
+
+        # Ignore (1) removed answer due to simplification, (2) dummy restart for delayed negation,
+        # (3) conditional answer for tnot
+        if an != 0 && atrie.nodes[an].value == 0   # removed answer
+            state.here = 0                          # skip all suspensions
+            state.candidates = CAND_ALL
+            @goto next
+        end
+
+        # An indexed suspension cluster offers a new answer only to its candidates, from the top down as the scan does.
+        if state.candidates == CAND_UNDECIDED
+            state.candidates = CAND_ALL
+            if state.sindex !== nothing && an != 0
+                if can != an
+                    can != 0 && Undo!(ld, m)
+                    tbl_unify_answer(ld, atrie, an, A2) || @goto out_fail   # resource error
+                    can = an
+                end
+                i = sindex_candidates(ld, state.sindex::sindex_table, A2)
+                if i < 0
+                    state.here = 0                  # none
+                    @goto next
+                end
+                state.here = i
+                state.candidates = CAND_KEYED
+            end
+        end
+
+        sp = get_suspension_from_cluster(scp, state.here)
+
+        if (an == 0 && !sp.is_tnot) ||
+            (an != 0 && sp.is_tnot && answer_is_conditional(_query_gd(ld), atrie, an))
+            @goto next
+        end
+
+        # Call subsumption: filter out suspensions for which the answer does not unify with the answer skeleton for the
+        # subsumed table, holding the same answer `an` in A2 against several suspensions.
+        if sp.instance !== nothing && an != 0
+            if can != an                            # reuse the answer
+                can != 0 && Undo!(ld, m)
+                tbl_unify_answer(ld, atrie, an, A2) || @goto out_fail   # resource error
+                can = an
+            end
+
+            if !state.keys_inited
+                k, w, _ = _deref_loc(ld, -(A2 + 1)) # Word p = valTermRef(A2); deRef(p)
+                @assert k == DU_WORD && _is_gcompound(w)
+                fp = valPtr(w)
+                arity = arityFunctor(ld.functors, ld.gstack[fp])
+                arity > SINDEX_MAX && (arity = SINDEX_MAX)
+                for i in 0:(arity - 1)
+                    ak, aw, ap = _deref_loc(ld, fp + 1 + i)
+                    state.keys[i + 2] = sindex_key(
+                        UInt32(0), _sindex_word_key(ld, ak, aw, ap)
+                    )
+                end
+                state.keys_inited = true
+            end
+
+            skeys = state.keys                      # key args are one based: entry i+1 is argument i
+
+            while true
+                if suspension_matches_index(ld, sp, skeys, A2)
+                    rc = suspension_matches(ld, A2, sp)
+                    rc == 1 && @goto match
+                    rc != 0 && @goto out_fail
+                end
+
+                if wkl_next_suspension(state)
+                    sp = get_suspension_from_cluster(state.scp::cluster{T}, state.here)
+                    sp.instance === nothing && @goto match
+                else
+                    @goto next
+                end
+            end
+        end
+
+        # Found real work to do. If we get here we can only fail due to resource errors.
+        @label match
+        if can != 0 && can != an                    # A2 holds another answer
+            Undo!(ld, m)
+            can = 0
+        end
+        attvars = ld.attvar_attvars
+        susp = PL_new_term_ref(ld)
+        PL_recorded(ld, sp.term, susp) || @goto out_fail   # resource errors
+        if ld.attvar_attvars != attvars && can != an       # the skeleton has constraints: unify
+            tbl_unify_answer(ld, atrie, an, A2) || @goto out_fail
+            can = an
+        end
+        # unifies A2..A6
+        unify_dependency(ld, A2, susp, state.list::tbl_worklist{T}, an, can == an) ||
+            @goto out_fail
+
+        if advance_wkl_state(ld, state)
+            return PL_retry_address(idx)            # ForeignRedoPtr(state)
+        else
+            free_wkl_state(ld, idx)
+            return FTRUE
+        end
+
+        @label next
+        advance_wkl_state(ld, state) || break
+    end
+
+    @label out_fail
+    free_wkl_state(ld, idx)
+
+    return FFALSE
+end
+
+# ---- TB2b: completing a component (pl-tabling.c:6226-6255, :6295-6324, :6440-6563 at the pin) ----
+
+# PORT: pl-tabling.c wls_reeval_complete
+# (pl-tabling.c:6226-6255 at the pin)
+"Finish the re-evaluation of the re-evaluated tables of the worklists `wls` (pl-tabling.c `wls_reeval_complete`)."
+function wls_reeval_complete(
+    ld::PL_local_data{T}, wls::Vector{tbl_worklist{T}}
+)::Nothing where {T}
+    reevaluated = 0
+
+    for wl in wls
+        atrie = wl_table(ld, wl)
+
+        if (n = atrie.IDG) !== nothing
+            if n.reevaluating
+                reeval_complete(ld, atrie)
+                reevaluated += 1
+            end
+        end
+    end
+
+    if reevaluated != 0
+        for wl in wls
+            atrie = wl_table(ld, wl)
+
+            if (n = atrie.IDG) !== nothing
+                n.reevaluating = false
+                @assert n.falsecount == 0
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c unify_leader_clause
+# (pl-tabling.c:6295-6324 at the pin)
+# Owner: TB2. Its only caller at the pin is `table_complete_all` (:6463); TB3's `complete_answer_clause` is a
+# separate function.
+# DIVERGES: the result is `(rc, is_trie)` (upstream: the truth value and `*is_trie`); the leader is the trie numbered
+# `scc.leader` in `gd.tries`; `atrie->data.worklist` holds a worklist, NULL (`nothing`) or a sentinel (an `Int`, TB1);
+# `O_TRIE_STATS` is on (`gen_call` counts); `PL_unify_atom(cl, trie_symbol(atrie))` is pl-trie.c `unify_trie` (TR4's
+# `unify_trie`, the same unification); the clause reference is TR4's `compile_trie(gd, ld, def, atrie)`, an atom word,
+# 0 when the clause is refused (then false, upstream unifies its 0). `GD->procedures.trie_gen_compiled2` is
+# `gd.procedures_trie_gen_compiled2` (as TB3's `complete_answer_clause`).
+"Unify `cl` with the answer trie of the leader of `scc` or its compiled clause; the result and whether `cl` is the trie (pl-tabling.c `unify_leader_clause`)."
+function unify_leader_clause(
+    ld::PL_local_data{T}, scc::tbl_component{T}, cl::term_t
+)::Tuple{Bool, Bool} where {T}
+    gd = _query_gd(ld)
+    atrie = gd.tries[scc.leader]
+    wl = atrie.worklist
+
+    is_trie = false
+    atrie.gen_call += 1                             # TRIE_STAT_INC(atrie, gen_call)
+    defined = !(wl isa tbl_worklist{T}) || wl.undefined == 0
+
+    clref = atrie.clause
+    as_trie = false
+    if clref == 0 && (atrie.flags & (TRIE_ISSHARED | TRIE_ABOLISH_ON_COMPLETE)) == 0
+        if atrie.IDG !== nothing                    # atrie->data.IDG ? ... : ...
+            as_trie =
+                defined && (atrie.flags & TRIE_ISMAP) == 0 &&
+                atrie.value_count == 1 && trie_single_value_node(atrie) != 0
+        else
+            as_trie =
+                (atrie.flags & TRIE_ISMAP) != 0 ||
+                (
+                    defined &&
+                    div(atrie.node_count, atrie.value_count + 1) <
+                    ld.table_flags_compile_threshold
+                )
+        end
+    end
+    if as_trie
+        is_trie = true
+        return unify_trie(gd, ld, cl, atrie), is_trie   # see (*)
+    end
+
+    def = gd.procedures_trie_gen_compiled2.definition::Definition{T}
+    clref = compile_trie(gd, ld, def, atrie)
+    clref == 0 && return false, is_trie
+
+    return PL_unify_atomic(ld, cl, _atom_value(ld, clref)), is_trie
+end
+
+# PORT: pl-tabling.c table_complete_all
+# (pl-tabling.c:6440-6533 at the pin; the DEBUG print is left out)
+# DIVERGES: `skel` 0 is upstream's NULL (not for a leader); the leader is the trie numbered `c.leader` in `gd.tries`; a
+# worklist's `table` 0 is upstream's NULL. Called with their upstream contracts, owned by the steps named:
+# `destroy_answer_trie` (pl-tabling.c:4472) and `sweep_orphan_dynamic_tables` (:4598) TB1's, `trie_maybe_discard_nodes`
+# (pl-trie.h:340) TR4's, `droppable_table` (:6350) and `drop_intermediate_tables` (:6374) the drop step's (TB8);
+# `LD->table_flags.drop_intermediate` is `ld.table_flags_drop_intermediate` (TB1).
+"Complete the tables the component `scc` created: its status, and for a leader (`skel` not 0) how to return its answers in `status` and `cl` (pl-tabling.c `table_complete_all`)."
+function table_complete_all(
+    ld::PL_local_data{T}, scc::term_t, status::term_t, cl::term_t, skel::term_t
+)::Bool where {T}
+    for_leader = skel != 0
+    is_trie = false
+
+    c = get_scc(ld, scc)
+    c === nothing && return false
+
+    if c.status == SCC_ACTIVE
+        wls = worklist_set_to_array(c.created_worklists, T)
+        ntables = length(wls)
+
+        leader = _query_gd(ld).tries[c.leader]
+        leader_stays = (leader.flags & TRIE_ABOLISH_ON_COMPLETE) == 0
+
+        wls_reeval_complete(ld, wls)
+        rc, is_trie = unify_leader_clause(ld, c, cl)
+
+        for i in 1:ntables
+            wl = wls[i]
+            atrie = wl_table(ld, wl)
+
+            if (atrie.flags & TRIE_ABOLISH_ON_COMPLETE) != 0
+                atrie.worklist = nothing
+                wl.table = 0
+                destroy_answer_trie(ld, atrie)
+                free_worklist(ld, wl)
+            else
+                destroy = wl.undefined == 0 && isempty(wl.delays)   # see (*)
+
+                complete_worklist(ld, wl, destroy)
+            end
+        end
+        reset_newly_created_worklists(ld, c, Int(WLFS_FREE_NONE))
+        set_component_status(ld, c, SCC_COMPLETED)
+        (rc && leader_stays) && trie_maybe_discard_nodes(_query_gd(ld), leader)   # compiled by unify_leader_clause()
+        c.inferences = ld.statistics.inferences - c.inferences
+        if ld.table_flags_drop_intermediate != 0
+            if c.parent !== nothing
+                if rc && ntables == 1 && leader_stays &&
+                    (leader.flags & (TRIE_DISCARDABLE | TRIE_DISCARDED)) != 0 &&
+                    leader.IDG === nothing
+                    droppable_table(ld, c, leader)
+                end
+            else
+                drop_intermediate_tables(ld, c)
+            end
+        end
+
+        (c.parent !== nothing && ld.tabling.component === c) &&
+            (ld.tabling.component = c.parent)
+        if c.parent === nothing
+            ld.tabling.has_scheduling_component = false
+            ld.tabling.active_components == 0 && sweep_orphan_dynamic_tables(ld)
+        end
+
+        rc || return false
+
+        if for_leader
+            if is_trie
+                leader.value_count == 0 &&
+                    return PL_unify_atom(ld, status, mk_sym(T, Symbol("false")))
+                answer = trie_single_value_node(leader)
+                if answer != 0
+                    ok, _ = unify_trie_term(ld, leader, answer, skel)
+                    return ok && PL_unify_atom(ld, status, mk_sym(T, Symbol("true")))
+                end
+            end
+            return PL_unify_atom(ld, status, mk_sym(T, is_trie ? :trie : :clause))
+        end
+    end
+
+    (for_leader && c.status == SCC_MERGED) &&
+        return PL_unify_atom(ld, status, mk_sym(T, :merged))
+
+    return unify_component_status(ld, status, c)
+end
+
+# PORT: pl-tabling.c tbl_table_complete_all as pl_tbl_table_complete_all3_va
+# (pl-tabling.c:6535-6540 at the pin: PRED_IMPL("$tbl_table_complete_all", 3, tbl_table_complete_all, 0))
+"`'\$tbl_table_complete_all'(+SCC, -Status, -Clause)`: complete and reset the tables `SCC` created; `Status` is merged, complete or final, `Clause` the leader's answer trie or its compiled clause (pl-tabling.c)."
+function pl_tbl_table_complete_all3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    return table_complete_all(ld, A1, A2, A3, term_t(0)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_leader_complete as pl_tbl_leader_complete4_va
+# (pl-tabling.c:6558-6563 at the pin: PRED_IMPL("$tbl_leader_complete", 4, tbl_leader_complete, 0))
+"`'\$tbl_leader_complete'(+SCC, ?Skeleton, -Status, -Clause)`: as `'\$tbl_table_complete_all'/3` for the leader, `Status` true (the single answer unified with `Skeleton`), false, trie, clause or merged (pl-tabling.c)."
+function pl_tbl_leader_complete4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+
+    return table_complete_all(ld, A1, A3, A4, A2) ? FTRUE : FFALSE
+end
+
+# ---- TB2b: freeing and discarding a component, the leader's cleanup, subcomponents (pl-tabling.c:6572-6728 at the pin) ----
+
+# PORT: pl-tabling.c tbl_free_component as pl_tbl_free_component1_va
+# (pl-tabling.c:6571-6584 at the pin: PRED_IMPL("$tbl_free_component", 1, tbl_free_component, 0))
+"`'\$tbl_free_component'(+SCC)`: free the top component `SCC` if it is the current one (pl-tabling.c)."
+function pl_tbl_free_component1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    c = get_scc(ld, A1)
+    if c !== nothing
+        @assert c.parent === nothing
+        ld.tabling.component === c && free_component(ld, c, Int(FC_DESTROY))
+        @assert ld.tabling.component === nothing
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c table_discard_all
+# (pl-tabling.c:6595-6610 at the pin)
+"Discard the tables `c` created and its worklists, after an exception in tabling; its parent becomes the current component (pl-tabling.c `table_discard_all`)."
+function table_discard_all(ld::PL_local_data{T}, c::tbl_component{T})::Nothing where {T}
+    if c.status != SCC_MERGED
+        parent = c.parent
+
+        c.created_worklists !== nothing &&
+            reset_newly_created_worklists(ld, c, Int(WLFS_DISCARD_INCOMPLETE))
+        reset_global_worklist(ld, c)
+
+        ld.tabling.component = parent
+        free_component(ld, c, Int(FC_DESTROY))
+
+        parent === nothing && (ld.tabling.has_scheduling_component = false)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_table_discard_all as pl_tbl_table_discard_all1_va
+# (pl-tabling.c:6612-6621 at the pin: PRED_IMPL("$tbl_table_discard_all", 1, tbl_table_discard_all, 0))
+"`'\$tbl_table_discard_all'(+SCC)`: discard the tables and worklists of `SCC` (pl-tabling.c)."
+function pl_tbl_table_discard_all1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    c = get_scc(ld, A1)
+    c !== nothing && table_discard_all(ld, c)
+
+    return FTRUE
+end
+
+# PORT: pl-tabling.c tbl_leader_finished
+# (pl-tabling.c:6638-6673 at the pin)
+# DIVERGES: `set_idg_current` (pl-tabling.c:8328) is the IDG step's (TB6), assumed with its upstream contract; the message
+# term `tabling(unexpected_result(Wrapper, Catcher))` is built by unification (upstream: `PL_FUNCTOR_CHARS` in printMessage).
+"The cleanup of `'\$tbl_leader'/5`: on exit or failure free the completed top component `scc`, on an exception discard it (pl-tabling.c `tbl_leader_finished`)."
+function tbl_leader_finished(
+    ld::PL_local_data{T}, old::term_t, catcher::term_t, scc::term_t, wrapper::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    set_idg_current(ld, get_trie_noex(gd, ld, old)) || return false
+
+    a = PL_get_atom(ld, catcher)
+    if a !== nothing &&
+        (sym_key(a) == sym_key(mk_sym(T, :exit)) || sym_key(a) == sym_key(mk_sym(T, :fail)))
+        c = ld.tabling.component
+        if sym_key(a) == sym_key(mk_sym(T, :exit)) && c !== nothing &&
+            tbl_get_pointer(ld, scc) === c &&   # PL_get_pointer(scc, &ptr) && ptr == (void*)c
+            c.status == SCC_COMPLETED && c.parent === nothing
+            free_component(ld, c, Int(FC_DESTROY))
+            @assert ld.tabling.component === nothing
+        end
+        return true
+    end
+
+    if PL_is_functor(ld, catcher, mk_sym(T, :exception), 1)
+        c = get_scc(ld, scc)
+        c !== nothing && table_discard_all(ld, c)
+        return true
+    end
+
+    msg = PL_new_term_ref(ld)
+    a1 = PL_new_term_ref(ld)
+    PL_unify_functor(ld, msg, mk_sym(T, :tabling), 1) || return false
+    _PL_get_arg(ld, 1, msg, a1)
+    PL_unify_functor(ld, a1, mk_sym(T, :unexpected_result), 2) || return false
+    a2 = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, a1, a2)
+    PL_unify(ld, a2, wrapper) || return false
+    _PL_get_arg(ld, 2, a1, a2)
+    PL_unify(ld, a2, catcher) || return false
+
+    return printMessage(ld, :error, msg)
+end
+
+# PORT: pl-tabling.c tbl_create_subcomponent
+# (pl-tabling.c:6676-6698 at the pin)
+# DIVERGES: `leader` is the trie's number in `gd.tries` (`tbl_component.leader`, an index).
+"A component led by `leader`: the scheduling component the first time, else a child of the current one (pl-tabling.c `tbl_create_subcomponent`)."
+function tbl_create_subcomponent(
+    ld::PL_local_data{T}, leader::trie{T}
+)::tbl_component{T} where {T}
+    tab = ld.tabling
+    if !tab.has_scheduling_component
+        tab.has_scheduling_component = true
+        cur = tab.component
+        if cur === nothing || tab.in_answer_completion
+            cur = new_component(ld)
+            tab.component = cur
+        else
+            set_component_status(ld, cur, SCC_ACTIVE)
+        end
+        cur.leader = leader.serial
+        cur.inferences = ld.statistics.inferences
+    else
+        c = new_component(ld)
+        c.leader = leader.serial
+        c.inferences = ld.statistics.inferences
+        p = tab.component::tbl_component{T}
+        c.parent = p
+        tab.component = c
+        add_child_component(p, c)
+    end
+
+    return tab.component::tbl_component{T}
+end
+
+# PORT: pl-tabling.c unify_component_status
+# (pl-tabling.c:6701-6721 at the pin)
+"Unify `t` with the status of `scc`: active, merged, complete (with a parent) or final (pl-tabling.c `unify_component_status`)."
+function unify_component_status(
+    ld::PL_local_data{T}, t::term_t, scc::tbl_component{T}
+)::Bool where {T}
+    if scc.status == SCC_ACTIVE
+        status = :active
+    elseif scc.status == SCC_MERGED
+        status = :merged
+    elseif scc.status == SCC_COMPLETED
+        status = scc.parent !== nothing ? :complete : :final
+    else
+        @assert false
+        return false
+    end
+
+    return PL_unify_atom(ld, t, mk_sym(T, status))
+end
+
 # ORIGINAL (TAB1MIN): pl-atom.ih `ATOM_trienode` (generated from src/ATOMS): the reserved atom `trienode` (src/pl-ressymbol.jl retypes it).
 "The atom word of the reserved symbol `trienode` (pl-atom.ih `ATOM_trienode`): the same in every database."
 const ATOM_trienode = builtin_atom("trienode")
@@ -213,6 +2626,227 @@ function pl_tbl_is_trienode1_va(
     k, w, _ = _deref_loc(ld, -(A1 + 1))
 
     return (k == DU_WORD && w == ATOM_trienode) ? FTRUE : FFALSE
+end
+
+# ---- TB2b: inspecting tabling data (pl-tabling.c:6767-6932 at the pin) ----
+
+# PORT: pl-tabling.c tbl_scc as pl_tbl_scc1_va
+# (pl-tabling.c:6771-6779 at the pin: PRED_IMPL("$tbl_scc", 1, tbl_scc, 0))
+"`'\$tbl_scc'(-SCC)`: `SCC` is the handle of the current component; false without one (pl-tabling.c)."
+function pl_tbl_scc1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    c = ld.tabling.component
+    c !== nothing && return tbl_unify_pointer(ld, A1, c) ? FTRUE : FFALSE
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c unify_wl_set
+# (pl-tabling.c:6781-6796 at the pin)
+"Unify `l` with the list of the handles of the worklists of `wls` (pl-tabling.c `unify_wl_set`)."
+function unify_wl_set(
+    ld::PL_local_data{T}, l::term_t, wls::Union{Nothing, worklist_set{tbl_worklist{T}}}
+)::Bool where {T}
+    p = worklist_set_to_array(wls, T)
+    n = length(p)
+
+    tail = PL_copy_term_ref(ld, l)
+    head = PL_new_term_ref(ld)
+    for i in 1:n
+        if !PL_unify_list(ld, tail, head, tail) || !tbl_unify_pointer(ld, head, p[i])
+            return false
+        end
+    end
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-tabling.c unify_scc_set
+# (pl-tabling.c:6798-6816 at the pin)
+"Unify `l` with the list of the handles of the components of `cs`, [] for none (pl-tabling.c `unify_scc_set`)."
+function unify_scc_set(
+    ld::PL_local_data{T}, l::term_t, cs::Union{Nothing, component_set{tbl_component{T}}}
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, l)
+
+    if cs !== nothing
+        head = PL_new_term_ref(ld)
+
+        for c in cs.members
+            if !PL_unify_list(ld, tail, head, tail) || !tbl_unify_pointer(ld, head, c)
+                return false
+            end
+        end
+    end
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-tabling.c unify_pointer_or_nil
+# (pl-tabling.c:6818-6826 at the pin)
+"Unify `t` with the handle of the component `ptr`, or the atom `null` for none (pl-tabling.c `unify_pointer_or_nil`)."
+function unify_pointer_or_nil(
+    ld::PL_local_data{T}, t::term_t, ptr::Union{Nothing, tbl_component{T}}
+)::Bool where {T}
+    if ptr !== nothing
+        return tbl_unify_pointer(ld, t, ptr)
+    else
+        return PL_unify_atom(ld, t, mk_sym(T, :null))   # PL_unify_atom_chars(t, "null")
+    end
+end
+
+# PORT: pl-tabling.c tbl_scc_data as pl_tbl_scc_data2_va
+# (pl-tabling.c:6828-6847 at the pin: PRED_IMPL("$tbl_scc_data", 2, tbl_scc_data, 0))
+"`'\$tbl_scc_data'(+SCC, -Data)`: `Data` is scc(Parent, Children, Status, Worklist, CreatedWorklists) of the component `SCC` (pl-tabling.c)."
+function pl_tbl_scc_data2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    scc = get_scc(ld, A1)
+
+    if scc !== nothing
+        av = PL_new_term_refs(ld, 5)
+        t = PL_new_term_ref(ld)
+        scc5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :scc)), 5)   # FUNCTOR_scc5
+
+        return if (
+            unify_pointer_or_nil(ld, av + 0, scc.parent) &&
+            unify_scc_set(ld, av + 1, scc.children) &&
+            unify_component_status(ld, av + 2, scc) &&
+            unify_wl_set(ld, av + 3, scc.worklist) &&
+            unify_wl_set(ld, av + 4, scc.created_worklists) &&
+            PL_cons_functor_v(ld, t, scc5, av) &&
+            PL_unify(ld, t, A2)
+        )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c unify_cluster
+# (pl-tabling.c:6850-6892 at the pin)
+# DIVERGES: an answer is a node id of the worklist's answer trie, passed as `atrie` (upstream: the node, which knows its trie);
+# `tbl_unify_answer(ld, atrie, nid, term)` is TB3's (pl-tabling.c `tbl_unify_answer`); `PL_unify_term(t, PL_FUNCTOR_CHARS,
+# "riac", 1, PL_TERM, a)` is `PL_unify_functor` then `PL_unify_arg`; `UNTNOT(sp->term)` is `sp.term`.
+"Unify `t` with the list of the answers or suspension goals of the cluster `c`, wrapped in riac/1 when `is_riac` (pl-tabling.c `unify_cluster`)."
+function unify_cluster(
+    ld::PL_local_data{T}, t::term_t, atrie::trie{T}, c::cluster{T}, is_riac::Bool
+)::Bool where {T}
+    if is_riac
+        a = PL_new_term_ref(ld)
+        if !(PL_unify_functor(ld, t, mk_sym(T, :riac), 1) && PL_unify_arg(ld, 1, t, a))
+            return false
+        end
+        t = a
+    end
+
+    tail = PL_copy_term_ref(ld, t)
+    head = PL_new_term_ref(ld)
+
+    if c.type == CLUSTER_ANSWERS
+        for an in c.answers
+            if !PL_unify_list(ld, tail, head, tail) ||
+                !tbl_unify_answer(ld, atrie, an, head)
+                return false
+            end
+        end
+        return PL_unify_nil(ld, tail)
+    else
+        tmp = PL_new_term_ref(ld)
+
+        @assert c.type == CLUSTER_SUSPENSIONS
+
+        for sp in c.suspensions
+            if !PL_unify_list(ld, tail, head, tail) || !PL_recorded(ld, sp.term, tmp) ||
+                !PL_unify(ld, tmp, head)
+                return false
+            end
+        end
+        return PL_unify_nil(ld, tail)
+    end
+end
+
+# PORT: pl-tabling.c unify_clusters
+# (pl-tabling.c:6895-6909 at the pin)
+"Unify `t` with the list of the clusters of the worklist `wl` (pl-tabling.c `unify_clusters`)."
+function unify_clusters(
+    ld::PL_local_data{T}, t::term_t, wl::tbl_worklist{T}
+)::Bool where {T}
+    tail = PL_copy_term_ref(ld, t)
+    head = PL_new_term_ref(ld)
+    atrie = wl_table(ld, wl)
+
+    c = wl.head
+    while c !== nothing
+        if !PL_unify_list(ld, tail, head, tail) ||
+            !unify_cluster(ld, head, atrie, c, c === wl.riac)
+            return false
+        end
+        c = c.next
+    end
+
+    return PL_unify_nil(ld, tail)
+end
+
+# PORT: pl-tabling.c tbl_worklist_data as pl_tbl_worklist_data2_va
+# (pl-tabling.c:6912-6932 at the pin: PRED_IMPL("$tbl_worklist_data", 2, tbl_worklist_data, 0))
+# DIVERGES: `PL_unify_atomic(av+1, trie_symbol(wl->table))` is TR4's `unify_trie` (the same unification); a worklist without a
+# component (`wl->component` NULL; upstream unifies the integer `PL_unify_pointer` makes of NULL) unifies 0.
+"`'\$tbl_worklist_data'(+Worklist, -Data)`: `Data` is worklist(SCC, Trie, InGlobal, Executing, Clusters) of `Worklist` (pl-tabling.c)."
+function pl_tbl_worklist_data2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    wl = get_worklist(ld, A1)
+
+    if wl !== nothing
+        av = PL_new_term_refs(ld, 5)
+        t = PL_new_term_ref(ld)
+        worklist5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :worklist)), 5)   # FUNCTOR_worklist5
+        c = wl.component
+        comp_ok =
+            c === nothing ? PL_unify_int64(ld, av + 0, 0) : tbl_unify_pointer(ld, av + 0, c)
+
+        return if (
+            comp_ok &&
+            unify_trie(_query_gd(ld), ld, av + 1, wl_table(ld, wl)) &&
+            PL_unify_bool(ld, av + 2, wl.in_global_wl) &&
+            PL_unify_bool(ld, av + 3, wl.executing) &&
+            unify_clusters(ld, av + 4, wl) &&
+            PL_cons_functor_v(ld, t, worklist5, av) &&
+            PL_unify(ld, t, A2)
+        )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_table as pl_tbl_wkl_table2_va
+# (pl-tabling.c:6935-6942 at the pin: PRED_IMPL("$tbl_wkl_table", 2, tbl_wkl_table, 0))
+# DIVERGES: `PL_unify_atomic(A2, trie_symbol(wl->table))` is TR4's `unify_trie` (the same unification), as in
+# `'\$tbl_worklist_data'/2`.
+"`'\$tbl_wkl_table'(+Worklist, -Trie)`: `Trie` is the answer trie of `Worklist` (pl-tabling.c)."
+function pl_tbl_wkl_table2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    wl = get_worklist(ld, A1)
+
+    return if (wl !== nothing && unify_trie(_query_gd(ld), ld, A2, wl_table(ld, wl)))
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-tabling.c clear_table_props
@@ -544,42 +3178,20 @@ const RAT_CLEANUP = Int(0x1)
 "`reset_answer_table` flag: all private tables go (pl-tabling.c `RAT_BULK`)."
 const RAT_BULK = Int(0x2)
 
-# ORIGINAL (stack, batch 2): `trie_empty` and `trie_destroy` take the database since TR4 (`trie_discard_clause` retracts the compiled
-# clause through it), but `release_node`, which reaches a table trie through `tbl_release_node` (and `release_value` through the
-# pointer value of a variant table node), has none. A table trie holds no compiled clause before TB3 (`tbl_complete_answer_clause`),
-# so these two do `empty_trie` and `trie_destroy` without the discard and refuse by name (owner TB3, which threads the database
-# through `release_node`/`clear_node`) when `trie.clause` is set.
-"`empty_trie` of a table trie without the database: refuses (owner TB3) a trie with a compiled clause."
-function table_trie_empty(atrie::trie{T})::Nothing where {T}
-    atrie.clause == 0 || tbl_refuse(
-        T,
-        :trie_discard_clause,
-        "a table trie with a compiled clause (release_node has no database to retract it)",
-        "TB3"
-    )
-    if atrie.references == 0
-        clear_nodes(atrie, nothing)
-        atrie.value_count = 0
-        atrie.flags &= ~(TRIE_DISCARDABLE | TRIE_DISCARDED)
-    end
-    return nothing
-end
-
-"`trie_destroy` of a table trie without the database (see `table_trie_empty`)."
-function table_trie_destroy(atrie::trie{T})::Nothing where {T}
-    atrie.magic = TRIE_CMAGIC
-    table_trie_empty(atrie)
-    free_lingering_blocks(atrie)
-    return nothing
-end
-
 # PORT: pl-tabling.c reset_answer_table
-# DIVERGES: the worklist branch (an answer table with a worklist) is refused by name, owner TB2 (the worklists, the delays
-# `destroy_depending_worklists`, `destroy_delay_info_worklist`, `free_worklist`); a sentinel (WL_GROUND, WL_DYNAMIC) is
+# DIVERGES: the worklist branch (an answer table with a worklist) is refused by name, owner TB5 (the abolish callers hold the
+# engine `ld` that `destroy_depending_worklists`, `destroy_delay_info_worklist` and `free_worklist` need; this function and the
+# release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"). DISPATCHER RULING (option c): the callers
+# that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
+# (`reset_answer_table_worklist`, `reset_answer_table_idg`), so the chain finds neither; the refusals below stay for every other
+# path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
+# a sentinel (WL_GROUND, WL_DYNAMIC) is
 # `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
-# `idg_destroy_private`), the tracked table (`tt_abolish_table`) owner TB9.
+# `idg_destroy_private`); the tracked branch (`tt_abolish_table`) is `reset_answer_table_tracked`, run by the same callers.
 "Make the answer table `atrie` fresh again: no worklist, not complete, no answers (pl-tabling.c)."
-function reset_answer_table(atrie::trie{T}, flags::Int)::Nothing where {T}
+function reset_answer_table(
+    gd::PL_global_data{T}, atrie::trie{T}, flags::Int
+)::Nothing where {T}
     wl = atrie.worklist
     if wl isa Int
         atrie.worklist = nothing                # make fresh again
@@ -587,8 +3199,8 @@ function reset_answer_table(atrie::trie{T}, flags::Int)::Nothing where {T}
         tbl_refuse(
             T,
             :reset_answer_table,
-            "reset_answer_table: a table with a worklist (destroy_depending_worklists, free_worklist)",
-            "TB2"
+            "reset_answer_table: a table with a worklist (destroy_depending_worklists, free_worklist: the engine)",
+            "TB5"
         )
     end
     atrie.flags &= ~TRIE_COMPLETE
@@ -603,11 +3215,11 @@ function reset_answer_table(atrie::trie{T}, flags::Int)::Nothing where {T}
     (atrie.flags & TRIE_ISTRACKED) != 0 && tbl_refuse(
         T,
         :tt_abolish_table,
-        "reset_answer_table: a tracked table (tt_abolish_table)",
+        "reset_answer_table: a tracked table (tt_abolish_table), left to the callers that hold ld (reset_answer_table_tracked)",
         "TB9"
     )
 
-    table_trie_empty(atrie)
+    trie_empty(gd, atrie)
 
     return nothing
 end
@@ -616,7 +3228,9 @@ end
 # DIVERGES: the answer trie is found by number in the table's `registry`; the node is a node id, the node's `variant` link
 # of the answer trie is the node id (0: NULL).
 "Release the answer table of node `nid` of the variant table `variant_table` (pl-tabling.c)."
-function release_variant_table_node(variant_table::trie{T}, nid::Int)::Nothing where {T}
+function release_variant_table_node(
+    gd::PL_global_data{T}, variant_table::trie{T}, nid::Int
+)::Nothing where {T}
     node = variant_table.nodes[nid]
     if node.value != 0
         w = node.value
@@ -630,7 +3244,7 @@ function release_variant_table_node(variant_table::trie{T}, nid::Int)::Nothing w
                 "TH1"
             )
         end
-        reset_answer_table(atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)
+        reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)
         @assert atrie.variant == nid
         atrie.variant = 0
     end
@@ -643,17 +3257,13 @@ end
 is_variant_trie(tr::trie)::Bool = (tr.flags & TRIE_ISVARIANT) != 0
 
 # PORT: pl-tabling.c release_answer_node
-# DIVERGES: a node with a delay list (`TN_DELAYINFO`: `destroy_delay_info`, `node_delayinfo`) is refused by name, owner TB4;
-# no node has the flag before TB4.
-"Release the tabling data of node `nid` of the answer trie `atrie` (pl-tabling.c)."
-function release_answer_node(atrie::trie{T}, nid::Int)::Nothing where {T}
-    if (atrie.nodes[nid].flags & TN_DELAYINFO) != 0
-        tbl_refuse(
-            T,
-            :release_answer_node,
-            "release_answer_node: a node with delay information (destroy_delay_info, set_node_delayinfo)",
-            "TB4"
-        )
+# (pl-tabling.c:2511-2515 at the pin) DIVERGES: the node is a node id and the database an argument (`node_delayinfo`, `destroy_delay_info`).
+"Release the tabling data of node `nid` of the answer trie `atrie`: the delay information of a conditional answer goes (pl-tabling.c)."
+function release_answer_node(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int
+)::Nothing where {T}
+    if DL_IS_DELAY_LIST(node_delayinfo(gd, atrie, nid))
+        destroy_delay_info(gd, atrie, nid, true)
     end
 
     return nothing
@@ -661,11 +3271,11 @@ end
 
 # PORT: pl-tabling.c tbl_release_node
 "Called by the trie code when node `nid` of the answer trie or variant table `tr` is released (pl-tabling.c)."
-function tbl_release_node(tr::trie{T}, nid::Int)::Nothing where {T}
+function tbl_release_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
     if is_variant_trie(tr)
-        release_variant_table_node(tr, nid)
+        release_variant_table_node(gd, tr, nid)
     else
-        release_answer_node(tr, nid)
+        release_answer_node(gd, tr, nid)
     end
 
     return nothing
@@ -744,12 +3354,56 @@ function pred_max_table_subgoal_size(ld::PL_local_data, def::Definition)::Int
     return limit
 end
 
+# ---- TB3: answers, answer subsumption (moded tables), S_TABLED support (pl-tabling.c at 18168e62) ----
+# ORIGINAL (TAB1 TB3): the code of later steps this part reaches is refused by name with TB1's `tbl_refuse` (owner in the
+# message): the delay lists of WFS (TB4), the restraint tripwires (TB8), the IDG (TB6). Interfaces of the parallel steps it
+# calls (TB2: `wl_table`, `get_worklist`, `wkl_add_answer`, `prune_answers_worklist`; TR1: `trie_insert_flat`,
+# `trie_lookup_abstract`, `trie_lookup`, `trie_delete`, `set_trie_value_word`, `unify_trie_term`, `put_trie_value`,
+# `prune_trie`, `map_trie_node`) are listed in evidence/TB3/handoff.md.
+
+# PORT: pl-tabling.c UDL_FALSE
+"`update_delay_list` result: an error (pl-tabling.c `udl_status`)."
+const UDL_FALSE = 0
+# PORT: pl-tabling.c UDL_TRUE
+"`update_delay_list` result: done (pl-tabling.c `udl_status`)."
+const UDL_TRUE = 1
+# PORT: pl-tabling.c UDL_COMPLETE
+"`update_delay_list` result: the answer completes the table (early completion, pl-tabling.c `udl_status`)."
+const UDL_COMPLETE = 2
+
+# ORIGINAL (TAB1 TB3): pl-tabling.c `deRef2(valTermRef(LD->tabling.delay_list), gdlp); gdlp = argTermP(*gdlp, 0)` and `isNil`:
+# whether the global delay list (argument 1 of the term in `ld.tabling.delay_list`) is `[]`.
+# DIVERGES: `ld.tabling.delay_list` is 0 until the term reference is created (TB4's `$tbl_set_delay_list/1` and initTabling's
+# owner): 0 reads as the empty list.
+"Whether the global delay list of this thread is empty (pl-tabling.c `isNil(*gdlp)`)."
+function global_delay_list_is_nil(ld::PL_local_data{T})::Bool where {T}
+    dl = ld.tabling.delay_list
+    dl == 0 && return true
+    a = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, dl, a) || return true
+
+    return PL_get_nil(ld, a)
+end
+
+# PORT: pl-tabling.c pred_max_table_answer_size
+# DIVERGES: `(size_t)-1` is -1 (as `table_props`).
+"The answer size limit of `def`: its `answer_abstract`, else the restraint; -1: none (pl-tabling.c)."
+function pred_max_table_answer_size(ld::PL_local_data, def::Definition)::Int
+    limit = def.tabling !== nothing ? def.tabling.answer_abstract : -1
+    if limit == -1
+        limit = ld.tabling.restraint.max_table_answer_size
+    end
+
+    return limit
+end
+
 # PORT: pl-tabling.c get_answer_table
 # DIVERGES: single thread: `shared` is false (the `O_PLMT` parts: the scope flags, `claim_answer_table`, the shared symbol, are
 # TH1; a call with `AT_SHARED` or a predicate with `TP_SHARED` is refused by name); `def` is not looked up when it is
 # `nothing` (upstream resolves the procedure of `t` only for the scope, which is the `O_PLMT` part). The size abstraction
-# `sa` has `size` -1 (none) as `typemax(Int)`. The tripwire `tbl_pred_tripwire` (TB8) is refused by name unless the action
-# is `abstract` and AT_ABSTRACT is set (that action needs no tripwire). The retry of upstream after a global stack overflow
+# `sa` has `size` -1 (none) as `typemax(Int)`. `goto retry` after a passed tripwire is the loop (the abstraction is lifted:
+# `size` `typemax(Int)`, `vars` emptied); `tbl_pred_tripwire` needs a `def` (upstream passes the pointer: a NULL `def` has no size
+# limit, so the lookup is never abstracted without one). The retry of upstream after a global stack overflow
 # (`Undo`, `makeMoreStackSpace`) is not needed: no stack overflows here. A moded trie's `value_count` and the node's value
 # are as upstream's; `clrefp` is the `O_PLMT` clause-reference protection (a trie clause is TR4): dropped.
 """
@@ -784,28 +3438,37 @@ function get_answer_table(
     vars = Int[]
 
     sa = size_abstract(2, size == -1 ? typemax(Int) : size)
-    rc, nid = trie_lookup_abstract(
-        ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars
-    )
+    local rc::Int
+    local nid::Int
+    while true                                      # upstream's `retry:`
+        rc, nid = trie_lookup_abstract(
+            ld, variants, 0, -(t + 1), (flags & AT_CREATE) != 0, sa, vars
+        )
+        rc <= 0 && break
+
+        if rc == TRIE_ABSTRACTED
+            action = ld.tabling.restraint.max_table_subgoal_size_action
+            if sym_key(action) == sym_key(mk_sym(T, :abstract)) &&
+                (flags & AT_ABSTRACT) == 0
+                action = mk_sym(T, :error)
+            end
+            if sym_key(action) != sym_key(mk_sym(T, :abstract))
+                if def !== nothing && tbl_pred_tripwire(
+                    ld, def, action, mk_sym(T, :max_table_subgoal_size)
+                )
+                    sa = size_abstract(2, typemax(Int))     # `sa.size = (size_t)-1`
+                    empty!(vars)                            # `emptyBuffer(&vars, (size_t)-1)`
+                    continue                                # `goto retry`
+                else
+                    return nothing
+                end
+            end
+        end
+        break
+    end
     if rc <= 0
         trie_error(ld, rc, t)
         return nothing
-    end
-
-    if rc == TRIE_ABSTRACTED
-        action = ld.tabling.restraint.max_table_subgoal_size_action
-        if sym_key(action) == sym_key(mk_sym(T, :abstract)) && (flags & AT_ABSTRACT) == 0
-            action = mk_sym(T, :error)
-        end
-        if sym_key(action) != sym_key(mk_sym(T, :abstract))
-            # tbl_pred_tripwire(def, action, max_table_subgoal_size): the restraint tripwire is TB8
-            tbl_refuse(
-                T,
-                :tbl_pred_tripwire,
-                "get_answer_table: the subgoal size tripwire (tbl_pred_tripwire)",
-                "TB8"
-            )
-        end
     end
 
     node = variants.nodes[nid]
@@ -845,36 +3508,33 @@ function get_answer_table(
 end
 
 # PORT: pl-tabling.c unify_fresh
-# DIVERGES: `create` true makes the component and the worklist of the table (`tripwire_incomplete_subgoals`: TB8,
-# `tbl_create_subcomponent` and `tbl_add_worklist`: TB2) and is refused by name, owner TB2; `create` false is ported.
+# DIVERGES: `create` true is `_unify_fresh_create` (TB2: `tripwire_incomplete_subgoals`, `tbl_create_subcomponent`,
+# `tbl_add_worklist`, the pointers as handles).
 "Unify `t` with `fresh`, or with `fresh(SCC, WL)` when `create` (pl-tabling.c)."
 function unify_fresh(
     ld::PL_local_data{T}, t::term_t, atrie::trie{T}, def::Union{Nothing, Definition{T}},
     create::Bool
 )::Bool where {T}
-    create && tbl_refuse(
-        T,
-        :unify_fresh,
-        "unify_fresh(create): the component and worklist of a new table (tbl_create_subcomponent, tbl_add_worklist, tripwire_incomplete_subgoals)",
-        "TB2"
-    )
+    create && return _unify_fresh_create(ld, t, atrie, def)
 
     return PL_unify_atom(ld, t, mk_sym(T, :fresh))
 end
 
 # PORT: pl-tabling.c complete_or_invalid_status
-# DIVERGES: the IDG node (`atrie->data.IDG`, a monotonic or incremental table) is TB6's: refused by name when a table has one;
-# no table has one before TB6, so the answer is `complete`.
+# (pl-tabling.c:4263-4285 at the pin.)
+# DIVERGES: the IDG node (`atrie->data.IDG`, the TB6 node of a monotonic or incremental table) is read as `atrie.IDG`; the
+# status is the atom of the answer, `mk_sym(T, ...)` of the same names.
 "The status atom of a complete table: `complete`, `invalid` or `fresh` (pl-tabling.c)."
 function complete_or_invalid_status(
     ld::PL_local_data{T}, atrie::trie{T}, create::Bool
 )::T where {T}
-    atrie.IDG === nothing || tbl_refuse(
-        T,
-        :complete_or_invalid_status,
-        "complete_or_invalid_status: an IDG node (monotonic, falsecount, reevaluating)",
-        "TB6"
-    )
+    if (n = atrie.IDG) !== nothing
+        n.monotonic && !n.lazy && !n.force_reeval && return mk_sym(T, :complete)
+        n.monotonic && n.lazy && ld.tabling.in_assert_propagation && !create &&
+            return mk_sym(T, :complete)
+        n.falsecount > 0 && return mk_sym(T, :invalid)
+        n.reevaluating && return mk_sym(T, :fresh)
+    end
 
     return mk_sym(T, :complete)
 end
@@ -894,8 +3554,7 @@ function unify_complete_or_invalid(
 end
 
 # PORT: pl-tabling.c unify_table_status
-# DIVERGES: a table with a worklist (`PL_unify_pointer(t, wl)`, `merge_component`, `tripwire_scc_subgoals`) is refused by name,
-# owner TB2: no table has a worklist before TB2.
+# DIVERGES: the worklist is unified as its handle (`tbl_unify_pointer`, upstream `PL_unify_pointer(t, wl)`).
 "Unify `t` with the status of `atrie`: `complete`, `invalid`, `dynamic` or `fresh`, a worklist for an incomplete table (pl-tabling.c)."
 function unify_table_status(
     ld::PL_local_data{T}, t::term_t, atrie::trie{T}, def::Union{Nothing, Definition{T}},
@@ -905,12 +3564,16 @@ function unify_table_status(
         return unify_complete_or_invalid(ld, t, atrie, def, create)
     else
         wl = atrie.worklist
-        wl isa tbl_worklist && tbl_refuse(
-            T,
-            :unify_table_status,
-            "unify_table_status: a table with a worklist (PL_unify_pointer, merge_component)",
-            "TB2"
-        )
+        if wl isa tbl_worklist
+            if create && wl.component !== ld.tabling.component
+                size0 = wls_size((wl.component::tbl_component{T}).created_worklists)
+                merge_component(ld, wl.component::tbl_component{T})
+                ld.tabling.component = wl.component
+                tripwire_scc_subgoals(ld, wl, size0) || return false
+            end
+
+            return tbl_unify_pointer(ld, t, wl)
+        end
         if wl isa Int && wl == WL_DYNAMIC
             return PL_unify_atom(ld, t, mk_sym(T, :dynamic))
         end
@@ -942,6 +3605,219 @@ end
 table_is_incomplete(atrie::trie)::Bool =
     atrie.worklist isa tbl_worklist && (atrie.flags & TRIE_COMPLETE) == 0
 
+# ---- the destruction of a table and the orphan sweep: called by TB2 and TB4, owned by TB5 (pl-tabling.c:4472-4690) ----
+# NOTE: a minimal port of the functions batch 3 calls (`table_complete_all`, `destroy_depending_worklists`), taken from pl-tabling.c at
+# the pin; TB5 supersedes them with the rest of the abolish steps (`abolish_table`, `collect_dynamic_children`, the shared
+# tables), as `'\$idg_set_current'/2` is TB6's. `droppable_table` and `drop_intermediate_tables` (the flag
+# `table_drop_intermediate`) are TB8's (the end of this file).
+
+# PORT: pl-tabling.c DYN_ORPHAN_SWEEP_MIN
+"The number of dynamic nodes that lost a dependent from which a completed root component sweeps the orphans (pl-tabling.c)."
+const DYN_ORPHAN_SWEEP_MIN = 1024
+
+# ORIGINAL (TAB1 TB5): whether the worklist slot of `atrie` holds the sentinel `s` (`WL_GROUND`, `WL_DYNAMIC`: an `Int` in the slot).
+@inline function _wl_is(atrie::trie, s::Int)::Bool
+    w = atrie.worklist
+    return w isa Int && w == s
+end
+
+# PORT: pl-trie.c get_trie_from_node
+# DIVERGES: the node id `atrie.variant` is a node of the thread's variant table (the private one: a shared table is refused by
+# name, owner TH1), so the trie is `gd.tries[ld.tabling.variant_table]`; upstream finds the trie of a node by walking up to the
+# root chunk. `nothing` when the thread has no variant table (it was cleared).
+"The variant table the node `atrie.variant` belongs to, or `nothing` (pl-trie.c `get_trie_from_node`)."
+function get_trie_from_node(
+    ld::PL_local_data{T}, atrie::trie{T}
+)::Union{Nothing, trie{T}} where {T}
+    (atrie.flags & TRIE_ISSHARED) != 0 && tbl_refuse(
+        T, :get_trie_from_node,
+        "get_trie_from_node: the node of a shared variant table", "TH1"
+    )
+    vi = ld.tabling.variant_table
+    vi == 0 && return nothing
+
+    return _query_gd(ld).tries[vi]
+end
+
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_worklist
+# (pl-tabling.c:2642-2652 at the pin: the `WL_IS_WORKLIST` branch; the call site is `release_variant_table_node`, :2689, reached
+# from `trie_delete` in `destroy_answer_trie`, :4486.)
+# DIVERGES: the branch needs the engine (`destroy_depending_worklists`, `free_worklist`), which the release chain of `trie_delete`
+# does not carry (`reset_answer_table`'s refusal, owner TB5); `destroy_answer_trie` holds it and runs the branch before the delete,
+# so the chain finds no worklist. TB5's abolish callers do the same or carry the engine through the chain (owner TB5).
+"The worklist branch of `reset_answer_table`: the worklist of `atrie` and the tables that depend on it go (pl-tabling.c)."
+function reset_answer_table_worklist(
+    ld::PL_local_data{T}, atrie::trie{T}, flags::Int
+)::Nothing where {T}
+    wl = atrie.worklist
+    if wl isa tbl_worklist{T}
+        if !isempty(wl.delays) && (flags & RAT_CLEANUP) == 0
+            destroy_depending_worklists(ld, wl)
+        end
+        wl.undefined != 0 && destroy_delay_info_worklist(_query_gd(ld), wl)
+        atrie.worklist = nothing
+        atrie.flags &= ~TRIE_ABOLISH_ON_COMPLETE
+        free_worklist(ld, wl)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_idg
+# (pl-tabling.c:2654-2662 at the pin: the `(n=atrie->data.IDG)` branch.)
+# DIVERGES: the branch needs the engine (`idg_reset`, `idg_destroy` and `idg_destroy_private` take `ld`: the lingering sets and the
+# node pool are the thread's), which the release chain of `trie_delete` does not carry (`reset_answer_table`'s refusal, owner TB6).
+# The callers that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the branch BEFORE `trie_delete`, as they do the worklist
+# branch (`reset_answer_table_worklist`); it sets `atrie.IDG = nothing`, so the chain finds no node. Upstream runs it inside the
+# chain, after the variant table's node is unlinked: the only observable difference is the order of those two steps. Any other path
+# into the chain with an IDG node (`tbl_release_node` from another `trie_delete`) keeps the refusal. A shared table is refused by
+# name, owner TH1 (`idg_reset` of a shared node is its concurrent-reader case).
+"The IDG branch of `reset_answer_table`: the node of `atrie` is reset (shared table) or destroyed (pl-tabling.c)."
+function reset_answer_table_idg(
+    ld::PL_local_data{T}, atrie::trie{T}, flags::Int
+)::Nothing where {T}
+    n = atrie.IDG
+    if n !== nothing
+        if (atrie.flags & TRIE_ISSHARED) != 0 && _query_gd(ld).halt_cleaning != CLN_DATA
+            tbl_refuse(
+                T,
+                :reset_answer_table_idg,
+                "reset_answer_table: the IDG node of a shared table (idg_reset)",
+                "TH1"
+            )
+        else
+            atrie.IDG = nothing
+            if (flags & RAT_BULK) != 0
+                idg_destroy_private(ld, n)
+            else
+                idg_destroy(ld, n)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_answer_table as reset_answer_table_tracked
+# (pl-tabling.c:2664-2665 at the pin: the `ison(atrie, TRIE_ISTRACKED)` branch.)
+# DIVERGES: `tt_abolish_table` needs the thread's transaction (`ld`), which the release chain of `trie_delete` does not carry
+# (`reset_answer_table`'s refusal below): the callers that hold `ld` (`destroy_answer_trie`, `abolish_table`, `reset_table_bulk`)
+# run the branch after the IDG branch and before `trie_delete`, the order of upstream's `reset_answer_table` (worklist, IDG,
+# `tt_abolish_table`, `trie_empty`). It CLEARS `TRIE_ISTRACKED` where upstream leaves it, so the chain finds the flag off: the table
+# is orphaned right after in each of the three callers, and the flag is read only by `answer_nodes_discardable` and
+# `reset_answer_table`.
+"The tracked branch of `reset_answer_table`: the transaction's trail forgets the answers of `atrie` (pl-tabling.c)."
+function reset_answer_table_tracked(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    if (atrie.flags & TRIE_ISTRACKED) != 0
+        tt_abolish_table(ld, atrie)
+        atrie.flags &= ~TRIE_ISTRACKED
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c destroy_answer_trie
+# (pl-tabling.c:4472-4492 at the pin.)
+# DIVERGES: the shared branch (`COMPLETE_WORKLIST(reset_answer_table)`) is refused by name, owner TH1. The worklist and IDG branches of
+# `reset_answer_table` run before `trie_delete` (`reset_answer_table_worklist`, `reset_answer_table_idg`).
+"Delete the node of the answer trie `atrie` from its variant table; whether there was one (pl-tabling.c)."
+function destroy_answer_trie(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    if atrie.variant != 0
+        vtrie = get_trie_from_node(ld, atrie)
+        if vtrie !== nothing && is_variant_trie(vtrie)
+            (atrie.flags & TRIE_ISSHARED) != 0 &&
+                tbl_refuse(
+                    T, :destroy_answer_trie, "destroy_answer_trie: a shared table", "TH1"
+                )
+            rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
+            reset_answer_table_worklist(ld, atrie, rat_flags)
+            reset_answer_table_idg(ld, atrie, rat_flags)
+            reset_answer_table_tracked(ld, atrie)
+            trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
+
+            return true
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c delayed_destroy_table
+# (pl-tabling.c:4495-4505 at the pin.)
+"If `atrie` is incomplete, schedule its destruction for when it completes; whether it was scheduled (pl-tabling.c)."
+function delayed_destroy_table(atrie::trie{T})::Bool where {T}
+    if table_is_incomplete(atrie)
+        atrie.flags |= TRIE_ABOLISH_ON_COMPLETE
+
+        return true
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c orphan_dynamic_table
+# (pl-tabling.c:4533-4543 at the pin; the IDG node is TB6's, `atrie.IDG`)
+"Whether the private dynamic pseudo table `atrie` has no dependent tables and may be deleted (pl-tabling.c)."
+function orphan_dynamic_table(atrie::trie)::Bool
+    n = atrie.IDG
+    return _wl_is(atrie, WL_DYNAMIC) &&
+           atrie.variant != 0 &&
+           (atrie.flags & TRIE_ISSHARED) == 0 &&
+           n !== nothing &&
+           idg_set_is_empty(n.affected)
+end
+
+# PORT: pl-tabling.c delete_dynamic_table
+"Delete the dynamic pseudo table `atrie` from its variant table (pl-tabling.c)."
+function delete_dynamic_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    vtrie = get_trie_from_node(ld, atrie)
+    if vtrie !== nothing && is_variant_trie(vtrie)
+        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c delete_orphan_dynamic_tables
+"Delete those of the tables `b` that are orphans (pl-tabling.c)."
+function delete_orphan_dynamic_tables(
+    ld::PL_local_data{T}, b::Vector{trie{T}}
+)::Nothing where {T}
+    for atrie in b
+        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sweep_orphan_dynamic_tables
+# DIVERGES: upstream's callback `collect_orphan_dynamic_table(node, ctx)` is the closure over `b` here; `vtrie->value_count` is the
+# trie's `value_count`.
+"Delete all orphan dynamic pseudo tables once enough dynamic nodes lost a dependent (pl-tabling.c)."
+function sweep_orphan_dynamic_tables(ld::PL_local_data{T})::Nothing where {T}
+    gd = _query_gd(ld)
+    vi = ld.tabling.variant_table
+    vi == 0 && return nothing
+    vtrie = gd.tries[vi]
+    if ld.tabling.dyn_orphan_events >= DYN_ORPHAN_SWEEP_MIN &&
+        ld.tabling.dyn_orphan_events >= vtrie.value_count
+        b = trie{T}[]
+        map_trie_node(vtrie, 1, function (tr, nid)
+            v = tr.nodes[nid].value
+            if v != 0
+                atrie = value_trie(gd, v)
+                orphan_dynamic_table(atrie) && push!(b, atrie)
+            end
+
+            return nothing
+        end)
+        delete_orphan_dynamic_tables(ld, b)
+        ld.tabling.dyn_orphan_events = 0
+    end
+
+    return nothing
+end
+
 # PORT: pl-tabling.c unify_skeleton
 # DIVERGES: `wrapper` 0 is NULL; the variant is found in this thread's variant table by the node id (`variant_table(false)`);
 # the predicate of an incomplete table is the worklist's (`wl->predicate`, TB2: not met before it, so `nothing`).
@@ -972,10 +3848,10 @@ end
 
 # PORT: pl-tabling.c tbl_variant_table
 # DIVERGES: `clref` (the trie clause an O_PLMT build hands out for a complete table, `claim_answer_table`) is TR4's and is never
-# set here: the table is always unified as symbol and `unify_table_status`. The closure-less call (`get_procedure(variant,
-# GP_RESOLVE|GP_EXISTENCE_ERROR)`, e.g. `start_tabling(0, ...)`) is refused by name, owner TB2. `idg_init_variant` and
-# `idg_add_edge` (TB6) are inlined as their guard: no IDG node and a predicate that is neither monotonic nor incremental
-# needs nothing, else the name is refused (TB6); `inner_is_monotonic` (TB7) likewise.
+# set here: the table is always unified as symbol and `unify_table_status`. The closure-less call (e.g. `start_tabling(0, ...)`)
+# gets its definition from `get_procedure_resolve` (src/pl-proc.jl, `get_procedure(variant, &proc, 0, GP_RESOLVE|GP_EXISTENCE_ERROR)`). `idg_init_variant`
+# and `idg_add_edge` (TB6) and `inner_is_monotonic` (TB7) are called; the debug `assert(ison(environment_frame, FR_INRESET))` before the monotonic
+# answer is not kept.
 "The common part of `'\$tbl_variant_table'/6` and its siblings: find or create the answer table of `variant` (pl-tabling.c)."
 function tbl_variant_table(
     ld::PL_local_data{T}, closure::term_t, variant::term_t, Trie::term_t, abstract::term_t,
@@ -984,41 +3860,22 @@ function tbl_variant_table(
     gd = _query_gd(ld)
     def = get_closure_predicate(gd, ld, closure)
     if def === nothing                          # e.g., start_tabling(0, ...)
-        tbl_refuse(
-            T,
-            :get_procedure,
-            "tbl_variant_table: no closure, get_procedure(GP_RESOLVE|GP_EXISTENCE_ERROR) of the variant",
-            "TB2"
-        )
+        proc = get_procedure_resolve(gd, ld, variant)   # get_procedure(variant, &proc, 0, GP_RESOLVE|GP_EXISTENCE_ERROR)
+        proc === nothing && return false
+        def = proc.definition
     end
 
     atrie = get_answer_table(ld, def, variant, ret, flags)    # moded tabling needs the trie
     atrie === nothing && return false
 
-    if atrie.IDG === nothing && def.tabling !== nothing &&
-        (def.tabling.flags & (TP_MONOTONIC | TP_INCREMENTAL)) != 0
-        tbl_refuse(
-            T,
-            :idg_init_variant,
-            "tbl_variant_table: a monotonic or incremental table (idg_init_variant, idg_add_edge)",
-            "TB6"
-        )
-    end
-    atrie.IDG === nothing || tbl_refuse(
-        T,
-        :idg_add_edge,
-        "tbl_variant_table: a table with an IDG node (idg_add_edge)",
-        "TB6"
-    )
+    idg_init_variant(ld, atrie, def, variant) || return false   # `!idg_init_variant(atrie, def, variant) || !idg_add_edge(...)`
+    idg_add_edge(ld, atrie, nothing) == 0 && return false   # `!idg_add_edge(atrie, NULL)`: -1 (no current node) goes on
 
     if is_monotonic != 0 && def.tabling !== nothing &&
-        (def.tabling.flags & TP_MONOTONIC) != 0
-        tbl_refuse(
-            T,
-            :inner_is_monotonic,
-            "tbl_variant_table: a monotonic predicate (inner_is_monotonic)",
-            "TB7"
-        )
+        (def.tabling.flags & TP_MONOTONIC) != 0 &&
+        (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))
+        # assert(ison(environment_frame, FR_INRESET)): a debug assertion, not kept (the frame flag is the run loop's)
+        PL_unify_bool(ld, is_monotonic, true) || return false
     end
 
     return unify_trie(gd, ld, Trie, atrie) &&
@@ -1273,7 +4130,6 @@ end
 
 # PORT: pl-tabling.c is_answer_trie as pl_is_answer_trie2_va
 # (PRED_IMPL("$is_answer_trie", 2, is_answer_trie, 0))
-# DIVERGES: an IDG node (`monotonic(How)`, `incremental`) is TB6's, refused by name; no table has one before it.
 "`'\$is_answer_trie'(@Trie, -Type)`: `Trie` is an answer trie (possibly destroyed); its type (pl-tabling.c)."
 function pl_is_answer_trie2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1285,13 +4141,20 @@ function pl_is_answer_trie2_va(
         wl = atrie.worklist
         if wl isa Int && wl == WL_DYNAMIC
             return PL_unify_atom(ld, A2, mk_sym(T, :dynamic)) ? FTRUE : FFALSE
-        elseif atrie.IDG !== nothing
-            tbl_refuse(
-                T,
-                :is_answer_trie,
-                "is_answer_trie: an IDG node (monotonic(How), incremental)",
-                "TB6"
-            )
+        elseif (n = atrie.IDG) !== nothing
+            if n.monotonic
+                # PL_unify_term(A2, PL_FUNCTOR, FUNCTOR_monotonic1, PL_ATOM, n->lazy ? ATOM_lazy : ATOM_eager)
+                PL_unify_functor(ld, A2, mk_sym(T, :monotonic), 1) || return FFALSE
+                how = PL_new_term_ref(ld)
+                _PL_get_arg(ld, 1, A2, how)
+                return if PL_unify_atom(ld, how, mk_sym(T, n.lazy ? :lazy : :eager))
+                    FTRUE
+                else
+                    FFALSE
+                end
+            end
+
+            return PL_unify_atom(ld, A2, mk_sym(T, :incremental)) ? FTRUE : FFALSE
         else
             return PL_unify_atom(ld, A2, mk_sym(T, :normal)) ? FTRUE : FFALSE
         end
@@ -1300,13 +4163,6559 @@ function pl_is_answer_trie2_va(
     return FFALSE
 end
 
+# PORT: pl-tabling.c tripwire_answers_for_subgoal
+# DIVERGES: `NULL_ATOM` is `nothing`; `(size_t)-1` is -1.
+"The action when the worklist's table reached its answer count limit, `nothing` if it did not (pl-tabling.c)."
+function tripwire_answers_for_subgoal(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}
+)::Union{Nothing, T} where {T}
+    ps = (wl.predicate::Definition{T}).tabling
+    if ps !== nothing && ps.max_answers != -1
+        limit = ps.max_answers
+        wl_table(ld, wl).value_count >= limit && return mk_sym(T, :bounded_rationality)
+        return nothing
+    end
+    limit = ld.tabling.restraint.max_answers_for_subgoal
+    if limit != -1
+        wl_table(ld, wl).value_count == limit &&
+            return ld.tabling.restraint.max_answers_for_subgoal_action
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c TBL_ANSWER_NEW
+"`tbl_add_answer` result: a new answer (pl-tabling.c)."
+const TBL_ANSWER_NEW = 1
+# PORT: pl-tabling.c TBL_ANSWER_COMPLETE
+"`tbl_add_answer` result: the answer completes the table (pl-tabling.c)."
+const TBL_ANSWER_COMPLETE = 2
+
+# PORT: pl-tabling.c tbl_add_answer
+# (pl-tabling.c:4756-4771 at the pin.) The `O_PLMT` debug assertion is dropped (TH1).
+"""
+    tbl_add_answer(ld, wl, answer, delays) -> Int
+
+Add `answer` with `delays` to the worklist `wl` and its answer trie: 0 (false) if it is a variant of an existing answer or on an
+exception, `TBL_ANSWER_NEW` or `TBL_ANSWER_COMPLETE` (pl-tabling.c).
+"""
+function tbl_add_answer(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::term_t, delays::term_t
+)::Int where {T}
+    atrie = wl_table(ld, wl)
+    if (atrie.flags & TRIE_ISMAP) != 0
+        return wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_NEW : 0
+    end
+
+    rc, nid = trie_insert_flat(ld, atrie, -(answer + 1))
+    return tbl_add_answer_found(ld, wl, answer, delays, rc, nid)
+end
+
+# PORT: pl-tabling.c tbl_add_answer_found
+# (pl-tabling.c:4777-4883 at the pin.)
+# DIVERGES: nodes are ids; the restraint branches are TB8's: the answer size restraint (`add_radial_restraint`, `tbl_wl_tripwire`)
+# and the answer count restraint (`generalise_answer_substitution`, `add_answer_count_restraint`, `tbl_wl_tripwire`), TB8 replaced
+# TB2's named refusals. `kp = valTermRef(gen)` is the location `-(gen + 1)`; `trie_lookup` returning `true` is rc 1. The `goto
+# update_dl` / `add_anyway` labels are `@goto`s.
+"Continue `tbl_add_answer` after `trie_insert_flat` gave `rc` and `nid` (pl-tabling.c)."
+function tbl_add_answer_found(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::term_t, delays::term_t, rc::Int,
+    nid::Int
+)::Int where {T}
+    atrie = wl_table(ld, wl)
+    complete = false
+
+    if rc == TRIE_LOOKUP_NOT_FLAT
+        sz = pred_max_table_answer_size(ld, wl.predicate::Definition{T})
+        sa = size_abstract(2, sz == -1 ? typemax(Int) : sz)
+        rc, nid = trie_lookup_abstract(ld, atrie, 0, -(answer + 1), true, sa, nothing)
+    end
+    if rc > 0                                       # ok or abstracted
+        if rc == TRIE_ABSTRACTED
+            action = ld.tabling.restraint.max_table_answer_size_action
+
+            if sym_key(action) == sym_key(mk_sym(T, :bounded_rationality))
+                add_radial_restraint(ld) || return 0
+            elseif sym_key(action) == sym_key(mk_sym(T, :fail)) ||
+                !tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_table_answer_size))
+                trie_delete(_query_gd(ld), atrie, nid, true)
+                return 0
+            end
+        end
+
+        nd = atrie.nodes[nid]
+        if nd.value != 0
+            if nd.value == ATOM_trienode
+                if (nd.flags & TN_IDG_DELETED) != 0
+                    nd.flags &= ~TN_IDG_DELETED
+                    @goto update_dl
+                else
+                    if answer_is_conditional(_query_gd(ld), atrie, nid)
+                        update_delay_list(ld, wl, nid, answer, delays) == UDL_COMPLETE &&
+                            return TBL_ANSWER_COMPLETE
+                    end
+                end
+
+                return 0                            # already in trie
+            end
+            PL_error(
+                ld,
+                "",
+                0,
+                "",
+                ERR_PERMISSION,
+                mk_sym(T, :modify),
+                mk_sym(T, :trie_key),
+                answer
+            )
+            return 0                                # return PL_permission_error("modify", "trie_key", answer)
+        elseif (action = tripwire_answers_for_subgoal(ld, wl)) !== nothing
+            if sym_key(action) == sym_key(mk_sym(T, :bounded_rationality))
+                trie_delete(_query_gd(ld), atrie, nid, true)
+
+                gen = PL_new_term_ref(ld)
+                if gen == 0 || !generalise_answer_substitution(ld, answer, gen) ||
+                    !add_answer_count_restraint(ld)
+                    return 0
+                end
+
+                rc, nid = trie_lookup(ld, atrie, 0, -(gen + 1), true, nothing)
+                if rc == 1                          # rc == true
+                    set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
+                    update_delay_list(ld, wl, nid, answer, delays) == UDL_FALSE && return 0
+
+                    return TBL_ANSWER_COMPLETE
+                else
+                    return trie_error(ld, rc, gen) ? 1 : 0
+                end
+            elseif tbl_wl_tripwire(ld, wl, action, mk_sym(T, :max_answers_for_subgoal))
+                @goto add_anyway
+            else
+                trie_delete(_query_gd(ld), atrie, nid, true)
+                return 0
+            end
+        else
+            @label add_anyway
+            set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
+            if (idg = atrie.IDG) !== nothing && idg.reevaluating
+                atrie.nodes[nid].flags |= TN_IDG_ADDED
+                idg.new_answer = true
+            end
+
+            @label update_dl
+            udl = update_delay_list(ld, wl, nid, answer, delays)
+            if udl == UDL_FALSE
+                return 0
+            elseif udl == UDL_COMPLETE
+                complete = true
+            end
+
+            wkl_add_answer(ld, wl, nid) || return 0
+            return complete ? TBL_ANSWER_COMPLETE : TBL_ANSWER_NEW
+        end
+    end
+
+    return trie_error(ld, rc, answer) ? 1 : 0
+end
+
+# PORT: pl-tabling.c tbl_wkl_add_answer as pl_tbl_wkl_add_answer4_va
+# (PRED_IMPL("$tbl_wkl_add_answer", 4, tbl_wkl_add_answer, 0), pl-tabling.c:4885-4899 at the pin.)
+"`'\$tbl_wkl_add_answer'(+Worklist, +Term, +Delays, -Complete)`: add an answer; `Complete` is `!` if it completes the table (pl-tabling.c)."
+function pl_tbl_wkl_add_answer4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    A4 = PL__t0 + 3
+
+    wl = get_worklist(ld, A1)
+    if wl !== nothing
+        rc = tbl_add_answer(ld, wl, A2, A3)
+
+        rc == TBL_ANSWER_COMPLETE &&
+            return PL_unify_atom(ld, A4, mk_sym(T, Symbol("!"))) ? FTRUE : FFALSE
+        return rc != 0 ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c AS_NEW_DEFINED
+"`'\$tabling':update/7` flag: the new answer is unconditional (pl-tabling.c)."
+const AS_NEW_DEFINED = Int(0x1)
+# PORT: pl-tabling.c AS_OLD_DEFINED
+"`'\$tabling':update/7` flag: the old answer is unconditional (pl-tabling.c)."
+const AS_OLD_DEFINED = Int(0x2)
+
+# PORT: pl-tabling.c TRIE_MAP_FALSE
+"`update_subsuming_answer` result: an error while mapping (pl-tabling.c; `TRIE_MAP_TRUE`, go on, is `nothing`)."
+const TRIE_MAP_FALSE = 1
+# PORT: pl-tabling.c TRIE_MAP_DONE
+"`update_subsuming_answer` result: an existing answer subsumes the new one (pl-tabling.c)."
+const TRIE_MAP_DONE = 2
+
+# PORT: pl-tabling.c sa_context
+# DIVERGES: nodes are ids (0: NULL); `wl` is `nothing` for monotonic tabling (upstream NULL); `delays` is 0 for monotonic tabling.
+"The state of `update_subsuming_answers` while it maps the secondary nodes of an answer (pl-tabling.c `sa_context`)."
+mutable struct sa_context{T}
+    wl::Union{Nothing, tbl_worklist{T}}
+    atrie::trie{T}
+    root::Int
+    added::Int
+    skel::term_t
+    delays::term_t
+    argv::term_t
+    flags::Int
+    garbage::Int
+end
+
+# PORT: pl-tabling.c add_subsuming_answer
+# (pl-tabling.c:5035-5079 at the pin.)
+# DIVERGES: nodes are ids, the result is the added secondary node or 0 (upstream NULL); `old` is 0 for NULL; the error of the
+# lookup names the trie through `unify_trie` (upstream `PL_unify_atomic(trie, trie_symbol(atrie))`).
+"Add the aggregated moded arguments `margs` as a secondary node below `root`; the new node or 0 if nothing changed (pl-tabling.c)."
+function add_subsuming_answer(
+    ld::PL_local_data{T}, wl::Union{Nothing, tbl_worklist{T}}, atrie::trie{T}, root::Int,
+    skel::term_t, old::Int,
+    margs::term_t, delays::term_t
+)::Int where {T}
+    rc, nid = trie_lookup(ld, atrie, root, -(margs + 1), true, nothing)
+    if rc == 1
+        nd = atrie.nodes[nid]
+        if (nd.flags & TN_SECONDARY) == 0
+            nd.value = ATOM_trienode
+            nd.flags |= TN_SECONDARY
+            if old != 0
+                trie_delete(_query_gd(ld), atrie, old, false)
+            end
+            if wl !== nothing
+                update_delay_list(ld, wl, nid, skel, delays) == UDL_FALSE && return 0
+                wkl_add_answer(ld, wl, nid)
+            end
+            return nid
+        else
+            if (nd.flags & TN_IDG_DELETED) != 0
+                nd.flags &= ~TN_IDG_DELETED
+            end
+            if wl !== nothing && answer_is_conditional(_query_gd(ld), atrie, nid)
+                update_delay_list(ld, wl, nid, skel, delays)
+            end
+        end
+        return 0                                    # no change
+    else
+        tt = PL_new_term_ref(ld)
+        if unify_trie(_query_gd(ld), ld, tt, atrie)
+            trie_error(ld, rc, tt)
+        end
+        return 0
+    end
+end
+
+# PORT: pl-tabling.c update_subsuming_answer
+# (pl-tabling.c:5087-5149 at the pin.)
+# DIVERGES: the callback of `map_trie_node` gets the trie and a node id and returns `nothing` for `TRIE_MAP_TRUE`; the procedure
+# `'$tabling':update/7` is looked up at each call (upstream caches it in `GD->procedures.update7` at the first, `_PL_predicate`);
+# the `MSG_TABLING_MODED` debug output does not exist here; `trie_has_children` is the node's `children != 0`.
+"Call `'\$tabling':update/7` on the secondary node `nid` and the new moded arguments: keep, replace or done (pl-tabling.c)."
+function update_subsuming_answer(
+    ld::PL_local_data{T}, ctx::sa_context{T}, nid::Int
+)::Union{Nothing, Int} where {T}
+    atrie = ctx.atrie
+    if (atrie.nodes[nid].flags & TN_SECONDARY) != 0
+        gd = _query_gd(ld)
+        av = ctx.argv
+        agg = av + 5
+        action = av + 6
+        conditional = answer_is_conditional(gd, atrie, nid) ? 0 : AS_OLD_DEFINED
+        PRED_update7 = lookupProcedure(
+            mk_sym(T, :update), 7, lookupModule(gd, mk_sym(T, Symbol("\$tabling")))
+        )
+
+        if tbl_put_moded_args(ld, atrie, av + 3, nid) &&
+            PL_put_integer(ld, av + 0, ctx.flags | conditional) &&
+            PL_put_variable(ld, agg) &&
+            PL_put_variable(ld, action) &&
+            PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, PRED_update7, av)
+            act = PL_get_atom_ex(ld, av + 6)
+            act === nothing && return TRIE_MAP_FALSE
+
+            if sym_key(act) == sym_key(mk_sym(T, :done))
+                return TRIE_MAP_DONE
+            elseif sym_key(act) == sym_key(mk_sym(T, :keep))
+                del = 0
+            else
+                del = nid
+            end
+
+            ctx.added = add_subsuming_answer(
+                ld, ctx.wl, atrie, ctx.root, ctx.skel, del, agg, ctx.delays
+            )
+            ctx.added != 0 && return nothing        # TRIE_MAP_TRUE
+            return TRIE_MAP_FALSE
+        else
+            PL_exception(ld, 0) != 0 && return TRIE_MAP_FALSE
+            return nothing                          # TRIE_MAP_TRUE
+        end
+    else
+        if atrie.nodes[nid].children == 0           # !trie_has_children(node)
+            ctx.garbage += 1
+        end
+        return nothing                              # TRIE_MAP_TRUE
+    end
+end
+
+# PORT: pl-tabling.c update_subsuming_answers
+# (pl-tabling.c:5150-5206 at the pin.)
+# DIVERGES: `wl` is `nothing` and `delays` 0 for monotonic tabling; the functor of the predicate is put as `PL_put_functor` does
+# (an atom for arity 0); the monotonic branch's `prune_deleted_mdeps` of a lazy IDG node is TB6's (`IDG` is `nothing` until then).
+"Aggregate the new moded arguments `margs` with the secondary nodes below `root`: the added node or 0 (pl-tabling.c)."
+function update_subsuming_answers(
+    ld::PL_local_data{T}, wl::Union{Nothing, tbl_worklist{T}}, atrie::trie{T}, root::Int,
+    skel::term_t, margs::term_t,
+    delays::term_t
+)::Int where {T}
+    gd = _query_gd(ld)
+    def = atrie.predicate::Definition{T}
+    ctx = sa_context{T}(wl, atrie, root, 0, skel, delays, PL_new_term_refs(ld, 7), 0, 0)
+
+    ok = if def.arity == 0
+        PL_put_atom(ld, ctx.argv + 1, def.name)
+    else
+        PL_put_variable(ld, ctx.argv + 1) &&
+            PL_unify_functor(ld, ctx.argv + 1, def.name, def.arity)
+    end
+    (
+        ok && PL_put_atom(ld, ctx.argv + 2, gd.modules[def.module_].atom) &&
+        PL_put_term(ld, ctx.argv + 4, margs)
+    ) || return 0
+
+    if delays != 0                                  # normal tabling
+        if PL_get_nil(ld, delays) && global_delay_list_is_nil(ld)
+            ctx.flags = AS_NEW_DEFINED
+        end
+    else
+        ctx.flags = AS_NEW_DEFINED                  # monotonic tabling
+    end
+
+    map_trie_node(atrie, root, (tr, n) -> update_subsuming_answer(ld, ctx, n)) ==
+    TRIE_MAP_FALSE && return 0
+
+    if ctx.garbage > 10
+        if wl !== nothing
+            if wl.executing
+                wl.needs_answer_gc = true
+            else
+                prune_answers_worklist(ld, wl)
+            end
+        else                                        # monotonic tabling
+            # (idg = atrie->data.IDG) && idg->lazy: prune_deleted_mdeps(idg), TB6 (`IDG` is `nothing` until then)
+            prune_trie(_query_gd(ld), atrie, root, nothing)
+        end
+    end
+
+    return ctx.added
+end
+
+# PORT: pl-tabling.c FUNCTOR_divide2
+"The functor `//2` (pl-funct.ih `FUNCTOR_divide2`)."
+const FUNCTOR_divide2 = builtin_functor("divide", 2)
+
+# PORT: pl-tabling.c wkl_mode_add_answer
+# (pl-tabling.c:5207-5262 at the pin.)
+# DIVERGES: the result is the added secondary node or 0; the arguments of `Skel/ModedArgs` are put in `skel` and `margs` with
+# `_PL_get_arg` (upstream links the term references to the argument cells, `linkValI`); the `MSG_TABLING_MODED` debug output
+# does not exist here.
+"Add the moded answer `Skel/ModedArgs` to the moded table `atrie`: the added secondary node or 0 (pl-tabling.c)."
+function wkl_mode_add_answer(
+    ld::PL_local_data{T}, wl::Union{Nothing, tbl_worklist{T}}, atrie::trie{T},
+    answer::term_t, delays::term_t
+)::Int where {T}
+    av = PL_new_term_refs(ld, 2)
+    skel = av + 0
+    margs = av + 1
+
+    if PL_is_functor(ld, answer, mk_sym(T, Symbol("/")), 2)
+        _PL_get_arg(ld, 1, answer, skel)
+        _PL_get_arg(ld, 2, answer, margs)
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :moded_answer), answer)
+        return 0
+    end
+
+    rc, root = trie_lookup(ld, atrie, 0, -(skel + 1), true, nothing)
+    if rc == 1
+        rn = atrie.nodes[root]
+        if (rn.flags & TN_PRIMARY) != 0
+            if (rn.flags & TN_IDG_DELETED) != 0
+                rn.flags &= ~TN_IDG_DELETED
+                return add_subsuming_answer(ld, wl, atrie, root, skel, 0, margs, delays)
+            else
+                return update_subsuming_answers(ld, wl, atrie, root, skel, margs, delays)
+            end
+        else
+            set_trie_value_word(_query_gd(ld), atrie, root, ATOM_trienode)
+            return add_subsuming_answer(ld, wl, atrie, root, skel, 0, margs, delays)
+        end
+    else
+        trie_error(ld, rc, skel)
+        return 0
+    end
+end
+
+# PORT: pl-tabling.c tbl_unify_answer
+# (pl-tabling.c:5458-5477 at the pin.)
+# DIVERGES: the trie is an argument (nodes are ids, 0: NULL, the negative dummy solution); `PL_unify_output` is `PL_unify`.
+"Unify `term` with the answer node `nid` of `tr`; a secondary node of answer subsumption gives `Ret/ModeArgs` (pl-tabling.c)."
+function tbl_unify_answer(
+    ld::PL_local_data{T}, tr::trie{T}, nid::Int, term::term_t
+)::Bool where {T}
+    if nid != 0
+        if (tr.nodes[nid].flags & TN_SECONDARY) != 0
+            av = PL_new_term_refs(ld, 2)
+            rc, parent = unify_trie_term(ld, tr, nid, av + 1)
+            rc || return false
+            return unify_trie_term(ld, tr, parent, av + 0)[1] &&
+                   PL_cons_functor_v(ld, av + 0, FUNCTOR_divide2, av) &&
+                   PL_unify(ld, term, av + 0)
+        else
+            return unify_trie_term(ld, tr, nid, term)[1]
+        end
+    end
+
+    return true                                     # for negative dummy solutions
+end
+
+# PORT: pl-tabling.c idg_set_current_wl
+"Make the answer trie of the worklist `wlref` the current IDG node (pl-tabling.c)."
+function idg_set_current_wl(ld::PL_local_data{T}, wlref::term_t)::Bool where {T}
+    wl = get_worklist(ld, wlref)
+    wl === nothing && return false
+
+    return set_idg_current(ld, wl_table(ld, wl))
+end
+
+# PORT: pl-tabling.c unify_dependency
+# (pl-tabling.c:5482-5540 at the pin.)
+# DIVERGES: the five arguments of the dependency term are unified with `srcskel` and `a0+1` .. `a0+4` (upstream binds the fresh
+# output variables to them, `Trail(p, linkValI(v))`, which is the same unification); `ensureStackSpace` is dropped (the stacks
+# grow on demand); `answer` is a node of `wl`'s answer trie (0: NULL, a negative delay); pushing a delay on the global delay
+# list is TB4's `push_delay_list` / `tbl_push_delay` (the delay element is built with the FLI from the table symbol).
+"Unify `a0..a0+4` with the dependency `dependency(SrcSkel, Cont, TargetSkel, TargetWL, Delays)` and the answer (pl-tabling.c)."
+function unify_dependency(
+    ld::PL_local_data{T}, a0::term_t, dependency::term_t, wl::tbl_worklist{T}, answer::Int,
+    unified::Bool
+)::Bool where {T}
+    srcskel = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+
+    _PL_get_arg(ld, 1, dependency, a) || return false   # if ( unlikely(!isTerm(*dp)) ) return false
+    PL_unify(ld, srcskel, a) || return false            # SrcSkeleton
+    for i in 1:4                                        # Continuation, TargetSkeleton, TargetWL, Delays
+        (_PL_get_arg(ld, i + 1, dependency, a) && PL_unify(ld, a0 + i, a)) || return false
+    end
+
+    if unified || answer == 0
+        PL_unify(ld, srcskel, a0 + 0) || return false
+    else                                                # unify the answer into the skeleton
+        (
+            tbl_unify_answer(ld, wl_table(ld, wl), answer, srcskel) &&
+            PL_unify(ld, a0 + 0, srcskel)
+        ) || return false
+    end
+
+    idg_set_current_wl(ld, a0 + 3) || return false
+
+    gd = _query_gd(ld)
+    atrie = wl_table(ld, wl)
+    if answer == 0                                      # negative delay
+        h = PL_new_term_ref(ld)
+        ld.slots[h + 1] = trie_symbol(gd, atrie)        # p[1] = wl->table->symbol
+        push_delay_list(ld, h)
+    elseif answer_is_conditional(gd, atrie, answer)
+        tbl_push_delay(ld, trie_symbol(gd, atrie), atrie, a0 + 0, answer)   # atrie+Data, Data = delay_to_data(answer, a0+0)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tbl_put_moded_args
+# (pl-tabling.c:5542-5554 at the pin.)
+# DIVERGES: the trie is an argument; node 0 (the negative dummy solution) puts the reserved `trienode` (as `$tbl_trienode/1`).
+"Put the moded arguments of the answer node `nid` of `tr` in `t` (pl-tabling.c)."
+function tbl_put_moded_args(
+    ld::PL_local_data{T}, tr::trie{T}, t::term_t, nid::Int
+)::Bool where {T}
+    if nid != 0
+        if (tr.nodes[nid].flags & TN_SECONDARY) != 0
+            return unify_trie_term(ld, tr, nid, t)[1]
+        else
+            return put_trie_value(ld, tr, t, nid)   # TBD: Can become ATOM_trienode
+        end
+    else                                            # negative dummy solution
+        return PL_put_atom(ld, t, mk_reserved_symbol(T, :trienode))
+    end
+end
+
+# PORT: pl-tabling.c tbl_single_answer
+# (pl-tabling.c:6269-6279 at the pin.) The condition `atrie->data.IDG &&` is copied as is: `IDG` is `nothing` until TB6, so the
+# result is 0 until then.
+# DIVERGES: the result is a node id (0: NULL); `!atrie->clause` is `clause == 0` (the clause atom word, TR4).
+"The answer node of the complete table `atrie` if it has a single unconditional answer and needs no compiled clause, else 0 (pl-tabling.c)."
+function tbl_single_answer(atrie::trie{T})::Int where {T}
+    if atrie.value_count == 1 &&
+        atrie.IDG !== nothing &&
+        atrie.clause == 0 &&
+        atrie.worklist === nothing &&           # no conditional answers
+        (atrie.flags & (TRIE_ISSHARED | TRIE_ISMAP)) == 0
+        return trie_single_value_node(atrie)
+    end
+
+    return 0
+end
+
+# PORT: pl-tabling.c FUNCTOR_comma2
+"The functor `,/2` (pl-funct.ih `FUNCTOR_comma2`)."
+const FUNCTOR_comma2 = builtin_functor("comma", 2)
+
+# PORT: pl-tabling.c FUNCTOR_semicolon2
+"The functor `;/2` (pl-funct.ih `FUNCTOR_semicolon2`)."
+const FUNCTOR_semicolon2 = builtin_functor("semicolon", 2)
+
+# PORT: pl-tabling.c put_delay_set
+# (pl-tabling.c:6952-7062 at the pin; the pin's `answer_ctx` is its one field, the skeleton `skel`.)
+# DIVERGES: the trie `tr` of the answer is an argument (upstream reads it from the nodes; it holds the variable-sharing records,
+# `record_of_value`); `top` is a 1-based index into the set's delays (`get_delay_set`), a delay's trie is `gd.tries[d.variant]`
+# and its call variant the node `at.variant` of the variant table (`top->variant->data.variant`); a DELETED delay keeps the
+# answer as `answer_ref(serial, nid)` (`propagate_to_answer` writes it: the trie is gone with
+# `variant`), decoded here for `is_ground_trie_node`; `PL_get_arg(1, ans, tmp)` is `_PL_get_arg` (the term is the `Ret/ModeArgs`
+# compound `tbl_unify_answer` made); the error line "OOPS! could not find variant table" is `return false` (no DEBUG output).
+"Build the condition of the delay set `set` of `di` (answer of `tr`) in `cond`: the conjunction of its delays; `skel` is the answer's skeleton (pl-tabling.c)."
+function put_delay_set(
+    ld::PL_local_data{T}, cond::term_t, tr::trie{T}, di::delay_info, set::delay_set,
+    skel::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    av = PL_new_term_refs(ld, 6)
+    count = 0
+    gshare = 0
+    gskel = 0
+    arity = 0
+    tmp = av + 4
+    ret = av + 5
+    tnot1 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :tnot)), 1)
+
+    ds = get_delay_set(di, set)                         # get_delay_set(di, set, &base, &top)
+    top = length(ds)                                    # the 1-based index of top[-1]
+
+    # Get the variable sharing term
+    if top > 0 && ds[top].answer != 0 && ds[top].variant == 0
+        @assert IS_REC_DELAY(ds[top].answer)
+        r = record_of_value(tr, word(UNREC_DELAY(ds[top].answer)) << 2)
+        gshare = PL_new_term_refs(ld, 2)
+        PL_recorded(ld, r, gshare) || return false
+        na = PL_get_name_arity(ld, gshare)
+        arity = na === nothing ? 0 : na[2]
+        gskel = gshare + 1
+        _PL_get_arg(ld, 1, gshare, gskel)
+        PL_unify(ld, gskel, skel) || return false      # "global skeleton doesn't unify"
+        top -= 1
+    end
+
+    while top >= 1                                      # for(--top; top >= base; top--)
+        d = ds[top]
+        top -= 1
+        c1 = count == 0 ? cond : av + 0
+
+        if d.variant == DV_DELETED
+            if d.answer != 0
+                at = gd.tries[answer_ref_trie(d.answer)]
+                is_ground_trie_node(at, answer_ref_node(d.answer)) || (arity -= 1)
+            end
+            continue
+        end
+        if d.answer != 0                                # positive delay
+            at = gd.tries[d.variant]
+            ans = av + 1
+
+            PL_put_variable(ld, c1)
+            PL_put_variable(ld, ans)
+            PL_put_variable(ld, ret)
+
+            at.variant == 0 && return false             # NULL top->variant->data.variant
+            unify_trie_term(
+                ld, variant_table(ld, (at.flags & TRIE_ISSHARED) != 0), at.variant, c1
+            )[1] || return false
+            get_answer_table(ld, nothing, c1, ret, 0) === nothing && return false      # "could not find variant table"
+
+            if (at.nodes[d.answer].flags & TN_SECONDARY) != 0       # Ret/ModeArgs
+                tbl_unify_answer(ld, at, d.answer, ans) || return false
+                _PL_get_arg(ld, 1, ans, tmp)
+                PL_unify(ld, tmp, ret) || return false
+                _PL_get_arg(ld, 2, ans, tmp)
+                PL_cons_functor(ld, c1, FUNCTOR_divide2, c1, tmp) || return false
+                uans = ans
+            else
+                unify_trie_term(ld, at, d.answer, ret)[1] || return false
+                uans = ret
+            end
+
+            if !is_ground_trie_node(at, d.answer)
+                @assert gshare != 0
+                _PL_get_arg(ld, arity, gshare, gskel)
+                PL_unify(ld, gskel, uans) || return false       # "skeleton does not unify"
+                arity -= 1
+            end
+        else                                            # negative delay
+            at = gd.tries[d.variant]
+            PL_put_variable(ld, c1)
+            at.variant == 0 && return false
+            unify_trie_term(
+                ld, variant_table(ld, (at.flags & TRIE_ISSHARED) != 0), at.variant, c1
+            )[1] || return false
+            PL_cons_functor(ld, c1, tnot1, c1) || return false
+        end
+
+        if count > 0                                    # count++ > 0
+            PL_cons_functor(ld, cond, FUNCTOR_comma2, c1, cond) || return false
+        end
+        count += 1
+    end
+
+    PL_reset_term_refs(ld, av)
+
+    return true
+end
+
+# PORT: pl-tabling.c unify_delay_info
+# (pl-tabling.c:7061-7097 at the pin.)
+# DIVERGES: the trie is an argument (nodes are ids); the context `answer_ctx` is its one field, the skeleton `skel`. An answer is
+# named as TB4 names it, `answer_ref(serial, nid)` = `serial << 32 | nid` (dispatcher decision; upstream: the `trie_node *`):
+# `answer_delay_info(NULL, answer, false)` is TB4's `node_delayinfo(gd, tr, nid)`, keyed by it, read only when the node has
+# `TN_DELAYINFO` (only TB4 sets it). A delay list is `put_delay_set`'s (above), one conjunction at a time, joined by `;`.
+"Unify `t` with the condition of the answer node `nid` of `tr`: `true` for an unconditional answer (pl-tabling.c)."
+function unify_delay_info(
+    ld::PL_local_data{T}, t::term_t, tr::trie{T}, nid::Int, skel::term_t
+)::Bool where {T}
+    di = if (tr.nodes[nid].flags & TN_DELAYINFO) != 0
+        node_delayinfo(_query_gd(ld), tr, nid)
+    else
+        nothing
+    end
+    if di !== nothing
+        if DL_IS_DELAY_LIST(di)
+            av = PL_new_term_refs(ld, 2)
+            cond = av + 1
+            count = 0
+            for set in delay_sets(di)                   # delay_sets(di, &base, &top); for(; base < top; base++)
+                c1 = count == 0 ? cond : av + 0
+                isempty(di.delay_sets) && continue      # isEmptyBuffer(&di->delay_sets)
+                put_delay_set(ld, c1, tr, di, set, skel) || return false
+                if count > 0                            # count++ > 0
+                    PL_cons_functor_v(ld, cond, FUNCTOR_semicolon2, av) || return false
+                end
+                count += 1
+            end
+
+            return PL_unify(ld, t, cond)
+        else
+            return PL_unify_atom(ld, t, mk_sym(T, :undefined))
+        end
+    else
+        return PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
+    end
+end
+
+# ORIGINAL (TAB1 TB3): the `data_kind` of TR2's `trie_gen` / `trie_gen_raw` that selects `unify_delay_info` (upstream passes the
+# function pointer `unify_delay_info` as `unify_data`; TR2 has kind 0, no data, and 1, `unify_node_id`'s handle, whose
+# encoding `trie_node_handle` = `serial << 32 | nid` is TB4's `answer_ref`: an answer handed to Prolog is that integer).
+# STACK EDIT (TR2, done): trie_gen_raw's data step is `trie_gen_unify_data` (src/pl-trie.jl), whose DELAY_INFO arm calls
+# `unify_delay_info(ld, Data, trs, nid, st.key)`.
+"`trie_gen` data kind: unify `Data` with the condition of the answer (pl-tabling.c `unify_delay_info` as `unify_data`)."
+const TRIE_GEN_DELAY_INFO = 2
+
+# PORT: pl-tabling.c tbl_answer as pl_tbl_answer3_va
+# (PRED_IMPL("$tbl_answer", 3, tbl_answer, PL_FA_NONDETERMINISTIC), pl-tabling.c:7114-7123 at the pin.)
+# DIVERGES: `ctx.skel = A2` is the key TR2's `trie_gen_raw` holds (`st.key`, see `TRIE_GEN_DELAY_INFO`).
+"`'\$tbl_answer'(+Trie, ?Skeleton, -Condition)`: the answers of the table `Trie` with their condition (pl-tabling.c)."
+function pl_tbl_answer3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+
+    return trie_gen(_query_gd(ld), ld, A1, 0, A2, 0, A3, TRIE_GEN_DELAY_INFO, PL__ctx)
+end
+
+# PORT: pl-tabling.c tbl_answer_c as pl_tbl_answer_c4_va
+# (PRED_IMPL("$tbl_answer_c", 4, tbl_answer_c, PL_FA_NONDETERMINISTIC), pl-tabling.c:7125-7157 at the pin.)
+# DIVERGES: a redo or a cut goes to TR2's `trie_gen_raw` with no trie (its state holds the trie and the root: upstream looks the
+# root up again on a redo and `trie_gen_raw` then ignores it; on a cut `clear_trie_gen_state` is `trie_gen_raw`'s `FRG_CUTTED`);
+# the condition's skeleton is `Key` (A3, see `TRIE_GEN_DELAY_INFO`; upstream `ctx.skel = A2`): it is read only by `put_delay_set`,
+# TB4's, which needs A2 here.
+"`'\$tbl_answer_c'(+Trie, +Skeleton, -ModedArgs, -Condition)`: the moded arguments of `Skeleton` in the moded table `Trie` (pl-tabling.c)."
+function pl_tbl_answer_c4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    A4 = PL__t0 + 3
+
+    if PL_foreign_control(PL__ctx) != FRG_FIRST_CALL   # FRG_CUTTED: clear_trie_gen_state(CTX_PTR); FRG_REDO
+        return trie_gen_raw(ld, nothing, 0, A3, 0, A4, TRIE_GEN_DELAY_INFO, PL__ctx)
+    end
+
+    tr = get_trie_nodes(_query_gd(ld), ld, A1)
+    if tr !== nothing
+        rc, root = trie_lookup(ld, tr, 0, -(A2 + 1), false, nothing)
+        if rc == 1
+            return trie_gen_raw(ld, tr, root, A3, 0, A4, TRIE_GEN_DELAY_INFO, PL__ctx)
+        else
+            return trie_error(ld, rc, A1) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# ORIGINAL (TAB1 TB3 stack hole, gate 12): the `data_kind` of TR2's `trie_gen` / `trie_gen_raw` that selects `unify_delay_info_dl`
+# (upstream passes the function pointer as `unify_data`). `'$tbl_answer_dl'/3,4` is `tnot/1`'s test of an answer's condition; it is
+# called by TB5's `tnot` and later steps, ported here because TB4's tests run `tnot/1`.
+# STACK EDIT (TR2, done): `trie_gen_unify_data` (src/pl-trie.jl) has the arm for kind 3.
+"`trie_gen` data kind: unify `Data` with the kind of the answer, `true`, a handle or `nonground` (pl-tabling.c `unify_delay_info_dl`)."
+const TRIE_GEN_DELAY_INFO_DL = 3
+
+# PORT: pl-tabling.c unify_delay_info_dl
+# (pl-tabling.c:7158-7176 at the pin.)
+# DIVERGES: the answer is its trie `tr` and node id `nid`; a ground conditional answer is named by its handle `trie_node_handle`
+# (upstream: `PL_unify_pointer(t, answer)`).
+"Unify `t` with `true` for an unconditional answer, its handle for a conditional ground one, else `nonground`; false for a deleted answer (pl-tabling.c)."
+function unify_delay_info_dl(
+    ld::PL_local_data{T}, t::term_t, tr::trie{T}, nid::Int
+)::Bool where {T}
+    if (tr.nodes[nid].flags & (TN_IDG_DELETED | TN_IDG_ADDED)) == TN_IDG_DELETED
+        return false
+    end
+
+    if answer_is_conditional(_query_gd(ld), tr, nid)
+        if is_ground_trie_node(tr, nid)
+            return PL_unify_int64(ld, t, trie_node_handle(tr, nid))
+        else
+            return PL_unify_atom(ld, t, mk_sym(T, :nonground))
+        end
+    else
+        return PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
+    end
+end
+
+# PORT: pl-tabling.c tbl_answer_dl as pl_tbl_answer_dl3_va
+# (PRED_IMPL("$tbl_answer_dl", 3, tbl_answer_dl, PL_FA_NONDETERMINISTIC), pl-tabling.c:7177-7181 at the pin.)
+"`'\$tbl_answer_dl'(+ATrie, ?Skeleton, -Kind)`: the answers of `ATrie` with their kind (`true`, a handle, `nonground`) (pl-tabling.c)."
+function pl_tbl_answer_dl3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+
+    return trie_gen(_query_gd(ld), ld, A1, 0, A2, 0, A3, TRIE_GEN_DELAY_INFO_DL, PL__ctx)
+end
+
+# PORT: pl-tabling.c tbl_answer_dl as pl_tbl_answer_dl4_va
+# (PRED_IMPL("$tbl_answer_dl", 4, tbl_answer_dl, PL_FA_NONDETERMINISTIC), pl-tabling.c:7183-7212 at the pin.)
+# DIVERGES: as pl_tbl_answer_c4_va: a redo or a cut goes to TR2's `trie_gen_raw` with no trie.
+"`'\$tbl_answer_dl'(+ATrie, +Skeleton, -Subsuming, -Kind)`: the answers below `Skeleton` with their kind (pl-tabling.c)."
+function pl_tbl_answer_dl4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    A4 = PL__t0 + 3
+
+    if PL_foreign_control(PL__ctx) != FRG_FIRST_CALL   # FRG_CUTTED: clear_trie_gen_state(CTX_PTR); FRG_REDO
+        return trie_gen_raw(ld, nothing, 0, A3, 0, A4, TRIE_GEN_DELAY_INFO_DL, PL__ctx)
+    end
+
+    tr = get_trie_nodes(_query_gd(ld), ld, A1)
+    if tr !== nothing
+        rc, root = trie_lookup(ld, tr, 0, -(A2 + 1), false, nothing)
+        if rc == 1
+            return trie_gen_raw(ld, tr, root, A3, 0, A4, TRIE_GEN_DELAY_INFO_DL, PL__ctx)
+        else
+            return trie_error(ld, rc, A1) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# ---- TB3b: S_TABLED support, the complete-table fast path (pl-tabling.c:12229-12636 at 18168e62) ----
+# ORIGINAL (TAB1 TB3b): frame arguments are local-stack slots: argument `n` (0-based) of frame `fr` is `ld.slots[argFrameP(base,
+# n) + 1]`, its location `-(argFrameP(base, n) + 1)` (as a term reference `t` is `ld.slots[t + 1]`, location `-(t + 1)`). A slot is
+# never an unbound variable (TB1's `unify_trie_ret`): upstream's "unbound on the local stack" branches (`onStack(local, ...)`,
+# `LTrail`) have nothing to globalise here. The supervisor frame is an argument (upstream reads `LD->query->registers.fr`, saved by
+# `SAVE_REGISTERS`). TR4 interfaces used (see evidence/TB3/handoff2.md): `compile_trie(gd, ld, def, tr)::word`,
+# `trie_maybe_discard_nodes(tr)`, `gd.procedures_trie_gen_compiled2`.
+
+"The slot index of argument `n` (0-based) of frame `fr` (pl-incl.h `argFrameP(fr, n)`)."
+@inline _frame_arg_slot(ld::PL_local_data, fr::Int, n::Int)::Int =
+    argFrameP(ld.frames[fr].base, n) + 1
+
+# PORT: pl-tabling.c put_supervisor_goal
+# (pl-tabling.c:12236-12278 at the pin.)
+# DIVERGES: the frame is an argument; `M:Head` is built with the FLI (`PL_unify_functor`, the argument links of
+# `put_frame_goal`, `PL_cons_functor` with `:/2`), upstream writes the cells in one allocation (`allocGlobalNoShift`):
+# the same term. `ensureStackSpace` is dropped (the stacks grow on demand).
+"Put `M:Head` for the call in the supervisor frame `fr` in `t`; with `abstract` the arguments are fresh variables (pl-tabling.c)."
+function put_supervisor_goal(
+    ld::PL_local_data{T}, t::term_t, def::Definition{T}, fr::Int, abstract::Bool
+)::Bool where {T}
+    gd = _query_gd(ld)
+    arity = def.arity
+    goal = PL_new_term_ref(ld)
+
+    PL_unify_functor(ld, goal, def.name, arity) || return false   # gp[2] = def->functor->name / consCompound(&gp[3])
+    if arity > 0 && !abstract
+        argv = argFrameP(ld.frames[fr].base, 0)     # Word fp = argFrameP(LD->query->registers.fr, 0)
+        _, gw, _ = _deref_loc(ld, -(goal + 1))
+        argp = valPtr(gw)
+        for i in 1:arity
+            _cell_link!(ld, argp + i, argv + i)     # *ap = needsRef(*fa) ? makeRefG(fa) : *fa
+        end
+    end
+
+    m = PL_new_term_ref(ld)
+    PL_put_atom(ld, m, gd.modules[def.module_].atom) || return false   # gp[1] = def->module->name
+    colon2 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :(:))), 2)
+    PL_cons_functor(ld, goal, colon2, m, goal) || return false         # gp[0] = FUNCTOR_colon2
+
+    return PL_put_term(ld, t, goal)                 # *valTermRef(t) = consCompound(gp)
+end
+
+# PORT: pl-tabling.c complete_answer_clause
+# (pl-tabling.c:12287-12319 at the pin.)
+# DIVERGES: the result is an atom word (0: none); the `O_PLMT` shared branch is TH1's (a private table only here: the shared
+# tables are refused where they are made, `get_answer_table`).
+"The compiled answer trie of the complete, valid table `atrie`, or 0 if `start_tabling/3` must handle the call (pl-tabling.c)."
+function complete_answer_clause(ld::PL_local_data{T}, atrie::trie{T})::word where {T}
+    gd = _query_gd(ld)
+    if (atrie.flags & TRIE_COMPLETE) == 0 ||
+        sym_key(complete_or_invalid_status(ld, atrie, true)) != sym_key(mk_sym(T, :complete))
+        return word(0)
+    end
+
+    clref = atrie.clause
+    if clref == 0
+        def = gd.procedures_trie_gen_compiled2.definition::Definition{T}
+        tbl_single_answer(atrie) != 0 && return trie_symbol(gd, atrie)
+        clref = compile_trie(gd, ld, def, atrie)
+        clref == _atom_word!(ld, mk_sym(T, :error)) && return clref
+    end
+    trie_maybe_discard_nodes(_query_gd(ld), atrie)
+
+    return clref
+end
+
+# PORT: pl-tabling.c call_complete_table
+# (pl-tabling.c:12321-12339 at the pin.)
+# DIVERGES: `O_TRIE_STATS` is on: `gen_call` counts the private table. The call to `idg_init_variant` passes `def` (never `nothing`
+# here), so its `variant` term is the unused 0, as upstream; `idg_add_edge(atrie, NULL)` returns 0 (failed), 1 or -1 (no current
+# node), and only 0 refuses the call, as `!idg_add_edge(...)` upstream does.
+"Register calling the complete table `atrie` and return `clref`, `fail` or `error` (atom words, pl-tabling.c)."
+function call_complete_table(
+    ld::PL_local_data{T}, atrie::trie{T}, def::Definition{T}, clref::word
+)::word where {T}
+    if !idg_init_variant(ld, atrie, def, 0) || idg_add_edge(ld, atrie, nothing) == 0
+        return _atom_word!(ld, mk_sym(T, PL_exception(ld, 0) != 0 ? :error : :fail))
+    end
+    atrie.gen_call += 1                             # atrie->stats.gen_call++
+
+    return clref
+end
+
+# PORT: pl-tabling.c flat_skeleton
+# (pl-tabling.c:12455-12482 at the pin.)
+# DIVERGES: `vars` holds the global positions of the variable cells (see the TB3b note: none is on the local stack).
+"The word of `ret(V1, ...)` for the variables `vars` found by `trie_lookup_flat`; the atom `ret` if there are none (pl-tabling.c)."
+function flat_skeleton(ld::PL_local_data{T}, vars::Vector{Int})::word where {T}
+    arity = length(vars)
+    arity == 0 && return _atom_word!(ld, mk_sym(T, :ret))
+
+    p = _alloc_compound!(ld, ret_functor(ld, arity), arity)
+    for (i, vp) in enumerate(vars)
+        @assert vp > 0 "flat_skeleton: a variable cell on the local stack"
+        ld.gstack[p + i] = makeRefG(vp)             # *p = makeRefG(vp)
+    end
+
+    return consPtr(p, TAG_COMPOUND | STG_GLOBAL)
+end
+
+# PORT: pl-tabling.c tbl_complete_answer_clause
+# (pl-tabling.c:12484-12565 at the pin.)
+# DIVERGES: the supervisor frame `fr` is an argument; the result is an atom word (0: none); the variables of the flat lookup are a
+# vector; `hasStackSpace` is true (the stacks grow on demand); the `O_PLMT` `shared` is false.
+"The fast path of `S_TABLED` for the variant tabled `def` called in frame `fr`: a clause reference, `fail`, `error` or 0 (pl-tabling.c)."
+function tbl_complete_answer_clause(
+    ld::PL_local_data{T}, def::Definition{T}, fr::Int
+)::word where {T}
+    gd = _query_gd(ld)
+    tp = def.tabling::table_props
+    arity = def.arity
+    shared = false
+
+    if (tp.flags & TP_MONOTONIC) != 0 &&
+        (ld.tabling.in_assert_propagation || inner_is_monotonic(ld))
+        return word(0)                              # must shift/1 the dependency
+    end
+
+    variants = variant_table(ld, shared)
+
+    id = start_node_id(gd, tp)
+    start = get_start_node(start_node_array(ld, shared), id)
+    cached = start != 0
+    vars = Int[]
+    argv = Int[-_frame_arg_slot(ld, fr, i - 1) for i in 1:arity]   # argFrameP(fr, 0)
+
+    rc, start, node = trie_lookup_flat(gd, ld, variants, start, def, argv, vars)
+    if !cached && start != 0
+        set_start_node(ld, variants, id, start)
+    end
+    if rc != TRIE_LOOKUP_NOT_FLAT
+        clref = word(0)
+        if rc == 1 && variants.nodes[node].value != 0 &&
+            (
+                clref = complete_answer_clause(
+                    ld, value_trie(gd, variants.nodes[node].value)
+                )
+            ) != 0
+            atrie = value_trie(gd, variants.nodes[node].value)
+            skel = flat_skeleton(ld, vars)
+            clref = call_complete_table(ld, atrie, def, clref)
+            if clref != _atom_word!(ld, mk_sym(T, :fail)) &&
+                clref != _atom_word!(ld, mk_sym(T, :error))
+                ld.slots[_frame_arg_slot(ld, fr, 0)] = clref   # *argFrameP(fr, 0) = atom2word(clref)
+                ld.slots[_frame_arg_slot(ld, fr, 1)] = skel    # *argFrameP(fr, 1) = skel
+            end
+        end
+        return clref
+    end
+
+    return complete_answer_clause_term(ld, def, fr, variants)
+end
+
+# PORT: pl-tabling.c complete_answer_clause_term
+# (pl-tabling.c:12567-12636 at the pin.)
+# DIVERGES: as `tbl_complete_answer_clause`; the `retry` after a global stack overflow (`makeMoreStackSpace`) is dropped
+# (`unify_trie_ret` is a Bool: the stacks grow on demand); `deRef(sp); w = *sp` is `_slot_link!` of the skeleton onto itself.
+"The slow path of `tbl_complete_answer_clause`: look up `M:Head` with `trie_lookup_abstract` (pl-tabling.c)."
+function complete_answer_clause_term(
+    ld::PL_local_data{T}, def::Definition{T}, fr::Int, variants::trie{T}
+)::word where {T}
+    gd = _query_gd(ld)
+    clref = word(0)
+    error = _atom_word!(ld, mk_sym(T, :error))
+
+    fid = PL_open_foreign_frame(ld)
+    variant = PL_new_term_ref(ld)
+    skel = PL_new_term_ref(ld)
+    if !put_supervisor_goal(ld, variant, def, fr, false)
+        clref = error
+        @goto out
+    end
+    sz = pred_max_table_subgoal_size(ld, def)
+    sa = size_abstract(2, sz == -1 ? typemax(Int) : sz)
+    vars = Int[]
+
+    rc, node = trie_lookup_abstract(ld, variants, 0, -(variant + 1), false, sa, vars)
+    (rc != 1 || variants.nodes[node].value == 0) && @goto out   # new, abstracted or error
+    atrie = value_trie(gd, variants.nodes[node].value)
+    (clref = complete_answer_clause(ld, atrie)) == 0 && @goto out
+
+    if isempty(vars)
+        PL_put_atom(ld, skel, mk_sym(T, :ret))
+    elseif !unify_trie_ret(ld, skel, vars)
+        clref = error
+        @goto out
+    end
+
+    clref = call_complete_table(ld, atrie, def, clref)
+    if clref != _atom_word!(ld, mk_sym(T, :fail)) && clref != error
+        _slot_link!(ld, skel + 1, skel + 1)         # deRef(sp)
+        w = ld.slots[skel + 1]                      # w = *sp
+        PL_close_foreign_frame(ld, fid)             # frame args may overlap fid
+        ld.slots[_frame_arg_slot(ld, fr, 0)] = clref
+        ld.slots[_frame_arg_slot(ld, fr, 1)] = w
+        return clref
+    end
+
+    @label out
+    PL_close_foreign_frame(ld, fid)
+    return clref
+end
+
+# =====================================================================================================================
+# TAB1 TB4: WFS and delays (pl-tabling.c :290-330 and :960-2560 at swipl-devel 18168e629eab)
+# REPRESENTATION (DIVERGES, representation-only; docs/architecture.md "TAB1 TB4"):
+# - an answer is named by its trie and its node id. The key of `gd.tabling_answer_delay_infos` and an entry of
+#   `worklist.pos_undefined` are `answer_ref(serial, nid)` = `serial << 32 | nid` (upstream: the `trie_node *`, unique).
+# - `delay.variant` and `delay_info.variant` are the ANSWER TRIE's serial in `gd.tries` (upstream: the answer trie, resp. the
+#   variant-table node whose value is that trie); `worklist.delays` holds `delay(serial, nid)` of the conditional answers
+#   that depend on the worklist's table (upstream: their `trie_node *`).
+# - `DL_UNDEFINED` is the delay_info `DL_UNDEFINED_INFO`, compared by identity (upstream `(delay_info*)0x1`).
+# - a variable-sharing record (`REC_DELAY`) is a slot of the owning answer trie's `records` (TR1's `new_record_value!`); its
+#   delay is `delay(0, -slot)` (upstream: the record pointer with bit 0 set, and a NULL variant).
+# - `delay_set.offset` counts the delays before the set (0-based as upstream); the set's delays are `offset+1:offset+size`.
+# - the term walks use the FLI (`PL_get_list`, `_PL_get_arg`, `trie_deref`) where upstream walks the words; the
+#   `ensureGlobalSpace` + `retry` of update_delay_list_any is dropped (the FLI calls allocate as they go).
+# =====================================================================================================================
+
+# ORIGINAL: the name of an answer in the kernel (upstream: the `trie_node *`).
+"The reference of answer node `nid` of the answer trie with serial `serial` (`serial << 32 | nid`)."
+@inline answer_ref(serial::Int, nid::Int)::Int = (serial << 32) | nid
+"The trie serial of the answer reference `r`."
+@inline answer_ref_trie(r::Int)::Int = r >> 32
+"The node id of the answer reference `r`."
+@inline answer_ref_node(r::Int)::Int = r & 0xffffffff
+
+# PORT: pl-tabling.c DL_UNDEFINED as DL_UNDEFINED_INFO
+# DIVERGES: an identity sentinel delay_info (upstream `(delay_info*)0x1`); TB0's integer `DL_UNDEFINED` stays for its readers.
+# The delay info of an answer that is undefined (pl-tabling.c `DL_UNDEFINED`). A comment, not a docstring: a docstring on a
+# `const` leaves a `#…#val` temporary holding the object, which tools/lint_globals.jl reports as a second non-const global.
+const DL_UNDEFINED_INFO = delay_info(-1, UInt32(0), delay_set[], delay[])
+# PORT: pl-tabling.c DL_IS_DELAY_LIST
+"Whether `di` is a delay list: neither NULL nor `DL_UNDEFINED_INFO` (pl-tabling.c `DL_IS_DELAY_LIST`)."
+DL_IS_DELAY_LIST(di::Union{Nothing, delay_info})::Bool =
+    di !== nothing && di !== DL_UNDEFINED_INFO
+
+# PORT: pl-tabling.c node_delayinfo
+# (pl-tabling.c:307 at the pin)
+# DIVERGES: the node is its trie and id; the table key is `answer_ref`.
+"The delay info of answer `nid` of `atrie` (pl-tabling.c): `nothing` unless the node has `TN_DELAYINFO`."
+function node_delayinfo(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int
+)::Union{Nothing, delay_info} where {T}
+    if (atrie.nodes[nid].flags & TN_DELAYINFO) != 0
+        return get(gd.tabling_answer_delay_infos, answer_ref(atrie.serial, nid), nothing)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c set_node_delayinfo
+# (pl-tabling.c:317 at the pin)
+"Set (`di`) or remove (`nothing`) the delay info of answer `nid` of `atrie` and its flag `TN_DELAYINFO` (pl-tabling.c)."
+function set_node_delayinfo(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int, di::Union{Nothing, delay_info}
+)::Nothing where {T}
+    n = atrie.nodes[nid]
+    if di !== nothing
+        gd.tabling_answer_delay_infos[answer_ref(atrie.serial, nid)] = di
+        n.flags |= TN_DELAYINFO
+    elseif (n.flags & TN_DELAYINFO) != 0
+        n.flags &= ~TN_DELAYINFO
+        delete!(gd.tabling_answer_delay_infos, answer_ref(atrie.serial, nid))
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c REC_DELAY
+# (pl-tabling.c:966 at the pin)
+# DIVERGES: a record is a slot of the owning answer trie's `records`; the delay's answer is the slot negated.
+"The delay answer of the variable-sharing record in slot `slot` (pl-tabling.c `REC_DELAY`)."
+REC_DELAY(slot::Int)::Int = -slot
+# PORT: pl-tabling.c UNREC_DELAY
+# (pl-tabling.c:970 at the pin)
+"The record slot of the delay answer `a` (pl-tabling.c `UNREC_DELAY`)."
+UNREC_DELAY(a::Int)::Int = -a
+# PORT: pl-tabling.c IS_REC_DELAY
+# (pl-tabling.c:974 at the pin)
+"Whether the delay answer `a` is a variable-sharing record (pl-tabling.c `IS_REC_DELAY`)."
+IS_REC_DELAY(a::Int)::Bool = a < 0
+
+# PORT: pl-tabling.c answer_is_conditional
+# (pl-tabling.c:982 at the pin)
+"Whether answer `nid` of `atrie` is conditional: undefined or with a delay set (pl-tabling.c)."
+function answer_is_conditional(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int
+)::Bool where {T}
+    di = node_delayinfo(gd, atrie, nid)
+    return di !== nothing && (di === DL_UNDEFINED_INFO || !isempty(di.delay_sets))
+end
+
+# PORT: pl-tabling.c answer_delay_info
+# (pl-tabling.c:990 at the pin)
+# DIVERGES: `atrie` is `wl`'s answer trie (an argument); `di.variant` is its serial (upstream `wl->table->data.variant`).
+"The delay info of answer `nid` of `wl`'s table; a new one if `create` (pl-tabling.c)."
+function answer_delay_info(
+    gd::PL_global_data{T}, wl::tbl_worklist{T}, atrie::trie{T}, nid::Int, create::Bool
+)::Union{Nothing, delay_info} where {T}
+    di = node_delayinfo(gd, atrie, nid)
+    if di !== nothing
+        return di
+    elseif !create
+        return nothing
+    else
+        di = delay_info(wl.table, UInt32(0), delay_set[], delay[])
+        set_node_delayinfo(gd, atrie, nid, di)
+        wl.undefined += 1
+        return di
+    end
+end
+
+# PORT: pl-tabling.c delete_answer
+# (pl-tabling.c:1021 at the pin)
+"Remove the answer `nid` of the trie with serial `serial` from the answer buffer `ab` (pl-tabling.c)."
+function delete_answer(ab::Vector{delay}, serial::Int, nid::Int)::Nothing
+    filter!(d -> !(d.variant == serial && d.answer == nid), ab)
+    return nothing
+end
+
+# PORT: pl-tabling.c destroy_delay_info
+# (pl-tabling.c:1035 at the pin)
+"Remove and free the delay info of answer `nid` of `atrie`; if `propagate`, also its entries in the worklists' `delays` (pl-tabling.c)."
+function destroy_delay_info(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int, propagate::Bool
+)::Nothing where {T}
+    di = node_delayinfo(gd, atrie, nid)
+    if DL_IS_DELAY_LIST(di)
+        set_node_delayinfo(gd, atrie, nid, nothing)
+        if di.has_share_records != 0
+            for d in di.delays                                  # keep a flag to see whether we have these
+                IS_REC_DELAY(d.answer) &&
+                    erase_value!(atrie, word(UNREC_DELAY(d.answer)) << 2)
+            end
+        end
+        if propagate
+            for d in di.delays
+                at = d.variant
+                if at != 0 && at != DV_DELETED
+                    wl = gd.tries[at].worklist
+                    if wl isa worklist && !isempty(wl.delays)
+                        delete_answer(wl.delays, atrie.serial, nid)
+                    end
+                end
+            end
+        end
+        empty!(di.delay_sets)
+        empty!(di.delays)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c answer_set_general_undefined
+# (pl-tabling.c:1088 at the pin)
+"Make answer `nid` of `atrie` undefined without conditions (pl-tabling.c)."
+function answer_set_general_undefined(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int
+)::Nothing where {T}
+    destroy_delay_info(gd, atrie, nid, true)
+    set_node_delayinfo(gd, atrie, nid, DL_UNDEFINED_INFO)
+    return nothing
+end
+
+# PORT: pl-tabling.c delete_depending_answers
+# (pl-tabling.c:1098 at the pin)
+# DIVERGES: `wlset` is a vector (upstream a `TmpBuffer`); an entry of `wl.delays` names its trie (see the REPRESENTATION note).
+"Make the conditional answers that depend on `wl` undefined; their worklists go on `wlset` (pl-tabling.c)."
+function delete_depending_answers(
+    gd::PL_global_data{T}, wl::tbl_worklist{T}, wlset::Vector{tbl_worklist{T}}
+)::Nothing where {T}
+    while !isempty(wl.delays)
+        top = wl.delays[end]
+        at = gd.tries[top.variant]
+        di = node_delayinfo(gd, at, top.answer)
+        if DL_IS_DELAY_LIST(di)
+            at = gd.tries[di.variant]                           # value_trie(di->variant->value)
+            dwl = at.worklist
+            if dwl isa worklist && !dwl.depend_abolish
+                dwl.depend_abolish = true
+                push!(wlset, dwl)
+            end
+            answer_set_general_undefined(gd, at, top.answer)
+        else
+            pop!(wl.delays)
+        end
+    end
+    empty!(wl.delays)
+    return nothing
+end
+
+# PORT: pl-tabling.c destroy_depending_worklists
+# (pl-tabling.c:1151 at the pin)
+# Calls `delayed_destroy_table(atrie)::Bool` (:4495) and `destroy_answer_trie(ld, atrie)` (:4472): batch 3 holds a minimal port of both, TB5's.
+"Destroy the worklists that have answers depending on `wl0` and its answers (pl-tabling.c)."
+function destroy_depending_worklists(
+    ld::PL_local_data{T}, wl0::tbl_worklist{T}
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    wlset = tbl_worklist{T}[]
+    wl0.depend_abolish = true
+    delete_depending_answers(gd, wl0, wlset)
+    while !isempty(wlset)
+        wl = pop!(wlset)
+        delete_depending_answers(gd, wl, wlset)
+        atrie = gd.tries[wl.table]
+        delayed_destroy_table(atrie) || destroy_answer_trie(ld, atrie)  # (*)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c destroy_delay_info_answer
+# (pl-tabling.c:1169 at the pin)
+"Make answer `nid` of `atrie` undefined if it has a delay list (pl-tabling.c); `nothing` to continue the walk."
+function destroy_delay_info_answer(
+    gd::PL_global_data{T}, atrie::trie{T}, nid::Int
+)::Nothing where {T}
+    if DL_IS_DELAY_LIST(node_delayinfo(gd, atrie, nid))
+        answer_set_general_undefined(gd, atrie, nid)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c destroy_delay_info_worklist
+# (pl-tabling.c:1181 at the pin)
+"Make every answer of `wl`'s table with a delay list undefined (pl-tabling.c)."
+function destroy_delay_info_worklist(
+    gd::PL_global_data{T}, wl::tbl_worklist{T}
+)::Nothing where {T}
+    atrie = gd.tries[wl.table]
+    map_trie_node(atrie, 1, (tr, nid) -> destroy_delay_info_answer(gd, tr, nid))
+    return nothing
+end
+
+# PORT: pl-tabling.c create_delay_set
+# (pl-tabling.c:1187 at the pin)
+"A new, empty delay set at the end of `di`'s sets; `nothing` when `di` is (pl-tabling.c)."
+function create_delay_set(di::Union{Nothing, delay_info})::Union{Nothing, delay_set}
+    di === nothing && return nothing
+    ds = delay_set(length(di.delays), 0, UInt32(0))
+    push!(di.delay_sets, ds)
+    return ds
+end
+
+# PORT: pl-tabling.c add_to_delay_set
+# (pl-tabling.c:1203 at the pin)
+"Add the delay (`variant`, `answer`) to the set `ds` of `di`; the set's new size (pl-tabling.c)."
+function add_to_delay_set(di::delay_info, ds::delay_set, variant::Int, answer::Int)::Int
+    push!(di.delays, delay(variant, answer))
+    variant != 0 && (ds.active += UInt32(1))
+    ds.size += 1
+    return ds.size
+end
+
+# PORT: pl-tabling.c add_to_wl_delays
+# (pl-tabling.c:1227 at the pin)
+# DIVERGES: the conditional answer is `(serial, nid)`; upstream asserts in the not-a-worklist branch.
+"Register the conditional answer `nid` of the trie `serial` with the worklist of `at`, a table of its condition (pl-tabling.c)."
+function add_to_wl_delays(
+    at::trie{T}, serial::Int, nid::Int, wla::tbl_worklist{T}
+)::Bool where {T}
+    wl = at.worklist
+    if wl isa worklist
+        push!(wl.delays, delay(serial, nid))
+    end                                                         # else: see '$tbl_table_complete_all'/3
+    return true
+end
+
+# PORT: pl-tabling.c add_to_wl_pos_undefined
+# (pl-tabling.c:1259 at the pin)
+"Record the positive undefined answer `an` of `at` with `wl` (pl-tabling.c)."
+function add_to_wl_pos_undefined(
+    wl::tbl_worklist{T}, at::trie{T}, an::Int
+)::Nothing where {T}
+    push!(wl.pos_undefined, answer_ref(at.serial, an))
+    return nothing
+end
+
+# PORT: pl-tabling.c equal_delay
+# (pl-tabling.c:1270 at the pin)
+"Whether the delays `a` and `b` are the same (pl-tabling.c)."
+equal_delay(a::delay, b::delay)::Bool = a.variant == b.variant && a.answer == b.answer
+
+# PORT: pl-tabling.c equal_delay_set
+# (pl-tabling.c:1276 at the pin)
+"Whether the delay sets `a` and `b` over `delays` hold the same delays (pl-tabling.c)."
+function equal_delay_set(delays::Vector{delay}, a::delay_set, b::delay_set)::Bool
+    if a.size == b.size
+        ib = b.offset
+        for ia in a.offset:(a.offset + a.size - 1)
+            equal_delay(delays[ia + 1], delays[ib + 1]) || return false
+            ib += 1
+        end
+        return true
+    end
+    return false
+end
+
+# PORT: pl-tabling.c simplify_delay_set
+# (pl-tabling.c:1295 at the pin)
+"Pop the new delay set `ds` of `di` if it duplicates an older one (pl-tabling.c); whether it did."
+function simplify_delay_set(di::delay_info, ds::delay_set)::Bool
+    for base in di.delay_sets
+        base === ds && break
+        if equal_delay_set(di.delays, base, ds)
+            resize!(di.delays, ds.offset)                       # seekBuffer(&di->delays, ds->offset, delay)
+            pop!(di.delay_sets)
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-tabling.c word_to_answer
+# (pl-tabling.c:1313 at the pin)
+# DIVERGES: the tagged integer is the answer's handle `trie_node_handle` = `serial << 32 | nid` (upstream: the node's address, the
+# integer `trie_term/2` takes); the caller knows the trie, so the node id is the low 32 bits (gate 13 class M).
+"The answer node id of the tagged integer `w`, the low half of its handle (pl-tabling.c)."
+word_to_answer(w::word)::Int = Int(valInt(w)) & 0xffffffff
+
+# ORIGINAL (TAB1 stack): `UDL_FALSE`, `UDL_TRUE` and `UDL_COMPLETE` (pl-tabling.c `udl_status`) are defined once, in the TB3 block above (a second definition of a `const` with a docstring is a docs-replacement warning).
+
+# ORIGINAL: upstream's `undef:` label of update_delay_list_any (a deleted trie or 'undefined' in a delay list).
+"Make answer `nid` of `atrie` generally undefined (update_delay_list_any's `undef:`); `UDL_TRUE`."
+function _udl_undefined(gd::PL_global_data{T}, atrie::trie{T}, nid::Int)::Int where {T}
+    destroy_delay_info(gd, atrie, nid, true)
+    set_node_delayinfo(gd, atrie, nid, DL_UNDEFINED_INFO)
+    return UDL_TRUE
+end
+
+# PORT: pl-tabling.c update_delay_list_any
+# (pl-tabling.c:1342 at the pin)
+# DIVERGES: see the REPRESENTATION note above (FLI walk, no retry); `answer` is a node id of `wl`'s table.
+"Store the delay list (`delays` + the global one) of the new answer `answer` of `wl`'s table (pl-tabling.c); a `UDL_*`."
+function update_delay_list_any(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::Int, skel::term_t, delays::term_t
+)::Int where {T}
+    gd = _query_gd(ld)
+    atrie = gd.tries[wl.table]
+    gdl = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, ld.tabling.delay_list, gdl)              # gdlp = argTermP(*gdlp, 0)
+
+    if PL_get_nil(ld, delays) && PL_get_nil(ld, gdl)
+        di = node_delayinfo(gd, atrie, answer)
+        if di !== nothing
+            destroy_delay_info(gd, atrie, answer, true)
+            set_node_delayinfo(gd, atrie, answer, nothing)
+            wl.undefined -= 1
+            simplify_answer(ld, wl, answer, true)
+        end
+        # Incremental tabling
+        if (idg = atrie.IDG) !== nothing && idg.reevaluating
+            if (atrie.nodes[answer].flags & TN_IDG_UNCONDITIONAL) == 0
+                simplify_answer(ld, wl, answer, true)
+            end
+        end
+        wl.ground && return UDL_COMPLETE                        # early completion
+        return UDL_TRUE
+    else
+        di = answer_delay_info(gd, wl, atrie, answer, true)
+        ds = create_delay_set(di)
+
+        rc, _ = PL_skip_list(ld, delays)
+        rc == PL_LIST || (PL_type_error(ld, "delay_list", delays); return UDL_FALSE)
+        rc, _ = PL_skip_list(ld, gdl)
+        rc == PL_LIST ||
+            (PL_type_error(ld, "delay_list", ld.tabling.delay_list); return UDL_FALSE)
+
+        if ds !== nothing && di !== nothing
+            tshare = term_t[]                                   # skel, then the shared non-ground answers
+            l = PL_new_term_ref(ld)
+            h = PL_new_term_ref(ld)
+            p = PL_new_term_ref(ld)
+            for pass in 0:1
+                PL_put_term(ld, l, pass == 1 ? delays : gdl)
+                while PL_get_list(ld, l, h, l)
+                    an = 0
+                    _, hw = trie_deref(ld, -(h + 1))
+                    if isAtomW(hw)                              # Answer trie symbol
+                        at = symbol_trie(gd, hw)
+                        at === nothing && return _udl_undefined(gd, atrie, answer)  # deleted trie or 'undefined'
+                    elseif PL_is_functor(ld, h, mk_sym(T, :+), 2)
+                        _PL_get_arg(ld, 1, h, p)
+                        _, aw = trie_deref(ld, -(p + 1))
+                        at = symbol_trie(gd, aw)
+                        at === nothing && return _udl_undefined(gd, atrie, answer)
+                        _PL_get_arg(ld, 2, h, p)
+                        _, pw = trie_deref(ld, -(p + 1))
+                        if isTaggedIntW(pw)
+                            an = word_to_answer(pw)
+                        else
+                            if ground_cells(ld, -(p + 1)) != 0  # ground() returns first var
+                                isempty(tshare) && push!(tshare, PL_copy_term_ref(ld, skel))
+                                push!(tshare, PL_copy_term_ref(ld, p))
+                            end
+                            if (at.flags & TRIE_ISMAP) != 0     # answer subsumption
+                                r = PL_new_term_ref(ld)
+                                _PL_get_arg(ld, 1, p, r)
+                                rc, root = trie_lookup_abstract(
+                                    ld, at, 0, -(r + 1), true, nothing, nothing
+                                )
+                                if rc == 1
+                                    _PL_get_arg(ld, 2, p, r)
+                                    rc, an = trie_lookup_abstract(
+                                        ld, at, root, -(r + 1), true, nothing, nothing
+                                    )
+                                end
+                            else
+                                rc, an = trie_lookup_abstract(
+                                    ld, at, 0, -(p + 1), true, nothing, nothing
+                                )
+                            end
+                            if rc == 1
+                                add_to_wl_pos_undefined(wl, at, an)
+                            else
+                                return if trie_trie_error(gd, ld, rc, at)
+                                    UDL_TRUE
+                                else
+                                    UDL_FALSE
+                                end
+                            end
+                        end
+                    else
+                        PL_type_error(ld, "delay_list", delays)
+                        return UDL_FALSE
+                    end
+                    add_to_delay_set(di, ds, at.serial, an)
+                end
+            end
+
+            if !isempty(tshare)
+                n = length(tshare)
+                a0 = PL_new_term_refs(ld, n)
+                for i in 1:n
+                    PL_put_term(ld, a0 + i - 1, tshare[i])
+                end
+                v = PL_new_term_ref(ld)
+                fd = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :v)), n)
+                PL_cons_functor_v(ld, v, fd, a0) || return UDL_FALSE
+                slot = Int(new_record_value!(atrie, PL_record(ld, v)) >> 2)
+                add_to_delay_set(di, ds, 0, REC_DELAY(slot))
+                di.has_share_records = UInt32(1)
+            end
+
+            if !isempty(tshare) || !simplify_delay_set(di, ds)
+                for i in (ds.offset + 1):(ds.offset + ds.size)
+                    d = di.delays[i]
+                    if d.variant != 0
+                        add_to_wl_delays(gd.tries[d.variant], atrie.serial, answer, wl) ||
+                            return UDL_FALSE
+                    end
+                end
+            end
+            return UDL_TRUE
+        end
+        PL_resource_error(ld, "memory")                         # nomem:
+        return UDL_FALSE
+    end
+end
+
+# PORT: pl-tabling.c update_delay_list
+# (pl-tabling.c:1544 at the pin)
+# DIVERGES: the IDG test is `data.IDG !== nothing` (`Nothing` until TB6, which adds `->reevaluating`).
+"update_delay_list_any for the common case of an unconditional answer without delay information inline (pl-tabling.c)."
+function update_delay_list(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::Int, skel::term_t, delays::term_t
+)::Int where {T}
+    gd = _query_gd(ld)
+    atrie = gd.tries[wl.table]
+    gdl = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, ld.tabling.delay_list, gdl)
+    if PL_get_nil(ld, delays) && PL_get_nil(ld, gdl) &&
+        node_delayinfo(gd, atrie, answer) === nothing &&
+        atrie.IDG === nothing
+        return wl.ground ? UDL_COMPLETE : UDL_TRUE
+    end
+    return update_delay_list_any(ld, wl, answer, skel, delays)
+end
+
+# PORT: pl-tabling.c delay_sets
+# (pl-tabling.c:1567 at the pin)
+"The delay sets of `di` (pl-tabling.c; upstream: base and top pointers)."
+delay_sets(di::delay_info)::Vector{delay_set} = di.delay_sets
+
+# PORT: pl-tabling.c get_delay_set
+# (pl-tabling.c:1573 at the pin)
+"The delays of the set `set` of `di` (pl-tabling.c; upstream: base and top pointers)."
+get_delay_set(di::delay_info, set::delay_set) =
+    view(di.delays, (set.offset + 1):(set.offset + set.size))
+
+# PORT: pl-tabling.c init_delay_list
+# (pl-tabling.c:1580 at the pin)
+"A new term reference holding `-([])`, the empty global delay list (pl-tabling.c)."
+function init_delay_list(ld::PL_local_data{T})::term_t where {T}
+    t = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+    PL_put_nil(ld, a)
+    PL_cons_functor_v(
+        ld, t, lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :-)), 1), a
+    )
+    return t
+end
+
+# PORT: pl-tabling.c PL_get_delay_list
+# (pl-tabling.c:1593 at the pin)
+# DIVERGES: for `t == 0` the argument goes to a new term reference (upstream reads the word).
+"Whether the global delay list is not empty; it goes to `t` unless `t` is 0 (pl-tabling.c)."
+function PL_get_delay_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    dl = ld.tabling.delay_list
+    a = t != 0 ? t : PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, dl, a)
+    return !PL_get_nil(ld, a)
+end
+
+# PORT: pl-tabling.c tbl_delay_list as pl_tbl_delay_list1_va
+# (PRED_IMPL("$tbl_delay_list", 1, tbl_delay_list, 0))
+"`'\$tbl_delay_list'(-List)`: the global delay list (pl-tabling.c)."
+function pl_tbl_delay_list1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    dl = ld.tabling.delay_list
+    a = PL_new_term_ref(ld)
+    return (_PL_get_arg(ld, 1, dl, a) && PL_unify(ld, A1, a)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_set_delay_list as pl_tbl_set_delay_list1_va
+# (PRED_IMPL("$tbl_set_delay_list", 1, tbl_set_delay_list, 0))
+# DIVERGES: the argument cell is `valPtr(w) + 1` of the dereferenced `-(List)` (upstream `argTermP(*p, 0)`).
+"`'\$tbl_set_delay_list'(+List)`: set the global delay list, backtrackable (pl-tabling.c)."
+function pl_tbl_set_delay_list1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    dl = ld.tabling.delay_list
+    ensureGlobalSpace(ld, 0) || return FFALSE
+    k, w, _ = _deref_loc(ld, -(dl + 1))                        # p = valTermRef(dl)
+    if k == DU_WORD && _is_gcompound(w)                         # if ( isTerm(*p) )
+        p = valPtr(w) + 1                                       # p = argTermP(*p, 0)
+        TrailAssignment!(ld, p)
+        unify_vp(ld, p, -(A1 + 1))
+    end
+    return FTRUE
+end
+
+# PORT: pl-tabling.c push_delay_list
+# (pl-tabling.c:1644 at the pin)
+# DIVERGES: the new list cell `[H|Old]` is built with the FLI from the term `h` (upstream fills the cell `p` the caller
+# allocated); the trailed assignment of the delay list's argument is upstream's.
+"Push the delay element `h` on the global delay list, backtrackable (pl-tabling.c)."
+function push_delay_list(ld::PL_local_data{T}, h::term_t)::Nothing where {T}
+    dl = ld.tabling.delay_list
+    c = PL_new_term_refs(ld, 2)
+    PL_put_term(ld, c, h)
+    _PL_get_arg(ld, 1, dl, c + 1)                               # p[2] = *dl
+    l = PL_new_term_ref(ld)
+    PL_cons_functor_v(ld, l, ld.functor_dot2, c)
+    _, w, _ = _deref_loc(ld, -(dl + 1))
+    p = valPtr(w) + 1                                           # dl = argTermP(*dl, 0)
+    TrailAssignment!(ld, p)
+    unify_vp(ld, p, -(l + 1))                                   # *dl = consCompound(p)
+    return nothing
+end
+
+# PORT: pl-tabling.c delay_to_data
+# (pl-tabling.c:1660 at the pin)
+# DIVERGES: the data goes to the term reference `out`; a ground answer is its handle `trie_node_handle` (upstream: its address,
+# which `trie_term/2` reads in `delay_goals`, boot/tabling.pl:1060; gate 13 class M: the node id alone named no trie); `at` is the
+# answer's trie (for `is_ground_trie_node`; `nothing` with `answer` 0, T_DELAY's NULL node).
+"The delay data of `answer` of `at`: 0 for none, the node handle if ground, else the `wrapper` (pl-tabling.c)."
+function delay_to_data(
+    ld::PL_local_data{T}, at::Union{Nothing, trie{T}}, answer::Int, wrapper::term_t,
+    out::term_t
+)::Nothing where {T}
+    # `at` is `nothing` only with `answer` 0 (T_DELAY's NULL node)
+    if answer == 0 || at === nothing
+        PL_put_integer(ld, out, 0)
+    elseif is_ground_trie_node(at, answer)
+        PL_put_integer(ld, out, trie_node_handle(at, answer))
+    else
+        PL_put_term(ld, out, wrapper)                           # linkValI(wrapper)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_push_delay
+# (pl-tabling.c:1696 at the pin)
+# DIVERGES: `atrie` is the answer trie's symbol word with the trie `at` beside it; `wrapper` a term reference; the term
+# `atrie+Data` is built with the FLI (upstream: six cells from allocGlobalNoShift).
+"Push `atrie+Data` (the positive delay of `answer`) on the global delay list (pl-tabling.c)."
+function tbl_push_delay(
+    ld::PL_local_data{T}, atrie::word, at::Union{Nothing, trie{T}}, wrapper::term_t,
+    answer::Int
+)::Nothing where {T}
+    a = PL_new_term_refs(ld, 2)
+    ld.slots[a + 1] = atrie                                     # p[4] = atrie (PL_put_atom's setHandle)
+    delay_to_data(ld, at, answer, wrapper, a + 1)               # p[5] = p5
+    d = PL_new_term_ref(ld)
+    PL_cons_functor_v(
+        ld, d, lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :+)), 2), a
+    )
+    push_delay_list(ld, d)
+    return nothing
+end
+
+# PORT: pl-vmi.c T_DELAY as t_delay!
+# (pl-vmi.c:6225-6249 at the pin: VMI(T_DELAY, 0, 1, (CA1_TRIE_NODE)); the note (*) is :6211-6223.)
+# DIVERGES: the body after `ENSURE_STACK_SPACE(16, 12)` and `UnwindTrieArgP()` is this function, called by the run loop's
+# `T_DELAY` arm (TR4 declares `T_DELAY`, code 173, and owns `UnwindTrieArgP` and the frame's trie state cells,
+# `_trie_state_cell`); the operand `h` is TR4's `trie_node_handle` = `answer_ref(serial, nid)` (0: upstream's NULL node);
+# `get_trie_from_node(answer)` is the trie of the handle's serial; `argTermP(*TrieTermP, 0)` is a term reference to argument 1
+# of the compound in the TrieTermP cell.
+# STACK EDIT (TR4, recorded in evidence/TB4/handoff2.md): `:T_DELAY` joins the run loop's dispatch tuple and the run loop
+# gains, beside TR4's T_* arms: `@label T_DELAY` / UnwindTrieArgP (TR4's form) / `t_delay!(ld, FR, Int(PCc[PC]))` /
+# `PC += 1` / the next instruction (the FLI allocates as it goes: no ENSURE_STACK_SPACE).
+"Push the delay of the answer `h` of a compiled trie's clause on the global delay list; nothing if it lost its delay info (pl-vmi.c `T_DELAY`)."
+function t_delay!(ld::PL_local_data{T}, fr::Int, h::Int)::Nothing where {T}
+    gd = _query_gd(ld)
+    if h != 0
+        at = gd.tries[answer_ref_trie(h)]::trie{T}
+        nid = answer_ref_node(h)
+        (at.nodes[nid].flags & TN_DELAYINFO) == 0 && return nothing     # (*)
+        atrie = trie_symbol(gd, at)
+    else                                                                # generally undefined; see
+        at = nothing                                                    # set_trie_clause_general_undefined()
+        nid = 0
+        atrie = ld.atom_nil_w
+    end
+    tt = PL_new_term_ref(ld)
+    ld.slots[tt + 1] = makeRefG(_trie_state_cell(ld, fr, 0))           # *TrieTermP
+    wrapper = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, tt, wrapper)                                     # argTermP(*TrieTermP, 0)
+    tbl_push_delay(ld, atrie, at, wrapper, nid)
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_add_global_delays as pl_tbl_add_global_delays2_va
+# (PRED_IMPL("$tbl_add_global_delays", 2, tbl_add_global_delays, 0))
+# DIVERGES: the copy of the global list ending in `Delays0` is built with the FLI from its last element backwards (upstream
+# lays out the cells forwards).
+"`'\$tbl_add_global_delays'(+Delays0, -Delays)`: `Delays` is the global delay list appended with `Delays0` (pl-tabling.c)."
+function pl_tbl_add_global_delays2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    dl = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, ld.tabling.delay_list, dl)
+    if PL_get_nil(ld, dl)
+        return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
+    elseif PL_get_nil(ld, A1)
+        return PL_unify(ld, A2, dl) ? FTRUE : FFALSE
+    else
+        heads = term_t[]
+        l = PL_copy_term_ref(ld, dl)
+        while true
+            h = PL_new_term_ref(ld)
+            PL_get_list(ld, l, h, l) || break
+            push!(heads, h)
+        end
+        tail = PL_copy_term_ref(ld, A1)                         # *p = linkValI(valTermRef(A1))
+        for i in length(heads):-1:1
+            c = PL_new_term_refs(ld, 2)
+            PL_put_term(ld, c, heads[i])
+            PL_put_term(ld, c + 1, tail)
+            PL_cons_functor_v(ld, tail, ld.functor_dot2, c)
+        end
+        return PL_unify(ld, A2, tail) ? FTRUE : FFALSE
+    end
+end
+
+#                *******************************
+#                *        SIMPLIFICATION        *
+#                *******************************
+
+# PORT: pl-tabling.c propagate
+# (pl-tabling.c:1771 at the pin)
+# DIVERGES: `answer` is an `answer_ref` (0: NULL) of the answer to propagate.
+"One propagation step of the simplification agenda (pl-tabling.c `struct propagate`)."
+struct propagate{T}
+    worklist::tbl_worklist{T}
+    answer::Int
+    result::Bool
+end
+
+# PORT: pl-tabling.c spf_agenda
+# (pl-tabling.c:1777 at the pin)
+"The simplification agenda (pl-tabling.c `spf_agenda`): the answers changed and the steps to do."
+mutable struct spf_agenda{T}
+    done::Int
+    buffer::Vector{propagate{T}}
+end
+
+# PORT: pl-tabling.c init_spf_agenda
+# (pl-tabling.c:1783 at the pin)
+"A new, empty agenda (pl-tabling.c)."
+init_spf_agenda(::Type{T}) where {T} = spf_agenda{T}(0, propagate{T}[])
+
+# PORT: pl-tabling.c exit_spf_agenda
+# (pl-tabling.c:1789 at the pin)
+"Discard the agenda's steps (pl-tabling.c)."
+function exit_spf_agenda(a::spf_agenda{T})::Nothing where {T}
+    empty!(a.buffer)
+    return nothing
+end
+
+# PORT: pl-tabling.c push_propagate
+# (pl-tabling.c:1794 at the pin)
+"Push the step (`wl`, `answer`, `result`) on the agenda (pl-tabling.c)."
+function push_propagate(
+    a::spf_agenda{T}, wl::tbl_worklist{T}, answer::Int, result::Bool
+)::Bool where {T}
+    push!(a.buffer, propagate{T}(wl, answer, result))
+    return true
+end
+
+# PORT: pl-tabling.c pop_propagate
+# (pl-tabling.c:1805 at the pin)
+"The last step of the agenda, removed; `nothing` when empty (pl-tabling.c)."
+function pop_propagate(a::spf_agenda{T})::Union{Nothing, propagate{T}} where {T}
+    isempty(a.buffer) && return nothing
+    return pop!(a.buffer)
+end
+
+# PORT: pl-tabling.c make_answer_unconditional
+# (pl-tabling.c:1820 at the pin)
+# DIVERGES: the answer is `nid` of `atrie` (its delay info names the same trie).
+"Make answer `nid` of `atrie` unconditional and schedule its propagation (pl-tabling.c)."
+function make_answer_unconditional(
+    gd::PL_global_data{T}, agenda::spf_agenda{T}, atrie::trie{T}, nid::Int
+)::Bool where {T}
+    di = node_delayinfo(gd, atrie, nid)
+    if DL_IS_DELAY_LIST(di)
+        at = gd.tries[di.variant]                               # value_trie(di->variant->value)
+        wl = at.worklist::tbl_worklist{T}
+        destroy_delay_info(gd, at, nid, true)
+        agenda.done += 1
+        wl.undefined -= 1
+        isempty(wl.delays) || push_propagate(agenda, wl, answer_ref(at.serial, nid), true)
+    end                                                         # else: upstream asserts
+    return true
+end
+
+# PORT: pl-tabling.c remove_conditional_answer
+# (pl-tabling.c:1846 at the pin)
+"Remove the conditional answer `nid` of `atrie` and schedule its propagation (pl-tabling.c)."
+function remove_conditional_answer(
+    gd::PL_global_data{T}, agenda::spf_agenda{T}, atrie::trie{T}, nid::Int
+)::Bool where {T}
+    di = node_delayinfo(gd, atrie, nid)
+    if DL_IS_DELAY_LIST(di)
+        at = gd.tries[di.variant]
+        wl = at.worklist::tbl_worklist{T}
+        destroy_delay_info(gd, at, nid, true)
+        trie_delete(gd, at, nid, true)                              # cannot prune as may be
+        agenda.done += 1                                        # in worklist delay lists
+        wl.undefined -= 1
+        isempty(wl.delays) || push_propagate(agenda, wl, answer_ref(at.serial, nid), false)
+    end
+    return true
+end
+
+# PORT: pl-tabling.c answer_delay_sets
+# (pl-tabling.c:1873 at the pin)
+"The delay sets of `di` (pl-tabling.c; upstream: base and top pointers)."
+answer_delay_sets(di::delay_info)::Vector{delay_set} = di.delay_sets
+
+# PORT: pl-tabling.c propagate_to_answer
+# (pl-tabling.c:1900 at the pin)
+# DIVERGES: `panswer` is an `answer_ref` (0: NULL), compared with a delay as `answer_ref(d.variant, d.answer)`; the
+# conditional answer is `nid` of `atrie`; the memmove of the delay sets is `deleteat!`.
+"Propagate (`wl`, `panswer`, `result`) to the conditional answer `nid` of `atrie` (pl-tabling.c); whether a delay matched."
+function propagate_to_answer(
+    gd::PL_global_data{T}, agenda::spf_agenda{T}, wl::tbl_worklist{T}, panswer::Int,
+    result::Bool,
+    atrie::trie{T}, nid::Int
+)::Bool where {T}
+    variant = wl.table
+    found = false
+    di = node_delayinfo(gd, atrie, nid)                         # answer_delay_info(NULL, answer, false)
+    if di !== nothing
+        db = di.delays
+        k = 1
+        while k <= length(di.delay_sets)
+            ds = di.delay_sets[k]
+            removed = false
+            for o in ds.offset:(ds.offset + ds.size - 1)
+                d = db[o + 1]
+                if d.variant == variant
+                    if d.answer == 0 || answer_ref(d.variant, d.answer) == panswer
+                        res = false
+                        if d.answer == 0
+                            if result == false && (wl.has_answers || wl.undefined != 0)
+                                continue
+                            end
+                            res = !result
+                        else
+                            res = result
+                        end
+                        found = true
+                        c = wl.component
+                        c === nothing || (c.simplifications += 1)  # (*)
+                        if res                                  # remove member from conjunction
+                            db[o + 1] = delay(
+                                DV_DELETED,
+                                d.answer == 0 ? 0 : answer_ref(d.variant, d.answer)
+                            )   # the answer's trie goes with `variant`: `put_delay_set` reads it back
+                            ds.active -= UInt32(1)
+                            if ds.active == 0
+                                make_answer_unconditional(gd, agenda, atrie, nid)
+                                return found
+                            end
+                        else                                    # remove the conjunction
+                            deleteat!(di.delay_sets, k)
+                            removed = true                      # compensate for(;;ds++)
+                            break
+                        end
+                    end
+                end
+            end
+            if isempty(di.delay_sets)
+                remove_conditional_answer(gd, agenda, atrie, nid)
+                return found
+            end
+            removed || (k += 1)
+        end
+    end
+    return found
+end
+
+# PORT: pl-tabling.c answer_delays_on
+# (pl-tabling.c:1986 at the pin)
+"Whether answer `nid` of `atrie_of_answer` has a live delay element on the answer trie with serial `serial` (pl-tabling.c)."
+function answer_delays_on(
+    gd::PL_global_data{T}, atrie_of_answer::trie{T}, nid::Int, serial::Int
+)::Bool where {T}
+    di = node_delayinfo(gd, atrie_of_answer, nid)
+    if DL_IS_DELAY_LIST(di)
+        for ds in answer_delay_sets(di)
+            for o in ds.offset:(ds.offset + ds.size - 1)
+                di.delays[o + 1].variant == serial && return true
+            end
+        end
+    end
+    return false
+end
+
+# PORT: pl-tabling.c propagate_result
+# (pl-tabling.c:2023 at the pin)
+"Propagate (`wl`, `panswer`, `result`) to the answers that delay on `wl`'s table (pl-tabling.c)."
+function propagate_result(
+    gd::PL_global_data{T}, agenda::spf_agenda{T}, wl::tbl_worklist{T}, panswer::Int,
+    result::Bool
+)::Bool where {T}
+    i = 1
+    while i <= length(wl.delays)
+        e = wl.delays[i]
+        at = gd.tries[e.variant]
+        propagate_to_answer(gd, agenda, wl, panswer, result, at, e.answer)
+        if i <= length(wl.delays) && wl.delays[i] == e
+            if answer_delays_on(gd, at, e.answer, wl.table)     # (*)
+                i += 1
+            else
+                delete_answer(wl.delays, e.variant, e.answer)
+            end
+        end
+    end
+    return true
+end
+
+# ORIGINAL: upstream's `while( (p=pop_propagate(&agenda)) ) propagate_result(...)` loop, used five times.
+"Run the agenda's steps until it is empty."
+function _run_agenda(gd::PL_global_data{T}, agenda::spf_agenda{T})::Nothing where {T}
+    while true
+        p = pop_propagate(agenda)
+        p === nothing && break
+        propagate_result(gd, agenda, p.worklist, p.answer, p.result)
+    end
+    return nothing
+end
+
+# PORT: pl-tabling.c simplify_answer
+# (pl-tabling.c:2053 at the pin)
+# DIVERGES: `answer` is a node id of `wl`'s table (its `answer_ref` is propagated).
+"Propagate the truth `truth` of answer `answer` of `wl`'s table (pl-tabling.c)."
+function simplify_answer(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, answer::Int, truth::Bool
+)::Bool where {T}
+    gd = _query_gd(ld)
+    agenda = init_spf_agenda(T)
+    push_propagate(agenda, wl, answer_ref(wl.table, answer), truth)
+    _run_agenda(gd, agenda)
+    exit_spf_agenda(agenda)
+    return true
+end
+
+# PORT: pl-tabling.c live_answer_node
+# (pl-tabling.c:2076 at the pin)
+"`nid` if it is a live answer (a value, not `TN_IDG_DELETED`), else `nothing` (pl-tabling.c)."
+function live_answer_node(tr::trie{T}, nid::Int)::Union{Nothing, Int} where {T}
+    n = tr.nodes[nid]
+    (n.value != 0 && (n.flags & TN_IDG_DELETED) == 0) && return nid
+    return nothing
+end
+
+# PORT: pl-tabling.c table_has_no_answers
+# (pl-tabling.c:2086 at the pin)
+"Whether the answer trie has no answers (pl-tabling.c)."
+function table_has_no_answers(atrie::trie{T})::Bool where {T}
+    atrie.value_count == 0 && return true
+    if (n = atrie.IDG) !== nothing && n.reevaluating
+        return map_trie_node(atrie, 1, live_answer_node) === nothing
+    end
+    return false
+end
+
+# PORT: pl-tabling.c simplify_component
+# (pl-tabling.c:2099 at the pin)
+# DIVERGES: O_AC_EAGER is defined at the pin (:72), so the `#ifndef O_AC_EAGER` parts (`simplified0`, :2106 and :2181) are
+# left out as upstream compiles them; `pos_undefined` holds `answer_ref`s.
+# NOTE: `clean_worklist(ld, wl)` (pl-tabling.c :3932-3953, TB2) takes the engine, as the freeing of its clusters needs it (gate 13 class L).
+"Simplify the conditional answers of the component `scc`; answer completion if undefined answers remain (pl-tabling.c)."
+function simplify_component(ld::PL_local_data{T}, scc::tbl_component{T})::Bool where {T}
+    gd = _query_gd(ld)
+    wls = scc.created_worklists::worklist_set{tbl_worklist{T}}
+    agenda = init_spf_agenda(T)
+    undefined = 0
+    pass = 0
+    while true
+        count = 0
+        undefined = 0
+        for wl in wls.members
+            pass == 0 && clean_worklist(ld, wl)
+            if wl.negative && wl.neg_delayed && !isempty(wl.delays) &&
+                table_has_no_answers(gd.tries[wl.table])
+                count += 1
+                push_propagate(agenda, wl, 0, false)
+                _run_agenda(gd, agenda)
+            end
+            if !isempty(wl.pos_undefined)
+                on = 0
+                for bn in 1:length(wl.pos_undefined)
+                    r = wl.pos_undefined[bn]
+                    at = gd.tries[answer_ref_trie(r)]
+                    an = answer_ref_node(r)
+                    if !answer_is_conditional(gd, at, an)
+                        count += 1
+                        push_propagate(agenda, wl, r, at.nodes[an].value != 0)
+                        _run_agenda(gd, agenda)
+                    else
+                        on += 1
+                        wl.pos_undefined[on] = r
+                    end
+                end
+                resize!(wl.pos_undefined, on)
+            end
+            wl.undefined != 0 && (undefined += 1)
+        end
+        (count == 0 || undefined == 0) && break
+        pass += 1
+    end
+    exit_spf_agenda(agenda)
+    # DSW: there cannot be any "uncovering" of a positive loop if there was no simplification
+    if undefined != 0 && scc.simplifications != 0
+        return answer_completion(ld, scc)
+    else
+        return true
+    end
+end
+
+#                *******************************
+#                *      ANSWER COMPLETION       *
+#                *******************************
+
+# PORT: pl-tabling.c call_answer_completion
+# (pl-tabling.c:2241 at the pin)
+# DIVERGES: `'$tabling':answer_completion/2` is looked up on each call (upstream caches it in
+# `GD->procedures.answer_completion2`); `saved` is a `tbl_status`. ASSUMES (TB1): `unify_skeleton(ld, atrie, wrapper, skel)`.
+"Call `'\$tabling':answer_completion(ATrie, Skeleton)` with the tabling state of a fresh evaluation (pl-tabling.c)."
+function call_answer_completion(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    gd = _query_gd(ld)
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return false                                    # stack overflow
+    av = PL_new_term_refs(ld, 2)
+    scc_old = ld.tabling.component
+    hsc = ld.tabling.has_scheduling_component
+    saved = tbl_status{T}(scc_old, ld.tabling.saved_status, false, false, false)  # for '$tbl_sdg'/3
+    pred = lookupProcedure(
+        mk_sym(T, :answer_completion), 2, lookupModule(gd, mk_sym(T, Symbol("\$tabling")))
+    )
+    ld.tabling.saved_status = saved
+    ld.tabling.component = nothing
+    ld.tabling.has_scheduling_component = false
+    ld.tabling.in_answer_completion = true
+    ld.slots[av + 1] = trie_symbol(gd, atrie)                   # PL_put_atom(av+0, trie_symbol(atrie))
+    rc =
+        unify_skeleton(ld, atrie, 0, av + 1) &&
+        PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+    ld.tabling.in_answer_completion = false
+    ld.tabling.has_scheduling_component = hsc
+    ld.tabling.component = scc_old
+    ld.tabling.saved_status = saved.prev
+    PL_close_foreign_frame(ld, fid)
+    return rc
+end
+
+# PORT: pl-tabling.c has_positive_dl
+# (pl-tabling.c:2290 at the pin)
+"Whether answer `nid` of `atrie` has a value and a live positive delay element (pl-tabling.c)."
+function has_positive_dl(gd::PL_global_data{T}, atrie::trie{T}, nid::Int)::Bool where {T}
+    atrie.nodes[nid].value == 0 && return false
+    di = node_delayinfo(gd, atrie, nid)
+    if DL_IS_DELAY_LIST(di)
+        for ds in answer_delay_sets(di)
+            for o in ds.offset:(ds.offset + ds.size - 1)
+                d = di.delays[o + 1]
+                if d.variant != 0 && d.variant != DV_DELETED
+                    d.answer != 0 && return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+# PORT: pl-tabling.c is_ac_candidate_wl
+# (pl-tabling.c:2316 at the pin)
+"Whether `wl` is a candidate for answer completion: undefined answers, a positive delay among its dependents (pl-tabling.c)."
+function is_ac_candidate_wl(gd::PL_global_data{T}, wl::tbl_worklist{T})::Bool where {T}
+    if wl.undefined != 0 && !wl.answer_completed && !isempty(wl.delays)
+        for e in wl.delays
+            has_positive_dl(gd, gd.tries[e.variant], e.answer) && return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-tabling.c answer_completion
+# (pl-tabling.c:2334 at the pin)
+# DIVERGES: O_AC_EAGER is defined at the pin (:72): the eager branch only; the O_DEBUG `TABLING_NO_AC` test is left out.
+"Answer completion of the component `scc` (pl-tabling.c): call it for each candidate worklist; not recursive."
+function answer_completion(ld::PL_local_data{T}, scc::tbl_component{T})::Bool where {T}
+    ld.tabling.in_answer_completion && return true              # not recursive!
+    gd = _query_gd(ld)
+    wls = scc.created_worklists::worklist_set{tbl_worklist{T}}
+    for wl in wls.members
+        if is_ac_candidate_wl(gd, wl)
+            call_answer_completion(ld, gd.tries[wl.table]) || return false
+        end
+    end
+    return true
+end
+
+# PORT: pl-tabling.c tbl_force_truth_value as pl_tbl_force_truth_value3_va
+# (PRED_IMPL("$tbl_force_truth_value", 3, tbl_force_truth_value, 0))
+# DIVERGES: the AnswerNode "pointer" is the integer `answer_ref(serial, nid)` (upstream: the node's address).
+"`'\$tbl_force_truth_value'(+AnswerNode, +Value, -Count)`: force the answer's truth; Count answers changed (pl-tabling.c)."
+function pl_tbl_force_truth_value3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    gd = _query_gd(ld)
+    rc = false
+    ptr = PL_get_pointer_ex(ld, A1)                             # PL_get_pointer_ex(A1, &ptr): type_error(address, A1) (pl-error.c:1335)
+    truth = ptr === nothing ? nothing : PL_get_stdbool_ex(ld, A2)
+    if ptr !== nothing && truth !== nothing
+        atrie = gd.tries[answer_ref_trie(ptr)]
+        answer = answer_ref_node(ptr)
+        di = node_delayinfo(gd, atrie, answer)
+        agenda = init_spf_agenda(T)
+        if DL_IS_DELAY_LIST(di)
+            at = gd.tries[di.variant]
+            wl = at.worklist
+            if wl isa worklist
+                rc = if truth
+                    make_answer_unconditional(gd, agenda, atrie, answer)
+                else
+                    remove_conditional_answer(gd, agenda, atrie, answer)
+                end
+            else
+                rc = PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :force_truth_value),
+                    mk_sym(T, :answer), A1
+                )
+            end
+        else                                                    # answer is not conditional
+            truth || trie_delete(gd, atrie, answer, false)          # TBD: propagate?
+            rc = true
+        end
+        while rc
+            p = pop_propagate(agenda)
+            p === nothing && break
+            rc = propagate_result(gd, agenda, p.worklist, p.answer, p.result)
+        end
+        rc = rc && PL_unify_integer(ld, A3, agenda.done)
+        exit_spf_agenda(agenda)
+    end
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_set_answer_completed as pl_tbl_set_answer_completed1_va
+# (PRED_IMPL("$tbl_set_answer_completed", 1, tbl_set_answer_completed, 0))
+"`'\$tbl_set_answer_completed'(+ATrie)`: mark the table's worklist answer completed (pl-tabling.c)."
+function pl_tbl_set_answer_completed1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    tr = get_trie(_query_gd(ld), ld, A1)
+    if tr !== nothing
+        wl = tr.worklist
+        if wl isa worklist
+            wl.answer_completed = true
+            return FTRUE
+        end
+        (tr.flags & TRIE_COMPLETE) != 0 && return FTRUE
+        return if PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :set_answer_complete),
+            mk_sym(T, :trie), A1
+        )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_is_answer_completed as pl_tbl_is_answer_completed1_va
+# (PRED_IMPL("$tbl_is_answer_completed", 1, tbl_is_answer_completed, 0))
+"`'\$tbl_is_answer_completed'(+ATrie)`: the table's worklist is answer completed, or the table is complete (pl-tabling.c)."
+function pl_tbl_is_answer_completed1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    tr = get_trie(_query_gd(ld), ld, A1)
+    if tr !== nothing
+        wl = tr.worklist
+        wl isa worklist && return wl.answer_completed ? FTRUE : FFALSE
+        return (tr.flags & TRIE_COMPLETE) != 0 ? FTRUE : FFALSE
+    end
+    return FFALSE
+end
+
+#                *******************************
+#                *   TB4b: WORKLIST NEGATION, UPDATE_DL  *
+#                *******************************
+
+# PORT: pl-tabling.c tbl_wkl_negative as pl_tbl_wkl_negative1_va
+# (pl-tabling.c:5374-5380 at the pin: PRED_IMPL("$tbl_wkl_negative", 1, tbl_wkl_negative, 0))
+# Owner TB4 (dispatcher decision); the same text as wip/tb2's, which also writes it: the stack keeps one. `get_worklist` and
+# `worklist_negative` (pl-tabling.c :4409, :4023) are TB2's.
+"`'\$tbl_wkl_negative'(+Worklist)`: true if the worklist is a suspended negation (pl-tabling.c)."
+function pl_tbl_wkl_negative1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    wl = get_worklist(ld, A1)
+
+    return (wl !== nothing && worklist_negative(ld, wl)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_wkl_is_false as pl_tbl_wkl_is_false1_va
+# (pl-tabling.c:5392-5405 at the pin: PRED_IMPL("$tbl_wkl_is_false", 1, tbl_wkl_is_false, 0))
+# Owner TB4 (dispatcher decision); the same text as wip/tb2's: the stack keeps one.
+"`'\$tbl_wkl_is_false'(+Worklist)`: the negative node's negation was delayed and it has no unconditional answer (pl-tabling.c)."
+function pl_tbl_wkl_is_false1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    wl = get_worklist(ld, A1)
+    if wl !== nothing
+        @assert wl.negative
+
+        return (wl.neg_delayed && !wl.has_answers) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# ORIGINAL (TAB1 TB4): the `data_kind` of TR2's `trie_gen` / `trie_gen_raw` that selects `answer_update_delay_list` (upstream
+# passes the function pointer `answer_update_delay_list` and its `update_dl_ctx` as `unify_data`, `ctx`). TB3's
+# `TRIE_GEN_DELAY_INFO` is 2; 3 is left for `unify_delay_info_dl` (`$tbl_answer_dl`).
+# STACK EDIT (TR2, done): `trie_gen_unify_data` (src/pl-trie.jl) has the arm
+# `data_kind == TRIE_GEN_UPDATE_DL ? answer_update_delay_list(ld, Data, trs, nid)` beside TB3's `TRIE_GEN_DELAY_INFO` arm.
+"`trie_gen` data kind: push the answer's delay on the global delay list if it is conditional (pl-tabling.c `answer_update_delay_list`)."
+const TRIE_GEN_UPDATE_DL = 4
+
+# PORT: pl-tabling.c answer_update_delay_list
+# (pl-tabling.c:7229-7246 at the pin.)
+# DIVERGES: the answer is its trie `tr` and node id (upstream: the `trie_node *`); the answer trie's symbol is
+# `trie_symbol(gd, tr)` of the trie `trie_gen` enumerates, which is the atom of `ctx->atrie` (A1 of both callers: `trie_gen`
+# reads its trie from A1), so the context `update_dl_ctx` is not kept; the `ensureStackSpace(10, 2)` is dropped
+# (tbl_push_delay builds with the FLI).
+"If answer `nid` of `tr` is conditional, push its delay `ATrie+Data` on the global delay list; true (pl-tabling.c)."
+function answer_update_delay_list(
+    ld::PL_local_data{T}, wrapper::term_t, tr::trie{T}, nid::Int
+)::Bool where {T}
+    gd = _query_gd(ld)
+    if answer_is_conditional(gd, tr, nid)
+        tbl_push_delay(ld, trie_symbol(gd, tr), tr, wrapper, nid)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tbl_answer_update_dl as pl_tbl_answer_update_dl2_va
+# (PRED_IMPL("$tbl_answer_update_dl", 2, tbl_answer_update_dl, PL_FA_NONDETERMINISTIC), pl-tabling.c:7248-7256 at the pin.)
+"`'\$tbl_answer_update_dl'(+ATrie, -Skeleton)`: the answers of `ATrie`; a conditional one also extends the global delay list (pl-tabling.c)."
+function pl_tbl_answer_update_dl2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+
+    return trie_gen(_query_gd(ld), ld, A1, 0, A2, 0, A2, TRIE_GEN_UPDATE_DL, PL__ctx)
+end
+
+# PORT: pl-tabling.c tbl_answer_update_dl as pl_tbl_answer_update_dl3_va
+# (PRED_IMPL("$tbl_answer_update_dl", 3, tbl_answer_update_dl, PL_FA_NONDETERMINISTIC), pl-tabling.c:7262-7290 at the pin.)
+# DIVERGES: as TB3's pl_tbl_answer_c4_va: a redo or a cut goes to TR2's `trie_gen_raw` with no trie (its state holds the trie
+# and the root: upstream looks the root up again on a redo and `trie_gen_raw` then ignores it; on a cut
+# `clear_trie_gen_state` is `trie_gen_raw`'s `FRG_CUTTED`).
+"`'\$tbl_answer_update_dl'(+Trie, +Skeleton, -ModeArgs)`: the moded answers below `Skeleton`; a conditional one also extends the global delay list (pl-tabling.c)."
+function pl_tbl_answer_update_dl3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+
+    if PL_foreign_control(PL__ctx) != FRG_FIRST_CALL   # FRG_CUTTED: clear_trie_gen_state(CTX_PTR); FRG_REDO
+        return trie_gen_raw(ld, nothing, 0, A3, 0, A3, TRIE_GEN_UPDATE_DL, PL__ctx)
+    end
+
+    tr = get_trie_nodes(_query_gd(ld), ld, A1)
+    if tr !== nothing
+        rc, root = trie_lookup(ld, tr, 0, -(A2 + 1), false, nothing)
+        if rc == 1
+            return trie_gen_raw(ld, tr, root, A3, 0, A3, TRIE_GEN_UPDATE_DL, PL__ctx)
+        else
+            return trie_error(ld, rc, A1) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# ── IDG CONSTRUCTION and the current IDG node (pl-tabling.c:7824-8560, TAB1 TB6) ─────────────────────
+# DIVERGES (the block): a node's table pool is `ld.tabling.node_pool` (upstream `atrie->alloc_pool`: the private tables'
+# pool; a shared table's pool and registry, `GD->tabling.idg_registry`, are the threads', TH1); `n.atrie` is an index
+# into `gd.tries`; a callback of `idg_set_clear` gets `(ld, node)` as its context (upstream: the node, and `GET_LD`).
+# The monotonic dependencies (`idg_mdep` chains, `mono_index_*`, `new_mdep`, `find_dep`) are TB7's, in the MONOTONIC
+# TABLING block below; a shared table (`TRIE_ISSHARED`) is refused by name, owner TH1.
+
+# PORT: pl-tabling.c idg_pool
+"The table pool the IDG node `n` is charged to (pl-tabling.c `idg_pool`)."
+idg_pool(ld::PL_local_data{T}, n::idg_node{T}) where {T} = ld.tabling.node_pool
+
+# PORT: pl-tabling.c idg_new
+# DIVERGES: a shared table is refused by name (TH1) before the pool is charged; a trie that is not yet in `gd.tries`
+# (`serial` 0) is entered there (`trie_symbol`), as `n.atrie` names it by that index.
+"A new IDG node of the answer trie `atrie`, in the thread's registry; `nothing` after a resource error (pl-tabling.c `idg_new`)."
+function idg_new(
+    ld::PL_local_data{T}, atrie::trie{T}
+)::Union{Nothing, idg_node{T}} where {T}
+    pool = ld.tabling.node_pool
+
+    (atrie.flags & TRIE_ISSHARED) != 0 &&
+        tbl_refuse(
+            T, :idg_new, "idg_new: the IDG registry of the shared tables (O_PLMT)", "TH1"
+        )
+    alloc_from_pool(ld, pool, SIZEOF_IDG_NODE) || return nothing
+    atrie.serial == 0 && trie_symbol(_query_gd(ld), atrie)   # `n.atrie` is the index in `gd.tries`
+    n = idg_node{T}(atrie.serial)
+
+    reg = ld.tabling.idg_registry
+    if reg === nothing
+        reg = ld.tabling.idg_registry = idg_registry_new(idg_node{T})
+    end
+    index = idg_registry_add(ld, reg, n, pool)
+    if index < 0 || index > typemax(UInt32)             # includes (size_t)-1: error
+        if index >= 0
+            idg_registry_delete(reg, index)
+            PL_resource_error(ld, "table_space")
+        end
+        free_to_pool(pool, SIZEOF_IDG_NODE)
+        return nothing
+    end
+    n.registry_index = index
+    n.registry = reg
+
+    return n
+end
+
+# PORT: pl-tabling.c idg_release_registry
+"Release the IDG nodes of the thread of `ld` (pl-tabling.c `idg_release_registry`)."
+function idg_release_registry(ld::PL_local_data{T})::Nothing where {T}
+    if (reg = ld.tabling.idg_registry) !== nothing
+        ld.tabling.idg_registry = nothing
+        idg_registry_release(reg)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_mono_deps
+"The monotonic dependencies of `n` (parent -> chain), `nothing`: none (pl-tabling.c `idg_mono_deps`)."
+function idg_mono_deps(
+    n::idg_node{T}
+)::Union{Nothing, IdDict{idg_node{T}, idg_mdep{T, idg_node{T}}}} where {T}
+    m = n.mono
+    return m !== nothing ? m.deps : nothing
+end
+
+# PORT: pl-tabling.c idg_mono_index
+"The trie index of `n`'s monotonic dependencies by skeleton, 0: none (pl-tabling.c `idg_mono_index`)."
+function idg_mono_index(n::idg_node{T})::Int where {T}
+    m = n.mono
+    return m !== nothing ? m.index : 0
+end
+
+# PORT: pl-tabling.c idg_mono_index_deps
+"The index leaf -> dependencies map of `n`, `nothing`: none (pl-tabling.c `idg_mono_index_deps`)."
+function idg_mono_index_deps(
+    n::idg_node{T}
+)::Union{Nothing, Dict{Int, idg_mdep{T, idg_node{T}}}} where {T}
+    m = n.mono
+    return m !== nothing ? m.index_deps : nothing
+end
+
+# PORT: pl-tabling.c idg_ensure_mono
+"Make sure `n` has an `idg_mono`; `nothing` after a resource error (pl-tabling.c `idg_ensure_mono`)."
+function idg_ensure_mono(
+    ld::PL_local_data{T}, n::idg_node{T}
+)::Union{Nothing, idg_mono{T, idg_node{T}}} where {T}
+    m = n.mono
+    if m === nothing
+        alloc_from_pool(ld, idg_pool(ld, n), SIZEOF_IDG_MONO) || return nothing
+        m = idg_mono{T, idg_node{T}}(nothing, 0, nothing)
+        n.mono = m                                      # COMPARE_AND_SWAP_PTR(&n->mono, NULL, m)
+    end
+
+    return m
+end
+
+# PORT: pl-tabling.c idg_lingering
+# DIVERGES: the owner of the lingering list (`nothing`: NULL), see src/pl-incl.jl.
+"Where replaced blocks of `n`'s edge sets go: `nothing` if only this thread accesses them (pl-tabling.c `idg_lingering`)."
+function idg_lingering(
+    ld::PL_local_data{T}, n::idg_node{T}
+)::Union{Nothing, idg_node{T}} where {T}
+    gd = _query_gd(ld)
+    (n.concurrent || (gd.tries[n.atrie].flags & TRIE_ISSHARED) != 0) && return n
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_mdeps
+"The chain of monotonic dependencies of the edge `child` -> `parent`, or `nothing` (pl-tabling.c `idg_mdeps`)."
+function idg_mdeps(
+    child::idg_node{T}, parent::idg_node{T}
+)::Union{Nothing, idg_mdep{T, idg_node{T}}} where {T}
+    t = idg_mono_deps(child)
+    t !== nothing && return get(t, parent, nothing)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_clean_affected
+"Remove the edges from `node` to its parents (pl-tabling.c `idg_clean_affected`)."
+function idg_clean_affected(ld::PL_local_data{T}, node::idg_node{T})::Nothing where {T}
+    idg_set_clear(
+        node.affected,
+        idg_free_affected,
+        (ld, node),
+        idg_lingering(ld, node),
+        idg_pool(ld, node)
+    )
+end
+
+# PORT: pl-tabling.c idg_clean_dependent
+"Remove the edges from the children of `node` (pl-tabling.c `idg_clean_dependent`)."
+function idg_clean_dependent(ld::PL_local_data{T}, node::idg_node{T})::Nothing where {T}
+    idg_set_clear(
+        node.dependent,
+        idg_free_dependent,
+        (ld, node),
+        idg_lingering(ld, node),
+        idg_pool(ld, node)
+    )
+end
+
+# PORT: pl-tabling.c idg_reset
+"Remove the edges of `node` and reset its re-evaluation state (pl-tabling.c `idg_reset`)."
+function idg_reset(ld::PL_local_data{T}, node::idg_node{T})::Nothing where {T}
+    idg_clean_affected(ld, node)
+    idg_clean_dependent(ld, node)
+    node.answer_count = 0
+    node.new_answer = false
+    node.reevaluating = false
+    node.falsecount = 0
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_free_node
+"Discharge the bytes of the node `n` and its `idg_mono` from `pool` (pl-tabling.c `idg_free_node`)."
+function idg_free_node(n::idg_node{T}, pool::Union{Nothing, alloc_pool})::Nothing where {T}
+    n.mono !== nothing && free_to_pool(pool, SIZEOF_IDG_MONO)
+    free_to_pool(pool, SIZEOF_IDG_NODE)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_destroy
+# DIVERGES: see the block note of the monotonic tabling (TB7): the index trie of `mono_index_release` stays in `gd.tries`.
+"Remove the edges of `node`, leave the registry and free it (pl-tabling.c `idg_destroy`)."
+function idg_destroy(ld::PL_local_data{T}, node::idg_node{T})::Nothing where {T}
+    idg_clean_affected(ld, node)
+    idg_clean_dependent(ld, node)
+    if (m = node.mono) !== nothing && m.deps !== nothing
+        m.deps = nothing                                # destroyHTablePP(table)
+    end
+    mono_index_release(node)
+    idg_set_free_lingering(node, idg_pool(ld, node))
+    idg_registry_delete(node.registry::idg_registry{idg_node{T}}, node.registry_index)
+    idg_free_or_defer(idg_free_node, node, idg_pool(ld, node))
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_free_mdeps_affected
+"The `idg_set_clear` callback of `idg_destroy_private`: free the dependencies of the edge to `p` (pl-tabling.c)."
+function idg_free_mdeps_affected(
+    p::idg_node{T}, ctx::Tuple{PL_local_data{T}, idg_node{T}}
+)::Nothing where {T}
+    idg_free_mdeps(ctx[1], ctx[2], p)
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_destroy_private
+# DIVERGES: see `idg_destroy` for `mono_index_release`; the callback's context is `(ld, node)`.
+"As `idg_destroy` for a node whose neighbours are destroyed with it; the caller releases the registry (pl-tabling.c)."
+function idg_destroy_private(ld::PL_local_data{T}, node::idg_node{T})::Nothing where {T}
+    if idg_mono_deps(node) !== nothing
+        idg_set_clear(
+            node.affected,
+            idg_free_mdeps_affected,
+            (ld, node),
+            idg_lingering(ld, node),
+            idg_pool(ld, node)
+        )
+    else
+        idg_set_clear(
+            node.affected, nothing, (ld, node), idg_lingering(ld, node), idg_pool(ld, node)
+        )
+    end
+    idg_set_clear(
+        node.dependent, nothing, nothing, idg_lingering(ld, node), idg_pool(ld, node)
+    )
+    if (m = node.mono) !== nothing && m.deps !== nothing
+        m.deps = nothing                                # destroyHTablePP(table)
+    end
+    mono_index_release(node)
+    idg_set_free_lingering(node, idg_pool(ld, node))
+    idg_free_or_defer(idg_free_node, node, idg_pool(ld, node))
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_free_affected
+# DIVERGES: `ctx` is `(ld, child)`; the `Sdprintf` of a missing backlink is `@warn` (upstream prints "OOPS").
+"The edge child -> `p` left `child.affected`: remove the other half (pl-tabling.c `idg_free_affected`)."
+function idg_free_affected(
+    p::idg_node{T}, ctx::Tuple{PL_local_data{T}, idg_node{T}}
+)::Nothing where {T}
+    ld, child = ctx
+    parent = p
+
+    idg_free_mdeps(ld, child, parent)
+    if !idg_set_delete(
+        parent.dependent, child, idg_lingering(ld, parent), idg_pool(ld, parent)
+    )
+        @warn "OOPS: idg_free_affected() failed to delete backlink"
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_free_dependent
+# DIVERGES: see `idg_free_affected`; `ctx` is `(ld, parent)`; `WL_DYNAMIC` is TB1's sentinel in `trie.worklist`.
+"The edge `p` -> parent left `parent.dependent`: remove the other half (pl-tabling.c `idg_free_dependent`)."
+function idg_free_dependent(
+    p::idg_node{T}, ctx::Tuple{PL_local_data{T}, idg_node{T}}
+)::Nothing where {T}
+    ld, parent = ctx
+    child = p
+
+    if idg_set_delete(child.affected, parent, idg_lingering(ld, child), idg_pool(ld, child))
+        ctrie = _query_gd(ld).tries[child.atrie]
+
+        idg_free_mdeps(ld, child, parent)
+        if ctrie.worklist == WL_DYNAMIC && (ctrie.flags & TRIE_ISSHARED) == 0 &&
+            idg_set_is_empty(child.affected)
+            ld.tabling.dyn_orphan_events += 1           # see sweep_orphan_dynamic_tables()
+        end
+    else
+        @warn "OOPS: idg_free_dependent() failed to delete backlink"
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_add_child
+# DIVERGES: a shared parent or child (`idg_dependency_error`, `concurrent`) is TH1's: refused by name; the monotonic dependency
+# (`dep` not 0) is `idg_add_child_dep` (TB7). The DEBUG print is not kept.
+"Create the edge `child` -> `parent`, both halves or neither; false after a resource error (pl-tabling.c `idg_add_child`)."
+function idg_add_child(
+    ld::PL_local_data{T}, parent::idg_node{T}, child::idg_node{T}, dep::term_t, flags::Int
+)::Bool where {T}
+    gd = _query_gd(ld)
+    ((gd.tries[parent.atrie].flags | gd.tries[child.atrie].flags) & TRIE_ISSHARED) != 0 &&
+        tbl_refuse(
+            T,
+            :idg_dependency_error,
+            "idg_add_child: an edge with a shared table (O_PLMT)",
+            "TH1"
+        )
+
+    # both halves or neither
+    added = idg_set_add(
+        ld, child.affected, parent, idg_lingering(ld, child), idg_pool(ld, child)
+    )
+    added < 0 && return false
+    if idg_set_add(
+        ld, parent.dependent, child, idg_lingering(ld, parent), idg_pool(ld, parent)
+    ) < 0
+        if added != 0
+            idg_set_delete(
+                child.affected, parent, idg_lingering(ld, child), idg_pool(ld, child)
+            )
+        end
+        return false
+    end
+
+    dep != 0 && return idg_add_child_dep(ld, parent, child, dep)    # the monotonic dependency (TB7)
+
+    return true
+end
+
+# PORT: pl-tabling.c idg_init_variant
+"Give the answer trie `atrie` of a monotonic or incremental predicate an IDG node (pl-tabling.c `idg_init_variant`)."
+function idg_init_variant(
+    ld::PL_local_data{T}, atrie::trie{T}, def::Union{Nothing, Definition{T}},
+    variant::term_t
+)::Bool where {T}
+    if atrie.IDG === nothing
+        if def === nothing
+            proc = get_procedure(
+                _query_gd(ld), ld, variant, GP_RESOLVE | GP_EXISTENCE_ERROR
+            )
+
+            proc === nothing && return false
+            def = proc.definition
+        end
+
+        if def.tabling !== nothing &&
+            (def.tabling.flags & (TP_MONOTONIC | TP_INCREMENTAL)) != 0
+            n = idg_new(ld, atrie)
+
+            n === nothing && return false
+            if def.tabling !== nothing
+                (def.tabling.flags & TP_MONOTONIC) != 0 && (n.monotonic = true)
+                (def.tabling.flags & TP_LAZY) != 0 && (n.lazy = true)
+            end
+
+            atrie.IDG = n                               # COMPARE_AND_SWAP_PTR(&atrie->data.IDG, NULL, n)
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c set_idg_current
+# DIVERGES: `LD->tabling.idg_current` references a PERMANENT global cell (src/pl-setup.jl, as the wakeup list's head),
+# so the assignment is trailed on the global stack; `nothing` is NULL (the cell is made unbound, `setVar`).
+"Make the table `atrie` (`nothing`: none) the current IDG node, backtrackable (pl-tabling.c `set_idg_current`)."
+function set_idg_current(
+    ld::PL_local_data{T}, atrie::Union{Nothing, trie{T}}
+)::Bool where {T}
+    ensureGlobalSpace(ld, 0) || return false
+    p = unRef(ld.slots[ld.tabling.idg_current + 1])     # valTermRef(LD->tabling.idg_current)
+    TrailAssignment!(ld, p)
+    if atrie !== nothing
+        ld.gstack[p] = trie_symbol(_query_gd(ld), atrie)
+    else
+        ld.gstack[p] = word(0)                          # setVar(*p)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c idg_current
+"The table of the current IDG node, or `nothing` (pl-tabling.c `idg_current`)."
+function idg_current(ld::PL_local_data{T})::Union{Nothing, trie{T}} where {T}
+    current = ld.gstack[unRef(ld.slots[ld.tabling.idg_current + 1])]
+
+    current != 0 && return symbol_trie(_query_gd(ld), current)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_add_edge
+"Add an edge from `ctrie` (`nothing`: the current node) to `atrie`: 1 created, 0 failed, -1 no current node (pl-tabling.c)."
+function idg_add_edge(
+    ld::PL_local_data{T}, atrie::trie{T}, ctrie::Union{Nothing, trie{T}}
+)::Int where {T}
+    if (aidg = atrie.IDG) !== nothing
+        if ctrie === nothing
+            ctrie = idg_current(ld)
+        end
+
+        if ctrie !== nothing && (cidg = ctrie.IDG) !== nothing
+            return idg_add_child(ld, cidg, aidg, 0, 0) ? 1 : 0
+        end
+    end
+
+    return -1
+end
+
+# PORT: pl-tabling.c idg_add_edge as pl_idg_add_edge1_va
+# (PRED_IMPL("$idg_add_edge", 1, idg_add_edge, 0))
+"`'\$idg_add_edge'(+ATrie)`: add `ATrie` as a child of the current IDG node (pl-tabling.c)."
+function pl_idg_add_edge1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    ctrie = idg_current(ld)
+
+    if ctrie !== nothing && ctrie.IDG !== nothing
+        atrie = get_trie(_query_gd(ld), ld, A1)
+
+        atrie !== nothing && return idg_add_edge(ld, atrie, ctrie) != 0 ? FTRUE : FFALSE
+        return FFALSE
+    end
+
+    return FTRUE
+end
+
+# PORT: pl-tabling.c idg_set_current as pl_idg_set_current2_va
+# (PRED_IMPL("$idg_set_current", 2, idg_set_current, 0))
+# DIVERGES: the old current symbol is unified as `unify_trie` does (`_blob_term!`, `PL_unify_atomic`; upstream `PL_unify_atom`).
+"`'\$idg_set_current'(-OldCurrent, +ATrie)`: make `ATrie` the current IDG node, unify the old one (pl-tabling.c)."
+function pl_idg_set_current2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie(_query_gd(ld), ld, A2)
+
+    if atrie !== nothing
+        current = ld.gstack[unRef(ld.slots[ld.tabling.idg_current + 1])]
+
+        if current != 0
+            gd = _query_gd(ld)
+            PL_unify_atomic(ld, A1, _blob_term!(gd.atoms, gd.atom_symbols, T, current)) ||
+                return FFALSE
+        end
+        return set_idg_current(ld, atrie) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c trie_for_dynamic_predicate
+# DIVERGES: a shared current table (`AT_SHARED`, `P_THREAD_LOCAL`, `idg_dependency_error_dyncall`) is TH1's: refused by name.
+"The answer trie of the incremental dynamic call `variant`, with an IDG node (pl-tabling.c `trie_for_dynamic_predicate`)."
+function trie_for_dynamic_predicate(
+    ld::PL_local_data{T}, def::Union{Nothing, Definition{T}}, ctrie::trie{T},
+    variant::term_t
+)::Union{Nothing, trie{T}} where {T}
+    flags = AT_CREATE | AT_NOCLAIM
+
+    if (ctrie.flags & TRIE_ISSHARED) != 0
+        tbl_refuse(
+            T,
+            :trie_for_dynamic_predicate,
+            "trie_for_dynamic_predicate: a shared table (O_PLMT)",
+            "TH1"
+        )
+    else
+        flags |= AT_PRIVATE
+    end
+
+    if (atrie = get_answer_table(ld, nothing, variant, 0, Int(flags))) !== nothing
+        if atrie.IDG === nothing
+            @assert atrie.worklist === nothing || atrie.worklist == WL_GROUND
+            atrie.worklist = WL_DYNAMIC
+            atrie.predicate = def
+            n = idg_new(ld, atrie)
+            n === nothing && return nothing
+            atrie.IDG = n                               # COMPARE_AND_SWAP_PTR(&atrie->data.IDG, NULL, n)
+        end
+
+        (atrie.IDG::idg_node{T}).falsecount = 0         # see (*) above
+        return atrie
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_add_dyncall
+"Add the edge from `ctrie` to the call `variant` of an incremental dynamic predicate (pl-tabling.c `idg_add_dyncall`)."
+function idg_add_dyncall(
+    ld::PL_local_data{T}, def::Union{Nothing, Definition{T}}, ctrie::trie{T},
+    variant::term_t
+)::Bool where {T}
+    if (atrie = trie_for_dynamic_predicate(ld, def, ctrie, variant)) !== nothing
+        return idg_add_edge(ld, atrie, ctrie) != 0
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c idg_add_dyncall as pl_idg_add_dyncall1_va
+# (PRED_IMPL("$idg_add_dyncall", 1, idg_add_dyncall, 0))
+"`'\$idg_add_dyncall'(+Variant)`: a call to an incremental dynamic predicate (pl-tabling.c)."
+function pl_idg_add_dyncall1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    ctrie = idg_current(ld)
+
+    if ctrie !== nothing && ctrie.IDG !== nothing
+        return idg_add_dyncall(ld, nothing, ctrie, A1) ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
+
+# ORIGINAL (TAB1 TB6): the body of pl-vmi.c S_INCR_DYNAMIC (:3527-3549 at 18168e629eab) between `SAVE_REGISTERS` and
+# `LOAD_REGISTERS`, called by the run loop (src/pl-wam.jl) with the current table `ctrie` (it has an IDG node).
+# DIVERGES: `put_supervisor_goal` is TB3's (the frame `fr` is an argument); `Sdprintf` is `_qlf_Sdprintf!` (the local data's
+# collected messages); an exception stays in `ld.exception_term` for the run loop.
+"Add the IDG edge from `ctrie` to the call of the incremental dynamic `def` in frame `fr` (pl-vmi.c `S_INCR_DYNAMIC`)."
+function incr_dynamic_call(
+    ld::PL_local_data{T}, def::Definition{T}, fr::Int, ctrie::trie{T}
+)::Nothing where {T}
+    tp = def.tabling
+    abstract = tp !== nothing && tp.abstract != -1  # DEF->tabling->abstract != (size_t)-1
+
+    if abstract && tp.abstract != 0
+        _qlf_Sdprintf!(ld, "% WARNING: Only abstract(0) is supported\n")
+    end
+
+    if (fid = PL_open_foreign_frame(ld)) != 0
+        t = PL_new_term_ref(ld)
+
+        if put_supervisor_goal(ld, t, def, fr, abstract)
+            idg_add_dyncall(ld, def, ctrie, t)
+        end
+        PL_close_foreign_frame(ld, fid)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_set_current as pl_idg_set_current1_va
+# (PRED_IMPL("$idg_set_current", 1, idg_set_current, 0))
+"`'\$idg_set_current'(+ATrie)`: make `ATrie` the current IDG node; not a trie: none (pl-tabling.c)."
+function pl_idg_set_current1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    atrie = get_trie_noex(_query_gd(ld), ld, A1)
+
+    return set_idg_current(ld, atrie) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c idg_reset_current as pl_idg_reset_current0_va
+# (PRED_IMPL("$idg_reset_current", 0, idg_reset_current, 0))
+"`'\$idg_reset_current'`: no current IDG node (pl-tabling.c)."
+function pl_idg_reset_current0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return set_idg_current(ld, nothing) ? FTRUE : FFALSE
+end
+
+# ── IDG QUERYING (pl-tabling.c:8562-8850, TAB1 TB6) ───────────────────────────────────────────────────
+# DIVERGES (the block): the state lives on the Julia heap and `save_idg_edge_state` copies it into a record of
+# `ld.tabling.idg_edge_states` (upstream: `allocForeignState`), whose index is the REDO_PTR context; `Mark`/`Undo` of the
+# FLI context are a foreign frame opened and rewound (as nb_current/2, src/pl-gvar.jl). The monotonic generators that share
+# `idg_edge_gen` (`$idg_mono_affects*`: `dep`, `answers`, `IDG_MONO_AFFECTS`) are TB7's: refused by name.
+
+# PORT: pl-tabling.c IDG_MONO_AFFECTS
+"`idg_edge_gen` flag of `'\$idg_mono_affects'/3` (pl-tabling.c)."
+const IDG_MONO_AFFECTS = 0x1
+
+# PORT: pl-tabling.c advance_idg_edge_state
+"Step `state` to the next edge (and the next dependency of a monotonic one); false when done (pl-tabling.c)."
+function advance_idg_edge_state(
+    ld::PL_local_data{T}, state::idg_edge_state{T}
+)::Bool where {T}
+    gd = _query_gd(ld)
+
+    while true                                          # retry:
+        if state.monotonic &&
+            (d = state.dependencies) !== nothing &&
+            (nx = d.next) isa idg_mdep &&
+            nx.magic == IDG_MDEP_MAGIC
+            state.dependencies = nx
+            return true
+        end
+
+        n = idg_set_next(state.en::idg_set_enum{idg_node{T}})
+        if n !== nothing
+            self = (state.atrie::trie{T}).IDG::idg_node{T}
+
+            if gnd_equal(state.dir::T, mk_sym(T, :affected))  # edge self->n
+                mdep = idg_mdeps(self, n)
+            elseif state.lazy                           # edge n->self
+                mdep = idg_mdeps(n, self)
+            else
+                mdep = nothing
+            end
+
+            state.dependencies = nothing
+            if mdep !== nothing
+                state.dependencies = mdep
+                state.force_reeval = n.force_reeval
+            end
+
+            state.deptrie_symbol = trie_symbol(gd, gd.tries[n.atrie])
+            return true
+        else
+            if !state.fixed_dir && gnd_equal(state.dir::T, mk_sym(T, :affected))
+                self = (state.atrie::trie{T}).IDG::idg_node{T}
+
+                if !idg_set_is_empty(self.dependent)
+                    state.dir = mk_sym(T, :dependent)
+                    state.set = self.dependent
+                    state.en = idg_set_enum_init(self.dependent)
+                    continue                            # goto retry
+                end
+            end
+        end
+
+        return false
+    end
+end
+
+# PORT: pl-tabling.c free_idg_edge_state
+# DIVERGES: `idx` is the record's index in `ld.tabling.idg_edge_states` (0: not saved).
+"Give a saved `state` back (pl-tabling.c `free_idg_edge_state`)."
+function free_idg_edge_state(
+    ld::PL_local_data{T}, state::idg_edge_state{T}, idx::Int
+)::Nothing where {T}
+    if state.allocated
+        free_foreign_state!(ld.tabling.idg_edge_states, idx)    # freeForeignState(state, sizeof(*state))
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c save_idg_edge_state
+# DIVERGES: returns the record's index (upstream: the copy's address); `idx` is the index of a saved `state`.
+"Copy `state` to a record of the pool if it is not one: its index (pl-tabling.c `save_idg_edge_state`)."
+function save_idg_edge_state(
+    ld::PL_local_data{T}, state::idg_edge_state{T}, idx::Int
+)::Int where {T}
+    if !state.allocated
+        pool = ld.tabling.idg_edge_states
+        i = alloc_foreign_state!(pool)                  # allocForeignState(sizeof(*n))
+        n = pool.states[i]
+
+        n.atrie = state.atrie                           # *n = *state
+        n.set = state.set
+        n.en = state.en
+        n.dir = state.dir
+        n.fixed_dir = state.fixed_dir
+        n.monotonic = state.monotonic
+        n.lazy = state.lazy
+        n.force_reeval = state.force_reeval
+        n.dyn_or_complete = state.dyn_or_complete
+        n.deptrie_symbol = state.deptrie_symbol
+        n.dependencies = state.dependencies
+        n.allocated = true
+        return i
+    end
+
+    return idx
+end
+
+# PORT: pl-tabling.c idg_edge_gen
+# DIVERGES: see the block note; `dir`, `dep`, `depref`, `answers`, `status` are 0 for NULL; the monotonic dependency block is
+# `idg_edge_dep_step` (TB7), the dependency a Prolog integer reference (`mdep_ref!`).
+"The generator of `'\$idg_edge'/3` and `'\$idg_false_edge'/3` over the edges of the IDG node of `from` (pl-tabling.c)."
+function idg_edge_gen(
+    ld::PL_local_data{T}, from::term_t, dir::term_t, To::term_t, dep::term_t,
+    depref::term_t,
+    answers::term_t, status::term_t, flags::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    idx = 0
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        state = idg_edge_state{T}()                     # state = &sbuf; memset(state, 0, sizeof(*state))
+
+        (state.atrie = get_trie(gd, ld, from)) === nothing && return FFALSE
+        atrie = state.atrie::trie{T}
+        atrie.IDG === nothing && return FFALSE
+        self = atrie.IDG::idg_node{T}
+
+        if dir == 0
+            state.fixed_dir = true
+            if status != 0                              # '$idg_false_edge'/3
+                state.lazy = false
+                state.dir = mk_sym(T, :dependent)
+                state.set = self.dependent
+            else
+                state.monotonic = true
+                if answers != 0                         # '$idg_mono_affects_lazy'/5
+                    self.lazy || return FFALSE
+                    state.lazy = true
+                    state.dir = mk_sym(T, :dependent)
+                    state.set = self.dependent
+                else                                    # '$idg_mono_affects[_eager]'/3
+                    state.lazy = false
+                    state.dir = mk_sym(T, :affected)
+                    state.set = self.affected
+                end
+            end
+        elseif PL_is_variable(ld, dir)
+            if !idg_set_is_empty(self.affected)
+                state.dir = mk_sym(T, :affected)
+                state.set = self.affected
+            elseif !idg_set_is_empty(self.dependent)
+                state.dir = mk_sym(T, :dependent)
+                state.set = self.dependent
+                PL_unify_atom(ld, dir, mk_sym(T, :dependent)) || return FFALSE
+                state.fixed_dir = true
+            else
+                return FFALSE
+            end
+        elseif (state.dir = PL_get_atom_ex(ld, dir)) !== nothing
+            state.fixed_dir = true
+            if gnd_equal(state.dir::T, mk_sym(T, :affected))
+                state.set = self.affected
+            elseif gnd_equal(state.dir::T, mk_sym(T, :dependent))
+                state.set = self.dependent
+            else
+                return PL_domain_error(ld, "idg_edge_dir", dir) ? FTRUE : FFALSE
+            end
+        end
+
+        (state.set === nothing || idg_set_is_empty(state.set::idg_set{idg_node{T}})) &&
+            return FFALSE
+
+        if PL_is_variable(ld, To)
+            state.en = idg_set_enum_init(state.set::idg_set{idg_node{T}})
+            if !advance_idg_edge_state(ld, state)
+                free_idg_edge_state(ld, state, idx)
+                return FFALSE
+            end
+        elseif (to = get_trie(gd, ld, To)) !== nothing
+            return if to.IDG !== nothing &&
+                idg_set_contains(state.set::idg_set{idg_node{T}}, to.IDG::idg_node{T})
+                FTRUE
+            else
+                FFALSE
+            end
+        else
+            return FFALSE                               # get_trie() raised the error (upstream continues at FRG_REDO)
+        end
+    elseif ctl == FRG_REDO
+        idx = PL_foreign_context_address(PL__ctx)       # state = CTX_PTR
+        state = ld.tabling.idg_edge_states.states[idx]
+    else                                                # FRG_CUTTED
+        idx = PL_foreign_context_address(PL__ctx)
+        state = ld.tabling.idg_edge_states.states[idx]
+        free_idg_edge_state(ld, state, idx)
+        return FTRUE
+    end
+
+    t = 0
+    if dep != 0
+        t = PL_new_term_ref(ld)
+        if t == 0
+            free_idg_edge_state(ld, state, idx)
+            return FFALSE
+        end
+    end
+
+    fid = PL_open_foreign_frame(ld)                     # Mark(fli_context->mark)
+    fid == 0 && @goto out_fail
+    while true
+        if dep != 0                                     # monotonic dependency
+            r = idg_edge_dep_step(ld, state, dep, depref, answers, flags, t)
+            r < 0 && @goto out_error
+            r == 0 && @goto next
+        end
+
+        if status != 0                                  # '$idg_false_edge'/3
+            dtrie = symbol_trie(gd, state.deptrie_symbol)::trie{T}
+            astat = table_status_reeval_wait(ld, dtrie)
+
+            if astat !== nothing
+                if gnd_equal(astat, mk_sym(T, :dynamic)) ||
+                    gnd_equal(astat, mk_sym(T, :complete))
+                    if state.dyn_or_complete
+                        @goto next
+                    else
+                        state.dyn_or_complete = true
+                    end
+                end
+
+                PL_unify_atom(ld, status, astat) || @goto out_error
+            else
+                @goto out_error                         # Deadlock
+            end
+        end
+
+        if PL_unify_atomic(
+            ld, To, _blob_term!(gd.atoms, gd.atom_symbols, T, state.deptrie_symbol)
+        )
+            if state.fixed_dir || PL_unify_atom(ld, dir, state.dir::T)
+                PL_close_foreign_frame(ld, fid)
+                advance_idg_edge_state(ld, state) &&
+                    return PL_retry_address(save_idg_edge_state(ld, state, idx))
+                free_idg_edge_state(ld, state, idx)
+                return FTRUE
+            end
+        end
+
+        PL_exception(ld, 0) != 0 && @goto out_error
+
+        @label next
+        PL_rewind_foreign_frame(ld, fid)                # Undo(fli_context->mark)
+        advance_idg_edge_state(ld, state) || break
+    end
+    PL_close_foreign_frame(ld, fid)
+
+    @label out_fail
+    free_idg_edge_state(ld, state, idx)
+    return FFALSE
+
+    @label out_error
+    @assert PL_exception(ld, 0) != 0
+    PL_close_foreign_frame(ld, fid)
+    free_idg_edge_state(ld, state, idx)
+    return FFALSE
+end
+
+# PORT: pl-tabling.c idg_edge as pl_idg_edge3_va
+# (PRED_IMPL("$idg_edge", 3, idg_edge, PL_FA_NONDETERMINISTIC))
+"`'\$idg_edge'(+ATrie, ?Direction, -DTrie)`: enumerate the edges of the dependency graph (pl-tabling.c)."
+function pl_idg_edge3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+
+    return idg_edge_gen(ld, A1, A2, A3, 0, 0, 0, 0, 0, PL__ctx)
+end
+
+# PORT: pl-tabling.c idg_false_edge as pl_idg_false_edge3_va
+# (PRED_IMPL("$idg_false_edge", 3, idg_false_edge, PL_FA_NONDETERMINISTIC))
+"`'\$idg_false_edge'(+ATrie, -DTrie, -Status)`: as `'\$idg_edge'(ATrie, dependent, DTrie)`, one dynamic or complete edge (pl-tabling.c)."
+function pl_idg_false_edge3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+
+    return idg_edge_gen(ld, A1, 0, A2, 0, 0, 0, A3, 0, PL__ctx)
+end
+
+# PORT: pl-tabling.c table_status_reeval_wait
+# DIVERGES: the single-thread build (no `claim_answer_table` of another thread's table: TH1); `nothing` is upstream's 0.
+# Ported here for `'$idg_false_edge'/3`; `'$tbl_reeval_wait'/2` (its predicate) is TB6c's.
+"The status of `atrie`: `dynamic`, `invalid`, `monotonic` or its `table_status`; `nothing`: no IDG node (pl-tabling.c)."
+function table_status_reeval_wait(
+    ld::PL_local_data{T}, atrie::trie{T}
+)::Union{Nothing, T} where {T}
+    if (n = atrie.IDG) !== nothing
+        wl = atrie.worklist
+        if wl isa Int && wl == WL_DYNAMIC
+            return mk_sym(T, :dynamic)
+        elseif n.falsecount > 0 && n.lazy
+            return mk_sym(T, :invalid)
+        elseif n.monotonic
+            return mk_sym(T, :monotonic)
+        else
+            return table_status(ld, atrie)
+        end
+    end
+
+    return nothing
+end
+
+# ── IDG CHANGE PROPAGATION (pl-tabling.c:8994-9203, TAB1 TB6) ─────────────────────────────────────────
+# DIVERGES (the block): the monotonic transitions (`force_reeval`, `mdep_empty_queues`: a monotonic parent of a changed
+# node) are TB7's and refused by name; the re-validation of a shared table of this thread (`O_PLMT`, `COMPLETE_WORKLIST`)
+# is TH1's (a shared table is refused at `idg_new`). The `DEBUG` prints are not kept (`idg_flag_name` is O_DEBUG only).
+
+# PORT: pl-tabling.c IDG_CHANGED_NODE
+"`idg_changed` flag: a normal node change (pl-tabling.c)."
+const IDG_CHANGED_NODE = 1
+# PORT: pl-tabling.c IDG_CHANGED_MONO
+"`idg_changed` flag: a monotonic node change (pl-tabling.c)."
+const IDG_CHANGED_MONO = 2
+# PORT: pl-tabling.c IDG_PROPAGATE_FORCE
+"`idg_propagate_change` flag: monotonic to incremental evaluation (pl-tabling.c)."
+const IDG_PROPAGATE_FORCE = 4
+
+# PORT: pl-tabling.c idg_changed_loop
+"Walk the parents of `state.child` and on, raising (`IDG_CHANGED_NODE`) or lowering the falsecounts (pl-tabling.c)."
+function idg_changed_loop(
+    ld::PL_local_data{T}, state::idg_propagate_state{T}, flags::Int
+)::Nothing where {T}
+    gd = _query_gd(ld)
+
+    while true
+        while (n = idg_set_next(state.en)) !== nothing
+            n.reevaluating && continue
+
+            if (flags & IDG_PROPAGATE_FORCE) != 0       # See (**)
+                if n.monotonic && !n.force_reeval
+                    mono_force_reeval(ld, state.child, n)
+                end
+                continue
+            end
+
+            if (flags & IDG_CHANGED_NODE) != 0          # Increment falsecount
+                atrie = gd.tries[n.atrie]
+                if table_is_incomplete(atrie)
+                    state.incomplete = atrie            # return?
+                end
+
+                if n.monotonic && !n.force_reeval && (flags & IDG_CHANGED_MONO) == 0
+                    mono_force_reeval(ld, state.child, n)
+                    idg_propagate_change(ld, n, IDG_PROPAGATE_FORCE)
+                end
+
+                n.falsecount += 1                       # ATOMIC_INC(&n->falsecount) == 1
+                if n.falsecount == 1
+                    n.stats_invalidated += 1            # TRIE_STAT_INC(n, invalidated)
+                    if !idg_set_is_empty(n.affected)
+                        push!(state.stack, n)           # pushSegStack(&state->stack, n, IDGNode)
+                    end
+                end
+            elseif !table_is_incomplete(gd.tries[n.atrie]) &&
+                !n.mono_reevaluating &&
+                (n.monotonic ? n.falsecount > 0 : true)  # see (***)
+                n.falsecount -= 1                       # size_t fc = ATOMIC_DEC(&n->falsecount)
+                fc = n.falsecount
+
+                @assert fc >= 0
+                if fc == 0
+                    n.force_reeval = false
+                    # O_PLMT: re-validating a shared table of this thread (COMPLETE_WORKLIST) is TH1's
+                    if !idg_set_is_empty(n.affected)
+                        push!(state.stack, n)           # pushSegStack(&state->stack, n, IDGNode)
+                    end
+                end
+            end
+        end
+        if !isempty(state.stack)                        # popSegStack(&state->stack, &next, IDGNode)
+            next = pop!(state.stack)
+            state.child = next
+            state.en = idg_set_enum_init(next.affected)
+        else
+            break
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_propagate_change
+"Propagate a change of `n` to the nodes it affects; the incomplete table hit, or `nothing` (pl-tabling.c)."
+function idg_propagate_change(
+    ld::PL_local_data{T}, n::idg_node{T}, flags::Int
+)::Union{Nothing, trie{T}} where {T}
+    if !idg_set_is_empty(n.affected)
+        state = idg_propagate_state{T}(
+            0, nothing, n, idg_set_enum_init(n.affected), idg_node{T}[]
+        )
+
+        idg_changed_loop(ld, state, flags)
+        empty!(state.stack)                             # clearSegStack(&state.stack)
+
+        return state.incomplete
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c change_incomplete_error
+# DIVERGES: the variant trie is TB1's `variant_table(ld, shared)` (upstream `unify_trie_term` finds it from the node).
+"Raise `permission_error(update, variant, Variant)` for the incomplete table `atrie`; false (pl-tabling.c)."
+function change_incomplete_error(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    v = PL_new_term_ref(ld)
+
+    v != 0 || return false
+    ok, _ = unify_trie_term(
+        ld, variant_table(ld, (atrie.flags & TRIE_ISSHARED) != 0), atrie.variant, v
+    )
+    ok || return false
+
+    return PL_error(
+        ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :update), mk_sym(T, :variant), v
+    )
+end
+
+# PORT: pl-tabling.c idg_need_invalidated
+"Whether a change of `n` must invalidate anything: a dynamic or eager monotonic node only if it affects one (pl-tabling.c)."
+function idg_need_invalidated(ld::PL_local_data{T}, n::idg_node{T})::Bool where {T}
+    wl = _query_gd(ld).tries[n.atrie].worklist
+    if (wl isa Int && wl == WL_DYNAMIC) || (n.monotonic && !n.lazy)
+        return !idg_set_is_empty(n.affected)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c idg_changed
+"The answers of `atrie` changed: invalidate the tables that depend on it; false after an error (pl-tabling.c `idg_changed`)."
+function idg_changed(ld::PL_local_data{T}, atrie::trie{T}, flags::Int)::Bool where {T}
+    if (n = atrie.IDG) !== nothing && n.falsecount == 0 && idg_need_invalidated(ld, n)
+        if table_is_incomplete(atrie)
+            (flags & IDG_CHANGED_MONO) != 0 && return true  # Incomplete table: stopping propagation
+            return change_incomplete_error(ld, atrie)
+        end
+        n.falsecount += 1                               # ATOMIC_INC(&n->falsecount) == 1
+        if n.falsecount == 1
+            n.stats_invalidated += 1                    # TRIE_STAT_INC(n, invalidated)
+            if (incomplete = idg_propagate_change(ld, n, flags)) !== nothing
+                n.falsecount = 0
+                idg_propagate_change(ld, n, 0)
+                return change_incomplete_error(ld, incomplete)
+            end
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c idg_changed as pl_idg_changed1_va
+# (PRED_IMPL("$idg_changed", 1, idg_changed, 0))
+"`'\$idg_changed'(+ATrie)`: the answers of `ATrie` changed, propagate (pl-tabling.c)."
+function pl_idg_changed1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    atrie !== nothing && return idg_changed(ld, atrie, IDG_CHANGED_NODE) ? FTRUE : FFALSE
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c idg_falsecount as pl_idg_falsecount2_va
+# (PRED_IMPL("$idg_falsecount", 2, idg_falsecount, 0))
+"`'\$idg_falsecount'(+ATrie, -Count)`: the falsecount of the IDG node of `ATrie` (pl-tabling.c)."
+function pl_idg_falsecount2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        if (n = atrie.IDG) !== nothing
+            return PL_unify_integer(ld, A2, n.falsecount) ? FTRUE : FFALSE
+        end
+
+        return FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c idg_set_falsecount as pl_idg_set_falsecount2_va
+# (PRED_IMPL("$idg_set_falsecount", 2, idg_set_falsecount, 0))
+"`'\$idg_set_falsecount'(+ATrie, +Count)`: set the falsecount of the IDG node of `ATrie` (pl-tabling.c)."
+function pl_idg_set_falsecount2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        if (n = atrie.IDG) !== nothing && (fc = PL_get_size_ex(ld, A2)) !== nothing
+            fc > typemax(UInt32) &&
+                return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :falsecount))
+                    FTRUE
+                else
+                    FFALSE
+                end
+            n.falsecount = fc
+            return FTRUE
+        end
+
+        return FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c idg_forced as pl_idg_forced1_va
+# (PRED_IMPL("$idg_forced", 1, idg_forced, 0))
+"`'\$idg_forced'(+ATrie)`: true if the IDG node of `ATrie` is forced to re-evaluate (pl-tabling.c)."
+function pl_idg_forced1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        if (n = atrie.IDG) !== nothing
+            return n.force_reeval ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# ── INSPECTING THE IDG of a thread (pl-tabling.c:9206-9493, TAB1 TB6) ─────────────────────────────────
+
+# PORT: pl-tabling.c idg_reader_registry
+# DIVERGES: the single-thread build (upstream's `#else`); `PL_get_thread_id_ex` is the threads' (TH1): the main thread
+# (`main`, or its id 1) is accepted, `shared` (the shared tables' registry) and any other thread are refused by name.
+"Enter the reader section; the IDG registry of `thread` (`nothing`: none) and true, or false after an error (pl-tabling.c)."
+function idg_reader_registry(
+    ld::PL_local_data{T}, thread::term_t
+)::Tuple{Bool, Union{Nothing, idg_registry{idg_node{T}}}} where {T}
+    a = PL_get_atom(ld, thread)
+    i = PL_get_integer(ld, thread)
+    if !((a !== nothing && gnd_equal(a, mk_sym(T, :main))) || (i !== nothing && i == 1))
+        tbl_refuse(
+            T,
+            :PL_get_thread_id_ex,
+            "idg_reader_registry: a thread but main, or the shared tables",
+            "TH1"
+        )
+    end
+    idg_reader_enter()
+
+    return true, ld.tabling.idg_registry
+end
+
+# pl-tabling.c `idg_summary` (the struct, pl-tabling.c:9256) has no Julia definition, so no PORT marker: `idg_thread_summary`
+# returns a named tuple (nodes, edges, bytes) (upstream fills the caller's struct).
+# PORT: pl-tabling.c idg_thread_summary
+# DIVERGES: `sizeof(*n)`, `sizeof(*n->mono)` are SIZEOF_IDG_NODE, SIZEOF_IDG_MONO (src/pl-incl.jl); `nothing`: an error.
+"The number of IDG nodes of `thread`, their edges to the nodes they affect and the table space (pl-tabling.c)."
+function idg_thread_summary(
+    ld::PL_local_data{T}, thread::term_t
+)::Union{Nothing, @NamedTuple{nodes::Int, edges::Int, bytes::Int}} where {T}
+    nodes = 0
+    edges = 0
+    bytes = 0
+
+    ok, reg = idg_reader_registry(ld, thread)
+    ok || return nothing
+    if reg !== nothing
+        count = idg_registry_count(reg)
+
+        bytes = idg_registry_sizeof(reg)
+        for i in 0:(count - 1)
+            n = idg_registry_get(reg, i)
+
+            if n !== nothing
+                nodes += 1
+                edges += idg_set_size(n.affected)
+                bytes +=
+                    SIZEOF_IDG_NODE +
+                    (n.mono !== nothing ? SIZEOF_IDG_MONO : 0) +
+                    idg_set_sizeof(n.affected) +
+                    idg_set_sizeof(n.dependent) +
+                    idg_set_lingering_sizeof(n.lingering)
+            end
+        end
+    end
+    idg_reader_exit()
+
+    return (nodes=nodes, edges=edges, bytes=bytes)
+end
+
+# PORT: pl-tabling.c idg_thread_summary as pl_idg_thread_summary3_va
+# (PRED_IMPL("$idg_thread_summary", 3, idg_thread_summary, 0))
+"`'\$idg_thread_summary'(+Thread, -Nodes, -Edges)`: the IDG nodes of `Thread` and their edges to the nodes they affect (pl-tabling.c)."
+function pl_idg_thread_summary3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    sum = idg_thread_summary(ld, A1)
+
+    return if sum !== nothing &&
+        PL_unify_int64(ld, A2, sum.nodes) &&
+        PL_unify_int64(ld, A3, sum.edges)
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-tabling.c idg_thread_space as pl_idg_thread_space2_va
+# (PRED_IMPL("$idg_thread_space", 2, idg_thread_space, 0))
+"`'\$idg_thread_space'(+Thread, -Bytes)`: the table space of the IDG of `Thread` (pl-tabling.c)."
+function pl_idg_thread_space2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    sum = idg_thread_summary(ld, A1)
+
+    return sum !== nothing && PL_unify_int64(ld, A2, sum.bytes) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c pair_map_get
+# DIVERGES: see `pair_map` (src/pl-incl.jl); returns the entry's index.
+"The entry of `(a, b)` in `m`, added with zero counts if it is new (pl-tabling.c `pair_map_get`)."
+function pair_map_get(
+    m::pair_map{T}, a::definition{T}, b::Union{Nothing, definition{T}}
+)::Int where {T}
+    key = (objectid(a), b === nothing ? UInt(0) : objectid(b))
+    e = get(m.index, key, 0)
+
+    if e == 0
+        push!(m.a, a)
+        push!(m.b, b)
+        push!(m.count, 0)
+        push!(m.invalid, 0)
+        e = m.index[key] = length(m.a)
+    end
+
+    return e
+end
+
+# PORT: pl-tabling.c unify_pred_pi
+"Unify `t` with the qualified name/arity of `def` (pl-tabling.c `unify_pred_pi`)."
+function unify_pred_pi(ld::PL_local_data{T}, t::term_t, def::definition{T})::Bool where {T}
+    gd = _query_gd(ld)
+
+    return unify_definition(gd, ld, MODULE_user(gd), t, def, 0, GP_QUALIFY | GP_NAMEARITY)
+end
+
+# PORT: pl-tabling.c idg_predicate_edges as pl_idg_predicate_edges3_va
+# (PRED_IMPL("$idg_predicate_edges", 3, idg_predicate_edges, 0))
+# DIVERGES: the lists are in the order `pair_map` keeps (first met), see src/pl-incl.jl.
+"`'\$idg_predicate_edges'(+Thread, -Nodes, -Edges)`: the IDG of `Thread` per predicate, `node(PI,Count,Invalid)` and `edge(From,To,Count)` (pl-tabling.c)."
+function pl_idg_predicate_edges3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    gd = _query_gd(ld)
+    rc = true
+
+    ok, reg = idg_reader_registry(ld, A1)
+    ok || return FFALSE
+    nodes = pair_map{T}()                               # pair_map_init(&nodes)
+    edges = pair_map{T}()                               # pair_map_init(&edges)
+    if reg !== nothing
+        count = idg_registry_count(reg)
+
+        for i in 0:(count - 1)
+            n = idg_registry_get(reg, i)
+
+            if n !== nothing && (def = gd.tries[n.atrie].predicate) !== nothing
+                e = pair_map_get(nodes, def, nothing)
+
+                nodes.count[e] += 1
+                if n.falsecount != 0
+                    nodes.invalid[e] += 1
+                end
+
+                en = idg_set_enum_init(n.affected)
+                while (p = idg_set_next(en)) !== nothing
+                    pdef = gd.tries[p.atrie].predicate
+
+                    if pdef !== nothing
+                        pair_map_get(nodes, pdef, nothing)
+                        edges.count[pair_map_get(edges, def, pdef)] += 1
+                    end
+                end
+            end
+        end
+    end
+    idg_reader_exit()
+
+    let tail = PL_copy_term_ref(ld, A2), head = PL_new_term_ref(ld),
+        a1 = PL_new_term_ref(ld), a2 = PL_new_term_ref(ld)
+
+        for e in 1:length(nodes.a)
+            rc || break
+            rc =
+                PL_unify_list(ld, tail, head, tail) &&
+                PL_unify_functor(ld, head, mk_sym(T, :node), 3) &&
+                _PL_get_arg(ld, 1, head, a1) &&
+                unify_pred_pi(ld, a1, nodes.a[e]) &&
+                _PL_get_arg(ld, 2, head, a1) &&
+                PL_unify_int64(ld, a1, nodes.count[e]) &&
+                _PL_get_arg(ld, 3, head, a1) &&
+                PL_unify_int64(ld, a1, nodes.invalid[e])
+        end
+        rc = rc && PL_unify_nil(ld, tail)
+
+        if rc
+            tail = PL_copy_term_ref(ld, A3)
+
+            for e in 1:length(edges.a)
+                rc || break
+                rc =
+                    PL_unify_list(ld, tail, head, tail) &&
+                    PL_unify_functor(ld, head, mk_sym(T, :edge), 3) &&
+                    _PL_get_arg(ld, 1, head, a1) &&
+                    unify_pred_pi(ld, a1, edges.a[e]) &&
+                    _PL_get_arg(ld, 2, head, a2) &&
+                    unify_pred_pi(ld, a2, edges.b[e]::definition{T}) &&
+                    _PL_get_arg(ld, 3, head, a1) &&
+                    PL_unify_int64(ld, a1, edges.count[e])
+            end
+            rc = rc && PL_unify_nil(ld, tail)
+        end
+    end
+
+    return rc ? FTRUE : FFALSE
+end
+
+# ── IDG REEVALUATION (pl-tabling.c:7416-7438, :11053-11430, TAB1 TB6) ─────────────────────────────────
+# DIVERGES (the block): the single-thread build: `claim_answer_table` of a shared table (`O_PLMT`, `TRIE_ISSHARED`) is
+# TH1's (a shared table is refused at `idg_new`), `COMPLETE_WORKLIST` is its `#else` (the code alone, pl-tabling.c:383);
+# the transactions (`LD->transaction.predicates`, `tt_add_table`, TB9) are read from `ld.transaction`: outside a
+# transaction `tt_has_modified_dependencies` is false. The `DEBUG` prints are not kept. A trie node is a node id of `atrie`; the
+# `map_trie_node` callbacks are closures over `ld` (upstream: the context pointer).
+
+# PORT: pl-tabling.c tt_has_modified_dependencies
+# (pl-tabling.c:7405-7438 at the pin)
+# DIVERGES: `LD->transaction.predicates` is a `Dict` keyed on the `Definition` (upstream's `TablePW` keyed on the pointer); a trie
+# without a predicate (`nothing`) names none.
+"Whether `atrie` depends on a dynamic predicate modified in the open transaction (pl-tabling.c)."
+function tt_has_modified_dependencies(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    n = atrie.IDG
+    preds = ld.transaction.predicates
+    found = false
+
+    if n !== nothing && preds !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(n.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+            pred = strie.predicate
+
+            if _wl_is(strie, WL_DYNAMIC) && pred !== nothing && haskey(preds, pred)
+                found = true
+                break
+            end
+        end
+    end
+
+    return found
+end
+
+# PORT: pl-tabling.c mono_dep_status
+"The tally `tt_mono_status` keeps over the dependencies of a lazy monotonic table (pl-tabling.c `mono_dep_status`)."
+mutable struct mono_dep_status
+    invalid_dep_tables::Int                             # dependent tables that are invalid
+    global_clauses::Int                                 # queued clauses older than the transaction
+    local_clauses::Int                                  # queued clauses made by the transaction
+end
+mono_dep_status() = mono_dep_status(0, 0, 0)
+
+# PORT: pl-tabling.c lg_clauses
+# DIVERGES: a queue entry is an `Int` (see the monotonic block note): `< 0` is a clause reference (`-` the clause's number in
+# `gd.clause_refs`), `> 0` the node of an answer, which a dynamic dependency never queues (upstream: `assert(0)`; skipped).
+"Count the live queued clauses of `mdep` older than the transaction and made inside it (pl-tabling.c)."
+function lg_clauses(
+    ld::PL_local_data{T}, mdep::idg_mdep{T, idg_node{T}}, s::mono_dep_status
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    tr = ld.transaction
+
+    for a in mdep.queue
+        a < 0 || continue                               # isAtom(*base): else assert(0)
+        cl = get(gd.clause_refs, -a, nothing)
+        cl === nothing && continue
+
+        if (cl.flags & CL_ERASED) == 0
+            created = cl.generation_created
+            if created < GEN_TRANSACTION_BASE
+                s.global_clauses += 1
+            elseif created >= tr.gen_base && created < tr.gen_max
+                s.local_clauses += 1
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c M_INVALID_DEPS
+# DIVERGES: the enum `mono_status` is `Int` constants.
+"The result of `tt_mono_status`: a dependent table is invalid (pl-tabling.c `M_INVALID_DEPS`)."
+const M_INVALID_DEPS = 0
+# PORT: pl-tabling.c M_OLD_CLAUSES
+"The result of `tt_mono_status`: all queued clauses are older than the transaction (pl-tabling.c `M_OLD_CLAUSES`)."
+const M_OLD_CLAUSES = 1
+# PORT: pl-tabling.c M_MIXED_CLAUSES
+"The result of `tt_mono_status`: queued clauses of both kinds (pl-tabling.c `M_MIXED_CLAUSES`)."
+const M_MIXED_CLAUSES = 2
+# PORT: pl-tabling.c M_NEW_CLAUSES
+"The result of `tt_mono_status`: all queued clauses are from the transaction, or none is queued (pl-tabling.c `M_NEW_CLAUSES`)."
+const M_NEW_CLAUSES = 3
+
+# PORT: pl-tabling.c tt_mono_status
+# DIVERGES: the `DEBUG` prints are not kept.
+"How to deal with the lazy monotonic table `atrie` that is about to be reevaluated: an `M_*` value (pl-tabling.c)."
+function tt_mono_status(ld::PL_local_data{T}, atrie::trie{T})::Int where {T}
+    an = atrie.IDG
+    status = mono_dep_status()
+
+    if an !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(an.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            strie = gd.tries[dep.atrie]
+
+            if _wl_is(strie, WL_DYNAMIC)
+                mdep = idg_mdeps(dep, an)
+                mdep !== nothing && lg_clauses(ld, mdep, status)
+            elseif dep.falsecount > 0 || dep.force_reeval
+                status.invalid_dep_tables += 1
+            end
+
+            status.invalid_dep_tables != 0 && break
+        end
+    end
+
+    if status.invalid_dep_tables != 0
+        return M_INVALID_DEPS
+    elseif status.global_clauses != 0 && status.local_clauses != 0
+        return M_MIXED_CLAUSES
+    end
+
+    return status.global_clauses != 0 ? M_OLD_CLAUSES : M_NEW_CLAUSES
+end
+
+# ── TRANSACTION TABLES (pl-tabling.c:7440-7822, TAB1 TB9) ──────────────────────────────────────────────────────
+# DIVERGES (the block): upstream keeps a transaction's changes to tables in `LD->transaction.table_trail` (`tbl_trail`: the
+# affected tables, and a buffer of the monotonic answers added). The kernel's `tbl_trail` (src/pl-incl.jl) holds a `Vector` of
+# answers walked in reverse and a `Dict` keyed on the trie symbol atom word. A table is named by its symbol atom (the kernel
+# has no atom GC: `PL_register_atom`/`PL_unregister_atom` are left out), a trie in an action by its index in `gd.tries`. A
+# shared table (`TRIE_ISSHARED`) is TH1's: the lines 7405-7822 have no shared branch.
+
+# PORT: pl-tabling.c tt_free_table_symbol
+# DIVERGES: the `free_symbol` hook of `tt->tables` (it unregisters the atom): the kernel registers none, so it is empty.
+"The hook that releases the symbol of a table of the trail; nothing to release (pl-tabling.c)."
+function tt_free_table_symbol(k::word, v::Int)::Nothing
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_trail
+"The transaction's trail of table changes, made on first use (pl-tabling.c)."
+function tt_trail(ld::PL_local_data{T})::tbl_trail where {T}
+    tt = ld.transaction.table_trail
+    if tt === nothing
+        tt = tbl_trail()
+        ld.transaction.table_trail = tt
+    end
+
+    return tt
+end
+
+# PORT: pl-tabling.c tbl_trail_free
+# DIVERGES: empties the trail (`discardBuffer`, `destroyHTable`); the memory is the collector's.
+"Release the trail `tt` (pl-tabling.c)."
+function tbl_trail_free(tt::tbl_trail)::Nothing
+    empty!(tt.actions)
+    for (k, v) in tt.tables
+        tt_free_table_symbol(k, v)
+    end
+    empty!(tt.tables)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_table
+"Record that the table `atrie` must be dealt with (`flags`: `TT_TBL_INVALIDATE`) when the transaction rolls back (pl-tabling.c)."
+function tt_add_table(ld::PL_local_data{T}, atrie::trie{T}, flags::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        tt = tt_trail(ld)
+        symbol = trie_symbol(_query_gd(ld), atrie)
+
+        tt.tables[symbol] = flags
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_alloc
+# DIVERGES: the size-suffixed record of the buffer is a `push!` of a `tbl_trail_answer` onto `tt.actions`.
+"Add the answer record of a monotonic answer to the trail (pl-tabling.c `tt_alloc`)."
+function tt_alloc(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    tt = tt_trail(ld)
+    push!(tt.actions, tbl_trail_answer(TT_ANSWER, trie_serial!(_query_gd(ld), atrie), node))
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_add_answer
+# DIVERGES: `node` is a node id of `atrie`; `tt_alloc` is a function of the answer (see above).
+"A monotonic new answer `node` was added to `atrie`: record it unless the table is marked for reevaluation (pl-tabling.c)."
+function tt_add_answer(ld::PL_local_data{T}, atrie::trie{T}, node::Int)::Nothing where {T}
+    if ld.transaction.generation != 0
+        idg = atrie.IDG
+
+        if !(idg !== nothing && idg.tt_notrail)
+            tt = tt_trail(ld)
+
+            if !haskey(tt.tables, trie_symbol(_query_gd(ld), atrie))
+                tt_alloc(ld, atrie, node)
+
+                if (atrie.flags & TRIE_ISTRACKED) == 0
+                    atrie.flags |= TRIE_ISTRACKED
+                end
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_abolish_table
+# DIVERGES: `atrie` is matched by its index in `gd.tries` (a trie not yet registered has no entry); the action list is walked
+# from the top (`reverse`) as upstream's buffer.
+"The table `atrie` is abolished: discard all answers the trail holds for it (pl-tabling.c)."
+function tt_abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing && atrie.serial != 0
+        for i in length(tt.actions):-1:1
+            ta = tt.actions[i]
+
+            if ta.type == TT_ANSWER
+                if ta.atrie == atrie.serial
+                    ta.atrie = 0
+                    ta.answer = 0
+                end
+            else
+                @assert false "tt_abolish_table: unknown trail action"
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c transaction_commit_tables
+"The outermost transaction commits: release the trail of table changes; true (pl-tabling.c)."
+function transaction_commit_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        for i in length(tt.actions):-1:1
+            tt.actions[i].type == TT_ANSWER ||
+                @assert false "transaction_commit_tables: unknown trail action"
+        end
+
+        tbl_trail_free(tt)
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tt_rollback_answer
+# DIVERGES: `answer` is a node id of `atrie`; the `DEBUG` print is not kept.
+"Roll back a monotonic answer: a lazy table's queues are pruned of it first, then its node is deleted (pl-tabling.c)."
+function tt_rollback_answer(
+    ld::PL_local_data{T}, atrie::trie{T}, answer::Int
+)::Nothing where {T}
+    idg = atrie.IDG
+
+    if idg !== nothing && idg.lazy
+        n = atrie.nodes[answer]
+        v = n.value
+
+        n.value = 0
+        prune_deleted_mdeps(ld, idg)
+        n.value = v
+    end
+
+    trie_delete(_query_gd(ld), atrie, answer, true)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tt_rollback_tables
+# DIVERGES: `affected` is the trail's `Dict`; a symbol that names no live trie (its table was destroyed) is skipped where
+# upstream dereferences the null trie.
+"Roll back the tables the transaction affected: invalidate each one that has an IDG node; false if that failed (pl-tabling.c)."
+function tt_rollback_tables(ld::PL_local_data{T}, affected::Dict{word, Int})::Bool where {T}
+    rc = true
+    gd = _query_gd(ld)
+
+    for (symbol, flags) in affected
+        atrie = symbol_trie(gd, symbol)
+        atrie === nothing && continue
+        n = atrie.IDG
+
+        if n !== nothing
+            fl = Int(IDG_CHANGED_NODE)
+
+            n.monotonic && (fl |= Int(IDG_CHANGED_MONO))
+            idg_changed(ld, atrie, fl) || (rc = false)          # can this happen?
+            if n.monotonic && !n.force_reeval
+                n.force_reeval = true
+            end
+        end
+    end
+
+    return rc
+end
+
+# PORT: pl-tabling.c tt_rollback_actions
+# DIVERGES: `b` is the trail's action `Vector`; the entries are walked from the top (`reverse`); an entry `tt_abolish_table`
+# cleared (`atrie` 0) is skipped.
+"Roll back the answers of the trail's actions, newest first; true (pl-tabling.c)."
+function tt_rollback_actions(
+    ld::PL_local_data{T}, b::Vector{tbl_trail_answer}
+)::Bool where {T}
+    gd = _query_gd(ld)
+
+    for i in length(b):-1:1
+        ta = b[i]
+
+        if ta.type == TT_ANSWER
+            ta.atrie != 0 && tt_rollback_answer(ld, gd.tries[ta.atrie], ta.answer)
+        else
+            @assert false "tt_rollback_actions: unknown trail action"
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c transaction_rollback_tables
+"A transaction rolls back: invalidate the affected tables, then delete the answers it added; false if either failed (pl-tabling.c)."
+function transaction_rollback_tables(ld::PL_local_data{T})::Bool where {T}
+    tt = ld.transaction.table_trail
+    rc = true
+
+    if tt !== nothing
+        ld.transaction.table_trail = nothing
+
+        rc = tt_rollback_tables(ld, tt.tables)
+        rc = tt_rollback_actions(ld, tt.actions) && rc
+
+        tbl_trail_free(tt)
+    end
+
+    return rc
+end
+
+# PORT: pl-tabling.c merge_tabling_trail
+# DIVERGES: the actions of `from` are appended in order and `from` is emptied (`discardBuffer`, `freeHeap`); its `tables` are
+# dropped, as upstream's are.
+"A nested transaction commits: append its trail's actions to the enclosing one's (pl-tabling.c)."
+function merge_tabling_trail(into::tbl_trail, from::tbl_trail)::Nothing
+    append!(into.actions, from.actions)
+    tbl_trail_free(from)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_reeval_wait as pl_tbl_reeval_wait2_va
+# (pl-tabling.c:11100-11111 at the pin; table_status_reeval_wait :11062 is ported above, TB6b)
+"`'\$tbl_reeval_wait'(+Trie, -Status)`: the status of `Trie` (`dynamic`, `monotonic`, `complete`, `invalid`) (pl-tabling.c)."
+function pl_tbl_reeval_wait2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing && (status = table_status_reeval_wait(ld, atrie)) !== nothing
+        return PL_unify_atom(ld, A2, status) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c reeval_prep_node
+# (pl-tabling.c:11141-11164 at the pin)
+"Mark the answer `nid` of `atrie` deleted and drop the delay list of a conditional one; `nothing` (pl-tabling.c)."
+function reeval_prep_node(ld::PL_local_data{T}, atrie::trie{T}, nid::Int)::Nothing where {T}
+    gd = _query_gd(ld)
+    n = atrie.nodes[nid]
+
+    if n.value != 0
+        n.flags |= TN_IDG_DELETED
+        n.flags &= ~TN_IDG_ADDED
+
+        if answer_is_conditional(gd, atrie, nid)
+            destroy_delay_info(gd, atrie, nid, true)
+            set_node_delayinfo(gd, atrie, nid, nothing)
+            n.flags &= ~TN_IDG_UNCONDITIONAL
+            wl = atrie.worklist
+            if wl isa tbl_worklist{T} && wl.undefined > 0   # WL_IS_WORKLIST(wl)
+                wl.undefined -= 1                       # (*)
+            end
+        else
+            n.flags |= TN_IDG_UNCONDITIONAL
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c prepare_reeval
+# (pl-tabling.c:11173-11204 at the pin)
+"Prepare the invalid table `atrie` for its re-evaluation; false if its nodes cannot be restored (pl-tabling.c)."
+function prepare_reeval(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    idg = atrie.IDG::idg_node{T}
+    wl = atrie.worklist
+
+    trie_ensure_nodes(atrie) || return false        # see answer_nodes_discardable()
+    atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again
+
+    if tt_has_modified_dependencies(ld, atrie)
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+    end
+
+    idg.answer_count = atrie.value_count
+    idg.new_answer = false
+    idg.falsecount = 0
+    idg_clean_dependent(ld, idg)
+    if !idg.aborted
+        map_trie_node(atrie, 1, (tr, nid) -> reeval_prep_node(ld, tr, nid))
+    end
+    idg.reevaluating = true
+
+    if wl isa tbl_worklist{T}                       # WL_IS_WORKLIST(wl)
+        wl.negative = false
+        wl.has_answers = false
+        wl.neg_delayed = false
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tbl_reeval_prepare_top as pl_tbl_reeval_prepare_top2_va
+# (pl-tabling.c:11206-11236 at the pin)
+"`'\$tbl_reeval_prepare_top'(+ATrie, -Clause)`: start re-evaluating the invalid `ATrie`, or bind `Clause` if it is valid (pl-tabling.c)."
+function pl_tbl_reeval_prepare_top2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    gd = _query_gd(ld)
+    atrie = get_trie(gd, ld, A1)
+
+    if atrie !== nothing
+        idg = atrie.IDG::idg_node{T}
+
+        # O_PLMT: claim_answer_table of a shared table (TH1)
+
+        if idg.falsecount == 0 && !idg.force_reeval     # someone else re-evaluated it
+            if (atrie.flags & TRIE_ISMAP) != 0
+                return PL_unify_integer(ld, A2, 0) ? FTRUE : FFALSE
+            else
+                return unify_trie(gd, ld, A2, atrie) ? FTRUE : FFALSE   # PL_unify_atom(A2, trie_symbol(atrie))
+            end
+        end
+
+        return prepare_reeval(ld, atrie) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_reeval_prepare as pl_tbl_reeval_prepare2_va
+# (pl-tabling.c:11245-11277 at the pin)
+# DIVERGES: the variant trie is TB1's `variant_table(ld, shared)` (as `change_incomplete_error`).
+"`'\$tbl_reeval_prepare'(+ATrie, -Variant)`: prepare the re-evaluation of `ATrie` on a false path, `Variant` its goal (pl-tabling.c)."
+function pl_tbl_reeval_prepare2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        idg = atrie.IDG::idg_node{T}
+
+        (idg.monotonic && !idg.force_reeval) && return FFALSE
+
+        # O_PLMT: claim_answer_table of a shared table (TH1)
+
+        idg.falsecount == 0 && return FFALSE        # someone else re-evaluated it
+
+        ok, _ = unify_trie_term(
+            ld, variant_table(ld, (atrie.flags & TRIE_ISSHARED) != 0), atrie.variant, A2
+        )
+        ok || return FFALSE
+
+        return prepare_reeval(ld, atrie) ? FTRUE : FFALSE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_reeval_abandon as pl_tbl_reeval_abandon1_va
+# (pl-tabling.c:11285-11297 at the pin)
+"`'\$tbl_reeval_abandon'(+ATrie)`: release the ownership of `ATrie` (single thread: nothing to release) (pl-tabling.c)."
+function pl_tbl_reeval_abandon1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    atrie = get_trie(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        nothing                                     # COMPLETE_WORKLIST(atrie, (void)0)
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c reeval_complete_node
+# (pl-tabling.c:11301-11337 at the pin)
+"Settle the answer `nid` of the re-evaluated `atrie`: delete an answer that did not reappear, note a changed one (pl-tabling.c)."
+function reeval_complete_node(
+    ld::PL_local_data{T}, atrie::trie{T}, nid::Int
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    n = atrie.nodes[nid]
+
+    if n.value == 0
+        n.flags &= ~TN_IDG_MASK
+        return nothing
+    end
+
+    if (n.flags & TN_IDG_DELETED) != 0
+        n.flags &= ~TN_IDG_DELETED                  # not used by trie admin
+        trie_delete(gd, atrie, nid, false)          # pruned by reeval_complete()
+        if (n.flags & TN_IDG_UNCONDITIONAL) == 0
+            simplify_answer(ld, atrie.worklist::tbl_worklist{T}, nid, false)
+        end
+    elseif (n.flags & TN_IDG_UNCONDITIONAL) != 0 && answer_is_conditional(gd, atrie, nid)
+        (atrie.IDG::idg_node{T}).new_answer = true  # Got conditional
+    elseif (n.flags & TN_IDG_UNCONDITIONAL) == 0 && !answer_is_conditional(gd, atrie, nid)
+        (atrie.IDG::idg_node{T}).new_answer = true  # Got UNconditional
+    end
+
+    n.flags &= ~TN_IDG_MASK
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reeval_complete
+# (pl-tabling.c:11340-11370 at the pin; called by TB2's wls_reeval_complete, pl-tabling.c:6238)
+"Complete the re-evaluation of `atrie`: propagate `not changed` if its answers are the same, else drop its clause (pl-tabling.c)."
+function reeval_complete(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    if (n = atrie.IDG) !== nothing && n.reevaluating
+        map_trie_node(atrie, 1, (tr, nid) -> reeval_complete_node(ld, tr, nid))
+
+        same_answers = (n.new_answer == false && n.answer_count == atrie.value_count)
+
+        if same_answers
+            idg_propagate_change(ld, n, 0)
+        else
+            trie_discard_clause(atrie)
+            if atrie.references == 0                # remove the deleted answers
+                prune_trie(atrie, 1, nothing)
+            end
+        end
+
+        n.stats_reevaluated += 1                    # TRIE_STAT_INC(n, reevaluated)
+
+        n.force_reeval = false
+        n.aborted = false
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_evaluate_node
+# (pl-tabling.c:11395-11411 at the pin)
+"Restore the answer `nid` of `atrie` to its prepared state: drop its delay list, delete an added answer (pl-tabling.c)."
+function reset_evaluate_node(
+    ld::PL_local_data{T}, atrie::trie{T}, nid::Int
+)::Nothing where {T}
+    gd = _query_gd(ld)
+
+    if answer_is_conditional(gd, atrie, nid)
+        destroy_delay_info(gd, atrie, nid, true)
+        set_node_delayinfo(gd, atrie, nid, nothing)
+    end
+
+    if (atrie.nodes[nid].flags & TN_IDG_ADDED) != 0
+        trie_delete(gd, atrie, nid, false)          # we are enumerating this node
+    else                                            # and cannot delete it (now)
+        atrie.nodes[nid].flags |= TN_IDG_DELETED
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c reset_reevaluation
+# (pl-tabling.c:11414-11430 at the pin; called by TB2's free_worklist_set, pl-tabling.c:941)
+"Reset `atrie`, re-evaluated when an exception came, so that its next call restarts the re-evaluation (pl-tabling.c)."
+function reset_reevaluation(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
+    n = atrie.IDG::idg_node{T}
+
+    map_trie_node(atrie, 1, (tr, nid) -> reset_evaluate_node(ld, tr, nid))
+    @assert n.answer_count == atrie.value_count
+
+    n.new_answer = false
+    n.aborted = true
+    n.falsecount = 1
+    atrie.flags |= TRIE_COMPLETE
+    n.reevaluating = false                          # COMPLETE_WORKLIST(atrie, n->reevaluating = false)
+
+    return nothing
+end
+
+# ── MONOTONIC TABLING (pl-tabling.c:9883-11100, TAB1 TB7) ────────────────────────────────────────────────────
+# DIVERGES (the block): a monotonic dependency `idg_mdep` is a Julia object; the chain of one edge (child -> parent) ends in
+# the CHILD node (`next` is a `idg_node` there; upstream tells the two apart by `magic`), and a freed dependency has
+# `magic == 0`. The `idg_mdep *` that `'$idg_edge'`-family predicates hand to Prolog is an integer reference
+# (`ld.tabling.mdep_by_ref`, `mdep_ref!`), never an address. A queue entry (`mdep.queue::Vector{Int}`) is the id of a node
+# of the CHILD's answer trie (> 0) or, for the pseudo table of a dynamic predicate, a clause reference as `-serial` (< 0;
+# upstream: a node pointer or an atom word). The `mono_index` trie of a node (a serial in `gd.tries`) stays in `gd.tries`
+# after `mono_index_release` (no atom GC). The transaction branches (`LD->transaction.generation`, `tt_add_table`,
+# `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are ported (TB9: `ld.transaction`). `Buffer`s are `Vector{Int}`; `TablePP` is an `IdDict`/`Dict`.
+
+const IdgMdep{T} = idg_mdep{T, idg_node{T}}
+const FUNCTOR_minus2_name = Symbol("-")
+# ORIGINAL: the value word of a leaf of a `mono_index` trie (upstream `ATOM_true`).
+const MONO_INDEX_VALUE = builtin_atom("true")
+
+# ORIGINAL: the atom of the answer trie `atrie`'s symbol, as upstream's `trie_symbol(atrie)` handed to `PL_put_atom`.
+"The atom of the symbol of `atrie` (upstream: `trie_symbol(atrie)` as an `atom_t`)."
+function mono_trie_atom(gd::PL_global_data{T}, atrie::trie{T})::T where {T}
+    return _blob_term!(gd.atoms, gd.atom_symbols, T, trie_symbol(gd, atrie))
+end
+
+# ORIGINAL (TB7): the integer reference of a monotonic dependency, assigned on first use (see the block note).
+"The integer reference of `m` (assigned on first use), the form of an `idg_mdep *` handed to Prolog."
+function mdep_ref!(ld::PL_local_data{T}, m::IdgMdep{T})::Int where {T}
+    tb = ld.tabling
+    r = get(tb.mdep_ref_of, m, 0)
+    if r == 0
+        r = (tb.mdep_ref_serial += 1)
+        tb.mdep_ref_of[m] = r
+        tb.mdep_by_ref[r] = m
+    end
+
+    return r
+end
+
+"The dependency of the integer reference `r`, `nothing` for a stale or unknown one."
+function mdep_of_ref(ld::PL_local_data{T}, r::Int)::Union{Nothing, IdgMdep{T}} where {T}
+    return get(ld.tabling.mdep_by_ref, r, nothing)
+end
+
+# PORT: pl-tabling.c mdep_hash
+# (pl-tabling.c:9883-9893 at the pin)
+# DIVERGES: the variant hash is `variant_hash` of the term exported from the cells (src/pl-termhash.jl), `.murmur`.
+"The Murmur variant hash of the term `dep` (pl-tabling.c `mdep_hash`)."
+function mdep_hash(ld::PL_local_data{T}, dep::term_t)::UInt32 where {T}
+    t = export_cells(ld, cell_export{T}(), -(dep + 1))
+
+    return UInt32(variant_hash(t, HASH_MURMUR).murmur)
+end
+
+# PORT: pl-tabling.c new_mdep
+# (pl-tabling.c:9896-9917 at the pin)
+# DIVERGES: `child` is the placeholder of `next` (the chain ends in the child; `idg_add_child_dep` sets the real link).
+"A new monotonic dependency holding a fast heap copy of the term `dep`; `nothing` after an error (pl-tabling.c `new_mdep`)."
+function new_mdep(
+    ld::PL_local_data{T}, dep::term_t, child::idg_node{T}
+)::Union{Nothing, IdgMdep{T}} where {T}
+    r = term_to_fastheap(ld, dep)
+
+    r === nothing && return nothing
+    return idg_mdep{T, idg_node{T}}(
+        IDG_MDEP_MAGIC, false, mdep_hash(ld, dep), r, child, Int[], 0, nothing
+    )
+end
+
+# PORT: pl-tabling.c find_dep
+# (pl-tabling.c:9920-9950 at the pin)
+# DIVERGES: returns `(rc, found)`, `rc` 1 (found), 0 or -1 (error); `mdep0` is the first link of the chain or the child
+# node that ends it; a variant found closes the foreign frame (upstream leaves it for the predicate's exit).
+"Find in the chain `mdep0` the dependency that is a variant of `dep`: `(1, it)`, `(0, nothing)` or `(-1, nothing)` (pl-tabling.c)."
+function find_dep(
+    ld::PL_local_data{T}, mdep0::Union{idg_node{T}, IdgMdep{T}}, dep::term_t
+)::Tuple{Int, Union{Nothing, IdgMdep{T}}} where {T}
+    if mdep0 isa idg_mdep && mdep0.magic == IDG_MDEP_MAGIC
+        hash = mdep_hash(ld, dep)
+        mdep = mdep0
+
+        while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+            if mdep.hash == hash
+                fid = PL_open_foreign_frame(ld)
+
+                if fid != 0
+                    dep2 = PL_new_term_ref(ld)
+                    if dep2 != 0 &&
+                        put_fastheap(ld, mdep.dependency::fastheap_term{T}, dep2)
+                        if is_variant_ptr_cells(ld, -(dep + 1), -(dep2 + 1))
+                            PL_discard_foreign_frame(ld, fid)
+                            return (1, mdep)
+                        end
+                        PL_discard_foreign_frame(ld, fid)
+                        mdep = mdep.next
+                        continue
+                    end
+                end
+
+                return (-1, nothing)                    # error
+            end
+            mdep = mdep.next
+        end
+    end
+
+    return (0, nothing)
+end
+
+# PORT: pl-tabling.c free_mdep
+# (pl-tabling.c:9975-9981 at the pin)
+# DIVERGES: the references are dropped, `magic` set to 0 (a stale reference or chain walk stops there).
+"Free the monotonic dependency `m` (pl-tabling.c `free_mdep`)."
+function free_mdep(ld::PL_local_data{T}, m::IdgMdep{T})::Nothing where {T}
+    @assert m.magic == IDG_MDEP_MAGIC
+    m.dependency === nothing || free_fastheap(m.dependency)
+    r = pop!(ld.tabling.mdep_ref_of, m, 0)
+    r == 0 || delete!(ld.tabling.mdep_by_ref, r)
+    empty!(m.queue)                                     # dep_free_queue(mdep->queue)
+    m.magic = Int32(0)
+
+    return nothing
+end
+
+# ── MONOTONIC DEPENDENCY INDEX (pl-tabling.c:9984-10190) ─────────────────────────────────────────────────
+
+# PORT: pl-tabling.c mono_index_key
+# (pl-tabling.c:10010-10019 at the pin)
+"Make `key` hold `SrcSkeleton-ParentTrie` for the dependency `dep` of the edge to `parent` (pl-tabling.c `mono_index_key`)."
+function mono_index_key(
+    ld::PL_local_data{T}, parent::idg_node{T}, dep::term_t, key::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    skel = PL_new_term_ref(ld)
+    ptrie = PL_new_term_ref(ld)
+
+    return skel != 0 && ptrie != 0 &&
+           _PL_get_arg(ld, 1, dep, skel) &&
+           PL_put_atom(ld, ptrie, mono_trie_atom(gd, gd.tries[parent.atrie])) &&
+           PL_cons_functor(ld, key, _err_functor(ld, FUNCTOR_minus2_name, 2), skel, ptrie)
+end
+
+# PORT: pl-tabling.c mono_index_find
+# (pl-tabling.c:10025-10074 at the pin)
+# DIVERGES: returns `(rc, found)` as `find_dep`; the index trie is `gd.tries[idg_mono_index(src)]`, the leaf's id the key of `index_deps`.
+"As `find_dep`, through the index trie of `src` (pl-tabling.c `mono_index_find`)."
+function mono_index_find(
+    ld::PL_local_data{T}, src::idg_node{T}, parent::idg_node{T}, dep::term_t
+)::Tuple{Int, Union{Nothing, IdgMdep{T}}} where {T}
+    gd = _query_gd(ld)
+    rc = 0
+    found = nothing
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return (-1, nothing)
+    key = PL_new_term_ref(ld)
+    if key == 0 || !mono_index_key(ld, parent, dep, key)
+        rc = -1
+    else
+        itrie = gd.tries[idg_mono_index(src)]
+        r, nid = trie_lookup(ld, itrie, 0, -(key + 1), false, nothing)
+
+        if r == 1 && itrie.nodes[nid].value != 0
+            hash = mdep_hash(ld, dep)
+            deps = idg_mono_index_deps(src)
+            mdep = deps === nothing ? nothing : get(deps, nid, nothing)
+
+            while mdep !== nothing
+                if mdep.hash == hash
+                    dep2 = PL_new_term_ref(ld)
+                    if dep2 == 0 ||
+                        !put_fastheap(ld, mdep.dependency::fastheap_term{T}, dep2)
+                        rc = -1
+                        break
+                    end
+                    if is_variant_ptr_cells(ld, -(dep + 1), -(dep2 + 1))
+                        found = mdep
+                        rc = 1
+                        break
+                    end
+                end
+                mdep = mdep.same_key
+            end
+        end
+    end
+
+    if rc < 0
+        PL_close_foreign_frame(ld, fid)                 # keep the exception
+    else
+        PL_discard_foreign_frame(ld, fid)
+    end
+    return (rc, found)
+end
+
+# PORT: pl-tabling.c mono_index_insert
+# (pl-tabling.c:10077-10112 at the pin)
+"Enter the dependency `mdep` of the edge `src` -> `parent` in the index of `src` (pl-tabling.c `mono_index_insert`)."
+function mono_index_insert(
+    ld::PL_local_data{T}, src::idg_node{T}, parent::idg_node{T}, mdep::IdgMdep{T},
+    dep::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return false
+    key = PL_new_term_ref(ld)
+    if key == 0 || !mono_index_key(ld, parent, dep, key)
+        PL_close_foreign_frame(ld, fid)                 # keep the exception
+        return false
+    end
+
+    itrie = gd.tries[idg_mono_index(src)]
+    rc, nid = trie_lookup(ld, itrie, 0, -(key + 1), true, nothing)
+    if rc != 1
+        if !trie_error(ld, rc, key) && PL_exception(ld, 0) == 0
+            PL_resource_error(ld, "table_space")
+        end
+        PL_close_foreign_frame(ld, fid)
+        return false
+    end
+
+    deps = idg_mono_index_deps(src)::Dict{Int, IdgMdep{T}}
+    if itrie.nodes[nid].value != 0
+        mdep.same_key = get(deps, nid, nothing)
+        deps[nid] = mdep                                # updateHTablePP
+    else
+        set_trie_value_word(itrie, nid, MONO_INDEX_VALUE)
+        deps[nid] = mdep                                # addHTablePP
+    end
+    mdep.index_node = nid
+
+    PL_discard_foreign_frame(ld, fid)
+    return true
+end
+
+# PORT: pl-tabling.c mono_index_build
+# (pl-tabling.c:10118-10164 at the pin)
+# DIVERGES: the trie is `trie_create(T)` entered in `gd.tries` (`trie_symbol`), its serial `m.index`; no alloc pool.
+"Index every monotonic dependency `src` holds; on failure `src` keeps no index (pl-tabling.c `mono_index_build`)."
+function mono_index_build(ld::PL_local_data{T}, src::idg_node{T})::Bool where {T}
+    gd = _query_gd(ld)
+    t = trie_create(T)
+
+    trie_symbol(gd, t)                                  # reference until mono_index_release()
+    m = idg_ensure_mono(ld, src)
+    m === nothing && return false
+    m.index = t.serial
+    m.index_deps = Dict{Int, IdgMdep{T}}()
+
+    deps = idg_mono_deps(src)
+    if deps !== nothing
+        for (parent, mdep0) in deps
+            mdep = mdep0
+            while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+                fid = PL_open_foreign_frame(ld)
+                d = fid == 0 ? 0 : PL_new_term_ref(ld)
+                if fid == 0 || d == 0 ||
+                    !put_fastheap(ld, mdep.dependency::fastheap_term{T}, d) ||
+                    !mono_index_insert(ld, src, parent, mdep, d)
+                    fid == 0 || PL_close_foreign_frame(ld, fid)     # keep the exception
+                    mono_index_release(src)
+                    return false
+                end
+                PL_discard_foreign_frame(ld, fid)
+                mdep = mdep.next
+            end
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c mono_index_release
+# (pl-tabling.c:10167-10190 at the pin)
+# DIVERGES: the index trie stays in `gd.tries` (no atom GC): `index` is set to 0 only.
+"Release the monotonic index of `src` (pl-tabling.c `mono_index_release`)."
+function mono_index_release(src::idg_node{T})::Nothing where {T}
+    m = src.mono
+    m === nothing && return nothing
+
+    if (map = m.index_deps) !== nothing
+        for mdep0 in values(map)
+            mdep = mdep0
+            while mdep !== nothing
+                mdep.index_node = 0
+                mdep = mdep.same_key
+            end
+        end
+        m.index_deps = nothing
+    end
+    m.index != 0 && (m.index = 0)
+
+    return nothing
+end
+
+# ── the queues of a monotonic dependency (pl-tabling.c:10192-10300) ────────────────────────────────────────
+
+# ORIGINAL (TB7): the clause serial of the clause reference atom `a`, 0 if `a` is not one.
+"The number of the clause the clause reference `a` names, 0 if `a` is no clause reference."
+function clref_serial(gd::PL_global_data{T}, a::T)::Int where {T}
+    clause_clref(gd, a) === nothing && return 0
+    at = atomValue(gd.atoms, blob_handle(a))
+
+    return Int(reinterpret(Int64, at.name[1:8])[1])
+end
+
+# ORIGINAL (TB7): whether a queue entry still stands (a node with a value, a clause not erased); see the block note.
+"Whether the queue entry `a` is live: a clause reference (`a < 0`) not erased, or a node of `atrie` with a value."
+function mono_answer_live(gd::PL_global_data{T}, atrie::trie{T}, a::Int)::Bool where {T}
+    if a < 0
+        cl = get(gd.clause_refs, -a, nothing)
+        return cl !== nothing && (cl.flags & CL_ERASED) == 0
+    end
+
+    return atrie.nodes[a].value != 0
+end
+
+# PORT: pl-tabling.c mdep_queue_answer
+# (pl-tabling.c:10199-10215 at the pin)
+# DIVERGES: the entry is an `Int` (see the block note). Returns whether the queue was non-empty BEFORE the push, as upstream's code
+# does (its comment says the opposite).
+"Queue the answer `ans` on `mdep`; whether the queue was non-empty (pl-tabling.c `mdep_queue_answer`)."
+function mdep_queue_answer(mdep::IdgMdep{T}, ans::Int)::Bool where {T}
+    rc = !isempty(mdep.queue)
+    push!(mdep.queue, ans)
+
+    return rc
+end
+
+# PORT: pl-tabling.c mdep_unify_answers
+# (pl-tabling.c:10218-10252 at the pin)
+# DIVERGES: takes the trie `atrie` of the queued nodes (upstream: the node pointers); a node is unified as its handle
+# `answer_ref(atrie.serial, a)` (an integer, upstream's `PL_unify_pointer(head, node)`), which `$tbl_node_answer/2` decodes.
+"Unify `t` with the list of the live answers queued on `mdep`; their number or -1 (pl-tabling.c `mdep_unify_answers`)."
+function mdep_unify_answers(
+    ld::PL_local_data{T}, atrie::trie{T}, t::term_t, mdep::IdgMdep{T}
+)::Int where {T}
+    gd = _query_gd(ld)
+    tail = PL_copy_term_ref(ld, t)
+    head = PL_new_term_ref(ld)
+    count = 0
+
+    for a in mdep.queue
+        if a < 0
+            cl = get(gd.clause_refs, -a, nothing)
+
+            if cl !== nothing && (cl.flags & CL_ERASED) == 0
+                if !PL_unify_list(ld, tail, head, tail) || !PL_unify_clref(gd, ld, head, cl)
+                    return -1
+                end
+                count += 1
+            end
+        elseif atrie.nodes[a].value != 0
+            if !PL_unify_list(ld, tail, head, tail) ||
+                !PL_unify_integer(ld, head, answer_ref(atrie.serial, a))
+                return -1
+            end
+            count += 1
+        end
+    end
+
+    PL_unify_nil(ld, tail) || return -1
+
+    return count
+end
+
+# PORT: pl-tabling.c mdep_empty_queue
+# (pl-tabling.c:10255-10282 at the pin)
+# DIVERGES: `del` < 0 is `(size_t)-1` (all); `del` above the length is the length (upstream reads beyond the buffer).
+"Drop the first `del` entries of the queue of `mdep` (all for `del < 0`) (pl-tabling.c `mdep_empty_queue`)."
+function mdep_empty_queue(mdep::IdgMdep{T}, del::Int)::Nothing where {T}
+    if !isempty(mdep.queue)
+        if del < 0 || del >= length(mdep.queue)
+            empty!(mdep.queue)
+        else
+            deleteat!(mdep.queue, 1:del)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mdep_empty_queues
+# (pl-tabling.c:10284-10291 at the pin)
+"Empty the queues of the chain starting at `mdep` (pl-tabling.c `mdep_empty_queues`)."
+function mdep_empty_queues(mdep::Union{Nothing, idg_node{T}, IdgMdep{T}})::Nothing where {T}
+    while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+        mdep_empty_queue(mdep, -1)
+        mdep = mdep.next
+    end
+
+    return nothing
+end
+
+# pl-tabling.c `dep_free_queue` (pl-tabling.c:10283) has no Julia definition, so no PORT marker: the queue is a `Vector{Int}` of
+# ids, nothing to unregister, and `free_mdep` empties it (`empty!(m.queue)`).
+
+# ── freeing, adding the dependencies of an edge (pl-tabling.c:7986-8110, :8190-8330) ────────────────────────
+
+# PORT: pl-tabling.c free_mdep_chain
+# (pl-tabling.c:8056-8078 at the pin)
+# DIVERGES: `src` is the child node ending the chain and `mdep0` its first link (upstream finds `src` by walking).
+"Free the monotonic dependencies of one (child, parent) edge: the chain `mdep0` ending in `src` (pl-tabling.c `free_mdep_chain`)."
+function free_mdep_chain(
+    ld::PL_local_data{T}, src::idg_node{T}, mdep0::IdgMdep{T}
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    mdep = mdep0
+
+    while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+        nxt = mdep.next
+        deps = idg_mono_index_deps(src)
+        if mdep.index_node != 0 && deps !== nothing &&
+            get(deps, mdep.index_node, nothing) === mdep
+            delete!(deps, mdep.index_node)
+            trie_delete(gd, gd.tries[idg_mono_index(src)], mdep.index_node, true)
+        end
+        free_mdep(ld, mdep)
+        mdep = nxt
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c idg_free_mdeps
+# (pl-tabling.c:8081-8090 at the pin)
+"Free the monotonic dependencies of the edge `child` -> `parent` (pl-tabling.c `idg_free_mdeps`)."
+function idg_free_mdeps(
+    ld::PL_local_data{T}, child::idg_node{T}, parent::idg_node{T}
+)::Nothing where {T}
+    t = idg_mono_deps(child)
+    if t !== nothing && (mdep = pop!(t, parent, nothing)) !== nothing
+        free_mdep_chain(ld, child, mdep)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_indexable
+# (pl-tabling.c:8190-8194 at the pin)
+"Whether the dependencies of `n` may be indexed: not a dynamic pseudo table, not a shared one (pl-tabling.c `mono_indexable`)."
+function mono_indexable(gd::PL_global_data{T}, n::idg_node{T})::Bool where {T}
+    atrie = gd.tries[n.atrie]
+
+    return atrie.worklist != WL_DYNAMIC && (atrie.flags & TRIE_ISSHARED) == 0
+end
+
+# PORT: pl-tabling.c idg_add_child as idg_add_child_dep
+# (the `dep` branch, pl-tabling.c:8250-8318 at the pin; a rename the code needs: the branch is a function of its own, and
+# `idg_add_child` above is the whole function's name)
+"The monotonic dependency `dep` of the edge `child` -> `parent`: found or created; false after an error (pl-tabling.c `idg_add_child`)."
+function idg_add_child_dep(
+    ld::PL_local_data{T}, parent::idg_node{T}, child::idg_node{T}, dep::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    mdep0 = idg_mdeps(child, parent)                    # chain old dependency
+    chain0 = mdep0 === nothing ? child : mdep0          # a chain ends in the child
+
+    rc, mdep = if idg_mono_index(child) != 0
+        mono_index_find(ld, child, parent, dep)
+    else
+        find_dep(ld, chain0, dep)
+    end
+    if rc == 0
+        idg_ensure_mono(ld, child) === nothing && return false
+        mdep = new_mdep(ld, dep, child)
+        mdep === nothing && return false
+        child.lazy && (parent.lazy = true)
+        parent.lazy && (mdep.lazy = true)
+        # index the second and later
+        if mono_indexable(gd, child) &&
+            (idg_mono_index(child) != 0 || child.mono_dep_seen) &&
+            !(
+                (idg_mono_index(child) != 0 || mono_index_build(ld, child)) &&
+                mono_index_insert(ld, child, parent, mdep, dep)
+            )
+            free_mdep(ld, mdep)
+            return false
+        end
+        child.mono_dep_seen = true
+        mdep.next = chain0
+        m = child.mono::idg_mono{T, idg_node{T}}
+        if m.deps === nothing
+            m.deps = IdDict{idg_node{T}, IdgMdep{T}}()
+        end
+        m.deps[parent] = mdep
+    elseif rc != 1
+        return false                                    # resource error
+    end
+
+    if (mdep::IdgMdep{T}).lazy && ld.transaction.generation != 0
+        ctrie = gd.tries[child.atrie]
+        preds = ld.transaction.predicates
+        pred = ctrie.predicate
+
+        if _wl_is(ctrie, WL_DYNAMIC) && preds !== nothing && pred !== nothing &&
+            haskey(preds, pred)
+            parent.tt_new_dep = true
+        end
+    end
+
+    return true
+end
+
+# ── the edge generator's dependency step (pl-tabling.c:8745-8785) ──────────────────────────────────────────
+
+# PORT: pl-tabling.c idg_edge_gen as idg_edge_dep_step
+# (the `dep` block of the loop, pl-tabling.c:8745-8785 at the pin; a rename the code needs: the block is a function of its
+# own, and `idg_edge_gen` above is the whole function's name)
+# DIVERGES: a separate function; returns 1 (proceed), 0 (go to next) or -1 (error). `t` is the term reference the caller made
+# for the dependency; the pointer handed to Prolog is `mdep_ref!` (an integer); the answers' trie is the one of the OTHER node of
+# the edge, `state.deptrie_symbol` (upstream's `mdep_unify_answers` finds the nodes by their pointers).
+"One monotonic dependency of the state `state` of `idg_edge_gen`: unify its answers and its term with `dep` (pl-tabling.c)."
+function idg_edge_dep_step(
+    ld::PL_local_data{T}, state::idg_edge_state{T}, dep::term_t, depref::term_t,
+    answers::term_t, flags::Int, t::term_t
+)::Int where {T}
+    gd = _query_gd(ld)
+    mdep = state.dependencies
+
+    if mdep !== nothing && (state.lazy == mdep.lazy || (flags & IDG_MONO_AFFECTS) != 0) &&
+        !state.force_reeval
+        if answers != 0
+            if (flags & IDG_MONO_AFFECTS) == 0 && isempty(mdep.queue)
+                return 0                                # no answers on this dependency
+            end
+
+            src = symbol_trie(gd, state.deptrie_symbol)::trie{T}
+            rc = mdep_unify_answers(ld, src, answers, mdep)
+            rc == -1 && return -1
+            rc == 0 && return 0                         # no real answers
+
+            PL_unify_integer(ld, depref, mdep_ref!(ld, mdep)) || return -1
+        end
+
+        put_fastheap(ld, mdep.dependency::fastheap_term{T}, t) || return -1
+        if !PL_unify(ld, t, dep)
+            PL_exception(ld, 0) != 0 && return -1
+            return 0                                    # dependency does not match dep
+        end
+        return 1
+    end
+
+    return 0
+end
+
+# ── monotonic edges and the change of a monotonic table (pl-tabling.c:8118-8180, :10320-10440) ─────────────
+
+# PORT: pl-tabling.c idg_dependency_error_mono
+# (pl-tabling.c:8153-8168 at the pin)
+# DIVERGES: the variant trie is TB1's `variant_table(ld, shared)` (as `change_incomplete_error`).
+"Raise `error(dependency_error(Dst, monotonic(Src)), _)` for the tables `src_trie` and `dst_trie`; false (pl-tabling.c)."
+function idg_dependency_error_mono(
+    ld::PL_local_data{T}, src_trie::trie{T}, dst_trie::trie{T}
+)::Bool where {T}
+    av = PL_new_term_refs(ld, 3)
+
+    av != 0 || return false
+    ok, _ = unify_trie_term(
+        ld, variant_table(ld, (dst_trie.flags & TRIE_ISSHARED) != 0), dst_trie.variant, av
+    )
+    ok || return false
+    ok, _ = unify_trie_term(
+        ld,
+        variant_table(ld, (src_trie.flags & TRIE_ISSHARED) != 0),
+        src_trie.variant,
+        av + 1
+    )
+    ok || return false
+
+    mono = PL_new_term_ref(ld)
+    depe = PL_new_term_ref(ld)
+    var = PL_new_term_ref(ld)
+    return PL_cons_functor(ld, mono, _err_functor(ld, :monotonic, 1), av + 1) &&
+           PL_cons_functor(ld, depe, _err_functor(ld, :dependency_error, 2), av, mono) &&
+           PL_put_variable(ld, var) &&
+           PL_cons_functor(ld, av + 2, _err_functor(ld, :error, 2), depe, var) &&
+           PL_raise_exception(ld, av + 2)
+end
+
+# PORT: pl-tabling.c idg_add_monotonic_edge
+# (pl-tabling.c:10313-10335 at the pin)
+"Add the monotonic edge `src_trie` -> `dst_trie` with the dependency `dep` (pl-tabling.c `idg_add_monotonic_edge`)."
+function idg_add_monotonic_edge(
+    ld::PL_local_data{T}, src_trie::trie{T}, dst_trie::trie{T}, dep::term_t
+)::Bool where {T}
+    def = dst_trie.predicate
+    sn = src_trie.IDG
+    dn = dst_trie.IDG
+
+    if sn !== nothing && dn !== nothing
+        if sn.monotonic && !sn.lazy
+            sn.falsecount = 0                           # (*)
+        end
+
+        if def !== nothing && def.tabling !== nothing &&
+            (def.tabling.flags & TP_MONOTONIC) != 0
+            return idg_add_child(ld, dn, sn, dep, Int(def.tabling.flags))
+        else
+            return true                                 # monotonic --> incremental
+        end
+    end
+
+    if def !== nothing && def.tabling !== nothing && (def.tabling.flags & TP_OPAQUE) != 0
+        return true                                     # monotonic --> opaque
+    end
+
+    return idg_dependency_error_mono(ld, src_trie, dst_trie)
+end
+
+# PORT: pl-tabling.c mono_idg_changed
+# (pl-tabling.c:10372-10412 at the pin)
+# DIVERGES: `answer` is a queue entry (see the block note).
+"A new answer `answer` of the table `atrie`: queue it on the lazy dependencies and invalidate the dependents (pl-tabling.c)."
+function mono_idg_changed(ld::PL_local_data{T}, atrie::trie{T}, answer::Int)::Bool where {T}
+    sn = atrie.IDG
+
+    if sn !== nothing
+        en = idg_set_enum_init(sn.affected)
+        while (dn = idg_set_next(en)) !== nothing
+            mdep = idg_mdeps(sn, dn)
+            nonempty = 0
+
+            if dn.force_reeval                          # Already marked as invalid
+                dn.falsecount += 1                      # see (*)
+                continue
+            end
+
+            # only a lazy dn has lazy mdeps
+            if dn.lazy
+                while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+                    if mdep.lazy
+                        nonempty += mdep_queue_answer(mdep, answer)
+                        dn.lazy_queued = true
+                    end
+                    mdep = mdep.next
+                end
+            end
+            if nonempty == 0 && (!dn.monotonic || dn.lazy)
+                flags = IDG_CHANGED_NODE
+
+                dn.lazy && (flags |= IDG_CHANGED_MONO)
+                idg_changed(ld, _query_gd(ld).tries[dn.atrie], flags) || return false
+            end
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c force_reeval
+# (pl-tabling.c:10415-10426 at the pin)
+"Mark the node `n` for forced re-evaluation; inside a transaction its table is listed and its trailed answers dropped (pl-tabling.c)."
+function force_reeval(ld::PL_local_data{T}, n::idg_node{T})::Nothing where {T}
+    n.force_reeval = true
+
+    if ld.transaction.generation != 0
+        atrie = _query_gd(ld).tries[n.atrie]
+
+        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+        tt_abolish_table(ld, atrie)                     # remove scheduled answers
+    end
+
+    return nothing
+end
+
+# ORIGINAL (TB7): the pair `mdep_empty_queues(idg_mdeps(child, n)); force_reeval(n)` of `idg_changed_loop`'s monotonic cases.
+"Empty the queues of the edge `child` -> `n` and force the re-evaluation of `n` (pl-tabling.c `idg_changed_loop`)."
+function mono_force_reeval(
+    ld::PL_local_data{T}, child::idg_node{T}, n::idg_node{T}
+)::Nothing where {T}
+    mdep_empty_queues(idg_mdeps(child, n))
+    force_reeval(ld, n)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c prune_deleted_mdeps
+# (pl-tabling.c:10586-10622 at the pin)
+# DIVERGES: a clause reference (`a < 0`) is always kept (upstream keeps every atom).
+"Remove the deleted answers from the queues of the dependencies of `idg` (pl-tabling.c `prune_deleted_mdeps`)."
+function prune_deleted_mdeps(ld::PL_local_data{T}, idg::idg_node{T})::Nothing where {T}
+    atrie = _query_gd(ld).tries[idg.atrie]
+    en = idg_set_enum_init(idg.affected)
+
+    while (dn = idg_set_next(en)) !== nothing
+        mdep = idg_mdeps(idg, dn)
+
+        if dn.force_reeval                              # Invalidated; no queue
+            dn.falsecount += 1                          # see mono_idg_changed()
+            continue
+        end
+        dn.lazy || continue                             # eager: no queue
+
+        while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+            filter!(a -> a < 0 || atrie.nodes[a].value != 0, mdep.queue)
+            mdep = mdep.next
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_reeval_prep_node
+# (pl-tabling.c:10547-10555 at the pin)
+"Mark the secondary answer nodes of `atrie` with a value `TN_IDG_AS_LAST` (pl-tabling.c `mono_reeval_prep_node`)."
+function mono_reeval_prep_node(tr::trie{T}, nid::Int)::Nothing where {T}
+    n = tr.nodes[nid]
+
+    if n.value != 0 && (n.flags & TN_SECONDARY) != 0
+        n.flags |= TN_IDG_AS_LAST
+    else
+        n.flags &= ~TN_IDG_AS_LAST
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_reeval_done_node
+# (pl-tabling.c:10625-10650 at the pin)
+# DIVERGES: `gc` is a `Ref` counting the deleted leaves; returns the node id of a new or deleted aggregated value or `nothing`.
+"Classify the node `nid` for `'\$mono_reeval_done'/3`: a changed aggregated value or `nothing` (pl-tabling.c)."
+function mono_reeval_done_node(
+    tr::trie{T}, nid::Int, gc::Base.RefValue{Int}
+)::Union{Nothing, Int} where {T}
+    n = tr.nodes[nid]
+
+    if n.value != 0 && (n.flags & TN_SECONDARY) != 0
+        if (n.flags & TN_IDG_AS_LAST) != 0
+            n.flags &= ~TN_IDG_AS_LAST
+            return nothing                              # same aggregated value
+        end
+        return nid                                      # new aggregated value
+    end
+    if (n.flags & TN_IDG_AS_LAST) != 0
+        n.flags &= ~TN_IDG_AS_LAST                      # deleted aggregated value
+        return nid
+    end
+
+    if is_leaf_trie_node(tr, nid) && n.value == 0
+        gc[] += 1
+    end
+
+    return nothing
+end
+
+# ── is a lazy monotonic SCC complete (pl-tabling.c:10652-10790) ───────────────────────────────────────────
+
+# PORT: pl-tabling.c mono_scc_state
+# DIVERGES: `visited` is an `IdDict` (a `TablePW` of `IDGNode -> bool`), `stack` a `Vector` (a `segstack`).
+mutable struct mono_scc_state{T}
+    idg::idg_node{T}                                    # current node
+    en::idg_set_enum{idg_node{T}}                       # Enum on its dependencies
+    visited::IdDict{idg_node{T}, Bool}                  # IDGNode -> bool
+    stack::Vector{idg_node{T}}                          # agenda
+end
+
+# PORT: pl-tabling.c mdep_is_empty
+# (pl-tabling.c:10665-10695 at the pin)
+# DIVERGES: `atrie` is the answer trie of the chain's child (the queued nodes belong to it).
+"Whether the chain `mdep` has no live queued answer (pl-tabling.c `mdep_is_empty`)."
+function mdep_is_empty(
+    gd::PL_global_data{T}, atrie::trie{T}, mdep::Union{Nothing, idg_node{T}, IdgMdep{T}}
+)::Bool where {T}
+    while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
+        for a in mdep.queue                             # there may only be deleted answers in the queue
+            mono_answer_live(gd, atrie, a) && return false
+        end
+        mdep = mdep.next
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c mono_scc_is_complete_loop
+# (pl-tabling.c:10701-10748 at the pin)
+"Walk the dependencies of the SCC; the invalid node found or `nothing` (pl-tabling.c `mono_scc_is_complete_loop`)."
+function mono_scc_is_complete_loop(
+    ld::PL_local_data{T}, state::mono_scc_state{T}
+)::Union{Nothing, idg_node{T}} where {T}
+    gd = _query_gd(ld)
+
+    while true
+        while (dep = idg_set_next(state.en)) !== nothing
+            mdep = idg_mdeps(dep, state.idg)
+            if mdep !== nothing && !mdep_is_empty(gd, gd.tries[dep.atrie], mdep)
+                return state.idg
+            end
+
+            if dep.falsecount != 0
+                if !dep.monotonic || dep.force_reeval
+                    return dep
+                end
+
+                if dep.lazy && !idg_set_is_empty(dep.dependent) &&
+                    !haskey(state.visited, dep)
+                    push!(state.stack, dep)
+                    state.visited[dep] = true
+                end
+            end
+        end
+
+        if !isempty(state.stack)
+            state.idg = pop!(state.stack)
+            state.en = idg_set_enum_init(state.idg.dependent)
+        else
+            break
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c mono_scc_is_complete
+# (pl-tabling.c:10751-10797 at the pin)
+"Validate that the lazy monotonic node `idg` is complete: `nothing`, or the invalid dependency found (pl-tabling.c)."
+function mono_scc_is_complete(
+    ld::PL_local_data{T}, idg::idg_node{T}
+)::Union{Nothing, idg_node{T}} where {T}
+    if idg.falsecount != 0 && !idg_set_is_empty(idg.dependent)
+        state = mono_scc_state{T}(
+            idg,
+            idg_set_enum_init(idg.dependent),
+            IdDict{idg_node{T}, Bool}(),
+            idg_node{T}[]
+        )
+        state.visited[idg] = true
+
+        invalid = mono_scc_is_complete_loop(ld, state)
+        if invalid === nothing
+            for dep in keys(state.visited)
+                dep.falsecount = 0
+                dep.tt_notrail = false
+            end
+        end
+
+        return invalid
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c has_queued_answers
+# (pl-tabling.c:10799-10817 at the pin)
+"Whether a node `idg` depends on has live answers queued for it (pl-tabling.c `has_queued_answers`)."
+function has_queued_answers(ld::PL_local_data{T}, idg::idg_node{T})::Bool where {T}
+    gd = _query_gd(ld)
+    en = idg_set_enum_init(idg.dependent)
+
+    while (dep = idg_set_next(en)) !== nothing
+        mdep = idg_mdeps(dep, idg)
+
+        if mdep !== nothing && !mdep_is_empty(gd, gd.tries[dep.atrie], mdep)
+            return true
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c invalid_dependencies
+# (pl-tabling.c:10826-10870 at the pin)
+# DIVERGES: returns `(ok, count)`.
+"Unify `deps` with the tries of the dependencies of `idg` ready to be evaluated; `(ok, number of invalid ones)` (pl-tabling.c)."
+function invalid_dependencies(
+    ld::PL_local_data{T}, deps::term_t, idg::idg_node{T}
+)::Tuple{Bool, Int} where {T}
+    gd = _query_gd(ld)
+    head = 0
+    tail = 0
+    cnt = 0
+    en = idg_set_enum_init(idg.dependent)
+
+    while (dep = idg_set_next(en)) !== nothing
+        if dep.falsecount > 0
+            cnt += 1
+
+            if (dep.monotonic && !dep.force_reeval && has_queued_answers(ld, dep)) ||
+                !(dep.monotonic && !dep.force_reeval)
+                if head == 0
+                    tail = PL_copy_term_ref(ld, deps)
+                    head = PL_new_term_ref(ld)
+                end
+
+                if !PL_unify_list(ld, tail, head, tail) ||
+                    !PL_unify_atom(ld, head, mono_trie_atom(gd, gd.tries[dep.atrie]))
+                    return (false, 0)
+                end
+            end
+        end
+    end
+
+    if cnt == 0
+        if idg.lazy_queued
+            return (PL_unify_atom(ld, deps, mk_sym(T, Symbol("false"))), 0)   # ATOM_false (`:false` is the Bool)
+        else
+            return (PL_unify_nil(ld, deps), 0)
+        end
+    else
+        return (PL_unify_nil(ld, tail != 0 ? tail : deps), cnt)
+    end
+end
+
+# PORT: pl-tabling.c inner_is_monotonic
+# (pl-tabling.c:10498-10510 at the pin)
+"Whether the table being evaluated is a monotonic predicate's (pl-tabling.c `inner_is_monotonic`)."
+function inner_is_monotonic(ld::PL_local_data{T})::Bool where {T}
+    if ld.tabling.has_scheduling_component
+        dep = idg_current(ld)
+
+        if dep !== nothing
+            def = dep.predicate
+
+            if def !== nothing && def.tabling !== nothing &&
+                (def.tabling.flags & TP_MONOTONIC) != 0
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c get_mono_answer
+# (pl-tabling.c:11012-11030 at the pin)
+# DIVERGES: the queue entry is a node id (> 0) or `-serial` of a clause reference; 0 after a type error.
+"The queue entry of the answer `t` of `'\$mono_idg_changed'/2`: a node id, or a clause reference as `-serial` (pl-tabling.c)."
+function get_mono_answer(ld::PL_local_data{T}, t::term_t)::Int where {T}
+    gd = _query_gd(ld)
+    a = PL_get_atom(ld, t)
+
+    if a !== nothing                                    # clause reference
+        s = clref_serial(gd, a)
+        s != 0 && return -s
+    elseif (i = PL_get_integer(ld, t)) !== nothing && i > 0     # trie node
+        return i
+    end
+    PL_type_error(ld, "tbl_answer", t)
+
+    return 0
+end
+
+# PORT: pl-tabling.c mono_queue_answer
+# (pl-tabling.c:11044-11050 at the pin)
+"A new answer `ans` (a node id or a clause reference) of `atrie` for `'\$mono_idg_changed'/2` (pl-tabling.c)."
+function mono_queue_answer(
+    ld::PL_local_data{T}, atrie::trie{T}, ans::term_t
+)::Bool where {T}
+    a = get_mono_answer(ld, ans)
+
+    a == 0 && return false
+    return mono_idg_changed(ld, atrie, a)
+end
+
+# PORT: pl-tabling.c atrie_answer_event
+# (pl-tabling.c:11443-11463 at the pin)
+# DIVERGES: the events (`unify_skeleton`, `table_answer_event`) are EV1's: a predicate with `events` is refused by name.
+"Send the new-answer event of `nid` of `atrie`; false if the hooks raised (pl-tabling.c `atrie_answer_event`)."
+function atrie_answer_event(ld::PL_local_data{T}, atrie::trie{T}, nid::Int)::Bool where {T}
+    def = atrie.predicate
+
+    if def !== nothing && def.events !== nothing
+        tbl_refuse(
+            T,
+            :atrie_answer_event,
+            "atrie_answer_event: the events of a tabled predicate (table_answer_event)",
+            "EV1"
+        )
+    end
+
+    return true
+end
+
+
+# ── the predicates of the monotonic tabling (pl-tabling.c:8853-8960, :10320-11060) ─────────────────────────
+
+# PORT: pl-tabling.c idg_add_monotonic_dep as pl_idg_add_monotonic_dep3_va
+# (PRED_IMPL("$idg_add_monotonic_dep", 3, idg_add_monotonic_dep, 0), pl-tabling.c:10339-10347 at the pin)
+"`'\$idg_add_monotonic_dep'(+SrcTrie, +Dep, +TargetTrie)`: add a monotonic dependency edge (pl-tabling.c)."
+function pl_idg_add_monotonic_dep3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    src_trie = get_trie(gd, ld, PL__t0)
+    src_trie === nothing && return FFALSE
+    dst_trie = get_trie(gd, ld, PL__t0 + 2)
+    dst_trie === nothing && return FFALSE
+
+    return idg_add_monotonic_edge(ld, src_trie, dst_trie, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c idg_add_mono_dyn_dep as pl_idg_add_mono_dyn_dep3_va
+# (PRED_IMPL("$idg_add_mono_dyn_dep", 3, idg_add_mono_dyn_dep, 0), pl-tabling.c:10353-10370 at the pin)
+# DIVERGES: `get_procedure(.., GP_FIND)` is as far as src/pl-proc.jl ports it (it refuses other than GP_DEFINE: owner V9).
+"`'\$idg_add_mono_dyn_dep'(:Head, +Dependency, +TargetTrie)`: a monotonic dependency on a dynamic predicate (pl-tabling.c)."
+function pl_idg_add_mono_dyn_dep3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    proc = get_procedure(gd, ld, PL__t0, GP_FIND)
+    proc === nothing && return FFALSE
+    ctrie = get_trie(gd, ld, PL__t0 + 2)
+    ctrie === nothing && return FFALSE
+
+    atrie = trie_for_dynamic_predicate(ld, proc.definition, ctrie, PL__t0)
+    atrie === nothing && return FFALSE
+
+    return idg_add_monotonic_edge(ld, atrie, ctrie, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_monotonic_add_answer as pl_tbl_monotonic_add_answer2_va
+# (PRED_IMPL("$tbl_monotonic_add_answer", 2, tbl_monotonic_add_answer, 0), pl-tabling.c:10438-10492 at the pin)
+# DIVERGES: the answer of an answer subsumption table (`TRIE_ISMAP`) is queued as its node id; `atrie_answer_event` is the stub above (owner EV1).
+"`'\$tbl_monotonic_add_answer'(+Trie, +Answer)`: add an answer from monotonic propagation (pl-tabling.c)."
+function pl_tbl_monotonic_add_answer2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    atrie = get_trie_nodes(_query_gd(ld), ld, A1)
+
+    if atrie !== nothing
+        idg = atrie.IDG
+        if idg !== nothing && !idg.monotonic
+            _qlf_Sdprintf!(ld, "Monotonic propagation to non-monotonic table??\n")
+            idg_changed(ld, atrie, IDG_CHANGED_NODE)
+            return FFALSE
+        elseif (atrie.flags & TRIE_ISMAP) != 0         # answer subsumption
+            nid = wkl_mode_add_answer(ld, nothing, atrie, A2, 0)
+
+            if nid != 0
+                mono_idg_changed(ld, atrie, nid)
+                return FTRUE
+            end
+        else                                            # normal tabling
+            rc, nid = trie_lookup_abstract(ld, atrie, 0, -(A2 + 1), true, nothing, nothing)
+
+            if rc > 0
+                atrie.nodes[nid].value != 0 && return FFALSE
+                tt_add_answer(ld, atrie, nid)
+                set_trie_value_word(atrie, nid, ATOM_trienode)
+
+                mono_idg_changed(ld, atrie, nid) || return FFALSE
+                atrie_answer_event(ld, atrie, nid) || return FFALSE
+
+                return FTRUE
+            else
+                return trie_error(ld, rc, A1) ? FTRUE : FFALSE
+            end
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c tbl_propagate_start as pl_tbl_propagate_start1_va
+# (PRED_IMPL("$tbl_propagate_start", 1, tbl_propagate_start, 0), pl-tabling.c:10494-10499 at the pin)
+# DIVERGES: `in_assert_propagation` is a `Bool` here (TB3 tests it as one; upstream: an int counter, `++`): a properly nested pair
+# differs only at depth three (upstream hands out 2, here 1).
+"`'\$tbl_propagate_start'(-Old)`: enter assert propagation, `Old` the previous state (pl-tabling.c)."
+function pl_tbl_propagate_start1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    old = Int(ld.tabling.in_assert_propagation)
+
+    ld.tabling.in_assert_propagation = true
+    return PL_unify_integer(ld, PL__t0, old) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_propagate_end as pl_tbl_propagate_end1_va
+# (PRED_IMPL("$tbl_propagate_end", 1, tbl_propagate_end, 0), pl-tabling.c:10501-10506 at the pin)
+# DIVERGES: see `pl_tbl_propagate_start1_va`.
+"`'\$tbl_propagate_end'(+Old)`: restore the assert propagation state `Old` (pl-tabling.c)."
+function pl_tbl_propagate_end1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    v = PL_get_integer_ex(ld, PL__t0)
+
+    v === nothing && return FFALSE
+    ld.tabling.in_assert_propagation = v != 0
+
+    return FTRUE
+end
+
+# PORT: pl-tabling.c tbl_collect_mono_dep as pl_tbl_collect_mono_dep0_va
+# (PRED_IMPL("$tbl_collect_mono_dep", 0, tbl_collect_mono_dep, 0), pl-tabling.c:10523-10530 at the pin)
+"`'\$tbl_collect_mono_dep'`: true in monotonic propagation or when the inner tabled predicate is monotonic (pl-tabling.c)."
+function pl_tbl_collect_mono_dep0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.tabling.in_assert_propagation && return FTRUE
+
+    return inner_is_monotonic(ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c mono_reeval_prepare as pl_mono_reeval_prepare2_va
+# (PRED_IMPL("$mono_reeval_prepare", 2, mono_reeval_prepare, 0), pl-tabling.c:10556-10589 at the pin)
+"`'\$mono_reeval_prepare'(+ATrie, -Size)`: prepare `ATrie` for lazy monotonic updates (pl-tabling.c)."
+function pl_mono_reeval_prepare2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    atrie = get_trie(_query_gd(ld), ld, PL__t0)
+
+    if atrie !== nothing
+        idg = atrie.IDG
+
+        if idg !== nothing && idg.falsecount != 0 && idg.monotonic && idg.lazy
+            if ld.transaction.generation != 0
+                status = tt_mono_status(ld, atrie)
+
+                if status == M_INVALID_DEPS || status == M_MIXED_CLAUSES
+                    tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+                elseif status == M_OLD_CLAUSES
+                    idg.tt_notrail = true
+                elseif status == M_NEW_CLAUSES
+                    idg.tt_notrail = false
+                end
+            end
+
+            idg.lazy_queued = false                     # trap that new answers are queued
+            idg.mono_reevaluating = true
+            idg.tt_new_dep = false                      # see idg_add_child()
+            if (atrie.flags & TRIE_ISMAP) != 0
+                map_trie_node(atrie, 1, mono_reeval_prep_node)
+            end
+
+            return PL_unify_integer(ld, PL__t0 + 1, atrie.value_count) ? FTRUE : FFALSE
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c mono_reeval_done as pl_mono_reeval_done3_va
+# (PRED_IMPL("$mono_reeval_done", 3, mono_reeval_done, 0), pl-tabling.c:10880-10955 at the pin)
+# DIVERGES: the answer node of `mono_idg_changed` is an id.
+"`'\$mono_reeval_done'(+ATrie, +SizeAtStart, -InvalidDependencies)`: done processing the queued answers of `ATrie` (pl-tabling.c)."
+function pl_mono_reeval_done3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    gd = _query_gd(ld)
+    atrie = get_trie(gd, ld, A1)
+    atrie === nothing && return FFALSE
+    vc = PL_get_integer(ld, A2)
+    vc === nothing && return FFALSE
+
+    rc = true
+    idg = atrie.IDG
+    if idg !== nothing
+        deps_t = PL_new_term_ref(ld)
+
+        idg.mono_reevaluating = false
+        idg.tt_new_dep && tt_add_table(ld, atrie, TT_TBL_INVALIDATE)
+        ok, invalid_deps = invalid_dependencies(ld, deps_t, idg)
+        ok || return FFALSE
+
+        if atrie.value_count == vc
+            n = nothing
+
+            if (atrie.flags & TRIE_ISMAP) != 0
+                gc = Ref(0)
+
+                n = map_trie_node(atrie, 1, (tr, nid) -> mono_reeval_done_node(tr, nid, gc))
+                queue = n !== nothing && atrie.nodes[n].value != 0
+                if gc[] != 0
+                    prune_deleted_mdeps(ld, idg)
+                    prune_trie(atrie, 1, nothing)
+                end
+                queue && (rc = mono_idg_changed(ld, atrie, n))
+            end
+
+            if n === nothing && rc && invalid_deps == 0
+                rc = idg_propagate_change(ld, idg, 0) === nothing
+            end
+        end
+
+        if invalid_deps + Int(idg.lazy_queued) != 0
+            invalid = mono_scc_is_complete(ld, idg)
+
+            if invalid === nothing
+                rc = PL_unify_nil(ld, A3)
+            else
+                idg.falsecount = invalid_deps + Int(idg.lazy_queued)
+                if PL_get_nil(ld, deps_t)
+                    t2 = PL_new_term_ref(ld)
+                    rc =
+                        t2 != 0 &&
+                        PL_put_atom(ld, t2, mono_trie_atom(gd, gd.tries[invalid.atrie])) &&
+                        PL_cons_list(ld, deps_t, t2, deps_t) &&
+                        PL_unify(ld, A3, deps_t)
+                else
+                    rc = PL_unify(ld, A3, deps_t)
+                end
+            end
+        else
+            idg.falsecount = 0
+            idg.tt_notrail = false
+            rc = PL_unify_nil(ld, A3)
+        end
+    end
+
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c idg_mono_empty_queue as pl_idg_mono_empty_queue2_va
+# (PRED_IMPL("$idg_mono_empty_queue", 2, idg_mono_empty_queue, 0), pl-tabling.c:10957-10970 at the pin)
+# DIVERGES: the dependency is an integer reference (`mdep_ref!`); a stale or unknown one fails, as upstream's failed magic
+# test does (no address is read).
+"`'\$idg_mono_empty_queue'(+MDep, +Del)`: drop the first `Del` queued answers of the dependency `MDep` (pl-tabling.c)."
+function pl_idg_mono_empty_queue2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    r = PL_get_integer_ex(ld, PL__t0)
+    r === nothing && return FFALSE
+    mdep = mdep_of_ref(ld, r)
+    mdep === nothing && return FFALSE
+    mdep.magic != IDG_MDEP_MAGIC && return FFALSE
+    del = PL_get_size_ex(ld, PL__t0 + 1)
+    del === nothing && return FFALSE
+
+    mdep_empty_queue(mdep, del)
+    return FTRUE
+end
+
+# PORT: pl-tabling.c idg_mono_invalidate as pl_idg_mono_invalidate1_va
+# (PRED_IMPL("$idg_mono_invalidate", 1, idg_mono_invalidate, 0), pl-tabling.c:10972-10983 at the pin)
+"`'\$idg_mono_invalidate'(+Trie)`: invalidate the dependent tables after erasing a clause (pl-tabling.c)."
+function pl_idg_mono_invalidate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    atrie = get_trie(_query_gd(ld), ld, PL__t0)
+    atrie === nothing && return FFALSE
+
+    return idg_changed(ld, atrie, IDG_CHANGED_NODE) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c tbl_node_answer as pl_tbl_node_answer2_va
+# (PRED_IMPL("$tbl_node_answer", 2, tbl_node_answer, 0), pl-tabling.c:8957-8969 at the pin)
+# DIVERGES: the NodeRef "pointer" is the integer `answer_ref(serial, nid)` (upstream: the node's address), as for
+# `$tbl_force_truth_value/3`; a handle that names no trie or no node of it fails (upstream dereferences the address).
+"`'\$tbl_node_answer'(+NodeRef, -Answer)`: the answer of a trie node, `Primary/Moded` for a moded answer (pl-tabling.c)."
+function pl_tbl_node_answer2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    gd = _query_gd(ld)
+    ptr = PL_get_pointer_ex(ld, A1)                             # PL_get_pointer_ex(A1, &ptr): type_error(address, A1)
+    ptr === nothing && return FFALSE
+    ti = answer_ref_trie(ptr)
+    (ptr > 0 && 1 <= ti <= length(gd.tries)) || return FFALSE
+    atrie = gd.tries[ti]
+    nid = answer_ref_node(ptr)
+    (1 <= nid <= length(atrie.nodes)) || return FFALSE
+
+    return tbl_unify_answer(ld, atrie, nid, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c mono_idg_changed as pl_mono_idg_changed2_va
+# (PRED_IMPL("$mono_idg_changed", 2, mono_idg_changed, 0), pl-tabling.c:11052-11060 at the pin)
+"`'\$mono_idg_changed'(+ATrie, +Answer)`: a new answer for `ATrie`, a trie node or a clause reference (pl-tabling.c)."
+function pl_mono_idg_changed2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    atrie = get_trie(_query_gd(ld), ld, PL__t0)
+    atrie === nothing && return FFALSE
+
+    return mono_queue_answer(ld, atrie, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c idg_mono_affects_eager as pl_idg_mono_affects_eager3_va
+# (PRED_IMPL("$idg_mono_affects_eager", 3, idg_mono_affects_eager, PL_FA_NONDETERMINISTIC), pl-tabling.c:8853-8858 at the pin)
+"`'\$idg_mono_affects_eager'(+SrcTrie, -DstTrie, -Dependency)` (pl-tabling.c)."
+function pl_idg_mono_affects_eager3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return idg_edge_gen(
+        ld, PL__t0, 0, PL__t0 + 1, PL__t0 + 2, 0, 0, 0, IDG_MONO_AFFECTS, PL__ctx
+    )
+end
+
+# PORT: pl-tabling.c idg_mono_affects as pl_idg_mono_affects3_va
+# (PRED_IMPL("$idg_mono_affects", 3, idg_mono_affects, PL_FA_NONDETERMINISTIC), pl-tabling.c:8863-8868 at the pin)
+"`'\$idg_mono_affects'(+SrcTrie, -DstTrie, -Dependency)` (pl-tabling.c)."
+function pl_idg_mono_affects3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return idg_edge_gen(
+        ld, PL__t0, 0, PL__t0 + 1, PL__t0 + 2, 0, 0, 0, IDG_MONO_AFFECTS, PL__ctx
+    )
+end
+
+# PORT: pl-tabling.c idg_mono_affects_lazy as pl_idg_mono_affects_lazy5_va
+# (PRED_IMPL("$idg_mono_affects_lazy", 5, idg_mono_affects_lazy, PL_FA_NONDETERMINISTIC), pl-tabling.c:8876-8881 at the pin)
+"`'\$idg_mono_affects_lazy'(+DstTrie, -SrcTrie, -Dependency, -DepRef, -Answers)` (pl-tabling.c)."
+function pl_idg_mono_affects_lazy5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return idg_edge_gen(
+        ld, PL__t0, 0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, 0, 0, PL__ctx
+    )
+end
+
+# PORT: pl-tabling.c idg_mono_index as pl_idg_mono_index2_va
+# (PRED_IMPL("$idg_mono_index", 2, idg_mono_index, 0), pl-tabling.c:8889-8900 at the pin)
+"`'\$idg_mono_index'(+SrcTrie, -Index)`: the trie that indexes the monotonic dependencies of `SrcTrie` (pl-tabling.c)."
+function pl_idg_mono_index2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    atrie = get_trie(gd, ld, PL__t0)
+
+    if atrie !== nothing
+        n = atrie.IDG
+
+        if n !== nothing && idg_mono_index(n) != 0
+            return if PL_unify_atom(
+                ld, PL__t0 + 1, mono_trie_atom(gd, gd.tries[idg_mono_index(n)])
+            )
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c idg_mono_index_deps as pl_idg_mono_index_deps4_va
+# (PRED_IMPL("$idg_mono_index_deps", 4, idg_mono_index_deps, PL_FA_NONDETERMINISTIC), pl-tabling.c:8908-8960 at the pin)
+# DIVERGES: the leaf is the integer id of a node of the index trie (what `'\$trie_gen_node'/3` returns here; upstream: a node
+# pointer); the REDO context is the integer reference of the next dependency (`mdep_ref!`), a stale one ends the enumeration.
+"`'\$idg_mono_index_deps'(+SrcTrie, +Leaf, +DstTrie, ?Dependency)`: the dependencies stored at `Leaf` (pl-tabling.c)."
+function pl_idg_mono_index_deps4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    ctl = PL_foreign_control(PL__ctx)
+
+    if ctl == FRG_FIRST_CALL
+        atrie = get_trie(gd, ld, PL__t0)
+        atrie === nothing && return FFALSE
+        n = atrie.IDG
+        n === nothing && return FFALSE
+        deps = idg_mono_index_deps(n)
+        deps === nothing && return FFALSE
+        leaf = PL_get_integer_ex(ld, PL__t0 + 1)
+        leaf === nothing && return FFALSE
+        dtrie = get_trie(gd, ld, PL__t0 + 2)
+        dtrie === nothing && return FFALSE
+        (di = dtrie.IDG) !== nothing && di.force_reeval && return FFALSE
+
+        mdep = get(deps, leaf, nothing)
+    elseif ctl == FRG_REDO
+        mdep = mdep_of_ref(ld, PL_foreign_context_address(PL__ctx))
+    else                                                # FRG_CUTTED
+        return FTRUE
+    end
+
+    t = PL_new_term_ref(ld)
+    t == 0 && return FFALSE
+    fid = PL_open_foreign_frame(ld)                     # Mark(fli_context->mark)
+    fid == 0 && return FFALSE
+    while mdep !== nothing && mdep.magic == IDG_MDEP_MAGIC
+        if !put_fastheap(ld, mdep.dependency::fastheap_term{T}, t)
+            PL_close_foreign_frame(ld, fid)
+            return FFALSE
+        end
+        if PL_unify(ld, t, PL__t0 + 3)
+            nxt = mdep.same_key
+
+            PL_close_foreign_frame(ld, fid)
+            nxt !== nothing && return PL_retry_address(mdep_ref!(ld, nxt))
+            return FTRUE
+        end
+        if PL_exception(ld, 0) != 0
+            PL_close_foreign_frame(ld, fid)
+            return FFALSE
+        end
+        PL_rewind_foreign_frame(ld, fid)                # Undo(fli_context->mark)
+        mdep = mdep.same_key
+    end
+    PL_close_foreign_frame(ld, fid)
+
+    return FFALSE
+end
+
+# ---- TB5: abolish and reclaim (pl-tabling.c :2700-2950, :3232, :4472-4690, :6723, :12650) ----
+# Merged onto batch 3 and TB6 (TB-merge step 3): the destruction functions that batch 3 had as minimal ports stay where they are
+# (`destroy_answer_trie`, `delayed_destroy_table`, `delete_dynamic_table`, `delete_orphan_dynamic_tables`, `sweep_orphan_dynamic_tables`,
+# `get_trie_from_node`, `DYN_ORPHAN_SWEEP_MIN`, `_wl_is`, above); the TB5 copies of the same names are dropped, and `release_trie_value`
+# is `release_value` of src/pl-trie.jl. What is left here is `collect_dynamic_children`, `abolish_table` and what calls it.
+# The shared tables (`TRIE_ISSHARED`) are refused by name, owner TH1.
+
+# PORT: pl-tabling.c collect_dynamic_children
+# DIVERGES: the buffer is the returned vector; the dependent IDG node names its answer trie by number (`dep.atrie`, a slot of `gd.tries`).
+"The private dynamic pseudo tables the IDG node of `atrie` depends on (pl-tabling.c)."
+function collect_dynamic_children(
+    ld::PL_local_data{T}, atrie::trie{T}
+)::Vector{trie{T}} where {T}
+    b = trie{T}[]
+    n = atrie.IDG
+    if n !== nothing
+        gd = _query_gd(ld)
+        en = idg_set_enum_init(n.dependent)
+        while (dep = idg_set_next(en)) !== nothing
+            ctrie = gd.tries[dep.atrie]
+            if _wl_is(ctrie, WL_DYNAMIC) && (ctrie.flags & TRIE_ISSHARED) == 0
+                push!(b, ctrie)
+            end
+        end
+    end
+
+    return b
+end
+
+# PORT: pl-tabling.c abolish_table
+# DIVERGES: the `O_PLMT` branch of a shared table is refused by name, owner TH1 (`take_trie`, `drop_trie`, the condition variable).
+# The worklist and IDG branches of `reset_answer_table` run before `trie_delete` (`reset_answer_table_worklist`,
+# `reset_answer_table_idg`: the release chain carries only `gd`), after `collect_dynamic_children` has read the node's dependents.
+"Abolish the table `atrie`: schedule it for when it completes if it is incomplete, else delete it from its variant table (pl-tabling.c)."
+function abolish_table(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
+    if _wl_is(atrie, WL_DYNAMIC)
+        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)
+
+        return true
+    end
+
+    if atrie.variant != 0
+        vtrie = get_trie_from_node(ld, atrie)
+        if vtrie !== nothing && is_variant_trie(vtrie)
+            (atrie.flags & TRIE_ISSHARED) != 0 &&
+                tbl_refuse(
+                    T,
+                    :abolish_table,
+                    "abolish_table: a shared table (take_trie, drop_trie)",
+                    "TH1"
+                )
+            if !delayed_destroy_table(atrie)
+                b = collect_dynamic_children(ld, atrie)
+                rat_flags = vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0
+                reset_answer_table_worklist(ld, atrie, rat_flags)
+                reset_answer_table_idg(ld, atrie, rat_flags)
+                reset_answer_table_tracked(ld, atrie)
+                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
+                delete_orphan_dynamic_tables(ld, b)
+            end
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tbl_destroy_table as pl_tbl_destroy_table1_va
+# (PRED_IMPL("$tbl_destroy_table", 1, tbl_destroy_table, 0))
+"`'\$tbl_destroy_table'(+Trie)`: destroy a single answer trie table; true if it is already destroyed (pl-tabling.c)."
+function pl_tbl_destroy_table1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    atrie = get_trie(_query_gd(ld), ld, A1)
+    atrie === nothing && return FFALSE
+
+    return abolish_table(ld, atrie) ? FTRUE : FFALSE
+end
+
+# PORT: pl-tabling.c destroy_delay_info_table
+# DIVERGES: a closure over `gd`, returning the callback `map(tr, nid)` of `map_trie_node` (upstream: `(node, ctx)`); `destroy_delay_info_worklist`
+# is TB4's.
+"The `map_trie_node` callback that destroys the delay info of the worklist of each table of the variant table (pl-tabling.c)."
+function destroy_delay_info_table(gd::PL_global_data{T}) where {T}
+    return function (tr, nid)
+        v = tr.nodes[nid].value
+        if v != 0
+            wl = value_trie(gd, v).worklist
+            if wl isa tbl_worklist && wl.undefined != 0
+                destroy_delay_info_worklist(gd, wl)
+            end
+        end
+
+        return nothing
+    end
+end
+
+# PORT: pl-tabling.c idg_unlink_concurrent_table
+# (pl-tabling.c:2758-2772 at the pin)
+# DIVERGES: the `map_trie_node` callback `(tr, nid)` of the variant table `tr` (upstream: `(node, ctx)`); a closure over `ld`.
+"The `map_trie_node` callback that cleans the edges of an IDG node with concurrent readers, for each table of a variant table (pl-tabling.c)."
+function idg_unlink_concurrent_table(ld::PL_local_data{T}) where {T}
+    return function (tr, nid)
+        v = tr.nodes[nid].value
+        if v != 0
+            n = value_trie(_query_gd(ld), v).IDG
+            if n !== nothing && n.concurrent
+                idg_clean_affected(ld, n)
+                idg_clean_dependent(ld, n)
+            end
+        end
+
+        return nothing
+    end
+end
+
+# PORT: pl-tabling.c reset_table_bulk
+# (pl-tabling.c:2783-2795 at the pin; `bulk_reset *br` is its `registry` and the counter `idg_nodes`)
+# DIVERGES: `ld` is an argument (the worklist and IDG branches of `reset_answer_table` need it, see there: they run here, before
+# `reset_answer_table(gd, ...)`, which then finds neither); `br->registry` is `registry` and `br->idg_nodes` a `Ref`; the node's
+# registry is compared by identity (`===`), as upstream compares the pointers.
+"Reset the answer table of a variant table `value` taken by the bulk teardown, count or delete its IDG node and forget its node (pl-tabling.c)."
+function reset_table_bulk(
+    ld::PL_local_data{T}, value::word, registry::Union{Nothing, idg_registry{idg_node{T}}},
+    idg_nodes::Base.RefValue{Int}
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    atrie = value_trie(gd, value)
+    n = atrie.IDG
+    if n !== nothing
+        if n.registry === registry
+            idg_nodes[] += 1
+        else                                            # not expected
+            idg_registry_delete(n.registry::idg_registry{idg_node{T}}, n.registry_index)
+        end
+    end
+    reset_answer_table_worklist(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table_idg(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    reset_answer_table_tracked(ld, atrie)
+    reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))
+    atrie.variant = 0
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sort_table_values
+# DIVERGES: `sort!` on the values: a value that names a trie is `(serial << 3) | 7`, so its order is the creation order of the tries
+# (upstream sorts by address with an LSD radix sort for the cache; no cache here).
+"Sort the taken values of a variant table in creation order of the tables (pl-tabling.c)."
+function sort_table_values!(values::Vector{word})::Nothing
+    sort!(values)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c save_tabling_status
+# (pl-tabling.c:2539-2554 at the pin; used by `break/0` (pl-pro.c `pl_break1`) and the answer event hook (pl-event.c))
+# DIVERGES: `state` is a `tbl_status{T}` the caller allocates (upstream: a stack struct); `GET_LD` is the argument `ld`.
+"Save the tabling status of `ld` into `state` and start a fresh one: no component, no flags (pl-tabling.c)."
+function save_tabling_status(ld::PL_local_data{T}, state::tbl_status{T})::Nothing where {T}
+    tb = ld.tabling
+    state.scc = tb.component
+    state.hsc = tb.has_scheduling_component
+    state.iac = tb.in_answer_completion
+    state.iap = tb.in_assert_propagation
+    state.prev = tb.saved_status
+
+    tb.saved_status = state
+    tb.component = nothing
+    tb.has_scheduling_component = false
+    tb.in_answer_completion = false
+    tb.in_assert_propagation = false
+
+    return nothing
+end
+
+# PORT: pl-tabling.c restore_tabling_status
+# (pl-tabling.c:2557-2566 at the pin)
+"Restore the tabling status of `ld` from `state`, saved by `save_tabling_status` (pl-tabling.c)."
+function restore_tabling_status(
+    ld::PL_local_data{T}, state::tbl_status{T}
+)::Nothing where {T}
+    tb = ld.tabling
+    tb.component = state.scc
+    tb.has_scheduling_component = state.hsc
+    tb.in_answer_completion = state.iac
+    tb.in_assert_propagation = state.iap
+    tb.saved_status = state.prev
+
+    return nothing
+end
+
+# PORT: pl-tabling.c take_table_value
+# (pl-tabling.c:2804-2822 at the pin; the `trie_empty_take` callback of `empty_variant_table`)
+# DIVERGES: `values` is a growing vector (upstream: the `bulk_reset` buffer sized for all values, grown by `realloc`); the branch
+# of a failed `realloc` (`reset_table_bulk` and `trie_release_value` at once) cannot occur.
+"Take the value `value` of a variant table node into `values` (see `trie_empty_take`) (pl-tabling.c)."
+function take_table_value!(values::Vector{word}, value::word)::Nothing
+    push!(values, value)                                # br->values[br->count++] = value
+
+    return nothing
+end
+
+# PORT: pl-tabling.c empty_variant_table
+# DIVERGES: one path for the private table: the values are taken by `trie_empty_take`, reset in creation order and released after
+# (upstream's malloc failure fallback is the second branch only when there are no values or the delay pass is done); the IDG
+# registry release (`idg_registry_release_n`) and `idg_unlink_concurrent_table` as upstream (the thread's registry is detached
+# before the resets and released after, the nodes of the table plus the thread's reference).
+"Empty the variant table `vtrie` that has no readers; `delays_done`: the delay info pass was done (pl-tabling.c)."
+function empty_variant_table(
+    ld::PL_local_data{T}, vtrie::trie{T}, delays_done::Bool
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    if !delays_done && vtrie.value_count > 0
+        registry = ld.tabling.idg_registry
+        if ld.tabling.concurrent_idg_nodes != 0
+            map_trie_node(vtrie, 1, idg_unlink_concurrent_table(ld))
+        end
+        ld.tabling.idg_registry = nothing
+        idg_nodes = Ref(0)
+        values = word[]
+        trie_empty_take(gd, vtrie, w -> take_table_value!(values, w))
+        sort_table_values!(values)                      # creation order
+        for v in values
+            reset_table_bulk(ld, v, registry, idg_nodes)
+        end
+        if registry !== nothing                         # the nodes' and the thread's
+            idg_registry_release_n(registry, idg_nodes[] + 1)
+        end
+        for v in values
+            isTriePtrValue(v) && release_value(gd, vtrie, v)
+        end
+        ld.tabling.concurrent_idg_nodes = 0
+        ld.tabling.dyn_orphan_events = 0
+    else
+        delays_done || map_trie_node(vtrie, 1, destroy_delay_info_table(gd))   # (*)
+        trie_empty(gd, vtrie)
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c clear_variant_table
+# DIVERGES: the private variant table of `ld` only (`ld.tabling.variant_table` and `ld.tabling.start_nodes`; upstream passes the
+# pointers, `ld == NULL` is the shared table, owner TH1: a shared table is refused by name); the trie's reference count is its
+# `references`, no atomics; `PL_unregister_atom(vtrie->symbol)` is not done (no atom reference counts); `free_node_array` is dropping
+# the vector.
+"Destroy all tables of the thread's variant table and the start node cache (pl-tabling.c)."
+function clear_variant_table(ld::PL_local_data{T})::Nothing where {T}
+    gd = _query_gd(ld)
+    vi = ld.tabling.variant_table
+    if vi != 0
+        vtrie = gd.tries[vi]
+        (vtrie.flags & TRIE_ISSHARED) != 0 &&
+            tbl_refuse(
+                T,
+                :clear_variant_table,
+                "clear_variant_table: a shared variant table",
+                "TH1"
+            )
+        vtrie.references += 1                           # acquire_trie (**)
+        vtrie.magic = TRIE_CMAGIC
+        readers = vtrie.references > 1
+        readers && map_trie_node(vtrie, 1, destroy_delay_info_table(gd))   # (*)
+        vtrie.references -= 1
+        vtrie.references == 0 && empty_variant_table(ld, vtrie, readers)
+        # else the last reader empties it (`trie_clean`)
+        ld.tabling.variant_table = 0
+    end
+    ld.tabling.start_nodes = nothing                    # free_node_array: the nodes are in vtrie
+
+    return nothing
+end
+
+# PORT: pl-tabling.c clearThreadTablingData
+# DIVERGES: `exit` is kept for the callers (no thread exit in the kernel); `idg_release_registry(ld)` is TB6's.
+"Reset the components, the worklists and the tables of this thread (pl-tabling.c)."
+function clearThreadTablingData(ld::PL_local_data{T}, exit::Bool)::Nothing where {T}
+    c = ld.tabling.component
+    reset_global_worklist(ld, c)
+    reset_newly_created_worklists(ld, c, Int(WLFS_KEEP_COMPLETE))
+    clear_variant_table(ld)
+    free_tbl_free_objects(ld, exit)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c tbl_abolish_local_tables as pl_tbl_abolish_local_tables0_va
+# (PRED_IMPL("$tbl_abolish_local_tables", 0, tbl_abolish_local_tables, 0))
+"`'\$tbl_abolish_local_tables'`: clear the thread table data; fails silently if tabling is in progress (pl-tabling.c)."
+function pl_tbl_abolish_local_tables0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    if !ld.tabling.has_scheduling_component
+        clearThreadTablingData(ld, false)
+
+        return FTRUE
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-tabling.c untable_from_clause
+# DIVERGES: the database and the local data are arguments; the clause's first instruction is read from the code vector
+# (`decode`, the functor from the operand, `functor_operand_word`), the procedure by name and arity in the predicate's module;
+# `fatalError` is an `error` (the event hook is not expected to fail). The call sites are pl-srcfile.c:1476 (`unloadFile`) and
+# :1544 (`endReconsult`'s `delete_old_predicates`): the kernel has no `unloadFile` and no `endReconsult` before LB6b, which
+# calls `untable_definition_clauses` below where upstream calls `untable_from_clause`.
+"Raise the `untable` event for the procedure a deleted `'\$tabled'(Head, Mode)` clause names (pl-tabling.c)."
+function untable_from_clause(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, cl::Clause{T}
+)::Nothing where {T}
+    if decode(Code{T}(cl.codes, cl.literals, 1)) == H_FUNCTOR
+        f = functor_operand_word(cl.codes[2])
+        m = gd.modules[cl.predicate.module_]
+        proc = isCurrentProcedure(
+            nameFunctor(ld.functors, f), arityFunctor(ld.functors, f), m
+        )
+        if proc !== nothing && !callEventHook(gd, ld, PLEV_UNTABLE, proc)
+            error("Failed to register untable event")
+        end
+    else
+        @warn "untable_from_clause(): unexpected clause"
+    end
+
+    return nothing
+end
+
+# ORIGINAL (TAB1 TB5): the loop of pl-srcfile.c:1460-1478 (`unloadFile`): `untable_from_clause` for each visible, not erased clause
+# of a `'$tabled'/2` definition; the kernel's `unloadFile` (LB6b) calls this where upstream has the loop.
+"Raise the `untable` event for each live clause of `def` if `def` is `'\$tabled'/2` (pl-srcfile.c `unloadFile`'s loop)."
+function untable_definition_clauses(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
+)::Nothing where {T}
+    if def.arity == 2 && def.functor_name == builtin_atom("\$tabled")
+        c = def.impl_clauses.first_clause
+        while c !== nothing
+            cl = c.clause::Clause{T}
+            if (cl.flags & CL_ERASED) == 0 &&
+                GLOBALLY_VISIBLE_CLAUSE(cl, global_generation(gd))
+                untable_from_clause(gd, ld, cl)
+            end
+            c = c.next
+        end
+    end
+
+    return nothing
+end
+
+# TAB1 TB8 (the restraint flags, the tripwires and the drop of intermediate tables; pl-tabling.c at 18168e629eab, in its order
+# at :6340-6440 and :11693-11975). `tripwire_answers_for_subgoal` (:11827) and `pred_max_table_answer_size` are TB3's. The
+# callers that TB1/TB2/TB3 refused by name before this step call the code below (on wip/tb8m): get_answer_table
+# (`tbl_pred_tripwire`, TB1), tbl_add_answer_found (`tbl_wl_tripwire`, `add_radial_restraint`, `generalise_answer_substitution`,
+# `add_answer_count_restraint`, TB3), `unify_table_status` (`tripwire_scc_subgoals`, TB1/TB2), `_unify_fresh_create`
+# (`tripwire_incomplete_subgoals`, TB2), table_complete_all (`droppable_table`, `drop_intermediate_tables`, TB2).
+
+# ORIGINAL (TAB1 TB8): whether the atom `a` is the atom `name`, by the atom's identity (`sym_key`), as upstream's `==` of atom handles.
+"Whether the atom `a` is `name` (upstream: the comparison of two atom handles)."
+function _tbl_is(a::T, name::Symbol)::Bool where {T}
+    return sym_key(a) == sym_key(mk_sym(T, name))
+end
+
+# ORIGINAL (TAB1 TB8): the atom (the blob term) that names the trie `tr`, `PL_put_atom(t, trie_symbol(tr))`'s value.
+"The atom of the trie `tr`, made on first use (pl-trie.c `trie_symbol`)."
+function _trie_atom(gd::PL_global_data{T}, tr::trie{T})::T where {T}
+    return _blob_term!(gd.atoms, gd.atom_symbols, T, trie_symbol(gd, tr))
+end
+
+# PORT: pl-tabling.c unify_restraint
+# DIVERGES: a `size_t` is an `Int`: `(size_t)-1` is -1; `PL_unify_uint64` of a non-negative value is `unify_int64_ex(t, i, true)`
+# (pl-fli.c:3750-3755): a bound `t` that is no integer raises `type_error(integer, t)` (swipl 10.1.20:
+# `current_prolog_flag(max_answers_for_subgoal, a)`).
+"Unify `t` with the limit `val`: fail for no limit, -1 (pl-tabling.c)."
+function unify_restraint(ld::PL_local_data{T}, t::term_t, val::Int)::Bool where {T}
+    val == -1 && return false
+
+    return unify_int64_ex(ld, t, val, true)
+end
+
+# PORT: pl-tabling.c tbl_get_restraint_flag
+# DIVERGES: the key is compared by its atom (`_tbl_is`); upstream's -1 for a key that is no restraint flag (its caller tests
+# `tbl_is_restraint_flag` first) is `false`.
+"Unify `t` with the value of the restraint flag `key`; the three limits and the two others that are unlimited fail (pl-tabling.c)."
+function tbl_get_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
+    r = ld.tabling.restraint
+    if _tbl_is(key, :max_table_subgoal_size_action)
+        return PL_unify_atom(ld, t, r.max_table_subgoal_size_action)
+    elseif _tbl_is(key, :max_table_answer_size_action)
+        return PL_unify_atom(ld, t, r.max_table_answer_size_action)
+    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+        return PL_unify_atom(ld, t, r.max_answers_for_subgoal_action)
+    elseif _tbl_is(key, :max_table_subgoal_size)
+        return unify_restraint(ld, t, r.max_table_subgoal_size)
+    elseif _tbl_is(key, :max_table_answer_size)
+        return unify_restraint(ld, t, r.max_table_answer_size)
+    elseif _tbl_is(key, :max_answers_for_subgoal)
+        return unify_restraint(ld, t, r.max_answers_for_subgoal)
+    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+        return PL_unify_atom(ld, t, r.max_incomplete_subgoals_action)
+    elseif _tbl_is(key, :max_incomplete_subgoals)
+        return unify_restraint(ld, t, r.max_incomplete_subgoals)
+    elseif _tbl_is(key, :max_scc_subgoals_action)
+        return PL_unify_atom(ld, t, r.max_scc_subgoals_action)
+    elseif _tbl_is(key, :max_scc_subgoals)
+        return unify_restraint(ld, t, r.max_scc_subgoals)
+    end
+
+    return false
+end
+
+# PORT: pl-tabling.c set_restraint_action
+# DIVERGES: the action is returned (`nothing` after the error or a failed `PL_get_atom_ex`); upstream stores it through `valp`.
+"The action atom `t` holds for the restraint `key`, or `nothing` after `domain_error(restraint_action, T)` (pl-tabling.c)."
+function set_restraint_action(
+    ld::PL_local_data{T}, t::term_t, key::T
+)::Union{Nothing, T} where {T}
+    act = PL_get_atom_ex(ld, t)
+    act === nothing && return nothing
+
+    if _tbl_is(act, :error) || _tbl_is(act, :warning) || _tbl_is(act, :suspend)
+        return act
+    end
+
+    _tbl_is(act, :complete_soundly) && (act = mk_sym(T, :bounded_rationality))      # XSB compatibility
+
+    _tbl_is(key, :max_table_subgoal_size_action) && _tbl_is(act, :abstract) && return act
+    if _tbl_is(key, :max_table_answer_size_action) &&
+        (_tbl_is(act, :bounded_rationality) || _tbl_is(act, :fail))
+        return act
+    end
+    _tbl_is(key, :max_answers_for_subgoal_action) && _tbl_is(act, :bounded_rationality) &&
+        return act
+
+    PL_error(ld, ERR_DOMAIN, mk_sym(T, :restraint_action), t)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c set_restraint
+# DIVERGES: the limit is returned (`nothing` after the error); upstream stores it through `valp`. `infinite` is -1 and a size
+# beyond `typemax(Int)` is `PL_get_size_ex`'s error.
+"The limit `t` holds: `infinite` is -1, else a size (pl-tabling.c)."
+function set_restraint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    inf = PL_get_atom(ld, t)
+    (inf !== nothing && _tbl_is(inf, :infinite)) && return -1
+
+    return PL_get_size_ex(ld, t)
+end
+
+# PORT: pl-tabling.c tbl_set_restraint_flag
+# DIVERGES: the key is compared by its atom; upstream's -1 for a key that is no restraint flag (a truth value in C) cannot happen
+# (the caller tests `tbl_is_restraint_flag` first) and is `true` here.
+"Set the restraint flag `key` from `t`: the actions and limits of `LD->tabling.restraint` (pl-tabling.c)."
+function tbl_set_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
+    r = ld.tabling.restraint
+    if _tbl_is(key, :max_table_subgoal_size_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_table_subgoal_size_action = a
+    elseif _tbl_is(key, :max_table_answer_size_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_table_answer_size_action = a
+    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_answers_for_subgoal_action = a
+    elseif _tbl_is(key, :max_table_subgoal_size)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_table_subgoal_size = v
+    elseif _tbl_is(key, :max_table_answer_size)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_table_answer_size = v
+    elseif _tbl_is(key, :max_answers_for_subgoal)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_answers_for_subgoal = v
+    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_incomplete_subgoals_action = a
+    elseif _tbl_is(key, :max_incomplete_subgoals)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_incomplete_subgoals = v
+    elseif _tbl_is(key, :max_scc_subgoals_action)
+        a = set_restraint_action(ld, t, key)
+        a === nothing && return false
+        r.max_scc_subgoals_action = a
+    elseif _tbl_is(key, :max_scc_subgoals)
+        v = set_restraint(ld, t)
+        v === nothing && return false
+        r.max_scc_subgoals = v
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c generalise_answer_substitution
+# DIVERGES: the functor of the compound is its name and arity (`PL_get_name_arity`); `*p == ATOM_ret` is `ret` read through
+# `PL_get_atom`.
+"Unify `gen` with the most general `ret/N` term that fits `spec`, for the answer count restraint (pl-tabling.c)."
+function generalise_answer_substitution(
+    ld::PL_local_data{T}, spec::term_t, gen::term_t
+)::Bool where {T}
+    if PL_is_compound(ld, spec)
+        na = PL_get_name_arity(ld, spec)
+        na === nothing && return false
+
+        return PL_unify_functor(ld, gen, na[1], na[2])
+    end
+    a = PL_get_atom(ld, spec)
+    (a !== nothing && _tbl_is(a, :ret)) && return PL_unify_atom(ld, gen, a)
+
+    return PL_type_error(ld, "answer_substitution", spec)
+end
+
+# PORT: pl-tabling.c add_answer_count_restraint
+# DIVERGES: the predicate is looked up by `lookupProcedure` (upstream: `_PL_predicate`, cached in `GD->procedures`); the
+# database is `_query_gd(ld)`; the `DEBUG(MSG_TABLING_RESTRAINT)` print is left out.
+"Add the condition `answer_count_restraint` to the current delay list: call `system:answer_count_restraint/0` (pl-tabling.c)."
+function add_answer_count_restraint(ld::PL_local_data{T})::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :answer_count_restraint), 0, MODULE_system(gd))
+
+    return PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, 0)
+end
+
+# PORT: pl-tabling.c add_radial_restraint
+# DIVERGES: as `add_answer_count_restraint`, for `system:radial_restraint/0`.
+"Add the condition `radial_restraint` to the current delay list: call `system:radial_restraint/0` (pl-tabling.c)."
+function add_radial_restraint(ld::PL_local_data{T})::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :radial_restraint), 0, MODULE_system(gd))
+
+    return PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, 0)
+end
+
+# PORT: pl-tabling.c tbl_wl_tripwire
+# DIVERGES: `'$tabling':tripwire/3` is looked up by `lookupProcedure` (upstream: `_PL_predicate`, cached); the trie atom is
+# `_trie_atom`; the `DEBUG(MSG_TABLING_RESTRAINT)` print is left out.
+"Call `'\$tabling':tripwire(Wire, Action, Table)` for the answer table of the worklist `wl`: false if it fails or raises (pl-tabling.c)."
+function tbl_wl_tripwire(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, action::T, wire::T
+)::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(
+        mk_sym(T, :tripwire), 3, lookupModule(gd, mk_sym(T, Symbol("\$tabling")))
+    )
+    av = PL_new_term_refs(ld, 3)
+
+    return (
+        PL_put_atom(ld, av, wire) &&
+        PL_put_atom(ld, av + 1, action) &&
+        PL_put_atom(ld, av + 2, _trie_atom(gd, wl_table(ld, wl))) &&
+        PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+    )
+end
+
+# PORT: pl-tabling.c tbl_pred_tripwire
+# DIVERGES: as `tbl_wl_tripwire`; `unify_definition(MODULE_user, av+2, def, 0, GP_QUALIFY)` takes the database.
+"Call `'\$tabling':tripwire(Wire, Action, Pred)` for the predicate `def`: false if it fails or raises (pl-tabling.c)."
+function tbl_pred_tripwire(
+    ld::PL_local_data{T}, def::Definition{T}, action::T, wire::T
+)::Bool where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(
+        mk_sym(T, :tripwire), 3, lookupModule(gd, mk_sym(T, Symbol("\$tabling")))
+    )
+    av = PL_new_term_refs(ld, 3)
+
+    return (
+        PL_put_atom(ld, av, wire) &&
+        PL_put_atom(ld, av + 1, action) &&
+        unify_definition(gd, ld, MODULE_user(gd), av + 2, def, 0, GP_QUALIFY) &&
+        PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+    )
+end
+
+# PORT: pl-tabling.c tripwire_incomplete_subgoals
+# (pl-tabling.c:11943-11954 at the pin.)
+# DIVERGES: a `Definition` that is `nothing` is NULL; the tripwire is `tbl_pred_tripwire` (TB8 replaced TB2's named refusal).
+"True unless the `max_incomplete_subgoals` limit is reached and its tripwire fails: the check before a table is created (pl-tabling.c)."
+function tripwire_incomplete_subgoals(
+    ld::PL_local_data{T}, def::Union{Nothing, Definition{T}}
+)::Bool where {T}
+    r = ld.tabling.restraint
+    limit = r.max_incomplete_subgoals
+
+    if limit != -1 && def !== nothing && ld.tabling.incomplete_tables == limit
+        return tbl_pred_tripwire(
+            ld, def, r.max_incomplete_subgoals_action, mk_sym(T, :max_incomplete_subgoals)
+        )
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c tripwire_scc_subgoals
+# (pl-tabling.c:11956-11965 at the pin.)
+# DIVERGES: the tripwire is `tbl_wl_tripwire` (TB8 replaced TB2's named refusal).
+"True unless a merge made the component of `wl` larger than `max_scc_subgoals` and its tripwire fails; `size0` is the size before (pl-tabling.c)."
+function tripwire_scc_subgoals(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, size0::Int
+)::Bool where {T}
+    r = ld.tabling.restraint
+    limit = r.max_scc_subgoals
+
+    if limit != -1 && size0 <= limit &&
+        wls_size((wl.component::tbl_component{T}).created_worklists) > limit
+        return tbl_wl_tripwire(
+            ld, wl, r.max_scc_subgoals_action, mk_sym(T, :max_scc_subgoals)
+        )
+    end
+
+    return true
+end
+
+# PORT: pl-tabling.c TABLE_DROP_MIN_SIZE
+"The smallest table (in bytes, `trie_table_size`) that `drop_intermediate_tables` drops (pl-tabling.c)."
+const TABLE_DROP_MIN_SIZE = 1024
+
+# PORT: pl-tabling.c droppable_table
+# DIVERGES: the local data is an argument (`trie_symbol` needs the database; TB2's call `droppable_table(c, leader)` becomes
+# `droppable_table(ld, c, leader)`); `PL_register_atom` is left out (no atom GC).
+"Register the answer trie `atrie` as the table of the component `c` that may be dropped when the component completes (pl-tabling.c)."
+function droppable_table(
+    ld::PL_local_data{T}, c::tbl_component{T}, atrie::trie{T}
+)::Nothing where {T}
+    c.drop_symbol = _trie_atom(_query_gd(ld), atrie)
+    c.drop_size = trie_table_size(atrie)
+    c.drop_gen_calls = UInt64(atrie.gen_call)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c children_of_component
+# DIVERGES: the pre-order buffer is a `Vector`.
+"Append the completed children of the component `c` to `b` (pl-tabling.c)."
+function children_of_component(
+    c::tbl_component{T}, b::Vector{tbl_component{T}}
+)::Nothing where {T}
+    if c.children !== nothing
+        for ch in c.children.members
+            ch.status == SCC_COMPLETED && push!(b, ch)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c drop_intermediate_tables
+# DIVERGES: `LD->tabling.variant_table` is the trie numbered `ld.tabling.variant_table` (0: none); the symbol is a blob atom
+# (`symbol_trie` of its handle: the live trie or `nothing`); `trie_delete` takes the database; `PL_unregister_atom` is left
+# out (no atom GC); `table_is_incomplete` is TB1's.
+"Drop the intermediate answer tables of the completed components below `root` that are cheap to recompute (pl-tabling.c)."
+function drop_intermediate_tables(
+    ld::PL_local_data{T}, root::tbl_component{T}
+)::Nothing where {T}
+    gd = _query_gd(ld)
+    factor = Int64(ld.table_flags_drop_intermediate)
+    vtrie = ld.tabling.variant_table != 0 ? gd.tries[ld.tabling.variant_table] : nothing   # private tables only
+
+    order = tbl_component{T}[root]                  # pre-order
+    i = 1
+    while i <= length(order)
+        children_of_component(order[i], order)
+        i += 1
+    end
+
+    count = length(order)
+    for k in count:-1:2                             # children first, not the root
+        c = order[k]
+        below = Int64(0)
+        recompute = Int64(0)
+        keep = true
+
+        if c.children !== nothing
+            for ch in c.children.members
+                if ch.status == SCC_COMPLETED
+                    below += ch.inferences
+                    recompute += ch.drop_recompute
+                end
+            end
+        end
+        own = c.inferences > below ? c.inferences - below : Int64(0)
+        recompute += own
+
+        if c.drop_symbol !== nothing
+            sym = c.drop_symbol::T
+            atrie = is_blob(sym) ? symbol_trie(gd, blob_handle(sym)) : nothing
+
+            keep = (
+                atrie === nothing ||
+                c.drop_size < TABLE_DROP_MIN_SIZE ||
+                UInt64(atrie.gen_call) > c.drop_gen_calls ||
+                recompute > factor * own
+            )
+            if !keep
+                if vtrie !== nothing && !table_is_incomplete(atrie::trie{T})
+                    trie_delete(gd, vtrie, (atrie::trie{T}).variant, true)
+                end
+            end
+            c.drop_symbol = nothing
+        end
+        c.drop_recompute = keep ? Int64(0) : recompute
+    end
+
+    return nothing
+end
+
+# TAB1 TB8 part 2: `'$tbl_sdg'/3` and `'$tbl_incomplete'/3` (pl-tabling.c:9526-9820 at the pin). The graph is built from the
+# live objects: the components, tables and edges are insertion-ordered vectors with an `IdDict` as their index (upstream's
+# `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is TB2's `tbl_pointer!`.
+
+# pl-tabling.c `sdg_atom` (the enum, pl-tabling.c:9553) and `sdg_atoms[]` have no Julia definition, so no PORT marker: they are
+# the symbols `null`, `positive`, `negative`, `pending`, `executing`, `delays`; `sdg_init` is not needed (`mk_sym` interns on
+# first use, the functors are looked up where they are built).
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle of
+# TB2's `tbl_pointer!`.
+"Put the handle of the worklist or component `obj` (0 for none) into `t` (pl-fli.c `PL_put_pointer`)."
+function _tbl_put_pointer(
+    ld::PL_local_data{T}, t::term_t, obj::Union{Nothing, tbl_worklist{T}, tbl_component{T}}
+)::Bool where {T}
+    return PL_put_int64(ld, t, obj === nothing ? 0 : tbl_pointer!(ld, obj))
+end
+
+# PORT: pl-tabling.c sdg_push_root
+# DIVERGES: the stack is a `Vector` (no `segstack`, no `outOfCore`).
+"Push the root of the component `c` on `stack` (pl-tabling.c `sdg_push_root`)."
+function sdg_push_root(
+    stack::Vector{tbl_component{T}}, c::tbl_component{T}
+)::Nothing where {T}
+    up = c.parent
+    while up !== nothing
+        c = up
+        up = c.parent
+    end
+    push!(stack, c)
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_collect
+# DIVERGES: `components` and `tables` are insertion-ordered vectors with an `IdDict` for the lookup (upstream: two `pair_map`s,
+# the count of a component being how often it was met); `c->children` is `component_set.members`; a table is a worklist whose
+# `table` is not 0.
+"Collect the active components below the roots on `stack` in `components` and their incomplete worklists in `tables` (pl-tabling.c)."
+function sdg_collect(
+    stack::Vector{tbl_component{T}}, components::Vector{tbl_component{T}},
+    seen::IdDict{tbl_component{T}, Bool},
+    tables::Vector{tbl_worklist{T}}, tindex::IdDict{tbl_worklist{T}, Int}
+)::Nothing where {T}
+    while !isempty(stack)
+        c = pop!(stack)
+
+        c.status == SCC_ACTIVE || continue          # merged or completed
+        haskey(seen, c) && continue                 # a root seen twice
+        seen[c] = true
+        push!(components, c)
+        children = c.children
+        if children !== nothing
+            for ch in children.members
+                push!(stack, ch)
+            end
+        end
+
+        for wl in worklist_set_to_array(c.created_worklists, T)
+            if wl.table != 0 && !haskey(tindex, wl)
+                push!(tables, wl)
+                tindex[wl] = length(tables)
+            end
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c sdg_count_edges
+# DIVERGES: `tables` is the index of the tables (`tindex`, worklist -> position), `edges` the counts by (caller, callee, negative)
+# with their order in `eorder`; the caller is the worklist `tbl_get_pointer` finds for the handle (upstream: a pointer, accepted
+# only when it is in `tables`); `UNTNOT(sp->term)` is `sp.term`, the sign `IS_TNOT`'s field `is_tnot`.
+"Count the suspensions on the callee `wl` by caller in `edges` (pl-tabling.c `sdg_count_edges`)."
+function sdg_count_edges(
+    ld::PL_local_data{T}, wl::tbl_worklist{T}, tindex::IdDict{tbl_worklist{T}, Int},
+    edges::Dict{Tuple{Int, Int, Bool}, Int}, eorder::Vector{Tuple{Int, Int, Bool}}
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    t = PL_new_term_ref(ld)
+    a = PL_new_term_ref(ld)
+    dependency = mk_sym(T, :dependency)
+
+    c = wl.head
+    while c !== nothing
+        if c.type == CLUSTER_SUSPENSIONS
+            for sp in c.suspensions
+                if !PL_recorded(ld, sp.term, t)
+                    PL_close_foreign_frame(ld, fid)
+
+                    return false
+                end
+                if PL_is_functor(ld, t, dependency, 5) && _PL_get_arg(ld, 4, t, a)
+                    caller = tbl_get_pointer(ld, a)
+                    if caller isa tbl_worklist{T} && haskey(tindex, caller)
+                        key = (tindex[caller], tindex[wl], sp.is_tnot)
+                        if haskey(edges, key)
+                            edges[key] += 1
+                        else
+                            edges[key] = 1
+                            push!(eorder, key)
+                        end
+                    end
+                end
+                PL_rewind_foreign_frame(ld, fid)
+            end
+        end
+        c = c.next
+    end
+
+    PL_close_foreign_frame(ld, fid)
+
+    return true
+end
+
+# PORT: pl-tabling.c sdg_unify_table
+# DIVERGES: the flags are consed in upstream's order (delays, executing, pending, negative), so the list reads [negative, pending,
+# executing, delays]; the variant is read from the variant table of the thread (`atrie->data.variant` is a node of it).
+"Unify `t` with table(Trie, Variant, SCC, Answers, Flags) of the worklist `wl` (pl-tabling.c `sdg_unify_table`)."
+function sdg_unify_table(
+    ld::PL_local_data{T}, t::term_t, wl::tbl_worklist{T}
+)::Bool where {T}
+    gd = _query_gd(ld)
+    atrie = wl_table(ld, wl)
+    av = PL_new_term_refs(ld, 6)
+    flag = av + 5
+
+    PL_put_atom(ld, av + 0, _trie_atom(gd, atrie)) || return false
+    if atrie.variant != 0
+        vtrie = gd.tries[ld.tabling.variant_table]
+        unify_trie_term(ld, vtrie, atrie.variant, av + 1)[1] || return false
+    end
+    _tbl_put_pointer(ld, av + 2, wl.component) || return false
+    PL_put_int64(ld, av + 3, atrie.value_count) || return false
+    PL_put_nil(ld, av + 4)
+    flags = (
+        (!isempty(wl.delays), :delays), (wl.executing, :executing),
+        (wl.in_global_wl, :pending), (wl.negative, :negative)
+    )
+    for (on, name) in flags
+        if on
+            PL_put_atom(ld, flag, mk_sym(T, name)) &&
+            PL_cons_list(ld, av + 4, flag, av + 4) || return false
+        end
+    end
+    table5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :table)), 5)
+
+    return PL_cons_functor_v(ld, av + 0, table5, av) && PL_unify(ld, t, av + 0)
+end
+
+# PORT: pl-tabling.c tbl_sdg as pl_tbl_sdg3_va
+# (pl-tabling.c:9667-9785 at the pin: PRED_IMPL("$tbl_sdg", 3, tbl_sdg, 0))
+# DIVERGES: the single thread is the calling one; the components, tables and edges come in the order they are met (see above).
+"`'\$tbl_sdg'(-Components, -Tables, -Edges)`: the subgoal dependency graph of the calling thread (pl-tabling.c)."
+function pl_tbl_sdg3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    stack = tbl_component{T}[]
+    components = tbl_component{T}[]
+    seen = IdDict{tbl_component{T}, Bool}()
+    tables = tbl_worklist{T}[]
+    tindex = IdDict{tbl_worklist{T}, Int}()
+    edges = Dict{Tuple{Int, Int, Bool}, Int}()
+    eorder = Tuple{Int, Int, Bool}[]
+    tail = PL_new_term_ref(ld)
+    head = PL_new_term_ref(ld)
+    av = PL_new_term_refs(ld, 4)
+    gd = _query_gd(ld)
+
+    active = ld.tabling.component
+    active !== nothing && sdg_push_root(stack, active)
+    s = ld.tabling.saved_status
+    while s !== nothing
+        root = s.scc
+        root !== nothing && sdg_push_root(stack, root)
+        s = s.prev
+    end
+    sdg_collect(stack, components, seen, tables, tindex)
+
+    for wl in tables
+        sdg_count_edges(ld, wl, tindex, edges, eorder) || return FFALSE
+    end
+
+    PL_put_term(ld, tail, A1)
+    scc3 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :scc)), 3)
+    for c in components
+        parent = c.parent
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+            _tbl_put_pointer(ld, av + 0, c) &&
+            (
+                if parent !== nothing
+                    _tbl_put_pointer(ld, av + 1, parent)
+                else
+                    PL_put_atom(ld, av + 1, mk_sym(T, :null))
+                end
+            ) &&
+            (
+                if c.leader != 0
+                    PL_put_atom(ld, av + 2, _trie_atom(gd, gd.tries[c.leader]))
+                else
+                    PL_put_atom(ld, av + 2, mk_sym(T, :null))
+                end
+            ) &&
+            PL_cons_functor_v(ld, av + 0, scc3, av) &&
+            PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A2)
+    for wl in tables
+        (PL_unify_list(ld, tail, head, tail) && sdg_unify_table(ld, head, wl)) ||
+            return FFALSE
+    end
+    PL_unify_nil(ld, tail) || return FFALSE
+
+    PL_put_term(ld, tail, A3)
+    edge4 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :edge)), 4)
+    for key in eorder
+        caller = tables[key[1]]
+        callee = tables[key[2]]
+        (
+            PL_unify_list(ld, tail, head, tail) &&
+            PL_put_atom(ld, av + 0, _trie_atom(gd, wl_table(ld, caller))) &&
+            PL_put_atom(ld, av + 1, _trie_atom(gd, wl_table(ld, callee))) &&
+            PL_put_atom(ld, av + 2, mk_sym(T, key[3] ? :negative : :positive)) &&
+            PL_put_int64(ld, av + 3, edges[key]) &&
+            PL_cons_functor_v(ld, av + 0, edge4, av) &&
+            PL_unify(ld, head, av + 0)
+        ) || return FFALSE
+    end
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# ORIGINAL (TAB1 TB8): upstream's `PL_get_thread_id_ex(t, &tid)` (pl-thread.c); the kernel has the one thread `main` (thread id 1).
+# swipl 10.1.20: `main` and 1 are the thread, another atom or integer raises `existence_error(thread, X)`, a variable
+# `instantiation_error`, any other term `type_error(thread, X)`.
+"Whether `t` names the one thread, `main` or 1; else raise the error of `PL_get_thread_id_ex` (pl-thread.c)."
+function _tbl_get_thread_id_ex(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        _tbl_is(a, :main) && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+    i = PL_get_int64(ld, t)
+    if i !== nothing
+        i == 1 && return true
+
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
+    end
+
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :thread), t)
+end
+
+# PORT: pl-tabling.c tbl_incomplete as pl_tbl_incomplete3_va
+# (pl-tabling.c:9787-9820 at the pin: PRED_IMPL("$tbl_incomplete", 3, tbl_incomplete, 0))
+# DIVERGES: the single thread (the `#else` of `O_PLMT`): the counters of the calling thread; `PL_unify_uint64` of a count is
+# `unify_int64_ex(t, i, true)`.
+"`'\$tbl_incomplete'(+Thread, -Tables, -SCCs)`: the number of incomplete tables and of active components of `Thread` (pl-tabling.c)."
+function pl_tbl_incomplete3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    _tbl_get_thread_id_ex(ld, A1) || return FFALSE
+    tables = ld.tabling.incomplete_tables
+    sccs = ld.tabling.active_components
+
+    return if (unify_int64_ex(ld, A2, tables, true) && unify_int64_ex(ld, A3, sccs, true))
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
 # PORT: pl-tabling.c BeginPredDefs as PL_predicates_from_tabling
+# (pl-tabling.c:12747-12789 at the pin for the entries below)
 # DIVERGES: the ported entries, in upstream's order (upstream's table has the other `$tbl_*` predicates; `$tbl_trienode`
-# and `$tbl_is_trienode` sit between `$tbl_destroy_table/1` and `$tbl_delay_list/1`). The TB1 entries are appended after them.
+# and `$tbl_is_trienode` sit between `$tbl_destroy_table/1` and `$tbl_delay_list/1`). The TB1 entries are appended after them. TB2's entries (relay TB2d): the
+# worklist predicates and `$tbl_wkl_work/6` (NDET) after `$tbl_wkl_add_answer/4`'s place, the completion and freeing
+# predicates after `$tbl_table_pi/2`'s, the inspection predicates after `$tbl_add_global_delays/2`'s (at the stack: TB2's after TB1's); `$tbl_pop_worklist/2`
+# first, `$tbl_wkl_table/2` after `$tbl_incomplete/3`'s place (TB2e).
+# TB7: `$idg_mono_empty_queue/2` fails on a stale dependency reference (upstream's failed `magic` test), as it does on any
+# non-pointer; the 16 monotonic entries follow `$tbl_reeval_wait/2` in upstream's order.
+# TB6's real `$idg_set_current/2` and `$idg_add_edge/1` replace TB4's minimal ports and sit in TB6's block after the TB4 entries.
+# TB8: `$tbl_sdg/3` and `$tbl_incomplete/3` sit after `$tbl_worklist_data/2` and before `$tbl_wkl_table/2`, as upstream's table has them.
 "pl-tabling.c's registration table (`BeginPredDefs(tabling)`): the ported entries."
 const PL_predicates_from_tabling = (
+    PL_extension("\$tbl_wkl_negative", 1, pl_tbl_wkl_negative1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_wkl_is_false", 1, pl_tbl_wkl_is_false1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_pop_worklist", 2, pl_tbl_pop_worklist2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_wkl_add_answer", 4, pl_tbl_wkl_add_answer4_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_wkl_make_follower", 1, pl_tbl_wkl_make_follower1_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_wkl_add_suspension", 2, pl_tbl_wkl_add_suspension2_va, PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_wkl_add_suspension", 3, pl_tbl_wkl_add_suspension3_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$tbl_wkl_done", 1, pl_tbl_wkl_done1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_wkl_answer_trie", 2, pl_tbl_wkl_answer_trie2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_wkl_work", 6, pl_tbl_wkl_work6_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_table_complete_all", 3, pl_tbl_table_complete_all3_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$tbl_leader_complete", 4, pl_tbl_leader_complete4_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_free_component", 1, pl_tbl_free_component1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_table_discard_all", 1, pl_tbl_table_discard_all1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_trienode", 1, pl_tbl_trienode1_va, PL_FA_VARARGS),
     PL_extension("\$tbl_is_trienode", 1, pl_tbl_is_trienode1_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_answer", 3, pl_tbl_answer3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_answer_c", 4, pl_tbl_answer_c4_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_answer_dl", 3, pl_tbl_answer_dl3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_answer_dl", 4, pl_tbl_answer_dl4_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("\$tbl_variant_table", 6, pl_tbl_variant_table6_va, PL_FA_VARARGS),
     PL_extension("\$tbl_abstract_table", 6, pl_tbl_abstract_table6_va, PL_FA_VARARGS),
     PL_extension(
@@ -1337,5 +10746,101 @@ const PL_predicates_from_tabling = (
         pl_tbl_implementation2_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
-    PL_extension("\$is_answer_trie", 2, pl_is_answer_trie2_va, PL_FA_VARARGS)
+    PL_extension("\$is_answer_trie", 2, pl_is_answer_trie2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_scc", 1, pl_tbl_scc1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_scc_data", 2, pl_tbl_scc_data2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_worklist_data", 2, pl_tbl_worklist_data2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_sdg", 3, pl_tbl_sdg3_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_incomplete", 3, pl_tbl_incomplete3_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_wkl_table", 2, pl_tbl_wkl_table2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_delay_list", 1, pl_tbl_delay_list1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_set_delay_list", 1, pl_tbl_set_delay_list1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_add_global_delays", 2, pl_tbl_add_global_delays2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_answer_update_dl",
+        2,
+        pl_tbl_answer_update_dl2_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_answer_update_dl",
+        3,
+        pl_tbl_answer_update_dl3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("\$tbl_force_truth_value", 3, pl_tbl_force_truth_value3_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_set_answer_completed", 1, pl_tbl_set_answer_completed1_va, PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$tbl_is_answer_completed", 1, pl_tbl_is_answer_completed1_va, PL_FA_VARARGS
+    ),
+    # TB6: the IDG predicates, in upstream's order among themselves (pl-tabling.c BeginPredDefs at 18168e629eab)
+    PL_extension("\$idg_add_dyncall", 1, pl_idg_add_dyncall1_va, PL_FA_VARARGS),
+    PL_extension("\$idg_add_edge", 1, pl_idg_add_edge1_va, PL_FA_VARARGS),
+    PL_extension("\$idg_set_current", 1, pl_idg_set_current1_va, PL_FA_VARARGS),
+    PL_extension("\$idg_set_current", 2, pl_idg_set_current2_va, PL_FA_VARARGS),
+    PL_extension("\$idg_reset_current", 0, pl_idg_reset_current0_va, PL_FA_VARARGS),
+    PL_extension("\$idg_edge", 3, pl_idg_edge3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("\$idg_changed", 1, pl_idg_changed1_va, PL_FA_VARARGS),
+    PL_extension("\$idg_thread_summary", 3, pl_idg_thread_summary3_va, PL_FA_VARARGS),
+    PL_extension("\$idg_thread_space", 2, pl_idg_thread_space2_va, PL_FA_VARARGS),
+    PL_extension("\$idg_predicate_edges", 3, pl_idg_predicate_edges3_va, PL_FA_VARARGS),
+    PL_extension("\$idg_falsecount", 2, pl_idg_falsecount2_va, PL_FA_VARARGS),
+    PL_extension("\$idg_forced", 1, pl_idg_forced1_va, PL_FA_VARARGS),
+    PL_extension("\$idg_set_falsecount", 2, pl_idg_set_falsecount2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$idg_false_edge", 3, pl_idg_false_edge3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    # TB6c: the reevaluation predicates (pl-tabling.c:12818-12821 at 18168e629eab)
+    PL_extension(
+        "\$tbl_reeval_prepare_top", 2, pl_tbl_reeval_prepare_top2_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$tbl_reeval_prepare", 2, pl_tbl_reeval_prepare2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_reeval_abandon", 1, pl_tbl_reeval_abandon1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_reeval_wait", 2, pl_tbl_reeval_wait2_va, PL_FA_VARARGS),
+    # TB7: the monotonic predicates (pl-tabling.c:12823-12838 at 18168e629eab)
+    PL_extension(
+        "\$tbl_monotonic_add_answer", 2, pl_tbl_monotonic_add_answer2_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$idg_add_monotonic_dep", 3, pl_idg_add_monotonic_dep3_va, PL_FA_VARARGS),
+    PL_extension("\$idg_add_mono_dyn_dep", 3, pl_idg_add_mono_dyn_dep3_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$idg_mono_affects",
+        3,
+        pl_idg_mono_affects3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$idg_mono_affects_eager",
+        3,
+        pl_idg_mono_affects_eager3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$idg_mono_affects_lazy",
+        5,
+        pl_idg_mono_affects_lazy5_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("\$idg_mono_index", 2, pl_idg_mono_index2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$idg_mono_index_deps",
+        4,
+        pl_idg_mono_index_deps4_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("\$tbl_propagate_start", 1, pl_tbl_propagate_start1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_propagate_end", 1, pl_tbl_propagate_end1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_collect_mono_dep", 0, pl_tbl_collect_mono_dep0_va, PL_FA_VARARGS),
+    PL_extension("\$mono_idg_changed", 2, pl_mono_idg_changed2_va, PL_FA_VARARGS),
+    PL_extension("\$mono_reeval_prepare", 2, pl_mono_reeval_prepare2_va, PL_FA_VARARGS),
+    PL_extension("\$mono_reeval_done", 3, pl_mono_reeval_done3_va, PL_FA_VARARGS),
+    PL_extension("\$idg_mono_empty_queue", 2, pl_idg_mono_empty_queue2_va, PL_FA_VARARGS),
+    PL_extension("\$idg_mono_invalidate", 1, pl_idg_mono_invalidate1_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_node_answer", 2, pl_tbl_node_answer2_va, PL_FA_VARARGS),
+    PL_extension("\$tbl_destroy_table", 1, pl_tbl_destroy_table1_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$tbl_abolish_local_tables", 0, pl_tbl_abolish_local_tables0_va, PL_FA_VARARGS
+    )
 )

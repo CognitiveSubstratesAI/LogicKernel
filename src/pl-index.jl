@@ -68,6 +68,9 @@ const MIN_CLAUSES_FOR_INDEX = 10
 # `reload_generation` (R2 LB6a) is upstream's `LD->reload.generation`, which `visibleClause` and `STATIC_RELOADING` read for every
 # clause: representation only, it is copied from the database (`ld.GD.reload_generation`, the one copy) at EVERY entry into a search (`_index_context!`: the first call and
 # each redo/resume, as a choice point resumes the search), not at every clause.
+# `transaction` (TX1c) is upstream's `LD->transaction`, which `visibleClause` reads (pl-inline.h:673-675): the thread's transaction state,
+# `nothing` where a search has no local data. Inside a transaction a clause of the global generations is visible to the transaction's
+# generation (above GEN_MAX) only through `transaction_visible_clause`, which needs it.
 "The state of one clause search (pl-index.c `index_context`)."
 mutable struct index_context{T}
     generation::gen_t                               # Current generation
@@ -77,6 +80,7 @@ mutable struct index_context{T}
     position::NTuple{MAXINDEXDEPTH + 1, iarg_t}     # Keep track of argument position
     active::Bool                                    # a search is using it (re-entrance guard)
     reload_generation::gen_t                        # LD->reload.generation, read at every entry into a search (R2 LB6a)
+    transaction::Union{Nothing, ld_transaction{T}}  # LD->transaction, read at every entry into a search (TX1c)
 end
 
 "A position path holding only `END_INDEX_POS` — upstream's `.position[0] = END_INDEX_POS`."
@@ -240,7 +244,8 @@ function next_clause_unindexed!(
         cref = chp.cref
         while cref !== nothing
             if visibleClauseCNT(
-                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation,
+                ctx.transaction
             )
                 chp.key = 0
                 setClauseChoice!(cref.next, ctx)
@@ -286,7 +291,8 @@ function next_clause_primary_index!(
         while cref !== nothing
             if cref_matches(cref, key) &&
                 visibleClauseCNT(
-                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation,
+                ctx.transaction
             )
                 result = cref
                 maxsearch = MAX_LOOKAHEAD
@@ -294,7 +300,8 @@ function next_clause_primary_index!(
                 while cref !== nothing
                     if cref_matches(cref, key)
                         if visibleClauseCNT(
-                            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+                            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation,
+                            ctx.transaction
                         )
                             chp.cref = cref
                             return result
@@ -377,7 +384,7 @@ function setClauseChoice!(
     if !is_clean_predicate(ctx.predicate)                               # O_INDEX_STATIC
         while cref !== nothing &&
               !visibleClauseCNT(
-            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation
+            cref.clause::Clause{T}, ctx.generation, ctx.reload_generation, ctx.transaction
         )
             cref = cref.next
         end
@@ -628,11 +635,12 @@ call was a heap allocation on every `nextClause!` — every step of every enumer
 """
 function _index_context!(
     ctx::index_context{T}, generation::gen_t, def::Definition{T}, chp::ClauseChoice{T},
-    rgen::gen_t
+    rgen::gen_t, tr::Union{Nothing, ld_transaction{T}}
 )::index_context{T} where {T}
     @assert !ctx.active "firstClause!/nextClause! re-entered: the shared index_context is in use"
     ctx.active = true
     ctx.reload_generation = rgen
+    ctx.transaction = tr
     ctx.generation = generation
     ctx.predicate = def
     ctx.chp = chp
@@ -660,7 +668,8 @@ function firstClause!(
         generation,
         def,
         chp,
-        (ld.GD::PL_global_data{T}).reload_generation
+        (ld.GD::PL_global_data{T}).reload_generation,
+        ld.transaction::ld_transaction{T}
     )
     try
         return first_clause_guarded!(argv, def.arity, def.impl_clauses, ctx)
@@ -685,7 +694,8 @@ function nextClause!(
         generation,
         def,
         chp,
-        (ld.GD::PL_global_data{T}).reload_generation
+        (ld.GD::PL_global_data{T}).reload_generation,
+        ld.transaction::ld_transaction{T}
     )
     try
         if chp.key == 0                 # not indexed
@@ -2453,7 +2463,9 @@ function set_candidate_indexes!(
     def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool
 )::Bool where {T}
     hints = [hash_hints() for _ in 1:max]
-    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID)   # (no visibleClause test in candidate_indexes!)
+    ctx = index_context{T}(
+        gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID, nothing
+    )   # (no visibleClause test in candidate_indexes!)
     ac = def.arity > MAXINDEXARG ? MAXINDEXARG : def.arity
     _, max = candidate_indexes!(ac, clist, hints, max, ctx)
     if max > 0

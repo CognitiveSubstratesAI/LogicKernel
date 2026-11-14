@@ -796,6 +796,19 @@ end
 "The C `intptr_t` term reference `t` holds, or `nothing` with the error raised (pl-error.c)."
 PL_get_intptr_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long_ex(ld, t)
 
+# PORT: pl-error.c PL_get_pointer_ex
+# DIVERGES: also the body of pl-fli.c `PL_get_pointer`. Returns the integer, or `nothing` with the error raised; the kernel's "pointers" are integers (an answer reference
+# `serial<<32|nid`, a worklist or component handle), so the C cast `intToPointer` is the identity. As at the pin (pl-fli.c:2461-2477,
+# 64-bit: no 32-bit mask) any int64 is a pointer, a negative one too; every other term (an atom, a bigint, a compound, a variable)
+# raises `type_error(address, T)` (pl-error.c:1335-1341), NOT `type_error(integer, T)` of `PL_get_int64_ex`.
+"The pointer (an int64) term reference `t` holds, or `nothing` after raising `type_error(address, T)` (pl-error.c `PL_get_pointer_ex`)."
+function PL_get_pointer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    p = PL_get_int64(ld, t)                     # PL_get_pointer(t, addrp): PL_get_int64, then intToPointer
+    p === nothing || return p
+    PL_error(ld, ERR_TYPE, mk_sym(T, :address), t)
+    return nothing
+end
+
 # PORT: pl-error.c PL_get_size_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (or none: upstream's plain
 # `false`). An integer beyond `Int64` is beyond `size_t` or negative. On the WORDS (f3b-5a): a
