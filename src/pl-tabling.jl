@@ -3205,6 +3205,19 @@ function reset_answer_table(
     end
     atrie.flags &= ~TRIE_COMPLETE
 
+    # THE IDG ARM IS UNREACHABLE BY A PORTED CALLER, AND STAYS A REFUSAL (audit D-0740 item 4, ruling: "the refusal STAYS (not deleted)").
+    # The C: pl-tabling.c:2659-2670 at the pin 18168e62, the `(n=atrie->data.IDG)` arm of reset_answer_table (idg_reset of a shared
+    # table, else idg_destroy_private under RAT_BULK, idg_destroy otherwise); the guard that keeps `droppable_table` off a table with a
+    # node is pl-tabling.c:6495-6497 (`!leader->data.IDG`).
+    # THE INVARIANT: every caller that can hold an answer table with an IDG node clears it through `reset_answer_table_idg` first:
+    #   * `destroy_answer_trie`  src/pl-tabling.jl:3747 (then `trie_delete`),
+    #   * `delete_dynamic_table` src/pl-tabling.jl:3795 (then `trie_delete`),
+    #   * `abolish_table`        src/pl-tabling.jl:9780 (then `trie_delete`; its WL_DYNAMIC branch goes through `delete_dynamic_table`),
+    #   * `reset_table_bulk`     src/pl-tabling.jl:9862 (then this function, with `RAT_CLEANUP | RAT_BULK`);
+    # `drop_intermediate_tables` (src/pl-tabling.jl:10383) cannot meet a node: its tables come from `droppable_table`, whose one call
+    # (src/pl-tabling.jl:2393-2394) is guarded by `leader.IDG === nothing`, as the C is at :6495-6497.
+    # A future caller that skips the clear fails here, loudly: the test `reset_answer_table's IDG arm ...` of
+    # test/core_lang/test_tabling_abolish_swipl.jl pins the refusal and each caller above (tools/mutants/TB6R.py, TB6R-INV1).
     atrie.IDG === nothing || tbl_refuse(
         T,
         :reset_answer_table,
