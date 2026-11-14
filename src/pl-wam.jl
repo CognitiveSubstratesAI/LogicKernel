@@ -3587,6 +3587,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_UNIFY_VV
     # DIVERGES: no `globaliseVar` (decision 2).
     # NOT PORTED: `CHECK_WAKEUP` (no attributed variables).
+    # synced to cf6960c2 (pl-vmi.c:1319-1327): `do_unify()` is called directly under `occurs_check=false`,
+    # before the `unify_ptrs()` path; the stack-overflow retry the C leaves to `unify_ptrs` does not exist here.
     @label B_UNIFY_VV
     buvv_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buvv_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
@@ -3598,6 +3600,14 @@ function PL_next_solution_guarded(
         _slot_copy!(ld, ARGP.pos + 1, buvv_2 + 1)
         ARGP = _argp_add(ARGP, 1)
         @goto debug_equals2
+    end
+    if ld.prolog_flag_occurs_check == OCCURS_CHECK_FALSE
+        buvv_rc0 = do_unify_cells(ld, -(buvv_1 + 1), -(buvv_2 + 1))   # rc = do_unify(v1, v2)
+        if buvv_rc0 == BOOLEX_TRUE
+            (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP (AV3)
+            @goto next_instruction
+        end
+        buvv_rc0 == BOOLEX_FALSE && @goto shallow_backtrack          # BODY_FAILED
     end
     @SAVE_REGISTERS(QID)
     buvv_rc = unify_ptrs_cells(ld, -(buvv_1 + 1), -(buvv_2 + 1))   # on the cells (L1c-4)
@@ -4008,6 +4018,8 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c S_TRIE_GEN
     # (pl-vmi.c:5937-5980 at the pin.) The supervisor of `trie_gen_compiled/2,3`: the first argument is a trie, the clause
     # reference of its compiled clause, or `fail`; compile the trie once (`compile_trie`) and run its clause in this frame.
+    # synced to cf6960c2 (pl-vmi.c:6067-6123): `clause_dbref` returns the clause, not its clause_ref, and a clause reference that is
+    # not a trie clause (`is_trie_clause`, pl-trie.h:244) is a `trie_or_clause` type error (pl-vmi.c:6118-6120).
     # DIVERGES: the argument's atom word is read with `_deref_loc`; `clause_clref` returns the clause, so a trie's reference is
     # the one `compile_trie` kept (`_trie_clause_cref`) and a clause reference argument runs from a reference of its own, as the
     # meta-call's clause does (`I_CALLN`); `lTop` is raised past the arguments (`setLTop!`) before `compile_trie` opens its foreign frame, where upstream sets
@@ -4044,6 +4056,11 @@ function PL_next_solution_guarded(
         trie_maybe_discard_nodes(gd, stg_tr)
         tc_cref = _trie_clause_cref(stg_tr)         # cref = clause_clref(dbref)
     else
+        # } else if ( !is_trie_clause(cl) ) goto trie_gen_type_error; is_trie_clause (pl-trie.h:244-248) written inline: one use
+        stg_gc2 = gd.procedures_trie_gen_compiled2.definition
+        stg_gc3 = gd.procedures_trie_gen_compiled3.definition
+        stg_is_trie_clause = stg_cl.predicate === stg_gc3 || stg_cl.predicate === stg_gc2
+        stg_is_trie_clause || @goto trie_gen_type_error
         tc_cref = ClauseRef{T}(nothing, word(0), stg_cl, nothing)  # a clause reference argument: a reference of its own
     end
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(stg_base, 0), ph)    # ARGP = argFrameP(FR, 0)
@@ -5239,9 +5256,23 @@ function PL_next_solution_guarded(
     # debugger branch (`tracePort(…, CUT_CALL_PORT)`: no debugger). The `exception_term` test after
     # the discard is read since V9g: a cleanup frame the cut discards runs its handler
     # (`discardChoicesAfter` → `frameFinished`), which can raise.
+    # synced to cf6960c2 (pl-vmi.c:2699-2703): the fast cut when the only choice point is the frame's own
+    # (both arms end at `NEXT_INSTRUCTION`; the arm's state is the one the general discard leaves).
     @label I_CUT
     ld.frames[FR].flags &= ~FR_SSU_DET              # clear(FR, FR_SSU_DET)
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base   # (LocalFrame)BFR <= FR
+        @goto next_instruction
+    end
+    cu_b = ld.choices[ld.BFR]
+    cu_older = cu_b.parent == 0 || ld.choices[cu_b.parent].base <= ld.frames[FR].base
+    if cu_b.frame == FR && cu_older
+        # BFR->frame == FR && (LocalFrame)BFR->parent <= FR: only our own choice, no frames to
+        # discard (discardChoicesAfter(): its frame loop runs no round and its tail is these two lines)
+        DiscardMark(ld, cu_b.mark)                  # DiscardMark(BFR->mark)
+        ld.BFR = cu_b.parent                        # BFR = BFR->parent
+        cu_clause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+        setLTop!(ld, argFrameP(ld.frames[FR].base, Int(cu_clause.variables)))
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         @goto next_instruction
     end
     @SAVE_REGISTERS(QID)
@@ -5952,6 +5983,8 @@ function PL_next_solution_guarded(
     # table is complete (`tbl_complete_answer_clause`) run the answer trie as `trie_gen_compiled/2` in this frame, else continue as
     # `S_CALLWRAPPER`, calling `start_tabling/3`.
     # (TB3b: pl-vmi.c:3646-3668 at 18168e62.)
+    # synced to cf6960c2 (pl-vmi.c:3681-3706): upstream reads the clause with `clause_dbref` and runs `trie_clause_cref(cl)`;
+    # the kernel's `clause_clref` already returns the clause and the reference run is built from it (below): no code change.
     # DIVERGES: `tbl_complete_answer_clause` gets the frame (upstream reads the saved registers); the clause reference is an atom
     # word; the single-answer path jumps to the VMH `trie_gen_single` (after `trie_gen_type_error`) with the answer node
     # `trie_single_value_node(symbol_trie(gd, st_clref))` and its trie (the node id is a node of that trie); the path is reached only
@@ -6325,6 +6358,8 @@ function PL_next_solution_guarded(
     # `CHP_CATCH` (since V9f): the popped record and the dead ones above it are dropped at once, as
     # at `CHP_CLAUSE`; since V9g its `FR_WATCHED` branch: the goal of a cleanup frame failed, the
     # handler runs with `fail` (`callCleanupHandler`).
+    # synced to cf6960c2 (pl-vmi.c:6975-6976): before `Undo(BFR->mark)` upstream calls `profBacktrack()` when `LD->alerted` is
+    # set. The profiler is unwritten in the kernel (owner row refuse:profiler; `ld.alerted` here carries the wakeup bit only): nothing to call.
     @label deep_backtrack                           # next_choice:
     while FR != 0 && ld.frames[FR].base > ld.choices[ld.BFR].base     # NULL is below every choice
         leaveFrame(ld, FR)                          # LEAVE_FAILED_FRAME(FR)
