@@ -118,30 +118,84 @@ tl24(1).
 """
 
 const _TLO_CASES = [
-    ("tl01", raw"thread_local(tl01/1), assertz(tl01(1)), assertz(tl01(2)), findall(X, tl01(X), R)"),
-    ("tl02", raw"thread_local(tl02/1), ( predicate_property(tl02(_), thread_local) -> R = yes ; R = no )"),
-    ("tl03", raw"thread_local(tl03/1), ( predicate_property(tl03(_), dynamic) -> R = yes ; R = no )"),
-    ("tl04", raw"thread_local(tl04/1), ( predicate_property(tl04(_), volatile) -> R = yes ; R = no )"),
-    ("tl05", raw"thread_local(tl05/1), assertz(tl05(1)), assertz(tl05(2)), retract(tl05(1)), findall(X, tl05(X), R)"),
+    (
+        "tl01",
+        raw"thread_local(tl01/1), assertz(tl01(1)), assertz(tl01(2)), findall(X, tl01(X), R)"
+    ),
+    (
+        "tl02",
+        raw"thread_local(tl02/1), ( predicate_property(tl02(_), thread_local) -> R = yes ; R = no )"
+    ),
+    (
+        "tl03",
+        raw"thread_local(tl03/1), ( predicate_property(tl03(_), dynamic) -> R = yes ; R = no )"
+    ),
+    (
+        "tl04",
+        raw"thread_local(tl04/1), ( predicate_property(tl04(_), volatile) -> R = yes ; R = no )"
+    ),
+    (
+        "tl05",
+        raw"thread_local(tl05/1), assertz(tl05(1)), assertz(tl05(2)), retract(tl05(1)), findall(X, tl05(X), R)"
+    ),
     ("tl06", raw"thread_local(tl06/1), assertz(tl06(7)), clause(tl06(X), true), R = X"),
     ("tl07", raw"thread_local(tl07/1), ( tl07(_) -> R = yes ; R = no )"),
-    ("tl08", raw"thread_local(tl08/1), thread_local(tl08/1), assertz(tl08(1)), thread_local(tl08/1), findall(X, tl08(X), R)"),
-    ("tl09", raw"thread_local(tl09/1), dynamic(tl09/1), assertz(tl09(1)), findall(X, tl09(X), R)"),
-    ("tl10", raw"dynamic(tl10/1), thread_local(tl10/1), assertz(tl10(1)), findall(X, tl10(X), R)"),
-    ("tl11", raw"thread_local(tl11/1), assertz(tl11(1)), retractall(tl11(_)), findall(X, tl11(X), R)"),
+    (
+        "tl08",
+        raw"thread_local(tl08/1), thread_local(tl08/1), assertz(tl08(1)), thread_local(tl08/1), findall(X, tl08(X), R)"
+    ),
+    (
+        "tl09",
+        raw"thread_local(tl09/1), dynamic(tl09/1), assertz(tl09(1)), findall(X, tl09(X), R)"
+    ),
+    (
+        "tl10",
+        raw"dynamic(tl10/1), thread_local(tl10/1), assertz(tl10(1)), findall(X, tl10(X), R)"
+    ),
+    (
+        "tl11",
+        raw"thread_local(tl11/1), assertz(tl11(1)), retractall(tl11(_)), findall(X, tl11(X), R)"
+    ),
     ("tl12", raw"thread_local(tm:tl12/1), assertz(tm:tl12(1)), findall(X, tm:tl12(X), R)"),
-    ("tl13", raw"dynamic(tl13/1), assertz(tl13(1)), thread_local(tl13/1), findall(X, tl13(X), R)"),
+    (
+        "tl13",
+        raw"dynamic(tl13/1), assertz(tl13(1)), thread_local(tl13/1), findall(X, tl13(X), R)"
+    ),
     ("tl14", raw"thread_local(tl14/1), assertz(tl14(2)), findall(X, tl14(X), R)"),
-    ("tl15", raw"assertz(tl15(1)), retract(tl15(1)), thread_local(tl15/1), assertz(tl15(2)), findall(X, tl15(X), R)"),
-    ("tl16", raw"'$set_predicate_attribute'(tl16(_), thread_local, true), '$set_predicate_attribute'(tl16(_), thread_local, false), ( '$get_predicate_attribute'(tl16(_), thread_local, 1) -> R = yes ; R = no )"),
-    ("tl17", raw"dynamic(tl17/1), assertz(tl17(1)), '$set_predicate_attribute'(tl17(_), thread_local, false), ( '$get_predicate_attribute'(tl17(_), dynamic, 1) -> R = yes ; R = no )"),
-    ("tl18", raw"dynamic(tl18/1), assertz(tl18(1)), '$set_predicate_attribute'(tl18(_), thread_local, false), assertz(tl18(2)), findall(X, tl18(X), R)"),
-    ("tl19", raw"thread_local(tl19/1), assertz(tl19(1)), '$set_predicate_attribute'(tl19(_), thread_local, false), findall(X, tl19(X), R)"),
+    (
+        "tl15",
+        raw"assertz(tl15(1)), retract(tl15(1)), thread_local(tl15/1), assertz(tl15(2)), findall(X, tl15(X), R)"
+    ),
+    (
+        "tl16",
+        raw"'$set_predicate_attribute'(tl16(_), thread_local, true), '$set_predicate_attribute'(tl16(_), thread_local, false), ( '$get_predicate_attribute'(tl16(_), thread_local, 1) -> R = yes ; R = no )"
+    ),
+    (
+        "tl17",
+        raw"dynamic(tl17/1), assertz(tl17(1)), '$set_predicate_attribute'(tl17(_), thread_local, false), ( '$get_predicate_attribute'(tl17(_), dynamic, 1) -> R = yes ; R = no )"
+    ),
+    (
+        "tl18",
+        raw"dynamic(tl18/1), assertz(tl18(1)), '$set_predicate_attribute'(tl18(_), thread_local, false), assertz(tl18(2)), findall(X, tl18(X), R)"
+    ),
+    (
+        "tl19",
+        raw"thread_local(tl19/1), assertz(tl19(1)), '$set_predicate_attribute'(tl19(_), thread_local, false), findall(X, tl19(X), R)"
+    ),
     ("tl20", raw"'$local_definitions'(_, _), R = yes"),
-    ("tl21", raw"'$set_predicate_attribute'(tl21(_), thread_local, 1), assertz(tl21(1)), findall(X, tl21(X), R)"),
+    (
+        "tl21",
+        raw"'$set_predicate_attribute'(tl21(_), thread_local, 1), assertz(tl21(1)), findall(X, tl21(X), R)"
+    ),
     ("tl22", raw"'$set_predicate_attribute'(tl22(_), thread_local, false), R = ok"),
-    ("tl23", raw"thread_local(tl23/1), assertz(tl23(1)), '$set_predicate_attribute'(tl23(_), dynamic, false), '$set_predicate_attribute'(tl23(_), thread_local, true), assertz(tl23(2)), findall(X, tl23(X), R)"),
-    ("tl24", raw"'$set_predicate_attribute'(tl24(_), thread_local, false), findall(X, tl24(X), R)")
+    (
+        "tl23",
+        raw"thread_local(tl23/1), assertz(tl23(1)), '$set_predicate_attribute'(tl23(_), dynamic, false), '$set_predicate_attribute'(tl23(_), thread_local, true), assertz(tl23(2)), findall(X, tl23(X), R)"
+    ),
+    (
+        "tl24",
+        raw"'$set_predicate_attribute'(tl24(_), thread_local, false), findall(X, tl24(X), R)"
+    )
 ]
 
 const _TLO_SWIPL = [
@@ -191,12 +245,13 @@ const _TLO_KERNEL_DIFF = Dict(
     "tl19" => _eline("tl19", _el(_ei(1))),
     # tl20: DIVERGES vs threads=true oracle (TH1a ruling D-0716 Q1(a)): `$local_definitions/2` is registered only under O_ENGINES (pl-proc.c:4426-4428): an unknown procedure (the oracle's call fails)
     "tl20" => _eline(
-        "tl20", _eraised(_ec("existence_error", _ea("procedure"), _epi("\$local_definitions", 2)))
+        "tl20",
+        _eraised(_ec("existence_error", _ea("procedure"), _epi("\$local_definitions", 2)))
     )
 )
 const _TLO_KERNEL = String[
     (
-        m = match(r"^t_(tl\d+)", l);
+        m=match(r"^t_(tl\d+)", l);
         m === nothing ? l : get(_TLO_KERNEL_DIFF, String(m.captures[1]), l)
     ) for l in _TLO_SWIPL
 ]
@@ -239,7 +294,8 @@ function _tlo_ask(gd, ld, pred::String)::String
         rc = LK.PL_next_solution(gd, ld, qid)
         if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
             push!(
-                sols, _tlo_enc(mk_expr(_TLO, _TLO[_tlos(pred), lk_answers(ld, (a:a)...)...]))
+                sols,
+                _tlo_enc(mk_expr(_TLO, _TLO[_tlos(pred), lk_answers(ld, (a:a)...)...]))
             )
             rc == LK.PL_S_LAST && break
         elseif rc == LK.PL_S_EXCEPTION
@@ -279,7 +335,8 @@ end
     end
     @test differ == _TLO_DIVERGES
     @test length(_TLO_DIVERGES) == 8                    # tl13-tl19 (the body) and tl20 (the O_ENGINES-only predicate)
-    for id in ("tl01", "tl02", "tl05", "tl08", "tl09", "tl10", "tl21", "tl22", "tl23", "tl24")
+    for id in
+        ("tl01", "tl02", "tl05", "tl08", "tl09", "tl10", "tl21", "tl22", "tl23", "tl24")
         @test !(id in _TLO_DIVERGES)                    # the controls: the same answer on both sides
     end
 end
@@ -320,4 +377,3 @@ end
         @test _tlo_swipl_lines(f, names) == _TLO_SWIPL
     end
 end
-
