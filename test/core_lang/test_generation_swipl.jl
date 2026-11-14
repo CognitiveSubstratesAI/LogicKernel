@@ -1,5 +1,5 @@
 # ORIGINAL: a differential of clause/2 and retract/1 against swipl at the pin; test_dbg1_swipl.jl's harness (a program, a .out of swipl's answers, a live check).
-# UPSTREAM: pl-comp.c clause/2 (setGenerationFrameVal(environment_frame, dref->generation), :7413) and pl-proc.c retract/1 (:3180), swipl-devel 18168e62.
+# C source of these rows: pl-comp.c clause/2 (setGenerationFrameVal(environment_frame, dref->generation), :7413) and pl-proc.c retract/1 (:3180), swipl-devel 18168e62.
 # test/core_lang/test_generation_swipl.jl — ASSERT-GEN (audit D-0713 (3)): clause/2 and retract/1 store the predicate access object's generation in
 # the frame; upstream does not compare it with the generation the frame took at the call. The kernel had `@assert dref.generation ==
 # generationFrame(frame)` at both sites (a probe showed it fires for clause/2 on a predicate declared `autoload/2`, whose library `trapUndefined`
@@ -26,9 +26,13 @@ const _GN_OUT = joinpath(@__DIR__, "test_generation_swipl.out")
 const _GN_AUTO = ":- autoload(library(lists), [append/3, last/2, subtract/3]).\n"
 
 # the cases, in the order of the program; the ones that run with the declaration (ONE extractor for the kernel's side and swipl's)
-_gn_ids() = [String(m[1]) for m in eachmatch(r"^(p1[a-z]+\d+)\(R\) :-"m, read(_GN_PL, String))]
+_gn_ids() =
+    [String(m[1]) for m in eachmatch(r"^(p1[a-z]+\d+)\(R\) :-"m, read(_GN_PL, String))]
 _gn_autoids() =
-    [String(m[1]) for m in eachmatch(r"^%% (p1[a-z]+\d+): \[autoload-decl\]"m, read(_GN_PL, String))]
+    [
+        String(m[1]) for
+        m in eachmatch(r"^%% (p1[a-z]+\d+): \[autoload-decl\]"m, read(_GN_PL, String))
+    ]
 _gn_program(id::String) = (id in _gn_autoids() ? _GN_AUTO : "") * read(_GN_PL, String)
 function _gn_pins()::Dict{String, String}
     d = Dict{String, String}()
@@ -81,7 +85,8 @@ function gn_ask(::Type{T}, id::String)::Union{String, Exception} where {T}
         gd = LK.PL_global_data{T}()
         ld = LK.PL_local_data{T}(gd)
         st, ball = LK.load_file!(gd, ld, f)
-        st === :ok || return "the program did not load: $st " * (ball === nothing ? "" : _gn_enc(ball::T))
+        st === :ok || return "the program did not load: $st " *
+               (ball === nothing ? "" : _gn_enc(ball::T))
         proc = LK.isCurrentProcedure(sym_key(lk_sym(T, Symbol(id))), 1, LK.MODULE_user(gd))
         (proc === nothing || !LK.isDefinedProcedure(gd, proc)) &&
             return "the case predicate $id/1 is not defined"
@@ -100,7 +105,9 @@ function gn_ask(::Type{T}, id::String)::Union{String, Exception} where {T}
                 rc == LK.PL_S_LAST && break
             elseif rc == LK.PL_S_EXCEPTION
                 ex = LK.PL_exception(ld, qid)
-                push!(sols, "query exception " * (ex == 0 ? "?" : _gn_enc(lk_answer(ld, ex))))
+                push!(
+                    sols, "query exception " * (ex == 0 ? "?" : _gn_enc(lk_answer(ld, ex)))
+                )
                 break
             else
                 break
@@ -132,9 +139,10 @@ function gn_swipl(swipl::String, id::String)::String
         goal = "consult(['$prog','$drv']), pr_main($id)"
         out = read(
             pipeline(
-                addenv(`$swipl -q -g $goal -t halt`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull
+                addenv(`$swipl -q -g $goal -t halt`, "LC_ALL" => "C"); stdin=devnull,
+                stderr=devnull
             ),
-            String,
+            String
         )
         return chomp(out)
     end
@@ -149,7 +157,8 @@ end
     @test sort(collect(keys(pins))) == sort(ids)
     @test auto == ["p1a$i" for i in 12:19]
     @test count(id -> occursin("append(", pins[id]), auto) >= 6        # swipl loads library(lists) inside clause/2 and answers its clauses
-    @test pins["p1b1"] == "[1,2,3,9]" && pins["p1b2"] == "[1,3]" && pins["p1b13"] == "[2-true,3-true,9-true]"   # the wakeup's assert/retract is seen
+    @test pins["p1b1"] == "[1,2,3,9]" && pins["p1b2"] == "[1,3]" &&
+        pins["p1b13"] == "[2-true,3-true,9-true]"   # the wakeup's assert/retract is seen
 
     res = Dict{String, Union{String, Exception}}(id => gn_ask(_TL, id) for id in ids)
 

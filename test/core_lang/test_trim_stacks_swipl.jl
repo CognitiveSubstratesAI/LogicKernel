@@ -107,7 +107,7 @@ const _TS_CASES = [
     ("ts11", raw"( trim_stacks, fail ; R = alt )"),   # fails nowhere: the failure after it is the body's
     ("ts12", raw"findall(X, ( p(X), trim_stacks ), R)"),   # backtracks through it: the choice point of p/1 survives
     ("ts13", raw"p(X), X >= 2, trim_stacks, R = X"),   # two answers, the second after a backtrack over it
-    ("ts14", raw"once(trim_stacks), R = ok"),   # under once/1
+    ("ts14", raw"once(trim_stacks), R = ok")   # under once/1
 ]
 
 # swipl 10.1.20's answers to the program and cases above (the driver's lines; the same on two runs)
@@ -194,11 +194,16 @@ end
     end
     # not vacuous: the rows that answer true hold their answers, the arity-1 row raises, the backtracking rows answer 3 and 2 times
     @test count(l -> occursin(_ts_codes("ok"), l), _TS_PINNED) == 5                  # ts01, ts08, ts09, ts10, ts14
-    @test any(l -> startswith(l, "t_ts07 ") && occursin(_ts_codes("existence_error"), l), _TS_PINNED)
+    @test any(
+        l -> startswith(l, "t_ts07 ") && occursin(_ts_codes("existence_error"), l),
+        _TS_PINNED
+    )
     ts13 = only(filter(l -> startswith(l, "t_ts13 "), _TS_PINNED))
     @test length(collect(eachmatch(r"c\[116,95,116,115,49,51\]/1", ts13))) == 2       # ts13: two answers on its line
     @test any(
-        l -> startswith(l, "t_ts12 ") && occursin("i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil", l),
+        l ->
+            startswith(l, "t_ts12 ") &&
+            occursin("i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil", l),
         _TS_PINNED
     )
 end
