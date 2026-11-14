@@ -1004,6 +1004,8 @@ graph LR
     pl_pro["pl-pro.jl"]
     pl_init["pl-init.jl"]
     pl_event["pl-event.jl"]
+    pl_transaction["pl-transaction.jl"]
+    pl_undo["pl-undo.jl"]
     pl_mutex["pl-mutex.jl"]
     pl_bag["pl-bag.jl"]
     pl_gvar["pl-gvar.jl"]
@@ -1089,6 +1091,7 @@ graph LR
     pl_index --> pl_arith
     pl_index --> os_pl_text
     pl_index --> pl_proc
+    pl_index --> pl_transaction
     pl_index --> pl_read
     pl_funct --> term_interface
     pl_funct --> default_term
@@ -1111,6 +1114,7 @@ graph LR
     pl_global --> os_pl_os
     pl_global --> os_pl_file
     pl_global --> pl_setup
+    pl_global --> pl_transaction
     pl_global --> pl_tabling
     pl_global --> gd_template
     pl_modul --> term_interface
@@ -1145,6 +1149,8 @@ graph LR
     pl_inline --> pl_gmp
     pl_inline --> pl_arith
     pl_inline --> os_pl_text
+    pl_inline --> pl_transaction
+    pl_inline --> pl_undo
     pl_prims --> term_interface
     pl_prims --> default_term
     pl_prims --> os_pl_utf8
@@ -1344,6 +1350,7 @@ graph LR
     pl_wam --> pl_supervisor
     pl_wam --> pl_trace
     pl_wam --> pl_event
+    pl_wam --> pl_undo
     pl_wam --> pl_wrap
     pl_wam --> pl_trie
     pl_wam --> pl_write
@@ -1604,6 +1611,7 @@ graph LR
     pl_setup --> os_pl_text
     pl_setup --> pl_supervisor
     pl_setup --> pl_init
+    pl_setup --> pl_undo
     pl_setup --> pl_wrap
     pl_setup --> pl_trie
     pl_setup --> pl_op
@@ -1633,6 +1641,7 @@ graph LR
     pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
     pl_proc --> pl_event
+    pl_proc --> pl_transaction
     pl_proc --> pl_tabling
     pl_proc --> pl_trie
     pl_proc --> pl_read
@@ -1742,6 +1751,36 @@ graph LR
     pl_event --> os_pl_option
     pl_event --> pl_proc
     pl_event --> pl_trace
+    pl_transaction --> term_interface
+    pl_transaction --> default_term
+    pl_transaction --> pl_incl
+    pl_transaction --> SWI_Prolog
+    pl_transaction --> pl_global
+    pl_transaction --> pl_inline
+    pl_transaction --> pl_comp
+    pl_transaction --> pl_wam
+    pl_transaction --> pl_fli
+    pl_transaction --> pl_error
+    pl_transaction --> pl_dbref
+    pl_transaction --> os_pl_option
+    pl_transaction --> pl_proc
+    pl_transaction --> pl_pro
+    pl_transaction --> pl_event
+    pl_undo --> term_interface
+    pl_undo --> default_term
+    pl_undo --> pl_incl
+    pl_undo --> SWI_Prolog
+    pl_undo --> pl_atom
+    pl_undo --> pl_global
+    pl_undo --> pl_modul
+    pl_undo --> pl_inline
+    pl_undo --> pl_comp
+    pl_undo --> pl_alloc
+    pl_undo --> pl_wam
+    pl_undo --> pl_fli
+    pl_undo --> pl_attvar
+    pl_undo --> pl_error
+    pl_undo --> pl_proc
     pl_mutex --> SWI_Prolog
     pl_mutex --> pl_global
     pl_mutex --> pl_comp
@@ -2051,6 +2090,8 @@ graph LR
     pl_ext --> pl_pro
     pl_ext --> pl_init
     pl_ext --> pl_event
+    pl_ext --> pl_transaction
+    pl_ext --> pl_undo
     pl_ext --> pl_mutex
     pl_ext --> pl_bag
     pl_ext --> pl_gvar
@@ -2114,11 +2155,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 298 | 0 | 124 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 302 | 0 | 120 | 3 | 1 |
 | refusal sites | 0 | 73 | 0 | 0 | 3 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 560 | 88 | 180 | 3 | 39 |
+| **total** | 564 | 88 | 176 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2132,7 +2173,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 85 | 28 | 0 |
+| `boot/syspred.pl` | loaded | 89 | 24 | 0 |
 | `boot/messages.pl` | loaded | 78 | 7 | 1 |
 | `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
@@ -2176,7 +2217,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
-| TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
@@ -2203,7 +2243,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 150
-    bar [124, 0, 20, 36]
+    bar [120, 0, 20, 36]
     line [0, 73, 15, 0]
 ```
 
