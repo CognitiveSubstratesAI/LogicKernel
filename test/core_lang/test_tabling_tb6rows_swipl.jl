@@ -674,7 +674,11 @@ const _T6_BROKEN = Dict{String, String}(
     "ABOLISH/a07" => "owner builtins PRESENT: abolish_module_tables/1; expected to pass",
     "ABOLISH/a08" => "owner builtin PRESENT: abolish_table_subgoals/1 (vendored boot/tabling.pl:1158); expected to pass",
     # TABM-PREP (audit D-0736 (2)): the lane-2 runs of 2026-11-14 (397efdd3) show a04-a08 still differing (TABM-DIAG2: a04/a05 raise a refusal,
-    # a06-a08 leave IDG nodes after the abolish; undiagnosed, owner TAB1). DYNERR v01/v02: the kernel charges no trie memory to `table_space`
+    # a06-a08 leave IDG nodes after the abolish). TAB-A04 DIAGNOSIS: the cases run in one load, each on the state the previous left; a04 and a05 each
+    # delete a table whose dependent dynamic pseudo table `ad` becomes an orphan, and `delete_dynamic_table` (src/pl-tabling.jl) reached
+    # `reset_answer_table`'s IDG refusal (the orphan has its IDG node); the refused case leaves `ad` and its node, which a06-a08 count. The fix is
+    # ENG1 (`reset_answer_table_idg` before the `trie_delete`, as `destroy_answer_trie` and `abolish_table` do): expected to pass a04-a08, the run decides.
+    # DYNERR v01/v02: the kernel charges no trie memory to `table_space`
     # (upstream pl-trie.c:238, :772, :1087, :1105, :1113 charge; :257, :269, :729, :1200, :1268, :1389 release), so the limit 1508 is never
     # reached: owner TRIE-CHARGE (wip/trie-charge). The pins stay swipl's.
     "DYNERR/v01" => "owner TRIE-CHARGE: trie memory is not charged to table_space yet (pl-trie.c:238 etc.); the dynamic-call edge then fits",

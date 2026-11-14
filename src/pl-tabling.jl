@@ -3182,7 +3182,7 @@ const RAT_BULK = Int(0x2)
 # DIVERGES: the worklist branch (an answer table with a worklist) is refused by name, owner TB5 (the abolish callers hold the
 # engine `ld` that `destroy_depending_worklists`, `destroy_delay_info_worklist` and `free_worklist` need; this function and the
 # release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"). DISPATCHER RULING (option c): the callers
-# that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
+# that hold `ld` (`destroy_answer_trie`, `abolish_table`, `delete_dynamic_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
 # (`reset_answer_table_worklist`, `reset_answer_table_idg`), so the chain finds neither; the refusals below stay for every other
 # path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
 # a sentinel (WL_GROUND, WL_DYNAMIC) is
@@ -3667,7 +3667,7 @@ end
 # (pl-tabling.c:2654-2662 at the pin: the `(n=atrie->data.IDG)` branch.)
 # DIVERGES: the branch needs the engine (`idg_reset`, `idg_destroy` and `idg_destroy_private` take `ld`: the lingering sets and the
 # node pool are the thread's), which the release chain of `trie_delete` does not carry (`reset_answer_table`'s refusal, owner TB6).
-# The callers that hold `ld` (`destroy_answer_trie`, `abolish_table`) run the branch BEFORE `trie_delete`, as they do the worklist
+# The callers that hold `ld` (`destroy_answer_trie`, `abolish_table`, `delete_dynamic_table`) run the branch BEFORE `trie_delete`, as they do the worklist
 # branch (`reset_answer_table_worklist`); it sets `atrie.IDG = nothing`, so the chain finds no node. Upstream runs it inside the
 # chain, after the variant table's node is unlinked: the only observable difference is the order of those two steps. Any other path
 # into the chain with an IDG node (`tbl_release_node` from another `trie_delete`) keeps the refusal. A shared table is refused by
@@ -3768,10 +3768,18 @@ function orphan_dynamic_table(atrie::trie)::Bool
 end
 
 # PORT: pl-tabling.c delete_dynamic_table
+# (pl-tabling.c:4545-4551 at the pin: `trie_delete(vtrie, atrie->data.variant, true)`, whose release chain (`release_variant_table_node`,
+# :2679-2689) runs `reset_answer_table`, :2654-2662, and with it `idg_destroy` of the node every orphan has (`orphan_dynamic_table`).)
+# DIVERGES: the release chain carries only `gd` (`reset_answer_table`'s refusal of an IDG node), so this caller, which holds `ld`, runs the
+# IDG branch BEFORE `trie_delete` (`reset_answer_table_idg`), as `destroy_answer_trie` and `abolish_table` do; the flags are those of
+# `release_variant_table_node` (`RAT_CLEANUP` for the cleanup variant table; `RAT_BULK` is the bulk reset's). The worklist branch of
+# `reset_answer_table` is a no-op here (the table's worklist is the sentinel `WL_DYNAMIC`, an `Int`), and a pseudo table is never given an
+# answer, so it is never tracked (`tt_add_answer`): neither branch runs.
 "Delete the dynamic pseudo table `atrie` from its variant table (pl-tabling.c)."
 function delete_dynamic_table(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T}
     vtrie = get_trie_from_node(ld, atrie)
     if vtrie !== nothing && is_variant_trie(vtrie)
+        reset_answer_table_idg(ld, atrie, vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)
         trie_delete(_query_gd(ld), vtrie, atrie.variant, true)
     end
 

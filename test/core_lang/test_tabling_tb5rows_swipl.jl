@@ -21,10 +21,10 @@
 #     none, the second call evaluates again: counter 2); the mutant keeps it (a table, counter 1). l204/l205 are the control: the same goal
 #     without the abolish keeps its table and is not evaluated twice.
 #   * Groups A7 and O5 (TB5-A7 abolish_table deletes the orphan dynamic children, TB5-O5 the sweep collects the orphans, pl-tabling.c:4533-4610,
-#     :4870-4921): `_T5_GROUPS_ENG1`, pinned from swipl and checked against it live, NOT run on the kernel yet: delete_dynamic_table
-#     (src/pl-tabling.jl) reaches `reset_answer_table`'s IDG refusal for every real orphan (an orphan has its IDG node), evidence/TAB1/
-#     defkill_inventory.md ENGINE FINDING, candidate fix ENG1 (`reset_answer_table_idg(ld, atrie, 0)` before the trie_delete). With ENG1 the
-#     run is one line: `_T5_GROUPS_RUN = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)`. A7: swipl deletes the dependent-less dynamic table `ad` together
+#     :4870-4921): `_T5_GROUPS_ENG1`, pinned from swipl and checked against it live, run on the kernel since ENG1: delete_dynamic_table
+#     (src/pl-tabling.jl) used to reach `reset_answer_table`'s IDG refusal for every real orphan (an orphan has its IDG node), evidence/TAB1/
+#     defkill_inventory.md ENGINE FINDING; it now runs `reset_answer_table_idg` before the trie_delete, as swipl's release chain does
+#     (`_T5_GROUPS_RUN = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)`). A7: swipl deletes the dependent-less dynamic table `ad` together
 #     with the incremental table `ap` that held it (a704: no table left), keeps it while `ap` stays (a703: the abolish of `ad` alone). O5: 1100
 #     dynamic variants lose their only dependent in two reevaluations (events 2200 >= 1024 and >= the 1104 variants), the sweep of the next
 #     completed root component (`dm(d)`) deletes them: 6 tables left (swipl), the mutant keeps 1106.
@@ -333,7 +333,7 @@ const _T5_GROUPS = [
     )
 ]
 
-# pinned from swipl, checked live, NOT run on the kernel until ENG1 (see the header): the kernel refuses to delete an orphan dynamic table
+# pinned from swipl, checked live, run on the kernel since ENG1 (see the header): delete_dynamic_table destroys the orphan's IDG node as swipl does
 const _T5_GROUPS_ENG1 = [
     (
         key="A7",
@@ -372,8 +372,8 @@ const _T5_GROUPS_ENG1 = [
         ]
     )
 ]
-"The groups the kernel run and the live check cover: ENG1's join the kernel run when `delete_dynamic_table` can delete an orphan."
-const _T5_GROUPS_RUN = _T5_GROUPS
+"The groups the kernel run covers: ENG1's joined it when `delete_dynamic_table` could delete an orphan (src/pl-tabling.jl, `reset_answer_table_idg`)."
+const _T5_GROUPS_RUN = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
 const _T5_GROUPS_LIVE = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
 
 # kills TB4-A3 (A3N: the answer completion counter is 0, the mutant calls it); A3P and A3Q pin the controls; S4A/S4B are the S4 regression pins;
@@ -448,9 +448,8 @@ end
     @test all(
         endswith(_T5_ans("O5", id), r"\(i1[0-9]{3}\)") for id in ("o501", "o502", "o503")
     )
-    @test isempty(
-        intersect(Set(g.key for g in _T5_GROUPS_RUN), Set(g.key for g in _T5_GROUPS_ENG1))
-    )
+    # ENG1: every pinned group runs on the kernel
+    @test Set(g.key for g in _T5_GROUPS_RUN) == Set(g.key for g in _T5_GROUPS_LIVE)
 end
 
 @testset "the TB5-ROWS pins are swipl's (live, when swipl is on PATH)" begin

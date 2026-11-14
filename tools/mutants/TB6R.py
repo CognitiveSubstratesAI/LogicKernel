@@ -84,4 +84,8 @@ MUTANTS = [
          file='src/pl-trie.jl', targets=TRP,
          old='            size += idg_set_sizeof(idg.dependent)\n',
          new=''),
+    dict(id="TB6R-A1 (ABOLISH a04/a05: delete_dynamic_table does not destroy the orphan's IDG node before the trie_delete (= ENG1-D1, tools/mutants/ENG1.py; KILLS: ABOLISH a05 (`abolish_table_subgoals(ap(_))` deletes the dependent-less dynamic table `ad` with `ap`: [1,1,2,1,0,592], the plain @test of TR6; the mutant raises the named IDG refusal of reset_answer_table) and, once a04-a08 are plain @tests, a04, a06-a08 too))",
+         file='src/pl-tabling.jl', targets=[TR6, "test/core_lang/test_tabling_tb5rows_swipl.jl"] + ALL[1:],
+         old='        reset_answer_table_idg(ld, atrie, vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)\n        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n',
+         new='        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n'),
 ]

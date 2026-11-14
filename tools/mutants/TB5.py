@@ -40,10 +40,10 @@
 # ROWS WRITTEN (STEP DEFKILL, audit D-0668 item 2(d)): R-A ... R-F are now the testsets between "clear_variant_table: the IDG nodes of the tables go with them"
 # and "the abolish rows are not vacuous" in AB (white-box; R-A also carries R-C and the Y3/O4 reads, R-B the abolish_table / destroy_answer_trie
 # destruction, R-D the sweep, R-E clearThreadTablingData, R-F the non-orphan dynamic table, R-G the reader case). The 17 ADD-ROW mutants of the first
-# version are KILL, except TB5-C7 (EQUIVALENT: empty_trie is a no-op for a trie with a reader, `equivalent` has the lines) and TB5-A7/O5 stay DEFERRED:
-# an orphan dynamic table has an IDG node (orphan_dynamic_table), and delete_dynamic_table reaches reset_answer_table's IDG refusal (engine finding,
-# evidence/TAB1/defkill_inventory.md). STEP TB5-ROWS3: TB5-L2 and TB5-H4 are KILL (test_tabling_tb5rows_swipl.jl: group L2, the TB5-H4 testset); the A7 and O5
-# rows are written and pinned from swipl (groups A7, O5, `_T5_GROUPS_ENG1`) but wait for ENG1 to run on the kernel; TB5-E9 has no row (candidate EQUIVALENT, its entry). Rows NOT RUN (nothing compiled): the first hand-run decides.
+# version are KILL, except TB5-C7 (EQUIVALENT: empty_trie is a no-op for a trie with a reader, `equivalent` has the lines) and TB5-A7/O5 were DEFERRED
+# until ENG1 (an orphan dynamic table has an IDG node, orphan_dynamic_table, and delete_dynamic_table reached reset_answer_table's IDG refusal; engine finding,
+# evidence/TAB1/defkill_inventory.md); STEP ENG1 fixed it and they are KILL (a704, o504). STEP TB5-ROWS3: TB5-L2 and TB5-H4 are KILL (test_tabling_tb5rows_swipl.jl: group L2, the TB5-H4 testset); the A7 and O5
+# rows are written and pinned from swipl (groups A7, O5, `_T5_GROUPS_ENG1`) and run on the kernel since ENG1; TB5-E9 has no row (candidate EQUIVALENT, its entry). Rows NOT RUN (nothing compiled): the first hand-run decides.
 # TARGETS (audit D-0238): AB (the step's file); TV = test_tabling_variant_swipl.jl (TB1, on wip/tb1, in the stack: it builds the variant tables and `$tbl_existing_variant_table`
 # the abolish code deletes from); TT = test_tabling_state_swipl.jl (the freed-object lists `clearThreadTablingData` calls, the `ld.tabling` fields); TM =
 # test_tabling_min_swipl.jl (the `$tbl_*` predicates of the registration tuple); BI = test/db/test_boot_image_swipl.jl (the kernel-foreign count, 372 since TB5);
@@ -172,11 +172,11 @@ MUTANTS = [
          file=TAB, targets=TABL,
          old="    end\n\n    return true\nend\n\n# PORT: pl-tabling.c tbl_destroy_table as pl_tbl_destroy_table1_va\n",
          new="    end\n\n    return false\nend\n\n# PORT: pl-tabling.c tbl_destroy_table as pl_tbl_destroy_table1_va\n"),
-    dict(id="TB5-A5 abolish_table of a dynamic pseudo table answers false (KILL AB R-F: white-box, `a.worklist = LK.WL_DYNAMIC` on a table without an IDG node, so `orphan_dynamic_table(a)` is false and nothing is deleted; `abolish_table(ld, a) === true` and the variant table keeps its 3 tables. The orphan case, a dynamic table WITH its IDG node, is not a row: see the engine finding in evidence/TAB1/defkill_inventory.md)",
+    dict(id="TB5-A5 abolish_table of a dynamic pseudo table answers false (KILL AB R-F: white-box, `a.worklist = LK.WL_DYNAMIC` on a table without an IDG node, so `orphan_dynamic_table(a)` is false and nothing is deleted; `abolish_table(ld, a) === true` and the variant table keeps its 3 tables. The orphan case, a dynamic table WITH its IDG node, is TB5-A7's row (group A7, since ENG1))",
          file=TAB, targets=TABL,
          old="        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)\n\n        return true\n",
          new="        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)\n\n        return false\n"),
-    dict(id="TB5-A7 abolish_table does not delete the orphan children of the table (DEFERRED KILL: the rows are WRITTEN, group A7 of test_tabling_tb5rows_swipl.jl (a704: `abolish_table_subgoals(ap(_))` leaves no table, the mutant leaves `ad`; a703 the control: abolishing `ad` alone keeps it), pinned from swipl and checked live in `_T5_GROUPS_ENG1`, but NOT run on the kernel until ENG1: delete_dynamic_table reaches reset_answer_table's IDG refusal for every real orphan, evidence/TAB1/defkill_inventory.md ENGINE FINDING; with ENG1 the group joins `_T5_GROUPS_RUN`)",
+    dict(id="TB5-A7 abolish_table does not delete the orphan children of the table (KILL a704 of group A7 of test_tabling_tb5rows_swipl.jl: `abolish_table_subgoals(ap(_))` leaves no table, the mutant leaves `ad`; a703 is the control: abolishing `ad` alone keeps it. Pinned from swipl and checked live; the group runs on the kernel since ENG1 (delete_dynamic_table destroys the orphan's IDG node before the trie_delete))",
          file=TAB, targets=TABL + [T5R],
          old="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n",
          new="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n"),
@@ -257,7 +257,7 @@ MUTANTS = [
          file=TAB, targets=[AB],
          old="    vi == 0 && return nothing\n    vtrie = gd.tries[vi]\n",
          new="    vtrie = gd.tries[vi]\n"),
-    dict(id="TB5-O5 the sweep collects no orphan: `push!(b, atrie)` is skipped (DEFERRED KILL: the rows are WRITTEN, group O5 of test_tabling_tb5rows_swipl.jl (1100 dynamic variants lose their only dependent in two reevaluations; the sweep of the next completed root component leaves 6 tables, o504 `i6`; the mutant keeps 1106), pinned from swipl and checked live in `_T5_GROUPS_ENG1`, NOT run on the kernel until ENG1 (the same refusal as TB5-A7))",
+    dict(id="TB5-O5 the sweep collects no orphan: `push!(b, atrie)` is skipped (KILL o504 of group O5 of test_tabling_tb5rows_swipl.jl: 1100 dynamic variants lose their only dependent in two reevaluations; the sweep of the next completed root component leaves 6 tables, `i6`; the mutant keeps 1106 (o501-o503 are the controls). Pinned from swipl and checked live; the group runs on the kernel since ENG1)",
          file=TAB, targets=[AB, T5R],
          old="                orphan_dynamic_table(atrie) && push!(b, atrie)\n",
          new="                orphan_dynamic_table(atrie) && nothing\n"),
