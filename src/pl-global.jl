@@ -230,6 +230,13 @@ end
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 # Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
+# Synced to cf6960c2 (pl-global.h): fields the target adds or reads that `PL_global_data` leaves unwritten (a struct change belongs to
+# the step that uses the field; nothing here alters an answer by itself, so it is neither a DEFERRED nor a TARGET-ONLY row):
+# - `atoms.local_chunks` (pl-global.h:243), `atoms.local_pool` (:244-248), `atoms.local_unique` (:249): the thread-local atom
+#   tables ("Thread-local blobs"). Unwritten, needed by the thread-local atom slice (SYNC-J, SYNC-Z1: `promoteAtomIfLocal`,
+#   `lookup_shared_clref`, the local-atom sweep); one thread here, so every atom is shared.
+# - `os.tmp_files` (:323, the same field as the pin's line 316, outside the diff hunks): unwritten, needed by SYNC-W's temporary-entry
+#   registry (`TemporaryFile`, `TemporaryDirectory`, `RemoveTemporaryFiles`; callers `tmp_directory/2`, `delete_directory/1`).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -550,6 +557,22 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 LB6a: `reload_nesting`, upstream's `LD->reload.nesting` (pl-global.h:892-894), appended last: how deeply reconsult is nested, written by
 # `startReconsultFile` (src/pl-srcfile.jl). Upstream's `.generation` is NOT a field of this struct: `gd.reload_generation` is its single copy (see
 # `PL_global_data`; audit D-0416 item 3).
+# Synced to cf6960c2 (pl-global.h): fields the target adds to `struct PL_local_data` that this struct leaves unwritten (a struct change
+# belongs to the step that uses the field; none alters an answer by itself, so it is neither a DEFERRED nor a TARGET-ONLY row):
+# - `gen_bar` (pl-global.h:522, next to `mark_bar`), `gc.young_base` (:1010), `gc.remembered` (:1011-1016), `gc.gen_roots` (:1017-1021),
+#   `gc.major_live` (:1022), `gc.minor_count` (:1023), `gc.force_major` (:1024), `gc.trace` (:1025): the generational GC. Unwritten,
+#   needed by the generational-GC step (G1) and its readers: `gen_remember`/`gen_assign` in setarg (SYNC-B), `readValHandle` (SYNC-D),
+#   the dict argument stores (SYNC-S), `emptyStacks!` (`LD->gen_bar = gTop`, SYNC-Q), pl-gc.c and the `trace_gc` signal (SYNC-T);
+#   the statistics key `minor_collections` answers 0 meanwhile (SYNC-B).
+# - `atoms.local` (:711-726: chunks, cursor, current, live, created, threshold, units, units_kept, units_due, sweeping, collected,
+#   sweeps): the thread-local atom allocator and sweep. Unwritten, needed by SYNC-J/SYNC-Z1 (thread-local atoms), as `GD->atoms.local_*`.
+# - `clauses.local` (:955-962: erased, threshold, active, lingering, collections, reclaimed): clause GC of thread-local predicates.
+#   Unwritten, needed by SYNC-N's thread-local clause reclaim (`LD->clauses.local.*`) and the thread-local clause blob area (SYNC-C, SYNC-J).
+# - `tabling.handles` (:796-803: slots, size, top, free, live, serial): the table of Prolog handles of pl-tabling.c (`new_tbl_handle`,
+#   `tbl_handle_object`, `free_tbl_handle`(`s`)). Unwritten, needed by TAB1 (owner rows of pl-tabling.c); `ld_tabling.free_pointers`
+#   keeps pointer-like handles by number meanwhile.
+# - `profile.index` (:662, `struct prof_index *`, handle -> nodes for summing) and `profile.mem` (:680-688, global stack accounting
+#   of the profiler): unwritten, needed by the profiler (pl-prof.c `get_prof_index` and the memory clock); the profiler is unwritten in the kernel.
 """
     PL_local_data{T}(gd)
 
