@@ -559,6 +559,111 @@ end
     @test ld.tabling.dyn_orphan_events == 0
 end
 
+# ---- the kill rows of tools/mutants/TB5.py that its header named R-A ... R-G (audit D-0668 item 2(d), STEP DEFKILL) ----
+# LK-only white-box rows on the tables `_ab_tables!` builds (three complete answer tries without a symbol and without answers, so
+# the answer trie's own state is what is read: `magic`, `variant`, the TRIE_COMPLETE flag). The expectations are read off the code of
+# src/pl-tabling.jl (clear_variant_table, empty_variant_table, reset_table_bulk, sweep_orphan_dynamic_tables, abolish_table,
+# destroy_answer_trie, clearThreadTablingData) and of src/pl-trie.jl (release_value :163, clear_node, empty_trie :321). UNVERIFIED on
+# the kernel (nothing was compiled when these rows were written): the gate decides.
+function _ab_fresh()
+    gd, ld, st = _ab_load(_AB_COMMON * _AB_KERNEL, _AB_CASES[1:1], true)
+    @test st == "ok"
+    atries = _ab_tables!(gd, ld)
+    return gd, ld, atries, gd.tries[ld.tabling.variant_table]
+end
+
+@testset "clear_variant_table resets every table and destroys the variant table (TB5 R-A, R-C, R-D)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    # premises: three live tables without symbol, complete, with a node; the variant table is live and has no reader
+    @test variants.value_count == 3 && variants.references == 0 && variants.magic == LK.TRIE_MAGIC
+    @test all(a -> a.symbol == 0 && a.magic == LK.TRIE_MAGIC, atries)
+    @test all(a -> (a.flags & LK.TRIE_COMPLETE) != 0 && a.variant != 0, atries)
+    ld.tabling.start_nodes = Int[1]
+    ld.tabling.concurrent_idg_nodes = 1
+    ld.tabling.dyn_orphan_events = 5
+    @test LK.clear_variant_table(ld) === nothing
+    @test variants.value_count == 0                            # emptied: the reference went up and down again (TB5-C4, C5)
+    @test variants.references == 0
+    @test variants.magic == LK.TRIE_CMAGIC                     # marked destroyed (TB5-C8)
+    @test ld.tabling.variant_table == 0
+    @test ld.tabling.start_nodes === nothing                   # the node cache is dropped (TB5-C3)
+    @test ld.tabling.concurrent_idg_nodes == 0                 # the bulk teardown ran, not a plain trie_empty (TB5-C6)
+    @test ld.tabling.dyn_orphan_events == 0                    # empty_variant_table's reset (TB5-E7)
+    @test all(a -> a.variant == 0, atries)                     # reset_table_bulk forgets the node (TB5-E1)
+    @test all(a -> (a.flags & LK.TRIE_COMPLETE) == 0, atries)  # the answer tables are reset (TB5-E2)
+    @test all(a -> a.magic == LK.TRIE_CMAGIC, atries)          # released after the resets: release_value destroys a trie without a symbol (TB5-E5, G4)
+    # no variant table any more
+    @test LK.sweep_orphan_dynamic_tables(ld) === nothing       # `vi == 0` returns before `gd.tries[vi]` (TB5-O4)
+    @test !LK.destroy_answer_trie(ld, atries[1])               # a table without a node is not destroyed (TB5-Y3)
+    @test LK.abolish_table(ld, atries[1])                      # abolish_table answers true on every path
+end
+
+@testset "abolish_table and destroy_answer_trie destroy a table without a symbol (TB5 R-B)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    @test atries[2].symbol == 0 && atries[2].magic == LK.TRIE_MAGIC
+    @test LK.abolish_table(ld, atries[2])
+    @test atries[2].magic == LK.TRIE_CMAGIC                    # trie_delete -> clear_node -> release_value (pl-trie.jl:163, TB5-G4)
+    @test atries[2].variant == 0
+    @test atries[1].magic == LK.TRIE_MAGIC && atries[3].magic == LK.TRIE_MAGIC
+    @test LK.destroy_answer_trie(ld, atries[3])
+    @test atries[3].magic == LK.TRIE_CMAGIC
+    @test atries[1].magic == LK.TRIE_MAGIC && atries[1].variant != 0
+    @test variants.value_count == 1
+end
+
+@testset "the orphan sweep: threshold and event reset (TB5 R-D)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    ld.tabling.dyn_orphan_events = LK.DYN_ORPHAN_SWEEP_MIN - 1  # below the threshold: nothing runs
+    @test LK.sweep_orphan_dynamic_tables(ld) === nothing
+    @test ld.tabling.dyn_orphan_events == LK.DYN_ORPHAN_SWEEP_MIN - 1
+    ld.tabling.dyn_orphan_events = 2000                         # >= 1024 and >= value_count (3): the sweep runs (TB5-O2)
+    @test LK.sweep_orphan_dynamic_tables(ld) === nothing
+    @test ld.tabling.dyn_orphan_events == 0                     # and resets the count (TB5-O3)
+    @test variants.value_count == 3                             # no complete table is an orphan dynamic table
+    ld.tabling.dyn_orphan_events = LK.DYN_ORPHAN_SWEEP_MIN      # exactly the threshold runs it, too
+    @test LK.sweep_orphan_dynamic_tables(ld) === nothing
+    @test ld.tabling.dyn_orphan_events == 0
+end
+
+@testset "abolish_table of a dynamic pseudo table that is no orphan answers true and keeps it (TB5 R-F)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    a = atries[1]
+    a.worklist = LK.WL_DYNAMIC                                  # WL_DYNAMIC is written by TB6; abolish_table only reads it
+    @test LK.orphan_dynamic_table(a) == false                   # no IDG node: not an orphan
+    @test LK.abolish_table(ld, a) === true                      # pl-tabling.c abolish_table: the dynamic branch returns TRUE (TB5-A5)
+    @test variants.value_count == 3 && a.variant != 0 && a.magic == LK.TRIE_MAGIC
+end
+
+@testset "clearThreadTablingData frees the freed objects and leaves them open (TB5 R-E)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    fo = ld.tabling.free_objects
+    LK.tbl_free(ld, Val(LK.TBL_FREE_CLUSTER), LK.cluster{_AB}(LK.CLUSTER_ANSWERS))
+    LK.tbl_free(ld, Val(LK.TBL_FREE_COMPONENT), LK.tbl_component{_AB}())
+    LK.tbl_free(ld, Val(LK.TBL_FREE_WORKLIST), LK.tbl_worklist{_AB}())
+    LK.tbl_free(ld, Val(LK.TBL_FREE_WORKLIST_SET), LK.worklist_set{LK.tbl_worklist{_AB}}())
+    @test (length(fo.component), length(fo.worklist_set), length(fo.worklist), length(fo.cluster)) == (1, 1, 1, 1)
+    @test !fo.closed
+    @test LK.clearThreadTablingData(ld, false) === nothing
+    @test all(isempty, (fo.component, fo.worklist_set, fo.worklist, fo.cluster))   # TB5-H2
+    @test !fo.closed                                                               # TB5-H3: `exit` false does not close them
+    LK.tbl_free(ld, Val(LK.TBL_FREE_CLUSTER), LK.cluster{_AB}(LK.CLUSTER_ANSWERS))
+    @test length(fo.cluster) == 1                                                  # still kept
+    @test LK.clearThreadTablingData(ld, true) === nothing
+    @test isempty(fo.cluster) && fo.closed                                         # `exit` true closes them
+end
+
+@testset "clear_variant_table while a reader holds the variant table: the last reader empties it (TB5 R-G)" begin
+    gd, ld, atries, variants = _ab_fresh()
+    variants.references = 1                                     # a reader
+    @test LK.clear_variant_table(ld) === nothing
+    @test ld.tabling.variant_table == 0
+    @test variants.magic == LK.TRIE_CMAGIC
+    @test variants.references == 1 && variants.value_count == 3 # empty_trie leaves a trie in use alone (pl-trie.jl:321-331)
+    variants.references = 0                                     # the last reader leaves: trie_clean empties it
+    LK.trie_clean(gd, variants)
+    @test variants.value_count == 0
+end
+
 @testset "the abolish rows are not vacuous" begin
     @test _AB_PINNED[1] == "ok" && _AB_PINNED_U[1] == "ok"
     @test length(_AB_PINNED) == length(_AB_CASES) + 1
