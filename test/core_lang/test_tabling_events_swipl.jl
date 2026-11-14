@@ -14,9 +14,9 @@
 #     evidence/TAB1/ev1_verify.md of the channel); with `swipl` on PATH the live answers are compared with the pins too.
 #   * NOT ROWS (with the reason): the answer-subsumption branch of `'$tbl_monotonic_add_answer'/2` (an answer of a moded table raises
 #     `domain_error(moded_answer, _)` on the pin for every shape tried by hand: the branch sends no event, but no row reaches it).
-#   * ev01 needs the monotonic dependency on a dynamic predicate: `'$idg_add_mono_dyn_dep'/3` calls `get_procedure(.., GP_FIND)`,
-#     which src/pl-proc.jl refuses by name (owner V9; `get_procedure_find` is the function that would answer it): until then the
-#     kernel's answer is the NotPortedError and the row pins exactly that (D-0083: once the refusal is gone it must be the pin `[c]`).
+#   * ev01 needs the monotonic dependency on a dynamic predicate: `'$idg_add_mono_dyn_dep'/3` looks the head up with
+#     `get_procedure_find` (the GP_FIND case; `get_procedure` itself refuses it, owner V9). The row still accepts the NotPortedError
+#     of `get_procedure` or an `exc(..get_procedure..)` text, in case a branch carries the older lookup; the pin `[c]` is the answer.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -165,9 +165,8 @@ end
     end
 end
 
-# ev01: tests/tabling/test_mono_subsumptive.pl, unit mono_abstract, test `new_answer`. Until `'$idg_add_mono_dyn_dep'/3` can
-# find the dynamic predicate (V9's `get_procedure(.., GP_FIND)`), the kernel's answer is the named refusal: the row pins exactly
-# that, or the pin once the refusal is gone.
+# ev01: tests/tabling/test_mono_subsumptive.pl, unit mono_abstract, test `new_answer`: the pin `[c]`, or (a branch with the older
+# lookup in `'$idg_add_mono_dyn_dep'/3`) the named refusal of `get_procedure`.
 @testset "ev01: the upstream test mono_abstract/new_answer" begin
     gd, ld, st = _ti_load(_TI_UP_PROGRAM)
     @test st === :ok
