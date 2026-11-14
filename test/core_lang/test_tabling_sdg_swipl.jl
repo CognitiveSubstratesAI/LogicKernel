@@ -221,7 +221,7 @@ const _TG_CASES = [
     (
         "tsg09",
         raw"'$tbl_sdg'(A, B, C), '$tbl_incomplete'(main, T, S), R = r(A, B, C, T, S)"
-    ),
+    )
 ]
 
 const _TG_PINNED = [
@@ -323,13 +323,14 @@ const _TG_PINNED = [
     "t_tsg06 c[116,95,116,115,103,48,54]/1(a[110,111])",
     "t_tsg07 c[116,95,116,115,103,48,55]/1(a[110,111])",
     "t_tsg08 c[116,95,116,115,103,48,56]/1(a[110,111])",
-    "t_tsg09 c[116,95,116,115,103,48,57]/1(c[114]/5(nil,nil,nil,i0,i0))",
+    "t_tsg09 c[116,95,116,115,103,48,57]/1(c[114]/5(nil,nil,nil,i0,i0))"
 ]
 
 "The program text with the cases appended."
 _tg_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -386,9 +387,11 @@ end
     # white-box: every case reset what it set (the restraints are the defaults again, initTabling's)
     r = ld.tabling.restraint
     @test r.max_table_subgoal_size == -1 && r.max_table_answer_size == -1
-    @test r.max_answers_for_subgoal == -1 && r.max_incomplete_subgoals == -1 && r.max_scc_subgoals == -1
+    @test r.max_answers_for_subgoal == -1 && r.max_incomplete_subgoals == -1 &&
+        r.max_scc_subgoals == -1
     for act in (
-        r.max_table_subgoal_size_action, r.max_table_answer_size_action, r.max_answers_for_subgoal_action,
+        r.max_table_subgoal_size_action, r.max_table_answer_size_action,
+        r.max_answers_for_subgoal_action,
         r.max_incomplete_subgoals_action, r.max_scc_subgoals_action
     )
         @test sym_text(act) == "error"
@@ -402,7 +405,8 @@ end
     for pre in ("tsd", "tsl", "tsa", "tsi", "tsg")
         ids = [id for (id, _) in _TG_CASES if startswith(id, pre)]
         @test !isempty(ids)
-        @test length([l for l in _TG_PINNED if any(id -> startswith(l, "t_$id "), ids)]) == length(ids)
+        @test length([l for l in _TG_PINNED if any(id -> startswith(l, "t_$id "), ids)]) ==
+            length(ids)
     end
     line(id) = only(filter(l -> startswith(l, "t_$id "), _TG_PINNED))
     ans(id) = split(line(id), " "; limit=2)[2]

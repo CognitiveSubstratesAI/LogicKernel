@@ -165,7 +165,9 @@ end
 
 # PORT: pl-transaction.c set_modified
 "Give every predicate the transaction changed the generation `gen` of the commit as its last modification (pl-transaction.c)."
-function set_modified(gd::PL_global_data{T}, ld::PL_local_data{T}, gen::gen_t)::Nothing where {T}
+function set_modified(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, gen::gen_t
+)::Nothing where {T}
     tr = ld.transaction
     table = tr.predicates
     if table !== nothing
@@ -251,7 +253,9 @@ function transaction_discard(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool 
             end
 
             if def.events !== nothing && action !== nothing && (tr.flags & TR_BULK) == 0
-                if !predicate_update_event(gd, ld, def, mk_sym(T, action), cl, P_EVENT_ROLLBACK)
+                if !predicate_update_event(
+                    gd, ld, def, mk_sym(T, action), cl, P_EVENT_ROLLBACK
+                )
                     rc = false
                 end
             end
@@ -315,7 +319,9 @@ end
 # DIVERGES: returns the updates, sorted by generation, where upstream fills a `Buffer`; `sort!` is stable where `qsort` is not,
 # which no result sees: the generations of the updates are different.
 "The updates (asserts and erases) of the transaction, in the order they were made (pl-transaction.c)."
-function transaction_updates(gd::PL_global_data{T}, ld::PL_local_data{T})::Vector{tr_update{T}} where {T}
+function transaction_updates(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Vector{tr_update{T}} where {T}
     b = tr_update{T}[]
     clauses = ld.transaction.clauses
     if clauses !== nothing
@@ -328,7 +334,7 @@ function transaction_updates(gd::PL_global_data{T}, ld::PL_local_data{T})::Vecto
                 push!(b, tr_update{T}(cl, :erased))
             end
         end
-        sort!(b; lt = cmp_updates)
+        sort!(b; lt=cmp_updates)
     end
     return b
 end
@@ -374,7 +380,8 @@ function transaction(
 
     if tr.generation != 0                                   # nested transaction
         parent = tr_stack{T}(
-            tr.stack, tr.gen_nest, tr.generation, tr.clauses, tr.predicates, tr.table_trail, tr.id, tr.flags
+            tr.stack, tr.gen_nest, tr.generation, tr.clauses, tr.predicates, tr.table_trail,
+            tr.id, tr.flags
         )
 
         tr.clauses = nothing
@@ -391,23 +398,29 @@ function transaction(
         discard = true                                      # (the `nested_discard:` label)
         if rc && (flags & TR_TRANSACTION) != 0
             discard = false
-            if tr.table_trail !== nothing
-                if parent.table_trail !== nothing
-                    merge_tabling_trail(parent.table_trail, tr.table_trail)
+            tr_ttrail = tr.table_trail                      # a field read twice is not narrowed: bind it first
+            if tr_ttrail !== nothing
+                parent_ttrail = parent.table_trail
+                if parent_ttrail !== nothing
+                    merge_tabling_trail(parent_ttrail, tr_ttrail)
                 else
-                    parent.table_trail = tr.table_trail
+                    parent.table_trail = tr_ttrail
                 end
             end
-            if tr.predicates !== nothing
-                if parent.predicates !== nothing
-                    merge_pred_tables(parent.predicates, tr.predicates)
+            tr_preds = tr.predicates                        # a field read twice is not narrowed: bind it first
+            if tr_preds !== nothing
+                parent_preds = parent.predicates
+                if parent_preds !== nothing
+                    merge_pred_tables(parent_preds, tr_preds)
                 else
-                    parent.predicates = tr.predicates
+                    parent.predicates = tr_preds
                 end
             end
 
-            if tr.clauses !== nothing
-                if parent.clauses !== nothing
+            tr_clauses = tr.clauses
+            if tr_clauses !== nothing
+                parent_clauses = parent.clauses
+                if parent_clauses !== nothing
                     if (flags & TR_BULK) != 0
                         updates = transaction_updates(gd, ld)
                         if !announce_updates(gd, ld, updates)
@@ -415,10 +428,10 @@ function transaction(
                         end
                     end
                     if !discard
-                        merge_clause_tables(parent.clauses, tr.clauses)
+                        merge_clause_tables(parent_clauses, tr_clauses)
                     end
                 else
-                    parent.clauses = tr.clauses
+                    parent.clauses = tr_clauses
                 end
             end
         end
@@ -478,7 +491,7 @@ end
 "The options of `\$transaction/2`: `bulk(Bool)` (pl-transaction.c)."
 const transaction_options = (PL_option_t(:bulk, OPT_BOOL),)
 
-# PORT: pl-transaction.c pl_transaction2
+# PORT: pl-transaction.c transaction as pl_transaction2_va
 # (PRED_IMPL("$transaction", 2, transaction, PL_FA_TRANSPARENT), pl-transaction.c:677-691)
 "`'\$transaction'(:Goal, +Options)`: run `Goal` in a transaction, `bulk(true)` raising the events at the commit (pl-transaction.c)."
 function pl_transaction2_va(
@@ -496,7 +509,7 @@ function pl_transaction2_va(
     return transaction(_query_gd(ld), ld, A1, 0, 0, flags) ? FTRUE : FFALSE
 end
 
-# PORT: pl-transaction.c pl_transaction3
+# PORT: pl-transaction.c transaction as pl_transaction3_va
 # (PRED_IMPL("$transaction", 3, transaction, PL_FA_TRANSPARENT), pl-transaction.c:692-697)
 "`'\$transaction'(:Goal, :Constraint, +Mutex)`: run `Goal` and then `Constraint` in a transaction (pl-transaction.c)."
 function pl_transaction3_va(
@@ -507,7 +520,7 @@ function pl_transaction3_va(
     return transaction(_query_gd(ld), ld, A1, A2, A3, TR_TRANSACTION) ? FTRUE : FFALSE
 end
 
-# PORT: pl-transaction.c pl_snapshot1
+# PORT: pl-transaction.c snapshot as pl_snapshot1_va
 # (PRED_IMPL("$snapshot", 1, snapshot, PL_FA_TRANSPARENT), pl-transaction.c:699-704)
 "`'\$snapshot'(:Goal)`: run `Goal` in a transaction that is always discarded (pl-transaction.c)."
 function pl_snapshot1_va(
@@ -530,7 +543,7 @@ function add_update(
            PL_unify(ld, head, tmp)
 end
 
-# PORT: pl-transaction.c pl_transaction_updates1
+# PORT: pl-transaction.c transaction_updates as pl_transaction_updates1_va
 # (PRED_IMPL("transaction_updates", 1, transaction_updates, 0), pl-transaction.c:770-796)
 "`transaction_updates(-Updates)`: the clause references the running transaction changed, as `asserta/1`, `assertz/1` and `erased/1` terms in order (pl-transaction.c)."
 function pl_transaction_updates1_va(

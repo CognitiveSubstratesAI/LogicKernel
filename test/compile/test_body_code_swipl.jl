@@ -1837,8 +1837,10 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
         # later one, so each name grows by 8 (`varName` prints twice the offset; internal identity, D-0083).
         # TAB1 TB6 moved them again from ("_40", "_42"): emptyStacks makes `tabling.idg_current` (pl-setup.c:1559), one more permanent
         # cell before every later one, so each name grows by 2 (D-0083).
-        # TX1e moved them again from ("_42", "_44"): emptyStacks makes the undo list's cell FIRST (`init_undo_list`, pl-setup.c:1557),
-        # one more permanent cell before every later one, so each name grows by 2 (D-0083).
+        # TX1e moved them again from ("_42", "_44"): the undo list's cell is the FIRST global cell (`init_undo_list`, pl-setup.c:1557,
+        # pl-undo.c:42-52; the kernel keeps its term references on the global stack, so the cell sits below every later one),
+        # so each name grows by 2 (internal identity, D-0083; measured by derivation from emptyStacks! in TX1-PINS: the cell at
+        # position 1, the exception cells from 2).
         @test cy[1][2:3] == ("_44", "_46")
         if _BC_SWIPL_BIN !== nothing
             theirs = _bc_swipl([

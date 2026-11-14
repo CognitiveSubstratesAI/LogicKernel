@@ -113,14 +113,30 @@ stats(Variant, Pairs) :-
 const _TS_LEFT_PROGRAM = ""
 
 const _TS_CASES = [
-    ("ts01", "table_statistics:dependency_nodes", raw"""
-fill, stats(user:ts_data(_), Pairs), pairs_keys(Pairs, Keys), memberchk(dependency_nodes-Nodes, Pairs), memberchk(dependency_space-Space, Pairs), ( Space > 0 -> Pos = positive ; Pos = other ), R = r(Keys, Nodes, Pos)"""),
-    ("ts02", "table_statistics:answer_tables", raw"""
-fill, stats(user:ts_inc(_), Pairs), memberchk(tables-Tables, Pairs), memberchk(answers-Answers, Pairs), ( \+ memberchk(dependency_nodes-_, Pairs) -> NoDep = no_dependency_nodes ; NoDep = has_dependency_nodes ), R = r(Tables-Answers, NoDep)"""),
-    ("ts03", "table_statistics:plain_answers", raw"""
-fill, table_statistics(user:ts_plain(_), answers, Answers), R = Answers"""),
-    ("ts04", "table_statistics:no_tables", raw"""
-abolish_all_tables, table_statistics(user:ts_plain(_), tables, Tables), R = Tables"""),
+    (
+        "ts01",
+        "table_statistics:dependency_nodes",
+        raw"""
+fill, stats(user:ts_data(_), Pairs), pairs_keys(Pairs, Keys), memberchk(dependency_nodes-Nodes, Pairs), memberchk(dependency_space-Space, Pairs), ( Space > 0 -> Pos = positive ; Pos = other ), R = r(Keys, Nodes, Pos)"""
+    ),
+    (
+        "ts02",
+        "table_statistics:answer_tables",
+        raw"""
+fill, stats(user:ts_inc(_), Pairs), memberchk(tables-Tables, Pairs), memberchk(answers-Answers, Pairs), ( \+ memberchk(dependency_nodes-_, Pairs) -> NoDep = no_dependency_nodes ; NoDep = has_dependency_nodes ), R = r(Tables-Answers, NoDep)"""
+    ),
+    (
+        "ts03",
+        "table_statistics:plain_answers",
+        raw"""
+fill, table_statistics(user:ts_plain(_), answers, Answers), R = Answers"""
+    ),
+    (
+        "ts04",
+        "table_statistics:no_tables",
+        raw"""
+abolish_all_tables, table_statistics(user:ts_plain(_), tables, Tables), R = Tables"""
+    )
 ]
 
 const _TS_LEFT = Tuple{String, String, String, String}[]
@@ -130,7 +146,7 @@ const _TS_PINNED = [
     "t_ts01 c[116,95,116,115,48,49]/1(c[114]/3(c[91,124,93]/2(a[100,101,112,101,110,100,101,110,99,121,95,110,111,100,101,115],c[91,124,93]/2(a[100,101,112,101,110,100,101,110,99,121,95,115,112,97,99,101],nil)),i4,a[112,111,115,105,116,105,118,101]))",
     "t_ts02 c[116,95,116,115,48,50]/1(c[114]/2(c[45]/2(i4,i4),a[110,111,95,100,101,112,101,110,100,101,110,99,121,95,110,111,100,101,115]))",
     "t_ts03 c[116,95,116,115,48,51]/1(i3)",
-    "t_ts04 c[116,95,116,115,48,52]/1(i0)",
+    "t_ts04 c[116,95,116,115,48,52]/1(i0)"
 ]
 
 "The answer the UPSTREAM test expects, run in swipl (`x_<id>(R) :- R = Expected`), as the driver encodes it."
@@ -138,7 +154,7 @@ const _TS_UPSTREAM = [
     "c[114]/3(c[91,124,93]/2(a[100,101,112,101,110,100,101,110,99,121,95,110,111,100,101,115],c[91,124,93]/2(a[100,101,112,101,110,100,101,110,99,121,95,115,112,97,99,101],nil)),i4,a[112,111,115,105,116,105,118,101])",
     "c[114]/2(c[45]/2(i4,i4),a[110,111,95,100,101,112,101,110,100,101,110,99,121,95,110,111,100,101,115])",
     "i3",
-    "i0",
+    "i0"
 ]
 
 const _TS_LEFT_PINNED = String[]
@@ -148,7 +164,8 @@ const _TS_LEFT_UPSTREAM = String[]
 "The program text with the cases appended."
 _ts_text(program::String, cases) =
     program * join([
-        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n" for (id, g) in cases
+        "t_$(id)(R) :- ( catch(($g), error(SsuE, _), R = raised(SsuE)) -> true ; R = failed ).\n"
+        for (id, g) in cases
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
@@ -238,7 +255,9 @@ end
         @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
         f = joinpath(mktempdir(), "ts_upstream_swipl.pl")
-        all_cases = vcat([(id, g) for (id, _, g) in _TS_CASES], [(id, g) for (id, _, g, _) in _TS_LEFT])
+        all_cases = vcat(
+            [(id, g) for (id, _, g) in _TS_CASES], [(id, g) for (id, _, g, _) in _TS_LEFT]
+        )
         write(f, _ts_text(_TS_PROGRAM * _TS_LEFT_PROGRAM, all_cases))
         got = _ts_swipl_lines(f, ["t_$id" for (id, _) in all_cases])
         @test !isempty(got) && got == vcat(_TS_PINNED, _TS_LEFT_PINNED)

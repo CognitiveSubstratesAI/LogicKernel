@@ -4467,7 +4467,10 @@ function PL_next_solution_guarded(
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
     if ld.alerted != 0 && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)
-       !(DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0)
+        !(
+            DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) &&
+            (DEF.flags & PROC_DEFINED) == 0
+        )
         setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = argFrameP(FR, DEF->functor->arity)
         @SAVE_REGISTERS(QID)
         dr_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()
@@ -6390,7 +6393,7 @@ function PL_next_solution_guarded(
     _reset_argument_stack!(ld, ld.queries[QF])
     DEF = ld.frames[FR].predicate::Definition{T}
 
-    # PORT: pl-vmi.c b_failed, the `LD->alerted` block (pl-vmi.c:6840-6856 at the pin), its undo branch only (since TX1e): the
+    # From pl-vmi.c b_failed, the `LD->alerted` block (pl-vmi.c:6840-6856 at the pin), its undo branch only (since TX1e): the
     # scheduled undo goals run above the choice point (`lTop = BFR+1`, `mark_bar` at `gTop`), then it is `db_c` that is resumed.
     # DIVERGES: upstream also handles the `ALERT_BUFFER` branch (string buffers) and the profiler here; the kernel leaves both out.
     if ld.alerted != 0 && UNDO_SCHEDULED(ld)

@@ -45,7 +45,8 @@ end
 # Whether `codes` is one of the database's shared blocks (upstream: its length word is 0).
 function _shared_supervisor(cd::PL_code_data, codes::Vector{code})::Bool
     return codes === cd.exit || codes === cd.virgin || codes === cd.undef ||
-           codes === cd.dynamic || codes === cd.incr_dynamic || codes === cd.multifile || codes === cd.staticp ||
+           codes === cd.dynamic || codes === cd.incr_dynamic || codes === cd.multifile ||
+           codes === cd.staticp ||
            codes === cd.wrapper || codes === cd.trie_gen
 end
 

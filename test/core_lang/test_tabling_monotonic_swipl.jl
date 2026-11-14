@@ -48,7 +48,17 @@ t_mono09(R) :- '$tbl_variant_table'(0, user:tm_p(_), T, S, Sk, M), '$is_answer_t
     ( var(M) -> Mo = unbound ; Mo = M ), ( Sk = ret(_) -> Sko = ret1 ; Sko = Sk ), R = r(S, Mo, Sko, Ty).
 """
 
-const _TI_CASES = ["t_mono01", "t_mono02", "t_mono03", "t_mono04", "t_mono05", "t_mono06", "t_mono07", "t_mono08", "t_mono09"]
+const _TI_CASES = [
+    "t_mono01",
+    "t_mono02",
+    "t_mono03",
+    "t_mono04",
+    "t_mono05",
+    "t_mono06",
+    "t_mono07",
+    "t_mono08",
+    "t_mono09"
+]
 
 # swipl 10.1.20 (`tm_q(t_mono<NN>, A)`, in order), two identical runs
 const _TI_PINNED = [
@@ -60,7 +70,7 @@ const _TI_PINNED = [
     "r([1],[2],[1,11],[2,12])",
     "r([],[])",
     "[1]",
-    "r(complete,unbound,ret1,monotonic(eager))",   # mono09 (TB7M5): `\$tbl_variant_table` of the complete monotonic table outside propagation: IsMono stays unbound
+    "r(complete,unbound,ret1,monotonic(eager))"   # mono09 (TB7M5): `\$tbl_variant_table` of the complete monotonic table outside propagation: IsMono stays unbound
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -72,7 +82,10 @@ function _ti_swipl_lines()::Vector{String}
             _TI_PROGRAM * ":- initialization((forall(member(G, [" * join(_TI_CASES, ",") *
             "]), (tm_q(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -85,10 +98,12 @@ function _ti_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tis(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"

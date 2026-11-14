@@ -162,7 +162,7 @@ t_lz99(R) :- findall(G-D, lz_calls(G, D), L0), sort(L0, R).
 
 const _TI_CASES = [
     "t_lz00", "t_lz03", "t_lz04", "t_lz05a", "t_lz05b", "t_lz06", "t_lz10", "t_lc15",
-    "t_ab01", "t_ab02", "t_ab03", "t_ab04", "t_na01", "t_na02", "t_na03", "t_na04", "t_lz99",
+    "t_ab01", "t_ab02", "t_ab03", "t_ab04", "t_na01", "t_na02", "t_na03", "t_na04", "t_lz99"
 ]
 
 # swipl 10.1.20 (`lz_q(t_..., A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-13
@@ -195,7 +195,10 @@ function _ti_swipl_lines(program::String, cases::Vector{String})::Vector{String}
             program * ":- initialization((forall(member(G, [" * join(cases, ",") *
             "]), (lz_q(G, A), write(A), nl)), halt)).\n"
         )
-        read(pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull), String)
+        read(
+            pipeline(addenv(`swipl -q $f`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+            String
+        )
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
@@ -208,10 +211,12 @@ function _ti_ask(gd, ld, case::String)::String
     a = LK.PL_new_term_refs(ld, 2)
     LK.putSlotValue!(ld, a + 1, _tis(case), LK.PutVarMap())
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
-    qid = LK.PL_open_query(gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a)
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
     rc = LK.PL_next_solution(gd, ld, qid)
     ans = if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-        t = lk_answers(ld, (a + 1:a + 1)...)[1]
+        t = lk_answers(ld, ((a + 1):(a + 1))...)[1]
         kind(t) === SYM ? sym_text(t) : "not an atom"
     else
         rc == LK.PL_S_EXCEPTION ? "exception" : "failed"
@@ -239,7 +244,8 @@ end
         @test _ti_ask(gd, ld, case) == pin
     end
     # the must-fail corruption row: a pin with its first answer changed is not what the kernel answers
-    @test _ti_ask(gd, ld, "t_na01") != replace(_TI_PINNED[findfirst(==("t_na01"), _TI_CASES)], "foo" => "bar")
+    @test _ti_ask(gd, ld, "t_na01") !=
+        replace(_TI_PINNED[findfirst(==("t_na01"), _TI_CASES)], "foo" => "bar")
 
     if Sys.which("swipl") !== nothing
         @test _ti_swipl_lines(_TI_PROGRAM, _TI_CASES) == _TI_PINNED
@@ -327,20 +333,21 @@ end
     @test s1.scc === c0 && s1.hsc && s1.iac && s1.iap && s1.prev === nothing      # the state holds the old values
     @test tb.saved_status === s1                                                  # linked
     @test tb.component === nothing && !tb.has_scheduling_component &&
-          !tb.in_answer_completion && !tb.in_assert_propagation                   # a fresh status
+        !tb.in_answer_completion && !tb.in_assert_propagation                   # a fresh status
     # nested: the second save chains to the first
     c1 = LK.tbl_component{_TI}()
     tb.component = c1
     tb.in_assert_propagation = true
     s2 = LK.tbl_status{_TI}()
     LK.save_tabling_status(ld, s2)
-    @test s2.scc === c1 && !s2.hsc && !s2.iac && s2.iap && s2.prev === s1 && tb.saved_status === s2
+    @test s2.scc === c1 && !s2.hsc && !s2.iac && s2.iap && s2.prev === s1 &&
+        tb.saved_status === s2
     LK.restore_tabling_status(ld, s2)
     @test tb.component === c1 && !tb.has_scheduling_component && !tb.in_answer_completion &&
-          tb.in_assert_propagation && tb.saved_status === s1
+        tb.in_assert_propagation && tb.saved_status === s1
     LK.restore_tabling_status(ld, s1)
     @test tb.component === c0 && tb.has_scheduling_component && tb.in_answer_completion &&
-          tb.in_assert_propagation && tb.saved_status === nothing
+        tb.in_assert_propagation && tb.saved_status === nothing
     # must-fail row: the restored component is the saved one, not the other
     @test !(tb.component === c1)
 end

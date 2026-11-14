@@ -1,6 +1,8 @@
 # UPSTREAM: swipl-devel src/pl-undo.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-undo.h @ 18168e629eab
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2022-2025, SWI-Prolog Solutions b.v.
+# COPYRIGHT: Copyright (c)  2022-2925, SWI-Prolog Solutions b.v.
+# (the year range is copied exactly as pl-undo.c at the pin has it, typo included: tools/port_check.jl compares the line)
 #
 # PORTED FROM pl-undo.c (TX1e): `undo/1`, goals run when a trailed assignment of the first global cell is undone (on
 # backtracking). `'$undo'(Goal)` records `Goal` (a record in `gd.undo_refs`, named by an atom of the blob type `undo`) and
@@ -77,7 +79,9 @@ end
 # DIVERGES: the record's number in `gd.undo_refs` is the payload (see `undo_blob_record`); the atom's WORD is returned and its
 # term is recorded (`_blob_term!`) so that a term over it reads back.
 "The undo blob atom of a record of the goal `goal` references (pl-undo.c)."
-function save_undo(gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t)::word where {T}
+function save_undo(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
+)::word where {T}
     r = PL_record(ld, goal)                         # record_t r = PL_record(goal)
     push!(gd.undo_refs, r)
     bytes = _undo_bytes(length(gd.undo_refs))
@@ -88,7 +92,9 @@ end
 
 # PORT: pl-undo.c put_undo
 "Make `t` the goal the undo blob atom `u` records (pl-undo.c)."
-function put_undo(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, u::word)::Bool where {T}
+function put_undo(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, u::word
+)::Bool where {T}
     return PL_recorded(ld, undo_blob_record(gd, u), t)  # PL_recorded(*ref, t)
 end
 
@@ -119,9 +125,13 @@ function pl_undo1_va(
             return FFALSE
         end
     else
-        return PL_error(
+        return if PL_error(
             ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :undo), mk_sym(T, :goal), A1
-        ) ? FTRUE : FFALSE                          # PL_permission_error("undo", "goal", A1)
+        )
+            FTRUE                          # PL_permission_error("undo", "goal", A1)
+        else
+            FFALSE                          # PL_permission_error("undo", "goal", A1)
+        end                          # PL_permission_error("undo", "goal", A1)
     end
 end
 
@@ -172,16 +182,13 @@ function put_scheduled_undo(
 end
 
 # PORT: pl-undo.c run_undo_hooks
-# DIVERGES: the procedure is looked up on each call (no `GD->procedures.drun_undo1`); `'$syspreds'` is the module of
-# boot/syspred.pl. A raising goal is `'$run_undo'/1`'s: named refusal, owner P3 (see the file header).
+# DIVERGES: the procedure is `GD->procedures.drun_undo1`, made by `setBuiltinPredicateProperties!` (src/pl-ext.jl) and not at the first
+# call; `'$syspreds'` is the module of boot/syspred.pl. A raising goal is `'$run_undo'/1`'s: named refusal, owner P3 (see the file header).
 "Run `'\$syspreds':'\$run_undo'/1` on the scheduled goals in a frame of its own; false with the exception pending (pl-undo.c)."
 function run_undo_hooks(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
     fid = PL_open_foreign_frame(ld)                 # if ( (fid=PL_open_foreign_frame()) )
     if fid != 0
-        pred = lookupProcedure(
-            mk_sym(T, Symbol("\$run_undo")), 1,
-            lookupModule(gd, mk_sym(T, Symbol("\$syspreds")))
-        )                                           # _PL_predicate("$run_undo", 1, "$syspreds", …)
+        pred = gd.procedures_drun_undo1             # _PL_predicate("$run_undo", 1, "$syspreds", &GD->procedures.drun_undo1)
 
         ld.undo_running += 1                        # LD->undo.running++
         list = PL_new_term_ref(ld)

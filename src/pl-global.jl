@@ -181,6 +181,7 @@ mutable struct PL_global_data{T}
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
     const undo_refs::Vector{record{T}}                          # (pl-undo.c: the record an undo blob names, by its number in the payload; TX1e)
+    procedures_drun_undo1::Procedure{T}                         # procedures.drun_undo1: '$syspreds':'$run_undo'/1, run_undo_hooks's (TX1e; set by setBuiltinPredicateProperties!)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -445,7 +446,8 @@ mutable struct ld_tabling{T}
     mdep_ref_serial::Int
 end
 ld_tabling{T}() where {T} = ld_tabling{T}(
-    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false, UInt32(0),
+    nothing, nothing, 0, 0, 0, nothing, nothing, nothing, 0, 0, false, false, false,
+    UInt32(0),
     0, 0,
     tbl_free_objects{T}(), tbl_restraint{T}(),
     Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
