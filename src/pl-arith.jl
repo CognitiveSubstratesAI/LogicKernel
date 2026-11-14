@@ -1563,6 +1563,10 @@ end
 _ulong_seed(i::Int64)::BigInt = BigInt(reinterpret(UInt64, i))
 
 # PORT: pl-arith.c seed_from_dev
+# DIVERGES: the read is `readbytes!` up to 128 bytes (it returns at 128 bytes or at the end of the file), where upstream's loop reads
+# until 16 bytes are in and takes whatever the last `read` returned (up to 128): on a device that hands out fewer than 128 bytes per
+# read the seed is longer here, and a device that blocks after 16 bytes blocks here (`/dev/urandom`, `/dev/random` of a current kernel
+# give 128 at once). An error from `open` (`SystemError`) is a false return, as `open() == -1`.
 "Seed the generator from a character device (`/dev/urandom`, `/dev/random`): true when 16 bytes or more were read."
 function seed_from_dev(ld::PL_local_data, dev::String)::Bool
     io = try
