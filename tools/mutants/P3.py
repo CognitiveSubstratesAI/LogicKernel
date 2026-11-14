@@ -103,12 +103,12 @@ MUTANTS = [
          new='''        if false                                            #   if ( ch->frame == environment_frame ) continue (I_FOPENNDET)'''),
     dict(id="P3-16 a deterministic exit is reported as `true` (KILL dl17, il16, il02's last answer)", file=P, targets=TD,
          old='''        return PL_unify_atom(ld, t, mk_sym(T, Symbol("!"))) ? FTRUE : FFALSE    # ATOM_cut''',
-         new='''        return PL_unify_atom(ld, t, mk_sym(T, :true)) ? FTRUE : FFALSE    # ATOM_cut'''),
+         new='''        return PL_unify_atom(ld, t, mk_sym(T, Symbol("true"))) ? FTRUE : FFALSE    # ATOM_cut'''),
     dict(id="P3-17 a non-deterministic exit leaves no retry (KILL dl22: no redo, so the deeper clause is not tried; il14)", file=P, targets=TD,
-         old='''        if PL_unify_atom(ld, t, mk_sym(T, :true))
+         old='''        if PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
             return PL_retry(1)                              # ForeignRedoInt(1)
         end''',
-         new='''        if PL_unify_atom(ld, t, mk_sym(T, :true))
+         new='''        if PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
             return FTRUE
         end'''),
     # ---- pl-prims.c: the inference limit

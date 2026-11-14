@@ -3,6 +3,7 @@
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
+# COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a port of the pin's src/pl-prof.c, read from the pin (git show 18168e62) for this file
 #
@@ -31,6 +32,7 @@
 #   5. MEMORY: no `allocHeap`, no `releaseModule` (`prof_release_def`: no module GC), the `prof_ref` chains are vectors
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
+"Raise the named refusal of a collection entry point (step PROF1)."
 # No upstream twin (kept as a comment, not a header line): the refusal every collection entry point raises (step PROF1).
 function _prof_refuse(
     ld::PL_local_data{T}, culprit::Symbol, what::String
@@ -65,8 +67,9 @@ function get_prof_status(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} w
     a = PL_get_atom_ex(ld, t)
     a === nothing && return nothing
     k = sym_key(a)
-    k == sym_key(mk_sym(T, :false)) && return PROF_INACTIVE
-    (k == sym_key(mk_sym(T, :true)) || k == sym_key(mk_sym(T, :cputime))) && return PROF_CPU
+    k == sym_key(mk_sym(T, Symbol("false"))) && return PROF_INACTIVE
+    (k == sym_key(mk_sym(T, Symbol("true"))) || k == sym_key(mk_sym(T, :cputime))) &&
+        return PROF_CPU
     k == sym_key(mk_sym(T, :walltime)) && return PROF_WALL
     k == sym_key(mk_sym(T, :exact_walltime)) && return PROF_WALL_EXACT
     k == sym_key(mk_sym(T, :exact_cputime)) && return PROF_CPU_EXACT
@@ -81,7 +84,7 @@ function prof_status_atom(::Type{T}, s::Int)::T where {T}
     s == PROF_WALL && return mk_sym(T, :walltime)
     s == PROF_WALL_EXACT && return mk_sym(T, :exact_walltime)
     s == PROF_CPU_EXACT && return mk_sym(T, :exact_cputime)
-    return mk_sym(T, :false)
+    return mk_sym(T, Symbol("false"))
 end
 
 # PORT: pl-prof.c get_node
@@ -474,9 +477,9 @@ function pl_prof_statistics8_va(
 )::foreign_t where {T}
     p = ld.profile
     ports = if p.ports_control == PROFC_FALSE
-        :false
+        Symbol("false")
     elseif p.ports_control == PROFC_TRUE
-        :true
+        Symbol("true")
     else
         :classic
     end
@@ -685,9 +688,9 @@ function pl_profile4_va(
     ports_opt === nothing && return FFALSE
     pk = sym_key(ports_opt)
     ld.profile.ports_control =
-        if pk == sym_key(mk_sym(T, :false))
+        if pk == sym_key(mk_sym(T, Symbol("false")))
             PROFC_FALSE
-        elseif pk == sym_key(mk_sym(T, :true))
+        elseif pk == sym_key(mk_sym(T, Symbol("true")))
             PROFC_TRUE
         else
             PROFC_CLASSIC

@@ -19,9 +19,11 @@
 # DIVERGES (file-wide): the message's `__FILE__:__LINE__` prefix is the pin's file and the line of the `Sdprintf` (os/pl-cstack.c:943 and :949);
 # a C build prints its build-time path of the file, which the kernel has not.
 
+"The fallback's message for `print_backtrace` (pl-cstack.c:943)."
 # No upstream twin (a comment, not a header line): the text the fallback's `Sdprintf` formats (`"%s:%d C-stack dumps are not supported on this platform\n"`), the file and line
 # being the pin's.
 const _CSTACK_UNSUPPORTED_BACKTRACE = "os/pl-cstack.c:943 C-stack dumps are not supported on this platform\n"
+"The fallback's message for `print_backtrace_named` (pl-cstack.c:949)."
 const _CSTACK_UNSUPPORTED_BACKTRACE_NAMED = "os/pl-cstack.c:949 C-stack dumps are not supported on this platform\n"
 
 # PORT: pl-cstack.c save_backtrace

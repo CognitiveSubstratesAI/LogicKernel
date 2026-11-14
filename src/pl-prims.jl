@@ -4785,7 +4785,7 @@ function unify_det(ld::PL_local_data{T}, t::term_t)::foreign_t where {T}
     if chi != 0 && ld.choices[chi].frame == ld.frames[ld.environment_frame].parent
         return PL_unify_atom(ld, t, mk_sym(T, Symbol("!"))) ? FTRUE : FFALSE    # ATOM_cut
     else
-        if PL_unify_atom(ld, t, mk_sym(T, :true))
+        if PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
             return PL_retry(1)                              # ForeignRedoInt(1)
         end
         return FFALSE
