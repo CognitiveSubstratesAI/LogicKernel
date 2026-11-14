@@ -296,6 +296,9 @@ maxBigIntSize(ld::PL_local_data)::UInt64 = min(UInt64(ld.stacks_limit) * 8, MPZ_
 # the Float64 mode (`setrounding(Float64, ...)` is a MethodError: only BigFloat has one). A mode other than to nearest
 # is held ONLY for the duration of an arithmetic evaluation (`evalExpression_cells`, pl-arith.jl, restores it in a
 # `finally`), never across calls: swipl leaves the hardware mode set, and the rest of the Julia runtime would run in it.
+# Julia's compiler does not model the mode: a float operation with literal (constant) operands may be folded in to_nearest at
+# compile time, and operations are not ordered against `fesetround`; the walk's operands are run-time values, so each `+ - * /`
+# and `sqrt` reaches the hardware at its place (what the rows of test_arith_round_swipl.jl check).
 "The C `FE_TONEAREST` of this platform (<fenv.h>): round to nearest."
 const FE_TONEAREST = Int(Base.Rounding.JL_FE_TONEAREST)
 "The C `FE_UPWARD` of this platform (<fenv.h>): round toward positive infinity."
