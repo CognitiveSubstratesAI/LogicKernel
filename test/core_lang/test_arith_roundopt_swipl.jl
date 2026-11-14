@@ -139,7 +139,8 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
         f = joinpath(d, "drv.pl")
         write(
             f,
-            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n"
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
         )
         read(pipeline(`swipl -q $f`; stdin=devnull, stderr=devnull), String)
     end
@@ -151,7 +152,7 @@ end
 # 0.33333333333333337 in Y. The kernel's answer is the same lines with 0.3333333333333333.
 const _RO_PIN_K = [
     "k0 c[107,48]/1(c[45]/2(c[45]/2(c[101,118,97,108,117,97,116,105,111,110,95,101,114,114,111,114]/1(a[122,101,114,111,95,100,105,118,105,115,111,114]),f0.33333333333333337),f-0.3333333333333333))",
-    "k1 c[107,49]/1(c[45]/2(c[45]/2(c[101,118,97,108,117,97,116,105,111,110,95,101,114,114,111,114]/1(a[122,101,114,111,95,100,105,118,105,115,111,114]),f0.33333333333333337),f-0.3333333333333333))",
+    "k1 c[107,49]/1(c[45]/2(c[45]/2(c[101,118,97,108,117,97,116,105,111,110,95,101,114,114,111,114]/1(a[122,101,114,111,95,100,105,118,105,115,111,114]),f0.33333333333333337),f-0.3333333333333333))"
 ]
 _ro_kernel_k(l::String) = replace(l, "f0.33333333333333337" => "f0.3333333333333333")
 
@@ -171,7 +172,8 @@ end
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test count(l -> occursin("f0.33333333333333337", l), expected) >= 6      # to_positive rounds 1/3.0 up
     # t24/t25 (the flag to_positive, the compound read by A_VAR inside roundtoward): the roundtoward's mode, never the flag's, so no row rounds up
-    @test !occursin("f0.33333333333333337", expected[25]) && !occursin("f0.33333333333333337", expected[26])
+    @test !occursin("f0.33333333333333337", expected[25]) &&
+        !occursin("f0.33333333333333337", expected[26])
     @test count(l -> occursin("f-0.33333333333333337", l), expected) >= 2     # to_negative rounds -1/3.0 down
     @test count(l -> occursin(_codes("zero_divisor"), l), expected) == 5      # the five throw rows t15..t19
 
@@ -254,7 +256,8 @@ end
         @test (i, kk[i + 1]) == (i, _ro_kernel_k(_RO_PIN_K[i]))
         @test kk[i + 1] != _RO_PIN_K[i]
         # the line is the throw row's (the same error and the same Z as the pin), only Y differs
-        @test occursin(_codes("zero_divisor"), kk[i + 1]) && occursin("f-0.3333333333333333", kk[i + 1])
+        @test occursin(_codes("zero_divisor"), kk[i + 1]) &&
+            occursin("f-0.3333333333333333", kk[i + 1])
     end
     # a row without the leak is the pin's, byte for byte (the single roundtoward row t15 of the .out)
     expected = String.(readlines(_RO_OUT))
