@@ -9,6 +9,8 @@
 # without threads (the `#else` of `#ifdef O_PLMT`, pl-mutex.c:768-772). NOT PORTED: the mutex table
 # (`initMutexes`, `get_mutex`, `PL_mutex_lock`) and the `mutex_*` predicates — the kernel has one
 # thread, and `BeginPredDefs(mutex)` is empty without O_PLMT.
+# Synced to cf6960c2: `mutexCreate` declares its `new` flag for `lookupBlob` as `bool` instead of `int`: a type
+# change in the mutex table, which the kernel does not port; no answer changes.
 
 # PORT: pl-mutex.c pl_with_mutex
 # (FRG("with_mutex", 2, pl_with_mutex, META|ISO), pl-ext.c:187; the meta declaration `+0`, pl-ext.c:406;
