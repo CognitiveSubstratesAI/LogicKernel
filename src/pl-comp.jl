@@ -2516,7 +2516,7 @@ end
 # DIVERGES: the operands are terms of the clause, resolved: no `deRef`; an integer that is not inline
 # is `A_MPZ` with a literal operand (the value as a term, as `B_MPZ`'s), a float `A_DOUBLE` with a literal,
 # a rational `A_MPQ`; `A_INTEGERW` is not emitted (`CODES_PER_WORD` is 1 here: `A_INTEGER` takes the whole
-# integer). A function name is looked up by its key and arity (`indexArithFunction`). The segmented stack
+# integer). A function name is looked up by its key and arity (`indexArithFunction`). The stack in pieces
 # is a `Vector`. `ignore_error` is kept as upstream has it, but no failed operand reaches it: every failure leaves through `exit`, as upstream's
 # (probed at the pin: `roundtoward(nofunc(1), M)` is refused with the error, no clause is added).
 """
