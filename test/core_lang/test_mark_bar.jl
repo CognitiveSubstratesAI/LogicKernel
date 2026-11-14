@@ -25,7 +25,7 @@ _mb_aw(ld, n) = LK._atom_word!(ld, _mb_sym(n))
     # D-0083)
     # TX1e: expectation changed (gTop 6 -> 7 + TMP_PTR_SIZE) because TX1 keeps the undo list's cell, the first global cell:
     # swipl does the same, `LD->undo.undo_list = init_undo_list()` allocates one global cell (pl-setup.c:1557, pl-undo.c:42-52),
-    # after `LD->mark_bar = gTop` (pl-setup.c:1536), so mark_bar stays 0 here too.
+    # after `LD->mark_bar = gTop` (pl-setup.c:1540), so mark_bar stays 0 here too.
     @test ld.mark_bar == 0 && ld.gTop == 7 + LK.TMP_PTR_SIZE
     LK.allocGlobalCells!(ld, 3)
     m = LK.Mark(ld)
