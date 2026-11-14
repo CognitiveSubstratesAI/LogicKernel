@@ -6,6 +6,7 @@
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners); pl-fli.h: the validate_api flag ported; the validateAPI macros are owner FLI1 (docs/architecture.md, deferred owners).
+# Synced to cf6960c2 (pl-fli.c, notes only; none of these is written here): `check_atom_t` (a debug-only check that a local atom belongs to this thread: the kernel has no local atoms or threads), `PL_get_list_slice` (owner FLI1: the target copies the list into `tail` with `PL_put_term`, which may globalize a variable, where the pin linked the value in place), `PL_blob_data` (the test `ATOM_TYPE_IS_INVALID(type)` for `type == ATOM_TYPE_INVALID`: the kernel's `ATOM_TYPE_INVALID` is one constant), `PL_new_blob`/`PL_unify_blob`/`PL_put_blob` (`new` is `bool`: a type), `PL_get_pointer`/`PL_put_pointer`/`PL_unify_pointer` (pointer integers, see `PL_get_pointer_ex`, src/pl-error.jl).
 # THE TERM REFERENCES of SWI-Prolog's foreign language interface (pl-fli.c): a `term_t` is a
 # position on the local stack (src/pl-incl.jl § the local stack), allocated at `lTop` inside the
 # innermost foreign frame, which counts them. Since V5a2, the `PL_*` functions the first built-ins
@@ -804,7 +805,8 @@ end
 # PORT: pl-fli.c codeToAtom
 # DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so a
 # code 0 is refused as in every atom: `NotPortedError`); no `GD->atoms.for_code` cache of the atoms of the
-# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
+# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`. Synced to cf6960c2: the target types the `new` flag of
+# `uncachedCodeToAtom`'s `lookupBlob` call `bool` (was `int`): a type; this port has no such call.
 "The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
 function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
     chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
@@ -1428,7 +1430,10 @@ const ucs_atom = PL_blob_t(PL_BLOB_UNIQUE | PL_BLOB_TEXT | PL_BLOB_WCHAR, "ucs_t
 # PORT: pl-fli.c lookupUCSAtom
 # DIVERGES: the table is an argument (`GD->atoms`). The key is upstream's: the code points as
 # `pl_wchar_t` — 4 bytes each on Linux, in the machine's byte order — and the length in BYTES
-# (`len * sizeof(pl_wchar_t)`).
+# (`len * sizeof(pl_wchar_t)`). Synced to cf6960c2: the target types the `new` flag `bool` (was `int`), and adds `lookupLocalUCSAtom`
+# (pl-fli.c:862-869): the same lookup, `lookupBlobEx(..., true)`, creating a LOCAL atom (one owned by the calling thread,
+# collected without the global atom GC). This kernel has no local atoms (no threads, no `lookupLocalAtom`), so the function is
+# unwritten here; a caller of `lookupUCSAtom` gets a global atom, which is the only kind.
 "The wide text atom of the first `len` code points of `s` (pl-fli.c), created if new."
 function lookupUCSAtom(
     atoms::atoms_t, s::AbstractVector{UInt32}, len::Int=length(s)

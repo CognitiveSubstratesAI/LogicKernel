@@ -800,7 +800,14 @@ PL_get_intptr_ex(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long_ex(ld,
 # DIVERGES: also the body of pl-fli.c `PL_get_pointer`. Returns the integer, or `nothing` with the error raised; the kernel's "pointers" are integers (an answer reference
 # `serial<<32|nid`, a worklist or component handle), so the C cast `intToPointer` is the identity. As at the pin (pl-fli.c:2461-2477,
 # 64-bit: no 32-bit mask) any int64 is a pointer, a negative one too; every other term (an atom, a bigint, a compound, a variable)
-# raises `type_error(address, T)` (pl-error.c:1335-1341), NOT `type_error(integer, T)` of `PL_get_int64_ex`.
+# raises `type_error(address, T)` (pl-error.c:1335-1341), NOT `type_error(integer, T)` of `PL_get_int64_ex`. Synced to cf6960c2:
+# the target's `PL_get_pointer` (pl-fli.c:2488-2506) takes only a POINTER INTEGER (`isPtrInt`, a new tag form of pl-data.h; with
+# `O_BIG_ADDRESS` also a plain integer that is indirect), so a plain integer typed or computed in Prolog, `trie_term(5, X)`, is
+# `type_error(address, 5)` there. The kernel's handles are plain integers with no tag (see above) and PL_get_int64 reads them,
+# so this function keeps accepting every int64 and the answer for such an integer differs from the target's: the one known
+# difference of the pointer-integer change (every non-integer, the tested case, is `type_error(address, T)` in both). The same
+# change in `PL_put_pointer`/`PL_unify_pointer` (consPtrInt, else representation_error(address) without `O_BIG_ADDRESS`) has no
+# kernel counterpart: a handle is an index or `serial<<32|nid`, always below 2^62.
 "The pointer (an int64) term reference `t` holds, or `nothing` after raising `type_error(address, T)` (pl-error.c `PL_get_pointer_ex`)."
 function PL_get_pointer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     p = PL_get_int64(ld, t)                     # PL_get_pointer(t, addrp): PL_get_int64, then intToPointer
