@@ -20,6 +20,19 @@
 # NOT PORTED: the rest of pl-os.c (`System`, the signals, the tmp-file
 # registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
+# Synced to cf6960c2 (pl-os.c, pl-os.h): the whole delta of the file is the temporary-entry registry,
+# the code the paragraph above leaves out, so it stays unwritten: `TemporaryFile` becomes a wrapper of a new static
+# `temporary_entry(id, ext, kind, fdp)` over `tmp_kind` (`TMP_NAME`, `TMP_FILE`, `TMP_DIRECTORY`); new
+# `TemporaryDirectory(id)` (mkdir 0700, retry on EEXIST), `ForgetTemporaryDirectory(name)` and a
+# `temporary_kind` lookup; `GD->os.tmp_files` stores the kind as the table value (was `true`);
+# `free_tmp_name(name, kind)` / `remove_tmp_entry` remove a directory with `rmdir`; `DeleteTemporaryFile`
+# returns `bool` and refuses a directory; `RemoveTemporaryFiles` removes the files first, then the empty
+# directories until no more go (`remove_tmp_entries`). Why unwritten: every function reads or writes
+# `GD->os.tmp_files`, a field `PL_global_data` does not have (a struct change, see src/os/pl-files.jl
+# `_tmp_file_refused`), and its callers (tmp_file/2, `$tmp_file_stream`/4, the target's new
+# tmp_directory/2 and `ForgetTemporaryDirectory` in delete_directory/1, both pl-files.c) are refused
+# or unwritten. No kernel answer changes: delete_file/1 on a temporary name fails on the empty registry
+# as before, so there is no TARGET-ONLY row and no mutant.
 
 # ORIGINAL (Y1): the C library the clocks and the environment call (glibc's soname), as `LIBM` is libm's.
 "The C library the OS layer calls (glibc's soname)."
