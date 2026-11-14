@@ -16,8 +16,8 @@
 # there and I5/T3/T4 are caught there by a template a revised module left poisoned. The CI mutation battery runs fresh processes and decides.
 # DEFERRED KILL (audit D-0374 item 2): a row declared `equivalent="DEFERRED KILL: ..."` has no killing assertion yet — no test file reads what the
 # mutant changes (a finding for a test step, not invented here). It must SURVIVE the battery; when a test step adds the row, the declaration goes.
-#   * PIN1-V5: apply_options_to_flags!'s `validate_api` entry (src/pl-init.jl:659): test_lb7_swipl.jl's `lb7_flagnames` (line 52) lacks `validate_api`,
-#     so neither the `-O` row f02 (TL7:402) nor any row reads it after the options are applied.
+#   * PIN1-V5 (KILLED by DEFKILL5): the testset `the validate_api flag after the options, as swipl (PIN1-V5)` at the end of test_lb7_swipl.jl reads validate_api
+#     (and optimise) after a default and a `-O` parse; the generated `lb7_flagnames` (line 52) still lacks validate_api, so f01/f02 are untouched.
 #   * PIN1-I5: the size flags' -1 default: `unify_prolog_flag_value` (pl-prologflag.jl:486, `_tbl_restraint_unlimited`) answers false before `f.i` is read, and TP:305 only asks `!== nothing`.
 #   * PIN1-T3, PIN1-T4: set_prolog_flag/2 on `max_incomplete_subgoals_action` / `max_scc_subgoals_action`: `_SF_REFUSED` (TS:576-585, since TAB1 TB0; run at TS:593-601, the @test_throws at TS:599) names no
 #     `*_action` flag, not the three of the old pin either. TB0 (wip/tb0) shifts src/os/pl-prologflag.jl by +17 lines above `tbl_is_restraint_flag` (now :1461, the refusal at :1534-1535); I5's lines (:412, :486, TP:302-305) did not move.
@@ -62,9 +62,8 @@ MUTANTS = [
          old='    setPrologFlag(gd, "validate_api", FT_BOOL, !gd.cmdline.optimise, PLFLAG_VALIDATE_API)\n',
          new='    setPrologFlag(gd, "validate_api", FT_BOOL | FF_READONLY, !gd.cmdline.optimise, PLFLAG_VALIDATE_API)\n'),
     # ── the validate_api flag: apply_options_to_flags! (pl-prologflag.c:2695-2698 reads `GD->cmdline.optimise`) ──
-    dict(id="PIN1-V5 the options write validate_api as `optimise`, not `!optimise` (no row: DEFERRED KILL, lb7_flagnames lacks validate_api)",
+    dict(id="PIN1-V5 the options write validate_api as `optimise`, not `!optimise` (KILL TL7, the testset `the validate_api flag after the options, as swipl (PIN1-V5)`: `-O` pins validate_api false and the default true)",
          file=INI, targets=[TL7, TFB],
-         equivalent="DEFERRED KILL: owner FLI1 (the validateAPI gate of pl-fli.c is the flag's consumer; docs/r2_owners.tsv has no flag: row for it, FLI1 named by PIN1 step C); no test reads validate_api after the options are applied: test_lb7_swipl.jl:52 (lb7_flagnames) and its -O rows f02/f01 (TL7:402-403, which pin `optimise`) do not name it, and neither test_firstboot_swipl.jl nor test_prolog_flag_swipl.jl names validate_api or optimise (the mutated entry is src/pl-init.jl:659)",
          old='        ("validate_api", PLFLAG_VALIDATE_API, !cmd.optimise)\n',
          new='        ("validate_api", PLFLAG_VALIDATE_API, cmd.optimise)\n'),
     dict(id="PIN1-V6 the options' validate_api entry writes the mask bit of `signals` (KILL TL7:369: rows f05 and f02 pin `signals` as swipl's false/true, the entry sets the local data's bit after the signals entry)",
