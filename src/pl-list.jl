@@ -33,6 +33,9 @@ end
 # order of upstream's cells). NOT PORTED: the global stack's overflow — upstream raises a resource
 # error for a list that does not fit the stacks (`ensureGlobalSpace`, and `outOfStack` for a big
 # integer); with no global stack such a length is refused (`NotPortedError`) rather than built.
+# Synced to cf6960c2: a length over `SIZE_MAX/(3*sizeof(word))` raises the global overflow before
+# `ensureGlobalSpace` (upstream: `len*3` would overflow; here `3 * len` would wrap in an `Int` and slip under
+# the limit); the guard is the same expression on `typemax(UInt)`.
 "`'\$length'(-List, +Len)`: `List` is a list of `Len` fresh variables; fails if `Len < 0` (pl-list.c)."
 function pl_dlength2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -44,6 +47,10 @@ function pl_dlength2_va(
         if len > 0
             list = PL_new_term_ref(ld)
 
+            if UInt(len) > typemax(UInt) ÷ UInt(3 * sizeof(UInt))   # (size_t)len > SIZE_MAX/(3*sizeof(word)): len*3 overflows
+                outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)
+                return FFALSE
+            end
             ensureGlobalSpace(ld, 3 * len) || return FFALSE    # !ensureGlobalSpace(len*3) (L1f f2)
 
             p0 = allocGlobalCells!(ld, 3 * len)         # p = allocGlobal(len*3) (L1e e4: on the cells)

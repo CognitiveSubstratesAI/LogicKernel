@@ -140,6 +140,20 @@ _bc_ctx() = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing)
     @test _bc_counts(ld) == c0
 end
 
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 — pl-list.c:72-73 of the target (a length over
+# SIZE_MAX/(3*sizeof(word)) raises the global overflow); the pin's `len*3` overflows. Mutants:
+# tools/mutants/SYNCZ12.py SZ12-1.
+@testset "'\$length'/2 of a length whose 3*len overflows raises the global overflow (swipl-devel cf6960c2)" begin
+    ld, t = _bc_engine(_R[_rv(1), _bc_k(typemax(Int) >> 1)])             # 2^62-1: 3*len wraps an Int
+    @test LK.pl_dlength2_va(ld, t, 2, _bc_ctx()) == LK.FFALSE
+    @test ld.exception_processing && ld.outofstack
+    @test _rcanonical(lk_answer(ld, ld.exception_bin)) ==
+        "error(resource_error(stack),stack_overflow)"
+    ld2, t2 = _bc_engine(_R[_rv(1), _bc_k(4)])                           # the guard leaves a small length alone
+    @test LK.pl_dlength2_va(ld2, t2, 2, _bc_ctx()) == LK.FTRUE
+    @test !ld2.outofstack
+end
+
 @testset "the meter: '\$length'/2, '\$skip_list'/3 and atom_number/2 on the stack make no cold traffic" begin
     ld, t = _bc_engine(
         _R[_rv(1), _bc_k(4), _rv(2), _rlist(_rs("a"), _rs("b")), _rv(3), _rs("12"), _rv(4)]
