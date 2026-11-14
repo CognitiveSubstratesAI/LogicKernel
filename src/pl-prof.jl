@@ -1,8 +1,9 @@
 # UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-prof.h @ 18168e629eab
 # CLASS: code
-# COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
+# COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
+# COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # allow-new-artifact: a port of the pin's src/pl-prof.c, read from the pin (git show 18168e62) for this file
 #
@@ -202,10 +203,10 @@ end
 # The kinds of a `prof_ref`: a real procedure (`PROF_REF_DEF`), and the two special handles upstream spells
 # `(Definition)0` and `(Definition)1` in pl-prof.c.
 const PROF_REF_DEF = 0
-# PORT: pl-prof.h DEF_SPONTANEOUS as PROF_REF_SPONTANEOUS
+# PORT: pl-prof.c DEF_SPONTANEOUS as PROF_REF_SPONTANEOUS
 # DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_SPONTANEOUS = 1
-# PORT: pl-prof.h DEF_RECURSIVE as PROF_REF_RECURSIVE
+# PORT: pl-prof.c DEF_RECURSIVE as PROF_REF_RECURSIVE
 # DIVERGES: the special handle is a kind of a reference, its `handle` being `nothing` then.
 const PROF_REF_RECURSIVE = 2
 

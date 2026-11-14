@@ -1,9 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-coverage.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
 # CLASS: code
-# COPYRIGHT: Copyright (c)  2022-2024, University of Amsterdam
-# COPYRIGHT: VU University Amsterdam
-# COPYRIGHT: SWI-Prolog Solutions b.v.
+# COPYRIGHT: Copyright (c)  2023-2024, SWI-Prolog Solutions b.v.
 # allow-new-artifact: a port of the pin's src/pl-coverage.c, read in full from the pin (git show 18168e62) for this file
 #
 # COVERAGE (pl-coverage.c), lane F: the data layer of the low-level coverage collection (library(prolog_coverage) reads it
