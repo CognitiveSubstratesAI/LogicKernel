@@ -11,6 +11,7 @@
 #   * A row whose program the kernel refuses stays a row pinned on swipl (the pin is not weakened); expected refusals (by reading, unverified): clpfd (needs library(clpfd) and attributed variables in tries); sneezing (compares a float with =:=).
 #   * Rows with plunit options folded by hand (ROW_FOLD in gen_tabling.py, from the unit text): tabling_clpfd, tabling_eruption, tabling_eruption2, tabling_sneezing: `Var op Val` options as once(Goal) then the check, `set(T == L)` as findall + sort + compare, `nondet` dropped; tabling_clpfd's two conditional tests as one if-then-else row.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
+# elided: unit tabling_ex16, upstream line 865, reason: matches the D-0164 term list
 
 using Test, LogicKernel
 const LK = LogicKernel
