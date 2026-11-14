@@ -154,9 +154,9 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     ld.gTop = 0                                 # emptyStack((Stack)&LD->stacks.global);
     _truncate_vtable!(ld)                       # (the value table with it: L1b stage C2)
     ld.mark_bar = ld.gTop                       # LD->mark_bar = gTop;
-    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
 
-    PL_open_foreign_frame(ld)
+    PL_open_foreign_frame(ld)                   # (its Mark sets mark_bar = gTop, still 0: the undo cell comes after, as in pl-setup.c:1540-1557)
+    ld.undo_list = init_undo_list(ld)           # LD->undo.undo_list = init_undo_list(): FIRST global cell, see __do_undo() (TX1e)
     ld.exception_term = 0
     ld.exception_bin = PL_new_term_ref(ld)
     ld.exception_printed = PL_new_term_ref(ld)
