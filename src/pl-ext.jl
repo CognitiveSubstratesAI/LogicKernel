@@ -224,8 +224,8 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     gd.procedures_dtbl_reset6 = lookupProcedure(mk_sym(T, Symbol("\$tbl_reset")), 6, m)  # LOOKUPPROC(dtbl_reset6)
     gd.procedures_call_continuation1 = lookupProcedure(mk_sym(T, :call_continuation), 1, m)  # LOOKUPPROC(call_continuation1)
     gd.procedures_dmeta_call1 = lookupProcedure(mk_sym(T, Symbol("\$meta_call")), 1, m)  # LOOKUPPROC(dmeta_call1)
-    # PORT: pl-undo.c run_undo_hooks's `_PL_predicate("$run_undo", 1, "$syspreds", &GD->procedures.drun_undo1)`
-    # DIVERGES: upstream looks the procedure up at its first call and keeps it in `GD->procedures.drun_undo1`; here it is made with the
+    # pl-undo.c run_undo_hooks looks the procedure up with `_PL_predicate("$run_undo", 1, "$syspreds",
+    # &GD->procedures.drun_undo1)` at its first call and keeps it in `GD->procedures.drun_undo1`; here it is made with the
     # other cached procedures, so that `run_undo_hooks` (a callee of the run loop's call path, which allocates nothing there) builds no
     # atom or term of its own. The module `'$syspreds'` therefore exists before boot/init.pl loads boot/syspred.pl into it.
     gd.procedures_drun_undo1 = lookupProcedure(
