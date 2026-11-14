@@ -395,7 +395,7 @@ function PL_get_dict_ex(
         len = lengthList(ld, data, true)
         len < 0 && return false                     # not a proper list
 
-        ensureGlobalSpace(ld, len * 2 + 2) || return false
+        ensureGlobalSpace(ld, len * 2 + 2, ALLOW_GC, :get_dict_ex) || return false   # G1-GC safe point: get_dict_ex
         m = Mark(ld)
         dp = allocGlobalCells!(ld, len * 2 + 2)
         ap = dp
@@ -504,17 +504,36 @@ function assign_in_dict(ld::PL_local_data, dp::Int, val::Int)::Nothing
     return nothing
 end
 
+# ORIGINAL: pl-dict.c's helpers return `GLOBAL_OVERFLOW` (a `boolex_t`) when `gTop+n > gMax`, and the PREDICATE calls `makeMoreStackSpace(rc,
+# ALLOW_GC|ALLOW_SHIFT)` and retries from its term references (pl-dict.c:1697 put_dict/3, :1836 del_dict/4, :1877 select_dict/3, :1629 unify_dict_copy).
+# The kernel's stacks grow on demand, so the "full" test is the one `ensureGlobalSpace(.., ALLOW_GC)` applies (G1-GC: the collector is forced, the vector is
+# full or the limit is passed) and the code carries the cells the helper needs, for the predicate's `ensureGlobalSpace(n, ALLOW_GC, site)`.
+"The helper's `GLOBAL_OVERFLOW` (pl-dict.c): `n` cells are needed; the predicate makes room (collecting at its safe point) and retries."
+struct DictOverflow
+    n::Int
+end
+
+# ORIGINAL: the overflow test of a retry loop's FIRST pass (`gc` true): the audited area is full or the collector is forced, as `ensureGlobalSpace(ld, n,
+# ALLOW_GC, ..)` tests it. The retry (`gc` false) uses the plain check: with room made, no second overflow is reported (a loop that cannot end).
+"Whether the helper must report `DictOverflow` for `n` cells: `gc` (the first pass) and the stack is full, past its limit, or `ld.gc_force`."
+@inline function _dict_overflow(ld::PL_local_data, n::Int, gc::Bool)::Bool
+    gc || return false
+    fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing
+    return ld.gc_force || ld.gTop + n > length(ld.gstack) || !fits
+end
+
 # PORT: pl-dict.c put_dict
 # DIVERGES: the merge of the two sorted runs is planned first (`plan`: which pair, from the old dict or from `nv`, comes
 # next), then the cells are laid out at their exact size; upstream lays them out at gTop and sets gTop to the end
 # (`gTop = out`), which the cells' allocation here cannot take back. The same pairs in the same order. The overflow
 # test (`gTop+1+arity+2*size > gMax`) is `ensureGlobalSpace`, which raises the overflow: the result is then `nothing`.
 # `dict` is the old dict's compound word, `nv` the position of the first VALUE cell of the `npairs` new pairs; the result is
-# the new dict's compound word (the old `dict` when nothing is modified).
+# the new dict's compound word (the old `dict` when nothing is modified). G1-B: `gc` (default false) is the predicate's first pass of its retry loop: the
+# `DictOverflow` is then reported BEFORE anything is laid out (pl-dict.c's `gTop+1+arity+2*size > gMax`) and the predicate retries with `gc` false.
 "The dict `dict` with the `npairs` pairs at `nv` put into it: replaced or added (pl-dict.c)."
 function put_dict(
-    ld::PL_local_data{T}, dict::word, npairs::Int, nv::Int
-)::Union{Nothing, word} where {T}
+    ld::PL_local_data{T}, dict::word, npairs::Int, nv::Int, gc::Bool=false
+)::Union{Nothing, word, DictOverflow} where {T}
     f = valPtr(dict)
     arity = arityFunctor(ld.functors, ld.gstack[f])
     modified = false
@@ -525,6 +544,8 @@ function put_dict(
         return dict
     end
 
+    _dict_overflow(ld, 1 + arity + 2 * npairs, gc) &&
+        return DictOverflow(1 + arity + 2 * npairs)
     ensureGlobalSpace(ld, 1 + arity + 2 * npairs) || return nothing
 
     ip = f + 2                                      # data->arguments+1
@@ -590,8 +611,9 @@ end
 
 # PORT: pl-dict.c put_dict as pl_put_dict3_va
 # (PRED_IMPL("put_dict", 3, put_dict, 0))
-# DIVERGES: no `Mark(fli_context->mark)` / retry on `GLOBAL_OVERFLOW`: the overflow is raised by `ensureGlobalSpace`
-# (the stack grows on demand, so only the limit refuses) and the predicate fails with it raised.
+# G1-B: the retry on `GLOBAL_OVERFLOW` (pl-dict.c:1697): `Mark`, the helper, and on `DictOverflow` `Undo`, `ensureGlobalSpace(.., ALLOW_GC)`
+# (`makeMoreStackSpace(rc, ALLOW_GC|ALLOW_SHIFT)`: the safe point `put_dict3`) and again from the term references `dt`; the dicts are re-read from them, no
+# position is held across the collection. DIVERGES: the overflow the limit raises is `ensureGlobalSpace`'s (the stack grows on demand).
 "`put_dict(+New, +DictIn, -DictOut)`: `DictOut` is `DictIn` with the pairs of `New` replacing or extending it (pl-dict.c)."
 function pl_put_dict3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -600,16 +622,29 @@ function pl_put_dict3_va(
     dt = PL_new_term_refs(ld, 2)
 
     if get_create_dict_ex(ld, A2, dt + 0) && get_create_dict_ex(ld, A1, dt + 1)
-        _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
-        _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
-        f2 = valPtr(d1)
-        arity = arityFunctor(ld.functors, ld.gstack[f2])
+        gc = true                                   # the first pass may report the overflow
+        while true                                  # retry:
+            m = Mark(ld)                            # Mark(fli_context->mark)
+            _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
+            _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
+            f2 = valPtr(d1)
+            arity = arityFunctor(ld.functors, ld.gstack[f2])
 
-        new = put_dict(ld, d0, arity ÷ 2, f2 + 2)   # &f2->arguments[1]
-        if new !== nothing
-            t = PL_new_term_ref(ld)
-            ld.slots[t + 1] = new
-            return PL_unify(ld, A3, t) ? FTRUE : FFALSE
+            new = put_dict(ld, d0, arity ÷ 2, f2 + 2, gc)   # &f2->arguments[1]
+            if new isa DictOverflow
+                Undo!(ld, m)                        # Undo(fli_context->mark)
+                DiscardMark(ld, m)
+                ensureGlobalSpace(ld, new.n, ALLOW_GC, :put_dict3) || return FFALSE   # G1-GC safe point: put_dict3
+                gc = false
+                continue                            # goto retry
+            end
+            DiscardMark(ld, m)
+            if new !== nothing
+                t = PL_new_term_ref(ld)
+                ld.slots[t + 1] = new
+                return PL_unify(ld, A3, t) ? FTRUE : FFALSE
+            end
+            break
         end
     end
 
@@ -652,10 +687,13 @@ end
 
 # PORT: pl-dict.c select_dict
 # DIVERGES: the result is the new dict's compound word, `word(0)` for upstream's false (also when the global overflow was
-# raised: `ensureGlobalSpace`, where upstream returns `GLOBAL_OVERFLOW` for its caller to retry); `keep` is a `Vector{Bool}`,
+# raised by `ensureGlobalSpace`); upstream's `GLOBAL_OVERFLOW` is `DictOverflow` (G1-B, `gc` the predicate's first pass: the bindings made so far are the
+# predicate's to `Undo`); `keep` is a `Vector{Bool}`,
 # not a `bit_vector` on a 256-int buffer; the cells are laid out after the count is known (`allocGlobalCells!`).
 "The rest of the dict `from` after the dict `del` was unified with the keys it shares: a `dyndict` dict, or `word(0)` (pl-dict.c)."
-function select_dict(ld::PL_local_data{T}, del::word, from::word)::word where {T}
+function select_dict(
+    ld::PL_local_data{T}, del::word, from::word, gc::Bool=false
+)::Union{word, DictOverflow} where {T}
     dd = valPtr(del)
     fd = valPtr(from)
     din = dd + 1                                    # dd->arguments
@@ -694,6 +732,7 @@ function select_dict(ld::PL_local_data{T}, del::word, from::word)::word where {T
     if din == dend                                  # unification succeeded
         nsize = (keep === nothing ? 0 : count(keep)) + (fend - fin) ÷ 2
 
+        _dict_overflow(ld, nsize * 2 + 2, gc) && return DictOverflow(nsize * 2 + 2)
         ensureGlobalSpace(ld, nsize * 2 + 2) || return word(0)
         out = allocGlobalCells!(ld, nsize * 2 + 2)
         new_dict = consPtr(out, TAG_COMPOUND | STG_GLOBAL)
@@ -724,7 +763,8 @@ end
 
 # PORT: pl-dict.c select_dict as pl_select_dict3_va
 # (PRED_IMPL("select_dict", 3, select_dict, 0))
-# DIVERGES: no `Mark(fli_context->mark)` and no retry after a global overflow (raised by `ensureGlobalSpace`).
+# G1-B: the retry on `GLOBAL_OVERFLOW` (pl-dict.c:1877): `Mark` after the dicts are read, `Undo` on `DictOverflow`, `ensureGlobalSpace(.., ALLOW_GC)`
+# (the safe point `select_dict3`), and again from the top (the dicts are re-read from `dt`). DIVERGES: the overflow the limit raises is `ensureGlobalSpace`'s.
 "`select_dict(+Select, +From, -Rest)`: `Select` unifies with the pairs of `From` it names; `Rest` is the others (pl-dict.c)."
 function pl_select_dict3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -732,16 +772,28 @@ function pl_select_dict3_va(
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
     dt = PL_new_term_refs(ld, 2)
 
-    if get_create_dict_ex(ld, A1, dt + 0) && get_create_dict_ex(ld, A2, dt + 1)
+    gc = true                                       # the first pass may report the overflow
+    while true                                      # retry:
+        get_create_dict_ex(ld, A1, dt + 0) && get_create_dict_ex(ld, A2, dt + 1) || break
+        m = Mark(ld)                                # Mark(fli_context->mark)
         _, d0, _ = _deref_loc(ld, -(dt + 0 + 1))
         _, d1, _ = _deref_loc(ld, -(dt + 1 + 1))
-        r = select_dict(ld, d0, d1)
+        r = select_dict(ld, d0, d1, gc)
 
+        if r isa DictOverflow
+            Undo!(ld, m)                            # Undo(fli_context->mark)
+            DiscardMark(ld, m)
+            ensureGlobalSpace(ld, r.n, ALLOW_GC, :select_dict3) || return FFALSE   # G1-GC safe point: select_dict3
+            gc = false
+            continue                                # goto retry
+        end
+        DiscardMark(ld, m)
         if r != word(0)
             t = PL_new_term_ref(ld)
             ld.slots[t + 1] = r
             return PL_unify(ld, A3, t) ? FTRUE : FFALSE
         end
+        break
     end
 
     return FFALSE
@@ -1051,18 +1103,19 @@ function pl_dict_pairs3_va(
 end
 
 # PORT: pl-dict.c del_dict
-# DIVERGES: the result is the new dict's compound word, `nothing` for upstream's `GLOBAL_OVERFLOW` (the overflow raised by
-# `ensureGlobalSpace`); the pairs kept are planned first and laid out at their exact size (as `put_dict`). `dict` is the dict's
+# DIVERGES: the result is the new dict's compound word, `nothing` for the overflow `ensureGlobalSpace` raised, `DictOverflow` for upstream's
+# `GLOBAL_OVERFLOW` (G1-B: `gc` is the predicate's first pass); the pairs kept are planned first and laid out at their exact size (as `put_dict`). `dict` is the dict's
 # compound word, `key` a key word.
 "The dict `dict` without the pair of key `key`, tag and the other pairs kept (pl-dict.c)."
 function del_dict(
-    ld::PL_local_data{T}, dict::word, key::word
-)::Union{Nothing, word} where {T}
+    ld::PL_local_data{T}, dict::word, key::word, gc::Bool=false
+)::Union{Nothing, word, DictOverflow} where {T}
     f = valPtr(dict)
     arity = arityFunctor(ld.functors, ld.gstack[f])
 
     @assert arity % 2 == 1
 
+    _dict_overflow(ld, 1 + arity - 2, gc) && return DictOverflow(1 + arity - 2)
     ensureGlobalSpace(ld, 1 + arity - 2) || return nothing
 
     keep = Tuple{Int, word}[]                       # (value position, key word)
@@ -1092,7 +1145,8 @@ end
 
 # PORT: pl-dict.c del_dict as pl_del_dict4_va
 # (PRED_IMPL("del_dict", 4, del_dict, 0))
-# DIVERGES: no foreign frame to rewind and no retry after a global overflow (raised by `ensureGlobalSpace`).
+# G1-B: the retry on `GLOBAL_OVERFLOW` (pl-dict.c:1836): the `retry:` label is at the top; upstream's `PL_rewind_foreign_frame(fid)` is `Undo!` to a `Mark`
+# taken there, then `ensureGlobalSpace(.., ALLOW_GC)` (the safe point `del_dict4`); everything is re-read from `mt`, `A2`. DIVERGES: no foreign frame is opened.
 "`del_dict(+Key, +DictIn, ?Value, -DictOut)`: `Key-Value` is in `DictIn`, `DictOut` has all its keys but `Key` (pl-dict.c)."
 function pl_del_dict4_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1100,20 +1154,38 @@ function pl_del_dict4_va(
     A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
     mt = PL_new_term_ref(ld)
 
-    if get_create_dict_ex(ld, A2, mt)
-        key = get_name_ex(ld, A1)
-        key === nothing && return FFALSE
-        _, d, _ = _deref_loc(ld, -(mt + 1))
-        r = dict_lookup_ptr(ld, d, key)
-        if r !== nothing && unify_ptrs_cells(ld, r[1], -(A3 + 1))
+    gc = true                                       # the first pass may report the overflow
+    while true                                      # retry:
+        m = Mark(ld)                                # PL_open_foreign_frame(): the point PL_rewind_foreign_frame(fid) returns to
+        if get_create_dict_ex(ld, A2, mt)
+            key = get_name_ex(ld, A1)
+            if key === nothing
+                DiscardMark(ld, m)
+                return FFALSE
+            end
             _, d, _ = _deref_loc(ld, -(mt + 1))
-            new = del_dict(ld, d, key)
-            if new !== nothing
-                t = PL_new_term_ref(ld)
-                ld.slots[t + 1] = new
-                return PL_unify(ld, A4, t) ? FTRUE : FFALSE
+            r = dict_lookup_ptr(ld, d, key)
+            if r !== nothing && unify_ptrs_cells(ld, r[1], -(A3 + 1))
+                _, d, _ = _deref_loc(ld, -(mt + 1))
+                new = del_dict(ld, d, key, gc)
+                if new isa DictOverflow
+                    Undo!(ld, m)                    # PL_rewind_foreign_frame(fid)
+                    DiscardMark(ld, m)
+                    ensureGlobalSpace(ld, new.n, ALLOW_GC, :del_dict4) || return FFALSE   # G1-GC safe point: del_dict4
+                    gc = false
+                    continue                        # goto retry
+                end
+                DiscardMark(ld, m)
+                if new !== nothing
+                    t = PL_new_term_ref(ld)
+                    ld.slots[t + 1] = new
+                    return PL_unify(ld, A4, t) ? FTRUE : FFALSE
+                end
+                break
             end
         end
+        DiscardMark(ld, m)
+        break
     end
 
     return FFALSE
@@ -1223,13 +1295,16 @@ function pl_punify_dict2_va(
 end
 
 # PORT: pl-dict.c copy_keys_dict
-# DIVERGES: the result is the new dict's compound word, `nothing` for upstream's `GLOBAL_OVERFLOW` (raised by
-# `ensureGlobalSpace`); `dict` is the dict's compound word.
+# DIVERGES: the result is the new dict's compound word, `nothing` for the overflow `ensureGlobalSpace` raised, `DictOverflow` for upstream's
+# `GLOBAL_OVERFLOW` (G1-B: `gc` is `unify_dict_copy`'s first pass); `dict` is the dict's compound word.
 "A new dict with the keys of `dict`, its tag and all values fresh variables (pl-dict.c)."
-function copy_keys_dict(ld::PL_local_data, dict::word)::Union{Nothing, word}
+function copy_keys_dict(
+    ld::PL_local_data, dict::word, gc::Bool=false
+)::Union{Nothing, word, DictOverflow}
     f = valPtr(dict)
     arity = arityFunctor(ld.functors, ld.gstack[f])
 
+    _dict_overflow(ld, 1 + arity, gc) && return DictOverflow(1 + arity)
     ensureGlobalSpace(ld, 1 + arity) || return nothing
 
     new = allocGlobalCells!(ld, 1 + arity)
@@ -1281,17 +1356,26 @@ function same_keys_dict(ld::PL_local_data, dict1::word, dict2::word)::Bool
 end
 
 # PORT: pl-dict.c unify_dict_copy
-# DIVERGES: no overflow retry loop (`ensureGlobalSpace` raises); `dict` is the compound word, `dt` unused for the reload
-# upstream does after a stack shift (the positions here do not move).
+# G1-B: the `for(;;)` loop of upstream (pl-dict.c:1629): on `DictOverflow` `ensureGlobalSpace(.., ALLOW_GC)` (`makeMoreStackSpace`; the safe point
+# `copy_keys_dict`) and `dict` is reloaded from `dt` (a collection moves it). `dict` is the compound word.
 "Unify `t` with a copy of the keys of `dict` (fresh tag and values); `dt` is the term reference of `dict` (pl-dict.c)."
 function unify_dict_copy(
     ld::PL_local_data{T}, t::term_t, dt::term_t, dict::word
 )::Bool where {T}
     tmp = PL_new_term_ref(ld)
-    copy = copy_keys_dict(ld, dict)
-    copy === nothing && return false
-    ld.slots[tmp + 1] = copy
-    return PL_unify(ld, tmp, t)
+    gc = true                                       # the first pass may report the overflow
+    while true                                      # for(;;)
+        copy = copy_keys_dict(ld, dict, gc)
+        if copy isa DictOverflow
+            ensureGlobalSpace(ld, copy.n, ALLOW_GC, :copy_keys_dict) || return false   # G1-GC safe point: copy_keys_dict
+            gc = false
+            _, dict, _ = _deref_loc(ld, -(dt + 1))  # p = valTermRef(dt); deRef(p); dict = *p
+            continue
+        end
+        copy === nothing && return false
+        ld.slots[tmp + 1] = copy
+        return PL_unify(ld, tmp, t)
+    end
 end
 
 # PORT: pl-dict.c dict_same_keys as pl_dict_same_keys2_va

@@ -125,7 +125,7 @@ function put_environment(
     active = falses(slots)                                      # init_bitvector(active, slots)
     mark_active_environment(ld, active, fr, cl.codes, pc)
 
-    if !ensureGlobalSpace(ld, 1 + slots)
+    if !ensureGlobalSpace(ld, 1 + slots, ALLOW_GC, :put_environment)   # G1-GC safe point: put_environment
         return false
     end
 

@@ -221,20 +221,21 @@ function PL_skip_list(ld::PL_local_data{T}, list::term_t)::Tuple{Int, Int} where
 end
 
 # PORT: pl-fli.c PL_unify_functor
+# `flags` (G1-B, default 0): as `PL_unify_compound`'s.
 # DIVERGES: the functor is its name and arity; no global space to ensure. A term that `canBind` (unbound,
 # or since AV1b an attributed variable: `bindConst`) is bound to `name` of `arity` fresh variables.
 "Unify term reference `t` with a term `name/arity` — binding it to one of fresh variables, or checking its functor (pl-fli.c)."
 function PL_unify_functor(
-    ld::PL_local_data{T}, t::term_t, name::T, arity::Int
+    ld::PL_local_data{T}, t::term_t, name::T, arity::Int, flags::Int=0
 )::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p) (L1e e3)
     nw = _atom_word!(ld, name)                              # nameFunctor(f)
     if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         if arity == 0
-            bindConst(ld, q, nw)                            # bindConst(p, name)
+            bindConst(ld, q, nw, flags)                     # bindConst(p, name)
         else                                                # *a = f; setVar(*++a)…
             a = _alloc_compound!(ld, lookupFunctorDef(ld.functors, nw, arity), arity)
-            bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))      # bindConst(p, to)
+            bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL), flags)   # bindConst(p, to)
         end
         return true
     end
@@ -245,12 +246,15 @@ end
 
 # PORT: pl-fli.c PL_unify_compound
 # DIVERGES: `f` is a functor WORD (`$expr/n` too); no global space to ensure.
+# `flags` (G1-B, default 0) is what `bind_attvar_const` passes to its `ensureGlobalSpace`: `ALLOW_GC` from a caller the audit rules SAFE (docs/g1gc_safe_points.md).
 "Unify term reference `t` with a compound of functor word `f` — binding it to one of fresh arguments, or checking its functor (pl-fli.c)."
-function PL_unify_compound(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
+function PL_unify_compound(
+    ld::PL_local_data{T}, t::term_t, f::word, flags::Int=0
+)::Bool where {T}
     k, w, q = _deref_loc(ld, -(t + 1))                      # p = valHandleP(t); deRef(p)
     if k == DU_CELL || k == DU_ATTVAR                       # canBind(*p) (AV1b)
         a = _alloc_compound!(ld, f, arityFunctor(ld.functors, f))  # *a = f; setVar(*++a)…
-        bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL))      # bindConst(p, to)
+        bindConst(ld, q, consPtr(a, TAG_COMPOUND | STG_GLOBAL), flags)   # bindConst(p, to)
         return true
     end
     return k == DU_WORD && _is_gcompound(w) && ld.gstack[valPtr(w)] == f   # hasFunctor(*p, f)
@@ -399,6 +403,50 @@ function popTermRef(ld::PL_local_data{T})::Nothing where {T}
     ld.gstack[c] = word(0)                          # setVar(*valTermRef(LD->tmp.h[i]))
     ld.slots[ld.tmp_h + i + 1] = makeRefG(c)
     return nothing
+end
+
+# PORT: pl-incl.h PushPtr
+# DIVERGES: `p` is a global position and the temporary handle takes the reference to it (`makeRefG`, where
+# upstream's `makeRefLG` covers a local or a global pointer); it rides the handle across a collection, as upstream's.
+"Keep the global position `p` safe over a collection in the next temporary handle; take it back with `PopPtr!` (pl-incl.h)."
+function PushPtr!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
+    i = ld.tmp_top                                  # int i = LD->tmp.top++
+    ld.tmp_top += 1
+    @assert i < TMP_PTR_SIZE
+    ld.slots[ld.tmp_h + i + 1] = makeRefG(p)        # *valTermRef(LD->tmp.h[i]) = makeRefLG(p)
+    return nothing
+end
+
+# PORT: pl-incl.h PopPtr
+# DIVERGES: returns the position (upstream assigns its argument); the handle is reset by `popTermRef`.
+"The global position the last `PushPtr!` kept, as a collection left it (pl-incl.h)."
+function PopPtr!(ld::PL_local_data{T})::Int where {T}
+    @assert ld.tmp_top > 0
+    p = unRef(ld.slots[ld.tmp_h + ld.tmp_top])      # p = unRef(*valTermRef(LD->tmp.h[i]))
+    popTermRef(ld)                                  # setVar(*valTermRef(LD->tmp.h[i]))
+    return p
+end
+
+# PORT: pl-incl.h PushVal
+# DIVERGES: a value-table word is kept as `_slot_link_loc!` keeps one in a slot older than the foreign frame (its
+# indirect form: the handles predate every frame), so `PopVal!` may hand back that form of the word, equal in value.
+"Keep the word `w` safe over a collection in the next temporary handle; take it back with `PopVal!` (pl-incl.h)."
+function PushVal!(ld::PL_local_data{T}, w::word)::Nothing where {T}
+    i = ld.tmp_top                                  # int i = LD->tmp.top++
+    ld.tmp_top += 1
+    @assert i < TMP_PTR_SIZE
+    _slot_link_loc!(ld, ld.tmp_h + i + 1, (_is_vword(w) ? DU_VALUE : DU_WORD, w, 0))   # *valTermRef(LD->tmp.h[i]) = w
+    return nothing
+end
+
+# PORT: pl-incl.h PopVal
+# DIVERGES: returns the word (upstream assigns its argument).
+"The word the last `PushVal!` kept, as a collection left it (pl-incl.h)."
+function PopVal!(ld::PL_local_data{T})::word where {T}
+    @assert ld.tmp_top > 0
+    w = ld.slots[ld.tmp_h + ld.tmp_top]             # w = *valTermRef(LD->tmp.h[i])
+    popTermRef(ld)                                  # setVar(*valTermRef(LD->tmp.h[i]))
+    return w
 end
 
 # (untyped: an implementation's leaves may be of different concrete types under one term type)
@@ -1363,7 +1411,7 @@ PL_record(ld::PL_local_data{T}, t::term_t) where {T} = compileTermToHeap(ld, t)
 # PORT: pl-fli.c PL_recorded
 "Make term reference `t` hold the term of record `r`, its variables fresh; false, the overflow raised, when it does not fit (pl-fli.c)."
 PL_recorded(ld::PL_local_data{T}, r::record{T}, t::term_t) where {T} =
-    copyRecordToGlobal(ld, t, r)
+    copyRecordToGlobal(ld, t, r, ALLOW_GC)   # G1-GC safe point: copyRecordToGlobal
 
 # PORT: pl-fli.c PL_erase
 # DIVERGES: nothing to free — a record is freed by Julia's GC (`freeRecord`, src/pl-rec.jl).
