@@ -482,8 +482,17 @@ end
     otext = read(joinpath(root, R2_OWNERS), String)
     @test r2_owner_violations(res.rows, otext) == String[]
     ow = r2_owners_parse(otext).owners
+    # the owned-row floor is a RATCHET set to the current count (audit D-0621 item 3): 200 owned rows at TAB1 batch 3, against
+    # 229 before it (> 200): the owner lines of the rows TB2-TB4 ported went (the tbl and idg predicates and refusals,
+    # owners TB2, TB3, TB4). Both sides stay non-empty and a dead owner lookup (0 owned rows) fails. D-0083: the real-tree
+    # count is internal identity; lower it only with the rows a step closed, named in that commit.
+    # AR1 merged onto TAB1 batch 3 lowers it 200 -> 175 (25 owned rows closed net): the 28 owner rows of AR1 went (the 25 A_* VM instruction
+    # rows A_ENTER A_INTEGER A_MPZ A_MPQ A_DOUBLE A_VAR A_VAR0 A_VAR1 A_VAR2 A_FUNC0 A_FUNC1 A_FUNC2 A_FUNC A_ROUNDTOWARDS_A A_ROUNDTOWARDS_V A_ADD A_MUL
+    # A_LT A_LE A_GT A_GE A_EQ A_NE A_IS A_FIRSTVAR_IS, `pred:succ/2`, `vmi:A_INTEGERW`, and the `compileArith (optimise)` refusal row of
+    # src/pl-comp.jl) and three owned rows came back (the two AR1 refusal rows of `set_arith_flag` and `vmi:A_INTEGERW` under owner REFUSED).
+    # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 200
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 175
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

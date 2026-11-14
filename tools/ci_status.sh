@@ -27,6 +27,11 @@
 # the `Verdict table` (it runs `if: !cancelled()`, so it fails after a failed Plan). Anything else —
 # a failed Baseline or mutant job, a red Verdict table with a green Plan, a push-triggered run (CI,
 # Evidence), jobs that cannot be read — stays RED. The ignored run is still printed, marked.
+# A run of the workflow named `CI compile check` (.github/workflows/ci-compile.yml, CIREF1, audit D-0636:
+# the compile-first check of a `ci/<owner>` push) is IGNORED, BY WORKFLOW NAME, red, green or pending: it is
+# no verdict on a commit that is later pushed to `gate/<name>` and is never the required run. It is still
+# printed, marked. A commit with such runs ALONE has no verdict yet (exit 3). Rename the workflow and this
+# rule together (the workflow's own header says so).
 # LOGICKERNEL_CI_FIXTURE=<file>: read that JSON instead of the API (test/test_gate_split.jl); its
 # optional top-level `jobs` maps a run id (string) to that run's jobs answer, `{"jobs":[{name,
 # status, conclusion}…]}`, as `GET <jobs_url>` returns it.
@@ -91,9 +96,14 @@ try:
     answer = json.load(sys.stdin)
     allruns = answer["workflow_runs"]
     runs = [r for r in allruns if r["head_sha"] == sha]
+    # the compile check of a ci/ push is no verdict (see the header): split it off by its workflow NAME
+    compile_runs = [r for r in runs if r["name"] == "CI compile check"]
+    runs = [r for r in runs if r["name"] != "CI compile check"]
 except Exception:
     print(f"ci_status: {sha[:7]}: the CI answer is unreadable")
     sys.exit(2)
+for r in compile_runs:
+    print("ci_status: %s  %s  %s  %s (ignored: CI compile check is no verdict)  %s" % (sha[:7], r["name"], r["status"], r["conclusion"] or "-", r["html_url"]))
 if not runs:
     print(f"ci_status: {sha[:7]}: no CI run yet")
     sys.exit(3)

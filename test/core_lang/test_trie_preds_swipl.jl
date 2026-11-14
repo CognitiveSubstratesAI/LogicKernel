@@ -9,8 +9,8 @@
 # error that names a trie is scrubbed to '<trie>' in the program, a handle goes only to trie_term/2. Rows that need an order of answers
 # are not here: nothing TR1 registers enumerates (trie_gen/2,3 are TR2's).
 # NAMED KNOWN DIFFERENCES (kernel-only testsets at the end; the checklist items are in the testsets' text):
-#   KD-1 a bad node handle: swipl `trie_term(foo, _)` is type_error(address, foo), the kernel's is type_error(integer, foo) (the handle is an
-#        integer here, read with PL_get_int64_ex); an integer naming no node is an existence_error(trie_node, H) here, undefined behaviour
+#   KD-1 a bad node handle: `trie_term(foo, _)` is type_error(address, foo) in both (PL_get_pointer_ex; the handle is an integer here);
+#        an integer naming no node is an existence_error(trie_node, H) here, undefined behaviour
 #        in swipl (a fault on 0, a read of freed memory on a destroyed trie) — those rows have NO swipl answer.
 #   (KD-2, an attributed variable in a key, is gone: TR3 ports it, O_TRIE_ATTVAR is defined at the pin (pl-incl.h:256); rows t71-t73 and
 #        t77-t86 are compared with swipl's answers.)
@@ -421,7 +421,7 @@ end
 
 # KD-1: the rows swipl and the kernel answer differently BY DESIGN. Each pins the kernel's exact current answer; swipl's is in the
 # comment beside it. CHECKLIST (the kernel's side moves with its owner): KD-1 the handle is an integer `(trie serial << 32) | node id` until the
-# kernel has PL_unify_pointer / PL_get_pointer_ex (a pointer handle, then `address` here).
+# kernel has PL_unify_pointer (a pointer handle); PL_get_pointer_ex is used (item 12).
 const _KD_PL = """
 :- dynamic hooked/1.
 attr_unify_hook(_, V) :- assertz(hooked(V)).
@@ -447,12 +447,12 @@ kd9(R) :- fn(trie_term(-1, _), -1, R).
     @test st == "ok"
     row(n) = _tp_row(gd, ld, n)
     # swipl (10.1.20): trie_term(foo, _) is error(type_error(address, foo), context(system:trie_term/2, _)); an unbound handle is
-    # instantiation_error in both. The kernel's handle is an integer read with PL_get_int64_ex: type_error(integer, _).
-    @test row("kd0") == _er("kd0", _ec("type_error", _ea("integer"), _ea("foo")))
-    @test row("kd1") == _er("kd1", _ec("type_error", _ea("integer"), "s" * _codes("s")))
-    @test row("kd2") == _er("kd2", _ec("type_error", _ea("integer"), "f1.5"))
-    @test row("kd3") == _er("kd3", _ec("type_error", _ea("integer"), _ec("f", _ea("x"))))
-    @test row("kd4") == _er("kd4", _ec("type_error", _ea("integer"), _ea("a")))
+    # instantiation_error in both. The kernel's handle is an integer read with PL_get_pointer_ex: the same type_error(address, _).
+    @test row("kd0") == _er("kd0", _ec("type_error", _ea("address"), _ea("foo")))
+    @test row("kd1") == _er("kd1", _ec("type_error", _ea("address"), "s" * _codes("s")))
+    @test row("kd2") == _er("kd2", _ec("type_error", _ea("address"), "f1.5"))
+    @test row("kd3") == _er("kd3", _ec("type_error", _ea("address"), _ec("f", _ea("x"))))
+    @test row("kd4") == _er("kd4", _ec("type_error", _ea("address"), _ea("a")))
     @test row("kd5") == _er("kd5", _ea("instantiation_error"))
     # an integer that names no live node: swipl dereferences it (a fault on 0, a read of freed memory after trie_destroy/1): NO swipl
     # answer. The kernel: existence_error(trie_node, <the handle>).

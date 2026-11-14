@@ -11,7 +11,7 @@
 #        not recover (an upstream defect, private register, no row can run it); the kernel raises type_error(trie_or_clause, X) as the C text
 #        of S_TRIE_GEN names (instantiation_error for an unbound X: PL_type_error's own rule).
 #   KD-2 trie_gen_compiled/2 on a clause reference of a trie with a non-true value: swipl at the pin fails an internal check, no row.
-#   KD-3 attributed variables in a key (TR3), conditional answers (T_DELAY: TB4), a table's answer trie (TB3/TB6): named refusals, not here.
+#   KD-3 attributed variables in a key (TR3), a table's answer trie (TB3/TB6): named refusals, not here; a conditional answer compiles to T_DELAY (TAB1 stack, batch 3), run by the tabling rows.
 #   KD-4 trie_gen_compiled/2 on a MAP trie with an ATOM or small-integer key and a non-variable value: T_VALUE reads the cell above
 #        gTop (after T_TRIE_GEN2's `+(Key)`), undefined at the pin (swipl answers `[]` or the key by what an earlier term left
 #        there); the kernel reads it as the term's functor word (`_trie_deref_current`): no answer. No row can pin it.
