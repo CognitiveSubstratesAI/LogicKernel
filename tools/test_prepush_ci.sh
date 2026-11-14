@@ -54,6 +54,7 @@ mk() {
         git remote add origin https://x.invalid/r.git
         printf 'f() = 1\n' > a.jl
         cp "$HOOK" tools/githooks/pre-push
+        cp "$REAL/tools/githooks/dterm.sh" tools/githooks/dterm.sh      # the hook sources it (the ONE D-0164 definition)
         cp "$REAL/tools/ci_status.sh" tools/ci_status.sh
         git add -A && git commit -q -m base
         git update-ref refs/remotes/origin/main HEAD
@@ -132,6 +133,33 @@ S5="$(sha r5)"
 push r5 "$L" "$S5" refs/heads/ci/x;       check "a term added and removed again: the message range is clean, the tree diff is clean" 0
 # a push to a branch that is not ci/ is not this arm's: the same term-carrying commit is not refused by 7. on gate/ (6. is another test's)
 push r2 refs/heads/gate/x "$S2" refs/heads/gate/x; check "a D-0164 term is not rule 7's business on gate/ (refused only by the missing pre-check script)" 1 "coverage-zero"
+
+# 4b. the exact-token allowlist of tools/githooks/dterm.sh (audit D-0650): an upstream identifier passes, in an added
+# line and in a commit message; a strong term beside it, or in capitals, still refuses. The tokens come from the
+# shared definition itself (the hook sources the same file), so this file holds no literal of them.
+AL0="$(. "$REAL/tools/githooks/dterm.sh"; printf '%s' "${D0164_ALLOW[0]}")"
+AL7="$(. "$REAL/tools/githooks/dterm.sh"; printf '%s' "${D0164_ALLOW[7]}")"
+mk r7
+add_commit r7 "see $AL0 and call $AL7" "a step on $AL7"
+S7="$(sha r7)"
+push r7 "$L" "$S7" refs/heads/ci/x;       check "ci/ push, allowlisted identifiers in the added line and in the message, passes" 0
+mk r8
+add_commit r8 "see $AL0 and the $TERM_" "a clean subject"
+S8="$(sha r8)"
+push r8 "$L" "$S8" refs/heads/ci/x;       check "ci/ push, a term next to an allowlisted identifier in an added line, refused" 1 "D-0164"
+mk r9
+add_commit r9 "h() = 3" "a step on $AL7 that ${TERM_}ed"
+S9="$(sha r9)"
+push r9 "$L" "$S9" refs/heads/ci/x;       check "ci/ push, a term next to an allowlisted identifier in the message, refused" 1 "D-0164"
+mk r10
+add_commit r10 "the run hit a ${TERM_^^} here" "a clean subject"
+S10="$(sha r10)"
+push r10 "$L" "$S10" refs/heads/ci/x;     check "ci/ push, the term in capitals, refused (the match is -i)" 1 "D-0164"
+mk r11
+add_commit r11 "h() = 3" "a clean subject"
+rm -f "$W/r11/tools/githooks/dterm.sh"
+S11="$(sha r11)"
+push r11 "$L" "$S11" refs/heads/ci/x;     check "ci/ push without tools/githooks/dterm.sh is refused (fails closed)" 1 "dterm.sh"
 
 # 5. fails closed: no refs/remotes/origin/main to diff against
 mk r6

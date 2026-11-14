@@ -61,15 +61,14 @@
 #
 # 7. A ci/<name> PUSH RUNS THE D-0164 TERM GREP (audit D-0636 item 1). A ci/ branch is on GitHub like any
 #    other, so the added lines of `git diff refs/remotes/<remote>/main..<sha>` and the commit messages of
-#    that range are grepped for tools/prepush.sh's step-6 terms; a hit, or an unreadable range, is a
-#    refusal. A delete (all-zero local sha) is allowed. No coverage-zero pre-check (6.) and no mutants-file
+#    that range are grepped for the step-6 terms of tools/prepush.sh — ONE definition, tools/githooks/dterm.sh
+#    (the strong terms and an exact-token allowlist of upstream identifiers; audit D-0650); a hit, an unreadable
+#    range or a missing dterm.sh is a refusal. A delete (all-zero local sha) is allowed. No coverage-zero pre-check (6.) and no mutants-file
 #    rule (5.) apply to ci/; the `main` arm (2.) is unchanged: main still takes only a green run's commit.
 #
 # LOGICKERNEL_CI_FIXTURE (tools/ci_status.sh) lets test/test_gate_split.jl plant each answer.
 NOREPLY_EMAIL="11524260+sivaji1012@users.noreply.github.com"
 EVIDENCE_WORKFLOW="Evidence (three term types)"     # 🔴 evidence.yml's `name:` — rename both or neither
-# the terms of D-0164 (tools/prepush.sh step 6), assembled from pieces so this file does not match its own grep
-TERMS164='seg''ment|SIG''SEGV|cra''sh|abo''rt|invalid term''_t|dies ''of'
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 if [ -e "$top/.warm/MUTANT_WORKTREE" ]; then
     echo "pre-push: REFUSED — $top is the mutant worktree of $(cat "$top/.warm/MUTANT_WORKTREE"): it holds mutated code and never pushes. Work in the main tree; remove this one with tools/mutate.sh remove." >&2
@@ -128,6 +127,12 @@ _identity_check() {
 # _ci_terms_check SHA — 0 when no added line of main..SHA and no commit message of that range holds a D-0164 term (see 7.)
 _ci_terms_check() {
     local sha="$1" d m dh mh
+    # TERMS164, D0164_ALLOW and d0164_filter: the ONE definition, shared with tools/prepush.sh step 6 (tools/githooks/dterm.sh)
+    # shellcheck source=/dev/null
+    [ -f "$top/tools/githooks/dterm.sh" ] && . "$top/tools/githooks/dterm.sh" || {
+        echo "pre-push: REFUSED — $top/tools/githooks/dterm.sh (the D-0164 terms and allowlist) is missing: the term grep cannot run" >&2
+        return 1
+    }
     d="$(git -C "$top" diff "refs/remotes/$remote_name/main..$sha" 2>&1)" || {
         echo "pre-push: REFUSED — cannot diff refs/remotes/$remote_name/main..${sha:0:7} for the D-0164 term grep: $d" >&2
         return 1
@@ -136,8 +141,8 @@ _ci_terms_check() {
         echo "pre-push: REFUSED — cannot list refs/remotes/$remote_name/main..${sha:0:7} for the D-0164 term grep: $m" >&2
         return 1
     }
-    dh="$(printf '%s\n' "$d" | grep -E '^\+[^+]' | grep -iE "$TERMS164")"
-    mh="$(printf '%s\n' "$m" | grep -iE "$TERMS164")"
+    dh="$(printf '%s\n' "$d" | grep -E '^\+[^+]' | d0164_filter | grep -iE "$TERMS164")"
+    mh="$(printf '%s\n' "$m" | d0164_filter | grep -iE "$TERMS164")"
     [ -z "$dh" ] && [ -z "$mh" ] && return 0
     echo "pre-push: REFUSED — D-0164: ${sha:0:7} adds a term that names an upstream failure in public text (added line or commit message); reword:" >&2
     printf '%s\n%s\n' "$dh" "$mh" | grep . | cut -c1-200 | sed 's/^/  /' >&2
