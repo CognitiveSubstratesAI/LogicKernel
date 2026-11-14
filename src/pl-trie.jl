@@ -2,6 +2,7 @@
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2016-2025, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -3054,7 +3055,8 @@ function pl_trie_gen_node3_va(
     return trie_gen(_query_gd(ld), ld, PL__t0, 0, PL__t0 + 1, 0, PL__t0 + 2, 1, PL__ctx)
 end
 
-# PORT: pl-table.h sizeofTablePP (os/pl-table.c sizeofTable)
+# PORT: pl-table.h sizeofTablePP
+# (os/pl-table.c sizeofTable)
 # DIVERGES: upstream's is `sizeof(struct table) + sizeof(struct kvs) + ht->kvs->len * sizeof(struct symbol)` (32, 40 and 16 bytes at the pin);
 # the kernel's table is an `IdDict` that keeps no `kvs->len`, so the capacity is modelled: `newHTablePP(4)` (pl-tabling.c:8267, :10117), doubled
 # while the table holds more than half of it. The number is the kernel's, as `size` of the same predicate (no row compares it with swipl's).
