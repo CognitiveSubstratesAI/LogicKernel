@@ -1,4 +1,4 @@
-# ORIGINAL: the UPSTREAM tests/tabling/test_incr_answer_subsumption.pl (swipl-devel 18168e62, 10.1.20), units 1..1 of 3 (incr_answer_subsumption_1),
+# ORIGINAL: the UPSTREAM tests/tabling/test_incr_answer_subsumption.pl (swipl-devel 18168e62, 10.1.20), units 1..3 of 3 (incr_answer_subsumption_1, mono_answer_subsumption_1, mono_answer_subsumption_lazy_1),
 # as kernel rows (TAB1, TABTEST-M). One row `t_<id>(R)` per upstream test: `abolish_all_tables, <unit>:test(<name>), abolish_all_tables`, R = ok / failed / raised(E).
 #   * The unit text is upstream's, verbatim, between `begin_tests` and `end_tests`, plus the file's shared code outside the units (the meta_predicate
 #     block and the TEST HELPERS block: init/1, cleanup/1,2, expect/3, expect_valid/1, expect_invalid/1, queued_answers/3, unqualify/3,
@@ -125,6 +125,98 @@ test(reeval, [cleanup(cleanup([d/1]))]) :-
     expect_valid(p2(_)).
 
 """),
+    ("mono_answer_subsumption_1", ":- begin_tests(mono_answer_subsumption_1).", raw"""
+
+:- dynamic d/1 as monotonic.
+:- table p(max) as monotonic.
+:- table p2/1 as incremental.
+
+p(X) :- d(X).
+p2(X) :- p(X).
+
+                                        % Verify normal update
+test(update, [cleanup(cleanup([d/1]))]) :-
+    init(p(_)),
+    assertz(d(1)),
+    expect(X, p(X), [1]),
+    expect_valid(p(_)),
+    assertz(d(2)),
+    expect(X, p(X), [2]),
+    expect_valid(p(_)).
+                                        % Verify non-changing update
+test(keep, [cleanup(cleanup([d/1]))]) :-
+    init(p(_)),
+    assertz(d(1)),
+    expect(X, p(X), [1]),
+    expect_valid(p(_)),
+    assertz(d(0)),
+    expect(X, p(X), [1]),
+    expect_valid(p(_)).
+                                        % Verify falsecount propagation
+test(reeval, [cleanup(cleanup([d/1]))]) :-
+    init(p2(_)),
+    assertz(d(1)),
+    expect(X, p(X), [1]),
+    expect_valid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [1]),
+    assertz(d(0)),
+    expect_valid(p2(_)),
+    expect(X, p2(X), [1]).
+
+test(reeval, [cleanup(cleanup([d/1]))]) :-
+    init(p2(_)),
+    assertz(d(1)),
+    expect(X, p(X), [1]),
+    expect_valid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [1]),
+    assertz(d(2)),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [2]),
+    expect_valid(p(_)).
+
+"""),
+    ("mono_answer_subsumption_lazy_1", ":- begin_tests(mono_answer_subsumption_lazy_1).", raw"""
+
+:- dynamic d/1 as monotonic.
+:- table p(max) as (monotonic,lazy).
+:- table p2/1 as incremental.
+
+p(X) :- d(X).
+p2(X) :- p(X).
+
+test(update, [cleanup(cleanup([d/1]))]) :-
+    init(p2(_)),
+    assertz(d(1)),
+    expect_invalid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p(X), [1]),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [1]),
+    assertz(d(2)),
+    expect_invalid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [2]),
+    expect_valid(p2(_)).
+
+test(update, [cleanup(cleanup([d/1]))]) :-
+    init(p2(_)),
+    assertz(d(1)),
+    expect_invalid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p(X), [1]),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [1]),
+    assertz(d(2)),
+    expect_invalid(p(_)),
+    expect_invalid(p2(_)),
+    expect(X, p(X), [2]),
+    expect_invalid(p2(_)),
+    expect(X, p2(X), [2]),
+    expect_valid(p2(_)).
+
+"""),
 ]
 
 "The file's common tail (lines `before :- ...` to the end), verbatim."
@@ -188,6 +280,12 @@ const _TT_CASES = [
     ("tt01a", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(update, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
     ("tt01b", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(keep, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
     ("tt01c", "incr_answer_subsumption_1", "setup_call_cleanup(true, pu_incr_answer_subsumption_1:test(reeval, _), pu_incr_answer_subsumption_1:cleanup([d/1]))"),
+    ("tt02a", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(update, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
+    ("tt02b", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(keep, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
+    ("tt02c", "mono_answer_subsumption_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_1:test(reeval, _), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
+    ("tt02d", "mono_answer_subsumption_1", "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_1:test(_, _), 4, CRef), clause(pu_mono_answer_subsumption_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_1:CBody)), pu_mono_answer_subsumption_1:cleanup([d/1]))"),
+    ("tt03a", "mono_answer_subsumption_lazy_1", "setup_call_cleanup(true, pu_mono_answer_subsumption_lazy_1:test(update, _), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"),
+    ("tt03b", "mono_answer_subsumption_lazy_1", "setup_call_cleanup(true, (nth_clause(pu_mono_answer_subsumption_lazy_1:test(_, _), 2, CRef), clause(pu_mono_answer_subsumption_lazy_1:test(_, _), CBody, CRef), call(pu_mono_answer_subsumption_lazy_1:CBody)), pu_mono_answer_subsumption_lazy_1:cleanup([d/1]))"),
 ]
 
 const _TT_PINNED = [
@@ -195,10 +293,22 @@ const _TT_PINNED = [
     "t_tt01a c[116,95,116,116,48,49,97]/1(a[111,107])",
     "t_tt01b c[116,95,116,116,48,49,98]/1(a[111,107])",
     "t_tt01c c[116,95,116,116,48,49,99]/1(a[111,107])",
+    "t_tt02a c[116,95,116,116,48,50,97]/1(a[111,107])",
+    "t_tt02b c[116,95,116,116,48,50,98]/1(a[111,107])",
+    "t_tt02c c[116,95,116,116,48,50,99]/1(a[111,107])",
+    "t_tt02d c[116,95,116,116,48,50,100]/1(a[111,107])",
+    "t_tt03a c[116,95,116,116,48,51,97]/1(a[111,107])",
+    "t_tt03b c[116,95,116,116,48,51,98]/1(a[111,107])",
 ]
 
 "The answer plunit expects of every row: the test passes, `R = ok` (run in swipl by gen_reeval.py pin, plunit part of pins file)."
 const _TT_UPSTREAM = [
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
+    "a[111,107]",
     "a[111,107]",
     "a[111,107]",
     "a[111,107]",
@@ -275,7 +385,7 @@ end
 "A line the same length that must differ from `s` (the must-fail corruption)."
 _tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
 
-@testset "upstream test_incr_answer_subsumption.pl units 1..1: the kernel answers every row as swipl does" begin
+@testset "upstream test_incr_answer_subsumption.pl units 1..3: the kernel answers every row as swipl does" begin
     gd, ld, st = _tt_load(_tt_materialize())
     @test st == "ok"
     kl = String[st]
