@@ -482,8 +482,21 @@ end
     otext = read(joinpath(root, R2_OWNERS), String)
     @test r2_owner_violations(res.rows, otext) == String[]
     ow = r2_owners_parse(otext).owners
+    # the owned-row floor is a RATCHET set to the current count (audit D-0621 item 3): 200 owned rows at TAB1 batch 3, against
+    # 229 before it (> 200): the owner lines of the rows TB2-TB4 ported went (the tbl and idg predicates and refusals,
+    # owners TB2, TB3, TB4). Both sides stay non-empty and a dead owner lookup (0 owned rows) fails. D-0083: the real-tree
+    # count is internal identity; lower it only with the rows a step closed, named in that commit.
+    # 2026-11-14 (D-0083 disclosure): 200 -> 165. Measured 168 owned rows on the tree of the TAB1 integration branch merged with
+    # origin/main a8cb295c (main itself: 229): the branch's TB5-TB9 and TX1 work closed 62 owned rows, one row was re-keyed (+1:
+    # the PL_CREATE_THREAD_LOCAL refusal of TH1 replaces the PL_CREATE_INCREMENTAL/THREAD_LOCAL one), net -61. The 62 rows:
+    # 51 pl-tabling.c predicates of owner TAB1 (`$idg_*`, `$mono_*`, `$tbl_*`, e.g. `$idg_add_edge/1`, `$idg_mono_index/2`,
+    # `$tbl_answer_dl/3`, `$tbl_propagate_start/1`, `$tbl_wkl_negative/1`), 4 of owner TX1 (`$transaction/2,3`, `$undo/1`,
+    # `$snapshot/1`), the 4 pl-wam.jl refusals (S_TABLED, T_DELAY, the two dtbl_reset6 branches), `vmi:S_INCR_DYNAMIC` (TB6),
+    # `pred:\=@=/2` (Q10, pl-variant.c) and the PL_CREATE_INCREMENTAL half of the assert_term refusal (TB6). The owner line
+    # `cfile:pl-tabling.c` is gone (TABINT-PC).
+    # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) > 200
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 165
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

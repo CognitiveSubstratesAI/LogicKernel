@@ -9,8 +9,8 @@
 # error that names a trie is scrubbed to '<trie>' in the program, a handle goes only to trie_term/2. Rows that need an order of answers
 # are not here: nothing TR1 registers enumerates (trie_gen/2,3 are TR2's).
 # NAMED KNOWN DIFFERENCES (kernel-only testsets at the end; the checklist items are in the testsets' text):
-#   KD-1 a bad node handle: swipl `trie_term(foo, _)` is type_error(address, foo), the kernel's is type_error(integer, foo) (the handle is an
-#        integer here, read with PL_get_int64_ex); an integer naming no node is an existence_error(trie_node, H) here, undefined behaviour
+#   KD-1 a bad node handle: `trie_term(foo, _)` is type_error(address, foo) in both (PL_get_pointer_ex; the handle is an integer here);
+#        an integer naming no node is an existence_error(trie_node, H) here, undefined behaviour
 #        in swipl (a fault on 0, a read of freed memory on a destroyed trie) — those rows have NO swipl answer.
 #   (KD-2, an attributed variable in a key, is gone: TR3 ports it, O_TRIE_ATTVAR is defined at the pin (pl-incl.h:256); rows t71-t73 and
 #        t77-t86 are compared with swipl's answers.)
@@ -421,7 +421,7 @@ end
 
 # KD-1: the rows swipl and the kernel answer differently BY DESIGN. Each pins the kernel's exact current answer; swipl's is in the
 # comment beside it. CHECKLIST (the kernel's side moves with its owner): KD-1 the handle is an integer `(trie serial << 32) | node id` until the
-# kernel has PL_unify_pointer / PL_get_pointer_ex (a pointer handle, then `address` here).
+# kernel has PL_unify_pointer (a pointer handle); PL_get_pointer_ex is used (item 12).
 const _KD_PL = """
 :- dynamic hooked/1.
 attr_unify_hook(_, V) :- assertz(hooked(V)).
@@ -447,12 +447,12 @@ kd9(R) :- fn(trie_term(-1, _), -1, R).
     @test st == "ok"
     row(n) = _tp_row(gd, ld, n)
     # swipl (10.1.20): trie_term(foo, _) is error(type_error(address, foo), context(system:trie_term/2, _)); an unbound handle is
-    # instantiation_error in both. The kernel's handle is an integer read with PL_get_int64_ex: type_error(integer, _).
-    @test row("kd0") == _er("kd0", _ec("type_error", _ea("integer"), _ea("foo")))
-    @test row("kd1") == _er("kd1", _ec("type_error", _ea("integer"), "s" * _codes("s")))
-    @test row("kd2") == _er("kd2", _ec("type_error", _ea("integer"), "f1.5"))
-    @test row("kd3") == _er("kd3", _ec("type_error", _ea("integer"), _ec("f", _ea("x"))))
-    @test row("kd4") == _er("kd4", _ec("type_error", _ea("integer"), _ea("a")))
+    # instantiation_error in both. The kernel's handle is an integer read with PL_get_pointer_ex: the same type_error(address, _).
+    @test row("kd0") == _er("kd0", _ec("type_error", _ea("address"), _ea("foo")))
+    @test row("kd1") == _er("kd1", _ec("type_error", _ea("address"), "s" * _codes("s")))
+    @test row("kd2") == _er("kd2", _ec("type_error", _ea("address"), "f1.5"))
+    @test row("kd3") == _er("kd3", _ec("type_error", _ea("address"), _ec("f", _ea("x"))))
+    @test row("kd4") == _er("kd4", _ec("type_error", _ea("address"), _ea("a")))
     @test row("kd5") == _er("kd5", _ea("instantiation_error"))
     # an integer that names no live node: swipl dereferences it (a fault on 0, a read of freed memory after trie_destroy/1): NO swipl
     # answer. The kernel: existence_error(trie_node, <the handle>).
@@ -460,4 +460,40 @@ kd9(R) :- fn(trie_term(-1, _), -1, R).
     @test row("kd7") == _er("kd7", _ea("existence_error"))
     @test row("kd8") == _er("kd8", _ea("existence_error"))
     @test row("kd9") == _er("kd9", _ea("existence_error"))
+end
+
+# DEFKILL5 rows (white-box over a program, no oracle line beyond the numbers cited): TR1-V6 and TR1-V11.
+#   * TR1-V6: pl-trie.c:2500 `trie_new/1` does `set(trie, TRIE_CONCURRENT)` (kernel src/pl-trie.jl:2150); the flag is read on the newest trie of `gd.tries`
+#     after a query ran `trie_new/1` (the query sets ld.GD, which `pl_trie_new1_va` needs).
+#   * TR1-V11: pl-trie.c:2865-2890 `trie_delete/3` calls `trie_delete(trie, node, true)`: the pruned node is destroyed. swipl 18168e62, two identical runs of
+#     `trie_new(T), trie_insert(T, f(a), v), trie_delete(T, f(a), V), trie_property(T, node_count(N))`: node_count is 1 before the insert and after the
+#     delete, 3 after the insert, V = v, value_count 0 (the list [N0,N1,N2,V,VC] printed [1,3,1,v,0]). The kernel's `prune && tr.references == 0` of
+#     src/pl-trie.jl:1815 gives the same node_count; a mutant that deletes without pruning keeps 3.
+const _DK5_PL = raw"""
+dk5_new(R) :- trie_new(_), R = ok.
+dk5_ins(R) :- trie_new(T), trie_insert(T, f(a), v), R = ok.
+dk5_del(R) :- trie_new(T), trie_insert(T, f(a), v), trie_delete(T, f(a), V), R = V.
+"""
+
+@testset "TR1 DEFKILL5 rows: trie_new/1 sets TRIE_CONCURRENT, trie_delete/3 prunes (TR1-V6, TR1-V11)" begin
+    f = tempname() * ".pl"
+    write(f, _DK5_PL)
+    gd, ld, st = _tp_load(_TP, f)
+    rm(f)
+    @test st == "ok"
+    row(n) = _tp_row(gd, ld, n)
+    n0 = length(gd.tries)
+    # TR1-V6
+    @test row("dk5_new") == _er("dk5_new", _ea("ok"))
+    @test length(gd.tries) == n0 + 1
+    @test (gd.tries[end].flags & LK.TRIE_CONCURRENT) != 0
+    # TR1-V11: the node count after an insert (3: the root, f/1, a), after the insert and the delete (1: only the root), and a fresh trie's (1)
+    @test row("dk5_ins") == _er("dk5_ins", _ea("ok"))
+    ins = gd.tries[end]
+    @test length(gd.tries) == n0 + 2 && ins.value_count == 1 && ins.node_count == 3
+    @test row("dk5_del") == _er("dk5_del", _ea("v"))
+    del = gd.tries[end]
+    @test length(gd.tries) == n0 + 3 && del !== ins
+    @test del.value_count == 0
+    @test del.node_count == 1 == LK.trie_create(_TP).node_count
 end

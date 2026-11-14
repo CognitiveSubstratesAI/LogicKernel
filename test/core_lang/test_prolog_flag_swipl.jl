@@ -304,6 +304,15 @@ end
             @test !(k in ours) && !(k in theirs)
             @test LK.current_prolog_flag(gd, k) !== nothing        # …but they are defined
         end
+        # PIN1-I5 (DEFKILL3): the generic reader never reads `f.i` of a restraint flag (pl-prologflag.jl:471 answers from the restraint
+        # record first, as pl-prologflag.c:2127), so the start value is read off the flag: setPrologFlag(.., -1), pl-tabling.c:12705-12712
+        # (kernel src/os/pl-prologflag.jl:1938-1945).
+        for k in (
+            "max_table_subgoal_size", "max_table_answer_size", "max_answers_for_subgoal",
+            "max_incomplete_subgoals", "max_scc_subgoals"
+        )
+            @test LK.current_prolog_flag(gd, k).i == -1
+        end
     end
 end
 

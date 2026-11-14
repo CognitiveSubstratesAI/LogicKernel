@@ -51,7 +51,7 @@ MUTANTS = [
          old='''        PL_exception(ld, 0) != 0 && break''',
          new='''        nothing'''),
     dict(id="NF2-R8 an undefined procedure is not made dynamic", file=P, targets=TR,
-         old='''            setDynamicDefinition!(def, true)            # implicit''',
+         old='''            setDynamicDefinition!(gd, def, true)        # implicit''',
          new='''            nothing                                     # implicit'''),
     dict(id="NF2-R9 a retry returns true instead of its context", file=P, targets=TR,
          old='''                return PL_retry_address(k)              # ForeignRedoPtr(ctx)''',
