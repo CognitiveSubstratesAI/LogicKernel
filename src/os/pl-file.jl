@@ -1841,7 +1841,7 @@ function pl_set_end_of_stream1_va(
             e isa SystemError || rethrow()
             rc = PL_error(
                 ld, "", 0, Base.Libc.strerror(e.errnum), ERR_FILE_OPERATION,
-                mk_sym(T, :set_end_of_stream), mk_sym(T, :stream), A1, e.errnum
+                mk_sym(T, :set_end_of_stream), mk_sym(T, :stream), A1, Int(e.errnum)
             )
             return rc ? FTRUE : FFALSE
         end
