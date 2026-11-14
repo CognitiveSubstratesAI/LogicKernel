@@ -3153,7 +3153,7 @@ end
 variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T} =
     variant_table_create(ld, shared)::trie{T}
 
-# PORT: pl-tabling.c variant_table
+# PORT: pl-tabling.c variant_table as variant_table_create
 # DIVERGES: the body of `variant_table`, answering `nothing` for upstream's NULL (see the note above `variant_table`).
 "As `variant_table`, `nothing` when the table cannot be created (pl-tabling.c `variant_table` answering NULL)."
 function variant_table_create(
