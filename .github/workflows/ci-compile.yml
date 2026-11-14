@@ -90,6 +90,8 @@ jobs:
           tools/ci_compile_run.sh tools_pre_ci tools/test_pre_ci.sh
           # the D-0164 allowlist filter's rows (audit D-0652): a no-op until the allowlist patch brings tools/test_dterm.sh
           if [ -f tools/test_dterm.sh ]; then tools/ci_compile_run.sh tools_dterm tools/test_dterm.sh; fi
+          # the mutation battery's term-type matrix (MUT3): a fake julia, the plan/one/collect chain, the workflow's shape
+          tools/ci_compile_run.sh tools_mutate_ci_impl tools/test_mutate_ci_impl.sh
       # THE CHEAP TEST FILES: the layout pins and the R2 status — files that run WITHOUT the oracle (they are
       # judged the way Pkg.test runs them: tools/pkgtest_way.jl, NO_SWIPL, a fresh process, the inert-testset guard)
       # and only on the reference term type. A file left out here is left to the lane's branch-gate.
