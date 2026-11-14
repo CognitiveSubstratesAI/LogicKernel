@@ -1232,6 +1232,68 @@ end
 PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
 
+# PORT: pl-fli.c PL_unify_uint64
+# DIVERGES: a value past `Int64` is unified through `PL_unify_number` with a `V_MPZ` number, where upstream builds
+# the word with `put_uint64` (a variable: `PL_unify_atomic`) or compares `mpz_to_uint64` of the bound big integer;
+# the outcomes agree: a variable binds to the big integer, a bound integer is equal by value, any other term fails.
+"Unify the term `t` references with the unsigned integer `i`; a value above `typemax(Int64)` is a big integer (pl-fli.c)."
+function PL_unify_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where {T}
+    if reinterpret(Int64, i) >= 0                           # (int64_t)i >= 0
+        return unify_int64_ex(ld, t, Int(i), true)
+    end
+    n = _number_alloc!(ld)                                  # number n (a bigint: V_MPZ)
+    n.type = V_MPZ
+    n.mpz = BigInt(i)
+    rc = PL_unify_number(ld, t, n)                          # put_uint64 + PL_unify_atomic / the V_MPZ compare
+    _number_free!(ld, 1)
+    return rc
+end
+
+# PORT: pl-fli.c PL_put_uint64
+# DIVERGES: a value past `Int64` is put as a fresh variable unified (`PL_unify_uint64`) with the big integer, where
+# upstream builds the word with `put_uint64`; the term the reference holds is the same integer.
+"Make term reference `t` hold the unsigned integer `i`; a value above `typemax(Int64)` is a big integer (pl-fli.c)."
+function PL_put_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where {T}
+    if reinterpret(Int64, i) >= 0                           # (int64_t)i >= 0
+        return PL_put_int64(ld, t, Int(i))
+    end
+    PL_put_variable(ld, t)
+    return PL_unify_uint64(ld, t, i)
+end
+
+# PORT: pl-fli.c PL_put_dict
+# DIVERGES: `tag` and `keys` are atom WORDS (upstream `atom_t`), 0 for no tag (the tag cell stays a variable); the cells are
+# allocated at their exact size (`allocGlobalCells!`) and cannot be taken back (upstream `gTop -= size`), so a duplicate key
+# leaves the allocated cells as garbage; a duplicate key raises `duplicate_key(Key)` as upstream, an invalid key (no
+# duplicate word to report) gives false; the values' `valid_term_t` checks and `globalizeTermRef` are `_cell_link!`.
+"Make term reference `t` hold a dict tagged `tag` of the `len` pairs `keys[i]`-(term reference `values + i - 1`) (pl-fli.c)."
+function PL_put_dict(
+    ld::PL_local_data{T}, t::term_t, tag::word, len::Int, keys::Vector{word}, values::term_t
+)::Bool where {T}
+    size = len * 2 + 2
+    ensureGlobalSpace(ld, size) || return false
+    p = allocGlobalCells!(ld, size)                         # p0 = p = allocGlobal(size)
+    ld.gstack[p] = dict_functor(ld, len)                    # *p++ = dict_functor(len)
+    tag != 0 && (ld.gstack[p + 1] = tag)                    # tag, else setVar(*p++)
+
+    for i in 0:(len - 1)
+        _cell_link!(ld, p + 2 + 2 * i, values + i + 1)      # *p++ = linkValI(valTermRef(values))
+        ld.gstack[p + 3 + 2 * i] = keys[i + 1]              # *p++ = *keys
+    end
+
+    status, dupl = dict_order(ld, p)
+    if status == PL_DICT_TRUE
+        ld.slots[t + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)     # setHandle(t, consCompound(p0))
+        return true
+    end
+
+    dupl == 0 && return false
+    k = PL_new_term_ref(ld)
+    ld.slots[k + 1] = dupl                                  # *valTermRef(t) = dupl
+    PL_duplicate_key_error(ld, k)                           # PL_error(NULL, 0, NULL, ERR_DUPLICATE_KEY, t)
+    return false
+end
+
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
 # number is read into a `number` (`PL_get_number`), not from the word.

@@ -27,7 +27,7 @@
 # a `stream_ref` (the stream's number in the table), written `<stream>(0x…)`; `close/1,2`
 # (`pl_close`) closes a stream by blob or alias; closing frees the stream's table entry and aliases
 # (`freeStream`, which upstream runs as the close hook). NOT PORTED: the rest of the stream table —
-# input streams for read/1, `stream_pair/3` (a pair blob), the
+# input streams for read/1, the
 # current-stream predicates, `open_null_stream/1`, `see/tell`, `with_output_to/2` and the output
 # redirection (O1); no locks (no threads), no atom/stream garbage collection (a blob is never
 # freed: a closed stream's blob stays a blob, its stream gone from the table).
@@ -74,6 +74,10 @@ const SNO_CURRENT_OUTPUT = 4
 # PORT: pl-file.h SNO_PROTOCOL
 "The index of `protocol` among the standard streams (pl-file.h)."
 const SNO_PROTOCOL = 5
+
+# PORT: pl-file.c SH_NOPAIR
+"Stream lookup flag: a stream pair is ambiguous (pl-file.c)."
+const SH_NOPAIR = Int(0x20)
 
 # PORT: pl-file.h ST_FALSE
 "`stream_type_check` off (pl-file.h)."
@@ -307,8 +311,10 @@ end
 # PORT: pl-file.c get_stream_handle
 # DIVERGES: a stream blob's payload names the stream by its number in the database's stream table (see
 # the file's header); a blob of a stream closed meanwhile is no stream (`existence_error`), its entry
-# being gone from the table (upstream: `s->erased`). A pair (both `read` and `write`) is NOT PORTED
-# (`stream_pair/3`). The alias table is the standard streams' names and the user aliases; returns the
+# being gone from the table (upstream: `s->erased`). A pair (both `read` and `write`) selects its
+# output stream for `SH_OUTPUT`, its input stream for `SH_INPUT`, else (`SH_NOPAIR`) the flag
+# `error_ambiguous_stream_pair` decides between `type_error(stream, Pair)` and a warning message and the
+# input stream; no `assert` on the reference counts. The alias table is the standard streams' names and the user aliases; returns the
 # stream or `nothing`; no locks, so `SH_UNLOCKED` and `SH_TRYLOCK` are all one. NOT PORTED: the
 # standard stream restored when its stream was closed (`restoreStandardStream` — the closers keep
 # the standard streams open, see `closeStream`). A standard name whose stream is NULL is
@@ -321,10 +327,35 @@ function get_stream_handle(
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                              # type == &stream_blob
-        (ref.read != 0 && ref.write != 0) && throw(
-            NotPortedError{T}(a, "a stream pair", "stream_pair/3 (not ported)")
-        )
-        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+        local sn::Int
+        if ref.read != 0
+            if ref.write != 0
+                if (flags & SH_OUTPUT) != 0
+                    sn = ref.write
+                elseif (flags & SH_INPUT) != 0
+                    sn = ref.read
+                elseif (flags & SH_NOPAIR) != 0
+                    if truePrologFlag(ld, PLFLAG_ERROR_AMBIGUOUS_STREAM_PAIR)
+                        symbol_stream_pair_not_allowed(ld, a)   # the error, false
+                        return nothing
+                    else
+                        t = PL_new_term_ref(ld)
+                        setSlotValue!(ld, t + 1, a)             # PL_put_atom(t, a)
+                        printMessage(
+                            ld, :warning, _message_term(ld, :ambiguous_stream_pair, t)
+                        ) || return nothing
+                        sn = ref.read
+                    end
+                else
+                    sn = ref.read
+                end
+            else
+                sn = ref.read
+            end
+        else
+            sn = ref.write
+        end
+        s = _stream_of(gd, sn)
         if s === nothing || s.erased                # if ( s->erased ) goto noent
             (flags & SH_ERRORS) != 0 && symbol_no_stream(ld, a)
             return nothing
@@ -573,7 +604,7 @@ end
 # PORT: pl-file.c stream_ref
 # DIVERGES: `read` and `write` are the NUMBERS of the streams in the database's stream table
 # (`getStreamContext`; 0 for NULL), where upstream holds the `IOSTREAM *`s: a Julia stream is no
-# pointer. A pair (both set) is NOT PORTED.
+# pointer. A pair has both set (`stream_pair/3`).
 "The data of a stream blob (pl-file.c `stream_ref`): the streams it reads and writes, by table number (0: none)."
 struct stream_ref
     read::Int
@@ -707,6 +738,7 @@ function freeStream(ld::PL_local_data, s::IOSTREAM)::Nothing
     if s.context != 0
         gd.stream_table[s.context] = nothing        # deleteHTablePP(streamContext, s)
         delete!(gd.stream_alias_names, s.context)
+        delete!(gd.stream_context_flags, s.context)   # ctx->flags
     end
     delete!(gd.stream_filenames, s)                 # ctx->filename
 
@@ -730,6 +762,59 @@ end
 # DIVERGES: no lock.
 "The stream `s` if it is open, else `nothing` (pl-file.c)."
 getStream(s::IOSTREAM)::Union{Nothing, IOSTREAM} = s.magic == SIO_MAGIC ? s : nothing
+
+# PORT: pl-file.c stream_pair as pl_stream_pair3_va
+# (PRED_IMPL("stream_pair", 3, stream_pair, 0)) — pl-file.c:1266-1330 (pin 18168e62)
+# DIVERGES: the pair's blob holds the streams' table numbers (`stream_ref`); no reference counts
+# (`acquire_stream_ref` is a hook the kernel has no twin of: no atom GC), no lock to release. A blob is unique
+# by payload, so the same two streams give the same pair.
+"`stream_pair(?Pair, ?Read, ?Write)`: split a pair into its streams, or make a pair of two (pl-file.c)."
+function pl_stream_pair3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if !PL_is_variable(ld, A1)
+        a = PL_get_atom(ld, A1)
+        ref = a === nothing ? nothing : _stream_ref_of(ld, a)
+        gd = _query_gd(ld)
+        if ref !== nothing                                  # type == &stream_blob
+            rc = true
+            rs = ref.read != 0 ? _stream_of(gd, ref.read) : nothing
+            if rs !== nothing && !rs.erased
+                rc = rc && PL_unify_stream_or_alias(ld, A2, rs)
+            end
+            ws = ref.write != 0 ? _stream_of(gd, ref.write) : nothing
+            if ws !== nothing && !ws.erased
+                rc = rc && PL_unify_stream_or_alias(ld, A3, ws)
+            end
+            return rc ? FTRUE : FFALSE
+        else
+            if a !== nothing
+                s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_UNLOCKED)
+                if s !== nothing
+                    rc = if (s.flags & SIO_INPUT) != 0
+                        PL_unify_stream_or_alias(ld, A2, s)
+                    else
+                        PL_unify_stream_or_alias(ld, A3, s)
+                    end
+                    return rc ? FTRUE : FFALSE
+                end
+            end
+
+            rc = PL_error(ld, "", 0, "", ERR_TYPE, mk_sym(T, :stream_pair), A1)
+            return rc ? FTRUE : FFALSE
+        end
+    end
+
+    in = getInputStream(ld, A2, S_DONTCARE)
+    in === nothing && return FFALSE
+    out = getOutputStream(ld, A3, S_DONTCARE)
+    out === nothing && return FFALSE
+    gd = _query_gd(ld)
+    pair = stream_ref(getStreamContext(gd, in), getStreamContext(gd, out))
+    return PL_unify_atom(ld, A1, _stream_blob_term(ld, pair)) ? FTRUE : FFALSE
+end
 
 # PORT: pl-file.c unify_stream_ref
 "Unify term reference `t` with the blob of the stream `s` (pl-file.c)."
@@ -915,10 +1000,10 @@ end
 
 # PORT: pl-file.c openStream
 # DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
-# (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`). NOT PORTED, each raising
-# `NotPortedError` BEFORE a file is opened: `pipe(Command)` files (`Sopen_pipe`), IRIs (`iri_hook`),
-# the `lock` option (no `flock`), the `locale` option (`PL_locale`), the `unicode_atoms` option
-# (`atom_to_unicode_atoms_ex`, F1's) and the encodings the stream layer refuses (ANSI, UTF-16, wchar_t).
+# (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
+# `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
+# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`),
+# the `locale` option (`PL_locale`). The encodings ENC_ANSI (`text`: libc's `mbrtowc`/`wcrtomb`, ENC1), UTF-16 and wchar_t are ported.
 # `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
@@ -931,11 +1016,13 @@ function openStream(
     eof_action = mk_sym(T, :eof_code)
     buffer = mk_sym(T, :full)
     lock = mk_sym(T, :none)
+    wait = true
     newline = nothing
     encoding = nothing
     close_on_abort = true
     bom = -1
     create = 0
+    unicode_atoms_opt = nothing
 
     if options != 0
         vals = PL_scan_options(ld, options, 0, "stream_option", open4_options)
@@ -953,6 +1040,8 @@ function openStream(
         v === nothing || (buffer = v)
         v = _opt_atom(T, vals[7])
         v === nothing || (lock = v)
+        b8 = vals[8]
+        b8 isa Bool && (wait = b8)
         encoding = _opt_atom(T, vals[9])
         newline = _opt_atom(T, vals[10])
         b11 = vals[11]
@@ -962,13 +1051,7 @@ function openStream(
         if vals[13] !== nothing
             throw(NotPortedError{T}(type, "open/4's locale(Locale) option", "PL_locale"))
         end
-        if vals[14] !== nothing
-            throw(
-                NotPortedError{T}(
-                    type, "open/4's unicode_atoms(Mode) option", "F1 (the flags)"
-                )
-            )
-        end
+        unicode_atoms_opt = _opt_atom(T, vals[14])
     end
 
     mname = PL_get_atom_ex(ld, mode)                            # MODE
@@ -1022,14 +1105,6 @@ function openStream(
     ebom = stream_encoding_options(ld, type, encoding, bom)
     ebom === nothing && return nothing
     enc, bom = ebom
-    if enc == ENC_ANSI || enc == ENC_UTF16BE || enc == ENC_UTF16LE || enc == ENC_WCHAR
-        throw(
-            NotPortedError{T}(
-                type, string("open/4 with the stream encoding ", enc),
-                "UTF-8 only (R1, user 2026-10-07)"
-            )
-        )
-    end
     fnewline = -1
     if newline !== nothing && !_sym_is(type, :binary)
         nm = atom_to_newline_mode(ld, newline, how[1] == 'r' ? SIO_INPUT : SIO_OUTPUT)
@@ -1050,11 +1125,8 @@ function openStream(
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :lock), l)
             return nothing
         end
-        throw(
-            NotPortedError{T}(
-                lock, "open/4's lock(Lock) option (advisory file locks)", "no flock"
-            )
-        )
+        push!(how, wait ? 'l' : 'L')
+        push!(how, (_sym_is(lock, :read) || _sym_is(lock, :shared)) ? 'r' : 'w')
     end
 
     if alias !== nothing &&
@@ -1070,20 +1142,36 @@ function openStream(
         return nothing
     end
 
+    local s::Union{Nothing, IOSTREAM}
     if PL_is_functor(ld, file, mk_sym(T, :pipe), 1)             # FILE
-        throw(NotPortedError{T}(mk_sym(T, :pipe), "open(pipe(Command), …)", "Sopen_pipe"))
+        a = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, file, a)
+        txt = PL_get_text(ld, a, CVT_ATOM | CVT_STRING)
+        if txt === nothing
+            PL_error(ld, ERR_TYPE, mk_sym(T, :atom), a)
+            return nothing
+        end
+        s, errno = Sopen_pipe(text_string(txt), String(how))
+        if s === nothing
+            PL_error(
+                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
+                mk_sym(T, :source_sink), file, errno
+            )
+            return nothing
+        end
+    else
+        path = PL_get_file_name(ld, file, 0)
+        path === nothing && return nothing
+        s, errno = Sopen_file(path, String(how))
+        if s === nothing
+            PL_error(                                           # error:
+                ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
+                mk_sym(T, :source_sink), file, errno
+            )
+            return nothing
+        end
+        setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
     end
-    path = PL_get_file_name(ld, file, 0)
-    path === nothing && return nothing
-    s, errno = Sopen_file(path, String(how))
-    if s === nothing
-        PL_error(                                               # error:
-            ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
-            mk_sym(T, :source_sink), file, errno
-        )
-        return nothing
-    end
-    setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
 
     s.encoding = enc
     fnewline == -1 || (s.newline = fnewline & 0x3)
@@ -1118,6 +1206,16 @@ function openStream(
             freeStream(ld, s)
             return nothing
         end
+    end
+
+    if unicode_atoms_opt !== nothing
+        mode = atom_to_unicode_atoms_ex(ld, unicode_atoms_opt)
+        if mode === nothing
+            Sclose(s)
+            freeStream(ld, s)
+            return nothing
+        end
+        s.unicode_atoms = mode
     end
 
     return s
@@ -1214,7 +1312,8 @@ function do_close(
 end
 
 # PORT: pl-file.c pl_close
-# DIVERGES: a pair is NOT PORTED.
+# DIVERGES: a stream the blob's number no longer names in the table is upstream's `erased` stream (a pair's closed
+# half is skipped, as there); no `assert` on the reference counts.
 "Close the stream (blob or alias) term reference `stream` holds (pl-file.c)."
 function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where {T}
     a = PL_get_atom(ld, stream)
@@ -1223,11 +1322,20 @@ function pl_close(ld::PL_local_data{T}, stream::term_t, force::Bool)::Bool where
     gd = _query_gd(ld)
     ref = _stream_ref_of(ld, a)
     if ref !== nothing                                          # close(Stream[pair], ...)
-        (ref.read != 0 && ref.write != 0) && throw(
-            NotPortedError{T}(a, "closing a stream pair", "stream_pair/3 (not ported)")
-        )
-        s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
-        rc = do_close(ld, s === nothing ? nothing : getStream(s), force)
+        rc = true
+        if ref.read != 0 && ref.write != 0
+            ws = _stream_of(gd, ref.write)
+            if ws !== nothing && !ws.erased
+                rc = do_close(ld, getStream(ws), force)
+            end
+            rs = _stream_of(gd, ref.read)
+            if rs !== nothing && !rs.erased
+                rc = do_close(ld, getStream(rs), force) && rc
+            end
+        else
+            s = _stream_of(gd, ref.read != 0 ? ref.read : ref.write)
+            rc = do_close(ld, s === nothing ? nothing : getStream(s), force)
+        end
 
         if !rc && ld.exception_term == 0
             rc = PL_error(
@@ -1333,12 +1441,44 @@ function pop_input_context(ld::PL_local_data{T})::Bool where {T}
     end
 end
 
+# PORT: pl-file.c IO_TELL
+"The stream-context flag of a stream opened by tell/1 (pl-file.c)."
+const IO_TELL = 1
+# PORT: pl-file.c IO_SEE
+"The stream-context flag of a stream opened by see/1 (pl-file.c)."
+const IO_SEE = 2
+
+# ORIGINAL: upstream's `set(getStreamContext(s), flag)`; the flags are `PL_global_data.stream_context_flags`, by the
+# stream's context number (upstream: `stream_context.flags`).
+"Set the stream-context flag `flag` of `s`, making the stream known first (pl-file.c `set(getStreamContext(s), flag)`)."
+function setStreamContextFlag(gd::PL_global_data, s::IOSTREAM, flag::Int)::Nothing
+    ctx = getStreamContext(gd, s)
+    gd.stream_context_flags[ctx] = get(gd.stream_context_flags, ctx, 0) | flag
+    return nothing
+end
+
+# PORT: pl-file.c findStreamFromFile
+# DIVERGES: `newTableEnumPP(streamContext)` is the live entries of `PL_global_data.stream_table`, in the order the
+# streams got their context (upstream: hash-table order); `ison(ctx, flags)` is a read of `stream_context_flags`.
+"The stream that reads or writes the file named `name` and carries the context flag `flags`, or `nothing` (pl-file.c)."
+function findStreamFromFile(
+    gd::PL_global_data{T}, name::T, flags::Int
+)::Union{Nothing, IOSTREAM} where {T}
+    for s in gd.stream_table
+        s === nothing && continue
+        fn = fileNameStream(gd, s)
+        if fn !== nothing && sym_key(fn) == sym_key(name) &&
+            (get(gd.stream_context_flags, s.context, 0) & flags) != 0
+            return s
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-file.c pl_see
 # (swipl-devel cbf4e189, src/os/pl-file.c:4446-4485)
-# DIVERGES: `findStreamFromFile(a, IO_SEE)` finds no stream: the kernel registers no see/1 (see/tell are
-# S1/O1's), so the only `pl_see` caller is `compileFile` (src/pl-qlf.jl), whose `pl_seen` closes the stream
-# it opened before the next file; for the same reason `set(getStreamContext(s), IO_SEE)` records no flag
-# (`getStreamContext` makes the stream known, its only effect read here). No lock (no threads).
+# DIVERGES: `findStreamFromFile` is `findStreamFromFile(gd, a, IO_SEE)` (above); `set(getStreamContext(s), IO_SEE)` is
+# `setStreamContextFlag`. No lock (no threads).
 "Make the stream alias, `user` or the file the atom `f` names the current input, opening the file for reading (pl-file.c)."
 function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
     gd = _query_gd(ld)
@@ -1354,14 +1494,18 @@ function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
         ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Suser_input
         return true
     end
-    # findStreamFromFile(a, IO_SEE): no stream (see above)
+    s = findStreamFromFile(gd, a, IO_SEE)
+    if s !== nothing
+        ld.IO_streams[SNO_CURRENT_INPUT + 1] = s    # Scurin = s
+        return true
+    end
 
     mode = PL_new_term_ref(ld)
     PL_put_atom(ld, mode, mk_sym(T, :read))         # PL_put_atom(mode, ATOM_read)
     s = openStream(ld, f, mode, 0)
     s === nothing && return false
 
-    getStreamContext(gd, s)                         # set(getStreamContext(s), IO_SEE)
+    setStreamContextFlag(gd, s, IO_SEE)             # set(getStreamContext(s), IO_SEE)
     push_input_context(ld, mk_sym(T, :see))         # push_input_context(ATOM_see)
     ld.IO_streams[SNO_CURRENT_INPUT + 1] = s        # Scurin = s
     return true
@@ -1381,6 +1525,826 @@ function pl_seen(ld::PL_local_data{T})::Bool where {T}
     s !== nothing && return closeStream(ld, s)
 
     return symbol_no_stream(ld, mk_sym(T, :current_input))
+end
+
+# PORT: pl-file.c see as pl_see1_va
+# (PRED_IMPL("see", 1, see, 0)) — pl-file.c:4546-4549 (pin 18168e62)
+"`see(+SrcDest)`: make a stream, alias, `user` or the file named the current input (pl-file.c)."
+function pl_see1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_see(ld, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c seen as pl_seen0_va
+# (PRED_IMPL("seen", 0, seen, 0)) — pl-file.c:4552-4555 (pin 18168e62)
+"`seen`: close the current input and restore the one before the `see/1` (pl-file.c)."
+function pl_seen0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return pl_seen(ld) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c seeing as pl_seeing1_va
+# (PRED_IMPL("seeing", 1, seeing, 0)) — pl-file.c:4558-4566 (pin 18168e62)
+"`seeing(-SrcDest)`: `user` for the user's input, else the current input stream (pl-file.c)."
+function pl_seeing1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    if Scurin(ld) === Suser_input(ld)
+        return PL_unify_atom(ld, PL__t0, mk_sym(T, :user)) ? FTRUE : FFALSE
+    end
+    return PL_unify_stream(ld, PL__t0, Scurin(ld)::IOSTREAM) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c do_tell
+# DIVERGES: no lock (no threads: `PL_LOCK(L_SEETELL)`); `m` is the open mode atom (`ATOM_write` or `ATOM_append`);
+# `findStreamFromFile` and `set(getStreamContext(s), IO_TELL)` as `pl_see`.
+"Make a stream, alias, `user` or the file `f` names the current output, opening the file in mode `m` (pl-file.c)."
+function do_tell(ld::PL_local_data{T}, f::term_t, m::T)::Bool where {T}
+    gd = _query_gd(ld)
+    a = PL_get_atom_ex(ld, f)
+    a === nothing && return false
+
+    s = get_stream_handle(ld, a, SH_UNLOCKED)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return true
+    end
+    if sym_key(a) == sym_key(mk_sym(T, :user))      # a == ATOM_user
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, Suser_output(ld)::IOSTREAM)
+        return true
+    end
+    s = findStreamFromFile(gd, a, IO_TELL)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return true
+    end
+
+    mode = PL_new_term_ref(ld)
+    PL_put_atom(ld, mode, m)                        # PL_put_atom(mode, m)
+    s = openStream(ld, f, mode, 0)
+    s === nothing && return false
+
+    setStreamContextFlag(gd, s, IO_TELL)            # set(getStreamContext(s), IO_TELL)
+    pushOutputContext(ld, s)
+    return true
+end
+
+# PORT: pl-file.c tell as pl_tell1_va
+# (PRED_IMPL("tell", 1, tell, 0)) — pl-file.c:4611-4614 (pin 18168e62)
+"`tell(+SrcDest)`: make a stream, alias, `user` or the file named the current output, opened for writing (pl-file.c)."
+function pl_tell1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return do_tell(ld, PL__t0, mk_sym(T, :write)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c append as pl_append1_va
+# (PRED_IMPL("append", 1, append, 0)) — pl-file.c:4616-4619 (pin 18168e62)
+"`append(+File)`: as `tell/1`, the file opened for appending (pl-file.c)."
+function pl_append1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return do_tell(ld, PL__t0, mk_sym(T, :append)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c telling as pl_telling1_va
+# (PRED_IMPL("telling", 1, telling, 0)) — pl-file.c:4621-4629 (pin 18168e62)
+"`telling(-SrcDest)`: `user` for the user's output, else the current output stream (pl-file.c)."
+function pl_telling1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    if Scurout(ld) === Suser_output(ld)
+        return PL_unify_atom(ld, PL__t0, mk_sym(T, :user)) ? FTRUE : FFALSE
+    end
+    return PL_unify_stream(ld, PL__t0, Scurout(ld)::IOSTREAM) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c told as pl_told0_va
+# (PRED_IMPL("told", 0, told, 0)) — pl-file.c:4631-4645 (pin 18168e62)
+"`told`: close the current output and restore the one before the `tell/1` (pl-file.c)."
+function pl_told0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    cur = Scurout(ld)
+    s = cur === nothing ? nothing : getStream(cur)  # getStream(Scurout)
+
+    popOutputContext(ld)
+
+    s !== nothing && (s.flags & SIO_NOFEOF) != 0 && return FTRUE
+
+    s !== nothing && return closeStream(ld, s) ? FTRUE : FFALSE
+
+    return symbol_no_stream(ld, mk_sym(T, :current_output)) ? FTRUE : FFALSE
+end
+
+# ── NULL-STREAM (pl-file.c, pin 18168e62:4646-4713) ─────────────────────────────────────────────
+
+# PORT: pl-file.c Swrite_null
+# DIVERGES: `buf` is `mem` from `from`; no handle (`Snullfunctions` streams hold `nothing`).
+"The write function of a null stream: every byte is taken (pl-file.c)."
+Swrite_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = size
+
+# PORT: pl-file.c Sread_null
+# DIVERGES: as `Swrite_null`.
+"The read function of a null stream: always at the end (pl-file.c)."
+Sread_null(mem::Vector{UInt8}, from::Int, size::Int)::Int = 0
+
+# PORT: pl-file.c Sseek_null
+# DIVERGES: `S_seek64` (pl-stream.jl) calls this where upstream's function set holds it as the `seek` pointer, with the offset
+# as an `Int`; a seek to an absolute position answers it, the other whences -1, as upstream.
+"The seek function of a null stream (pl-file.c)."
+function Sseek_null(offset::Int, whence::Int)::Int
+    whence == SIO_SEEK_SET && return offset
+    return -1
+end
+
+# PORT: pl-file.c Sclose_null
+# DIVERGES: as `Swrite_null`.
+"The close function of a null stream (pl-file.c)."
+Sclose_null()::Int = 0
+
+# PORT: pl-file.c open_null_stream as pl_open_null_stream1_va
+# (PRED_IMPL("open_null_stream", 1, open_null_stream, 0)) — pl-file.c:4698-4710 (pin 18168e62)
+"`open_null_stream(-Stream)`: a text output stream that discards what is written to it (pl-file.c)."
+function pl_open_null_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    sflags = SIO_NBUF | SIO_RECORDPOS | SIO_OUTPUT | SIO_TEXT
+    s = Snew(nothing, sflags, Snullfunctions)
+    s.encoding = ENC_UTF8
+    return PL_unify_stream_or_alias(ld, PL__t0, s) ? FTRUE : FFALSE
+end
+
+# ── seek and set_stream_position (pl-file.c) ────────────────────────────────────────────────────
+
+# PORT: pl-file.c getRepositionableStream
+# DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); "has a `seek` function" is `S_has_seek`
+# (the kernel's function sets are names, not pointer tables); no lock to release.
+"The stream `stream` names (an atom), if it records a position and can seek, else `permission_error(reposition, stream, S)`."
+function getRepositionableStream(
+    ld::PL_local_data{T}, stream::term_t
+)::Union{Nothing, IOSTREAM} where {T}
+    a = PL_get_atom(ld, stream)
+    if a === nothing
+        not_a_stream(ld, stream, SH_ALIAS)
+        return nothing
+    end
+    s = get_stream_handle(ld, a, SH_ERRORS)
+    s === nothing && return nothing
+    if s.position === nothing || !S_has_seek(s)
+        _PL_permission_error(ld, :reposition, :stream, stream)
+        return nothing
+    end
+    return s
+end
+
+# PORT: pl-file.c set_stream_position as pl_set_stream_position2_va
+# (PRED_IMPL("set_stream_position", 2, set_stream_position, PL_FA_ISO)) — pl-file.c:5611-5650 (pin 18168e62)
+"`set_stream_position(+Stream, +Pos)`: re-position `Stream` to `'\$stream_position'(Char, Line, LinePos, Byte)` (pl-file.c)."
+function pl_set_stream_position2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream, pos = PL__t0, PL__t0 + 1
+    a = PL_new_term_ref(ld)
+
+    s = getRepositionableStream(ld, stream)
+    s === nothing && return FFALSE
+
+    charno = lineno = linepos = byteno = nothing
+    if PL_is_functor(ld, pos, mk_sym(T, Symbol("\$stream_position")), 4) &&
+        _PL_get_arg(ld, 1, pos, a)
+        charno = PL_get_int64(ld, a)
+        _PL_get_arg(ld, 2, pos, a) && (lineno = PL_get_long(ld, a))
+        _PL_get_arg(ld, 3, pos, a) && (linepos = PL_get_long(ld, a))
+        _PL_get_arg(ld, 4, pos, a) && (byteno = PL_get_int64(ld, a))
+    end
+    if charno === nothing || lineno === nothing || linepos === nothing || byteno === nothing
+        rc = PL_error(
+            ld, "stream_position", 3, "", ERR_DOMAIN, mk_sym(T, :stream_position), pos
+        )
+        return rc ? FTRUE : FFALSE
+    end
+
+    if Sseek64(s, Int64(byteno), SIO_SEEK_SET) != 0
+        PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :reposition),
+            mk_sym(T, :stream), stream, s.io_errno
+        )
+        return FFALSE
+    end
+
+    p = s.position::IOPOS
+    p.byteno = byteno
+    p.charno = charno
+    p.lineno = lineno
+    p.linepos = linepos
+    Sresetesc(p)
+
+    return FTRUE
+end
+
+# PORT: pl-file.c seek as pl_seek4_va
+# (PRED_IMPL("seek", 4, seek, 0)) — pl-file.c:5655-5707 (pin 18168e62)
+# DIVERGES: `errno` is the stream's `io_errno` (see `Sseek64`); the message of the permission error is `strerror` of it,
+# read before `Sclearerr` clears it (the sentinel `MSG_ERRNO` is only understood by `ERR_FILE_OPERATION`).
+"`seek(+Stream, +Offset, +Method, -NewLocation)`: move `Stream`'s position (`bof`, `current`, `eof`), in units of its encoding (pl-file.c)."
+function pl_seek4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream, offset, method, newloc = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+
+    m = PL_get_atom_ex(ld, method)
+    m === nothing && return FFALSE
+
+    if _sym_is(m, :bof)
+        whence = SIO_SEEK_SET
+    elseif _sym_is(m, :current)
+        whence = SIO_SEEK_CUR
+    elseif _sym_is(m, :eof)
+        whence = SIO_SEEK_END
+    else
+        rc = PL_error(ld, "seek", 4, "", ERR_DOMAIN, mk_sym(T, :seek_method), method)
+        return rc ? FTRUE : FFALSE
+    end
+
+    off = PL_get_int64(ld, offset)
+    if off === nothing
+        rc = PL_error(ld, "seek", 4, "", ERR_DOMAIN, mk_sym(T, :integer), offset)
+        return rc ? FTRUE : FFALSE
+    end
+
+    s = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_NOPAIR)    # PL_get_stream_handle
+    s === nothing && return FFALSE
+
+    unit = Sunit_size(s)
+
+    off *= unit
+    if Sseek64(s, Int64(off), whence) < 0
+        if s.io_errno == EINVAL
+            PL_error(
+                ld, "seek", 4, "offset out of range", ERR_DOMAIN, mk_sym(T, :position),
+                offset
+            )
+        else
+            PL_error(
+                ld, "seek", 4, Base.Libc.strerror(s.io_errno), ERR_PERMISSION,
+                mk_sym(T, :reposition), mk_sym(T, :stream), stream
+            )
+        end
+        Sclearerr(s)
+        return FFALSE
+    end
+
+    new = Stell64(s)
+    new = div(new, unit)
+
+    return PL_unify_int64(ld, newloc, Int(new)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c set_end_of_stream as pl_set_end_of_stream1_va
+# (PRED_IMPL("set_end_of_stream", 1, set_end_of_stream, 0)) — pl-file.c:2634-2664 (pin 18168e62)
+# DIVERGES: `Sfileno(s) >= 0` + `ftruncate(fileno, Stell64(s))` is a stream over a file's Julia IO (`IOStream`) and
+# `truncate(io, Stell64(s))`, the IO's own buffer flushed first; every other stream "is not a file". `PL_get_stream(A1, &s,
+# SIO_OUTPUT)` reads its own flags (`SIO_OUTPUT` has no `SH_ALIAS` bit: a non-atom is `domain_error(stream, X)`).
+"`set_end_of_stream(+Stream)`: truncate the file of the output stream `Stream` at its current position (pl-file.c)."
+function pl_set_end_of_stream1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    a = PL_get_atom(ld, A1)
+    if a === nothing
+        not_a_stream(ld, A1, Int(SIO_OUTPUT))
+        return FFALSE
+    end
+    s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_OUTPUT)
+    s === nothing && return FFALSE
+
+    h = s.handle
+    if s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+        io = h.io::IOStream
+        try
+            flush(io)
+            truncate(io, Stell64(s))
+        catch e
+            e isa SystemError || rethrow()
+            rc = PL_error(
+                ld, "", 0, Base.Libc.strerror(e.errnum), ERR_FILE_OPERATION,
+                mk_sym(T, :set_end_of_stream), mk_sym(T, :stream), A1, Int(e.errnum)
+            )
+            return rc ? FTRUE : FFALSE
+        end
+        return FTRUE
+    end
+    rc = PL_error(
+        ld, "", 0, "not a file", ERR_PERMISSION, mk_sym(T, :set_end_of_stream),
+        mk_sym(T, :stream), A1
+    )
+    return rc ? FTRUE : FFALSE
+end
+
+# ── buffer and size (pl-file.c) ─────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c fill_buffer as pl_fill_buffer1_va
+# (PRED_IMPL("fill_buffer", 1, fill_buffer, 0)) — pl-file.c:5910-5928 (pin 18168e62)
+# DIVERGES: `s->bufp--` is `s.bufp -= 1` on the index into `s.mem`; no lock to release.
+"`fill_buffer(+Stream)`: fill the buffer of the input stream `Stream` (pl-file.c)."
+function pl_fill_buffer1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream = PL__t0
+    s = getInputStream(ld, stream, S_DONTCARE)
+    if s !== nothing
+        if (s.flags & SIO_NBUF) != 0
+            _PL_permission_error(ld, :fill_buffer, :stream, stream)
+            return FFALSE
+        end
+
+        if (s.flags & SIO_FEOF) == 0
+            if S__fillbuf(s) < 0
+                return streamStatus(ld, s) ? FTRUE : FFALSE      # PL_release_stream(s)
+            end
+
+            s.bufp -= 1
+        end
+        return streamStatus(ld, s) ? FTRUE : FFALSE              # PL_release_stream(s)
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-file.c size_stream as pl_dsize_stream2_va
+# (PRED_IMPL("$size_stream", 2, size_stream, 0)) — pl-file.c:6262-6279 (pin 18168e62)
+# DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)`; `Ssize` knows a file's size only (see there).
+"`'\$size_stream'(+Stream, -Size)`: the size in bytes of the data object `Stream` reads or writes (pl-file.c)."
+function pl_dsize_stream2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    s = term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)         # PL_get_stream_handle
+    s === nothing && return FFALSE
+    sz = Ssize(s)
+    streamStatus(ld, s) || return FFALSE                        # PL_release_stream(s)
+
+    sz >= 0 && return PL_unify_int64(ld, A2, Int(sz)) ? FTRUE : FFALSE
+
+    _PL_permission_error(ld, :reposition, :stream, A1)
+    return FFALSE
+end
+
+# ── pending input (pl-file.c) ───────────────────────────────────────────────────────────────────
+
+# PORT: pl-file.c MAX_PENDING
+"The most bytes `read_pending_codes/3` and `read_pending_chars/3` take from the buffer at once (pl-file.c)."
+const MAX_PENDING = SIO_BUFSIZE
+
+# PORT: pl-file.c re_buffer
+# DIVERGES: `from` is an index into `buf` (a byte vector), the memory move is `copyto!` within `s.mem`.
+"Put the `len` bytes of `buf` from index `from` back as the pending input of `s` (pl-file.c)."
+function re_buffer(s::IOSTREAM, buf::Vector{UInt8}, from::Int, len::Int)::Nothing
+    if s.bufp < s.limitp
+        pending = s.limitp - s.bufp
+
+        copyto!(s.mem, s.buffer, s.mem, s.bufp, pending)
+        s.bufp = s.buffer
+        s.limitp = s.bufp + pending
+    else
+        s.bufp = s.limitp = s.buffer
+    end
+
+    copyto!(s.mem, s.bufp, buf, from, len)
+    s.limitp = s.bufp + len
+    return nothing
+end
+
+# PORT: pl-file.c skip_cr
+"Whether a carriage return read from the text stream `s` is dropped: a DOS newline mode (detected on the first) (pl-file.c)."
+function skip_cr(s::IOSTREAM)::Bool
+    if (s.flags & SIO_TEXT) != 0
+        if s.newline == SIO_NL_DETECT
+            s.newline = SIO_NL_DOS
+            return true
+        elseif s.newline == SIO_NL_DOS
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-file.c get_ucs2
+# DIVERGES: `i` is the 1-based index of the first byte of the unit in `us`.
+"The UCS-2 unit at index `i` of `us`, big or little endian (pl-file.c)."
+function get_ucs2(us::Vector{UInt8}, i::Int, be::Bool)::Int
+    if be
+        return (Int(us[i]) << 8) + Int(us[i + 1])
+    else
+        return (Int(us[i + 1]) << 8) + Int(us[i])
+    end
+end
+
+# ORIGINAL: pl-file.c's `allocList`, `addSmallIntList`, `addCharList`, `unifyDiffList` build the list on the global stack
+# in place, with a hole for the tail; the codes are collected, then `PL_unify_text` (ENC_WCHAR units) builds the list ending
+# in a fresh tail term, which is unified with `tail`.
+"Unify `list` with the list of the code points `codes` (as codes, or one-character atoms if `chars`), whose end unifies with `tail`."
+function unify_diff_list(
+    ld::PL_local_data{T}, list::term_t, tail::term_t, codes::Vector{Int}, chars::Bool
+)::Bool where {T}
+    bytes = Vector{UInt8}(undef, 4 * length(codes))
+    for (k, c) in enumerate(codes)
+        u = UInt32(c)
+        bytes[4k - 3] = UInt8(u & 0xff)
+        bytes[4k - 2] = UInt8((u >> 8) & 0xff)
+        bytes[4k - 1] = UInt8((u >> 16) & 0xff)
+        bytes[4k] = UInt8((u >> 24) & 0xff)
+    end
+    text = PL_chars_t(bytes, length(codes), ENC_WCHAR, true)
+    hole = PL_new_term_ref(ld)
+    hole == 0 && return false
+    PL_unify_text(ld, list, hole, text, chars ? PL_CHAR_LIST : PL_CODE_LIST) || return false
+    return PL_unify(ld, tail, hole)
+end
+
+# PORT: pl-file.c read_pending_input
+# DIVERGES: the pending bytes are copied to a `Vector{UInt8}`; the list is built by `unify_diff_list`; `ENC_ANSI` is libc's
+# `mbsnrtowcs`/`mbrtowc` under the process's LC_CTYPE (`_mbsnrtowcs_count`, `_mbrtowc`); no lock to release.
+"The pending input of a stream as the difference list `list`-`tail` of codes or chars (pl-file.c)."
+function read_pending_input(
+    ld::PL_local_data{T}, input::term_t, list::term_t, tail::term_t, chars::Bool
+)::Bool where {T}
+    s = getInputStream(ld, input, S_DONTCARE)
+    s === nothing && return false
+
+    buf = Vector{UInt8}(undef, MAX_PENDING)
+    off0 = Stell64(s)
+
+    if Sferror(s) != 0
+        return streamStatus(ld, s)
+    end
+
+    n = Sread_pending(s, buf, MAX_PENDING, SIO_RP_NOPOS)
+    n < 0 && return streamStatus(ld, s)                   # should not happen
+    if n == 0                                             # end-of-file
+        return streamStatus(ld, s) && PL_unify(ld, list, tail) && PL_unify_nil(ld, list)
+    end
+    p = s.position
+    pos0 = if p === nothing
+        IOPOS()
+    else
+        IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    end
+
+    codes = Int[]
+    failed = false
+    enc = s.encoding
+
+    if enc == ENC_OCTET || enc == ENC_ISO_LATIN_1 || enc == ENC_ASCII
+        for i in 1:n
+            c = Int(buf[i])
+
+            c == Int('\r') && skip_cr(s) && continue
+
+            p !== nothing && S__fupdatefilepos_getc(s, c)
+
+            push!(codes, c)
+        end
+        p !== nothing && (p.byteno = pos0.byteno + n)
+    elseif enc == ENC_ANSI
+        us = 1
+        es = n + 1
+        st = stream_mbstate!(s)
+        s0 = copy(st)                                         # `s0 = *s->mbstate`
+        count = _mbsnrtowcs_count(buf, n, s0)
+        if count == -1
+            Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+            failed = true
+        else
+            for _ in 1:count
+                rc, c = _mbrtowc(buf, us, es - us, st)
+                us += rc                                      # (upstream's `us += mbrtowc(...)`: a NUL character is rc 0, so `us` stays)
+                c == Int('\r') && skip_cr(s) && continue
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+            p !== nothing && (p.byteno = pos0.byteno + (us - 1))
+
+            re_buffer(s, buf, us, es - us)
+        end
+    elseif enc == ENC_UTF8
+        us = 1
+        es = n + 1
+        count = 0
+
+        while us < es && !failed
+            b0 = Int(buf[us])
+            if (b0 & 0x80) == 0
+                count += 1
+                us += 1
+            else
+                ex = UTF8_FBN(b0)
+
+                if ex >= 0
+                    ec = us + ex + 1
+
+                    if ec <= es
+                        count += 1
+                        us = ec
+                    else                                  # incomplete multi-byte
+                        break
+                    end
+                else
+                    Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+                    failed = true
+                end
+            end
+        end
+
+        if !failed
+            us = 1
+            for _ in 1:count
+                _, us, c = _PL__utf8_code_point(buf, us, es)
+                c == Int('\r') && skip_cr(s) && continue
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+            p !== nothing && (p.byteno = pos0.byteno + (us - 1))
+
+            re_buffer(s, buf, us, es - us)
+        end
+    elseif enc == ENC_UTF16BE || enc == ENC_UTF16LE
+        be = enc == ENC_UTF16BE
+        count = 0
+        us = 1
+        es = n + 1
+        done = 0
+
+        while us + 2 <= es && !failed
+            c = get_ucs2(buf, us, be)
+            us += 2
+            if IS_UTF16_LEAD(c)
+                if us + 2 <= es
+                    c2 = get_ucs2(buf, us, be)
+
+                    if IS_UTF16_TRAIL(c2)
+                        count += 1
+                        us += 2
+                    else
+                        Sseterr(s, SIO_WARN, "Illegal UTF-16 surrogate pair")
+                        failed = true
+                    end
+                end
+            else
+                count += 1
+            end
+        end
+
+        if !failed
+            us = 1
+            for _ in 1:count
+                c = get_ucs2(buf, us, be)
+                us += 2
+                done += 2
+                c == Int('\r') && skip_cr(s) && continue
+
+                if IS_UTF16_LEAD(c)
+                    c2 = get_ucs2(buf, us, be)
+
+                    done += 2
+                    us += 2
+                    c = utf16_decode(c, c2)
+                end
+
+                p !== nothing && S__fupdatefilepos_getc(s, c)
+
+                push!(codes, c)
+            end
+
+            p !== nothing && (p.byteno = pos0.byteno + done)
+            re_buffer(s, buf, 1 + done, n - done)
+        end
+    elseif enc == ENC_WCHAR
+        count = n ÷ 4
+
+        for i in 1:count
+            c =
+                Int(buf[4i - 3]) | (Int(buf[4i - 2]) << 8) | (Int(buf[4i - 1]) << 16) |
+                (Int(buf[4i]) << 24)
+
+            c == Int('\r') && skip_cr(s) && continue
+            p !== nothing && S__fupdatefilepos_getc(s, c)
+
+            push!(codes, c)
+        end
+
+        done = count * 4
+        p !== nothing && (p.byteno = pos0.byteno + done)
+        re_buffer(s, buf, 1 + done, n - done)
+    else                                                  # ENC_UNKNOWN
+        error("read_pending_input: unknown encoding $enc")      # assert(0)
+    end
+
+    if !failed && unify_diff_list(ld, list, tail, codes, chars)
+        return true
+    end
+
+    Sseek64(s, off0, SIO_SEEK_SET)                        # TBD: error?
+    if p !== nothing
+        p.byteno = pos0.byteno
+        p.charno = pos0.charno
+        p.lineno = pos0.lineno
+        p.linepos = pos0.linepos
+        p.esc_state = pos0.esc_state
+    end
+    return false
+end
+
+# PORT: pl-file.c read_pending_codes as pl_read_pending_codes3_va
+# (PRED_IMPL("read_pending_codes", 3, read_pending_codes, 0)) — pl-file.c:3351-3356 (pin 18168e62)
+"`read_pending_codes(+StreamIn, -Codes, ?Tail)`: the codes pending in the buffer of `StreamIn`, as a difference list (pl-file.c)."
+function pl_read_pending_codes3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return read_pending_input(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c read_pending_chars as pl_read_pending_chars3_va
+# (PRED_IMPL("read_pending_chars", 3, read_pending_chars, 0)) — pl-file.c:3358-3363 (pin 18168e62)
+"`read_pending_chars(+StreamIn, -Chars, ?Tail)`: the characters pending in the buffer of `StreamIn`, as a difference list (pl-file.c)."
+function pl_read_pending_chars3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return read_pending_input(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, true) ? FTRUE : FFALSE
+end
+
+# ORIGINAL: the `PL_chars_t` upstream's `peek_string` fills from the stream's buffer (text.text.t = s->bufp, length in bytes):
+# a copy of the pending bytes, in the stream's encoding. DIVERGES: for `ENC_WCHAR` the length is in units (upstream passes
+# the byte count, which `PL_canonicalise_text` would read as units, past the buffer).
+"The pending bytes of `s`'s buffer as a text not yet canonical, in `s`'s encoding."
+function peek_pending_text(s::IOSTREAM)::PL_chars_t
+    bytes = s.mem[s.bufp:(s.limitp - 1)]
+    n = length(bytes)
+    return PL_chars_t(bytes, s.encoding == ENC_WCHAR ? n ÷ 4 : n, s.encoding, false)
+end
+
+# PORT: pl-file.c peek_string as pl_peek_string3_va
+# (PRED_IMPL("peek_string", 3, peek_string, 0)) — pl-file.c:3373-3425 (pin 18168e62)
+# DIVERGES: the pending bytes are copied (`peek_pending_text`); no lock to release, no `PL_STRINGS_MARK`.
+# DIVERGES: the pin's UTF-16 path fails its own assertion (PL_unify_text_range, canonical) or answers
+# representation_error(code_point) after a read to the end: no oracle row exists; the kernel decodes UTF-16 correctly.
+"`peek_string(+Stream, +Len, -String)`: `String` is the next `Len` characters of `Stream`, or all it has, without reading them (pl-file.c)."
+function pl_peek_string3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    len = PL_get_size_ex(ld, A2)
+    len === nothing && return FFALSE
+
+    s = getInputStream(ld, A1, S_DONTCARE)
+    s === nothing && return FFALSE
+
+    while true
+        if s.limitp > s.bufp
+            text = peek_pending_text(s)
+
+            PL_canonicalise_text_ex(ld, text) || return FFALSE
+            if text.length >= len
+                rc = PL_unify_text_range(ld, A3, text, 0, len, PL_STRING)
+                return rc ? FTRUE : FFALSE
+            end
+        end
+
+        if s.limitp - s.bufp == s.bufsize
+            Ssetbuffer(s, nothing, s.bufsize * 2)
+        end
+
+        if S__fillbuf(s) < 0
+            Sferror(s) != 0 && return streamStatus(ld, s) ? FTRUE : FFALSE
+
+            s.flags &= ~SIO_FEOF
+
+            text = peek_pending_text(s)
+            rc =
+                PL_canonicalise_text_ex(ld, text) &&
+                PL_unify_text(ld, A3, 0, text, PL_STRING)
+            return rc ? FTRUE : FFALSE
+        end
+        s.bufp -= 1
+    end
+end
+
+# PORT: pl-file.c copy_stream_data
+# DIVERGES: `len` is 0 for no length (upstream: a NULL `term_t`); no `PL_handle_signals` every 4096 characters, no locks.
+"Copy the characters of the input stream `in` to the output stream `out`, at most the integer `len` (0: all) (pl-file.c)."
+function copy_stream_data(
+    ld::PL_local_data{T}, in::term_t, out::term_t, len::term_t
+)::Bool where {T}
+    i = getInputStream(ld, in, S_DONTCARE)
+    i === nothing && return false
+    o = getOutputStream(ld, out, S_DONTCARE)
+    o === nothing && return false
+
+    if len == 0
+        while (c = Sgetcode(i)) != EOF
+            if Sputcode(c, o) < 0
+                return streamStatus(ld, o)
+            end
+        end
+    else
+        n = PL_get_int64_ex(ld, len)
+        n === nothing && return false
+
+        while n > 0 && (c = Sgetcode(i)) != EOF
+            n -= 1
+            Sputcode(c, o) < 0 && break
+        end
+    end
+
+    rc = streamStatus(ld, o)
+    rc = streamStatus(ld, i) && rc
+
+    return rc
+end
+
+# PORT: pl-file.c copy_stream_data3 as pl_copy_stream_data3_va
+# (PRED_IMPL("copy_stream_data", 3, copy_stream_data3, 0)) — pl-file.c:6338-6342 (pin 18168e62)
+"`copy_stream_data(+StreamIn, +StreamOut, +Len)`: copy `Len` characters from `StreamIn` to `StreamOut` (pl-file.c)."
+function pl_copy_stream_data3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return copy_stream_data(ld, PL__t0, PL__t0 + 1, PL__t0 + 2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c copy_stream_data2 as pl_copy_stream_data2_va
+# (PRED_IMPL("copy_stream_data", 2, copy_stream_data2, 0)) — pl-file.c:6344-6348 (pin 18168e62)
+"`copy_stream_data(+StreamIn, +StreamOut)`: copy all characters from `StreamIn` to `StreamOut` (pl-file.c)."
+function pl_copy_stream_data2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return copy_stream_data(ld, PL__t0, PL__t0 + 1, 0) ? FTRUE : FFALSE
+end
+
+# ── protocol (pl-file.c) ────────────────────────────────────────────────────────────────────────
+
+# DIVERGES (the group): the protocol stream is unwritten: a stream has no `tee` field (src/os/pl-stream.jl), so `Sprotocol` stays NULL
+# (`ld.IO_streams[SNO_PROTOCOL + 1] === nothing`, set in the standard streams' set-up above). With `Sprotocol` NULL upstream's
+# `noprotocol` does nothing and `protocolling` fails: those two are the ports; `protocol/1` and `protocola/1` (openProtocol
+# installs `tee` on the three standard streams) are REFUSED (`NotPortedError`), as the rest of the `tee` is.
+
+# PORT: pl-file.c noprotocol as pl_noprotocol0_va
+# (PRED_IMPL("noprotocol", 0, noprotocol, 0)) — pl-file.c:2128-2130 (pin 18168e62); static noprotocol(): 2102-2125
+# DIVERGES: `Sprotocol` is always NULL here (see the group note): the body of `noprotocol()` upstream is its `if (Sprotocol && ...)` arm.
+"`noprotocol`: stop protocolling; true (nothing is protocolled: no `tee`)."
+function pl_noprotocol0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing ||
+        error("noprotocol: a protocol stream without `tee`")
+    return FTRUE
+end
+
+# PORT: pl-file.c protocolling as pl_protocolling1_va
+# (PRED_IMPL("protocolling", 1, protocolling, 0)) — pl-file.c:3759-3774 (pin 18168e62)
+# DIVERGES: `Sprotocol` is always NULL here (see the group note): only upstream's final `return false` is reachable.
+"`protocolling(-File)`: fails, as upstream does when no protocol is on (pl-file.c)."
+function pl_protocolling1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ld.IO_streams[SNO_PROTOCOL + 1] === nothing ||
+        error("protocolling: a protocol stream without `tee`")
+    return FFALSE
+end
+
+# PORT: pl-file.c openProtocol
+# DIVERGES: REFUSED (`NotPortedError`): `Suser_input->tee = s` and the other two `tee`s are unwritten (a stream has no `tee`).
+"`protocol`'s and `protocola`'s common body: refused (pl-file.c `openProtocol`, pl-file.c:2080-2098)."
+function openProtocol(ld::PL_local_data{T}, f::term_t, appnd::Bool)::Bool where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, appnd ? :protocola : :protocol),
+            appnd ? "protocola/1" : "protocol/1", "tee (the streams' protocol copy)"
+        )
+    )
+end
+
+# PORT: pl-file.c protocol as pl_protocol1_va
+# (PRED_IMPL("protocol", 1, protocol, 0)) — pl-file.c:3746-3750 (pin 18168e62)
+"`protocol(+File)`: REFUSED (`NotPortedError`), see `openProtocol`."
+function pl_protocol1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return openProtocol(ld, PL__t0, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c protocola as pl_protocola1_va
+# (PRED_IMPL("protocola", 1, protocola, 0)) — pl-file.c:3752-3756 (pin 18168e62)
+"`protocola(+File)`: REFUSED (`NotPortedError`), see `openProtocol`."
+function pl_protocola1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return openProtocol(ld, PL__t0, true) ? FTRUE : FFALSE
 end
 
 # ── prompts (pl-file.c) ─────────────────────────────────────────────────────────────────────────
@@ -1601,6 +2565,15 @@ function pl_flush_output1_va(
     return flush_output(ld, PL__t0) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c flush_output as pl_flush_output0_va
+# (PRED_IMPL("flush_output", 0, flush_output, PL_FA_ISO)) — pl-file.c:5550-5555 (pin 18168e62)
+"`flush_output`: flush the current output (pl-file.c)."
+function pl_flush_output0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return flush_output(ld, 0) ? FTRUE : FFALSE
+end
+
 # ── current_input/1, current_output/1, line_count/2, line_position/2, tab/1,2 (pl-file.c) ──────
 
 # ORIGINAL: pl-file.c `is_stream_blob`'s `PL_blob_data(a, NULL, &type); type == &stream_blob`, through `_stream_ref_of`.
@@ -1648,14 +2621,14 @@ end
 
 # PORT: pl-file.c getStreamWithPosition
 # DIVERGES: returns the stream or `nothing` (upstream: `bool` and `IOSTREAM **sp`); `PL_get_stream(stream, &s, 0)` is
-# `term_stream_handle(SH_ERRORS)` (no `SH_NOPAIR`: a stream pair is refused by name); no lock to release. `PL_get_stream`
+# `term_stream_handle(SH_ERRORS|SH_NOPAIR)` (`PL_get_stream_from_blob`: no input or output flag asks for NOPAIR); no lock to release. `PL_get_stream`
 # passes its own flags (0) to `not_a_stream`, so a non-atom argument is `domain_error(stream, X)`, not `stream_or_alias`
 # (swipl 10.1.19: `line_count(1, N)`); `get_stream_handle` never reads `SH_ALIAS` for an atom's lookup.
 "The stream `stream` names if it records a position, else `permission_error(property, position, Stream)` (pl-file.c)."
 function getStreamWithPosition(
     ld::PL_local_data{T}, stream::term_t
 )::Union{Nothing, IOSTREAM} where {T}
-    s = term_stream_handle(ld, stream, SH_ERRORS)
+    s = term_stream_handle(ld, stream, SH_ERRORS | SH_NOPAIR)
     s === nothing && return nothing
     if s.position === nothing
         _PL_permission_error(ld, :property, :position, stream)     # non-ISO
@@ -1686,6 +2659,58 @@ function pl_line_position2_va(
     s === nothing && return FFALSE
     n = (s.position::IOPOS).linepos
     return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c byte_count as pl_byte_count2_va
+# (PRED_IMPL("byte_count", 2, byte_count, 0)) — pl-file.c:5782-5795 (pin 18168e62)
+"`byte_count(+Stream, -Count)`: the byte position of `Stream` (pl-file.c)."
+function pl_byte_count2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).byteno
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c character_count as pl_character_count2_va
+# (PRED_IMPL("character_count", 2, character_count, 0)) — pl-file.c:5798-5811 (pin 18168e62)
+"`character_count(+Stream, -Count)`: the character position of `Stream` (pl-file.c)."
+function pl_character_count2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getStreamWithPosition(ld, PL__t0)
+    s === nothing && return FFALSE
+    n = (s.position::IOPOS).charno
+    return PL_unify_integer(ld, PL__t0 + 1, n) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c set_input as pl_set_input1_va
+# (PRED_IMPL("set_input", 1, set_input, PL_FA_ISO)) — pl-file.c:5709-5721 (pin 18168e62)
+"`set_input(+Stream)`: make `Stream` the current input (pl-file.c)."
+function pl_set_input1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getInputStream(ld, PL__t0, S_DONTCARE)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_INPUT, s)
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-file.c set_output as pl_set_output1_va
+# (PRED_IMPL("set_output", 1, set_output, PL_FA_ISO)) — pl-file.c:5724-5736 (pin 18168e62)
+"`set_output(+Stream)`: make `Stream` the current output (pl-file.c)."
+function pl_set_output1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    s = getOutputStream(ld, PL__t0, S_DONTCARE)
+    if s !== nothing
+        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)
+        return FTRUE
+    end
+    return FFALSE
 end
 
 # PORT: pl-file.c tab
@@ -1885,14 +2910,24 @@ function pl_get_char2_va(
     return get_char2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c get_char1 as pl_get_char1_va
+# (PRED_IMPL("get_char", 1, get_char1, 0)) — pl-file.c:3724-3728 (pin 18168e62)
+"`get_char(-Char)`: read the next character of the current input; `end_of_file` at its end (pl-file.c)."
+function pl_get_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_char2(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c peek
-# DIVERGES: only the `:char` and `:code` forms (`how == PL_BYTE`'s `Sgetc`/`Sungetc` branch is S2b's with the byte
-# predicates); no locks (`releaseStream`).
+# DIVERGES: `how` is `:char`, `:code` or `:byte` (upstream: `PL_CHAR`, `PL_CODE`, `PL_BYTE`); `IOPOS pos = s->posbuf` is a
+# field-by-field copy, as `s.posbuf` is the object `s.position` points at (`getSingleChar` does the same); no locks
+# (`releaseStream`).
 "Peek the next character of the input stream `stream` names and unify it with `chr` as `how` asks (pl-file.c)."
 function peek(
     ld::PL_local_data{T}, stream::term_t, chr::term_t, how::Symbol
 )::Bool where {T}
-    s = getInputStream(ld, stream, S_TEXT)
+    s = getInputStream(ld, stream, how === :byte ? S_BINARY : S_TEXT)
     s === nothing && return false
     if (s.flags & SIO_NBUF) != 0 || (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX
         PL_error(
@@ -1901,7 +2936,16 @@ function peek(
         )
         return false
     end
-    c = Speekcode(s)
+    if how === :byte
+        p = s.posbuf
+        oldpos = IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)    # IOPOS pos = s->posbuf
+        c = Sgetc(s)
+        c != EOF && Sungetc(c, s)
+        p.byteno, p.charno, p.lineno, p.linepos, p.esc_state = oldpos.byteno,
+        oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state          # s->posbuf = pos
+    else
+        c = Speekcode(s)
+    end
     Sferror(s) != 0 && return streamStatus(ld, s)
     return PL_unify_char(ld, chr, c, how)
 end
@@ -1913,6 +2957,51 @@ function pl_peek_char2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     return peek(ld, PL__t0, PL__t0 + 1, :char) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_char1 as pl_peek_char1_va
+# (PRED_IMPL("peek_char", 1, peek_char1, 0)) — pl-file.c:6002-6006 (pin 18168e62)
+"`peek_char(-Char)`: the next character of the current input without reading it (pl-file.c)."
+function pl_peek_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :char) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_code2 as pl_peek_code2_va
+# (PRED_IMPL("peek_code", 2, peek_code2, 0)) — pl-file.c:5981-5985 (pin 18168e62)
+"`peek_code(+Stream, -Code)`: the next character code of `Stream` without reading it (pl-file.c)."
+function pl_peek_code2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, PL__t0, PL__t0 + 1, :code) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_code1 as pl_peek_code1_va
+# (PRED_IMPL("peek_code", 1, peek_code1, 0)) — pl-file.c:5988-5992 (pin 18168e62)
+"`peek_code(-Code)`: the next character code of the current input without reading it (pl-file.c)."
+function pl_peek_code1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :code) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_byte2 as pl_peek_byte2_va
+# (PRED_IMPL("peek_byte", 2, peek_byte2, 0)) — pl-file.c:5967-5971 (pin 18168e62)
+"`peek_byte(+Stream, -Byte)`: the next byte of the binary stream `Stream` without reading it (pl-file.c)."
+function pl_peek_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, PL__t0, PL__t0 + 1, :byte) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c peek_byte1 as pl_peek_byte1_va
+# (PRED_IMPL("peek_byte", 1, peek_byte1, 0)) — pl-file.c:5974-5978 (pin 18168e62)
+"`peek_byte(-Byte)`: the next byte of the current (binary) input without reading it (pl-file.c)."
+function pl_peek_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return peek(ld, 0, PL__t0, :byte) ? FTRUE : FFALSE
 end
 
 # PORT: pl-file.c skip
@@ -1937,6 +3026,148 @@ function pl_skip2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     return skip(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c skip1 as pl_skip1_va
+# (PRED_IMPL("skip", 1, skip1, 0)) — pl-file.c:3582-3587 (pin 18168e62)
+"`skip(+Code)`: read the current input up to and including `Code` (pl-file.c)."
+function pl_skip1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return skip(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_nonblank
+# DIVERGES: no lock (`releaseStream`).
+"Read the next non-blank character code of the text input stream `in` names (0: the current input) and unify it with `chr`; -1 at the end (pl-file.c)."
+function get_nonblank(ld::PL_local_data, in::term_t, chr::term_t)::Bool
+    s = getTextInputStream(ld, in)
+    if s !== nothing
+        while true
+            c = Sgetcode(s)
+
+            if c == EOF
+                PL_unify_integer(ld, chr, -1) || return false
+                return streamStatus(ld, s)
+            end
+
+            isBlankW(c) || return PL_unify_integer(ld, chr, c)
+        end
+    end
+
+    return false
+end
+
+# PORT: pl-file.c get1 as pl_get1_va
+# (PRED_IMPL("get", 1, get1, 0)) — pl-file.c:3547-3552 (pin 18168e62)
+"`get(-Code)`: the next non-blank character code of the current input (pl-file.c)."
+function pl_get1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get2 as pl_get2_va
+# (PRED_IMPL("get", 2, get2, 0)) — pl-file.c:3555-3560 (pin 18168e62)
+"`get(+Stream, -Code)`: the next non-blank character code of `Stream` (pl-file.c)."
+function pl_get2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put2 as pl_put2_va
+# (PRED_IMPL("put", 2, put2, 0)) — pl-file.c:3504-3509 (pin 18168e62)
+"`put(+Stream, +Char)`: Edinburgh name of `put_code/2` (pl-file.c)."
+function pl_put2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put1 as pl_put1_va
+# (PRED_IMPL("put", 1, put1, 0)) — pl-file.c:3512-3517 (pin 18168e62)
+"`put(+Char)`: Edinburgh name of `put_code/1` (pl-file.c)."
+function pl_put1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_byte
+# DIVERGES: no lock; the three-argument form (`ld` first) is distinct from pl-stream.jl's `put_byte(c, s)`
+# (pl-stream.c put_byte), as `put_code` is from `put_code(c, s)`.
+"Write the byte `byte` to the binary output stream `stream` names (0: the current output) (pl-file.c)."
+function put_byte(ld::PL_local_data{T}, stream::term_t, byte::term_t)::Bool where {T}
+    c = PL_get_integer(ld, byte)
+    if c === nothing || c < 0 || c > 255
+        PL_error(ld, ERR_TYPE, mk_sym(T, :byte), byte)
+        return false
+    end
+    s = getOutputStream(ld, stream, S_BINARY)       # getBinaryOutputStream
+    s === nothing && return false
+
+    Sputc(c, s)
+
+    return streamStatus(ld, s)
+end
+
+# PORT: pl-file.c put_byte2 as pl_put_byte2_va
+# (PRED_IMPL("put_byte", 2, put_byte2, 0); the table entry has PL_FA_ISO) — pl-file.c:3455-3460 (pin 18168e62)
+"`put_byte(+Stream, +Byte)`: write a byte to the binary stream `Stream` (pl-file.c)."
+function pl_put_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_byte(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put_byte1 as pl_put_byte1_va
+# (PRED_IMPL("put_byte", 1, put_byte1, 0); the table entry has PL_FA_ISO) — pl-file.c:3463-3468 (pin 18168e62)
+"`put_byte(+Byte)`: write a byte to the current (binary) output (pl-file.c)."
+function pl_put_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_byte(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_byte2
+# DIVERGES: `PL_get_char(chr, &c, true)` (eof accepted) is written out as in `get_code2`: `-1` and `end_of_file`
+# make the call fail without the type error; no lock.
+"Read the next byte of the binary input stream `in` names (0: the current input) and unify it with `chr`; -1 at the end (pl-file.c)."
+function get_byte2(ld::PL_local_data{T}, in::term_t, chr::term_t)::Bool where {T}
+    s = getInputStream(ld, in, S_BINARY)            # getBinaryInputStream
+    if s !== nothing
+        c = Sgetc(s)
+
+        PL_unify_integer(ld, chr, c) && return streamStatus(ld, s)
+
+        Sferror(s) != 0 && return streamStatus(ld, s)
+
+        i = PL_get_integer(ld, chr)
+        a = PL_get_atom(ld, chr)
+        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&
+            return false
+        PL_get_char(ld, chr)                        # set type-error
+    end
+    return false
+end
+
+# PORT: pl-file.c get_byte2 as pl_get_byte2_va
+# (PRED_IMPL("get_byte", 2, get_byte2, 0); the table entry has PL_FA_ISO) — pl-file.c:3645-3650 (pin 18168e62)
+"`get_byte(+Stream, -Byte)`: read the next byte of the binary stream `Stream`; -1 at its end (pl-file.c)."
+function pl_get_byte2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_byte2(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_byte1 as pl_get_byte1_va
+# (PRED_IMPL("get_byte", 1, get_byte1, 0); the table entry has PL_FA_ISO) — pl-file.c:3653-3658 (pin 18168e62)
+"`get_byte(-Byte)`: read the next byte of the current (binary) input (pl-file.c)."
+function pl_get_byte1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_byte2(ld, 0, PL__t0) ? FTRUE : FFALSE
 end
 
 # PORT: pl-file.c Sgetcode_intr
@@ -2176,15 +3407,26 @@ function stream_eof_action_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::B
 end
 
 # PORT: pl-file.c stream_reposition_prop
-# DIVERGES: the stream layer has no `seek`/`control` function pair and no file descriptor to `fstat`: a stream over
-# a file (a Julia `IOStream`) stands in for "has a seek function and `S_ISREG(fstat(fd))`", every other stream
-# (memory, string, terminal, pipe) is `false` (upstream: the same for a pipe or tty, a memory file has no fd).
+# DIVERGES: the stream layer has no `seek`/`control` function pair and no file descriptor to `fstat`. The pin's `Scontrol_memfile`
+# answers `SIO_GETREPOSITION` true: a memory stream (`open_string/2`, `with_output_to/2`: `Smemfunctions`) is `reposition(true)`, as
+# the pin says (rows d173-d175 seek in one). A stream over a file (a Julia `IOStream`) stands in for "has a seek function and
+# `S_ISREG(fstat(fd))`": `isfile(stat(io))`, so `/dev/null` is false as upstream's. The null stream (`Snullfunctions`: the kernel's
+# has a seek, upstream's `nullFunctions` has none: false), a string stream, a terminal and a pipe are `false`.
 "`reposition(Bool)` of `s`: whether it can be repositioned (pl-file.c)."
 function stream_reposition_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool
     val = false
     if s.magic == SIO_MAGIC
         h = s.handle
-        val = s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+        if s.functions == Smemfunctions
+            val = true                                      # Scontrol_memfile: SIO_GETREPOSITION
+        elseif s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
+            val = try
+                isfile(stat(h.io))                          # S_ISREG(fstat(fd))
+            catch e
+                e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+                false
+            end
+        end
     end
     return PL_unify_bool(ld, prop, val)
 end
@@ -2583,19 +3825,18 @@ function _PL_permission_error(
     )
 end
 
-# ORIGINAL: pl-prologflag.c `atom_to_unicode_atoms_ex`'s `domain_error(unicode_atoms, V)` checks, for the
-# modes `set_stream/2` sets. `nfc` needs the unicode normalisation hook (`ensure_unicode_normalize_hook`, F1's
-# flags) and is REFUSED (`NotPortedError`), as `open/4`'s `unicode_atoms` option is.
+# PORT: pl-prologflag.c atom_to_unicode_atoms_ex
+# DIVERGES: `ensure_hook` is always true and the hook always there: the kernel's normaliser is Julia's
+# `Unicode.normalize(s, :NFC)` (Base's Unicode stdlib), so `nfc` loads nothing and cannot raise the hook's
+# `existence_error` (the pin autoloads library(unicode) for it).
 "The `Sunicode_atoms_t` the atom `val` names, else `nothing` after raising `domain_error(unicode_atoms, V)`."
-function _atom_to_unicode_atoms(
+function atom_to_unicode_atoms_ex(
     ld::PL_local_data{T}, val::T
 )::Union{Nothing, Sunicode_atoms_t} where {T}
     _sym_is(val, :accept) && return S_UATOMS_ACCEPT
     _sym_is(val, :error) && return S_UATOMS_ERROR
     _sym_is(val, :reject) && return S_UATOMS_REJECT
-    _sym_is(val, :nfc) && throw(
-        NotPortedError{T}(val, "set_stream/2's unicode_atoms(nfc)", "F1 (the flags)")
-    )
+    _sym_is(val, :nfc) && return S_UATOMS_NFC
     v = PL_new_term_ref(ld)
     PL_put_atom(ld, v, val)
     PL_error(ld, "", 0, "", ERR_DOMAIN, mk_sym(T, :unicode_atoms), v)
@@ -2617,7 +3858,7 @@ end
 #  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;
 #  - `close_on_exec(B)` (file:2455-2458, `setCloseOnExec`): the stream has no descriptor (`Sfileno(s) < 0`), upstream's
 #    own `permission_error(close_on_exec, stream, S)` of that case;
-#  - `unicode_atoms(nfc)` is refused (the normalisation hook, F1's flags); `buffer_size(N)` on an input stream
+#  - `buffer_size(N)` on an input stream
 #    that holds more than N buffered bytes stops in `S__setbuf`'s `@assert` (upstream seeks back).
 # `LD->encoding` is UTF-8 (the flag table is F1's); `file_name` accepts an atom or a string (`CVT_ATOM|CVT_STRING`).
 "Set the attribute `aname` of the stream `s` to the term `a`; `stream` is the user's term (pl-file.c)."
@@ -2744,7 +3985,7 @@ function set_stream(
     elseif aname === :unicode_atoms
         val = PL_get_atom_ex(ld, a)
         val === nothing && return false
-        mode = _atom_to_unicode_atoms(ld, val)
+        mode = atom_to_unicode_atoms_ex(ld, val)
         mode === nothing && return false
         s.unicode_atoms = mode
         return true
@@ -2859,8 +4100,8 @@ end
 
 # PORT: pl-file.c set_stream as pl_set_stream2_va
 # (PRED_IMPL("set_stream", 2, set_stream, 0)) — pl-file.c:2520-2594
-# DIVERGES: a stream pair is NOT PORTED (`get_stream_handle` refuses it by name); `PL_get_stream_handle` is
-# `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`); no lock to release.
+# DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)` (reached for no blob: a pair is split
+# above, by the attribute's `SS_NOPAIR`, so `SH_NOPAIR` is moot); no lock to release.
 "`set_stream(+Stream, +Attribute)`: set the attribute of the stream (pl-file.c)."
 function pl_set_stream2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -2969,7 +4210,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; lane D (UNTESTED): set_input/1, set_output/1, get_char/1, get_byte/1,2, peek_char/1, peek_code/1,2, peek_byte/1,2, put_byte/1,2, flush_output/0, put/1,2, skip/1, get/1,2, get0/1,2 (upstream's alias of get_code), byte_count/2, character_count/2, see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0, open_null_stream/1, stream_pair/3, set_stream_position/2, seek/4, set_end_of_stream/1; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -2977,9 +4218,56 @@ const PL_predicates_from_file = (
     PL_extension("open", 3, pl_open3_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 1, pl_close1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("close", 2, pl_close2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("open_null_stream", 1, pl_open_null_stream1_va, PL_FA_VARARGS),
+    PL_extension("stream_pair", 3, pl_stream_pair3_va, PL_FA_VARARGS),
+    PL_extension(
+        "set_stream_position", 2, pl_set_stream_position2_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension("seek", 4, pl_seek4_va, PL_FA_VARARGS),
+    PL_extension("set_end_of_stream", 1, pl_set_end_of_stream1_va, PL_FA_VARARGS),
+    PL_extension("fill_buffer", 1, pl_fill_buffer1_va, PL_FA_VARARGS),
+    PL_extension("read_pending_codes", 3, pl_read_pending_codes3_va, PL_FA_VARARGS),
+    PL_extension("read_pending_chars", 3, pl_read_pending_chars3_va, PL_FA_VARARGS),
+    PL_extension("peek_string", 3, pl_peek_string3_va, PL_FA_VARARGS),
+    PL_extension("copy_stream_data", 3, pl_copy_stream_data3_va, PL_FA_VARARGS),
+    PL_extension("copy_stream_data", 2, pl_copy_stream_data2_va, PL_FA_VARARGS),
+    PL_extension("protocol", 1, pl_protocol1_va, PL_FA_VARARGS),
+    PL_extension("protocola", 1, pl_protocola1_va, PL_FA_VARARGS),
+    PL_extension("noprotocol", 0, pl_noprotocol0_va, PL_FA_VARARGS),
+    PL_extension("protocolling", 1, pl_protocolling1_va, PL_FA_VARARGS),
+    PL_extension("\$size_stream", 2, pl_dsize_stream2_va, PL_FA_VARARGS),
+    PL_extension("see", 1, pl_see1_va, PL_FA_VARARGS),
+    PL_extension("seen", 0, pl_seen0_va, PL_FA_VARARGS),
+    PL_extension("seeing", 1, pl_seeing1_va, PL_FA_VARARGS),
+    PL_extension("tell", 1, pl_tell1_va, PL_FA_VARARGS),
+    PL_extension("append", 1, pl_append1_va, PL_FA_VARARGS),
+    PL_extension("telling", 1, pl_telling1_va, PL_FA_VARARGS),
+    PL_extension("told", 0, pl_told0_va, PL_FA_VARARGS),
+    PL_extension("set_input", 1, pl_set_input1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("set_output", 1, pl_set_output1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("get_char", 2, pl_get_char2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_char", 1, pl_get_char1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_byte", 2, pl_get_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("get_byte", 1, pl_get_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("peek_char", 2, pl_peek_char2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_char", 1, pl_peek_char1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_code", 2, pl_peek_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_code", 1, pl_peek_code1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_byte", 2, pl_peek_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("peek_byte", 1, pl_peek_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_byte", 2, pl_put_byte2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put_byte", 1, pl_put_byte1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("flush_output", 0, pl_flush_output0_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("flush_output", 1, pl_flush_output1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put", 2, pl_put2_va, PL_FA_VARARGS),
+    PL_extension("put", 1, pl_put1_va, PL_FA_VARARGS),
+    PL_extension("skip", 1, pl_skip1_va, PL_FA_VARARGS),
+    PL_extension("get", 1, pl_get1_va, PL_FA_VARARGS),
+    PL_extension("get", 2, pl_get2_va, PL_FA_VARARGS),
+    PL_extension("get0", 2, pl_get_code2_va, PL_FA_VARARGS),
+    PL_extension("get0", 1, pl_get_code1_va, PL_FA_VARARGS),
+    PL_extension("byte_count", 2, pl_byte_count2_va, PL_FA_VARARGS),
+    PL_extension("character_count", 2, pl_character_count2_va, PL_FA_VARARGS),
     PL_extension("current_input", 1, pl_current_input1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("current_output", 1, pl_current_output1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("line_count", 2, pl_line_count2_va, PL_FA_VARARGS),
@@ -3251,8 +4539,8 @@ redir_context() = redir_context(
 )
 
 # PORT: pl-file.c setupOutputRedirect
-# DIVERGES: the memory stream is UTF-8 (upstream `ENC_WCHAR`, which this kernel's stream layer refuses:
-# the R1 UTF-8 rule); `to` is 0 for the current output.
+# DIVERGES: the memory stream is UTF-8 (upstream `ENC_WCHAR`; the stream layer ports it since ENC1, but the
+# redirect's readers below take the UTF-8 bytes); `to` is 0 for the current output.
 """
     setupOutputRedirect(ld, to, ctx, redir) -> Bool
 
@@ -3435,6 +4723,36 @@ function pl_with_output_to2_va(
     return FFALSE
 end
 
+# PORT: pl-file.c with_tty_raw as pl_with_tty_raw1_va
+# (PRED_IMPL("with_tty_raw", 1, with_tty_raw, PL_FA_TRANSPARENT)) — pl-file.c:1988-2012 (pin 18168e62)
+# DIVERGES: when `user_input` is a terminal (`SIO_ISATTY`) upstream's `PushTty(stream, &buf, TTY_RAW)` is REFUSED
+# (`NotPortedError`: no tty modes, pl-os.c); on any other `user_input` upstream does no tty change either, and the goal runs
+# as upstream does (`callProlog(NULL, A1, PL_Q_PASS_EXCEPTION, NULL)`). No lock to release (`releaseStream`).
+"`with_tty_raw(:Goal)`: call `Goal` once with `user_input` in raw mode: refused on a terminal, a plain call otherwise (pl-file.c)."
+function pl_with_tty_raw1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    stream = Suser_input(ld)
+    if stream === nothing || stream.magic != SIO_MAGIC
+        return symbol_no_stream(ld, mk_sym(T, :user_input)) ? FTRUE : FFALSE
+    end
+    save = (stream.flags & SIO_ISATTY) != 0
+
+    Sflush(stream)
+    if save
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :user_input),
+                "with_tty_raw/1 on a terminal",
+                "PushTty (pl-os.c tty modes)"
+            )
+        )
+    end
+
+    rval = callProlog(_query_gd(ld), ld, 0, PL__t0, PL_Q_PASS_EXCEPTION)
+    return rval ? FTRUE : FFALSE
+end
+
 # PORT: pl-file.c tellString
 """
     tellString(ld, bufp, sizep, enc) -> Bool
@@ -3477,4 +4795,7 @@ const PL_predicates_from_redirect = (
     PL_extension(
         "with_output_to", 2, pl_with_output_to2_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
     ),
+    PL_extension(
+        "with_tty_raw", 1, pl_with_tty_raw1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    )
 )
