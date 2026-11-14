@@ -3625,18 +3625,9 @@ _index_entry_points(T) = (
             LK.pl_protocola1_va, LK.pl_noprotocol0_va, LK.pl_protocolling1_va
         )
     ]...,
-    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
-    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
-    (LK.Sseek_null, Tuple{Int, Int}, false),
-    (LK.Sclose_null, Tuple{}, false),
     (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
-    (LK.re_buffer, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
-    (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
-    (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),
     (LK.unify_diff_list, Tuple{LK.PL_local_data{T}, Int, Int, Vector{Int}, Bool}, false),
     (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
-    (LK.peek_pending_text, Tuple{LK.IOSTREAM}, false),
     (LK.copy_stream_data, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.openProtocol, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
     (LK.do_tell, Tuple{LK.PL_local_data{T}, Int, T}, false),
@@ -4846,6 +4837,18 @@ const _DISPATCH_MANIFEST_TUPLE = (
         Tuple{LK.PL_local_data{_M3}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8}, Int, Int},
         false
     ),
+    # lane D / ENC1 (2026-11-14): the entries of `_index_entry_points`' stream block that name no term type (the null-stream
+    # functions, the pending-input and CR helpers, the Vector form of get_ucs2); in that block they were listed once per type,
+    # twice (`_index_entry_points(_M1)`, `(_M3)`): 9 duplicates, which the 'no duplicate entries' gate refused (4759 vs 4750)
+    (LK.Swrite_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.Sseek_null, Tuple{Int, Int}, false),
+    (LK.Sclose_null, Tuple{}, false),
+    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.re_buffer, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
+    (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),
+    (LK.peek_pending_text, Tuple{LK.IOSTREAM}, false),
     # LB3: the entries of its block (_index_entry_points) that name no term type; there they would be listed once per type
     (LK.cond_true, Tuple{LK.condc}, false),
     (LK.condc, Tuple{}, false),
@@ -5885,7 +5888,7 @@ const JET_DISPATCH_ALLOWED = [
 )
 ]
 
-"The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one."
+"The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one. `Swrite_null`, `Sread_null` and `S_seek64` (the null-stream functions and the seek dispatch of the laned stream layer) are members at 0, like their neighbours."
 const JET_DISPATCH_FAMILY = [
     (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
     (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 0),
