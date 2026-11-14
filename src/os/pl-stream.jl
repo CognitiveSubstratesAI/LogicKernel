@@ -1099,7 +1099,13 @@ end
 # PORT: pl-stream.c S__close
 # DIVERGES: no locks, no filter streams, no close hooks (the closers call pl-file.c's `freeStream`,
 # src/os/pl-file.jl), no `reportStreamError` on a failed close (the closers do); the stream is
-# marked closed, and `erased` when a reference is held.
+# marked closed, and `erased` when a reference is held. Synced to cf6960c2: the target closes in one atomic
+# step for a thread that releases the last reference while another closes: it sets `erased` always, then
+# adds the bit `SIO_REF_CLOSED` to `references` in the new `S__mark_closed` (an atomic OR, a plain one without
+# `O_PLMT`) and frees the stream if the old count was 0. There is one thread here, so the pair "count 0 and
+# `erased`" (`Srelease`) is the same state as the target's "count == SIO_REF_CLOSED", and `S__mark_closed`
+# is unwritten. A stream closed with no reference leaves `erased` false here (the target sets it); its
+# `freeStream` has removed it from the table, so `getStream` never reaches the flag.
 "Close `s`: 0, or -1 on error (pl-stream.c)."
 function S__close(s::IOSTREAM)::Int
     rval = 0
@@ -1138,7 +1144,10 @@ end
 
 # PORT: pl-stream.c Srelease
 # DIVERGES: `unallocStream` frees nothing (Julia's GC owns the stream): the result says whether it
-# would have.
+# would have. Synced to cf6960c2: the target returns `bool` and tests `Sunreference_free(s)` (new macro of
+# pl-stream.h: `Sunreference(s) == SIO_REF_CLOSED`, count 0 with the closed bit of `S__close`); here that is
+# `Sunreference(s) == 0 && s.erased` (see `S__close`). `Sunlock` and `Sset_filter` take the same new test; the
+# kernel has no locks and no filter streams, so neither function is written.
 "Release a reference to `s`; true if `s` was erased and this was the last (pl-stream.c)."
 function Srelease(s::IOSTREAM)::Bool
     return Sunreference(s) == 0 && s.erased
