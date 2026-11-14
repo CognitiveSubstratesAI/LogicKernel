@@ -763,14 +763,18 @@ end
     gd, ld, atries, variants = _ab_fresh_idg()
     @test all(a -> a.IDG !== nothing, atries)
     @test _ab_idg_refused(() -> LK.reset_answer_table(gd, atries[1], 0))
-    @test _ab_idg_refused(() -> LK.reset_answer_table(gd, atries[2], Int(LK.RAT_CLEANUP | LK.RAT_BULK)))
+    @test _ab_idg_refused(
+        () -> LK.reset_answer_table(gd, atries[2], Int(LK.RAT_CLEANUP | LK.RAT_BULK))
+    )
     @test atries[1].IDG !== nothing                           # the refusal does not touch the node
     # after the clear the same call passes: the refusal is the node's
     @test LK.reset_answer_table_idg(ld, atries[3], 0) === nothing
     @test atries[3].IDG === nothing
     @test !_ab_idg_refused(() -> LK.reset_answer_table(gd, atries[3], 0))
     # a table without a node is never refused
-    @test !_ab_idg_refused(() -> LK.reset_answer_table(gd, atries[3], Int(LK.RAT_CLEANUP | LK.RAT_BULK)))
+    @test !_ab_idg_refused(
+        () -> LK.reset_answer_table(gd, atries[3], Int(LK.RAT_CLEANUP | LK.RAT_BULK))
+    )
 
     # caller 1: destroy_answer_trie (src/pl-tabling.jl, then trie_delete)
     gd, ld, atries, variants = _ab_fresh_idg()
