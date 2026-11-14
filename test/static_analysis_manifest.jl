@@ -3800,7 +3800,8 @@ _manifest_tb6(T) = begin
         (LK.idg_destroy, Tuple{LD, IN}, false),
         (LK.idg_free_mdeps_affected, Tuple{IN, CTX}, false),
         (LK.idg_destroy_private, Tuple{LD, IN}, false),
-        (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
+        # `idg_free_mdeps` is listed in `_manifest_tb7` (its monotonic home); a second entry here made the manifest list it twice,
+        # once per term type (2026-11-14, ci/tabint2 shard 3: 5583 entries, 5580 distinct)
         (LK.idg_free_affected, Tuple{IN, CTX}, false),
         (LK.idg_free_dependent, Tuple{IN, CTX}, false),
         (LK.idg_add_child, Tuple{LD, IN, IN, Int, Int}, false),
