@@ -563,6 +563,38 @@ end
     @test ld.tabling.dyn_orphan_events == 0
 end
 
+# TB5-E8 (the kill row; audit D-0733 item 2): the row above cannot tell `empty_variant_table`'s unlink of the concurrent nodes from the bulk
+# teardown that follows it, because every neighbour of its node dies with the table (`idg_destroy_private` clears every set without a
+# callback). The unlink matters for a neighbour that is NOT destroyed with the table: here `x`, an IDG node that no table's `.IDG` holds, so
+# `reset_table_bulk` never visits it. Upstream builds such a state only through a SHARED child under a private parent (`idg_add_child` sets
+# `concurrent`, pl-tabling.c:8216-8219); the kernel refuses that edge by name (TH1, src/pl-tabling.jl:6678), so the state comes from
+# a hand-built edge only (not from a Prolog program or a kernel operation): white-box. Upstream's rationale: pl-tabling.c:2728-2735, the callback :2758-2772, the call
+# :2891-2892. Expected values read off `idg_unlink_concurrent_table` -> `idg_clean_affected` -> `idg_free_affected` (it deletes the
+# back-link in the parent's `dependent`); the mutant (no unlink) leaves the freed node in `x.dependent`. NOT RUN on the kernel.
+@testset "clear_variant_table unlinks the concurrent node from a neighbour outside the table (TB5-E8, white-box)" begin
+    gd, ld, st = _ab_load(_AB_COMMON * _AB_KERNEL, _AB_CASES[1:1], true)
+    @test st == "ok"
+    atries = _ab_tables!(gd, ld)
+    nodes = [LK.idg_new(ld, a) for a in atries]
+    @test all(n -> n !== nothing, nodes)
+    for (a, n) in zip(atries, nodes)
+        a.IDG = n
+    end
+    @test LK.idg_add_child(ld, nodes[1], nodes[2], 0, 0)
+    x = LK.idg_new(ld, atries[3])                              # a 4th node, held by no table
+    @test x !== nothing
+    @test all(a -> a.IDG !== x, atries)
+    @test LK.idg_add_child(ld, x, nodes[2], 0, 0)              # x -> nodes[2]: x is the parent, nodes[2] the child
+    @test LK.idg_set_contains(x.dependent, nodes[2])           # premises: both halves of the edge
+    @test LK.idg_set_contains(nodes[2].affected, x)
+    @test LK.idg_set_size(x.dependent) == 1
+    nodes[2].concurrent = true
+    ld.tabling.concurrent_idg_nodes = 1
+    LK.clear_variant_table(ld)
+    @test ld.tabling.concurrent_idg_nodes == 0
+    @test LK.idg_set_size(x.dependent) == 0                    # the unlink removed the back-link; the mutant leaves 1
+end
+
 # ---- the kill rows of tools/mutants/TB5.py that its header named R-A ... R-G (audit D-0668 item 2(d), STEP DEFKILL) ----
 # LK-only white-box rows on the tables `_ab_tables!` builds (three complete answer tries without a symbol and without answers, so
 # the answer trie's own state is what is read: `magic`, `variant`, the TRIE_COMPLETE flag). The expectations are read off the code of

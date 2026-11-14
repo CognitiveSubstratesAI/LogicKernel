@@ -42,7 +42,8 @@
 # destruction, R-D the sweep, R-E clearThreadTablingData, R-F the non-orphan dynamic table, R-G the reader case). The 17 ADD-ROW mutants of the first
 # version are KILL, except TB5-C7 (EQUIVALENT: empty_trie is a no-op for a trie with a reader, `equivalent` has the lines) and TB5-A7/O5 stay DEFERRED:
 # an orphan dynamic table has an IDG node (orphan_dynamic_table), and delete_dynamic_table reaches reset_answer_table's IDG refusal (engine finding,
-# evidence/TAB1/defkill_inventory.md). Rows NOT RUN (nothing compiled): the first hand-run decides.
+# evidence/TAB1/defkill_inventory.md). STEP TB5-ROWS3: TB5-L2 and TB5-H4 are KILL (test_tabling_tb5rows_swipl.jl: group L2, the TB5-H4 testset); the A7 and O5
+# rows are written and pinned from swipl (groups A7, O5, `_T5_GROUPS_ENG1`) but wait for ENG1 to run on the kernel; TB5-E9 has no row (candidate EQUIVALENT, its entry). Rows NOT RUN (nothing compiled): the first hand-run decides.
 # TARGETS (audit D-0238): AB (the step's file); TV = test_tabling_variant_swipl.jl (TB1, on wip/tb1, in the stack: it builds the variant tables and `$tbl_existing_variant_table`
 # the abolish code deletes from); TT = test_tabling_state_swipl.jl (the freed-object lists `clearThreadTablingData` calls, the `ld.tabling` fields); TM =
 # test_tabling_min_swipl.jl (the `$tbl_*` predicates of the registration tuple); BI = test/db/test_boot_image_swipl.jl (the kernel-foreign count, 372 since TB5);
@@ -53,6 +54,7 @@
 AB = "test/core_lang/test_tabling_abolish_swipl.jl"
 TV = "test/core_lang/test_tabling_variant_swipl.jl"
 TT = "test/core_lang/test_tabling_state_swipl.jl"
+T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"   # TB5-ROWS: the white-box testset of TB5-E10, TB5-E11
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 BI = "test/db/test_boot_image_swipl.jl"
 DYN = [
@@ -73,7 +75,60 @@ TW = "test/core_lang/test_trie_swipl.jl"                     # TR1: trie_delete 
 TP = "test/core_lang/test_trie_preds_swipl.jl"                # TR1: the trie_* predicates that delete nodes
 TRIE = TABL + [TW, TP]
 TABLS = [AB, TV, TT]                      # the same, where it reads or writes `ld.tabling` or the freed objects
-TARGETS = [AB, TV, TT, TM, BI, TW, TP] + DYN      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
+TWIDE = [   # TB5-E8, TB5-E9 (audit D-0733 item 2, D-0238): every file that reaches empty_variant_table: the 48 files of grep -rlE "empty_variant_table|clear_variant_table|clearThreadTablingData|tbl_abolish_local_tables|abolish_all_tables" test/ (manifest excluded) + TV, TT, TM (the last three)
+    "test/core_lang/test_tabling_abolish_bulk_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_delay_deps_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_depending_table_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_swipl.jl",
+    "test/core_lang/test_tabling_abstract_completion_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answer_insert_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answer_subsumption_upstream_swipl.jl",
+    "test/core_lang/test_tabling_delay_after_simplify_upstream_swipl.jl",
+    "test/core_lang/test_tabling_drop_intermediate_upstream_swipl.jl",
+    "test/core_lang/test_tabling_events_swipl.jl",
+    "test/core_lang/test_tabling_idg_sets_upstream_swipl.jl",
+    "test/core_lang/test_tabling_idg_swipl.jl",
+    "test/core_lang/test_tabling_incr_answer_subsumption_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_retractall_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_subsumptive_upstream_swipl.jl",
+    "test/core_lang/test_tabling_mono_reuse_upstream_swipl.jl",
+    "test/core_lang/test_tabling_mono_subsumptive_upstream_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_lazy_upstream_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_exceptions_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_wfs_upstream_swipl.jl",
+    "test/core_lang/test_tabling_restraint_wb_swipl.jl",
+    "test/core_lang/test_tabling_simplify_completed_upstream_swipl.jl",
+    "test/core_lang/test_tabling_supervisor_upstream_swipl.jl",
+    "test/core_lang/test_tabling_tabled_shortest_path_upstream_swipl.jl",
+    "test/core_lang/test_tabling_table_statistics_upstream_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_a_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_b_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_c_swipl.jl",
+    "test/core_lang/test_tabling_tb5rows_swipl.jl",
+    "test/core_lang/test_tabling_tb6rows_swipl.jl",
+    "test/core_lang/test_tabling_tb7rows_swipl.jl",
+    "test/core_lang/test_tabling_tb8rows_swipl.jl",
+    "test/core_lang/test_tabling_tb9rows_swipl.jl",
+    "test/core_lang/test_tabling_tbl_sdg_upstream_swipl.jl",
+    "test/core_lang/test_tabling_transaction_nested_swipl.jl",
+    "test/core_lang/test_tabling_transaction_swipl.jl",
+    "test/core_lang/test_tabling_trie_attvars_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_children_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_index_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_upstream_swipl.jl",
+    "test/core_lang/test_tabling_w2_swipl.jl",
+    "test/core_lang/test_tabling_wfs_upstream_swipl.jl",
+    "test/db/test_boot_image_swipl.jl",
+    "test/core_lang/test_tabling_variant_swipl.jl",
+    "test/core_lang/test_tabling_state_swipl.jl",
+    "test/core_lang/test_tabling_min_swipl.jl",
+]
+TARGETS = [AB, TV, TT, T5R, TM, BI, TW, TP] + DYN + [f for f in TWIDE if f not in (AB, TV, TT, T5R, TM, BI, TW, TP)]      # every file a mutant lists (mutate_ci.py plan reads TARGETS)
 TAB = "src/pl-tabling.jl"
 PROC = "src/pl-proc.jl"
 COMP = "src/pl-comp.jl"
@@ -121,8 +176,8 @@ MUTANTS = [
          file=TAB, targets=TABL,
          old="        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)\n\n        return true\n",
          new="        orphan_dynamic_table(atrie) && delete_dynamic_table(ld, atrie)\n\n        return false\n"),
-    dict(id="TB5-A7 abolish_table does not delete the orphan children of the table (DEFERRED KILL, owner TB6: `collect_dynamic_children` is the empty vector before TB6, src/pl-tabling.jl collect_dynamic_children; TB6 adds the row: abolishing a table whose only dependent dynamic pseudo table has no other dependents deletes both)",
-         file=TAB, targets=TABL,
+    dict(id="TB5-A7 abolish_table does not delete the orphan children of the table (DEFERRED KILL: the rows are WRITTEN, group A7 of test_tabling_tb5rows_swipl.jl (a704: `abolish_table_subgoals(ap(_))` leaves no table, the mutant leaves `ad`; a703 the control: abolishing `ad` alone keeps it), pinned from swipl and checked live in `_T5_GROUPS_ENG1`, but NOT run on the kernel until ENG1: delete_dynamic_table reaches reset_answer_table's IDG refusal for every real orphan, evidence/TAB1/defkill_inventory.md ENGINE FINDING; with ENG1 the group joins `_T5_GROUPS_RUN`)",
+         file=TAB, targets=TABL + [T5R],
          old="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n",
          new="                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n"),
     dict(id="TB5-A8 abolish_table treats every sentinel as the dynamic one, `_wl_is` ignores which (KILL abd01: the ground table ab_p(1) has `WL_GROUND`, is taken for a dynamic pseudo table and is not deleted; row R-F too)",
@@ -138,8 +193,8 @@ MUTANTS = [
          file=TAB, targets=[AB],
          old="    if table_is_incomplete(atrie)\n        atrie.flags |= TRIE_ABOLISH_ON_COMPLETE\n",
          new="    if !table_is_incomplete(atrie)\n        atrie.flags |= TRIE_ABOLISH_ON_COMPLETE\n"),
-    dict(id="TB5-L2 delayed_destroy_table does not set the flag (DEFERRED KILL, owner TB2: an INCOMPLETE table needs the worklist and the create path, TB2/TB3; the row: abolish_table of an incomplete table sets TRIE_ABOLISH_ON_COMPLETE and keeps the node)",
-         file=TAB, targets=[AB],
+    dict(id="TB5-L2 delayed_destroy_table does not set the flag (KILL group L2 of test_tabling_tb5rows_swipl.jl: a tabled goal calls abolish_all_tables inside its own evaluation, swipl deletes the flagged table when the evaluation completes: l202 `absent` (the mutant keeps the table) and l203 evaluated twice, counter 2 (the mutant 1); l204/l205 the control without the abolish)",
+         file=TAB, targets=[AB, T5R],
          old="        atrie.flags |= TRIE_ABOLISH_ON_COMPLETE\n",
          new="        atrie.flags |= 0\n"),
     # ── destroy_answer_trie (pl-tabling.c destroy_answer_trie) ──
@@ -202,8 +257,8 @@ MUTANTS = [
          file=TAB, targets=[AB],
          old="    vi == 0 && return nothing\n    vtrie = gd.tries[vi]\n",
          new="    vtrie = gd.tries[vi]\n"),
-    dict(id="TB5-O5 the sweep collects no orphan: `push!(b, atrie)` is skipped (DEFERRED KILL, owner TB6: orphan_dynamic_table is false before TB6; the row: 1024 lost dependents delete the dependent-less dynamic pseudo tables of the variant table)",
-         file=TAB, targets=[AB],
+    dict(id="TB5-O5 the sweep collects no orphan: `push!(b, atrie)` is skipped (DEFERRED KILL: the rows are WRITTEN, group O5 of test_tabling_tb5rows_swipl.jl (1100 dynamic variants lose their only dependent in two reevaluations; the sweep of the next completed root component leaves 6 tables, o504 `i6`; the mutant keeps 1106), pinned from swipl and checked live in `_T5_GROUPS_ENG1`, NOT run on the kernel until ENG1 (the same refusal as TB5-A7))",
+         file=TAB, targets=[AB, T5R],
          old="                orphan_dynamic_table(atrie) && push!(b, atrie)\n",
          new="                orphan_dynamic_table(atrie) && nothing\n"),
     # ── reset_table_bulk, sort_table_values!, empty_variant_table (pl-tabling.c) ──
@@ -233,20 +288,20 @@ MUTANTS = [
          file=TAB, targets=TABLS,
          old="        ld.tabling.dyn_orphan_events = 0\n    else\n",
          new="    else\n"),
-    dict(id="TB5-E8 empty_variant_table does not unlink the concurrent IDG nodes (the battery decides: the white-box row of test_tabling_abolish_swipl.jl 'clear_variant_table: the IDG nodes of the tables go with them' sets `concurrent` on one node; if it survives, the reason to record is that `idg_destroy_private` clears both sets of every node afterwards)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E8 empty_variant_table does not unlink the concurrent IDG nodes (KILL the white-box testset 'clear_variant_table unlinks the concurrent node from a neighbour outside the table (TB5-E8, white-box)' of test_tabling_abolish_swipl.jl: a 4th node x held by no table, edge x -> nodes[2], nodes[2].concurrent set; after clear_variant_table x.dependent is empty, the mutant leaves the freed node in it. NOT equivalent (audit D-0733 item 2, evidence/TAB1/equiv_s4_e8_e9.md): the state is built by hand only, the kernel refuses the shared edge, src/pl-tabling.jl:6678; the row 'the IDG nodes of the tables go with them' alone does not kill it, `idg_destroy_private` clears both sets of every node afterwards. TARGETS widened to the 51 files that reach empty_variant_table)",
+         file=TAB, targets=TWIDE,
          old="        if ld.tabling.concurrent_idg_nodes != 0\n            map_trie_node(vtrie, 1, idg_unlink_concurrent_table(ld))\n        end\n",
          new=""),
-    dict(id="TB5-E10 empty_variant_table does not release the registry (KILL the same row: the nodes' and the thread's references are dropped, `registry` is the detached one)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E10 empty_variant_table does not release the registry (KILL the testset 'clear_variant_table releases the IDG registry: no reference is left (TB5-E10, TB5-E11)' of test_tabling_tb5rows_swipl.jl: `reg.references == 0` after clear_variant_table, the mutant leaves length(nodes) + 1)",
+         file=TAB, targets=TABLS + [T5R],
          old="        if registry !== nothing                         # the nodes' and the thread's\n            idg_registry_release_n(registry, idg_nodes[] + 1)\n        end\n",
          new=""),
-    dict(id="TB5-E11 reset_table_bulk counts no node of the detached registry (the references are then released short: the row's `reg.refs` check is not written; the battery decides)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E11 reset_table_bulk counts no node of the detached registry (KILL the testset 'clear_variant_table releases the IDG registry: no reference is left (TB5-E10, TB5-E11)' of test_tabling_tb5rows_swipl.jl: the references are then released short, `reg.references == 0` fails, the mutant leaves length(nodes))",
+         file=TAB, targets=TABLS + [T5R],
          old="            idg_nodes[] += 1\n",
          new="            nothing\n"),
-    dict(id="TB5-E9 the delay info pass of an unvisited variant table is skipped (DEFERRED KILL, owner TB4: destroy_delay_info_worklist needs a worklist with undefined answers; the row: clear_variant_table of a table with `undefined != 0` destroys the delay info)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-E9 the delay info pass of an unvisited variant table is skipped (DEFERRED, NO ROW: candidate EQUIVALENT, the dispatcher decides. empty_variant_table's else branch is reached with `delays_done` true or `value_count == 0` (the first branch takes every table with a value); its only caller, clear_variant_table, passes `readers`, which is false whenever references reach 0 after the release, so the pass of this line runs only over a variant table with `value_count == 0`: no node has a value and destroy_delay_info_table visits nothing (the pass for a table with `undefined != 0` in the first branch is reset_answer_table_worklist's `destroy_delay_info_worklist`, src/pl-tabling.jl:3657). A row needs a hand-set `value_count = 0` over a table with a value, a state no operation builds)",
+         file=TAB, targets=TWIDE,
          old="        delays_done || map_trie_node(vtrie, 1, destroy_delay_info_table(gd))   # (*)\n",
          new="        nothing\n"),
     # ── clear_variant_table (pl-tabling.c clear_variant_table) ──
@@ -296,8 +351,8 @@ MUTANTS = [
          file=TAB, targets=TABLS,
          old="    free_tbl_free_objects(ld, exit)\n",
          new="    free_tbl_free_objects(ld, true)\n"),
-    dict(id="TB5-H4 clearThreadTablingData keeps the global worklist (DEFERRED KILL, owner TB2: `ld.tabling.component` is nothing before the evaluation core; the row: a clear inside no evaluation with a completed component list resets it)",
-         file=TAB, targets=TABLS,
+    dict(id="TB5-H4 clearThreadTablingData keeps the global worklist (KILL the testset 'clearThreadTablingData resets the global worklist of the thread's component (TB5-H4)' of test_tabling_tb5rows_swipl.jl: white-box, `ld.tabling.component` holds a component with a worklist set, no Prolog route; after the clear `c.worklist === nothing`, the mutant leaves the set)",
+         file=TAB, targets=TABLS + [T5R],
          old="    c = ld.tabling.component\n    reset_global_worklist(ld, c)\n    reset_newly_created_worklists(",
          new="    c = ld.tabling.component\n    nothing\n    reset_newly_created_worklists("),
     dict(id="TB5-H6 `$tbl_abolish_local_tables` runs inside an evaluation, the scheduling test is dropped (KILL abw01: the call answers yes where the pin is no; AB:425 `variants.value_count == 3`; abl01 holds)",

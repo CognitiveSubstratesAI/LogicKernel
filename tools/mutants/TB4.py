@@ -38,8 +38,14 @@ TR = "test/core_lang/test_tabling_tb4rows_swipl.jl"     # TB4K-b: the kill rows 
 TR2 = "test/core_lang/test_tabling_tb4rows2_swipl.jl"      # the kill rows R13-R18 (TB4K-c): answer completion, R14, R15 white-box, R16-R18
 A1G = "test/core_lang/test_tabling_a1_guard.jl"         # TB4K-d: the white-box row of TB4-A1 (its recursion guard has no Prolog route)
 S5G = "test/core_lang/test_tabling_s5_guard.jl"         # TB4-S5: the white-box row (run FIRST: a failing target ends the run before TW)
+T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"    # TB5-ROWS: groups A3N/A3P/A3Q (kill TB4-A3), S4A/S4B (regression pins of the S4 model, NOT a kill)
 TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # TAB1 INT3 (wip/tab-int): the rows R9, R10, g13a, g13b that need TB5's `$tbl_destroy_table`: they kill TB4-S1, S3, S4, A2, A3
-TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX]        # every file a mutant lists
+TS4X = ["test/core_lang/test_tabling_%s_swipl.jl" % n for n in (    # TB4-S4 (audit D-0733 item 2): the 12 other files that mention tnot (grep -rl tnot test/)
+    "abolish_bulk_upstream", "abolish_delay_deps_upstream", "abolish_depending_table_upstream",
+    "answer_discard_upstream", "delay_after_simplify_upstream", "engine_finding_cleanup_throw",
+    "reeval_upstream", "reeval_wfs_upstream", "simplify_completed_upstream", "supervisor_upstream",
+    "tbl_sdg_upstream", "wfs_upstream")]
+TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X        # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 SET = "src/pl-setup.jl"
 MUTANTS = [
@@ -230,16 +236,25 @@ MUTANTS = [
          file=TAB, targets=[TW, TX],
          old='                        if res                                  # remove member from conjunction',
          new='                        if !res                                 # remove member from conjunction'),
-    dict(id='TB4-S4 simplify_component stops after one pass (KILL TX group SIMP row r09a, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: row r09a: the stale-delay program a..f called from f needs several passes of simplify_component, pinned model a,f true and b..e false)',
-         file=TAB, targets=[TW, TX],
+    # TB4-S4 is a CANDIDATE EQUIVALENT (STEP TB5-ROWS2, read of pl-tabling.c at 18168e62; NOT decided: `equivalent=` needs the audit's two-sided
+    # acceptance, the dispatcher asks). No killing row could be designed: remove_conditional_answer pushes its own propagation at once
+    # (pl-tabling.c:1846-1866) and :1930 `res = !result` resolves every tnot(X) delay of a table left without answers (`!has_answers && undefined == 0`);
+    # make_answer_unconditional pushes propagate(true) (:1820-1840). So an emptied table or an answer that turned unconditional is resolved inside
+    # the agenda of pass 0, whichever worklist is scanned first. Pass 1 repeats the scan (propagate_to_answer finds nothing, as the stale-delay test
+    # header says: "propagated in every pass without changing anything") and recomputes `undefined`, which answer completion re-derives anyway from
+    # each worklist's own `undefined` (is_ac_candidate_wl, :2316): a stale count with every wl.undefined == 0 finds no candidate. No debug swipl is
+    # available (no O_DEBUG, no gdb), so the pass count cannot be observed; a mutated swipl build was NOT done. The rows S4A/S4B of
+    # test_tabling_tb5rows_swipl.jl pin the model of a component with two decided worklists as a regression guard (swipl 10.1.20); they do NOT kill it.
+    dict(id='TB4-S4 simplify_component stops after one pass (CANDIDATE EQUIVALENT, see the comment above: pass 1 repeats pass 0, pl-tabling.c:1846-1866, :1930; TX group SIMP row r09a and TB5-ROWS rows S4A/S4B pin the model, none is known to kill it; the dispatcher decides)',
+         file=TAB, targets=[TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X,
          old='        (count == 0 || undefined == 0) && break\n',
          new='        break\n'),
     dict(id='TB4-A2 is_ac_candidate_wl asks only `wl.undefined != 0` (KILL TX group G13A rows r1301 + r1302, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: group g13a, rows r1301 + r1302: a prolog_wrap counter on the answer completion pins ONE call for the program, the mutant also calls it on the worklists already marked answer completed)',
          file=TAB, targets=[TW, TX],
          old='    if wl.undefined != 0 && !wl.answer_completed && !isempty(wl.delays)\n',
          new='    if wl.undefined != 0\n'),
-    dict(id='TB4-A3 has_positive_dl counts a negative delay (KILL TX group G13B rows r1303 + r1304, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: group g13b, rows r1303 + r1304: the same counter pins ZERO calls for a program whose delays are all negative, the mutant calls the answer completion)',
-         file=TAB, targets=[TW, TX],
+    dict(id='TB4-A3 has_positive_dl counts a negative delay (KILL TB5-ROWS groups A3N rows a301 + a302 of test_tabling_tb5rows_swipl.jl: ONE component with a simplification (`le :- lp, fail.` loses its `tnot(le)` member of `lp`) and an undefined loop lp <-> lq whose delays are all negative; the prolog_wrap counter on answer completion pins ZERO calls, the mutant calls it (answer completion runs only for `undefined && scc->simplifications`, pl-tabling.c:2195). Controls A3P a303 + a304 (a positive element: ONE call) and A3Q a305 (no simplification: ZERO calls) pass with and without the mutant, they prove the counter works. The older TX group G13B rows r1303 + r1304 cannot kill it: its program makes no simplification)',
+         file=TAB, targets=[TW, TX, T5R],
          old='                    d.answer != 0 && return true\n',
          new='                    return true\n'),
 ]
