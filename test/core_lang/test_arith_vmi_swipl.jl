@@ -302,7 +302,8 @@ _vfi(name, arity) = LKV.indexArithFunction(_VT, sym_key(_vs(name)), arity)
             _VT[bad, _vg(0), _vg(0)]
         )
         @test rc == LKV.PL_S_EXCEPTION && ld.arith_top == 0
-        @test sym_text(child(child(out, 2), 1)) == formal
+        fm = child(out, 2)                  # the formal: a compound `domain_error(..)`, or the atom `instantiation_error`
+        @test sym_text(kind(fm) === SYM ? fm : child(fm, 1)) == formal
         @test LKV.fegetround() == LKV.FE_TONEAREST
     end
 end

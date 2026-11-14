@@ -183,12 +183,14 @@ end
     st, _ = LK.load_file!(gd, ld, _RO_PL)
     @test st === :ok
     for i in 0:14
+        i == 6 && continue                  # t6 calls rt/2 only: the arithmetic is rt's (checked below)
         cd = _ro_codes(gd, "t$i", 1)
         @test cd !== nothing
         cd === nothing && continue
         @test LK.A_ENTER in cd
     end
     for i in 0:11
+        i == 6 && continue
         cd = _ro_codes(gd, "t$i", 1)
         cd === nothing && continue
         @test (LK.A_IS in cd) || (LK.A_FIRSTVAR_IS in cd)
@@ -207,12 +209,14 @@ end
         cd = _ro_codes(gd, name, 2)
         @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd)
     end
-    # t24/t25: a variable bound to a compound is evaluated by A_VAR inside the roundtoward (the walk without the flag's mode)
+    # t24/t25: a variable bound to a compound is evaluated by A_VAR inside the roundtoward (the walk without the flag's mode);
+    # the compiler emits A_VAR0, A_VAR1 or A_VAR2 for a variable of frame index below 3 and A_VAR from index 3 (pl-comp.c compileArith)
+    has_var(cd) = any(op -> op in cd, (LK.A_VAR, LK.A_VAR0, LK.A_VAR1, LK.A_VAR2))
     let cd = _ro_codes(gd, "t24", 1)
-        @test cd !== nothing && (LK.A_ROUNDTOWARDS_A in cd) && (LK.A_VAR in cd)
+        @test cd !== nothing && (LK.A_ROUNDTOWARDS_A in cd) && has_var(cd)
     end
     let cd = _ro_codes(gd, "rtx", 3)
-        @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd) && (LK.A_VAR in cd)
+        @test cd !== nothing && (LK.A_ROUNDTOWARDS_V in cd) && has_var(cd)
     end
     # the rows that follow a leaked mode: the compiled is/2 (A_IS: a head variable; A_FIRSTVAR_IS: a first occurrence) and a comparison
     let cd = _ro_codes(gd, "lead_is", 1)

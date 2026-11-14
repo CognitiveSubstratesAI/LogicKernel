@@ -1546,7 +1546,10 @@ function _mt_randget!(mt::Vector{UInt32}, nbits::Int)::BigInt
             top = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << rbits) - 1)
         else
             lo = UInt64(_mt_getnext!(mt))
-            hi = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << (rbits - 32)) - 1)
+            hi = UInt64(0)
+            if rbits > 32                                   # exactly 32 bits take one word, as GMP's `rbits > 32` arm
+                hi = UInt64(_mt_getnext!(mt)) & ((UInt64(1) << (rbits - 32)) - 1)
+            end
             top = lo | (hi << 32)
         end
     end
@@ -3866,7 +3869,7 @@ const rounding_mode = (FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO)
 # DIVERGES: returns the mode, 0 for an atom that names none (upstream: a Boolean and `int *m`); the atom
 # is compared by its key.
 "The `FLT_ROUND_*` value the atom `a` names, 0 if it names none (pl-arith.c)."
-function atom_to_rounding(a::T)::Int where {T}
+function atom_to_rounding(ld::PL_local_data{T}, a::T)::Int where {T}
     key = sym_key(a)
     for i in 1:4
         key == sym_key(mk_sym(T, float_rounding_names[i])) && return i
@@ -3989,7 +3992,7 @@ function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {
         _set_float_flag(ld, a, FLT_UNDERFLOW, :ignore) ||
             return PL_domain_error(ld, "flag_value", val)
     elseif name == "float_rounding"
-        i = atom_to_rounding(a)
+        i = atom_to_rounding(ld, a)
         i == 0 && return PL_domain_error(ld, "flag_value", val)
         ld.arith_f_flags = (ld.arith_f_flags & ~FLT_ROUND_MASK) | UInt32(i)
     else

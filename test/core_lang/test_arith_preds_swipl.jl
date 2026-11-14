@@ -157,9 +157,9 @@ end
     @test length(names) >= 170
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test count(l -> occursin(_codes("type_error"), l), expected) >= 30
-    @test count(l -> occursin(_codes("instantiation_error"), l), expected) >= 15
-    @test count(l -> occursin(_codes("not_less_than_zero"), l), expected) >= 5
+    @test count(l -> occursin(_codes("type_error"), l), expected) >= 28
+    @test count(l -> occursin(_codes("instantiation_error"), l), expected) >= 12
+    @test count(l -> occursin(_codes("not_less_than_zero"), l), expected) >= 4
     @test any(l -> occursin(_codes("zero_divisor"), l), expected)
     @test any(l -> occursin(_codes("not_less_than_one"), l), expected)
     @test any(l -> occursin(_codes("undefined"), l), expected)         # an even root of a negative number

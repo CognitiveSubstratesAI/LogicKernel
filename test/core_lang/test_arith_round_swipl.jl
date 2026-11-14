@@ -189,17 +189,17 @@ end
     @test LK.nexttoward(1.0, 2.0) == nextfloat(1.0) &&
         LK.nexttoward(1.0, 0.0) == prevfloat(1.0)
     @test LK.nexttoward(1.0, 1.0) == 1.0
-    @test LK.atom_to_rounding(_tls("to_zero")) == Int(LK.FLT_ROUND_TO_ZERO)
-    @test LK.atom_to_rounding(_tls("to_nearest")) == Int(LK.FLT_ROUND_NEAREST)
-    @test LK.atom_to_rounding(_tls("foo")) == 0
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    @test LK.atom_to_rounding(ld, _tls("to_zero")) == Int(LK.FLT_ROUND_TO_ZERO)
+    @test LK.atom_to_rounding(ld, _tls("to_nearest")) == Int(LK.FLT_ROUND_NEAREST)
+    @test LK.atom_to_rounding(ld, _tls("foo")) == 0
     @test sym_text(LK.float_rounding_name(_TL, Int(LK.FLT_ROUND_TO_POS))) == "to_positive"
     LK.set_rounding(Int(LK.FLT_ROUND_TO_NEG))
     @test LK.fegetround() == LK.FE_DOWNWARD
     LK.set_rounding(Int(LK.FLT_ROUND_NEAREST))
     @test LK.fegetround() == LK.FE_TONEAREST
     # the scope: after an evaluation (also one that raises in roundtoward's first argument) the mode is the entry's
-    gd = LK.PL_global_data{_TL}()
-    ld = LK.PL_local_data{_TL}(gd)
     st, _ = LK.load_file!(gd, ld, _AR_PL)
     @test st === :ok
     for name in ("t350", "t359", "t360", "t361", "t380")

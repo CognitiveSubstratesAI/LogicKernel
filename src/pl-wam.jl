@@ -2394,7 +2394,7 @@ end
 )::Int where {T}
     arv_loc = _deref_loc(ld, -(varFrameP(ld.frames[FR].base, arv_slot) + 1))   # deRef(p)
     arv_atom = arv_loc[1] == DU_WORD && isAtomW(arv_loc[2])
-    arv_m = arv_atom ? atom_to_rounding(_atom_value(ld, arv_loc[2])) : 0   # atom_to_rounding(word2atom(*p), &rm)
+    arv_m = arv_atom ? atom_to_rounding(ld, _atom_value(ld, arv_loc[2])) : 0   # atom_to_rounding(word2atom(*p), &rm)
     if arv_m != 0
         art_n = _number_alloc!(ld)
         art_n.i = Int64(fegetround())                   # n->value.i = ctx.femode = fegetround()

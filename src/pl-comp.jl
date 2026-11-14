@@ -2606,7 +2606,7 @@ function compileArithArgument!(
 
     if fname == names.atom_roundtoward && ar == 2              # FUNCTOR_roundtoward2
         m = child(arg, 3)                                      # deRef2(a+1, m)
-        mode = kind(m) === SYM ? atom_to_rounding(m) : 0
+        mode = kind(m) === SYM ? atom_to_rounding(ld, m) : 0
         if mode != 0
             Output_1!(ci, A_ROUNDTOWARDS_A, code(mode))
         else

@@ -71,6 +71,12 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "log10, lgamma): sin, cos, tan, asin, acos, atan, atan2, exp, log, sqrt, pow… as swipl calls them (Julia's own differ from glibc in the last digit and throw where " *
         "C gives a NaN); each passes and returns Float64 values only — no pointer, no buffer"
     ),
+    "pl-gmp.jl ccall" => (
+        2,
+        "fegetround and fesetround (AR1): <fenv.h>'s two functions, direct ccalls to libm as pl-gmp.c and " *
+        "pl-arith.c call them (Base.Rounding's entry allocates, which AllocCheck reports); fegetround takes " *
+        "no argument and fesetround one Cint mode, each returns a Cint: no pointer, no buffer"
+    ),
     "default_term.jl unsafe_convert" => (
         1,
         "sym_first_byte (D-0140): the interned Symbol's name pointer (jl_symbol_name), as upstream's " *

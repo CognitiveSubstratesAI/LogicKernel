@@ -147,7 +147,11 @@ end
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
     @test length(names) == 140
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
-    @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
+    # a row with no solution is its name alone (the driver writes ` enc` per solution)
+    @test all(
+        i -> expected[i + 1] == names[i] || startswith(expected[i + 1], names[i] * " "),
+        eachindex(names)
+    )
     @test occursin("i79", expected[3])                               # t2: the pin's table has 79 evaluable functors
     @test count(l -> occursin(_codes("callable"), l), expected) >= 9   # the type errors of a non-callable head
     @test count(l -> occursin("a" * _codes("yes"), l), expected) >= 50

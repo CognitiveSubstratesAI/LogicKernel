@@ -164,7 +164,10 @@ end
         l -> occursin(_codes("domain_error") * "/2(a" * _codes("random_option"), l),
         expected
     )
-    @test any(l -> occursin("i315,i206,i978", l), expected)             # seed(1), random(1000): the twister's stream
+    # seed(1), random(1000): the twister's stream, the list [315, 206, 978] as `enc` writes it
+    @test any(
+        l -> occursin("i315,c[91,124,93]/2(i206,c[91,124,93]/2(i978,nil))", l), expected
+    )
     @test any(l -> occursin("i19975", l), expected)                      # the state's msb after a seed
     @test count(l -> occursin("a" * _codes("same"), l), expected) >= 4   # the state round-trips
 
@@ -191,6 +194,15 @@ end
     s = LK._mt_get_state(mt)
     @test s % 1000 == 770 && ndigits(s; base=2) - 1 == 19975             # swipl: S mod 1000 = 770, msb(S) = 19975
     @test [LK._mt_randget!(mt, 10) % 1000 for _ in 1:2] isa Vector{BigInt}
+    # the words a draw takes (GMP randget_mt, 64-bit limbs): 32 bits one word, 33 bits two, 64 bits two
+    mt = UInt32[]
+    LK._mt_randseed!(mt, big(1))
+    LK._mt_randget!(mt, 32)
+    @test mt[625] == 129
+    LK._mt_randget!(mt, 33)
+    @test mt[625] == 131
+    LK._mt_randget!(mt, 64)
+    @test mt[625] == 133
     mt = UInt32[]
     LK._mt_randseed!(mt, big(1))
     @test LK._mt_getnext!(mt) isa UInt32 && mt[625] == 129
