@@ -82,3 +82,9 @@ Remaining DEFERRED-by-TB6-ROWS ids of TB6.py: only those six (S6 C4 Q5 P14 V5 V6
   found in the kernel: git grep on wip/tb6 returns only docs/r2_*.tsv rows and a comment); TRIEKEYS k01-k03 owner TB6 ($trie_property idg_* / invalidated / reevaluated keys).
 - tools/mutants/TB6R.py: 9 mutants (TB6R-S6 C4 Q5 P14 V5 V6, TB6R-F4 T2 C2 = TB3's, `equivalent` dropped), TARGETS first = the new file.
 - NOT VERIFIED: nothing ran on the kernel; TB3's `old` texts occur once in origin/gate/tab1c-r4's src only (zero times in wip/tb6's); TB6R is judged at the stack.
+
+## TB6-PROPS2 (wip/tb6p2 = wip/tab-test 4b0826ca + the two TB6-ROWS commits + this one)
+- TRIEKEYS k01-k03 flipped from `@test_broken` to `@test` (the handler pl_trie_property2_va is ported, pl-trie.c:4326-4345); the three `_T6_BROKEN` entries and the "fails before the handler" comments removed.
+- TB6R.py: TB6R-K1..K5 (dependent<->affected count, invalidated<->reevaluated, idg_size without the dependent set); every `old` occurs once in src/pl-trie.jl. K5 is NOT killed by k01-k03 (edge sets of one pointer have no block: 0 bytes); TP tp01 kills it (as TBP-S3). TBP.py already lists the same mutants against TP.
+- idg_size DIVERGES wording (src/pl-trie.jl ~3077-3078, "the kernel's number ... not swipl's") over-claims: only the sizeofTablePP capacity of mono deps is modelled; blocks (sizeof_block) and SIZEOF_IDG_* are upstream's; TP pins 80/136 exactly = swipl. Not edited (src wording is a separate decision).
+- Broken rows likely to pass now (TB5 landed on wip/tab-test): ABOLISH a02-a08, EXPAND x02-x05 ($tbl_destroy_table pl-tabling.jl:9773, $tbl_abolish_local_tables :9994, both registered; abolish_* are vendor boot/tabling.pl); SINGLE s02-s04 probably (compiled_size reads tr.clause_cref, compile_trie called at pl-tabling.jl:2337/5014). NOT flipped: an unexpected pass is an ERROR, the kernel run decides.

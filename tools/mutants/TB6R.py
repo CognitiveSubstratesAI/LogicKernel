@@ -6,7 +6,7 @@
 # 2026-11-14, nothing compiled): every KILL is read off the rows of TR6 and the pinned swipl 10.1.20 answers (evidence/TB6ROWS/pins.txt), not observed.
 # TARGETS: TR6 FIRST (the driver stops at the first failing target), then every file that exercises the mutated source (D-0238): the stack's tabling files through
 # start_tabling (TI = the IDG rows, TV TW TA TF = TB1-TB4, TT = the table pools), and for the run-loop mutant the files of TB6.py's own list.
-# `@test_broken` rows (SINGLE s02-s04 owner TR4, ABOLISH a02-a08 and EXPAND x02-x05 owner TB5, TRIEKEYS k01-k03 owner TB6) judge no mutant today; the rows that kill are plain @tests.
+# `@test_broken` rows (SINGLE s02-s04 owner TR4, ABOLISH a02-a08 and EXPAND x02-x05 owner TB5) judge no mutant today (TRIEKEYS k01-k03 are plain @tests since the handler pl_trie_property2_va is ported); the rows that kill are plain @tests.
 TR6 = "test/core_lang/test_tabling_tb6rows_swipl.jl"
 TI = "test/core_lang/test_tabling_idg_swipl.jl"
 TV = "test/core_lang/test_tabling_variant_swipl.jl"
@@ -21,7 +21,11 @@ WR = "test/core_lang/test_wrap_swipl.jl"
 ALL = [TR6, TI, TV, TW, TA, TF, TT, TM]                 # every file that reaches the IDG or the answers through start_tabling
 WAM = [TR6, TI, TV, TW, TA, TF, TC, TB, TM, TT, WR]    # the run loop: every file of TB6.py's TARGETS
 COMP = [TR6, TI]                                        # assert_term!'s PL_CREATE_INCREMENTAL branch is reached only through TR6 and TI
-TARGETS = [TR6, TI, TV, TW, TA, TF, TT, TM, TC, TB, WR]  # every file a mutant lists
+TP = "test/core_lang/test_trie_property_idg_swipl.jl"   # the `'$trie_property'/2` IDG branches (tools/mutants/TBP.py kills the same mutants there)
+TG = "test/core_lang/test_trie_gen_swipl.jl"
+TZ = "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl"
+TRP = [TR6, TP, TG, TZ]                                 # every file that calls `'$trie_property'/2` with an IDG key (TR6 first)
+TARGETS = [TR6, TI, TV, TW, TA, TF, TT, TM, TC, TB, WR, TP, TG, TZ]  # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
     dict(id="TB6R-S6 (= TB6-S6; KILLS: the white-box testset `TB6 S6 white-box` of TR6 (a delete in a block of 4, the add that grows it to 8: block.dead == 1 and idg_set_size 4, the mutant gives 0 and 5) and, once TB5 lands, EXPAND x03 (after abolish_table_subgoals the fifth table revives the dead slot: swipl has 4 edges, the mutant 5))",
@@ -60,4 +64,24 @@ MUTANTS = [
          file='src/pl-tabling.jl', targets=ALL,
          old='        tbl_single_answer(atrie) != 0 && return trie_symbol(gd, atrie)\n',
          new='        nothing\n'),
+    dict(id="TB6R-K1 (TRIEKEYS: idg_dependent_count answers the affected count; KILLS: TRIEKEYS k01-k03 (cp has 1 affected and 1 dependent, cq 0 and 1, cd 1 and 0: r(1,1,..) r(0,1,..) r(1,0,..)); TBP-A2 kills it in TP too)",
+         file='src/pl-trie.jl', targets=TRP,
+         old='idg_set_size(idg.dependent)) ? FTRUE : FFALSE',
+         new='idg_set_size(idg.affected)) ? FTRUE : FFALSE'),
+    dict(id="TB6R-K2 (TRIEKEYS: idg_affected_count answers the dependent count; KILLS: TRIEKEYS k01-k03 (cq has 0 affected and 1 dependent, cd 1 and 0); TBP-A1 kills it in TP too)",
+         file='src/pl-trie.jl', targets=TRP,
+         old='idg_set_size(idg.affected)) ? FTRUE : FFALSE',
+         new='idg_set_size(idg.dependent)) ? FTRUE : FFALSE'),
+    dict(id="TB6R-K3 (TRIEKEYS: invalidated reads the reevaluated counter; KILLS: TRIEKEYS k02 and k03 (after assertz(cd(2)): invalidated 1, reevaluated 0 on cp and cq); TBP-I1 kills it in TP too)",
+         file='src/pl-trie.jl', targets=TRP,
+         old='PL_unify_int64(ld, arg, idg.stats_invalidated)',
+         new='PL_unify_int64(ld, arg, idg.stats_reevaluated)'),
+    dict(id="TB6R-K4 (TRIEKEYS: reevaluated reads the invalidated counter; KILLS: TRIEKEYS k02 (invalidated 1, reevaluated 0) and k03 (cp and cq re-evaluated: 1 and 1, cd 0 and 1); TBP-I2 kills it in TP too)",
+         file='src/pl-trie.jl', targets=TRP,
+         old='PL_unify_int64(ld, arg, idg.stats_reevaluated)',
+         new='PL_unify_int64(ld, arg, idg.stats_invalidated)'),
+    dict(id="TB6R-K5 (TRIEKEYS: idg_size omits the size of the dependent set; NOT KILLED by k01-k03: every edge set of those rows holds at most one pointer (the `single` slot, no block), `idg_set_sizeof` is 0 and the sum is 80 = the pin; KILLED by TP tp01 (three dependents make a block: 136 against 80), as TBP-S3)",
+         file='src/pl-trie.jl', targets=TRP,
+         old='            size += idg_set_sizeof(idg.dependent)\n',
+         new=''),
 ]

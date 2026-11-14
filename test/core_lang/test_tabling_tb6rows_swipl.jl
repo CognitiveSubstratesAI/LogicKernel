@@ -561,7 +561,7 @@ const _T6_GROUPS = [
     ),
     (
         key="TRIEKEYS",
-        label=raw"TRIEKEYS: the IDG keys of `'$trie_property'/2` (owner TB6: the five keys fail before the handler of pl-trie.c:4326-4345)",
+        label=raw"TRIEKEYS: the IDG keys of `'$trie_property'/2` (ported: pl-trie.jl `pl_trie_property2_va`, pl-trie.c:4326-4345)",
         program=_T6_PROG_TRIEKEYS,
         cases=_T6_CASES_TRIEKEYS,
         pins=_T6_PINS_TRIEKEYS
@@ -583,10 +583,7 @@ const _T6_BROKEN = Dict{String, String}(
     "EXPAND/x02" => "owner TB5: abolish_table_subgoals/1 (boot/tabling.pl:1146-1164) calls `'\$tbl_destroy_table'/1`, which cannot be found in the kernel",
     "EXPAND/x03" => "owner TB5: follows x02 (the dead slot x02 leaves in xd's edge set is what x03 revives; kills TB6-S6 then)",
     "EXPAND/x04" => "owner TB5: follows x02 (the node counts after the abolish)",
-    "EXPAND/x05" => "owner TB5: follows x02 (t3 is `none` only after the abolish)",
-    "TRIEKEYS/k01" => "owner TB6: the IDG keys of `'\$trie_property'/2` (pl-trie.c:4326-4345): invalidated, reevaluated, idg_affected_count, idg_dependent_count, idg_size fail (pl-trie.jl:3096)",
-    "TRIEKEYS/k02" => "owner TB6: the same",
-    "TRIEKEYS/k03" => "owner TB6: the same"
+    "EXPAND/x05" => "owner TB5: follows x02 (t3 is `none` only after the abolish)"
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
@@ -797,7 +794,7 @@ end
     # INCRPROP
     @test _T6_atoms(_T6_ans("INCRPROP", "i01")) == ["no", "yes"]
     @test _T6_atoms(_T6_ans("INCRPROP", "i02")) == ["yes", "yes", "no", "yes", "yes"]
-    # TRIEKEYS: every key has a number (a failing key would print `none`), idg_size 80 on all three nodes
+    # TRIEKEYS (the handler is ported: pl-trie.jl `pl_trie_property2_va`, pl-trie.c:4326-4345): every key has a number (a failing key would print `none`), idg_size 80 on all three nodes
     for id in ("k01", "k02", "k03")
         @test "none" ∉ _T6_atoms(_T6_ans("TRIEKEYS", id))
         @test count(==(80), _T6_ints(_T6_ans("TRIEKEYS", id))) == 3
