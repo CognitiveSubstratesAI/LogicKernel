@@ -529,7 +529,8 @@ function setLastModifiedPredicate!(
     return nothing
 end
 function setLastModifiedPredicate!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, gen::gen_t, flags::UInt32
+    gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, gen::gen_t,
+    flags::UInt32
 )::Nothing where {T}
     if gen < GEN_TRANSACTION_BASE
         setLastModifiedPredicate!(gd, def, gen)
@@ -649,7 +650,8 @@ function _assertDefinition!(
 )::Union{Nothing, ClauseRef{T}} where {T}
     key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
     cref = newClauseRef(clause, key)
-    clause.generation_created = ld === nothing ? max_generation(def) : max_generation(ld, def)   # invisible while it is linked in
+    clause.generation_created =
+        ld === nothing ? max_generation(def) : max_generation(ld, def)   # invisible while it is linked in
     clause.generation_erased = gen_t(1)
     cl = def.impl_clauses
     if cl.last_clause === nothing
@@ -695,26 +697,28 @@ function _assertDefinition!(
     else
         gd._generation += 1                             # PL_LOCK(L_GENERATION)
         clause.generation_created = gd._generation
-        clause.generation_erased = ld === nothing ? max_generation(def) : max_generation(ld, def)
+        clause.generation_erased =
+            ld === nothing ? max_generation(def) : max_generation(ld, def)
     end
     if ld === nothing
         setLastModifiedPredicate!(gd, def, clause.generation_created)   # setLastModifiedPredicate(def, …created, TWF_ASSERT)
         return cref
     end
     if def.events !== nothing && (ld.transaction.flags & TR_BULK) == 0 &&   # def->events && !(LD->transaction.flags&TR_BULK)
-       !predicate_update_event(
-        gd,
-        ld,
-        def,
-        mk_sym(T, where_ === CL_START ? :asserta : :assertz),
-        clause,
-        UInt32(0)
-    )
+        !predicate_update_event(
+            gd,
+            ld,
+            def,
+            mk_sym(T, where_ === CL_START ? :asserta : :assertz),
+            clause,
+            UInt32(0)
+        )
         retractClauseDefinition!(gd, ld, def, clause, false)          # error: retractClauseDefinition(def, clause, false)
         return nothing
     end
     setLastModifiedPredicate!(gd, ld, def, clause.generation_created, TWF_ASSERT)
-    if ld.transaction.generation != 0 && clause.generation_created >= ld.transaction.gen_base
+    if ld.transaction.generation != 0 &&
+        clause.generation_created >= ld.transaction.gen_base
         transaction_assert_clause(ld, clause, where_)
     end
     return cref
@@ -812,7 +816,7 @@ function retractClauseDefinition!(
     notify::Bool
 )::Bool where {T}
     if def.events !== nothing && notify && (ld.transaction.flags & TR_BULK) == 0 &&
-       !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
+        !predicate_update_event(gd, ld, def, mk_sym(T, :retract), clause, UInt32(0))
         return false
     end
 
@@ -3035,7 +3039,11 @@ function pl_get_predicate_attribute3_va(
     elseif k == sym_key(mk_sym(T, :last_modified_generation))
         (def.flags & P_FOREIGN) != 0 && return FFALSE
         g = if (def.flags & P_TRANSACT) != 0 && ld.transaction.generation != 0     # pl-proc.c:3696-3697
-            Int(transaction_last_modified_predicate(ld, def, gd.modules[def.module_].last_modified))
+            Int(
+                transaction_last_modified_predicate(
+                    ld, def, gd.modules[def.module_].last_modified
+                )
+            )
         else
             Int(gd.modules[def.module_].last_modified)
         end

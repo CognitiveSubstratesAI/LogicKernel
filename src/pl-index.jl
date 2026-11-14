@@ -244,7 +244,8 @@ function next_clause_unindexed!(
         cref = chp.cref
         while cref !== nothing
             if visibleClauseCNT(
-                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation, ctx.transaction
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation,
+                ctx.transaction
             )
                 chp.key = 0
                 setClauseChoice!(cref.next, ctx)
@@ -290,7 +291,8 @@ function next_clause_primary_index!(
         while cref !== nothing
             if cref_matches(cref, key) &&
                 visibleClauseCNT(
-                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation, ctx.transaction
+                cref.clause::Clause{T}, ctx.generation, ctx.reload_generation,
+                ctx.transaction
             )
                 result = cref
                 maxsearch = MAX_LOOKAHEAD
@@ -2461,7 +2463,9 @@ function set_candidate_indexes!(
     def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool
 )::Bool where {T}
     hints = [hash_hints() for _ in 1:max]
-    ctx = index_context{T}(gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID, nothing)   # (no visibleClause test in candidate_indexes!)
+    ctx = index_context{T}(
+        gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID, nothing
+    )   # (no visibleClause test in candidate_indexes!)
     ac = def.arity > MAXINDEXARG ? MAXINDEXARG : def.arity
     _, max = candidate_indexes!(ac, clist, hints, max, ctx)
     if max > 0

@@ -560,8 +560,16 @@ function _manifest_index(T)
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
         # TX1c: the forms with the transaction state
-        (LK.visibleClause, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
-        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}}, true),
+        (
+            LK.visibleClause,
+            Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}},
+            true
+        ),
+        (
+            LK.visibleClauseCNT,
+            Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}},
+            true
+        ),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -596,7 +604,11 @@ function _manifest_index(T)
         (LK._argv_is_var, Tuple{AC, Int}, false),
         (LK._descend_first_clause!, Tuple{AF, Int, CL, CTX}, false),
         (LK._descend_first_clause!, Tuple{AC, Int, CL, CTX}, false),
-        (LK._index_context!, Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}}, true),
+        (
+            LK._index_context!,
+            Tuple{LK.index_context{T}, UInt64, D, CH, UInt64, LK.ld_transaction{T}},
+            true
+        ),
         (LK.realize_clause_index!, Tuple{CI}, false),
         (LK.newClauseIndexTable, Tuple{HH, Bool, CTX}, false),
         (LK.newClauseListRef, Tuple{Type{T}, UInt64}, false),
@@ -681,7 +693,8 @@ function _manifest_index(T)
         (LK.setGenerationFrame, Tuple{GD, D}, true),
         # TX1c: the forms with the transaction state (pl-inline.h)
         (LK.current_generation, Tuple{GD, LD, D}, true),
-        (LK.next_generation!, Tuple{GD, LD, D}, true), (LK.max_generation, Tuple{LD, D}, true),
+        (LK.next_generation!, Tuple{GD, LD, D}, true),
+        (LK.max_generation, Tuple{LD, D}, true),
         (LK.setGenerationFrame, Tuple{GD, LD, D}, true),
         # src/pl-thread.jl, src/pl-gc.jl
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
@@ -3332,7 +3345,8 @@ _manifest_tx1(T) = begin
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_transaction2_va, LK.pl_transaction3_va, LK.pl_snapshot1_va,
-                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va, LK.pl_undo1_va
+                LK.pl_transaction_updates1_va, LK.pl_current_transaction1_va,
+                LK.pl_undo1_va
             )
         ]...,
         # pl-undo.c: the undo list, the blob, the schedule and its run

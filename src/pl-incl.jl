@@ -1278,7 +1278,18 @@ mutable struct ld_transaction{T}
     stack::Union{Nothing, tr_stack{T}}                      # Stack of nested transactions
 end
 ld_transaction{T}() where {T} =
-    ld_transaction{T}(gen_t(0), gen_t(0), GEN_INFINITE, gen_t(0), gen_t(0), UInt32(0), 0, nothing, nothing, nothing)
+    ld_transaction{T}(
+        gen_t(0),
+        gen_t(0),
+        GEN_INFINITE,
+        gen_t(0),
+        gen_t(0),
+        UInt32(0),
+        0,
+        nothing,
+        nothing,
+        nothing
+    )
 
 # PORT: pl-transaction.c current_transaction
 # DIVERGES: the redo state of `current_transaction/1` is a record of the local data's pool (`ld.transaction_enums`,

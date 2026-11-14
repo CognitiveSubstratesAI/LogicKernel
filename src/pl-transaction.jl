@@ -164,7 +164,9 @@ end
 
 # PORT: pl-transaction.c set_modified
 "Give every predicate the transaction changed the generation `gen` of the commit as its last modification (pl-transaction.c)."
-function set_modified(gd::PL_global_data{T}, ld::PL_local_data{T}, gen::gen_t)::Nothing where {T}
+function set_modified(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, gen::gen_t
+)::Nothing where {T}
     tr = ld.transaction
     table = tr.predicates
     if table !== nothing
@@ -250,7 +252,9 @@ function transaction_discard(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool 
             end
 
             if def.events !== nothing && action !== nothing && (tr.flags & TR_BULK) == 0
-                if !predicate_update_event(gd, ld, def, mk_sym(T, action), cl, P_EVENT_ROLLBACK)
+                if !predicate_update_event(
+                    gd, ld, def, mk_sym(T, action), cl, P_EVENT_ROLLBACK
+                )
                     rc = false
                 end
             end
@@ -314,7 +318,9 @@ end
 # DIVERGES: returns the updates, sorted by generation, where upstream fills a `Buffer`; `sort!` is stable where `qsort` is not,
 # which no result sees: the generations of the updates are different.
 "The updates (asserts and erases) of the transaction, in the order they were made (pl-transaction.c)."
-function transaction_updates(gd::PL_global_data{T}, ld::PL_local_data{T})::Vector{tr_update{T}} where {T}
+function transaction_updates(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Vector{tr_update{T}} where {T}
     b = tr_update{T}[]
     clauses = ld.transaction.clauses
     if clauses !== nothing
@@ -327,7 +333,7 @@ function transaction_updates(gd::PL_global_data{T}, ld::PL_local_data{T})::Vecto
                 push!(b, tr_update{T}(cl, :erased))
             end
         end
-        sort!(b; lt = cmp_updates)
+        sort!(b; lt=cmp_updates)
     end
     return b
 end
