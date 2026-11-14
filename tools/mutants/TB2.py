@@ -19,6 +19,7 @@
 # with an instance: `$tbl_wkl_add_suspension/3`, the keyed `sindex_*` candidates) and the white-box counters; TB4 = WFS (tnot: `negative`, `neg_delayed`,
 # `needs_answer_gc`, `$tbl_pop_worklist`'s negative branch, the component status of a finished SCC); TB5 = abolish, exceptions out of a tabled goal, the inspection
 # predicates (`$tbl_scc/1`, `$tbl_scc_data/2`, `$tbl_worklist_data/2`) and `$tbl_wkl_done/1` (no caller in boot/tabling.pl at the pin); TB6 = IDG (the refusals).
+# LANDED KILLS (TB3, wip/subsume): TB2-P4 and TB2-S1 are no longer deferred: rows SUB-07a, SUB-08a, SUB-09 of test_tabling_subsumptive_swipl.jl (TARGETS lists it). Their kill is UNVERIFIED until the battery runs.
 # EQUIVALENT: one (TB2-E1), with the file:line reason. Every `old` was counted EXACTLY once in its file at wip/tb2 by a python3 -I script (no Julia ran). RE-FIT any
 # `old` that `tools/warm.sh fmt` rewraps.
 # TARGETS (audit D-0238): TW (the step's own file, every tabled call); the engine mutants also list the files that run the mutated instruction WITHOUT tabling:
@@ -26,9 +27,10 @@
 # test_tabling_min_swipl.jl (the load-time slice: `$tbl_trienode`, the wrapper rows, no tabled call runs a worklist), test_tabling_state_swipl.jl (the pool, the freed
 # lists, the flags: none of the TB2 functions below), test_static_analysis.jl (the CI's static job, not a mutation target).
 TW = "test/core_lang/test_tabling_worklist_swipl.jl"
+SUB = "test/core_lang/test_tabling_subsumptive_swipl.jl"      # SUB-01..SUB-14 (TB3, plain subsumptive tabling): the rows that kill TB2-P4 and TB2-S1
 TCR = "test/core_lang/test_cont_run_swipl.jl"
 TCL = "test/core_lang/test_cleanup_swipl.jl"
-TARGETS = [TW, TCR, TCL]                  # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TARGETS = [TW, TCR, TCL, SUB]                 # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 TAB = "src/pl-tabling.jl"
 WAM = "src/pl-wam.jl"
 CONT = "src/pl-cont.jl"
@@ -131,9 +133,8 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old="    wl !== nothing && return wkl_add_suspension(ld, wl, A2, is_tnot, 0) ? FTRUE : FFALSE\n",
          new="    wl !== nothing && return wkl_add_suspension(ld, wl, A1, is_tnot, 0) ? FTRUE : FFALSE\n"),
-    dict(id="TB2-P4 `$tbl_wkl_add_suspension/3` swaps the instance and the suspension (DEFERRED KILL: the three-argument form is the subsumptive tables', TB3)",
-         file=TAB, targets=[TW],
-         equivalent="DEFERRED KILL: owner TB3 (a subsumptive-tabling row: `:- table p/2 as subsumptive`, boot/tabling.pl's `'$tbl_wkl_add_suspension'(WL, Instance, Dependency)`); the variant tables TW runs call the /2 form (boot/tabling.pl:712, :720)",
+    dict(id="TB2-P4 `$tbl_wkl_add_suspension/3` swaps the instance and the suspension (KILL SUB-07a SUB-08a SUB-09 of test_tabling_subsumptive_swipl.jl: an instance called while the general subsumptive table is incomplete suspends with the /3 form, `'$tbl_wkl_add_suspension'(WL, Instance, Dependency)` of boot/tabling.pl :707-725; the swap stores the instance as the suspension and the dependency as the instance filter; the variant tables TW runs call the /2 form, boot/tabling.pl:712, :720)",
+         file=TAB, targets=[TW, SUB],
          old="    wl !== nothing && return wkl_add_suspension(ld, wl, A3, is_tnot, A2) ? FTRUE : FFALSE\n",
          new="    wl !== nothing && return wkl_add_suspension(ld, wl, A2, is_tnot, A3) ? FTRUE : FFALSE\n"),
     dict(id="TB2-P5 `$tbl_wkl_make_follower` does not schedule the merged worklist (KILL the white-box testset `TB2K2 white-box: '$tbl_wkl_make_follower' ...` of TW: after the call the worklist is `in_global_wl` and `c.worklist.members == [wl]`; the mutant leaves it unscheduled; no Prolog row reads the queue, the completion loop hides it)",
@@ -150,9 +151,8 @@ MUTANTS = [
          old="    return (wl !== nothing && worklist_work_done(wl)) ? FTRUE : FFALSE\n",
          new="    return (wl !== nothing && !worklist_work_done(wl)) ? FTRUE : FFALSE\n"),
     # ── the suspension index (pl-tabling.c:4290-4560): built only for a cluster of many suspensions, keyed only with an instance ──
-    dict(id="TB2-S1 sindex_candidates takes the smallest candidate, `<` for `>` (DEFERRED KILL: the keyed index needs a suspension with an instance)",
-         file=TAB, targets=[TW],
-         equivalent="DEFERRED KILL: owner TB3 (a subsumptive-tabling row with a keyed suspension cluster: more than one suspension with an instance in one worklist, so `scp_index` builds the table); `state.sindex` is `nothing` for every variant table (an `instance === nothing` suspension is unkeyed, wkl_work6 passes `A2`'s instance only when `sp.instance !== nothing`)",
+    dict(id="TB2-S1 sindex_candidates takes the smallest candidate, `<` for `>` (KILL SUB-08a SUB-09 of test_tabling_subsumptive_swipl.jl: the keyed index is built for a cluster of more than one suspension with an instance in ONE worklist, `sp(_)` with `sp(1)`, `sp(2)`, `sp(3)`, `sp(Y)` suspended against it; `state.sindex` is `nothing` for every variant table, an `instance === nothing` suspension is unkeyed)",
+         file=TAB, targets=[TW, SUB],
          old="        c.at > first && (first = c.at)\n",
          new="        c.at < first && (first = c.at)\n"),
     dict(id="TB2-S2 sindex_next takes the smallest next candidate, `<` for `>` (DEFERRED KILL: as TB2-S1)",
