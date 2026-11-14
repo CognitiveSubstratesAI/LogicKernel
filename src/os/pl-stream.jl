@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/os/pl-stream.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/SWI-Stream.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -1919,8 +1920,9 @@ end
 
 # ── pipes (pl-stream.c Sopen_pipe), lane D ──────────────────────────────────────────────────────
 
-# PORT: pl-stream.c Sopen_pipe (+ Sread_pipe, Swrite_pipe, Sclose_pipe, Scontrol_pipe, `Spipefunctions`) — pl-stream.c:3967-4072 (pin 18168e62)
-# DIVERGES: the child is Julia's (`open(Cmd(["/bin/sh", "-c", command]), …)`) in place of `popen`, its pipe end a `Sjulia_io` of
+# PORT: pl-stream.c Sopen_pipe
+# DIVERGES: also `Sread_pipe`, `Swrite_pipe`, `Sclose_pipe`, `Scontrol_pipe` and `Spipefunctions` (pl-stream.c:3967-4072 at
+# the pin 18168e62); the child is Julia's (`open(Cmd(["/bin/sh", "-c", command]), …)`) in place of `popen`, its pipe end a `Sjulia_io` of
 # `Siofunctions` (`Sjulia_io.proc` is `pclose`'s child); a `r` child reads `/dev/null` for its stdin, a `w` child shares the process's
 # stdout; no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
 # upstream's `popen` takes `type[0]` (`r` or `w`: another first character is EINVAL here as `popen` gives), and its `assert(0)` on a
@@ -2007,8 +2009,8 @@ function _open_julia_file(
     return io
 end
 
-# PORT: pl-stream.c Sopen_file (the lock loop on `fcntl(fd, wait ? F_SETLKW : F_SETLK, &buf)`)
-# ORIGINAL: `struct flock` is built by hand (Linux LP64: `short l_type`, `short l_whence`, `off_t l_start`, `off_t l_len`,
+# ORIGINAL: the lock loop of pl-stream.c `Sopen_file` (`fcntl(fd, wait ? F_SETLKW : F_SETLK, &buf)`) as a helper:
+# `struct flock` is built by hand (Linux LP64: `short l_type`, `short l_whence`, `off_t l_start`, `off_t l_len`,
 # `pid_t l_pid`: 32 bytes); `F_RDLCK` 0, `F_WRLCK` 1, `F_SETLK` 6, `F_SETLKW` 7, `SEEK_SET` 0. 0 or the errno; an
 # `EINTR` retries as upstream does (`PL_handle_signals` has no signal to handle here).
 "Lock the whole file of `io`, read (`lock == 1`) or write, waiting or not: 0 or the errno (pl-stream.c Sopen_file)."

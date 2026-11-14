@@ -4684,7 +4684,7 @@ function read_clause(
                 return false
             end
             if opt_unicode_atoms !== nothing                # atom_to_unicode_atoms_ex(.., true)
-                mode = _atom_to_unicode_atoms(ld, opt_unicode_atoms::T)
+                mode = atom_to_unicode_atoms_ex(ld, opt_unicode_atoms::T)
                 if mode === nothing
                     PL_close_foreign_frame(ld, fid)
                     return false
@@ -4915,7 +4915,7 @@ function read_term_from_stream(
     end
     opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false
     if opt_unicode_atoms !== nothing                # atom_to_unicode_atoms_ex(.., true)
-        mode = _atom_to_unicode_atoms(ld, opt_unicode_atoms::T)
+        mode = atom_to_unicode_atoms_ex(ld, opt_unicode_atoms::T)
         mode === nothing && return false
         rd.unicode_atoms = mode
     end

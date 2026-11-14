@@ -558,12 +558,10 @@ function _wctobuffer_all!(b::Vector{UInt8}, cps)::Int
     return -1
 end
 
-# PORT: pl-text.c PL_mb_text
-# DIVERGES: the verdict is an `Int` (`_mb_text`: -1 done, -2 `PL_demote_text` failed, otherwise the character with no
-# representation, upstream's `norep`); an `ENC_UTF8` text is the kernel's own (`PL_get_text`) and is left as it is when
-# the target is UTF-8, its `length` in characters; any other source encoding is upstream's `assert(0)`, an `error()`.
-# The `ld` form raises what upstream's `rep_error` and `PL_demote_text` raise under `CVT_EXCEPTION`; the form without `ld`
-# (callers `x_chars`, `PL_text_recode`) gives only the verdict.
+# ORIGINAL: the recoding of pl-text.c `PL_mb_text` (the body of both `PL_mb_text` methods below), as one helper that returns
+# the verdict: an `Int` (-1 done, -2 `PL_demote_text` failed, otherwise the character with no representation, upstream's `norep`).
+# DIVERGES: an `ENC_UTF8` text is the kernel's own (`PL_get_text`) and is left as it is when the target is UTF-8, its `length` in
+# characters; any other source encoding is upstream's `assert(0)`, an `error()`.
 """
     _mb_text(text, flags) -> Int
 
@@ -610,6 +608,9 @@ function _mb_text(text::PL_chars_t, flags::UInt32)::Int
     return -1
 end
 
+# PORT: pl-text.c PL_mb_text
+# DIVERGES: the verdict is the helper `_mb_text`'s; the form without `ld` (callers `x_chars`, `PL_text_recode`) gives only the
+# verdict as a `Bool`, the `ld` form below raises what upstream's `rep_error` and `PL_demote_text` raise under `CVT_EXCEPTION`.
 "Recode the canonical `text` to the target of `flags` (pl-text.c `PL_mb_text`); false when a character has no representation."
 PL_mb_text(text::PL_chars_t, flags::UInt32)::Bool = _mb_text(text, flags) == -1
 

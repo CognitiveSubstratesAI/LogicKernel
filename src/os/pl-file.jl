@@ -1219,7 +1219,7 @@ function openStream(
     end
 
     if unicode_atoms_opt !== nothing
-        mode = _atom_to_unicode_atoms(ld, unicode_atoms_opt)
+        mode = atom_to_unicode_atoms_ex(ld, unicode_atoms_opt)
         if mode === nothing
             Sclose(s)
             freeStream(ld, s)
@@ -3827,7 +3827,7 @@ end
 # `Unicode.normalize(s, :NFC)` (Base's Unicode stdlib), so `nfc` loads nothing and cannot raise the hook's
 # `existence_error` (the pin autoloads library(unicode) for it).
 "The `Sunicode_atoms_t` the atom `val` names, else `nothing` after raising `domain_error(unicode_atoms, V)`."
-function _atom_to_unicode_atoms(
+function atom_to_unicode_atoms_ex(
     ld::PL_local_data{T}, val::T
 )::Union{Nothing, Sunicode_atoms_t} where {T}
     _sym_is(val, :accept) && return S_UATOMS_ACCEPT
@@ -3982,7 +3982,7 @@ function set_stream(
     elseif aname === :unicode_atoms
         val = PL_get_atom_ex(ld, a)
         val === nothing && return false
-        mode = _atom_to_unicode_atoms(ld, val)
+        mode = atom_to_unicode_atoms_ex(ld, val)
         mode === nothing && return false
         s.unicode_atoms = mode
         return true

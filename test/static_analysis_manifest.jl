@@ -3687,7 +3687,7 @@ _index_entry_points(T) = (
         false
     ),
     (LK._PL_permission_error, Tuple{LK.PL_local_data{T}, Symbol, Symbol, Int}, false),
-    (LK._atom_to_unicode_atoms, Tuple{LK.PL_local_data{T}, T}, false),
+    (LK.atom_to_unicode_atoms_ex, Tuple{LK.PL_local_data{T}, T}, false),
     (LK.set_stream, Tuple{LK.PL_local_data{T}, LK.IOSTREAM, Int, Symbol, Int}, false),
     (
         LK.prop_get_stream,
