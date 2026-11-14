@@ -564,17 +564,12 @@ function _manifest_index(T)
         (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64}, true),
         (LK.visibleClause, Tuple{LD, C, UInt64}, true),
         (LK.visibleClauseCNT, Tuple{LD, C, UInt64}, true),
-        # TX1c: the forms with the transaction state
-        (
-            LK.visibleClause,
-            Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}},
-            true
-        ),
-        (
-            LK.visibleClauseCNT,
-            Tuple{C, UInt64, UInt64, Union{Nothing, LK.ld_transaction{T}}},
-            true
-        ),
+        # TX1c: the forms with the transaction state. The parameter is `Union{Nothing, ld_transaction{T}}`, which is no dispatch
+        # tuple (GPUCompiler asserts `Base.isdispatchtuple(sig)`): the two types it names are listed one by one.
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, Nothing}, true),
+        (LK.visibleClause, Tuple{C, UInt64, UInt64, LK.ld_transaction{T}}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, Nothing}, true),
+        (LK.visibleClauseCNT, Tuple{C, UInt64, UInt64, LK.ld_transaction{T}}, true),
         (LK.ISDEADCI, Tuple{CI}, true), (LK.ISDEADCI, Tuple{Nothing}, true),
         (LK.next_clause_unindexed!, Tuple{CTX}, true),
         (LK.next_clause_primary_index!, Tuple{CTX}, true),
@@ -5264,6 +5259,13 @@ const SPAN_CALLEE_EXEMPT = [
         LK.discardChoicesAfter,
         :cold,
         "V9g: a cut that discards a CLEANUP frame runs its handler"
+    ),
+    (
+        LK.run_undo_hooks,
+        :cold,
+        "TX1e: the scheduled undo goals run (pl-undo.c run_undo_hooks, called from I_DEPART/I_CALL and b_failed only when ALERT_UNDO is set and a goal is scheduled): " *
+        "a foreign frame and a whole query (`PL_open_query`, `PL_next_solution`), whose frame and query vectors grow; since TX1e the procedure is " *
+        "`GD->procedures.drun_undo1` (built at start-up), so the function builds no atom of its own"
     ),
     (LK.error_foreign_return_code, :error, "a built-in returned a bad value"),
     (LK.outOfStack!, :error, "a stack overflow raises"),
