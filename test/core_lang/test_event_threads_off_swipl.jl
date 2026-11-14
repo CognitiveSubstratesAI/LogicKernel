@@ -108,7 +108,10 @@ const _TH_CASES = [
     ("th03", raw"prolog_listen(this_thread_exit, th_cb), R = yes"),
     ("th04", raw"prolog_listen(thread_start, th_cb, [as(last)]), R = yes"),
     ("th05", raw"prolog_listen(thread_exit, th_cb, [name(th_n1)]), R = yes"),
-    ("th06", raw"prolog_listen(thread_start, th_cb), prolog_unlisten(thread_start, th_cb), R = yes"),
+    (
+        "th06",
+        raw"prolog_listen(thread_start, th_cb), prolog_unlisten(thread_start, th_cb), R = yes"
+    ),
     ("th07", raw"prolog_unlisten(this_thread_exit, th_nosuch), R = yes"),
     ("th08", raw"prolog_unlisten(thread_exit, th_nosuch), R = yes"),
     ("th09", raw"prolog_listen(thread_start, 1), R = yes"),
@@ -118,7 +121,10 @@ const _TH_CASES = [
     ("th13", raw"prolog_listen(break, th_cb), R = yes"),
     ("th14", raw"prolog_listen(nosuchevent, th_cb), R = yes"),
     ("th15", raw"prolog_unlisten(nosuchevent, th_cb), R = yes"),
-    ("th16", raw"prolog_listen(thread_start, th_cb), prolog_listen(thread_start, th_cb), R = yes"),
+    (
+        "th16",
+        raw"prolog_listen(thread_start, th_cb), prolog_listen(thread_start, th_cb), R = yes"
+    ),
     ("th17", raw"thread_self(R)"),
     ("th18", raw"with_mutex(th_m, R = yes)"),
     ("th19", raw"thread_exit(x), R = yes"),
@@ -176,7 +182,21 @@ const _TH_KERNEL = [
     "t_th21 c[116,95,116,104,50,49]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[116,104,114,101,97,100,95,112,114,111,112,101,114,116,121],i2))))"
 ]
 
-const _TH_DIVERGES = ["th01", "th02", "th03", "th04", "th05", "th06", "th07", "th08", "th09", "th16", "th19", "th20", "th21"]
+const _TH_DIVERGES = [
+    "th01",
+    "th02",
+    "th03",
+    "th04",
+    "th05",
+    "th06",
+    "th07",
+    "th08",
+    "th09",
+    "th16",
+    "th19",
+    "th20",
+    "th21"
+]
 
 function _th_file()::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in _TH_CASES]
@@ -274,7 +294,8 @@ end
     ]
     @test all(i -> LK.PL_events[i + 1].id == i, 0:8)    # upstream's `assert(et->id == et-PL_events)`
     @test !any(et -> et.local_, LK.PL_events)            # the only local row was this_thread_exit
-    @test LK.PLEV_THREAD_START == 9 && LK.PLEV_THREAD_EXIT == 10 && LK.PLEV_THIS_THREAD_EXIT == 11   # the enum keeps them (pl-event.h:52-54)
+    @test LK.PLEV_THREAD_START == 9 && LK.PLEV_THREAD_EXIT == 10 &&
+        LK.PLEV_THIS_THREAD_EXIT == 11   # the enum keeps them (pl-event.h:52-54)
 end
 
 @testset "the oracle's lines are swipl's (live, when swipl is on PATH)" begin
