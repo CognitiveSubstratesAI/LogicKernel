@@ -1,9 +1,12 @@
 # tools/mutants/LANED8.py — ENC1 (lane D relay 7): the UTF-16 / wchar_t encodings of the stream layer (pl-stream.c put_code, Sgetcode and helpers).
 # Format: as LANED7.py. Killed by test/core_lang/test_lane_d_swipl.jl rows d351-d382 (and d229, d230).
+# LD8-16..19 were mutants of the ENC_ANSI named refusals (open/4, put_code, Sgetcode); ENC1 removed those refusals, so they now mutate the replacement
+# (the `text` table row, the put_code and Sgetcode ENC_ANSI arms) and run test_enc_ansi_swipl.jl too (TA).
 # UNTESTED: nothing was compiled. Every `old` was checked to occur exactly once in its file at wip/lane-d.
 # TARGETS (D-0238): the test files that open a UTF-16 or wchar_t stream or run put_code/Sgetcode over one: lane D's rows, the open/4 file rows.
 TL = ["test/core_lang/test_lane_d_swipl.jl", "test/files/test_open_close_swipl.jl"]
-TARGETS = TL
+TA = TL + ["test/core_lang/test_enc_ansi_swipl.jl"]
+TARGETS = TA
 G = "src/os/pl-stream.jl"
 MUTANTS = [
     dict(id="LD8-1 put_usc2: big endian writes the low byte first (KILL: d351 vs d352)", file=G, targets=TL,
@@ -51,16 +54,16 @@ MUTANTS = [
     dict(id="LD8-15 Sgetcode: wchar_t reads the high byte first (KILL: d358)", file=G, targets=TL,
          old='            c == 0 && (c = Int(reinterpret(Int32, wb)[1]))  # `chr`: the native `pl_wchar_t`\n',
          new='            c == 0 && (c = Int(reinterpret(Int32, reverse(wb))[1]))\n'),
-    dict(id="LD8-16 openStream: encoding(utf16be) is refused again (KILL: d351, d229)", file=("src/os/pl-file.jl"), targets=TL,
-         old='    if enc == ENC_ANSI                  # DIVERGES: the locale\'s multibyte conversion is not ported (named refusal)\n',
-         new='    if enc == ENC_ANSI || enc == ENC_UTF16BE                  # DIVERGES: the locale\'s multibyte conversion is not ported (named refusal)\n'),
-    dict(id="LD8-17 openStream: encoding(text) is accepted (KILL: the named-refusal testset)", file=("src/os/pl-file.jl"), targets=TL,
-         old='    if enc == ENC_ANSI                  # DIVERGES: the locale\'s multibyte conversion is not ported (named refusal)\n',
-         new='    if false                  # DIVERGES: the locale\'s multibyte conversion is not ported (named refusal)\n'),
-    dict(id="LD8-18 put_code: ENC_ANSI is written as UTF-8 instead of refused (KILL: the named-refusal testset)", file=G, targets=TL,
-         old='    elseif enc == ENC_UNKNOWN\n        return -1\n    else\n        throw(\n            NotPortedError{Nothing}(\n                nothing, "put_code: encoding $enc"',
-         new='    elseif enc == ENC_UNKNOWN\n        return -1\n    elseif false\n        throw(\n            NotPortedError{Nothing}(\n                nothing, "put_code: encoding $enc"'),
-    dict(id="LD8-19 Sgetcode: ENC_ANSI reads as UTF-8 instead of refused (KILL: the named-refusal testset, set_stream encoding(text))", file=G, targets=TL,
-         old='        else\n            throw(\n                NotPortedError{Nothing}(\n                    nothing, "Sgetcode: encoding $enc"',
-         new='        elseif false\n            throw(\n                NotPortedError{Nothing}(\n                    nothing, "Sgetcode: encoding $enc"'),
+    dict(id="LD8-16 encoding table: `text` names ENC_UTF8 (KILL: the ENC_ANSI stream_property row u03, the C-locale rows c01-c12)", file="src/os/pl-file.jl", targets=TA,
+         old='    (:text, ENC_ANSI), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n',
+         new='    (:text, ENC_UTF8), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n'),
+    dict(id="LD8-17 encoding table: `text` names ENC_ISO_LATIN_1 (KILL: u01, u02 multibyte write and read under C.UTF-8)", file="src/os/pl-file.jl", targets=TA,
+         old='    (:text, ENC_ANSI), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n',
+         new='    (:text, ENC_ISO_LATIN_1), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n'),
+    dict(id="LD8-18 put_code: ENC_ANSI is written as UTF-8 whatever the locale (KILL: the C-locale rows c01, c07, c10: 0xe9 must be refused)", file=G, targets=TA,
+         old='    elseif enc == ENC_ANSI\n        mb = _wcrtomb(c, stream_mbstate!(s))\n',
+         new='    elseif enc == ENC_ANSI\n        mb = (b = UInt8[]; utf8_put_char(b, c); b)\n'),
+    dict(id="LD8-19 Sgetcode: the ENC_ANSI arm is not taken, the stream reads as end of file (KILL: u02, u07, u10: the multibyte reads)", file=G, targets=TA,
+         old='        elseif enc == ENC_ANSI\n            st = stream_mbstate!(s)\n',
+         new='        elseif enc == ENC_ANSI && false\n            st = stream_mbstate!(s)\n'),
 ]
