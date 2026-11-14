@@ -329,6 +329,16 @@ function textToAtom(atoms::atoms_t, text::PL_chars_t)::UInt64
     end
 end
 
+# PORT: pl-text.c textToLocalAtom
+# synced to swipl-devel cf6960c2 (pl-text.c:491-514): new at the target, not at the pin.
+# DIVERGES: as `textToAtom`: the same call. The target's version makes a new atom local to the calling thread (`lookupLocalAtom`,
+# `lookupLocalUCSAtom`: the caller must drop it or keep it in that thread's data) and its `unify_text` (`PL_ATOM`, so
+# `PL_unify_text`) and the reader's `get_token` call it instead of `textToAtom`. This kernel has one thread and no atom
+# collector, so an atom is never local: `textToLocalAtom` and `textToAtom` answer the same atom for the same text (and
+# 0 for a text that cannot be canonicalised), and the callers here keep `textToAtom`'s path.
+"The atom of `text` as `textToAtom` makes it; the target's version of it is local to the calling thread (pl-text.c)."
+textToLocalAtom(atoms::atoms_t, text::PL_chars_t)::UInt64 = textToAtom(atoms, text)
+
 # ── T1 (R2): unifying with a text, comparing and concatenating texts (pl-text.c) ─────────────────
 # A text that `PL_get_text` returns for an atom or a string is UTF-8 and not canonical (`PL_chars_t`);
 # the functions that index a text — `PL_cmp_text`, `PL_concat_text`, `PL_unify_text_range` — need the
