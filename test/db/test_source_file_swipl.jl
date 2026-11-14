@@ -257,6 +257,42 @@ const _CASES = [
         "a17",
         "assertz(a17p(1)), '\$start_aux'('/no/such/a17', _), '\$end_aux'('/no/such/a17', user:a17p/1), retract(a17p(1)), '\$set_predicate_attribute'(a17p(_), dynamic, false), '\$start_aux'('/no/such/a17', C), '\$end_aux'('/no/such/a17', C), R = C"
     ),
+    # ---- '$unload_file'/1 (pl-srcfile.c:839-884; SRC2; each row its own file; an unknown file answers true, as swipl's last line does)
+    (
+        "u01",
+        "'\$start_consult'('/no/such/u01', 0), '\$unload_file'('/no/such/u01'), R = ok"
+    ),
+    ("u02", "ex('\$unload_file'(_), R)"),
+    ("u03", "ex('\$unload_file'(1), R)"),
+    ("u04", "ex('\$unload_file'('/no/such/u04'), R)"),
+    (
+        "u05",
+        "'\$start_consult'('/no/such/u05', 1.5), '\$unload_file'('/no/such/u05'), findall(T, '\$time_source_file'('/no/such/u05', T, _), L), R = L"
+    ),
+    (
+        "u06",
+        "'\$start_consult'('/no/such/u06', 1.5), '\$unload_file'('/no/such/u06'), '\$source_file_property'('/no/such/u06', number_of_clauses, V), R = V"
+    ),
+    (
+        "u07",
+        "'\$start_consult'('/no/such/u07', 0), '\$unload_file'('/no/such/u07'), ( '\$unload_file'('/no/such/u07') -> R = twice ; R = once )"
+    ),
+    (
+        "u08",
+        "'\$start_consult'('/no/such/u08', 0), '\$declare_module'(um08, user, user, '/no/such/u08', 7, false), '\$unload_file'('/no/such/u08'), findall(P, ( mem(P, [file(_), line_count(_)]), '\$module_property'(um08, P) ), L), R = L"
+    ),
+    (
+        "u09",
+        "'\$start_consult'('/no/such/u09', 0), '\$declare_module'(um09, user, user, '/no/such/u09', 7, false), '\$unload_file'('/no/such/u09'), '\$module_property'(um09, class(C)), R = C"
+    ),
+    # ---- '$foreign_predicate_source'/2 (pl-proc.c:4179-4208; PR1): every predicate that is no foreign one fails, as swipl's
+    ("fp01", "( '\$foreign_predicate_source'(foo(_), D) -> R = D ; R = fails )"),
+    ("fp02", "( '\$foreign_predicate_source'(user:nothere(_), D) -> R = D ; R = fails )"),
+    ("fp03", "( '\$foreign_predicate_source'(_, D) -> R = D ; R = fails )"),
+    ("fp04", "( '\$foreign_predicate_source'(1, D) -> R = D ; R = fails )"),
+    ("fp05", "( '\$foreign_predicate_source'(baz, D) -> R = D ; R = fails )"),
+    ("fp06", "( '\$foreign_predicate_source'(d(_), D) -> R = D ; R = fails )"),
+    ("fp07", "( '\$foreign_predicate_source'(nomod:foo(_), D) -> R = D ; R = fails )"),
     # l01: source_location/2 inside the directive at the program's end: the file and the 1-based line (pl-file.c:5805)
     ("l01", "sloc(F, L), ( F == '@FILE@' -> R = L-same ; R = L-F )"),
     # LAST: nothing follows (the program's last row)
@@ -479,11 +515,11 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
             findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
             findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
         # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12 a04;
-        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05
+        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05; SRC2's rows add instantiation u02 and type u03
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 3
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 2
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 10
-        @test count(l -> occursin(_codes("type_error"), l), sw) == 11
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 11
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 12
         @test any(
             l ->
                 startswith(l, "t_t01 ") && occursin(_codes("user"), l) &&
@@ -492,6 +528,8 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         )
         @test any(l -> startswith(l, "t_l01 ") && occursin(_codes("same"), l), sw)           # source_location/2 inside the directive
         @test any(l -> startswith(l, "t_a17 ") && occursin("nil", l), sw)                   # [] for the abolished current predicate
+        @test any(l -> startswith(l, "t_u04 ") && occursin(_codes("true"), l), sw)           # an unknown file: `$unload_file` answers true
+        @test any(l -> startswith(l, "t_u01 ") && occursin(_codes("ok"), l), sw)
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)
         @test startswith(last(sw), "t_z01 ")
@@ -701,4 +739,93 @@ end
     )
     @test st === :false                                                       # pl-srcfile.c:726: ltime == 0.0 is false
     LK.releaseSourceFile(sf0)
+end
+
+# ---- white-box (SRC2): '$unload_file'/1 removes the clauses a file loaded and the traces of its predicates; a system file is refused
+@testset "'\$unload_file'/1 removes the file's clauses, its procedure list and its file mark; a system file is refused (pl-srcfile.c:839-884)" begin
+    gd, ld, f = _loaded("foo(1).\nfoo(2).\nbar(1).\n")
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    pf = LK.isCurrentProcedure(sym_key(_tls("foo")), 1, LK.MODULE_user(gd))
+    @test sf.number_of_clauses == 3 && length(sf.procedures) == 2
+    @test pf.definition.impl_clauses.number_of_clauses == 2
+    @test (pf.definition.flags & LK.FILE_ASSIGNED) != 0
+    LK.releaseSourceFile(sf)
+    st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(f)])
+    @test st === :true
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    @test sf.number_of_clauses == 0 && isempty(sf.procedures) && !sf.isfile
+    @test pf.definition.impl_clauses.number_of_clauses == 0
+    @test (pf.definition.flags & LK.FILE_ASSIGNED) == 0
+    LK.releaseSourceFile(sf)
+    # a file marked `system` is refused: permission_error(unload, file, F)
+    gd2, ld2, f2 = _loaded("qux(1).\n")
+    sf2 = LK.lookupSourceFile(gd2, _tls(f2), false)
+    sf2.system = true
+    LK.releaseSourceFile(sf2)
+    st, ans = kcall(gd2, ld2, "\$unload_file", _TL[_tls(f2)])
+    @test st === :exception
+    @test occursin(_codes("permission_error"), enc(ans[1])) &&
+        occursin(_codes("unload"), enc(ans[1]))
+    pq = LK.isCurrentProcedure(sym_key(_tls("qux")), 1, LK.MODULE_user(gd2))
+    @test pq.definition.impl_clauses.number_of_clauses == 1                    # nothing was removed
+end
+
+# ---- white-box (SRC2): a multifile predicate loses only this file's clauses; a meta declaration and a module's file, line and public table are cleared; the reference is released
+@testset "'\$unload_file'/1: multifile clauses of the other file stay; meta declaration, module file/line/public table cleared (pl-srcfile.c:790-834)" begin
+    gd, ld, fa = _loaded(
+        ":- multifile mf/1.\nmf(1).\n:- meta_predicate mp(0).\nmp(G) :- call(G).\n"
+    )
+    fb = _load_more!(gd, ld, ":- multifile mf/1.\nmf(2).\n")
+    pm = LK.isCurrentProcedure(sym_key(_tls("mf")), 1, LK.MODULE_user(gd))
+    pp = LK.isCurrentProcedure(sym_key(_tls("mp")), 1, LK.MODULE_user(gd))
+    @test pm.definition.impl_clauses.number_of_clauses == 2
+    @test (pp.definition.flags & LK.P_META) != 0
+    sf = LK.lookupSourceFile(gd, _tls(fa), false)
+    r0 = sf.references - 1                                                    # (the lookup's own)
+    LK.releaseSourceFile(sf)
+    st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(fa)])
+    @test st === :true
+    sf = LK.lookupSourceFile(gd, _tls(fa), false)
+    @test sf.references - 1 == r0                                             # `$unload_file` released its lookup's reference
+    LK.releaseSourceFile(sf)
+    @test pm.definition.impl_clauses.number_of_clauses == 1                   # multifile: only fa's clause went
+    @test (pm.definition.flags & LK.P_MULTIFILE) != 0
+    @test (pp.definition.flags & LK.P_META) == 0 &&
+        (pp.definition.flags & LK.P_TRANSPARENT) == 0                         # clear_meta_declaration
+    # a module loaded from the file
+    gd2, ld2, fm = _loaded(":- module(wsr_m, [wp/1]).\nwp(1).\n")
+    m = LK.lookupModule(gd2, _tls("wsr_m"))
+    sfm = LK.lookupSourceFile(gd2, _tls(fm), false)
+    @test m.file == sfm.index && m.line_no > 0 && !isempty(m.public_) &&
+        !isempty(sfm.modules)
+    LK.releaseSourceFile(sfm)
+    st, _ = kcall(gd2, ld2, "\$unload_file", _TL[_tls(fm)])
+    @test st === :true
+    @test m.file == 0 && m.line_no == 0 && isempty(m.public_) && isempty(m.public_order)
+    sfm = LK.lookupSourceFile(gd2, _tls(fm), false)
+    @test isempty(sfm.modules)
+    LK.releaseSourceFile(sfm)
+end
+
+# ---- white-box (PR1): '$foreign_predicate_source'/2 of a foreign predicate is a named refusal (swipl answers the addr2line text of its C function:
+# "pl_atom_length2_va() at pl-prims.c:?" on the pin, measured); a predicate that is no foreign one fails
+@testset "'\$foreign_predicate_source'/2 refuses a foreign predicate by name (PR1); a static or undefined one fails (pl-proc.c:4188-4208)" begin
+    gd, ld, f = _loaded("foo(1).\n")
+    foreign_goals = (
+        _f("atom_length", _v(), _v()), _f(":", _tls("user"), _f("atom_length", _v(), _v()))
+    )
+    for g in foreign_goals
+        e = try
+            kcall(gd, ld, "\$foreign_predicate_source", _TL[g, _v()])
+            nothing
+        catch ex
+            ex
+        end
+        @test e isa LK.NotPortedError && e.step == "PR1"
+        @test e isa LK.NotPortedError && occursin("pl-proc.c:4199-4202", e.what)
+    end
+    st, _ = kcall(gd, ld, "\$foreign_predicate_source", _TL[_f("foo", _v()), _v()])
+    @test st === :false
+    st, _ = kcall(gd, ld, "\$foreign_predicate_source", _TL[_f("nothere", _v()), _v()])
+    @test st === :false
 end

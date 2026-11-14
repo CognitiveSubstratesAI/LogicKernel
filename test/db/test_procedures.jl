@@ -51,7 +51,7 @@ end
     @test length(user.procedures) == length(boot) + 2
     @test setdiff(Set(keys(user.procedures)), boot) == Set([(p, 1), (p, 2)])
     d = p2.definition                                           # a new predicate
-    @test d.functor_name == p && d.arity == 2 && d.flags == 0 && p2.flags == 0
+    @test d.functor_name == p && d.arity == 2 && d.flags == LK.TRACE_ME && p2.flags == 0
     @test lk_eq(d.name, _ps(:p))                                # the name itself, for error terms
     @test d.impl_clauses.first_clause === nothing && d.impl_clauses.number_of_clauses == 0
     @test length(d.impl_clauses.args::Vector{LK.arg_info}) == 2
@@ -60,6 +60,25 @@ end
     other = LK.MODULE_user(LK.PL_global_data{_P}())             # another database, another table
     @test LK.lookupProcedure(_ps(:p), 1, other) !== p1
     @test LK.isCurrentProcedure(p, 2, other) === nothing
+end
+
+# Q2 (pl-proc.c resetProcedure through lookupProcedure): `TRACE_ME` is set for a name that does not start with `$`, in EVERY module (the
+# system module's built-ins are registered over it, pl-ext.c registerBuiltins asserts it), and resetProcedure sets or clears it again whatever it was
+@testset "TRACE_ME: a name not starting with \$ gets it in every module; resetProcedure! sets it by the name, keeps SPY_ME (Q2)" begin
+    gd = LK.PL_global_data{_P}()
+    for m in (LK.MODULE_system(gd), LK.MODULE_user(gd))
+        @test LK.lookupProcedure(_ps(:q2_plain), 1, m).definition.flags == LK.TRACE_ME
+        @test LK.lookupProcedure(_ps("\$q2_dollar"), 1, m).definition.flags == 0
+    end
+    user = LK.MODULE_user(gd)
+    plain = LK.lookupProcedure(_ps(:q2_hidden), 0, user)
+    plain.definition.flags = LK.SPY_ME | LK.P_LOCKED            # a `'\$hide'(q2_hidden/0)` before the reset: TRACE_ME clear
+    LK.resetProcedure!(plain, true)
+    @test plain.definition.flags == (LK.SPY_ME | LK.TRACE_ME)
+    dollar = LK.lookupProcedure(_ps("\$q2_shown"), 0, user)
+    dollar.definition.flags = LK.SPY_ME | LK.TRACE_ME | LK.P_LOCKED
+    LK.resetProcedure!(dollar, true)
+    @test dollar.definition.flags == LK.SPY_ME
 end
 
 @testset "the functor's name is the symbol's identity: [] is not '[]'" begin

@@ -17,7 +17,7 @@
 #     read not run — removeClausesPredicate! decrements `number_of_clauses` for each clause it erases, so it is 0 already
 #     (src/pl-proc.jl:897, removeClausesPredicate!), and `isnew` only picks how the indexes are dropped (A1, A2).
 #   * setDynamicDefinition!(def, false) in abolishProcedure!: its flag change is made again by resetProcedure!'s
-#     `def.flags &= (SPY_ME | P_DIRTYREG)` (EQUIVALENT, read not run).
+#     `flags = def.flags & (SPY_ME | P_DIRTYREG)` (EQUIVALENT, read not run; Q2 rewrote the line).
 #   * the `n = PL_get_atom(name)` / `PL_is_variable(name) || return FFALSE` test of `$c_current_predicate`/2: with a bound
 #     non-atom name the later `PL_unify_atom(name, fname)` fails the same way (EQUIVALENT, read not run, see D3).
 #   * a Prolog-flag-dependent or hash-order-dependent path: the procedure order of an enumeration is the table's, every
@@ -67,8 +67,8 @@ MUTANTS = [
          old="    gd._generation = update\n    deleted > 0 && registerDirtyDefinition!(gd, def)",
          new="    deleted > 0 && registerDirtyDefinition!(gd, def)"),
     dict(id="PR1-B4 resetProcedure! keeps META (KILL pr108)", file=P, targets=TAB,
-         old="    def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0",
-         new="    def.flags &= (SPY_ME | P_DIRTYREG | P_META)         # flags0"),
+         old="    flags = def.flags & (SPY_ME | P_DIRTYREG)           # flags0",
+         new="    flags = def.flags & (SPY_ME | P_DIRTYREG | P_META)  # flags0"),
     dict(id="PR1-B5 abolishProcedure! takes the module's own predicate for the imported link (KILL pr01, pr29)", file=P, targets=TAB,
          old="    if def.module_ != m.index ",
          new="    if def.module_ == m.index "),

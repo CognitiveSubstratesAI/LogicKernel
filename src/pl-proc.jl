@@ -33,17 +33,18 @@
 
 # PORT: pl-proc.c lookupProcedure
 # DIVERGES: the functor is its parts: the name symbol `name` and the arity (there is no functor
-# table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: for a NEW
-# procedure it sets the debugger's `TRACE_ME`, which the kernel has no debugger for (`resetProcedure!`, since PR1, omits it
-# too), and `SUPERVISOR(virgin)`, which the new definition starts with. No
-# program-space limit, statistics or lock: there are no threads, so the table cannot gain the
+# table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure` call: the new definition starts with
+# `SUPERVISOR(virgin)` and the flags `resetProcedure(proc, true)` leaves on a definition that has none: `TRACE_ME` when the
+# name does not start with `$` (`userpred`), in EVERY module, the system module's built-ins and the boot's predicates included
+# (`registerBuiltins!` asserts `def->flags == defflags` on exactly this; `'$hide'/1`, `PL_FA_NOTRACE` and `P_LOCKED` system
+# mode work on top of it, as upstream's). No program-space limit, statistics or lock: there are no threads, so the table cannot gain the
 # functor between the lookup and the add.
 """
     lookupProcedure(name, arity, m) -> Procedure{T}
 
 The procedure `name/arity` (`name` a symbol) of module `m`: the one in its procedure table, or a new
-one with a new predicate — no clauses, flags 0, its per-argument information allocated (zeroed) when
-it has arguments, its supervisor `S_VIRGIN` — added to the table (pl-proc.c).
+one with a new predicate — no clauses, flags `TRACE_ME` when the name does not start with `\$` (else 0), its per-argument
+information allocated (zeroed) when it has arguments, its supervisor `S_VIRGIN` — added to the table (pl-proc.c).
 """
 function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} where {T}
     key = sym_key(name)
@@ -56,8 +57,10 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
         clauses.args = nothing
     end
     cd = m.code_data
+    userpred = sym_first_byte(name) != 0x24                     # resetProcedure: `stringAtom(def->functor->name)[0] != '$'`
     def = Definition{T}(
-        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
+        key, arity, clauses, userpred ? TRACE_ME : UInt64(0), name, cd.virgin,
+        ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
     )
     proc = Procedure{T}(def, UInt32(0), UInt32(0))
     m.procedures[(key, arity)] = proc
@@ -1071,7 +1074,8 @@ end
 
 # PORT: pl-proc.c resetProcedure
 # DIVERGES: no statistics (`GD->clauses.dirty`); the tabling attributes are cleared and the update listeners destroyed
-# (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
+# (EV1). The debugger's `TRACE_ME` is set for a name that does not start with `$` whatever it was (a `'$hide'/1` before the reset is
+# undone), as upstream's `if ( userpred ) flags |= TRACE_ME`. Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
 # the foreign function index.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
@@ -1081,7 +1085,10 @@ function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
     if (def.flags & P_DYNAMIC) != 0 || !defined
         isnew = true
     end
-    def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
+    userpred = sym_first_byte(def.name) != 0x24         # stringAtom(def->functor->name)[0] != '$'
+    flags = def.flags & (SPY_ME | P_DIRTYREG)           # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
+    userpred && (flags |= TRACE_ME)                     # if ( userpred ) flags |= TRACE_ME
+    def.flags = flags
     def.impl_clauses.number_of_clauses = 0x00000000
     destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
     def.tabling === nothing || tbl_reset_tabling_attributes!(def)   # if ( def->tabling ) tbl_reset_tabling_attributes(def)
@@ -1520,8 +1527,10 @@ function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int
 end
 
 # PORT: pl-proc.c get_procedure
-# DIVERGES: the `GP_DEFINE` path only (the ones `'$set_predicate_attribute'/3` and `meta_predicate/1`
-# ask for): the term stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`),
+# DIVERGES: the `GP_DEFINE` path only (pl-proc.c:786-791; the other cases of the switch at :770-800
+# (`GP_CREATE`, `GP_FINDHERE`, `GP_FIND`, `GP_RESOLVE`) and the `GP_EXISTENCE_ERROR` branch at :804-807 are
+# refused here): the ones `'$set_predicate_attribute'/3` and `meta_predicate/1`
+# ask for. The term stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`),
 # and `lookupProcedureToDefine` in that module (which exists: no module is created). The procedure is
 # returned (`nothing`: false), where upstream's writes it through `proc`; `h` (upstream's `term_t h`,
 # since MOD4) receives the stripped term — 0: a reference of its own.
@@ -1531,7 +1540,8 @@ function get_procedure(
 )::Union{Nothing, Procedure{T}} where {T}
     (how & GP_HOW_MASK) == GP_DEFINE || throw(
         NotPortedError{T}(
-            mk_sym(T, :get_procedure), "get_procedure: other than GP_DEFINE", "V9"
+            mk_sym(T, :get_procedure),
+            "get_procedure: other than GP_DEFINE (pl-proc.c:770-808)", "V9"
         )
     )
     head = h == 0 ? PL_new_term_ref(ld) : h
@@ -1584,7 +1594,9 @@ end
 
 # PORT: pl-proc.c set_predicate_attribute as pl_set_predicate_attribute3_va
 # (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
-# DIVERGES: `spy` is refused (it needs `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
+# DIVERGES: `spy` is refused (`NotPortedError`, step DBG1 group d: pl-proc.c:3917-3919 resolves the predicate with
+# `get_procedure(pred, &proc, 0, GP_RESOLVE)` for an attribute with `SPY_ME`; the spy point and its `GP_RESOLVE` lookup
+# (pl-proc.c:726, :792) belong to the debugger); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
 # module while reading, else the typein module.
 "`'\$set_predicate_attribute'(:Head, +Key, +Value)` (pl-proc.c): set a predicate attribute."
 function pl_set_predicate_attribute3_va(
@@ -1606,7 +1618,11 @@ function pl_set_predicate_attribute3_va(
     att == 0 && return FFALSE
 
     (att & SPY_ME) != 0 &&
-        throw(NotPortedError{T}(key, "spy points (GP_RESOLVE)", "the debugger"))
+        throw(
+            NotPortedError{T}(
+                key, "spy points (SPY_ME, GP_RESOLVE: pl-proc.c:3917)", "DBG1"
+            )
+        )
     proc = get_procedure(gd, ld, pred, GP_DEFINE | GP_NAMEARITY)
     proc === nothing && return FFALSE
     def = proc.definition
@@ -1722,8 +1738,26 @@ function setClausableDefinition!(
     return true
 end
 
+# PORT: pl-proc.c setDetDefinition
+"Set (`isdet`) or clear `P_DET` on `def`; a change resets the supervisor to `S_VIRGIN` (pl-proc.c)."
+function setDetDefinition!(def::Definition{T}, isdet::Bool)::Bool where {T}
+    if (isdet && (def.flags & P_DET) != 0) || (!isdet && (def.flags & P_DET) == 0)
+        return true
+    end
+
+    if isdet                                                # nondet --> det
+        def.flags |= P_DET
+        freeCodesDefinition!(def, true)                     # reset to S_VIRGIN
+    else                                                    # det --> nondet
+        def.flags &= ~P_DET
+        freeCodesDefinition!(def, true)                     # reset to S_VIRGIN
+    end
+
+    return true
+end
+
 # PORT: pl-proc.c setAttrDefinition
-# DIVERGES: `P_DET` (its own setter) is refused; `ld` is an argument (the thread-local setter raises).
+# DIVERGES: `ld` is an argument (the thread-local setter raises).
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
 function setAttrDefinition(
     ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool
@@ -1731,9 +1765,7 @@ function setAttrDefinition(
     attr == P_DYNAMIC && return setDynamicDefinition!(def, val)
     attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
     attr == P_CLAUSABLE && return setClausableDefinition!(_query_gd(ld), ld, def, val)
-    attr == P_DET && throw(
-        NotPortedError{T}(def.name, "setAttrDefinition: attribute $attr", "not ported")
-    )
+    attr == P_DET && return setDetDefinition!(def, val)
     if val
         def.flags |= attr
     else
@@ -1963,15 +1995,18 @@ end
 # (`get_procedure` above refuses it). The term is stripped of its qualifiers (`stripModuleName_cells`) and
 # `get_module`'s `GP_FIND` case is inlined: the module a qualifier names if it is current (`isCurrentModule`:
 # none is created), else `user`; no qualifier, the context module (since MOD2; pl-proc.c:727-728). Not found:
-# `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`.
-"The defined procedure the head term `descr` (`M:Head`) names, as seen from its module, or `nothing` (pl-proc.c)."
+# `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`. Since DBG1b `h`
+# (upstream's `term_t h`, 0: none) receives the plain head, as `get_procedure_create`'s: `prolog_frame_attribute/3`'s
+# `parent_goal` key reads the arguments of its goal through it.
+"The defined procedure the head term `descr` (`M:Head`) names, as seen from its module, or `nothing` (pl-proc.c); the plain head into `h`."
 function get_procedure_find(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, h::term_t=0
 )::Union{Nothing, Procedure{T}} where {T}
     head = PL_new_term_ref(ld)
     ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))  # stripModuleName(valTermRef(descr), &mname)
     ok || return nothing
     _slot_link_loc!(ld, head + 1, loc)                  # *valTermRef(head) = linkValNoG(p)
+    h != 0 && PL_put_term(ld, h, head)                  # if ( h ) PL_put_term(h, head)
     m = MODULE_user(gd)                                 # get_module(mname, GP_FIND)
     if mname != 0
         cm = isCurrentModule(gd.modules, _atom_value(ld, mname))
@@ -3036,6 +3071,42 @@ function _predicate_number_of_clauses(
     return n
 end
 
+# PORT: pl-proc.c foreign_predicate_source as pl_foreign_predicate_source2_va
+# (PRED_IMPL("$foreign_predicate_source", 2, foreign_predicate_source, PL_FA_TRANSPARENT)) — pl-proc.c:4179-4208
+# DIVERGES: the head is resolved and a predicate that is no foreign one fails, as upstream's. For a foreign predicate upstream calls
+# `addr2line(f, buf, sizeof(buf))`, which asks the C library's symbol table and the addr2line(1) tool for the function behind it
+# and answers a string such as "pl_atom_length2_va() at pl-prims.c:?" (measured on the pin); a foreign predicate of the kernel is a
+# Julia function with no such address. The answer is a named refusal (`NotPortedError`), not a silent failure: upstream's
+# "fails silently" (pl-proc.c:4179-4186) is for a binary without a symbol table, and the kernel's answer would hide that it has one.
+"`'\$foreign_predicate_source'(:Pred, -Description)`: the `addr2line` description of the function implementing `Pred` (pl-proc.c); refused for a foreign predicate."
+function pl_foreign_predicate_source2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred = PL__t0
+    head = PL_new_term_ref(ld)
+
+    ok, mi = PL_strip_module(gd, ld, pred, 0, head)
+    ok || return FFALSE
+    fd = _cp_get_functor(ld, head)
+    fd === nothing && return FFALSE
+    proc = visibleProcedure(gd, fd[1], fd[2], gd.modules[mi])
+    proc === nothing && return FFALSE
+
+    def = proc.definition                           # getProcDefinition(proc)
+    if (def.flags & P_FOREIGN) != 0
+        throw(
+            NotPortedError{T}(
+                fd[1],
+                "foreign_predicate_source of a foreign predicate: the addr2line description of its C function (pl-proc.c:4199-4202)",
+                "PR1"
+            )
+        )
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -3043,6 +3114,10 @@ const PL_predicates_from_proc = (
     PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension(
         "\$set_predicate_attribute", 3, pl_set_predicate_attribute3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$foreign_predicate_source", 2, pl_foreign_predicate_source2_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(                                   # (pl-proc.c:4369, since PR1)

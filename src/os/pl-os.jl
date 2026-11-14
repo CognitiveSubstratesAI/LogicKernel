@@ -16,7 +16,7 @@
 #
 # Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
 # Since R2 TOP1b: the terminal mode a stream records (`TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode`, `Sset_ttymode`); the kernel
-# has no ttys, so only the `SIO_RAW` flag moves (`PushTty`/`PopTty` stay out, see src/pl-read.jl's note).
+# has no ttys, so only the `SIO_RAW` flag moves; `PushTty`/`PopTty` (relay 11) follow upstream up to the terminal and refuse it by name.
 # NOT PORTED: the rest of pl-os.c (`System`, the signals, the tmp-file
 # registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
@@ -571,4 +571,67 @@ function Sset_ttymode(s::IOSTREAM, mode::Int)::Nothing
     end
 
     return nothing
+end
+
+# PORT: pl-os.h ttybuf
+# DIVERGES: `state` is the saved terminal state as bytes (upstream: `void *` to a `struct termios`); the kernel never
+# fills it (see PushTty), so it stays `nothing`.
+"The saved terminal state of a stream and Prolog's view of its mode (pl-os.h)."
+mutable struct ttybuf
+    state::Union{Nothing, Vector{UInt8}}
+    mode::Int
+end
+
+# ORIGINAL: upstream's `ttybuf buf;` is an uninitialised C struct; PushTty sets both fields first.
+ttybuf() = ttybuf(nothing, TTY_COOKED)
+
+# PORT: pl-os.c PushTty
+# (the `O_HAVE_TERMIO` form with `HAVE_TCSETATTR`, os/pl-os.c:2294-2346 at the pin: save the stream's mode, leave when the
+# stream is no terminal or `tty_control` is false, record `mode`, then `GetTtyState`, `cfmakeraw` (`TTY_RAW`) and `SetTtyState`
+# through `tcgetattr`/`tcsetattr` on `Sfileno(s)`)
+# DIVERGES: refused by name where the terminal is touched. A kernel stream has no file number and the kernel has no termios
+# binding, so a stream with `SIO_ISATTY` while `tty_control` is on raises NotPortedError after the mode is recorded; the flag
+# `tty_control` cannot be turned on in the kernel (src/os/pl-prologflag.jl), so today every call returns at the first two exits.
+# The sysError for an unknown mode (pl-os.c:2341) follows the termios branch and is not reached.
+"Push the tty of `s` to `mode`, saving the old state in `buf` (pl-os.c); true, or a refusal by name for a terminal."
+function PushTty(
+    ld::PL_local_data{T}, s::IOSTREAM, buf::ttybuf, mode::Int
+)::Bool where {T}
+    buf.mode = Sttymode(s)
+    buf.state = nothing
+
+    (s.flags & SIO_ISATTY) == 0 && return true                  # not a terminal
+    truePrologFlag(ld, PLFLAG_TTY_CONTROL) || return true       # tty_control is false
+
+    Sset_ttymode(s, mode)
+
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :PushTty),
+            "PushTty of a terminal: tcgetattr, cfmakeraw, tcsetattr (pl-os.c:2294-2346)",
+            "TOP1b"
+        )
+    )
+end
+
+# PORT: pl-os.c PopTty
+# (os/pl-os.c:2354-2379 at the pin: restore the mode of the stream, then `SetTtyState(fd, &TTY_STATE(buf))` when a state was saved,
+# and free the state when `do_free`)
+# DIVERGES: a saved state is never taken (see PushTty), so the branch with `SetTtyState` (tcsetattr) is refused by name; the mode
+# restore and the `true` result are upstream's. `do_free` has nothing to free.
+"Restore the tty state of `s` from `buf` (pl-os.c); true, or a refusal by name when a terminal state was saved."
+function PopTty(
+    ld::PL_local_data{T}, s::IOSTREAM, buf::ttybuf, do_free::Bool
+)::Bool where {T}
+    Sset_ttymode(s, buf.mode)
+
+    buf.state === nothing && return true
+
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :PopTty),
+            "PopTty of a saved terminal state: tcsetattr (pl-os.c:2354-2379)",
+            "TOP1b"
+        )
+    )
 end

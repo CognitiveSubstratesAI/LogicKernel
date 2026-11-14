@@ -37,6 +37,8 @@
 # (pl-mutex.c), the last two at the end of the table (pl-ext.c:186-187). Since PR1 abolish/1,2 (pl-proc.c, before
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
+# Since DBG1 trace/0, notrace/0, tracing/0, `$leash`/2 and `$visible`/2 (pl-trace.c) after `$fail`/0 as pl-ext.c:140-146 (`$spy`, `$nospy`, `$debuglevel` between them are not ported).
+# Since FL1b current_flag/1 (pl-flag.c) after garbage_collect_clauses/0, pl-ext.c:173.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
@@ -58,12 +60,18 @@ const foreigns = (
     PL_extension("fail", 0, pl_fail, PL_FA_ISO),
     PL_extension("true", 0, pl_true, PL_FA_ISO),
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
+    PL_extension("trace", 0, pl_trace, PL_FA_NOTRACE),                          # DBG1 (pl-ext.c:140)
+    PL_extension("notrace", 0, pl_notrace, PL_FA_NOTRACE),                      # DBG1 (pl-ext.c:141)
+    PL_extension("tracing", 0, pl_tracing, PL_FA_NOTRACE),                      # DBG1 (pl-ext.c:142)
+    PL_extension("\$leash", 2, pl_leash, PL_FA_NOTRACE),                        # DBG1 (pl-ext.c:145)
+    PL_extension("\$visible", 2, pl_visible, PL_FA_NOTRACE),                    # DBG1 (pl-ext.c:146)
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
     PL_extension("dwim_match", 3, pl_dwim_match, 0x00),                         # DWIM1 (pl-ext.c:155)
     PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)
     PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)
     PL_extension("\$garbage_collect", 1, pl_garbage_collect, 0x00),            # BOOTPRED (pl-ext.c:168)
     PL_extension("garbage_collect_clauses", 0, pl_garbage_collect_clauses0, 0x00),  # PR1 (pl-ext.c:171)
+    PL_extension("current_flag", 1, pl_current_flag, PL_FA_NONDETERMINISTIC),  # FL1b (pl-ext.c:173)
     PL_extension("read", 2, pl_read2, PL_FA_ISO),                   # RD1 (pl-ext.c:175)
     PL_extension("write", 2, pl_write2, PL_FA_ISO),
     PL_extension("writeln", 2, pl_writeln2, 0x00),
@@ -74,14 +82,14 @@ const foreigns = (
     PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)   # META|ISO (pl-ext.c:187)
 )
 
-# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
+# The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, flag (FL1b), list, module, prims, variant,
 # copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
 # termhash and bisim, between op and attvar upstream, are not ported; strings (T2) is appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
-    PL_predicates_from_comp, PL_predicates_from_init, PL_predicates_from_list,
-    PL_predicates_from_module,
+    PL_predicates_from_comp, PL_predicates_from_flag, PL_predicates_from_init,
+    PL_predicates_from_list, PL_predicates_from_module,
     PL_predicates_from_prims, PL_predicates_from_variant, PL_predicates_from_copyterm,
     PL_predicates_from_prologflag,
     PL_predicates_from_trace, PL_predicates_from_pro, PL_predicates_from_read,
@@ -96,11 +104,12 @@ const _PRED_TABLES = (
     PL_predicates_from_strings,
     PL_predicates_from_error, PL_predicates_from_event,
     PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
-    PL_predicates_from_wrap
+    PL_predicates_from_wrap,
+    PL_predicates_from_load, PL_predicates_from_apple
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
-    PL_predicates_from_comp..., PL_predicates_from_init...,
+    PL_predicates_from_comp..., PL_predicates_from_flag..., PL_predicates_from_init...,
     PL_predicates_from_list..., PL_predicates_from_module..., PL_predicates_from_prims...,
     PL_predicates_from_variant..., PL_predicates_from_copyterm...,
     PL_predicates_from_prologflag..., PL_predicates_from_trace...,
@@ -116,7 +125,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_error..., PL_predicates_from_event...,
     PL_predicates_from_termhash..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
-    PL_predicates_from_wrap...
+    PL_predicates_from_wrap...,
+    PL_predicates_from_load..., PL_predicates_from_apple...
 )
 const _FOREIGN_DET = foreigns
 
@@ -146,17 +156,18 @@ function builtin_pred_flags(regflags::UInt8, defflags::UInt64)::UInt64
 end
 
 # PORT: pl-ext.c registerBuiltins as registerBuiltins!
-# DIVERGES: no `signonly` (no saved-state signatures). `defflags` is 0 for every predicate:
-# `TRACE_ME` is the debugger's, and `lookupProcedure` does not set it (src/pl-proc.jl), so a new
-# procedure's flags are 0 — upstream asserts they equal `defflags`. `impl.foreign.function` and the
+# DIVERGES: no `signonly` (no saved-state signatures). `impl.foreign.function` and the
 # supervisor's operand are the entry's index in its dispatch table, `first + k` for entry `k`.
+# `defflags` is upstream's (`TRACE_ME` for a name that does not start with `$`), and so is the assertion that a new procedure's flags equal it:
+# `lookupProcedure` leaves exactly those flags (src/pl-proc.jl, upstream's `resetProcedure`).
 "Register the entries `sigs` of a table, the first at dispatch index `first + 1`, in the `system` module (pl-ext.c)."
 function registerBuiltins!(
     gd::PL_global_data{T}, sigs::Vector{Tuple{String, Int, UInt8}}, first::Int
 )::Nothing where {T}
     m = MODULE_system(gd)
     for (k, (name, arity, regflags)) in enumerate(sigs)
-        defflags = UInt64(0)                    # userpred ? TRACE_ME : 0 (see above)
+        userpred = !startswith(name, "\$")       # f->predicate_name[0] != '$'
+        defflags = userpred ? TRACE_ME : UInt64(0)
         flags = builtin_pred_flags(regflags, defflags)
         proc = lookupProcedure(mk_sym(T, Symbol(name)), arity, m)
         def = proc.definition

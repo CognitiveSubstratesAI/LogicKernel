@@ -43,6 +43,7 @@ include("pl-comp.jl")          # swipl-devel src/pl-comp.c — compiling clause 
 include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant checking
 include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, copy_term_nat/2, duplicate_term/2
 include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: compileTermToHeap, copyRecordToGlobal
+include("pl-flag.jl")          # swipl-devel src/pl-flag.c — get_flag/2, set_flag/2, current_flag/1
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
@@ -87,6 +88,8 @@ include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c)
 include("pl-qlf.jl")           # swipl-devel src/pl-qlf.c — the boot compilation of a source file (LB3; no state file)
 include("pl-string.jl")        # swipl-devel src/pl-string.c — the string predicates: atom_string/2, split_string/4, sub_string/5 (T2)
 include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
+include("pl-load.jl")          # swipl-devel src/pl-load.c — `$activate_static_extension/1`, refused by name (LB5-LB7)
+include("os/pl-apple.jl")      # swipl-devel src/os/pl-apple.c — apple_current_locale_identifier/1, refused by name (APPLE1)
 include("pl-dwim.jl")          # swipl-devel src/pl-dwim.c — dwim_match/3, '$dwim_predicate'/2 (DWIM1)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)

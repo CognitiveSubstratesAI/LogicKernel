@@ -444,6 +444,38 @@ function existingChoice(ld::PL_local_data{T}, off::Int)::Int where {T}
     return ch2
 end
 
+# PORT: pl-wam.c existingFrame
+# DIVERGES: takes the frame's local-stack POSITION `off` (upstream's `(LocalFrame)((Word)lBase+i)`, as `PL_unify_frame` gives it,
+# src/pl-trace.jl) and returns the index of the frame record at that position, 0 for upstream's false. A position no record holds
+# is no frame (upstream reads whatever lies there and tests its magic). The records are ordered by `base` (the pool invariant of
+# `dropDeadRecords!`), so the search runs from the newest record down. The chain of parents ends at a top frame, whose query
+# record (`queryOfFrame`: the record `QF_TOP_FRAME` below it) must carry `QID_MAGIC`, as upstream's `qf->magic == QID_MAGIC`.
+"The frame at local-stack position `off` if it is a live frame of a live query, else 0 (pl-wam.c)."
+function existingFrame(ld::PL_local_data{T}, off::Int)::Int where {T}
+    0 <= off < ld.lTop || return 0                  # onStack(local, fr)
+    start = ld.nframes
+    while start != 0 && ld.frames[start].base > off
+        start -= 1
+    end
+    start != 0 && ld.frames[start].base == off || return 0
+    fr = start
+    while true
+        isFrame(ld.frames[fr]) || return 0          # !isFrame(fr)
+        p = ld.frames[fr].parent
+        if p == 0                                   # a top frame: its query decides
+            b = ld.frames[fr].base - QF_TOP_FRAME   # queryOfFrame(fr)
+            for i in ld.nqueries:-1:1
+                if ld.queries[i].base == b
+                    return ld.queries[i].magic == QID_MAGIC ? start : 0
+                end
+            end
+            return 0
+        end
+        p < fr || return 0                          # a parent is an older record (else a stale index)
+        fr = p                                      # fr = fr->parent
+    end
+end
+
 # ── the overwrite points: never below the newest choice point ───────────────────────────────────
 # ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
 # nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point
@@ -2844,9 +2876,9 @@ const FUNCTOR_drecover_and_rethrow2 = builtin_functor("drecover_and_rethrow", 2)
 # `fli_context` live in `ld`, as upstream's in `LD`. A helper's arguments (`helper_args`) are locals
 # named for the helper. Instructions not ported yet raise `NotPortedError` (their step in
 # port_inventory). Blocks for subsystems not ported are marked `NOT PORTED` where they stand: the
-# signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_NOTIFY` (the
-# debugger's half of `FR_WATCHED`: `frameFinished` runs the cleanup handler of an `FR_CLEANUP`
-# frame since V9g); `FR_DET` (the `det` property: nothing sets it — the `$/0` guard's
+# signals, debugger, profiler, depth and inference limits of `LD->alerted`; the
+# `FR_WATCHED` branches run `frameFinished` (the cleanup handler of an `FR_CLEANUP` frame since V9g, the
+# `frame_finished` event of an `FR_NOTIFY` frame since EV1) at every site the C does; `FR_DET` (the `det` property: nothing sets it — the `$/0` guard's
 # `FR_DETGUARD` is ported, V9f); yield.
 """
     PL_next_solution_guarded(gd, ld, qid, except) -> Int
@@ -2944,6 +2976,11 @@ function PL_next_solution_guarded(
     thiscode = PCc[PC]
     PC += 1
     @vmi_dispatch(thiscode, VMI_RUN)
+    # UNWRITTEN: `D_BREAK` (pl-vmi.c:280-355 at the pin, DBG1 group c): the break-point instruction a
+    # debugger writes over a clause's code (`setBreak`, pl-comp.c:8997) and `callBreakHook` answers.
+    # The kernel's table has no `D_BREAK` and nothing writes one (`$break_at/3`, `setBreak` and
+    # `replacedBreak` are unwritten), so the dispatch cannot meet it; an instruction that is no
+    # opcode of the table ends in the refusal below, which names the instruction.
     throw(
         NotPortedError{T}(
             DEF.name, "the VM instruction $(codeTable(thiscode).name)", "V4b and later"
@@ -4469,11 +4506,24 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c I_DEPART
     # DIVERGES: the operand as `I_CALL`'s; `BFR <= FR` compares positions (decision 3). Last-call reuse
     # ASSERTS that FR is the newest live record (user, 2026-10-05), which upstream's reuse relies on.
-    # NOT PORTED: `frameFinished` on an `FR_WATCHED` frame — a cleanup frame's clause ends in
-    # `I_CALLCLEANUP I_EXITCLEANUP I_EXIT` and makes no last call, so only the debugger's
-    # `FR_NOTIFY` could be set here (asserted absent; so too at `I_LCALL` and `I_TCALL`);
-    # `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can set or
-    # observe it"). Since MOD2 the transparent branch (pl-vmi.c:2088-2096 at the pin):
+    # NOT PORTED: `HIDE_CHILDS` (only the debugger reads it; port_inventory § "Not ported: nothing here can
+    # set or observe it"). The `FR_WATCHED` branch is ported (pl-vmi.c:2074-2084 at the pin): a frame the
+    # debugger watches (`FR_NOTIFY`: `prolog_frame_attribute/3` sets it on the frame it reads, pl-trace.c:2509)
+    # that makes a last call is finished first, with `lTop` raised over the arguments just pushed (the C's
+    # `lTop = ARGP`, here the end of the callee's `arity` arguments, as `S_TRIE_GEN`'s) and restored after;
+    # a raised exception throws; then the frame is reused as for any last call.
+    #     if ( ison(FR, FR_WATCHED) )
+    #     { LD->query->next_environment = lTop;
+    #       lTop = (LocalFrame)ARGP;		/* just pushed arguments, so top */
+    #       SAVE_REGISTERS(QID);
+    #       frameFinished(FR, FINISH_EXIT);
+    #       LOAD_REGISTERS(QID);
+    #       lTop = LD->query->next_environment;
+    #       LD->query->next_environment = NULL;
+    #       if ( exception_term )
+    #         THROW_EXCEPTION;
+    #     }
+    # DIVERGES: `LD->query->next_environment` (GC's) is a local, `id_ltop`. Since MOD2 the transparent branch (pl-vmi.c:2088-2096 at the pin):
     #     DEF = proc->definition;
     #     if ( ison(DEF, P_TRANSPARENT) )
     #     { FR->context = contextModule(FR); /* must be  before setting FR_CONTEXT */
@@ -4491,7 +4541,18 @@ function PL_next_solution_guarded(
         truePrologFlag(ld, PLFLAG_LASTCALL) &&
         (id_def.impl_clauses.first_clause !== nothing || (id_def.flags & PROC_DEFINED) != 0)
         id_f = ld.frames[FR]
-        @assert (id_f.flags & FR_WATCHED) == 0
+        if (id_f.flags & FR_WATCHED) != 0
+            id_ltop = ld.lTop                       # LD->query->next_environment = lTop
+            setLTop!(ld, argFrameP(id_ltop, id_def.arity))  # lTop = (LocalFrame)ARGP: just pushed arguments, so top
+            @SAVE_REGISTERS(QID)
+            frameFinished(ld, FR, FINISH_EXIT)
+            @LOAD_REGISTERS(QID)
+            setLTop!(ld, id_ltop)                   # lTop = LD->query->next_environment
+            if ld.exception_term != 0
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+            id_f = ld.frames[FR]                    # (the record is read after: re-read)
+        end
         _assert_frame_above_choice(ld, id_f.base, :I_DEPART)   # (L1e e1 assertion) its arguments
         _no_record_above(ld, id_f.base) || dropDeadRecords!(ld, id_f.base)  # (the region above is reused)
         @assert _is_newest_live_frame(ld, FR) "I_DEPART: last-call reuse of a frame that is not the newest live record"
@@ -5048,9 +5109,15 @@ function PL_next_solution_guarded(
     # `leave` (since V9g): a cleanup frame that exits deterministically has run its handler at
     # `I_EXITCLEANUP` (`FR_CAUGHT`; asserted), so `frameFinished` finds nothing to do — it reads the
     # dropped record's flags only. NOT PORTED: the profiler (`profResumeParent`).
+    # A frame watched only through `FR_NOTIFY` (pl-trace.c:2509: every `prolog_frame_attribute/3` call sets
+    # it on the frame it reads, and the frame exits here) is no cleanup frame: `FR_CAUGHT` is never set on it
+    # and `frameFinished` runs its `frame_finished` event hook (EV1) as the C's does; the invariant is the
+    # cleanup frames'.
+    # DIVERGES: the C's exit_watched has no assertion here (it calls `frameFinished(leave, FINISH_EXIT)` directly); kept as a Julia-side check for CLEANUP frames only.
     @label exit_watched
     ew_f = ld.frames[FR]
-    @assert (ew_f.flags & FR_CAUGHT) != 0 "exit_watched: a cleanup frame exits before its handler ran"
+    @assert (ew_f.flags & FR_CLEANUP) == 0 ||
+        (ew_f.flags & FR_CAUGHT) != 0 "exit_watched: a cleanup frame exits before its handler ran"
     ew_leave = FR                                   # LocalFrame leave = FR
     ew_f.clause = nothing                           # leaveDefinition() destroys clause
     # leaveDefinition(DEF): (void)0 upstream
@@ -5092,8 +5159,16 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_EXITQUERY
     # DIVERGES: `QueryFromQid` is recomputed as upstream does ("may be shifted"), though positions never
-    # move. NOT PORTED: the profiler; `frameFinished` on the query's TOP frame — only the debugger
-    # watches it (`FR_NOTIFY`): the frame of the goal is `qf->frame`, below it (asserted absent).
+    # move. NOT PORTED: the profiler. The `FR_WATCHED` branch is ported (pl-vmi.c:2373 at the pin): a deterministic exit of the query's top frame,
+    # watched through `FR_NOTIFY` (`prolog_frame_attribute/3` sets it on the frame it reads, pl-trace.c:2509),
+    # runs `frameFinished(FR, FINISH_EXIT)`; its result is not read, as the C's (a raised exception stays
+    # in `exception_term`).
+    #     if ( ison(FR, FR_WATCHED) )
+    #     { SAVE_REGISTERS(QID);
+    #       frameFinished(FR, FINISH_EXIT);
+    #       LOAD_REGISTERS(QID);
+    #     }
+    # DIVERGES: `LOAD_REGISTERS` does not set `QF` here: it is recomputed from `QID` after the block.
     @label I_EXITQUERY
     @assert ld.frames[FR].parent == 0
     QF = QueryFromQid(ld, QID)                      # may be shifted: recompute
@@ -5106,7 +5181,13 @@ function PL_next_solution_guarded(
         eq_q.flags |= PL_Q_DETERMINISTIC
         setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
         ld.frames[FR].clause = nothing
-        @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+        if (ld.frames[FR].flags & FR_WATCHED) != 0
+            @SAVE_REGISTERS(QID)
+            frameFinished(ld, FR, FINISH_EXIT)
+            @LOAD_REGISTERS(QID)
+            QF = QueryFromQid(ld, QID)              # (a nested query the handler ran may have moved the record)
+            eq_q = ld.queries[QF]
+        end
     end
 
     eq_q.foreign_frame = PL_open_foreign_frame(ld)
@@ -5181,8 +5262,17 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c I_LCALL
     # DIVERGES: the operand as `I_CALL`'s. QUIRK kept: `setFramePredicate` twice (vmi:2571, 2599).
-    # NOT PORTED: `FR_WATCHED` (asserted absent: see `I_DEPART`), `HIDE_CHILDS`. Since MOD2 the
-    # context module (pl-vmi.c:2565-2566, 2588-2595 at the pin):
+    # NOT PORTED: `HIDE_CHILDS`. The `FR_WATCHED` branch is ported (pl-vmi.c:2574-2581 at the pin):
+    # the frame is finished (`FR_NOTIFY` is set by `prolog_frame_attribute/3`, pl-trace.c:2509; a cleanup
+    # frame's clause makes no last call), a raised exception throws.
+    #     if ( ison(FR, FR_WATCHED) )
+    #     { SAVE_REGISTERS(QID);
+    #       frameFinished(FR, FINISH_EXIT);
+    #       LOAD_REGISTERS(QID);
+    #       if ( exception_term )
+    #         THROW_EXCEPTION;
+    #     }
+    # Since MOD2 the context module (pl-vmi.c:2565-2566, 2588-2595 at the pin):
     #     Module ctx0 = contextModule(FR);                 (before the predicate is replaced: H4)
     #     ...
     #     if ( ison(DEF, P_TRANSPARENT) )
@@ -5203,7 +5293,15 @@ function PL_next_solution_guarded(
     DEF = il_proc.definition
     setFramePredicate(il_f, DEF)
     setLTop!(ld, argFrameP(il_f.base, DEF.arity))
-    @assert (il_f.flags & FR_WATCHED) == 0
+    if (il_f.flags & FR_WATCHED) != 0
+        @SAVE_REGISTERS(QID)
+        frameFinished(ld, FR, FINISH_EXIT)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+        il_f = ld.frames[FR]                        # (the record is read after: re-read)
+    end
     if !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
         @SAVE_REGISTERS(QID)
         DEF = getProcDefinedDefinition(gd, ld, DEF)
@@ -5221,10 +5319,23 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c I_TCALL
-    # DIVERGES: NOT PORTED: `FR_WATCHED` (asserted absent) and so its helper `tcall_watched`,
-    # `HIDE_CHILDS` (see `I_DEPART`).
+    # DIVERGES: NOT PORTED: `HIDE_CHILDS` (see `I_DEPART`). The `FR_WATCHED` branch and its helper
+    # `tcall_watched` (pl-vmi.c:2605-2619 at the pin) are ported as one: the frame is finished first,
+    # a raised exception throws, then the flags are set as for an unwatched frame.
+    #     SAVE_REGISTERS(QID);
+    #     frameFinished(FR, FINISH_EXIT);
+    #     LOAD_REGISTERS(QID);
+    #     if ( exception_term )
+    #       THROW_EXCEPTION;
     @label I_TCALL
-    @assert (ld.frames[FR].flags & FR_WATCHED) == 0
+    if (ld.frames[FR].flags & FR_WATCHED) != 0      # tcall_watched
+        @SAVE_REGISTERS(QID)
+        frameFinished(ld, FR, FINISH_EXIT)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
     tcallSetNextFrameFlags(ld.frames[FR])
     ld.frames[FR].clause = nothing
     @goto depart_or_retry_continue
@@ -6449,8 +6560,15 @@ function PL_next_solution_guarded(
         dropRecords!(ld, db_c.base)                 # the popped choice point and all above it
         @goto deep_backtrack                        # goto next_choice
     end
+    # The pin's switch ends after `CHP_DEBUG` (pl-vmi.c:7036) and the next lines are
+    # `assert(0); SOLUTION_RETURN(false)` (pl-vmi.c:7037-7038): a type outside `choice_type`
+    # (pl-incl.h:1836-1840) is unreachable there; here it is refused (CONT1 row).
     throw(
-        NotPortedError{T}(DEF.name, "backtracking into a $(db_c.type) choice point", "V9")
+        NotPortedError{T}(
+            DEF.name,
+            "backtracking into a $(db_c.type) choice point (pl-vmi.c:7037-7038, assert(0))",
+            "V9"
+        )
     )
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────

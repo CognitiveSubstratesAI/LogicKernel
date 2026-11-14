@@ -572,12 +572,12 @@ end
 # side effect that lives in a file not yet ported; a value the flag accepts is given, so the refusal is the answer, not a type error
 # Values swipl 10.1.19 accepts for the flag (probed); the kernel checks oneof and read-only BEFORE it refuses, so a
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
-# kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
+# kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here. Since R2 FL1 `incomparable`, `theme`, `agc_margin`
+# and `stack_limit` are set (test_flag_setters_swipl.jl; refusal-flip rule D-0375/D-0376): they left this list, and since R2 DBG1 so did
+# `debug_on_interrupt` (test_flag_setters_swipl.jl fs23-fs25).
 const _SF_REFUSED = [
-    ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
-    ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
-    ("theme", "dark"), ("agc_margin", "100"),
-    ("stack_limit", "1000000000"),
+    ("tty_control", "true"), ("var_tag", "dict"),
+    ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("heartbeat", "0"),
     ("float_overflow", "infinity"), ("max_answers_for_subgoal", "5"),
     ("max_table_subgoal_size", "5"),
@@ -598,13 +598,13 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 15
+    @test length(_SF_REFUSED) >= 10
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
 # `O_PLMT`: `FT_BOOL|FF_READONLY, false`), so setting it answers permission_error(modify, flag, threads); swipl 10.1.19 (a threaded
 # build) accepts `set_prolog_flag(threads, true)`, its current value. `string_stack_tripwire` is no flag of swipl's boot: the first set
-# creates a user flag, as swipl 10.1.19 does (probed), and the second reaches the refusal.
+# creates a user flag, as swipl 10.1.19 does (probed), and the second reaches the setter (R2 FL1: it stores the value; it was a refusal).
 @testset "threads is read-only in the no-threads build (design D1)" begin
     path = joinpath(mktempdir(), "threads.pl")
     write(
@@ -621,7 +621,9 @@ end
         _sf_codes("flag") * ",a" * _sf_codes("threads") * ")",
         line
     )
-    @test_throws LK.NotPortedError _sf_query(gd, ld, "t_sst")
+    # UNVERIFIED on the kernel: gate decides (R2 FL1: the second set reaches the setter and answers ok; the tripwire is stored)
+    @test endswith(_sf_query(gd, ld, "t_sst"), "a" * _sf_codes("ok") * ")")
+    @test ld.fli_string_buffers_tripwire == 100
 end
 
 # the kernel's answer where swipl 10.1.19 does not answer: `set_prolog_flag(user_flags, error)`, then a new key — the

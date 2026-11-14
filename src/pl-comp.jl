@@ -4367,6 +4367,301 @@ function pl_compile_predicates1_va(
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end
 
+# ── the source level debugger (pl-comp.c:8484-8900) ─────────────────────────────────────────────
+# ORIGINAL: upstream's pointer arithmetic on a `Code`: `PC + n` and `PC[n]`. The position `n` words
+# on, and the operand word `n` words on (a negative `n` reads back, as `jmploc[-1]` does).
+"The position `n` words from `PC` (upstream's `PC + n`)."
+_pc_add(PC::Code{T}, n::Int) where {T} = Code{T}(PC.codes, PC.literals, PC.pc + n)::Code{T}
+
+"The code word `n` words from `PC` (upstream's `PC[n]`)."
+_pc_word(PC::Code, n::Int)::code = PC.codes[PC.pc + n]
+
+# PORT: pl-comp.c find_code1
+# (`fop` and `ctx` are code words, as upstream's)
+"The first instruction from `PC` on that is `fop` with the first operand `ctx` (pl-comp.c)."
+function find_code1(PC::Code{T}, fop::code, ctx::code)::Code{T} where {T}
+    while true
+        op = decode(PC)
+        if fop == op && ctx == _pc_word(PC, 1)
+            return PC
+        end
+        @assert op != I_EXIT                                    # assert(op != I_EXIT)
+        PC = stepPC(PC)
+    end
+end
+
+# PORT: pl-comp.c find_if_then_end
+# DIVERGES: the `DEBUG(MSG_SRCLOC, …)` line is left out; `base` only served that line and stays as upstream's argument.
+"The `C_END` that closes the `A -> B` whose `B` starts at `PC`, jumping over the control structures between (pl-comp.c)."
+function find_if_then_end(PC::Code{T}, base::Code{T})::Code{T} where {T}
+    while true
+        op = decode(PC)
+        nextpc = stepPC(PC)
+
+        op == C_END && return PC
+        @assert op != I_EXIT                                    # assert(op != I_EXIT)
+
+        if op == C_OR                                           # jump over control structures
+            jmploc = _pc_add(nextpc, Int(_pc_word(PC, 1)))
+            PC = _pc_add(jmploc, Int(_pc_word(jmploc, -1)))
+        elseif op == C_NOT
+            PC = _pc_add(nextpc, Int(_pc_word(PC, 2)))
+        elseif op == C_SOFTIF || op == C_IFTHENELSE || op == C_FASTCOND
+            elseloc = _pc_add(nextpc, Int(_pc_word(PC, 2)))
+            PC = _pc_add(elseloc, Int(_pc_word(elseloc, -1)))
+        elseif op == C_IFTHEN
+            cutloc = find_code1(nextpc, C_CUT, _pc_word(PC, 1))
+            PC = _pc_add(find_if_then_end(_pc_add(cutloc, 2), base), 1)   # the location of C_END
+        else
+            PC = nextpc
+        end
+    end
+end
+
+# PORT: pl-comp.c add_node
+# DIVERGES: the `DEBUG(MSG_SRCLOC, …)` line is left out.
+"Add the integer `n` to the list whose open tail `tail` references, moving `tail` on (pl-comp.c)."
+function add_node(ld::PL_local_data{T}, tail::term_t, n::Int)::Bool where {T}
+    h = PL_new_term_ref(ld)
+    rval = PL_unify_list(ld, tail, h, tail) && PL_unify_integer(ld, h, n)
+    PL_reset_term_refs(ld, h)
+    return rval
+end
+
+# PORT: pl-comp.c add_1_if_not_at_end
+# DIVERGES: the `DEBUG(MSG_SRCLOC, …)` line is left out.
+"Add a `1` to `tail` unless only variable-slot instructions lie between `PC` and `fin` (pl-comp.c)."
+function add_1_if_not_at_end(
+    ld::PL_local_data{T}, PC::Code{T}, fin::Code{T}, tail::term_t
+)::Nothing where {T}
+    while PC.pc < fin.pc && (decode(PC) == C_VAR || decode(PC) == C_VAR_N)
+        PC = stepPC(PC)
+    end
+    if PC.pc != fin.pc
+        add_node(ld, tail, 1)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c not_breakable
+# DIVERGES: `PL_unify_term(av, PL_FUNCTOR, FUNCTOR_break2, PL_TERM, av+1, PL_INT, offset)` is the functor
+# and its two arguments, one call each; `op` is the atom of the operation (`op` of upstream's `atom_t`).
+"Raise `permission_error(op, break, break(Clause, Offset))`: the instruction at `offset` of `clause` takes no break point (pl-comp.c)."
+function not_breakable(
+    ld::PL_local_data{T}, op::T, clause::Clause{T}, offset::Int
+)::Bool where {T}
+    gd = _query_gd(ld)
+    av = PL_new_term_refs(ld, 2)
+    av == 0 && return false
+    a = PL_new_term_ref(ld)
+    if PL_put_clref(gd, ld, av + 1, clause) &&
+        PL_unify_functor(ld, av, mk_sym(T, :break), 2) &&
+        _PL_get_arg(ld, 1, av, a) &&
+        PL_unify(ld, a, av + 1) &&
+        _PL_get_arg(ld, 2, av, a) &&
+        PL_unify_integer(ld, a, offset)
+        return PL_error(ld, "", 0, "", ERR_PERMISSION, op, mk_sym(T, :break), av)
+    end
+    return false
+end
+
+# PORT: pl-comp.c clause_term_position as pl_clause_term_position3_va
+# (PRED_IMPL("$clause_term_position", 3, clause_term_position, 0)) — pl-comp.c:8584-8900
+# DIVERGES: positions are 1-based indexes into `codes` (`Code`): `pcoffset` is upstream's 0-based offset, `loc`
+# is `base + pcoffset`; `clause->code_size` is `length(codes)`; the jump operands are the same relative words as
+# upstream's (since V2 the code is compared with swipl's). An ERASED clause (`PL_get_clref` answers -1) goes on, as
+# upstream's `!PL_get_clref(…)` does. The `DEBUG(MSG_SRCLOC, …)` lines are left out. The `continue` of the
+# `I_EXIT` family without moving `PC` is upstream's (`PC < loc` never holds at the last instruction).
+"""
+`'\$clause_term_position'(+ClauseRef, +PCoffset, -TermPos)` (pl-comp.c): the list of argument numbers
+that leads, from the clause term, to the subterm whose call has `PCoffset` as its continuation PC.
+"""
+function pl_clause_term_position3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    tail = PL_copy_term_ref(ld, A3)
+
+    rc, cl = PL_get_clref(gd, ld, A1)
+    rc == 0 && return FFALSE
+    clause = cl::Clause{T}
+    pcoffset = PL_get_integer_ex(ld, A2)
+    pcoffset === nothing && return FFALSE
+    code_size = length(clause.codes)
+    if pcoffset < 0 || pcoffset > code_size
+        PL_error(
+            ld, "", 0, "not in clause executable code", ERR_DOMAIN,
+            mk_sym(T, :program_counter), A2
+        )
+        return FFALSE
+    end
+
+    base = Code(clause, 1)
+    PC = base
+    loc = _pc_add(base, pcoffset)
+    fin = _pc_add(base, code_size - 1)                          # forget the final I_EXIT
+    @assert decode(fin) == I_EXIT || decode(fin) == I_EXITFACT ||
+        decode(fin) == I_EXITCATCH || decode(fin) == I_EXITRESET
+
+    if pcoffset == code_size
+        return PL_unify_atom(ld, A3, mk_sym(T, :exit)) ? FTRUE : FFALSE
+    end
+
+    if (clause.flags & GOAL_CLAUSE) != 0
+        add_node(ld, tail, 2)                                   # $call :- <Body>
+    end
+
+    while PC.pc < loc.pc
+        op = decode(PC)
+        nextpc = stepPC(PC)
+
+        if op == I_ENTER || op == I_SSU_CHOICE || op == I_SSU_COMMIT
+            if loc.pc == nextpc.pc
+                add_node(ld, tail, 1)
+                return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+            end
+            add_node(ld, tail, 2)
+            PC = nextpc
+        elseif op == I_EXIT || op == I_EXITFACT || op == I_EXITCATCH ||
+            op == I_EXITRESET || op == I_EXITCLEANUP
+            if loc.pc == nextpc.pc
+                return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+            end
+        elseif op == C_OR                       # C_OR <jmp1> <A> C_JMP <jmp2> <B>
+            jmploc = _pc_add(nextpc, Int(_pc_word(PC, 1)))
+            endloc = _pc_add(jmploc, Int(_pc_word(jmploc, -1)))
+            PC = nextpc
+
+            if loc.pc <= endloc.pc              # loc is in the disjunction
+                add_1_if_not_at_end(ld, endloc, fin, tail)
+
+                if loc.pc <= jmploc.pc          # loc is in first branch
+                    add_node(ld, tail, 1)
+                    fin = _pc_add(jmploc, -2)
+                else                            # loc is in second branch
+                    add_node(ld, tail, 2)
+                    PC = jmploc
+                    fin = endloc
+                end
+            else                                # after_construct: loc is after disjunction
+                add_node(ld, tail, 2)
+                PC = endloc
+            end
+        elseif op == C_NOT                      # C_NOT <var> <jmp> <A> C_CUT <var>, C_FAIL,
+            endloc = _pc_add(nextpc, Int(_pc_word(PC, 2)))      # [C_JUMP <N>, C_VAR*]
+            PC = nextpc
+
+            endnot = _pc_add(endloc, -3)
+            if decode(endnot) != C_CUT
+                endnot = _pc_add(endnot, -2)
+                @assert decode(endnot) == C_CUT
+            end
+
+            if loc.pc <= endnot.pc              # in the \+ argument
+                add_1_if_not_at_end(ld, endloc, fin, tail)
+
+                add_node(ld, tail, 1)
+                fin = endnot                    # C_CUT <var>, C_FAIL
+            elseif loc.pc <= endloc.pc
+                PL_error(
+                    ld, "", 0, "not a possible continuation", ERR_DOMAIN,
+                    mk_sym(T, :program_counter), A2
+                )
+                return FFALSE
+            else                                # after_construct
+                add_node(ld, tail, 2)
+                PC = endloc
+            end
+        elseif op == C_SOFTIF || op == C_IFTHENELSE || op == C_FASTCOND
+            # C_IFTHENELSE <var> <jmp1>, <IF> C_CUT <THEN> C_JMP <jmp2> <ELSE>
+            elseloc = _pc_add(nextpc, Int(_pc_word(PC, 2)))
+            cut = op == C_IFTHENELSE ? C_CUT : (op == C_FASTCOND ? C_FASTCUT : C_SOFTCUT)
+
+            endloc = _pc_add(elseloc, Int(_pc_word(elseloc, -1)))
+
+            if loc.pc <= endloc.pc
+                add_1_if_not_at_end(ld, endloc, fin, tail)
+
+                if loc.pc <= elseloc.pc         # a->b
+                    cutloc = find_code1(nextpc, cut, _pc_word(PC, 1))
+
+                    add_node(ld, tail, 1)
+
+                    if loc.pc <= cutloc.pc      # a
+                        add_node(ld, tail, 1)
+                        fin = cutloc
+                        PC = nextpc
+                    else                        # b
+                        add_node(ld, tail, 2)
+                        PC = _pc_add(cutloc, 2)
+                        fin = _pc_add(elseloc, -2)
+                    end
+                else                            # c
+                    add_node(ld, tail, 2)
+                    PC = elseloc
+                    fin = endloc
+                end
+            else                                # after_construct
+                add_node(ld, tail, 2)
+                PC = endloc
+            end
+        elseif op == C_IFTHEN                   # C_IFTHEN <var> <A> C_CUT <var> <B> C_END
+            cutloc = find_code1(nextpc, C_CUT, _pc_word(PC, 1))
+
+            endloc = _pc_add(find_if_then_end(_pc_add(cutloc, 2), base), 1)
+            PC = nextpc
+
+            if loc.pc <= endloc.pc
+                add_1_if_not_at_end(ld, endloc, fin, tail)
+
+                if loc.pc <= cutloc.pc          # a
+                    add_node(ld, tail, 1)
+
+                    PC = nextpc
+                    fin = cutloc
+                else                            # b
+                    add_node(ld, tail, 2)
+                    PC = _pc_add(cutloc, 2)
+                    fin = _pc_add(endloc, -1)   # point at the C_END
+                end
+            else                                # after_construct
+                add_node(ld, tail, 2)
+                PC = endloc
+            end
+        elseif op == I_CONTEXT                  # used to compile m:head :- body
+            PC = nextpc
+            add_node(ld, tail, 2)
+        elseif op == B_UNIFY_FIRSTVAR || op == B_UNIFY_VAR  # child frame ptr after B_UNIFY_EXIT
+            while true
+                PC = nextpc
+                op = decode(PC)
+                nextpc = stepPC(PC)
+                op == B_UNIFY_EXIT && break
+            end
+            if loc.pc == nextpc.pc
+                add_1_if_not_at_end(ld, nextpc, fin, tail)
+
+                return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+            end
+            add_node(ld, tail, 2)
+            PC = nextpc
+        else
+            if loc.pc == nextpc.pc
+                add_1_if_not_at_end(ld, nextpc, fin, tail)
+
+                return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+            end
+            if (codeTable(op).flags & VIF_BREAK) != 0
+                add_node(ld, tail, 2)
+            end
+            PC = nextpc
+        end
+    end
+
+    return FFALSE                                               # assert(0)
+end
+
 # PORT: pl-comp.c BeginPredDefs as PL_predicates_from_comp
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
 # (c:9202-9232); `META` is `PL_FA_TRANSPARENT` (c:9199) and `PRED_DEF` ors in `PL_FA_VARARGS`.
@@ -4415,6 +4710,9 @@ const PL_predicates_from_comp = (
     PL_extension(                                   # PRED_DEF("nth_clause", 3, nth_clause, META|NDET)
         "nth_clause", 3, pl_nth_clause3_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # PRED_DEF("$clause_term_position", 3, clause_term_position, 0)
+        "\$clause_term_position", 3, pl_clause_term_position3_va, PL_FA_VARARGS
     )
 )
 
@@ -4870,7 +5168,7 @@ end
 # under construction is a frame closed at its `B_POP`, with the `B_RFUNCTOR`/`B_RLIST` chain of its
 # last argument (as `decompile_head!`); returns nothing — there is no stack to overflow, so no
 # `*_OVERFLOW` and no retry loop (`decompileBody`'s). `end_` is an instruction, `code(typemax)` for
-# upstream's `(code)-1`; `until` is an index, 0 for NULL. NOT PORTED: `D_BREAK` (no debugger), the
+# upstream's `(code)-1`; `until` is an index, 0 for NULL. UNWRITTEN: `D_BREAK` (pl-vmi.c:280 and pl-comp.c:6449: no debugger), the
 # arithmetic instructions but `A_ADD_FC`. Since MOD3a `I_CALLM`/`I_DEPARTM` decompile to `M:Goal`
 # (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
 # `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;

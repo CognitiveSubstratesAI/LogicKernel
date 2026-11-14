@@ -118,3 +118,54 @@ end
     @test ld.lTop == l0
     @test ld.gTop == g0
 end
+
+# The `--dump-runtime-variables` and `-c` command lines of PL_initialise (pl-init.c:1672-1680: `prologToplevel('$config')` and
+# `prologToplevel('$compile')`, then `PL_halt(status)`). Expected values: single-shot runs of the pin's swipl (18168e62), two identical
+# runs. The values of the shell variables differ per installation (paths, thread flag): the rows compare the variable NAMES in
+# order and the two constant values (PLBITS, PLSOEXT), the exit status, and the `Warning:` lines.
+const _FB_CONFIG_KEYS = String[
+    "PLBASE",
+    "SWIPL_PACK_PATH",
+    "PLARCH",
+    "PLBITS",
+    "PLVERSION",
+    "PLSOEXT",
+    "PLSOPATH",
+    "PLLIBDIR",
+    "PLLIB",
+    "PLLIBSWIPL",
+    "PLSHARED",
+    "PLTHREADS"
+]
+
+@testset "first boot: --dump-runtime-variables and -c run \$config and \$compile, then halt (swipl pin 18168e62)" begin
+    @testset "swipl -f none -F none --dump-runtime-variables" begin
+        st, o, w = _fb_run(String["--dump-runtime-variables"])
+        lines = String[l for l in split(o, '\n') if !isempty(l)]
+        @test st == 0
+        @test w == String[]
+        @test String[first(split(l, '=')) for l in lines] == _FB_CONFIG_KEYS
+        @test all(endswith(l, ";") for l in lines)
+        @test "PLBITS=\"64\";" in lines
+        @test "PLSOEXT=\"so\";" in lines
+        Sys.islinux() && @test "PLSOPATH=\"LD_LIBRARY_PATH\";" in lines      # swipl 10.1.20 on Linux prints it so
+    end
+    # OWNER (audit D-0710 item 2): the two `-c` subtests are `@test_broken` until step LB7C-3/4/5 ports the zip / shlib /
+    # arithmetic-function machinery that `$compile` needs (shared_object flag: F8). The expressions are the original ones.
+    # FINDING: the failing run printed halt_exited=[1,1] and status -1, which suggests PL_halt is called twice;
+    # "finding, owner step starts from it". An unexpected pass makes Julia ERROR: the day it works this row says so.
+    @testset "swipl -f none -F none -c (no files)" begin
+        st, o, w = _fb_run(String["-c"])
+        @test_broken st == 0
+        @test o == ""            # passes today on all three term types (unexpected pass of the @test_broken, D-0710 item 2)
+        @test_broken w == String[]
+    end
+    @testset "swipl -f none -F none -c <a file that does not exist>" begin
+        st, o, w = _fb_run(String["-c", "/nonexistent_zz.pl"])
+        @test_broken st == 1
+        @test o == ""            # passes today on all three term types (unexpected pass of the @test_broken, D-0710 item 2)
+        @test_broken w == String[
+            "Warning: [Thread main] Halting with status 1 due to 1 errors and 0 warnings"
+        ]
+    end
+end
