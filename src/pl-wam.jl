@@ -203,13 +203,15 @@ end
 # DIVERGES: the wakeup bit only — `alerted` carries no other (`ALERT_WAKEUP`, src/pl-incl.jl); no
 # compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
+# Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245).
 # NOT PORTED: the other masks (signals, profiling, exit requests, depth and inference limits, the
-# debugger, string buffers, `UNDO_SCHEDULED`, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty (pl-wam.c)."
+# debugger, string buffers, coverage).
+"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
     (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
+    UNDO_SCHEDULED(ld) && (mask |= ALERT_UNDO)      # if ( UNDO_SCHEDULED(ld) ) mask |= ALERT_UNDO
     ld.alerted = mask
     return nothing
 end
@@ -4372,8 +4374,11 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c depart_or_retry_continue
     # DIVERGES: NOT PORTED: the profiler's node, and the `LD->alerted` test
-    # with its helper `depart_alerted` (signals, undo hooks, depth and inference limits, the
-    # debugger).
+    # with its helper `depart_alerted` (signals, depth and inference limits, the debugger). Since TX1e
+    # its undo branch (pl-vmi.c:1989-1996 at the pin) is here: after the autoloader's early exit
+    # (`DEF->codes[0] == S_VIRGIN` with no definition yet: the supervisor runs first) the scheduled
+    # undo goals run in `run_undo_hooks`; an exception it leaves is thrown. Upstream sets `lTop` to
+    # the end of the frame's arguments first ("play safe"), so do we.
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4391,6 +4396,19 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
+    if ld.alerted != 0 && (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld) &&  # depart_alerted: UNDO_SCHEDULED(LD)
+        !(
+            DEF.codes === gd.code_data.virgin && !_impl_any_defined(DEF) &&
+            (DEF.flags & PROC_DEFINED) == 0
+        )
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = argFrameP(FR, DEF->functor->arity)
+        @SAVE_REGISTERS(QID)
+        dr_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()
+        @LOAD_REGISTERS(QID)
+        if !dr_rc
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
     PCc = DEF.codes
     PCl = gd.no_literals
     PC = 1
@@ -6226,7 +6244,7 @@ function PL_next_solution_guarded(
     # and the records above it are dropped before `lTop` is set (user, 2026-10-05); `chp` is the local
     # data's scratch `clause_choice`. `CHP_TOP` leaves `lTop` where it is, as upstream:
     # `restore_after_query` drops the dead records. NOT PORTED: the debugger (`trace_action`),
-    # the `LD->alerted` block (the inference count, of its `CHP_JUMP`, since Y1). Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
+    # the `LD->alerted` block (the inference count, of its `CHP_JUMP`, since Y1; its undo branch since TX1e). Since V9f: `frameFailed` for a frame that must not fail, and the `CHP_DEBUG`
     # choice point of such a frame (`S_STATIC` with no clause) — the popped record and the dead ones
     # above it are dropped at once, as at `CHP_CATCH`. `CHP_JUMP` (since V9d): the code registers are reloaded from the
     # frame's clause, because `value.pc` is an index into it where upstream's is an address.
@@ -6257,6 +6275,20 @@ function PL_next_solution_guarded(
     QF = QueryFromQid(ld, QID)
     _reset_argument_stack!(ld, ld.queries[QF])
     DEF = ld.frames[FR].predicate::Definition{T}
+
+    # From pl-vmi.c b_failed, the `LD->alerted` block (pl-vmi.c:6840-6856 at the pin), its undo branch only (since TX1e): the
+    # scheduled undo goals run above the choice point (`lTop = BFR+1`, `mark_bar` at `gTop`), then it is `db_c` that is resumed.
+    # DIVERGES: upstream also handles the `ALERT_BUFFER` branch (string buffers) and the profiler here; the kernel leaves both out.
+    if ld.alerted != 0 && UNDO_SCHEDULED(ld)
+        ld.lTop > db_c.base + SIZEOF_CHOICE && lowerLTop!(ld, db_c.base + SIZEOF_CHOICE)   # lTop = (LocalFrame)(BFR+1)
+        ld.mark_bar != NO_MARK_BAR && (ld.mark_bar = ld.gTop)   # if ( LD->mark_bar != NO_MARK_BAR ) LD->mark_bar = gTop
+        @SAVE_REGISTERS(QID)
+        bf_rc = run_undo_hooks(gd, ld)              # rc = run_undo_hooks()
+        @LOAD_REGISTERS(QID)
+        if !bf_rc
+            @goto b_throw                           # THROW_EXCEPTION
+        end
+    end
 
     if db_c.type == CHP_JUMP
         # if ( BFR->value.jump.trie_offset ) *TrieOffset = ... (pl-vmi.c:6865, TR4): a T_TRY_* choice point of a trie clause
