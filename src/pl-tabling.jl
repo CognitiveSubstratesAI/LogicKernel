@@ -6948,8 +6948,8 @@ end
 # `idg_edge_gen` (`$idg_mono_affects*`: `dep`, `answers`, `IDG_MONO_AFFECTS`) are TB7's: refused by name.
 
 # PORT: pl-tabling.c IDG_MONO_AFFECTS
-"`idg_edge_gen` flag of `'\$idg_mono_affects'/3` (pl-tabling.c)."
-const IDG_MONO_AFFECTS = 0x1
+"`idg_edge_gen` flag of `'\$idg_mono_affects'/3` (pl-tabling.c); an `Int`, as the `int flags` it is passed as."
+const IDG_MONO_AFFECTS = 1
 
 # PORT: pl-tabling.c advance_idg_edge_state
 "Step `state` to the next edge (and the next dependency of a monotonic one); false when done (pl-tabling.c)."
@@ -6971,7 +6971,8 @@ function advance_idg_edge_state(
         if n !== nothing
             self = (state.atrie::trie{T}).IDG::idg_node{T}
 
-            if gnd_equal(state.dir::T, mk_sym(T, :affected))  # edge self->n
+            dir = state.dir                             # NULL (`nothing`) is no direction: `dir == ATOM_affected` is false
+            if dir !== nothing && sym_key(dir) == sym_key(mk_sym(T, :affected))  # edge self->n
                 mdep = idg_mdeps(self, n)
             elseif state.lazy                           # edge n->self
                 mdep = idg_mdeps(n, self)
@@ -6988,7 +6989,9 @@ function advance_idg_edge_state(
             state.deptrie_symbol = trie_symbol(gd, gd.tries[n.atrie])
             return true
         else
-            if !state.fixed_dir && gnd_equal(state.dir::T, mk_sym(T, :affected))
+            dir = state.dir
+            if !state.fixed_dir && dir !== nothing &&
+                sym_key(dir) == sym_key(mk_sym(T, :affected))
                 self = (state.atrie::trie{T}).IDG::idg_node{T}
 
                 if !idg_set_is_empty(self.dependent)
@@ -7100,9 +7103,10 @@ function idg_edge_gen(
             end
         elseif (state.dir = PL_get_atom_ex(ld, dir)) !== nothing
             state.fixed_dir = true
-            if gnd_equal(state.dir::T, mk_sym(T, :affected))
+            d = state.dir
+            if d !== nothing && sym_key(d) == sym_key(mk_sym(T, :affected))
                 state.set = self.affected
-            elseif gnd_equal(state.dir::T, mk_sym(T, :dependent))
+            elseif d !== nothing && sym_key(d) == sym_key(mk_sym(T, :dependent))
                 state.set = self.dependent
             else
                 return PL_domain_error(ld, "idg_edge_dir", dir) ? FTRUE : FFALSE
@@ -7161,8 +7165,8 @@ function idg_edge_gen(
             astat = table_status_reeval_wait(ld, dtrie)
 
             if astat !== nothing
-                if gnd_equal(astat, mk_sym(T, :dynamic)) ||
-                    gnd_equal(astat, mk_sym(T, :complete))
+                if sym_key(astat) == sym_key(mk_sym(T, :dynamic)) ||
+                    sym_key(astat) == sym_key(mk_sym(T, :complete))
                     if state.dyn_or_complete
                         @goto next
                     else
@@ -7496,7 +7500,10 @@ function idg_reader_registry(
 )::Tuple{Bool, Union{Nothing, idg_registry{idg_node{T}}}} where {T}
     a = PL_get_atom(ld, thread)
     i = PL_get_integer(ld, thread)
-    if !((a !== nothing && gnd_equal(a, mk_sym(T, :main))) || (i !== nothing && i == 1))
+    if !(
+        (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :main))) ||
+        (i !== nothing && i == 1)
+    )
         tbl_refuse(
             T,
             :PL_get_thread_id_ex,
@@ -8090,7 +8097,7 @@ function prepare_reeval(ld::PL_local_data{T}, atrie::trie{T})::Bool where {T}
     idg = atrie.IDG::idg_node{T}
     wl = atrie.worklist
 
-    trie_ensure_nodes(atrie) || return false        # see answer_nodes_discardable()
+    trie_ensure_nodes(_query_gd(ld), ld, atrie) || return false        # see answer_nodes_discardable()
     atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again
 
     if tt_has_modified_dependencies(ld, atrie)
@@ -8236,9 +8243,9 @@ function reeval_complete(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T
         if same_answers
             idg_propagate_change(ld, n, 0)
         else
-            trie_discard_clause(atrie)
+            trie_discard_clause(_query_gd(ld), atrie)
             if atrie.references == 0                # remove the deleted answers
-                prune_trie(atrie, 1, nothing)
+                prune_trie(_query_gd(ld), atrie, 1, nothing)
             end
         end
 
@@ -8401,7 +8408,8 @@ end
 "Free the monotonic dependency `m` (pl-tabling.c `free_mdep`)."
 function free_mdep(ld::PL_local_data{T}, m::IdgMdep{T})::Nothing where {T}
     @assert m.magic == IDG_MDEP_MAGIC
-    m.dependency === nothing || free_fastheap(m.dependency)
+    dep = m.dependency
+    dep === nothing || free_fastheap(dep)
     r = pop!(ld.tabling.mdep_ref_of, m, 0)
     r == 0 || delete!(ld.tabling.mdep_by_ref, r)
     empty!(m.queue)                                     # dep_free_queue(mdep->queue)
@@ -8512,7 +8520,7 @@ function mono_index_insert(
         mdep.same_key = get(deps, nid, nothing)
         deps[nid] = mdep                                # updateHTablePP
     else
-        set_trie_value_word(itrie, nid, MONO_INDEX_VALUE)
+        set_trie_value_word(_query_gd(ld), itrie, nid, MONO_INDEX_VALUE)
         deps[nid] = mdep                                # addHTablePP
     end
     mdep.index_node = nid
@@ -8773,10 +8781,12 @@ function idg_add_child_dep(
         child.mono_dep_seen = true
         mdep.next = chain0
         m = child.mono::idg_mono{T, idg_node{T}}
-        if m.deps === nothing
-            m.deps = IdDict{idg_node{T}, IdgMdep{T}}()
+        pdeps = m.deps
+        if pdeps === nothing
+            pdeps = IdDict{idg_node{T}, IdgMdep{T}}()
+            m.deps = pdeps
         end
-        m.deps[parent] = mdep
+        pdeps[parent] = mdep
     elseif rc != 1
         return false                                    # resource error
     end
@@ -9331,7 +9341,7 @@ function pl_tbl_monotonic_add_answer2_va(
             if rc > 0
                 atrie.nodes[nid].value != 0 && return FFALSE
                 tt_add_answer(ld, atrie, nid)
-                set_trie_value_word(atrie, nid, ATOM_trienode)
+                set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)
 
                 mono_idg_changed(ld, atrie, nid) || return FFALSE
                 atrie_answer_event(ld, atrie, nid) || return FFALSE
@@ -9457,12 +9467,12 @@ function pl_mono_reeval_done3_va(
                 gc = Ref(0)
 
                 n = map_trie_node(atrie, 1, (tr, nid) -> mono_reeval_done_node(tr, nid, gc))
-                queue = n !== nothing && atrie.nodes[n].value != 0
+                qn = (n !== nothing && atrie.nodes[n].value != 0) ? n : nothing    # queue = (n && n->value != 0), kept as the node
                 if gc[] != 0
                     prune_deleted_mdeps(ld, idg)
-                    prune_trie(atrie, 1, nothing)
+                    prune_trie(_query_gd(ld), atrie, 1, nothing)
                 end
-                queue && (rc = mono_idg_changed(ld, atrie, n))
+                qn !== nothing && (rc = mono_idg_changed(ld, atrie, qn))
             end
 
             if n === nothing && rc && invalid_deps == 0
