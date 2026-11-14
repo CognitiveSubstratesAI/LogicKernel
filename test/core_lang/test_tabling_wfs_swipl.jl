@@ -11,6 +11,12 @@
 #   * Every answer line is swipl's, PINNED (swipl 10.1.20, two byte-identical runs); with `swipl` on PATH the live answers are
 #     compared with the pins too. A trie blob is never printed: wf32 projects the delay `ATrie+Data` to same/diff and int (swipl's
 #     data of a ground answer is the node's address, the kernel's the node id: docs/architecture.md "TAB1 TB4").
+#   * TB4K-a additions (audit D-0635): wf30 reads three tables (r(no,yes,yes): both branches of `'$tbl_is_answer_completed'`), wf33 reads
+#     the delay list INSIDE the findall (per answer), wf34/wf35/wf36 = `answer_residual` of `wz :- tnot(wp), tnot(wq).` (two delays in one
+#     set), `wm :- tnot(wp). wm :- tnot(wq).` (two sets) and `wd :- tnot(wp). wd :- tnot(wp).` (equal sets collapse); wf40-wf45 run in two
+#     databases of their own (the compiled clause's T_DELAY after a forced truth value, and with NULL node operands); the white-box
+#     row of TB4-S5 is its own file, test_tabling_s5_guard.jl. wf45 is the one hand-written expectation (swipl cannot be asked).
+#   * TERM TYPES: the file takes its term type from `lk_term_type` (term_under_test.jl); the gate runs it on all three term types.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -97,9 +103,9 @@ _wf_text(program::String, cases) =
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
-function _wf_load(program::String)
+function _wf_load(program::String, cases=_WF_CASES)
     f = joinpath(mktempdir(), "tabling_wfs.pl")
-    write(f, _wf_text(program, _WF_CASES))
+    write(f, _wf_text(program, cases))
     gd = LK.PL_global_data{_WF}()
     ld = LK.PL_local_data{_WF}(gd)
     st, ball = LK.load_file!(gd, ld, f)
@@ -138,13 +144,18 @@ end
 const _WF_PROGRAM = raw"""
 :- use_module(library(wfs)).
 tm_yn(G, R) :- ( call(G) -> R = yes ; R = no ).
-:- table wp/0, wq/0, wr/0, ws/1, wu/0, wv/0.
+:- table wp/0, wq/0, wr/0, ws/1, wu/0, wv/0, wz/0, wm/0, wd/0.
 wp :- tnot(wq).
 wq :- tnot(wp).
 wr :- tnot(wr).
 ws(X) :- member(X, [1, 2]), tnot(wu).
 wu :- fail.
 wv :- wp.
+wz :- tnot(wp), tnot(wq).
+wm :- tnot(wp).
+wm :- tnot(wq).
+wd :- tnot(wp).
+wd :- tnot(wp).
 """
 
 const _WF_CASES = [
@@ -177,7 +188,7 @@ const _WF_CASES = [
     ("wf29", raw"tm_yn(call_delays(wp, true), R)"),
     (
         "wf30",
-        raw"'$tbl_existing_variant_table'(0, user:wp, T, _, _), tm_yn('$tbl_is_answer_completed'(T), R)"
+        raw"'$tbl_existing_variant_table'(0, user:wp, T, _, _), tm_yn('$tbl_is_answer_completed'(T), R1), '$tbl_existing_variant_table'(0, user:wu, T2, _, _), tm_yn('$tbl_is_answer_completed'(T2), R2), '$tbl_existing_variant_table'(0, user:ws(_), T3, _, _), tm_yn('$tbl_is_answer_completed'(T3), R3), R = r(R1, R2, R3)"
     ),
     (
         "wf31",
@@ -189,8 +200,11 @@ const _WF_CASES = [
     ),
     (
         "wf33",
-        raw"'$tbl_existing_variant_table'(0, user:ws(_), T, _, _), findall(S, '$tbl_answer_update_dl'(T, S), L0), msort(L0, L), '$tbl_delay_list'(DL), R = r(L, DL)"
-    )
+        raw"'$tbl_existing_variant_table'(0, user:ws(_), T, _, _), findall(S-DL, ('$tbl_answer_update_dl'(T, S), '$tbl_delay_list'(DL)), L0), msort(L0, L), R = L"
+    ),
+    ("wf34", raw"call_delays(wz, _), findall(B, answer_residual(wz, B), L), R = L"),
+    ("wf35", raw"call_delays(wm, _), findall(B, answer_residual(wm, B), L), R = L"),
+    ("wf36", raw"call_delays(wd, _), findall(B, answer_residual(wd, B), L), R = L")
 ]
 
 const _WF_PINNED = [
@@ -216,11 +230,82 @@ const _WF_PINNED = [
     "t_wf27 c[116,95,119,102,50,55]/1(c[91,124,93]/2(c[116,110,111,116]/1(a[119,113]),nil))",
     "t_wf28 c[116,95,119,102,50,56]/1(c[91,124,93]/2(c[58,45]/2(a[119,112],c[116,110,111,116]/1(a[119,113])),c[91,124,93]/2(c[58,45]/2(a[119,113],c[116,110,111,116]/1(a[119,112])),c[91,124,93]/2(c[58,45]/2(a[119,118],a[119,112]),nil))))",
     "t_wf29 c[116,95,119,102,50,57]/1(a[110,111])",
-    "t_wf30 c[116,95,119,102,51,48]/1(a[110,111])",
+    "t_wf30 c[116,95,119,102,51,48]/1(c[114]/3(a[110,111],a[121,101,115],a[121,101,115]))",
     "t_wf31 c[116,95,119,102,51,49]/1(c[114]/2(c[91,124,93]/2(a[114,101,116],nil),nil))",
     "t_wf32 c[116,95,119,102,51,50]/1(c[114]/3(a[114,101,116],a[115,97,109,101],a[105,110,116]))",
-    "t_wf33 c[116,95,119,102,51,51]/1(c[114]/2(c[91,124,93]/2(c[114,101,116]/1(i1),c[91,124,93]/2(c[114,101,116]/1(i2),nil)),nil))"
+    "t_wf33 c[116,95,119,102,51,51]/1(c[91,124,93]/2(c[45]/2(c[114,101,116]/1(i1),nil),c[91,124,93]/2(c[45]/2(c[114,101,116]/1(i2),nil),nil)))",
+    "t_wf34 c[116,95,119,102,51,52]/1(c[91,124,93]/2(c[44]/2(c[116,110,111,116]/1(a[119,113]),c[116,110,111,116]/1(a[119,112])),nil))",
+    "t_wf35 c[116,95,119,102,51,53]/1(c[91,124,93]/2(c[59]/2(c[116,110,111,116]/1(a[119,113]),c[116,110,111,116]/1(a[119,112])),nil))",
+    "t_wf36 c[116,95,119,102,51,54]/1(c[91,124,93]/2(c[116,110,111,116]/1(a[119,112]),nil))"
 ]
+
+# ---- the compiled clause's T_DELAY (pl-vmi.c:6225-6249 at the pin): the rows wf40-wf45, run in two databases of their own ----
+# `compile_trie_node` (pl-trie.c:5008-5010) adds a T_DELAY for an answer that is conditional when the trie is compiled; the clause is
+# NOT discarded when the answer later becomes unconditional (pl-vmi.c:6211-6223, the note (*)), nor does an answer without a delay info
+# push anything. Rows on the program `_WF_PROGRAM` never see either: its answers are unconditional (no T_DELAY at all) or conditional
+# for good (the guard `TN_DELAYINFO` never fails).
+#   database 1 (`_WF_FORCED_*`): xa is undefined and compiled (wf40: T_DELAY with the node); `'$tbl_force_truth_value'/3` then makes
+#   its answer true (wf41: Count = 2: xa itself, and xb removed by the propagation) WITHOUT touching the clause: wf42/wf43 call it
+#   through the same clause and read `true` and the empty delay list (kills TB4-T1, the guard that skips the dropped delay info).
+#   database 2 (`_WF_UNDEF_*`): ya is undefined and compiled (wf44); the white-box testset below then does what trie_discard_clause
+#   does to a clause that is still running, set_trie_clause_general_undefined (pl-trie.c:5173): every T_DELAY node operand becomes
+#   NULL; wf45 reads the global delay list after the call: `[[]+0]` (pl-vmi.c: atrie = ATOM_nil; pl-tabling.c delay_to_data: a NULL
+#   answer is consInt(0)). swipl cannot be asked wf45 (that function is internal): its expectation is the C text, the one hand-written pin.
+const _WF_FORCED_PROGRAM = raw"""
+:- use_module(library(wfs)).
+:- table xa/0, xb/0.
+xa :- tnot(xb).
+xb :- tnot(xa).
+"""
+
+const _WF_FORCED_CASES = [
+    ("wf40", raw"call_delays(xa, D1), call_delays(xa, D2), R = r(D1, D2)"),
+    (
+        "wf41",
+        raw"'$tbl_existing_variant_table'(0, user:xa, T, _, Sk), '$trie_gen_node'(T, Sk, Leaf), '$tbl_force_truth_value'(Leaf, true, C), R = C"
+    ),
+    ("wf42", raw"call_delays(xa, D), R = D"),
+    (
+        "wf43",
+        raw"'$tbl_set_delay_list'([]), xa, '$tbl_delay_list'(DL), '$tbl_set_delay_list'([]), R = DL"
+    )
+]
+
+const _WF_UNDEF_PROGRAM = raw"""
+:- use_module(library(wfs)).
+:- table ya/0, yb/0.
+ya :- tnot(yb).
+yb :- tnot(ya).
+"""
+
+const _WF_UNDEF_CASES = [
+    ("wf44", raw"call_delays(ya, D1), call_delays(ya, D2), R = r(D1, D2)"),
+    (
+        "wf45",
+        raw"'$tbl_set_delay_list'([]), ya, '$tbl_delay_list'(DL), '$tbl_set_delay_list'([]), R = DL"
+    )
+]
+
+const _WF_FORCED_PINNED = [
+    "ok",
+    "t_wf40 c[116,95,119,102,52,48]/1(c[114]/2(a[120,97],a[120,97]))",
+    "t_wf41 c[116,95,119,102,52,49]/1(i2)",
+    "t_wf42 c[116,95,119,102,52,50]/1(a[116,114,117,101])",
+    "t_wf43 c[116,95,119,102,52,51]/1(nil)"
+]
+# wf45 has no swipl pin (see above): it is written by hand in the T_DELAY testset
+const _WF_UNDEF_PINNED = [
+    "ok", "t_wf44 c[116,95,119,102,52,52]/1(c[114]/2(a[121,97],a[121,97]))"
+]
+
+"The tries of `gd` whose compiled clause holds a `T_DELAY` with a node operand (pl-trie.c `trie_clause_refers_to_nodes`)."
+_wf_delay_tries(gd) = [tr for tr in gd.tries if LK.trie_clause_refers_to_nodes(tr)]
+
+"The driver's answer line for the case `id` with the encoded answer `body`."
+_wf_line(id::String, body::String) = "t_$id c" * _wf_codes("t_$id") * "/1(" * body * ")"
+
+# TB4-S5's white-box row is test_tabling_s5_guard.jl (its own file, run first by the mutant's TARGETS: a failing testset in THIS file
+# would not stop it, the including testset only fails at its end).
 
 @testset "WFS and the delay list as swipl's (wf0, wf1, wf2, wf3)" begin
     gd, ld, st = _wf_load(_WF_PROGRAM)
@@ -235,6 +320,36 @@ const _WF_PINNED = [
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
     end
+end
+
+@testset "the compiled clause's T_DELAY (wf40-wf45: TB4-T1, TB4-T4)" begin
+    # database 1: xa is conditional when its trie is compiled; forced true afterwards, the clause still runs and must push nothing
+    gd, ld, st = _wf_load(_WF_FORCED_PROGRAM, _WF_FORCED_CASES)
+    @test st == "ok"
+    @test _wf_ask(gd, ld, "t_wf40") == _WF_FORCED_PINNED[2]
+    @test !isempty(_wf_delay_tries(gd))                       # reach: the compiled clause holds a T_DELAY with its node
+    @test _wf_ask(gd, ld, "t_wf41") == _WF_FORCED_PINNED[3]   # the answer is forced true: Count = 2
+    @test !isempty(_wf_delay_tries(gd))                       # the force leaves the compiled clause alive
+    @test _wf_ask(gd, ld, "t_wf42") == _WF_FORCED_PINNED[4]   # call_delays through that clause: `true`
+    @test _wf_ask(gd, ld, "t_wf43") == _WF_FORCED_PINNED[5]   # the delay list stays empty
+    @test _WF_FORCED_PINNED[2] != _WF_FORCED_PINNED[4]        # non-vacuous: undefined before, true after
+
+    # database 2: ya is conditional and compiled; the clause's T_DELAY node operands are then made NULL, which is what
+    # trie_discard_clause does to a clause that is still running (set_trie_clause_general_undefined, pl-trie.c:5173)
+    gd2, ld2, st2 = _wf_load(_WF_UNDEF_PROGRAM, _WF_UNDEF_CASES)
+    @test st2 == "ok"
+    @test _wf_ask(gd2, ld2, "t_wf44") == _WF_UNDEF_PINNED[2]
+    trs = _wf_delay_tries(gd2)
+    @test !isempty(trs)
+    for tr in trs
+        LK.set_trie_clause_general_undefined(tr.clause_cref.clause)
+    end
+    @test isempty(_wf_delay_tries(gd2))
+    # wf45 is the one HAND-WRITTEN expectation of this file: swipl cannot be asked (the state needs the internal discard of a
+    # running clause). It is `[[]+0]`: pl-vmi.c:6240-6248 pushes `atrie = ATOM_nil` for a NULL node operand, and delay_to_data
+    # (pl-tabling.c:1660) turns a NULL answer into the integer 0.
+    @test _wf_ask(gd2, ld2, "t_wf45") ==
+        _wf_line("wf45", "c[91,124,93]/2(c[43]/2(nil,i0),nil)")
 end
 
 @testset "the WFS rows are not vacuous" begin
@@ -252,6 +367,11 @@ end
     @test ans("wf20") != ans("wf23")          # an undefined answer has its delay, an unconditional one `true`
     @test ans("wf25") != ans("wf26")          # undefined succeeds, false fails
     @test ans("wf31") != ans("wf33")          # a conditional answer extends the delay list, unconditional ones do not
+    @test ans("wf34") != ans("wf35")          # two delays in one set (`,`), two sets (`;`)
+    @test ans("wf35") != ans("wf36")          # two different sets, two equal sets that collapse into one
+    @test ans("wf30") != ans("wf29")          # three tables read (`r(no,yes,yes)`), not the single `no`
+    @test length(_WF_FORCED_PINNED) == length(_WF_FORCED_CASES) + 1
+    @test length(_WF_UNDEF_PINNED) == 2       # wf44 only: wf45 is hand-written in its own testset
 end
 
 @testset "the WFS pins are swipl's (live, when swipl is on PATH)" begin
@@ -266,5 +386,26 @@ end
         f = joinpath(mktempdir(), "wf_swipl.pl")
         write(f, _wf_text(_WF_PROGRAM, _WF_CASES))
         @test _wf_swipl_lines(f, ["t_$id" for (id, _) in _WF_CASES]) == _WF_PINNED
+    end
+end
+
+@testset "the T_DELAY pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "TB4 T_DELAY LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+        @test _WF_FORCED_PINNED[1] == "ok"
+        @test [first(split(l, " ")) for l in _WF_FORCED_PINNED[2:end]] ==
+            ["t_$id" for (id, _) in _WF_FORCED_CASES]
+        @test _WF_UNDEF_PINNED[1] == "ok"
+        @test [first(split(l, " ")) for l in _WF_UNDEF_PINNED[2:end]] == ["t_wf44"]
+    else
+        f = joinpath(mktempdir(), "wf_forced_swipl.pl")
+        write(f, _wf_text(_WF_FORCED_PROGRAM, _WF_FORCED_CASES))
+        @test _wf_swipl_lines(f, ["t_$id" for (id, _) in _WF_FORCED_CASES]) ==
+            _WF_FORCED_PINNED
+        # the undefined program: wf44 only, wf45 needs the internal discard of a running clause
+        f2 = joinpath(mktempdir(), "wf_undef_swipl.pl")
+        write(f2, _wf_text(_WF_UNDEF_PROGRAM, _WF_UNDEF_CASES))
+        @test _wf_swipl_lines(f2, ["t_wf44"]) == _WF_UNDEF_PINNED
     end
 end

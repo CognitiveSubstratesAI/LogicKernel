@@ -1,4 +1,4 @@
-# ORIGINAL: TB4's mutant list - no swipl-devel counterpart.
+# ORIGINAL: TB4's mutant list: a repository list of ours (upstream has no such file).
 # tools/mutants/TB4.py - the mutation battery of TAB1 TB4 (WFS: delay infos, delay lists, simplification, answer completion, t_delay!, the ten WFS
 # predicates; src/pl-tabling.jl blocks "TAB1 TB4: WFS and delays" and "TB4b", emptyStacks! in src/pl-setup.jl). Run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as TB0.py): `id`, `file`, `old` (EXACTLY once in its file at wip/tb4 378c01b3, counted by a
@@ -37,8 +37,9 @@ TT = "test/core_lang/test_tabling_state_swipl.jl"       # TB0: DV_DELETED, DL_UN
 TR = "test/core_lang/test_tabling_tb4rows_swipl.jl"     # TB4K-b: the kill rows R5, R6, R9-R12 (groups of programs, one fresh database each)
 TR2 = "test/core_lang/test_tabling_tb4rows2_swipl.jl"      # the kill rows R13-R18 (TB4K-c): answer completion, R14, R15 white-box, R16-R18
 A1G = "test/core_lang/test_tabling_a1_guard.jl"         # TB4K-d: the white-box row of TB4-A1 (its recursion guard has no Prolog route)
+S5G = "test/core_lang/test_tabling_s5_guard.jl"         # TB4-S5: the white-box row (run FIRST: a failing target ends the run before TW)
 TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # TAB1 INT3 (wip/tab-int): the rows R9, R10, g13a, g13b that need TB5's `$tbl_destroy_table`: they kill TB4-S1, S3, S4, A2, A3
-TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, TX]        # every file a mutant lists
+TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX]        # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 SET = "src/pl-setup.jl"
 MUTANTS = [
@@ -160,8 +161,8 @@ MUTANTS = [
          file=TAB, targets=[TW],
          old='        if equal_delay_set(di.delays, base, ds)\n',
          new='        if false\n'),
-    dict(id="TB4-S5 table_has_no_answers: a table with answers reads empty (KILL the white-box testset `table_has_no_answers reads the value count (TB4-S5, white-box)`, the FIRST testset of TW: `value_count = 1` must read false; it fails in seconds and, as a top-level testset, stops the file before any program row runs: with the mutant the program rows would never end, simplify_component's Julia loop has no tick; classification: not a hang, a fail-fast)",
-         file=TAB, targets=[TW],
+    dict(id="TB4-S5 table_has_no_answers: a table with answers reads empty (KILL the white-box testset `table_has_no_answers reads the value count (TB4-S5, white-box)` in S5G, run FIRST: `value_count = 1` must read false. With the mutant the program rows of TW would never end (simplify_component's Julia loop has no tick), so S5G is the first target and its failure ends the run: run_targets stops at the first failing target; the S5G row calls only table_has_no_answers, which cannot loop)",
+         file=TAB, targets=[S5G, TW],
          old='    atrie.value_count == 0 && return true\n',
          new='    atrie.value_count >= 0 && return true\n'),
     dict(id='TB4-S6 make_answer_unconditional does not count the answer, `agenda.done += 1` dropped (KILL TR row r12a, r12b: the count of `$tbl_force_truth_value/3` on an undefined pair, pinned 2 on both sides)',

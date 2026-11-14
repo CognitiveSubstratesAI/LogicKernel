@@ -137,6 +137,9 @@ ta_po(b, 0).
 ta_two(a, 1, 9).
 ta_two(a, 3, 7).
 ta_two(a, 2, 8).
+:- table ta_udl(_, max).
+ta_udl(a, 1) :- '$tbl_set_delay_list'(foo).
+ta_udl(a, 3).
 ta_vars(K, T) :- '$tbl_variant_table'(VT), trie_gen(VT, K, T).
 ta_tab(K0, T) :- ta_vars(user:K, T), K =@= K0.
 ta_answers(K, L) :- findall(S-C, (ta_tab(K, T), '$tbl_answer'(T, S, C)), L0), msort(L0, L).
@@ -230,7 +233,13 @@ const _TA_CASES = [
     (
         "tas23",
         raw"ta_all(ta_max(_, _), _), ta_tab('$ta_max$1'(_), T), findall(S, trie_gen(T, S), L), length(L, R)"
-    )
+    ),
+    # tas24: the body of ta_udl(a, 1) sets the global delay list to a non-list (the Prolog error is the observable answer): the call raises.
+    # This route reaches add_subsuming_answer through `'$tbl_reset'`, whose caller reads only the complete/not-complete result and the pending
+    # exception is thrown either way: tas24 pins the raise but does NOT tell TB3-S9 apart; the kill rows of TB3-S9 are tbw01-tbw03 (the
+    # testset "TB3-S9: ..." below), which call `'$tbl_wkl_add_answer'/4` as a predicate.
+    # LAST: the delay list stays `-foo` after the raise, no later row may run in this program.
+    ("tas24", raw"ta_all(ta_udl(_, _), R)")
 ]
 
 const _TA_PINNED = [
@@ -281,7 +290,8 @@ const _TA_PINNED = [
     "t_tas20 c[116,95,116,97,115,50,48]/1(a[110,111])",
     "t_tas21 c[116,95,116,97,115,50,49]/1(a[99,111,109,112,108,101,116,101])",
     "t_tas22 c[116,95,116,97,115,50,50]/1(a[121,101,115])",
-    "t_tas23 c[116,95,116,97,115,50,51]/1(i3)"
+    "t_tas23 c[116,95,116,97,115,50,51]/1(i3)",
+    "t_tas24 c[116,95,116,97,115,50,52]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,101,108,97,121,95,108,105,115,116],c[45]/1(a[102,111,111]))))"
 ]
 
 "The program text with the cases appended."
@@ -292,9 +302,9 @@ _ta_text(program::String, cases) =
     ])
 
 "A kernel with the program consulted: `(gd, ld, first line of the driver's output)`."
-function _ta_load(program::String)
+function _ta_load(program::String, cases=_TA_CASES)
     f = joinpath(mktempdir(), "tabling_answers.pl")
-    write(f, _ta_text(program, _TA_CASES))
+    write(f, _ta_text(program, cases))
     gd = LK.PL_global_data{_TA}()
     ld = LK.PL_local_data{_TA}(gd)
     st, ball = LK.load_file!(gd, ld, f)
@@ -380,11 +390,383 @@ end
 # RUNS ONCE TB2 AND TB5 ARE STACKED (header)
 @testset "answer subsumption as swipl's (tas: max, min, first, last, lattice, po, two moded arguments)" begin
     rows = _ta_group("tas")
-    @test length(rows) == 23
+    @test length(rows) == 24
     for (k, p) in rows
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
     end
+end
+
+# TB3K-S (kills TB3-S15; audit D-0635): the action `done` of `'$tabling':update/7`. boot/tabling.pl:837-860 (the only clauses of `update/7`)
+# bind the action to `delete` or `keep`, so `done` ("stop the update process", :831) never arises from a table that uses the boot code: the
+# mutant that no longer recognises `done` (replace instead of stop) cannot differ on `ta_max` and its kin. This program redefines
+# `'$tabling':update/7` in system mode (`abolish`, `assertz`; swipl 10.1.20 accepts it, probed) to a user predicate that picks the action,
+# so the kernel's branch for `done` is run. A SEPARATE program (its own kernel and its own swipl run): the redefinition is global.
+# `s15`: every later answer meets the stored one with `done` (Next = the new value): the stored answer stays (a, 1); a mutant that does not
+# recognise `done` replaces it each time (a, 2).
+# TB3-S17 (DONE stops the map of the secondary nodes; the mutant goes on): `s17` first stores p, then q with `keep` (two secondary nodes
+# p and q below the root a: the po table of the handoff keeps one answer, `ta_po`, so the update/7 of this program makes the two nodes);
+# the answer r meets the nodes: the FIRST call of update/7 for r answers `done`, the second `keep` (a global flag, so the row does not
+# depend on the order in which the trie visits the two nodes). Stopping at `done` leaves {p, q}. NOTE (audit, evidence/TAB1/s17_read.md):
+# with GROUND moded values (p, q) tbk03/tbk04 do NOT tell the walk that goes on from the one that stops: the argument block of
+# update_subsuming_answers is built once and the old-moded-arguments slot (av+3) is UNIFIED with the first node and keeps that binding,
+# so the second node (q) fails to unify, update/7 is never called for it and both walks end with {p, q}. tbk09 (s17v, below) is the row
+# that kills TB3-S17: the first node holds a VARIABLE (f(_)), the stale slot still unifies with the next node and update/7 is called.
+# UNVERIFIED on the kernel (written without a Julia run): the redefinition route (`'$tabling':abolish/1` + `assertz/1` at access level
+# system) is the first thing the verifier checks; the pins are swipl's.
+const _TBK_PROGRAM = raw"""
+% The redefinition is scoped to a row: `tb3k_run/1` saves the original clauses of `'$tabling':update/7` and the access level, redefines
+% the predicate, runs the goal and puts the original clauses and the level back in a CLEANUP, so it runs on success, on failure and on an
+% exception. The save is the SETUP (safe steps only, once per program: `nb_current` guards a second save from copying the redefinition);
+% the redefinition is inside the guarded goal, so a half-done redefinition is undone as well. tbk05-tbk08 (a second group, below) prove the original is back.
+tb3k_save(Old) :-
+    current_prolog_flag(access_level, Old),
+    (   nb_current(tb3k_saved, _)
+    ->  true
+    ;   set_prolog_flag(access_level, system),
+        setup_call_cleanup(true, tb3k_clauses(L), set_prolog_flag(access_level, Old)),
+        nb_setval(tb3k_saved, L)
+    ).
+tb3k_clauses(L) :-
+    findall((update(A, B, C, D, E, F, G) :- Bd), '$tabling':clause(update(A, B, C, D, E, F, G), Bd), L).
+tb3k_redef :-
+    set_prolog_flag(access_level, system),
+    '$tabling':abolish(update/7),
+    '$tabling':assertz((update(_, W, _, Agg, New, Next, Act) :- user:tb3k_upd(W, Agg, New, Next, Act))).
+tb3k_restore(Old) :-
+    nb_getval(tb3k_saved, L),
+    set_prolog_flag(access_level, system),
+    setup_call_cleanup(true, tb3k_put_back(L), set_prolog_flag(access_level, Old)).
+tb3k_put_back(L) :-
+    '$tabling':abolish(update/7),
+    forall(member(Cl, L), '$tabling':assertz(Cl)).
+tb3k_run(G) :-
+    setup_call_cleanup(tb3k_save(Old), (tb3k_redef, G), tb3k_restore(Old)).
+:- discontiguous tb3k_upd/5.
+tb3k_upd(s15(_, _), _, New, New, done).
+:- table s15(_, max).
+s15(a, 1).
+s15(a, 3).
+s15(a, 2).
+tb3k_upd(s17(_, _), p, q, q, keep) :- !.
+:- dynamic tb3k_seen/0.
+tb3k_upd(s17(_, _), _, r, r, Act) :-
+    (   tb3k_seen
+    ->  Act = keep
+    ;   assertz(tb3k_seen), Act = done
+    ).
+:- table s17(_, max).
+s17(a, p).
+s17(a, q).
+s17(a, r).
+% tbk09 (kills TB3-S17): the FIRST secondary node has a variable moded argument, f(_). f(b) meets it and `keep`s (two nodes f(_), f(b));
+% f(c) meets a node: the first call of update/7 for f(c) answers `done` (flag), every later call `keep`. Stopping at `done` leaves
+% {f(_), f(b)} (count 2); a walk that goes on reaches the other node (the stale old-arguments slot still unifies: f(V), V := b), gets `keep`
+% and adds f(c) (count 3). The same text runs in swipl (pin), the count is 2 there.
+:- dynamic tb3k_seenv/0.
+tb3k_upd(s17v(_, _), _, f(b), f(b), keep) :- !.
+tb3k_upd(s17v(_, _), _, f(c), f(c), Act) :-
+    (   tb3k_seenv -> Act = keep ; assertz(tb3k_seenv), Act = done ).
+:- table s17v(_, max).
+s17v(a, f(_)).
+s17v(a, f(b)).
+s17v(a, f(c)).
+tb3k_cntv(N) :- findall(x, s17v(_, _), L), length(L, N).
+% the rows after the redefinitions (tbk05-tbk08): the guard ran on failure and on an exception too; a plain moded table whose update/7 is the
+% BOOT code (`max`: both answers unconditional, the first clause, Act = delete) gives max again; the clauses of update/7 are the saved ones
+% (non-empty list, 4 clauses: boot/tabling.pl:837, :844, :852, :859); the access level is back.
+tb3k_guard(F-X) :-
+    (   tb3k_run(fail) -> F = yes ; F = no ),
+    catch(tb3k_run(throw(tb3k_x)), tb3k_x, X = caught).
+tb3k_restored(N-Same) :-
+    nb_getval(tb3k_saved, L0),
+    current_prolog_flag(access_level, Old),
+    set_prolog_flag(access_level, system),
+    setup_call_cleanup(true, tb3k_clauses(L1), set_prolog_flag(access_level, Old)),
+    length(L1, N),
+    N > 0,
+    (   L0 =@= L1 -> Same = true ; Same = false ).
+:- table p15(_, max).
+p15(a, 1).
+p15(a, 3).
+p15(a, 2).
+ta_vars(K, T) :- '$tbl_variant_table'(VT), trie_gen(VT, K, T).
+ta_tab(K0, T) :- ta_vars(user:K, T), K =@= K0.
+ta_moded(K, L) :- findall(S-M-C, (ta_tab(K, T), trie_gen(T, S), '$tbl_answer_c'(T, S, M, C)), L0), msort(L0, L).
+ta_all(G, L) :- findall(G, G, L0), msort(L0, L).
+"""
+
+const _TBK_CASES = [
+    ("tbk01", raw"tb3k_run(ta_all(s15(_, _), R))"),
+    ("tbk02", raw"ta_moded('$s15$1'(_), R)"),
+    ("tbk03", raw"tb3k_run(ta_all(s17(_, _), R))"),
+    ("tbk04", raw"ta_moded('$s17$1'(_), R)"),
+    ("tbk05", raw"tb3k_guard(R)"),
+    ("tbk06", raw"ta_all(p15(_, _), R)"),
+    ("tbk07", raw"tb3k_restored(R)"),
+    ("tbk08", raw"current_prolog_flag(access_level, R)"),
+    ("tbk09", raw"tb3k_run(tb3k_cntv(R))")
+]
+
+const _TBK_PINNED = [
+    "ok",
+    "t_tbk01 c[116,95,116,98,107,48,49]/1(c[91,124,93]/2(c[115,49,53]/2(a[97],i1),nil))",
+    "t_tbk02 c[116,95,116,98,107,48,50]/1(c[91,124,93]/2(c[45]/2(c[45]/2(c[114,101,116]/1(a[97]),i1),a[116,114,117,101]),nil))",
+    "t_tbk03 c[116,95,116,98,107,48,51]/1(c[91,124,93]/2(c[115,49,55]/2(a[97],a[112]),c[91,124,93]/2(c[115,49,55]/2(a[97],a[113]),nil)))",
+    "t_tbk04 c[116,95,116,98,107,48,52]/1(c[91,124,93]/2(c[45]/2(c[45]/2(c[114,101,116]/1(a[97]),a[112]),a[116,114,117,101]),c[91,124,93]/2(c[45]/2(c[45]/2(c[114,101,116]/1(a[97]),a[113]),a[116,114,117,101]),nil)))",
+    "t_tbk05 c[116,95,116,98,107,48,53]/1(c[45]/2(a[110,111],a[99,97,117,103,104,116]))",
+    "t_tbk06 c[116,95,116,98,107,48,54]/1(c[91,124,93]/2(c[112,49,53]/2(a[97],i3),nil))",
+    "t_tbk07 c[116,95,116,98,107,48,55]/1(c[45]/2(i4,a[116,114,117,101]))",
+    "t_tbk08 c[116,95,116,98,107,48,56]/1(a[117,115,101,114])",
+    "t_tbk09 c[116,95,116,98,107,48,57]/1(i2)"
+]
+
+const _TBK_CACHE = Ref{Any}(nothing)
+"The kernel's lines of the TB3K-S program: `(program loaded line, one line per case)`, computed once."
+function _tbk_kernel()
+    if _TBK_CACHE[] === nothing
+        gd, ld, st = _ta_load(_TBK_PROGRAM, _TBK_CASES)
+        _TBK_CACHE[] = (st, String[_ta_ask(gd, ld, "t_$id") for (id, _) in _TBK_CASES])
+    end
+    return _TBK_CACHE[]
+end
+
+@testset "TB3K-S: the action `done` of update/7 stops the update (kills TB3-S15, TB3-S17)" begin
+    @test _tbk_kernel()[1] == "ok"
+    @test length(_tbk_kernel()[2]) + 1 == length(_TBK_PINNED)
+    @test !isempty(_tbk_kernel()[2])
+    for (i, (id, _)) in enumerate(_TBK_CASES)
+        k, p = _tbk_kernel()[2][i], _TBK_PINNED[i + 1]
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    pin(id) = only(filter(l -> startswith(l, "t_$id "), _TBK_PINNED))
+    # not vacuous: `done` kept the FIRST answer (1); `max`, or the mutant's replace, would give 3 or 2
+    @test endswith(pin("tbk01"), "(a[97],i1),nil))")
+    @test !occursin("i3", pin("tbk01")) && !occursin("i2", pin("tbk01"))
+    # S17: two secondary nodes below the root (the `keep` of q), and the answer r was refused (`done` stopped the walk)
+    @test count("c[114,101,116]/1(a[97])", pin("tbk04")) == 2
+    @test !occursin("a[114]", pin("tbk03")) && !occursin("a[114]", pin("tbk04"))
+    @test occursin("a[112]", pin("tbk03")) && occursin("a[113]", pin("tbk03"))
+    # S17, the row that kills it (tbk09: the first secondary node holds a variable): the answer f(c) was refused, the table holds f(_) and
+    # f(b), 2 answers (swipl's); the walk that goes on (the mutant) adds f(c): 3. Both sides non-empty, and the corruption (2 -> 3, what
+    # the mutant returns) differs from the pin, so a kernel line with 3 cannot pass `k == p` above.
+    @test endswith(pin("tbk09"), "/1(i2)")
+    @test !isempty(_tbk_kernel()[2][findfirst(==("tbk09"), first.(_TBK_CASES))])
+    s17(l) = replace(l, "/1(i2)" => "/1(i3)"; count=1)
+    @test s17(pin("tbk09")) != pin("tbk09") && endswith(s17(pin("tbk09")), "/1(i3)")
+end
+
+# TB3K-S restore (audit D-0641 item 3): the rows tbk01/tbk03 redefine `'$tabling':update/7`; these four run AFTER them and prove the boot
+# definition is back: tbk05 the guard ran on a failing and on a throwing goal, tbk06 a plain `max` table (boot update/7, first clause, delete)
+# gives max again, tbk07 the clauses of update/7 are the saved ones (4 clauses: boot/tabling.pl:837, :844, :852, :859), tbk08 the access level.
+@testset "TB3K-S: update/7 is back after the redefinitions (call-cleanup restore)" begin
+    pin(id) = only(filter(l -> startswith(l, "t_$id "), _TBK_PINNED))
+    @test [id for (id, _) in _TBK_CASES] == ["tbk0$i" for i in 1:9]
+    ids = ["tbk05", "tbk06", "tbk07", "tbk08"]
+    rows = [
+        (_tbk_kernel()[2][findfirst(==(id), first.(_TBK_CASES))], pin(id)) for id in ids
+    ]
+    @test length(rows) == 4 && all(!isempty(k) && !isempty(p) for (k, p) in rows)
+    for (k, p) in rows
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # not vacuous: failure and exception both left the guard (`no`, `caught`); max is 3 (a mutant that does not put the clauses back gives
+    # 1 here: tb3k_upd has no clause for p15); the saved list has 4 clauses and equals the current one; the level is `user`
+    @test occursin("a[110,111],a[99,97,117,103,104,116]", pin("tbk05"))
+    @test endswith(pin("tbk06"), "(a[97],i3),nil))")
+    @test endswith(pin("tbk07"), "c[45]/2(i4,a[116,114,117,101]))")
+    @test endswith(pin("tbk08"), "a[117,115,101,114])")
+end
+
+# TB3-S9 (kills the mutant that drops the `update_delay_list(...) == UDL_FALSE` refusal in add_subsuming_answer, pl-tabling.c:5053-5056,
+# kernel src/pl-tabling.jl :4374-4375). Every row that reaches add_subsuming_answer through `'$tbl_reset'` (tas24) cannot see it: the caller
+# `tbl_reset_add_answer` reads only `rcadd == TBL_ANSWER_COMPLETE` and the pending exception is thrown either way. The caller that can is
+# `'$tbl_wkl_add_answer'/4` called AS A PREDICATE (pl-tabling.c:4886-4899): it returns `!!rc`; with the refusal rc = 0, FALSE with the type
+# error pending, so the call RAISES; without it rc = TBL_ANSWER_NEW, TRUE with the error pending, and `I_FEXITDET` clears it ("false alarm",
+# pl-vmi.c:4515-4518): the call SUCCEEDS and the error is swallowed. The rows call it on the worklist of a FRESH moded table, from an outermost
+# wrapper (`'$c_wrap_predicate'/5`, as test_tabling_min_swipl.jl:96-99 tm_wrapb does) built from `'$tbl_moded_variant_table'/6`, with a delay
+# list `foo` (not a list) set. tbw01 = first answer (path 1 of add_subsuming_answer, :5242-5251); tbw02 = a clean first answer, then the
+# delay list `foo` and a second answer 7 (the update path: update_subsuming_answers -> update_subsuming_answer -> add_subsuming_answer, :5128);
+# tbw03 = the control: a clean answer succeeds (`ok(_)`, delay list `[]`). Each row has its OWN key (k1, k2, k3): the wrapper leaves the fresh
+# table incomplete (the shape of the probe run in swipl), so a key is used once. Its own program and kernel: the wrapper is global.
+const _TBW_PROGRAM = raw"""
+:- dynamic ta_s9_res/2.
+:- table ta_wq(_, max).
+ta_wq(_, 1).
+ta_s9_steps(k1, [foo-5]).
+ta_s9_steps(k2, [[]-5, foo-7]).
+ta_s9_steps(k3, [[]-5]).
+ta_s9_add(K, Closure) :-
+    '$tbl_moded_variant_table'(Closure, ta_wq(K), Trie, Status, Skel, _Mono),
+    (   Status = fresh(_SCC, WL)
+    ->  ta_s9_steps(K, Steps),
+        ta_s9_job(Steps, WL, Skel, Rs),
+        '$tbl_delay_list'(DL),
+        '$tbl_set_delay_list'([]),
+        findall(S-V, '$tbl_answer'(Trie, S, V, _), L),
+        assertz(ta_s9_res(K, r(Rs, DL, L)))
+    ;   assertz(ta_s9_res(K, notfresh))
+    ).
+ta_s9_job([], _, _, []).
+ta_s9_job([D-V|Ss], WL, Skel, [R|Rs]) :-
+    '$tbl_set_delay_list'(D),
+    catch(( '$tbl_wkl_add_answer'(WL, (Skel/V), [], C), R = ok(C) ), E, R = ex(E)),
+    ta_s9_job(Ss, WL, Skel, Rs).
+:- '$c_wrap_predicate'(user:ta_wq(_, _), ta_s9_w, Closure, _W,
+       user:('$wrap$ta_wq'(K, _) :- ta_s9_add(K, Closure))).
+ta_s9_run(K, R) :- ( ta_wq(K, _) -> true ; true ), ta_s9_res(K, R).
+"""
+
+const _TBW_CASES = [
+    ("tbw01", raw"ta_s9_run(k1, R)"),
+    ("tbw02", raw"ta_s9_run(k2, R)"),
+    ("tbw03", raw"ta_s9_run(k3, R)")
+]
+
+# swipl 18168e62 (10.1.20), `LC_ALL=C swipl -q`, the file's driver, two byte-identical runs (evidence/TAB1/s9_row_notes.md)
+const _TBW_PINNED = [
+    "ok",
+    "t_tbw01 c[116,95,116,98,119,48,49]/1(c[114]/3(c[91,124,93]/2(c[101,120]/1(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,101,108,97,121,95,108,105,115,116],c[45]/1(a[102,111,111])),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,116,98,108,95,119,107,108,95,97,100,100,95,97,110,115,119,101,114],i4)),V0))),nil),a[102,111,111],c[91,124,93]/2(c[45]/2(a[114,101,116],i5),nil)))",
+    "t_tbw02 c[116,95,116,98,119,48,50]/1(c[114]/3(c[91,124,93]/2(c[111,107]/1(V0),c[91,124,93]/2(c[101,120]/1(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,101,108,97,121,95,108,105,115,116],c[45]/1(a[102,111,111])),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,116,98,108,95,119,107,108,95,97,100,100,95,97,110,115,119,101,114],i4)),V1))),nil)),a[102,111,111],c[91,124,93]/2(c[45]/2(a[114,101,116],i5),c[91,124,93]/2(c[45]/2(a[114,101,116],i7),nil))))",
+    "t_tbw03 c[116,95,116,98,119,48,51]/1(c[114]/3(c[91,124,93]/2(c[111,107]/1(V0),nil),nil,c[91,124,93]/2(c[45]/2(a[114,101,116],i5),nil)))"
+]
+
+const _TBW_CACHE = Ref{Any}(nothing)
+"The kernel's lines of the TB3-S9 program: `(program loaded line, one line per case)`, computed once."
+function _tbw_kernel()
+    if _TBW_CACHE[] === nothing
+        gd, ld, st = _ta_load(_TBW_PROGRAM, _TBW_CASES)
+        _TBW_CACHE[] = (st, String[_ta_ask(gd, ld, "t_$id") for (id, _) in _TBW_CASES])
+    end
+    return _TBW_CACHE[]
+end
+
+@testset "TB3-S9: '\$tbl_wkl_add_answer'/4 with a pending delay-list type error refuses (raises), not swallows (kills TB3-S9)" begin
+    @test _tbw_kernel()[1] == "ok"
+    @test length(_tbw_kernel()[2]) + 1 == length(_TBW_PINNED)
+    @test !isempty(_tbw_kernel()[2])
+    for (i, (id, _)) in enumerate(_TBW_CASES)
+        k, p = _tbw_kernel()[2][i], _TBW_PINNED[i + 1]
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    pin(id) = only(filter(l -> startswith(l, "t_$id "), _TBW_PINNED))
+    # the delay-list error in the encoding: ex(error(type_error(delay_list, -(foo)), context(system:'\$tbl_wkl_add_answer'/4, _)))
+    err = "c[101,120]/1(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[100,101,108,97,121,95,108,105,115,116],c[45]/1(a[102,111,111]))"
+    ok1 = "c[111,107]/1("
+    # not vacuous: tbw01 is the raised error and NOT an `ok`; tbw02 is `ok` for the clean answer, the error for the one with `foo`;
+    # tbw03 (the control) is `ok` and no error; the delay list stays `foo` after the refusal, the answers are in the trie in both
+    @test occursin(err, pin("tbw01")) && !occursin(ok1, pin("tbw01"))
+    @test occursin(err, pin("tbw02")) && count(ok1, pin("tbw02")) == 1
+    @test occursin("c[114]/3(c[91,124,93]/2(c[111,107]/1(", pin("tbw02"))      # the clean one comes FIRST, the error second
+    @test occursin(ok1, pin("tbw03")) && !occursin(err, pin("tbw03"))
+    @test occursin("a[102,111,111],c[91,124,93]/2(c[45]/2(a[114,101,116],i5)", pin("tbw01"))
+    # the MUST-FAIL corruptions (what TB3-S9 returns: the error replaced by `ok(_)`): the corrupted line differs from the pin, so a kernel
+    # line that swallowed the error cannot pass `k == p`
+    s9(l) = replace(l, "c[101,120]/1(" => "c[111,107]/1("; count=1)
+    @test s9(pin("tbw01")) != pin("tbw01")
+    @test s9(pin("tbw02")) != pin("tbw02")
+    @test s9(pin("tbw03")) == pin("tbw03")      # the control has nothing to corrupt: it is `ok` under the mutant too
+    @test occursin(ok1, s9(pin("tbw01"))) && !occursin(err, s9(pin("tbw01")))
+end
+
+@testset "TB3-S9: the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "TB3-S9 LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+        @test _TBW_PINNED[1] == "ok"
+        @test [first(split(l, " ")) for l in _TBW_PINNED[2:end]] ==
+            ["t_$id" for (id, _) in _TBW_CASES]
+    else
+        f = joinpath(mktempdir(), "tbw_swipl.pl")
+        write(f, _ta_text(_TBW_PROGRAM, _TBW_CASES))
+        @test _ta_swipl_lines(f, ["t_$id" for (id, _) in _TBW_CASES]) == _TBW_PINNED
+    end
+end
+
+# TB3K-1 (WHITE-BOX; kills TB3-C7, TB3-V2, TB3-V3; audit D-0635). None of the taa/tas rows can see these three: the answer list of the
+# second call is the same under each mutant (the compiled clause reads its key from argument 1, `S_TABLED` uses the local `st_clref`,
+# and the frame's predicate and the first choice point's position are read by no answer). So the row reads the frame itself, the way
+# test_context_module_swipl.jl and test_rules_swipl.jl read `ld.frames[q.frame]`. The Prolog route is not usable (no
+# `prolog_frame_attribute/3` here), so there is no swipl line for it: the expected values are `pl-vmi.c` S_TABLED/TRUST_CLAUSE as written.
+# UNVERIFIED on the kernel when written (no Julia was run): the first run decides the V2 formula (the alternative is in the handoff).
+# BOUNDED (audit D-0661 item 1): under TB3-V2/TB3-V3 this row once hung the daemon (a TIMEOUT is not a kill). The state is read FIRST and ONLY
+# into plain Bool/Int values (a failing `@test` of a struct would print the whole kernel), the choice-chain walk has an iteration cap, the
+# query is closed only when every check passed (a mutant leaves a frame that must not be walked further), and the whole body runs in a task
+# with a DEADLINE: a mutant that hangs fails `@test finished` in `_TB3K1_DEADLINE_S` seconds instead of the driver's TIMEOUT.
+const _TB3K1_DEADLINE_S = 30
+function _tb3k1_state!(st::Dict{Symbol, Any})
+    st[:stage] = 0
+    gd, ld, ld_st = _ta_load(_TA_PROGRAM)
+    st[:load] = ld_st == "ok"
+    first_line = _ta_ask(gd, ld, "ta_p")                  # the first call runs the table to completion (3 answers)
+    st[:first] = first_line != "ta_p undefined" && count(' ', first_line) >= 3
+    proc = LK.isCurrentProcedure(sym_key(_tas("ta_p")), 1, LK.MODULE_user(gd))
+    st[:proc] = proc !== nothing
+    st[:stage] = 1
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TA, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    q = ld.queries[LK.QueryFromQid(ld, qid)]
+    st[:rc] = LK.PL_next_solution(gd, ld, qid) == LK.PL_S_TRUE    # one answer of three: a choice point is left
+    fr = ld.frames[q.frame]
+    tgc = gd.procedures_trie_gen_compiled2.definition
+    st[:pred] = fr.predicate !== nothing && fr.predicate === tgc  # V3: setFramePredicate(FR, DEF)
+    w = ld.slots[LK._frame_arg_slot(ld, q.frame, 0)]              # C7: *argFrameP(FR, 0) = the clause atom
+    st[:atom] = LK.isAtomW(w)
+    cl = st[:atom] ? LK.clause_clref(gd, LK._atom_value(ld, w)) : nothing
+    st[:clause] = cl !== nothing && cl.predicate === tgc          # the atom names a clause of trie_gen_compiled/2
+    st[:stage] = 2
+    # V2: TRUST_CLAUSE sets lTop = ARGP + clause.variables (pl-vmi.c), so the oldest choice point of this frame sits there
+    ch = ld.BFR
+    steps = 0
+    while steps < 1000 && ld.choices[ch].parent != 0 &&
+          ld.choices[ld.choices[ch].parent].frame == q.frame
+        ch = ld.choices[ch].parent
+        steps += 1
+    end
+    st[:capped] = steps >= 1000
+    st[:chfr] = ld.choices[ch].frame == q.frame
+    st[:base] =
+        cl !== nothing &&
+        ld.choices[ch].base == LK.argFrameP(fr.base, 0) + Int(cl.variables)
+    st[:stage] = 3
+    if all(
+        st[k] === true for
+        k in (:load, :first, :proc, :rc, :pred, :atom, :clause, :chfr, :base)
+    ) && !st[:capped]
+        LK.PL_close_query(ld, qid)
+        LK.PL_close_foreign_frame(ld, fid)
+    end
+    st[:stage] = 4
+    return nothing
+end
+
+@testset "TB3K-1 white-box: the frame of the second call of a complete table runs trie_gen_compiled/2 (S_TABLED)" begin
+    st = Dict{Symbol, Any}(:stage => -1)
+    task = Threads.@spawn try
+        _tb3k1_state!(st)
+    catch e
+        st[:error] = sprint(showerror, e)
+    end
+    finished = timedwait(() -> istaskdone(task), Float64(_TB3K1_DEADLINE_S)) === :ok
+    @test finished                      # a hang is a FAILURE of this row within the deadline, not a driver TIMEOUT
+    @test !haskey(st, :error)
+    for k in (:load, :first, :proc, :rc)
+        @test get(st, k, false) === true
+    end
+    @test get(st, :pred, false) === true       # V3
+    @test get(st, :atom, false) === true       # C7
+    @test get(st, :clause, false) === true     # C7
+    @test get(st, :capped, true) === false     # the chain walk ended inside its cap
+    @test get(st, :chfr, false) === true       # V2: the oldest choice point of the frame ...
+    @test get(st, :base, false) === true       # ... sits at argFrameP(FR, 0) + clause.variables
+    @test get(st, :stage, -1) == 4
 end
 
 @testset "the answer rows are not vacuous" begin
@@ -407,6 +789,10 @@ end
     @test ans("taa02") != ans("taa03")      # one answer, none
     @test ans("taa07") == ans("taa10")      # a condition `true`
     @test ans("tas18") != ans("tas15")      # a bound moded argument: uninstantiation_error, not an answer
+    # tas24 is the raised error of the delay list, not an answer list (pinned through '$tbl_reset'; TB3-S9 is killed by tbw01-tbw03)
+    @test startswith(ans("tas24"), "c[114,97,105,115,101,100]/1(")
+    @test !occursin("c[91,124,93]", ans("tas24"))
+    @test ans("tas24") != ans("tas19")
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
@@ -417,9 +803,15 @@ end
         @test _TA_PINNED[1] == "ok"
         @test [first(split(l, " ")) for l in _TA_PINNED[2:end]] ==
             ["t_$id" for (id, _) in _TA_CASES]
+        @test _TBK_PINNED[1] == "ok"
+        @test [first(split(l, " ")) for l in _TBK_PINNED[2:end]] ==
+            ["t_$id" for (id, _) in _TBK_CASES]
     else
         f = joinpath(mktempdir(), "ta_swipl.pl")
         write(f, _ta_text(_TA_PROGRAM, _TA_CASES))
         @test _ta_swipl_lines(f, ["t_$id" for (id, _) in _TA_CASES]) == _TA_PINNED
+        g = joinpath(mktempdir(), "tbk_swipl.pl")
+        write(g, _ta_text(_TBK_PROGRAM, _TBK_CASES))
+        @test _ta_swipl_lines(g, ["t_$id" for (id, _) in _TBK_CASES]) == _TBK_PINNED
     end
 end

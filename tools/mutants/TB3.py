@@ -12,7 +12,7 @@
 # answers pinned from swipl 10.1.20): taq01-taq13 = `$tbl_answer`/3, `$tbl_answer_c`/4, `$tbl_wkl_add_answer`/4 registered, errors, an empty trie
 # (+ the white-box @tests of the registration table in the taq testset); taa01-taa11 = `$tbl_answer`/3 of completed tables of `ta_p/1`, `ta_pair/2`
 # (taa01 is the FIRST call of the variant `ta_p(_)`, taa06-taa11 call it again: the complete-table fast path, S_TABLED and `tbl_complete_answer_clause`);
-# tas01-tas23 = answer subsumption (max, min, first, last, lattice(ta_join/3), po(ta_lt/2), two moded args; the moded variant is `$ta_max$1(_)`;
+# tas01-tas24 = answer subsumption (max, min, first, last, lattice(ta_join/3), po(ta_lt/2), two moded args; the moded variant is `$ta_max$1(_)`;
 # tas15-tas17 the first calls of `ta_max(a|b|c, X)`, tas18 a bound moded argument (uninstantiation_error), tas21-tas23 the status and the answers
 # of the moded trie). The taa and tas rows RUN ONCE TB2 AND TB5 ARE STACKED (start_tabling, completion); taq needs TB3 + TB2's get_worklist.
 # THE FOUR CLASSES (every mutant id says which; DEFERRED and SURVIVES-UNTIL-ROW live in the list `DEFERRED` at the end, not in MUTANTS):
@@ -125,11 +125,10 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="            if old != 0\n                trie_delete(_query_gd(ld), atrie, old, false)\n",
          new="            if old == 0\n                trie_delete(atrie, old, false)\n"),
-    dict(id="TB3-S9 add_subsuming_answer: a failing update_delay_list does not return 0, the `== UDL_FALSE && return 0` dropped (EQUIVALENT: `update_delay_list` returns UDL_COMPLETE or UDL_TRUE only until TB4, pl-tabling.jl:417-429: its UDL_FALSE is never produced; TB4 re-judges)",
+    dict(id="TB3-S9 add_subsuming_answer: a failing update_delay_list does not return 0, the `== UDL_FALSE && return 0` dropped (KILL the TB3-S9 testset of test_tabling_answers_swipl.jl, rows tbw01-tbw03: `update_delay_list_any` (pl-tabling.jl ~5529-5650) returns UDL_FALSE on its type-error paths; tas24 (`ta_udl(a, 1) :- '$tbl_set_delay_list'(foo)`, through `'$tbl_reset'`) CANNOT see the refusal: its caller reads only the complete/not-complete result and the pending exception is thrown either way. The rows call `'$tbl_wkl_add_answer'/4` as a predicate on the worklist of a fresh moded table from an outermost wrapper, with the delay list `foo` set: with the refusal rc = 0 the call RAISES type_error(delay_list, -foo) (pl-tabling.c:4886-4899), the mutant returns TBL_ANSWER_NEW, the call succeeds and I_FEXITDET clears the pending error (pl-vmi.c:4515-4518): tbw01 first answer (path 1), tbw02 a clean answer then foo (the update path, update_subsuming_answers), tbw03 the control (clean answer, ok); audit D-0635 re-judged the old EQUIVALENT)",
          file=TAB, targets=TTAB,
          old="update_delay_list(ld, wl, nid, skel, delays) == UDL_FALSE && return 0\n",
-         new="update_delay_list(ld, wl, nid, skel, delays)\n",
-         equivalent="update_delay_list returns UDL_COMPLETE or UDL_TRUE only (pl-tabling.jl:417-429): the other branch is the TB4 refusal, so `== UDL_FALSE` never holds"),
+         new="update_delay_list(ld, wl, nid, skel, delays)\n"),
     dict(id="TB3-S10 update_subsuming_answer: a secondary node is taken for a primary one, `== 0` (KILL tas01: the second answer of `ta_max(a, _)` meets the first node as a non-secondary node, `update/7` never runs, 3 is not aggregated, 1 stays)",
          file=TAB, targets=TTAB,
          old="    if (atrie.nodes[nid].flags & TN_SECONDARY) != 0\n        gd = _query_gd(ld)\n",
@@ -150,7 +149,7 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="PL_put_atom(ld, ctx.argv + 2, gd.modules[def.module_].atom)",
          new="PL_put_atom(ld, ctx.argv + 2, mk_sym(T, :system))"),
-    dict(id="TB3-S15 update_subsuming_answer: the action `done` is not recognised, `:done` -> `:nothing_done` (KILL tas05/tas06: `first` answers `done` for a later answer, mutated it is a replace, the answer is `y`/`z` not `x`)",
+    dict(id="TB3-S15 update_subsuming_answer: the action `done` is not recognised, `:done` -> `:nothing_done` (KILL the TB3K-S testset of test_tabling_answers_swipl.jl, rows tbk01/tbk02 (tbk05-tbk08 follow and prove the boot update/7 is back, restored by tb3k_run's call-cleanup guard): boot/tabling.pl:837-860 never answers `done`, so tas05/tas06 cannot see it; that program redefines '$tabling':update/7 to answer `done` for every later answer of `s15`: unmutated the first answer (a, 1) stays, mutated it is replaced each time, (a, 2))",
          file=TAB, targets=TTAB,
          old="if sym_key(act) == sym_key(mk_sym(T, :done))\n",
          new="if sym_key(act) == sym_key(mk_sym(T, :nothing_done))\n"),
@@ -158,7 +157,7 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="            else\n                del = nid\n",
          new="            else\n                del = 0\n"),
-    dict(id="TB3-S17 update_subsuming_answer: DONE continues the mapping, `return nothing` (KILL tas05/tas06 as the plan of handoff3 reads it: `first` answers `done`; NOTE this is observable only with a SECOND secondary node below the root, `map_trie_node` goes on after `nothing` and stops at DONE; with one node per root (max, min, first, last) the result is the same: if the first battery lets it survive, the row is TB5's `po` row with two incomparable answers)",
+    dict(id="TB3-S17 update_subsuming_answer: DONE continues the mapping, `return nothing` (KILL the TB3K-S testset of test_tabling_answers_swipl.jl, row tbk09 (tbk05-tbk08 follow and prove the boot update/7 is back, restored by tb3k_run's call-cleanup guard): observable only when the FIRST secondary node holds a VARIABLE in its moded argument. update_subsuming_answers builds the argument block once and the old-moded-arguments slot is UNIFIED with each node and keeps the binding, so with ground values (tbk03/tbk04: p, q) the second node never unifies, update/7 is never called for it and both walks end alike: those two rows stay as correct pins, they do not kill. tbk09 (`s17v(a, f(_))`, `f(b)` kept, then `f(c)`): the first call of update/7 for f(c) answers `done`; unmutated the walk stops and the table holds {f(_), f(b)} (count 2, swipl's pin); the mutant goes on, the stale slot f(V) still unifies with the node f(b) (V := b), update/7 answers `keep` and f(c) is added (count 3); evidence/TAB1/s17_read.md)",
          file=TAB, targets=TTAB,
          old="                return TRIE_MAP_DONE\n",
          new="                return nothing\n"),
@@ -198,10 +197,11 @@ MUTANTS = [
          file=TAB, targets=TREG,
          old="            return PL_unify_atom(ld, t, mk_sym(T, :undefined))\n        end\n    else\n        return PL_unify_atom(ld, t, mk_sym(T, Symbol(\"true\")))\n",
          new="            return PL_unify_atom(ld, t, mk_sym(T, :undefined))\n        end\n    else\n        return PL_unify_atom(ld, t, mk_sym(T, :false))\n"),
-    dict(id="TB3-D3 trie_gen's data kind of `$tbl_answer` is the node handle, 0 for 2 (KILL taa07, taa10: the condition is bound to the plain unification of the node, not `true`; taa01: the second component of `S-C`; applies AFTER TR2's edit of trie_gen_raw, evidence/TB3/handoff2.md)",
+    dict(id="TB3-D3 trie_gen's data kind of `$tbl_answer` is the node handle, 0 for 2 (EQUIVALENT, audit D-0635 re-judged: the constant is only a tag shared by its three callers and the one comparison, see `equivalent`; no row can differ)",
          file=TAB, targets=TREG,
          old="const TRIE_GEN_DELAY_INFO = 2\n",
-         new="const TRIE_GEN_DELAY_INFO = 0\n"),
+         new="const TRIE_GEN_DELAY_INFO = 0\n",
+         equivalent="the constant is read only at src/pl-trie.jl:2894 (`data_kind == TRIE_GEN_DELAY_INFO`, in trie_gen_unify_data) and passed only by src/pl-tabling.jl:4874, :4893 and :4900 (`$tbl_answer`/3 and `$tbl_answer_c`/4); trie_gen_unify_data is reached only through src/pl-trie.jl:2985 `(Data == 0 || trie_gen_unify_data(...))`, and every kind-0 caller (src/pl-trie.jl:3035, :3044: trie_gen/2,3) passes Data == 0, so the comparison is never evaluated for it; the other kinds are 1 (:3054), 3 (pl-tabling.jl:4914) and 4 (pl-tabling.jl:6380); no other caller or test passes a kind (`git grep trie_gen_raw` over src and test); so the three callers take the same arm with 0 as with 2 and no input differs. Owner note: left to the owner of the data kinds (TR2's trie_gen_raw): a future caller that passes kind 0 with a Data term (it would reach the node-handle fallback unmutated, the delay-info arm mutated) must add the row that tells the two apart"),
     dict(id="TB3-D4 `$tbl_answer`/3: the skeleton and the condition are swapped, `A1, 0, A3, 0, A2` (KILL taa01: the answers `ret(V)` are unified with the condition, `true-ret(V)`... the row's pinned `ret(1)-true` list differs; taa06's count stays, taa07/taa10 fail)",
          file=TAB, targets=TREG,
          old="return trie_gen(_query_gd(ld), ld, A1, 0, A2, 0, A3, TRIE_GEN_DELAY_INFO, PL__ctx)",
@@ -232,7 +232,7 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="        ld.gstack[p + i] = makeRefG(vp)             # *p = makeRefG(vp)\n",
          new="        ld.gstack[p + i] = makeRefG(vp + 1)         # *p = makeRefG(vp)\n"),
-    dict(id="TB3-C7 tbl_complete_answer_clause: the clause and the skeleton are stored in swapped frame arguments (KILL taa06: trie_gen_compiled(Clause, Skel) runs with the skeleton in the clause slot; every second call of `ta_p(_)` raises or fails)",
+    dict(id="TB3-C7 tbl_complete_answer_clause: the clause and the skeleton are stored in swapped frame arguments (KILL the TB3K-1 white-box testset of test_tabling_answers_swipl.jl: argument 0 of the second call's frame must hold the clause atom of trie_gen_compiled/2; the answer list cannot show it, the compiled clause reads the key from argument 1)",
          file=TAB, targets=TTAB,
          old="                ld.slots[_frame_arg_slot(ld, fr, 0)] = clref   # *argFrameP(fr, 0) = atom2word(clref)\n",
          new="                ld.slots[_frame_arg_slot(ld, fr, 1)] = clref   # *argFrameP(fr, 0) = atom2word(clref)\n"),
@@ -246,11 +246,11 @@ MUTANTS = [
          file=WAM, targets=TTAB,
          old="    st_clref == 0 && @goto S_CALLWRAPPER            # if ( !clref ) VMI_GOTO(S_CALLWRAPPER)\n",
          new="    st_clref != 0 && @goto S_CALLWRAPPER            # if ( !clref ) VMI_GOTO(S_CALLWRAPPER)\n"),
-    dict(id="TB3-V2 S_TABLED: ARGP points at the second argument of the frame (KILL taa06: trie_gen_compiled/2 reads its arguments from ARGP, the second call of `ta_p(_)` gets the skeleton as the clause)",
+    dict(id="TB3-V2 S_TABLED: ARGP points at the second argument of the frame (KILL the TB3K-1 white-box testset: TRUST_CLAUSE sets lTop = ARGP + clause.variables, so the frame's oldest choice point sits one slot higher; the answer list is the same)",
          file=WAM, targets=TTAB,
          old="    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)      # ARGP = argFrameP(FR, 0)\n",
          new="    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 1), ph)      # ARGP = argFrameP(FR, 0)\n"),
-    dict(id="TB3-V3 S_TABLED: the frame keeps the supervisor's predicate, `setFramePredicate(ld.frames[FR], DEF)` dropped after the switch to trie_gen_compiled/2 (KILL taa06: the second call runs the answer clause under the wrong predicate: arity and trace/last-call state of the frame belong to `ta_p/1`; taa11)",
+    dict(id="TB3-V3 S_TABLED: the frame keeps the supervisor's predicate, `setFramePredicate(ld.frames[FR], DEF)` dropped after the switch to trie_gen_compiled/2 (KILL the TB3K-1 white-box testset: the frame of the second call must run trie_gen_compiled/2; the answer list is the same)",
          file=WAM, targets=TTAB,
          old="    DEF = gd.procedures_trie_gen_compiled2.definition::Definition{T}       # FR->predicate = DEF = GD->procedures...\n    setFramePredicate(ld.frames[FR], DEF)\n",
          new="    DEF = gd.procedures_trie_gen_compiled2.definition::Definition{T}       # FR->predicate = DEF = GD->procedures...\n"),

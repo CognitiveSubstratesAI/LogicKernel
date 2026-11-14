@@ -86,6 +86,8 @@ jobs:
           tools/ci_compile_run.sh tools_summary tools/test_ci_compile_summary.sh
           # every tools/test_*.sh is mode 100755 (CIREF2: a 100644 test script was exit 126 on the runner)
           tools/ci_compile_run.sh tools_modes tools/test_tool_modes.sh
+          # tools/pre_ci.sh (the local run of these steps, derived from this file): its rows use a fake workflow
+          tools/ci_compile_run.sh tools_pre_ci tools/test_pre_ci.sh
           # the D-0164 allowlist filter's rows (audit D-0652): a no-op until the allowlist patch brings tools/test_dterm.sh
           if [ -f tools/test_dterm.sh ]; then tools/ci_compile_run.sh tools_dterm tools/test_dterm.sh; fi
       # THE CHEAP TEST FILES: the layout pins and the R2 status — files that run WITHOUT the oracle (they are
