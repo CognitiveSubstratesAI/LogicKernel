@@ -1446,7 +1446,7 @@ const MT_MATRIX_A = 0x9908b0df
 const MT_WARM_UP = 2000                                     # randmt.c WARM_UP
 const MT_LIMBS = 313                                        # the struct's size in 64-bit limbs
 
-# PORT: randmt.c mangle_seed (GMP)
+# GMP source (not swipl-devel): randmt.c mangle_seed
 # One reduction step of GMP's `mangle_seed`: `r` modulo 2^19937 - 20023, as upstream's inner loop.
 function _mt_reduce(r::BigInt)::BigInt
     while true
@@ -1456,7 +1456,7 @@ function _mt_reduce(r::BigInt)::BigInt
     end
 end
 
-# PORT: randmt.c mangle_seed (GMP)
+# GMP source (not swipl-devel): randmt.c mangle_seed
 "`b^1074888996` modulo 2^19937 - 20023, GMP's mangling of a seed (randmt.c `mangle_seed`)."
 function _mt_mangle_seed(b::BigInt)::BigInt
     r = b
@@ -1473,7 +1473,7 @@ function _mt_mangle_seed(b::BigInt)::BigInt
     end
 end
 
-# PORT: randmt.c __gmp_mt_recalc_buffer (GMP)
+# GMP source (not swipl-devel): randmt.c __gmp_mt_recalc_buffer
 "Refill the twister's 624 words (`__gmp_mt_recalc_buffer`); `mt` is 1-based here."
 function _mt_recalc_buffer!(mt::Vector{UInt32})::Nothing
     for kk in 0:(MT_N - MT_M - 1)
@@ -1491,7 +1491,7 @@ function _mt_recalc_buffer!(mt::Vector{UInt32})::Nothing
     return nothing
 end
 
-# PORT: randmt.c randseed_mt (GMP)
+# GMP source (not swipl-devel): randmt.c randseed_mt
 "`gmp_randseed` on the twister (randmt.c `randseed_mt`): `mt` is reseeded from the integer `seed`."
 function _mt_randseed!(mt::Vector{UInt32}, seed::BigInt)::Nothing
     length(mt) == MT_N + 1 || resize!(mt, MT_N + 1)
@@ -1515,7 +1515,7 @@ function _mt_randseed!(mt::Vector{UInt32}, seed::BigInt)::Nothing
     return nothing
 end
 
-# PORT: randmt.c __gmp_mt_getnext (GMP)
+# GMP source (not swipl-devel): randmt.c __gmp_mt_getnext
 "The next tempered 32 bits of the twister (`__gmp_mt_getnext`)."
 function _mt_getnext!(mt::Vector{UInt32})::UInt32
     if mt[MT_N + 1] >= MT_N
@@ -1531,7 +1531,7 @@ function _mt_getnext!(mt::Vector{UInt32})::UInt32
     return y
 end
 
-# PORT: randmt.c randget_mt (GMP)
+# GMP source (not swipl-devel): randmt.c randget_mt
 "`nbits` random bits as an integer (GMP `_gmp_rand` on the twister: whole limbs as two words, low word first; a partial limb keeps its low bits)."
 function _mt_randget!(mt::Vector{UInt32}, nbits::Int)::BigInt
     nlimbs, rbits = divrem(nbits, 64)
@@ -1618,7 +1618,7 @@ function init_random(ld::PL_local_data)::Nothing
     return nothing
 end
 
-# PORT: mpz/urandomm.c mpz_urandomm (GMP)
+# GMP source (not swipl-devel): mpz/urandomm.c mpz_urandomm
 "A random integer in `[0, n)` for `n > 0` (GMP `mpz_urandomm`): `nbits` random bits until below `n`, 80 tries at most."
 function _mpz_urandomm(ld::PL_local_data, n::BigInt)::BigInt
     pow2 = count_ones(n) == 1                               # POW2_P of the limbs
@@ -2972,7 +2972,7 @@ function ar_roundtoward(ld::PL_local_data, n1::number, n2::number, r::number)::B
     return true
 end
 
-# PORT: pl-arith.c evalExpression as evalExpression_cells
+# The WORD walk of pl-arith.c `evalExpression` (`evalExpression_cells` below carries the PORT marker).
 # DIVERGES (L1d; the workspace's L1_plan/stageL1d_design.md §3e): upstream's WORD walk on LOCATIONS
 # (`_deref_loc`'s: a global position, or `-i` for slot `i`) — `term_stack` holds them with the
 # `walk_ref` bit (`(loc << 1) | wr`, `ld.arith_cells`); a compound is pushed and the walk goes to its
@@ -3155,7 +3155,7 @@ function _evalExpression_walk(
     return false
 end
 
-# PORT: pl-arith.c evalExpression
+# PORT: pl-arith.c evalExpression as evalExpression_cells
 # DIVERGES: the rounding mode is scoped to ONE evaluation (see the file header): the mode the
 # `float_rounding` flag names is set for the walk, and the mode found at the entry is put back in a
 # `finally`, also after an error (upstream leaves the hardware mode set by `roundtoward/2` after an
@@ -3634,7 +3634,7 @@ function pl_divmod4_va(
     return rc ? FTRUE : FFALSE
 end
 
-# PORT: pl-gmp.c mpz_rootrem as _mpz_rootrem
+# Ported from pl-gmp.c `mpz_rootrem` (pl-gmp.c is not one of this file's UPSTREAM files), as `_mpz_rootrem`.
 # DIVERGES: GMP's `mpz_rootrem` has no Julia wrapper: the truncated `k`-th root by Newton's
 # iteration on `BigInt` (the root of a negative `n` is the negated root of `-n`, GMP's sign rule),
 # the remainder `n - root^k`. A `k` at least the bit length of `n` gives the root 1 (or 0) at once.

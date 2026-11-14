@@ -6094,9 +6094,8 @@ function PL_next_solution_guarded(
     ac_what = NE
     @goto a_cmp
 
-    # PORT: pl-vmi.c CMP_FAST as a_cmp
-    # PORT: pl-vmi.c CMP
-    # PORT: pl-vmi.c a_cmp_out
+    # The macros `CMP_FAST` and `CMP` of pl-vmi.c are this label too.
+    # PORT: pl-vmi.c a_cmp_out as a_cmp
     # DIVERGES: the macros `CMP`/`CMP_FAST` are one shared label with the comparison in `ac_what`
     # (the `LT .. NE` of pl-arith.jl): equal types `V_INTEGER`/`V_FLOAT` compare directly (a NaN: `<`, `==`
     # false, `!=` true, as C's), anything else through `ar_compare`; the two numbers are the top two of
