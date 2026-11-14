@@ -3,8 +3,10 @@
 # `tN(R)`; the kernel consults the program and enumerates every solution of every tN/1, and its lines are compared with
 # test_tai_format_swipl.out — swipl 10.1.20's own, printed by the driver below (`ok`, then one line per row: its name and every
 # solution). When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale. The rows use
-# date/9 terms with an explicit offset and zone name, or float stamps read only by %s and %f (no host-zone dependence; no %c/%x/%X: the locale decides them). UNTESTED when written (TAI1 writer
-# lane, edit-only): the .out is swipl's (two identical runs), the kernel's side was never run.
+# date/9 terms with an explicit offset and zone name, or float stamps read only by %s and %f (no host-zone dependence; no %c/%x/%X: the locale decides them).
+# The second testset runs test_tai_format_tz_swipl.pl, whose rows read the HOST: both sides run with TZ set to the POSIX rule
+# CET-1CEST,M3.5.0/2,M10.5.0/3 (no zoneinfo file), the rows that print %c %x %X %p %P and the names switch LC_TIME to C (and back).
+# UNTESTED when written (TAI1 writer lane, edit-only): the .out files are swipl's (two identical runs), the kernel's side was never run.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -40,10 +42,13 @@ end
 
 const _TAF_PL = joinpath(@__DIR__, "test_tai_format_swipl.pl")
 const _TAF_OUT = joinpath(@__DIR__, "test_tai_format_swipl.out")
+const _TAFZ_PL = joinpath(@__DIR__, "test_tai_format_tz_swipl.pl")
+const _TAFZ_OUT = joinpath(@__DIR__, "test_tai_format_tz_swipl.out")
+const _TAFZ_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3"
 
 # the rows' names, in the order of the program
-_taf_names() =
-    unique([String(m[1]) for m in eachmatch(r"^(t\d+)\(R\) :-"m, read(_TAF_PL, String))])
+_taf_names(pl::String=_TAF_PL) =
+    unique([String(m[1]) for m in eachmatch(r"^(t\d+)\(R\) :-"m, read(pl, String))])
 
 # the kernel's lines: `ok` (the program loaded), then each row's name and solutions
 function kernel_lines(
@@ -132,7 +137,9 @@ fz_run(File, Ns) :-
     ( S == ok -> writeln(ok) ; S = exc(B), write('exc '), enc(B), nl ),
     forall(member(N, Ns), fz_pred(N)).
 """
-function swipl_lines(path::String, names::Vector{String})::Vector{String}
+function swipl_lines(
+    path::String, names::Vector{String}; tz::Union{Nothing, String}=nothing
+)::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
         write(
@@ -140,37 +147,59 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
             DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
             "]), halt)).\n"
         )
-        read(pipeline(`swipl -q $f`; stderr=devnull), String)
+        cmd = tz === nothing ? `swipl -q $f` : addenv(`swipl -q $f`, "TZ" => tz)
+        read(pipeline(cmd; stderr=devnull), String)
     end
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
 
-@testset "TAI1: format_time/3,4 == swipl's answers (the .out), through a program" begin
-    names = _taf_names()
-    expected = String.(readlines(_TAF_OUT))
-    # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
-    @test length(names) >= 16
+# one differential: the program `pl`, the .out `outp`, the host zone `tz` (nothing: the rows do not read it)
+function taf_check(pl::String, outp::String, tz::Union{Nothing, String})::Nothing
+    names = _taf_names(pl)
+    expected = String.(readlines(outp))
+    # not a vacuous agreement: the .out has a line per row, and every row has at least one answer
+    @test length(names) >= 10
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
-    @test all(l -> !endswith(l, " "), expected)                               # every row has at least one answer
+    @test all(l -> !endswith(l, " "), expected)
     @test !any(l -> endswith(l, " exception"), expected)                      # errors are caught by the rows, none escapes
+    kl = tz === nothing ? kernel_lines(_TL, pl, names) :
+         withenv(() -> kernel_lines(_TL, pl, names), "TZ" => tz)
+    @test length(kl) == length(expected)
+    for i in eachindex(kl)
+        @test (i, kl[i]) == (i, expected[i])
+    end
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "TAI FORMAT DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
+    else
+        @test swipl_lines(pl, names; tz) == expected                          # the .out is swipl's, still
+    end
+    return nothing
+end
+
+@testset "TAI1: format_time/3,4 == swipl's answers (the .out), through a program" begin
+    expected = String.(readlines(_TAF_OUT))
+    @test length(_taf_names()) >= 16
     @test count(l -> occursin(_codes("existence_error"), l), expected) >= 1
     @test count(l -> occursin(_codes("domain_error"), l), expected) >= 2
     @test count(l -> occursin(_codes("type_error"), l), expected) >= 3
     @test occursin(_codes("Thursday"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("1577934246"), expected[findfirst(startswith("t3 "), expected)])   # %s of 2020-01-02 03:04:05.5 UTC
+    taf_check(_TAF_PL, _TAF_OUT, nothing)
+end
 
-    kl = kernel_lines(_TL, _TAF_PL, names)
-    @test length(kl) == length(expected)
-    for i in eachindex(kl)
-        @test (i, kl[i]) == (i, expected[i])
-    end
-
-    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    if swipl === nothing
-        @info "TAI FORMAT DIFFERENTIAL NOT RUN LIVE: `swipl` is not on PATH here (the .out was checked). It runs in tools/run_tests.sh and CI."
-    else
-        @test swipl_lines(_TAF_PL, names) == expected                         # the .out is swipl's, still
-    end
+@testset "TAI1: format_time/3,4 under a fixed host zone and locale == swipl's answers, through a program" begin
+    expected = String.(readlines(_TAFZ_OUT))
+    @test length(_taf_names(_TAFZ_PL)) == 13
+    # the evidence the rows exist for: the zone names of both halves of the year, the C-locale %c, the wrapped year, the sinks
+    @test occursin(_codes("CEST"), expected[findfirst(startswith("t0 "), expected)])
+    @test occursin(_codes("CET"), expected[findfirst(startswith("t0 "), expected)])
+    @test occursin(_codes("Thu Jan  1 01:00:00 1970"), expected[findfirst(startswith("t2 "), expected)])
+    @test occursin(_codes("-2147483648"), expected[findfirst(startswith("t6 "), expected)])   # %G of year 2147483647 wraps
+    @test occursin(_codes("ab"), expected[findfirst(startswith("t8 "), expected)])           # output before an error stays
+    @test occursin(_codes("permission_error"), expected[findfirst(startswith("t9 "), expected)])
+    @test occursin(_codes("existence_error"), expected[findfirst(startswith("t10 "), expected)])
+    taf_check(_TAFZ_PL, _TAFZ_OUT, _TAFZ_TZ)
 end

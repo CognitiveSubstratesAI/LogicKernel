@@ -223,7 +223,7 @@ const SIG_GC = SIG_PROLOG_OFFSET + 1
 const SIG_THREAD_SIGNAL = SIG_PROLOG_OFFSET + 2
 "Prolog signal: clause garbage collection (pl-incl.h `SIG_CLAUSE_GC`)."
 const SIG_CLAUSE_GC = SIG_PROLOG_OFFSET + 3
-"Prolog signal: abort (pl-incl.h `SIG_PLABORT`)."
+"Prolog signal that unwinds to the top level (pl-incl.h `SIG_PLABORT`)."
 const SIG_PLABORT = SIG_PROLOG_OFFSET + 4
 "Prolog signal: halt (pl-incl.h `SIG_PLHALT`)."
 const SIG_PLHALT = SIG_PROLOG_OFFSET + 5

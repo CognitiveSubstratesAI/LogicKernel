@@ -4944,6 +4944,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.foutstra, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
     (LK._strftime_out, Tuple{LK.IOSTREAM, Int, LK.ftm, Vector{UInt64}}, false),
     (LK._fmt_cps, Tuple{String}, false),
+    (LK._wrap32, Tuple{Int}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),
