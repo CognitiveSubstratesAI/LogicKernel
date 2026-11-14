@@ -246,7 +246,7 @@ end
     @test !is_variant_ptr(nil, qnil)
 end
 
-# TARGET-ONLY: pin when the oracle moves to cf6960c2. The expectation is written by hand from the TARGET's pl-termhash.c
+# TARGET-ONLY: pin when the oracle moves to cf6960c2 (swipl-devel cf6960c2 pl-termhash.c:177-186, 640, 652). The expectation is written by hand from the TARGET's pl-termhash.c
 # `variant_sha1` and `HASH_VAR` (the local swipl is the pin, which hashes the variable's marked cell, a cell-layout word): a
 # numbered variable is hashed as "V" and `le64(valTagged(*p))`, which is its number — 0 for the first variable met, 1 for the
 # second, a repeat keeps its number. The digests are recomputed here with Julia's SHA stdlib and MurmurHashAligned2 from the
