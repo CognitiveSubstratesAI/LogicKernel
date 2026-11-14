@@ -1,0 +1,218 @@
+name: CI compile check
+# THE COMPILE-FIRST CHECK OF A WRITTEN BRANCH (audit D-0636 item 2, Shivaji D-0637, 2026-11-13). A writer pushes
+# `git push origin wip/<owner>:refs/heads/ci/<owner>` (tools/githooks/pre-push, rules 4b and 7) and GitHub's runner
+# answers in minutes what a shared local lane answers in hours: does the branch PARSE, PRECOMPILE, FORMAT, pass
+# port_check, hold no Bool-as-atom and no where-bound return type (tools/check_where_return.sh), and pass the cheap files that need no oracle. It NEVER runs the oracle, the
+# term-type shards, Evidence or a battery, and NOTHING LANDS FROM A ci/ REF (a landing still needs the gate branch,
+# the local branch-gate marker and the full recipe). CI.yml, evidence.yml and mutation.yml do not trigger on ci/**.
+# tools/ci_status.sh IGNORES a run of this workflow by its name above (the same SHA is later pushed to gate/<name>):
+# rename both or neither. Every failure of the push lands in ONE run (tools/ci_compile_run.sh keeps each step's
+# log and exit code; the last step prints the table and decides): file, line, message, in the job summary.
+# THE STATIC JOB (CIREF2, audit D-0651): after the compile job SUCCEEDED (a tree that does not precompile wastes no
+# runner), the SAME nine static-analysis shards Evidence runs (test/runtests.jl with LOGICKERNEL_SA_SHARD=k/9: JET,
+# Aqua, AllocCheck; the pinned analysis tools; the same caches) run in parallel, off the lanes: about the time of the
+# slowest shard. `static-summary` writes the Aqua and JET findings BY NAME with file:line into the job summary
+# (tools/ci_compile_summary.py). The whole workflow, every job of it, is ignored by tools/ci_status.sh by the
+# workflow name above: a red `static` job is no verdict on a commit either. The concurrency group below is the
+# workflow's, so a newer push cancels the static shards with the compile job. Cost: nine runners per pushed ci/ ref,
+# bounded by one ci/ ref per owner and cancel-in-progress.
+on:
+  push:
+    branches: ['ci/**']
+
+concurrency:
+  group: ci-compile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The runner image is pinned (ubuntu-24.04, never -latest), as in CI.yml; the actions are pinned by commit.
+jobs:
+  compile:
+    name: compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      # fetch-depth 0: origin/main must exist, the formatter step reads the files this branch changes against it
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      # the shared depot cache holds the DEPENDENCIES only: the package's own compiled cache is dropped after the
+      # restore (CI.yml, audit D-0535 item 1), so `using LogicKernel` below is a real precompile of this branch
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
+      # every database boots HOME/boot/init.pl; `home/` is generated and git-ignored (tools/build_home.jl)
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
+      - name: Pkg.instantiate
+        shell: bash
+        run: tools/ci_compile_run.sh instantiate julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      # THE COMPILE CHECK PROPER: the package parses and precompiles
+      - name: using LogicKernel (precompile)
+        shell: bash
+        run: tools/ci_compile_run.sh --needs instantiate precompile julia --project=. -e 'using LogicKernel'
+      - name: Formatter (the .jl files changed against origin/main)
+        shell: bash
+        run: tools/ci_compile_run.sh fmt tools/ci_compile_fmt.sh
+      - name: port_check (inventory and markers)
+        shell: bash
+        run: tools/ci_compile_run.sh port_check julia tools/port_check.jl
+      - name: Bool-as-atom grep (src/ and test/)
+        shell: bash
+        run: tools/ci_compile_run.sh bool_atoms tools/check_bool_atoms.sh
+      # CIFIX1's class (audit D-0651 item 3): a one-line `f(x::C{T})::R where {T} = ...` binds the `where` to the return type
+      - name: where-bound return type (src/ and test/)
+        shell: bash
+        run: tools/ci_compile_run.sh where_return tools/check_where_return.sh
+      # the pre-push hook's ci/ guard rows and the compile check's own tools: plain bash and python, seconds
+      - name: Tool cases (hook ci/ rows, Bool-as-atom, where-return, summary)
+        shell: bash
+        run: |
+          tools/ci_compile_run.sh tools_prepush_ci tools/test_prepush_ci.sh
+          tools/ci_compile_run.sh tools_bool_atoms tools/test_check_bool_atoms.sh
+          tools/ci_compile_run.sh tools_where_return tools/test_check_where_return.sh
+          tools/ci_compile_run.sh tools_summary tools/test_ci_compile_summary.sh
+          # the D-0164 allowlist filter's rows (audit D-0652): a no-op until the allowlist patch brings tools/test_dterm.sh
+          if [ -f tools/test_dterm.sh ]; then tools/ci_compile_run.sh tools_dterm tools/test_dterm.sh; fi
+      # THE CHEAP TEST FILES: the layout pins and the R2 status — files that run WITHOUT the oracle (they are
+      # judged the way Pkg.test runs them: tools/pkgtest_way.jl, NO_SWIPL, a fresh process, the inert-testset guard)
+      # and only on the reference term type. A file left out here is left to the lane's branch-gate.
+      - name: Layout-pin and R2-status test files
+        shell: bash
+        run: |
+          export LOGICKERNEL_NO_SWIPL=1 LOGICKERNEL_PKGTEST_WAY_NO_STALE=1
+          for f in test/test_r2_status.jl test/core_lang/test_mark_bar.jl test/core_lang/test_local_stack.jl test/core_lang/test_attvar_words.jl; do
+              tools/ci_compile_run.sh --needs precompile "$(basename "$f" .jl)" julia --project=. --startup-file=no tools/pkgtest_way.jl "$f"
+          done
+      # THE VERDICT: the table of every failure of the steps above, in the job summary, and the job's own status
+      - name: Failures (job summary) and verdict
+        if: always()
+        shell: bash
+        run: |
+          rc=0
+          python3 -I tools/ci_compile_summary.py "${RUNNER_TEMP:-/tmp}/ci-compile" > summary.md || rc=$?
+          cat summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+  # THE STATIC ANALYSIS, nine shards, only when the compile job passed. Copied from evidence.yml's `static_analysis`
+  # job (same pinned tools, same cache, same env, same 75-minute limit): move them TOGETHER. The shard's output is
+  # streamed to the log and kept in ci-compile/sa_<k>.log with its exit code in sa_<k>.rc (the artifact
+  # `ci-static-<k>`), which `static-summary` reads. The job itself ends red when its shard failed.
+  static:
+    name: static analysis ${{ matrix.shard }}/9
+    needs: compile
+    if: ${{ needs.compile.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    env:
+      JULIA_NUM_THREADS: '4'
+      LOGICKERNEL_REQUIRE_TOOLS: '1'
+      LOGICKERNEL_TERM_ONLY: reference
+      LOGICKERNEL_SA_SHARD: ${{ matrix.shard }}/9
+      LOGICKERNEL_UNITS_OUT: ${{ github.workspace }}/evidence-out/units_sa_${{ matrix.shard }}.tsv
+      LOGICKERNEL_SA_COUNTS_OUT: ${{ github.workspace }}/evidence-out/sa_${{ matrix.shard }}.tsv
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687  # v3.0.3
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36  # v3.5.0
+        with:
+          cache-name: julia-cache;lk-shared;julia=1.13
+          include-matrix: 'false'
+      - name: No restored compiled LogicKernel (the shared cache is dependencies only)
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping the restored $d"; rm -rf "$d"; }
+          done
+          true
+      # the analysis tools, PINNED to commit SHAs exactly as evidence.yml's static_analysis job installs them
+      # (JET 0.13.1, LoweredCodeUtils 3.10.2, Aqua 1.0.0-DEV: move the three together, deliberately, in both files)
+      - name: Install the analysis tools into the default environment
+        run: |
+          julia -e 'using Pkg; Pkg.add([
+            PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
+            PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
+            PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
+            PackageSpec(name="AllocCheck")])'
+      - name: The home tree (tools/build_home.jl)
+        run: julia tools/build_home.jl
+      - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Run this shard of the static analysis
+        shell: bash
+        run: |
+          mkdir -p evidence-out "$RUNNER_TEMP/ci-compile"
+          set +e
+          julia --project=. test/runtests.jl 2>&1 | tee "$RUNNER_TEMP/ci-compile/sa_${{ matrix.shard }}.log"
+          echo "${PIPESTATUS[0]}" > "$RUNNER_TEMP/ci-compile/sa_${{ matrix.shard }}.rc"
+          exit 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: ci-static-${{ matrix.shard }}
+          path: ${{ runner.temp }}/ci-compile/
+          if-no-files-found: warn
+      # the job's own status: red when the shard's exit code is not 0 (or was never written)
+      - name: This shard's verdict
+        shell: bash
+        run: |
+          rc="$(cat "$RUNNER_TEMP/ci-compile/sa_${{ matrix.shard }}.rc" 2>/dev/null || echo missing)"
+          echo "static analysis shard ${{ matrix.shard }}/9: exit $rc"
+          [ "$rc" = 0 ]
+      - name: No compiled LogicKernel in the shared cache
+        if: ${{ always() }}
+        run: |
+          for d in "$HOME"/.julia/compiled/v*/LogicKernel*; do
+              [ -e "$d" ] && { echo "dropping $d before the cache save"; rm -rf "$d"; }
+          done
+          true
+
+  # THE STATIC TABLE: every shard's result and the Aqua and JET findings by name with file:line, in the job summary.
+  # `--expect` makes a shard that never reported (timeout, lost artifact) a FAILED row, never a pass by default.
+  static-summary:
+    name: static summary
+    needs: [compile, static]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Static analysis not run (the compile job did not succeed)
+        if: ${{ needs.compile.result != 'success' }}
+        run: |
+          echo "## Static analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "Not run: the compile job ended \`${{ needs.compile.result }}\` (the static shards start only after it passed)." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        if: ${{ needs.compile.result == 'success' }}
+        continue-on-error: true
+        with:
+          pattern: ci-static-*
+          path: ci-static
+          merge-multiple: true
+      - name: Findings (job summary) and verdict
+        if: ${{ needs.compile.result == 'success' }}
+        shell: bash
+        run: |
+          mkdir -p ci-static
+          rc=0
+          python3 -I tools/ci_compile_summary.py --title "Static analysis (nine shards: JET, Aqua, AllocCheck)" --expect sa_1,sa_2,sa_3,sa_4,sa_5,sa_6,sa_7,sa_8,sa_9 ci-static > static-summary.md || rc=$?
+          cat static-summary.md
+          cat static-summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
