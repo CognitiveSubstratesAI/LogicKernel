@@ -309,7 +309,7 @@ end
 
 # PORT: pl-idgset.c idg_set_lingering_sizeof
 "The bytes of the blocks on the lingering list that starts with `b` (pl-idgset.c `idg_set_lingering_sizeof`)."
-function idg_set_lingering_sizeof(b::Union{Nothing, idg_set_block{P}})::Int where {P}
+function idg_set_lingering_sizeof(b::idg_set_block{P})::Int where {P}
     size = 0
 
     while b !== nothing
@@ -319,6 +319,10 @@ function idg_set_lingering_sizeof(b::Union{Nothing, idg_set_block{P}})::Int wher
 
     return size
 end
+
+# The NULL list of the C loop `for(; b; b = b->older)`: no block, no bytes. A method of its own, so that `P` is bound by every
+# signature (the Aqua unbound-type-parameters check, ci/tabint2).
+idg_set_lingering_sizeof(::Nothing)::Int = 0
 
 # PORT: pl-idgset.c idg_set_clear
 # DIVERGES: `func` is a Julia function `func(p, ctx)` or `nothing` (NULL); see `idg_set_add` for `lingering`.

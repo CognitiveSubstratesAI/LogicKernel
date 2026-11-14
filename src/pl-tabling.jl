@@ -8671,7 +8671,7 @@ end
 # PORT: pl-tabling.c mdep_empty_queues
 # (pl-tabling.c:10284-10291 at the pin)
 "Empty the queues of the chain starting at `mdep` (pl-tabling.c `mdep_empty_queues`)."
-function mdep_empty_queues(mdep::Union{Nothing, idg_node{T}, IdgMdep{T}})::Nothing where {T}
+function mdep_empty_queues(mdep::IdgMdep{T})::Nothing where {T}
     while mdep isa idg_mdep && mdep.magic == IDG_MDEP_MAGIC
         mdep_empty_queue(mdep, -1)
         mdep = mdep.next
@@ -8679,6 +8679,11 @@ function mdep_empty_queues(mdep::Union{Nothing, idg_node{T}, IdgMdep{T}})::Nothi
 
     return nothing
 end
+
+# The chain ends in the child node or in NULL (the `mdep->magic == IDG_MDEP_MAGIC` test of the C loop fails there): no queue to
+# empty. Methods of their own, so that `T` is bound by every signature (the Aqua unbound-type-parameters check, ci/tabint2).
+mdep_empty_queues(::idg_node)::Nothing = nothing
+mdep_empty_queues(::Nothing)::Nothing = nothing
 
 # pl-tabling.c `dep_free_queue` (pl-tabling.c:10283) has no Julia definition, so no PORT marker: the queue is a `Vector{Int}` of
 # ids, nothing to unregister, and `free_mdep` empties it (`empty!(m.queue)`).

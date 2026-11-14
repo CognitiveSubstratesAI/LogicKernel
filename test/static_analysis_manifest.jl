@@ -3758,7 +3758,7 @@ _manifest_tb6(T) = begin
         (LK.idg_set_contains, Tuple{SET, IN}, false),
         (LK.idg_set_size, Tuple{SET}, false),
         (LK.idg_set_sizeof, Tuple{SET}, false),
-        (LK.idg_set_lingering_sizeof, Tuple{Union{Nothing, BLK}}, false),
+        (LK.idg_set_lingering_sizeof, Tuple{BLK}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_affected), CTX, LING, PL}, false),
         (LK.idg_set_clear, Tuple{SET, typeof(LK.idg_free_dependent), CTX, LING, PL}, false),
         (
@@ -3897,7 +3897,8 @@ _manifest_tb7(T) = begin
         (LK.mdep_queue_answer, Tuple{MD, Int}, false),
         (LK.mdep_unify_answers, Tuple{LD, TR, Int, MD}, false),
         (LK.mdep_empty_queue, Tuple{MD, Int}, false),
-        (LK.mdep_empty_queues, Tuple{UMD}, false),
+        (LK.mdep_empty_queues, Tuple{MD}, false),
+        (LK.mdep_empty_queues, Tuple{IN}, false),
         (LK.free_mdep_chain, Tuple{LD, IN, MD}, false),
         (LK.idg_free_mdeps, Tuple{LD, IN, IN}, false),
         # the edges
@@ -4288,6 +4289,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.condc, Tuple{}, false),
     (LK.qlfEndPart, Tuple{Nothing}, false),
     (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
+    # TABINT-STATIC1: the NULL methods of the TB6/TB7 chain walks (the Aqua unbound-parameter split; type-free, so listed once)
+    (LK.idg_set_lingering_sizeof, Tuple{Nothing}, false),
+    (LK.mdep_empty_queues, Tuple{Nothing}, false),
     # S2a: the stream-layer entries that name no term type (listed once, not once per type)
     (LK.Sgetcode_intr, Tuple{LK.IOSTREAM}, false),
     (LK.Ssetbuffer, Tuple{LK.IOSTREAM, Union{Nothing, Vector{UInt8}}, Int}, false),
