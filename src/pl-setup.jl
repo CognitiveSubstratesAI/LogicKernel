@@ -299,6 +299,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         IdDict{IOSTREAM, T}(),
         Dict{UInt64, IOSTREAM}(),
         Dict{Int, Vector{T}}(),
+        Dict{Int, Int}(),
         Union{Nothing, IOSTREAM}[],
         atoms,
         syms,

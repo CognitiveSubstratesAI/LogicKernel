@@ -532,11 +532,16 @@ const _RT_CASES = [
     (
         "rt187",
         raw"""rt_serr((rt_file('/* abc', S), '$raw_read'(S, _)), R)"""
+    ),
+    # unicode_atoms(Mode) is honoured (ENC1, pl-read.c atom_to_unicode_atoms_ex): the pin answers f(_) like a plain read
+    (
+        "rt304",
+        raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T"""
     )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
-#   rt300-rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
+#   rt300-rt302: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
 #   swipl answers the term (and for comments/quasi_quotations the collected lists). rt320, rt321: a blob `<type>(...)`, below.
 const _RT_KNOWN = [
     (
@@ -553,11 +558,6 @@ const _RT_KNOWN = [
         "rt302",
         raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""",
         "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"
-    ),
-    (
-        "rt304",
-        raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T""",
-        "t_rt304 jlerr NotPortedError read_term's unicode_atoms option"
     ),
     # blob(dead|resolve) on `<type>(…)`: swipl reads a dead blob (its type is the answer); the kernel has no blob object: refused when read
     # (DIVERGES in src/pl-read.jl `atom_to_blob_mode_ex`; owner: the blob step). UNVERIFIED on the kernel: gate decides.
@@ -778,10 +778,10 @@ const _RT_PINNED = [
     "t_rt163 c[116,95,114,116,49,54,51]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[111,112,101,114,97,116,111,114,95,101,120,112,101,99,116,101,100])))",
     "t_rt169 c[116,95,114,116,49,54,57]/1(c[114,97,105,115,101,100]/1(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101])))",
     "t_rt187 c[116,95,114,116,49,56,55]/1(c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120,95,101,114,114,111,114]/1(a[101,110,100,95,111,102,95,102,105,108,101,95,105,110,95,98,108,111,99,107,95,99,111,109,109,101,110,116]),c[115,116,114,101,97,109]/3(i1,i0,i0)))",
+    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))",
     "t_rt300 c[116,95,114,116,51,48,48]/1(c[45]/2(c[102]/1(V0),nil))",
     "t_rt301 c[116,95,114,116,51,48,49]/1(c[102]/1(a[88]))",
     "t_rt302 c[116,95,114,116,51,48,50]/1(c[45]/2(c[102]/1(V0),nil))",
-    "t_rt304 c[116,95,114,116,51,48,52]/1(c[102]/1(V0))",
     "t_rt320 c[116,95,114,116,51,50,48]/1(a[97,45,98])",
     "t_rt321 c[116,95,114,116,51,50,49]/1(a[97,45,98])"
 ]

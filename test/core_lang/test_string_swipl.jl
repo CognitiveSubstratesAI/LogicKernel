@@ -10,8 +10,8 @@
 # and After (`sub_string("abab", X, 2, X, "ab")`: the last candidate of the search is returned without its unification being checked) is
 # pinned in the sub_string rows: the port is 1:1, so the kernel answers as swipl does.
 # UNVERIFIED on the kernel: gate decides — nothing of this file has run on the kernel yet; the `su` rows also rest on the stream layer
-# (getTextInputStream, Sgetcode, Sopenmem, PL_unify_stream) that T2 only uses. Not in the rows: the encoding `text` (ENC_ANSI, the locale:
-# refused by name by the kernel) and a decode with `ascii` (swipl 10.1.19 fails an assertion in pl-text.c there).
+# (getTextInputStream, Sgetcode, Sopenmem, PL_unify_stream) that T2 only uses. Not in the rows: the encoding `text` (ENC_ANSI, the locale: its
+# rows are in test/core_lang/test_enc_ansi_swipl.jl, under C.UTF-8 and C) and a decode with `ascii` (swipl 10.1.19 fails an assertion in pl-text.c there).
 using Test, LogicKernel
 const LK = LogicKernel
 
