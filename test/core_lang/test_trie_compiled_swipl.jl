@@ -337,3 +337,26 @@ _SUPERVISOR_OK &&
                 "k4 c[107,52]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],i1))"
         end
     end
+
+# SYNC-A (swipl-devel cf6960c2): a clause reference that is NOT a compiled trie clause. # TARGET-ONLY: pin when the oracle moves to cf6960c2
+# (the local swipl is the pin 18168e62, whose S_TRIE_GEN runs the clause it gets; the expectation is written by hand from the target's C:
+# src/pl-vmi.c:6118-6120 `} else if ( !is_trie_clause(cl) ) { goto trie_gen_type_error; }` with `is_trie_clause` at src/pl-trie.h:244-248,
+# whose culprit is the argument, here the clause reference itself, `same`). A trie clause reference still runs: the rows t42-t51 above.
+_SUPERVISOR_OK &&
+    @testset "SYNC-A TARGET-ONLY: trie_gen_compiled/2,3 on an ordinary clause reference raises type_error(trie_or_clause, Ref)" begin
+        prog = """
+        ek(G, Ref, R) :- catch(( G -> R = true ; R = false ), error(type_error(A, B), _), ( B == Ref -> R = te(A, same) ; R = te(A, other) )).
+        k5(R) :- assertz(sync_a_fact(1), Ref), ek(trie_gen_compiled(Ref, _), Ref, R).
+        k6(R) :- assertz(sync_a_fact(2), Ref), ek(trie_gen_compiled(Ref, _, _), Ref, R).
+        """
+        mktempdir() do d
+            f = joinpath(d, "synca.pl")
+            write(f, prog)
+            kl = kernel_lines(f, ["k5", "k6"])
+            @test kl[1] == "ok"
+            @test kl[2] ==
+                "k5 c[107,53]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[115,97,109,101]))"
+            @test kl[3] ==
+                "k6 c[107,54]/1(c[116,101]/2(a[116,114,105,101,95,111,114,95,99,108,97,117,115,101],a[115,97,109,101]))"
+        end
+    end
