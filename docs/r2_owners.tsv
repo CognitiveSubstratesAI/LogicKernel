@@ -47,7 +47,6 @@ pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
 pred:$seek_list/4	P2	seed: missing_c_preds.tsv
 pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
-pred:$snapshot/1	TX1	seed: missing_c_preds.tsv
 pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
 pred:$tbl_abolish_local_tables/0	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_add_global_delays/2	TAB1	seed: missing_c_preds.tsv
@@ -81,11 +80,8 @@ pred:$tbl_wkl_make_follower/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_wkl_negative/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_wkl_table/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_wkl_work/6	TAB1	seed: missing_c_preds.tsv
-pred:$transaction/2	TX1	seed: missing_c_preds.tsv
-pred:$transaction/3	TX1	seed: missing_c_preds.tsv
-pred:$undo/1	TX1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
-pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv
+pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv; '$run_undo'/1 (boot/syspred.pl) calls it when an undo goal RAISES: a raising undo goal is a named refusal, owner P3, and those undo rows wait for it (TX1)
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:\=@=/2	Q10	seed: missing_c_preds.tsv
 pred:char_type/2	CT1	seed: missing_c_preds.tsv
