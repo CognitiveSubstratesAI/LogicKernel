@@ -71,11 +71,31 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "log10, lgamma): sin, cos, tan, asin, acos, atan, atan2, exp, log, sqrt, pow… as swipl calls them (Julia's own differ from glibc in the last digit and throw where " *
         "C gives a NaN); each passes and returns Float64 values only — no pointer, no buffer"
     ),
+    # ACCEPTED by audit D-0744 (1), these two ccalls only; any further addition waits for a D-entry first.
+    # KERNEL sites: src/pl-gmp.jl:313 `fegetround()` = ccall(:fegetround, Cint, ()) and :316 `fesetround(mode)` =
+    #   ccall(:fesetround, Cint, (Cint,), mode % Cint). Their callers, all of them (no memory access beyond the call):
+    #   fegetround: pl-gmp.jl:355 mpz_to_double, :390 and :396 _ldexp_mode, :431 mpz_fdiv;
+    #     pl-arith.jl:1200 CR_FUNC, :1220 CR_FUNC_1, :1263 _libm_atan2, :1279 _libm_exp, :1297 _libm_pow, :1411 ar_pi,
+    #     :1419 ar_e, :1865 _ar_pow_doreal_mpq, :2123 _libm_cosh, :2151 _libm_erf, :2947 set_roundtoward,
+    #     :3172 and :3178 evalExpression_cells (kernel-side wrapper, see the C's pl-vmi.c lines below).
+    #   fesetround: pl-arith.jl:1201/1212 CR_FUNC, :1221/1232 CR_FUNC_1, :1264/1273 _libm_atan2, :1280/1291 _libm_exp,
+    #     :1298/1311 _libm_pow, :1884/1886/1891 _ar_pow_doreal_mpq, :2124/2135 _libm_cosh, :2152/2163 _libm_erf,
+    #     :2952/2954/2956/2958 set_roundtoward, :2974 ar_roundtoward, :3178 evalExpression_cells, :3891 set_rounding.
+    # C sites at pin 18168e62 (`git grep -n 'fegetround\|fesetround' 18168e62 -- src`, whole list):
+    #   pl-arith.c: 1951 (comment), 1972/1973/1980 CR_FUNC, 1991/1992/2007 CR_FUNC_1, 2015/2016/2029 cr_exp,
+    #     2053/2054/2061 cr_atan2, 2071/2072/2086 cr_cosh, 2096/2097/2113 cr_pow, 2121/2122/2139 cr_erf,
+    #     2707/2739/2746/2753 ar_pow (doreal_mpq), 3130/3133/3135/3137/3139 set_roundtoward, 3153 ar_roundtoward,
+    #     4693 ar_pi, 4702 ar_e, 5175 set_rounding;
+    #   pl-gmp.c: 2057 mpz_fdiv's `switch(fegetround())`, 2091 its closing comment, 2124 mpz_to_double's switch;
+    #   pl-gmp.h: 286, 315 `fesetround(__PL_ar_ctx.femode)` (the arithmetic-context macros);
+    #   pl-vmi.c: 4009, 4026 `__PL_ar_ctx.femode = fegetround()` (the kernel's counterpart is evalExpression_cells);
+    #   os/dtoa.c: 76-80 (comment), 2489, 3686 `switch(fegetround())` (dtoa's own rounding queries; the kernel has no ccall for them there, only the two above).
     "pl-gmp.jl ccall" => (
         2,
-        "fegetround and fesetround (AR1): <fenv.h>'s two functions, direct ccalls to libm as pl-gmp.c and " *
-        "pl-arith.c call them (Base.Rounding's entry allocates, which AllocCheck reports); fegetround takes " *
-        "no argument and fesetround one Cint mode, each returns a Cint: no pointer, no buffer"
+        "fegetround and fesetround (AR1, D-0744 (1)): <fenv.h>'s two functions, direct ccalls to libm (pl-gmp.jl:313, " *
+        ":316) as pl-arith.c and pl-gmp.c call them at the same places (the file:line lists above); " *
+        "(Base.Rounding's entry allocates, which AllocCheck reports); fegetround takes " *
+        "no argument and fesetround one Cint mode, each returns a Cint: no pointer, no buffer, no memory access beyond the call"
     ),
     "default_term.jl unsafe_convert" => (
         1,
