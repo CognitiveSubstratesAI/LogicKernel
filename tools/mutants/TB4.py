@@ -40,7 +40,12 @@ A1G = "test/core_lang/test_tabling_a1_guard.jl"         # TB4K-d: the white-box 
 S5G = "test/core_lang/test_tabling_s5_guard.jl"         # TB4-S5: the white-box row (run FIRST: a failing target ends the run before TW)
 T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"    # TB5-ROWS: groups A3N/A3P/A3Q (kill TB4-A3), S4A/S4B (regression pins of the S4 model, NOT a kill)
 TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # TAB1 INT3 (wip/tab-int): the rows R9, R10, g13a, g13b that need TB5's `$tbl_destroy_table`: they kill TB4-S1, S3, S4, A2, A3
-TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R]        # every file a mutant lists
+TS4X = ["test/core_lang/test_tabling_%s_swipl.jl" % n for n in (    # TB4-S4 (audit D-0733 item 2): the 12 other files that mention tnot (grep -rl tnot test/)
+    "abolish_bulk_upstream", "abolish_delay_deps_upstream", "abolish_depending_table_upstream",
+    "answer_discard_upstream", "delay_after_simplify_upstream", "engine_finding_cleanup_throw",
+    "reeval_upstream", "reeval_wfs_upstream", "simplify_completed_upstream", "supervisor_upstream",
+    "tbl_sdg_upstream", "wfs_upstream")]
+TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X        # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 SET = "src/pl-setup.jl"
 MUTANTS = [
@@ -241,7 +246,7 @@ MUTANTS = [
     # available (no O_DEBUG, no gdb), so the pass count cannot be observed; a mutated swipl build was NOT done. The rows S4A/S4B of
     # test_tabling_tb5rows_swipl.jl pin the model of a component with two decided worklists as a regression guard (swipl 10.1.20); they do NOT kill it.
     dict(id='TB4-S4 simplify_component stops after one pass (CANDIDATE EQUIVALENT, see the comment above: pass 1 repeats pass 0, pl-tabling.c:1846-1866, :1930; TX group SIMP row r09a and TB5-ROWS rows S4A/S4B pin the model, none is known to kill it; the dispatcher decides)',
-         file=TAB, targets=[TW, TX, T5R],
+         file=TAB, targets=[TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X,
          old='        (count == 0 || undefined == 0) && break\n',
          new='        break\n'),
     dict(id='TB4-A2 is_ac_candidate_wl asks only `wl.undefined != 0` (KILL TX group G13A rows r1301 + r1302, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: group g13a, rows r1301 + r1302: a prolog_wrap counter on the answer completion pins ONE call for the program, the mutant also calls it on the worklists already marked answer completed)',
