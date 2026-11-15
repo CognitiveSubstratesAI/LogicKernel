@@ -98,3 +98,29 @@
    "test_type_discipline.jl and warm.sh check NOT run"; end with the Co-Authored-By line from the brief.
 - Hook facts seen: the empty-result PostToolUse hook warns on a zero-hit grep (advisory). The 150k cap hook blocks every
   Bash call; it also blocked the first python edit of pl-termhash.jl (nothing was written).
+
+## STATE after TERMHASH2 piece 1 (second agent; stopped on audit D-0794, no new code until the weekly reset)
+- COMMITTED (wip/termhash 92269d16): src/pl-termhash.jl complete for item 1: header DIVERGES rewritten; helpers
+  `_text_is_latin1`, `_push_le!`, `_atom_text_bytes`, `_atom_hash`, `_atom_payload`, `_limbs`, `_signed_word`, `_mpz_words`,
+  `_mpq_words`, `_words_bytes`, `_string_data`, `_string_hash_bytes`, `_gnd_data(p, variant)`; `primitiveHashValue`,
+  `th_start_term`, `_HASH_bytes!`/`_HASH_str!`, `variant_sha1_walk!` rewritten; `_variant_arg(ld, A1, sha1)` (cyclic refusal naming
+  term_canonical_form; TV_ATTVAR scan inside a foreign frame, `type_error(free_of_attvar, A1)`), `_term_hash_arg(ld, A1)`
+  (cyclic refusal, culprit `term_hash`), `pl_variant_hash_2_va`, `pl_term_hash_2_va`, `pl_variant_sha1_2_va` via `_variant_arg`,
+  table `PL_predicates_from_termhash` = variant_sha1, variant_hash, term_hash. Nothing was run (no julia; the file has never been
+  parsed by Julia: first `warm.sh check` may find typos).
+- NOT STARTED (items 2-5): `termHashValue4` + `pl_term_hash_4_va` in src/pl-prims.jl (before `# PORT: pl-prims.c BeginPredDefs`, table entry
+  after `unifiable`); design is settled: iterative walk, five parallel stacks (term, off, arity, next, depth); entering a compound
+  folds 8 bytes `UInt64(_atom_hash(name)) + arity` (name 0 for a non-symbol head, `_comp_shape` gives `(off, arity)`), then `d -= 1`, and
+  arguments are walked only when `d != 0`; primitives via `primitiveHashValue` (wide string = UTF-8: DIVERGES comment worded "swipl's
+  wide-string case gives no stable answer to pin"); the registration uses `PL_get_int64_ex(A2)`, `depth < -1` -> `PL_domain_error(ld,
+  "not_less_than_zero", A2)`, `PL_get_integer_ex(A3)`, `range < 1` -> `PL_domain_error(ld, "not_less_than_one", A2)`, `depth != 0` ->
+  `termHashValue4(_term_hash_arg(ld, A1), depth)` (nothing = unbound variable: succeed), result `hraw % UInt32(range)`, `PL_unify_integer(A4)`.
+  Then: remove row bp3v15 and reword the header comment (~line 10) in test/core_lang/test_bootpred3_swipl.jl; `grep -n` term_hash /
+  variant_hash in test/core_lang/test_hash.jl for assertions on the old values (list, do not change); manifest entries in
+  test/static_analysis_manifest.jl (near line 85-92 and 3912; new: `_atom_hash`, `_atom_payload`, `_gnd_data`, `_variant_arg`,
+  `_term_hash_arg`, `pl_variant_hash_2_va`, `pl_term_hash_2_va`, the other helpers, `termHashValue4`, `pl_term_hash_4_va`); owner rows in
+  docs/r2_owners.tsv: keys `refusal:src/pl-termhash.jl::_variant_arg::the digest of a cyclic term (its canonical form, pl-bisim.c term_c`
+  and `refusal:src/pl-termhash.jl::_term_hash_arg::the hash of a cyclic term (pl-termhash.c CYCLE_CONST, pl-prims.c visited)` (first 60
+  chars of each `what`: verify by `grep -n` in src/pl-termhash.jl before writing), owner R2.
+- In my head only: nothing beyond the above (the formulas are in this file). A note: the type_error attvar test and refusals use
+  `mk_sym(T, ...)`; Python model check of a 7-char string's variant_sha1 padding (`(len+8) div 8`, len incl. the B tag byte) matched swipl.
