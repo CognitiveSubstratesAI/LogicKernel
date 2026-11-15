@@ -194,3 +194,8 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+# refusal sites of pl-term.c (TTY1): the calls into libtinfo, owner TTY2 (evidence/TTY/handoff.md)
+refusal:src/pl-term.jl::initTerm::tgetent() (the terminal database of libtinfo)	TTY2	tgetent of libtinfo (pl-term.c initTerm); TTY2 links the library and keeps `term_initialised` in GD->terminal
+refusal:src/pl-term.jl::lookupEntry::tgetnum(), tgetflag() and tgetstr() (the capabilities of lib	TTY2	tgetnum, tgetflag, tgetstr of libtinfo (pl-term.c lookupEntry); TTY2 adds the `capabilities` table of GD->terminal
+refusal:src/pl-term.jl::pl_tty_goto2_va::tgoto() and tputs() (the cursor motion string, libtinfo)	TTY2	tgoto and tputs of libtinfo (pl-term.c tty_goto); TTY2 writes the tputc callback to Suser_output
+refusal:src/pl-term.jl::pl_tty_put2_va::tputs() (output with padding, libtinfo)	TTY2	tputs of libtinfo (pl-term.c tty_put); TTY2 writes the tputc callback to Suser_output
