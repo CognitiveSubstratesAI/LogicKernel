@@ -450,7 +450,9 @@ end
 # DIVERGES: on locations, the two-sided cell agenda (upstream's term_agendaLRD; no COPY_ABSTRACT, so
 # no depth); `to` is always a global position; a copy's cell holding VAR_MARK is an unbound cell
 # with the side-vector bit (also under an attributed variable's forwarded word, without COPY_ATTRS).
-# No COPY_MARKED. A compound's cells, and a copied attvar's (`alloc_attvar`), are `allocGlobalNoShift`'s:
+# `*to = makeRefG(from)` (COPY_MARKED, COPY_ABSTRACT) is `makeRefG(f)`: `f` is a global position there (the
+# copy of an unmarked variable is the original cell; the start of `copy_term/4` is a compound, never a variable).
+# A compound's cells, and a copied attvar's (`alloc_attvar`), are `allocGlobalNoShift`'s:
 # `GLOBAL_OVERFLOW` when they pass the limit (since L1f f1b), as upstream's.
 "Copy the marked term at location `from` into the unbound global cell `to` (pl-copyterm.c `copy_term`): `BOOLEX_TRUE` or `GLOBAL_OVERFLOW`."
 function copy_term_cells(
@@ -477,7 +479,11 @@ function copy_term_cells(
                     _cp_vm!(ld, t, _cp_vm(ld, t) | _CPV_VARMARK)   # *to = VAR_MARK
                     ld.gstack[f] = makeRefG(t)              # *from = makeRefG(to)
                     push!(ld.cp_lstack, f)                  # TrailCyclic(from)
-                end
+                elseif (flags & COPY_ABSTRACT) != 0
+                    ld.gstack[t] = makeRefG(f)              # *to = makeRefG(from)
+                elseif (_cp_vm(ld, f) & _CPV_BOTH) == 0     # virgin(*from): copy_term/4
+                    ld.gstack[t] = makeRefG(f)              # *to = makeRefG(from)
+                end                                         # else setVar(*to), done above
             elseif isAttVar(c)                              # TAG_ATTVAR
                 p = valPtr(c & ~BOTH_MASK)                  # p = valPAttVar(*from & ~BOTH_MASK)
                 if (flags & COPY_ATTRS) != 0
@@ -485,18 +491,22 @@ function copy_term_cells(
                         ld.gstack[t] = makeRefG(p)
                         break
                     end
-                    attr = alloc_attvar(ld)                 # (no COPY_MARKED: always copied)
-                    if attr == 0                            # rc = GLOBAL_OVERFLOW; goto out
-                        clearCellAgendaLR!(a)
-                        return GLOBAL_OVERFLOW
+                    if (flags & COPY_MARKED) == 0 || _cp_must_copy(c)   # isoff(COPY_MARKED) || must_copy(*from)
+                        attr = alloc_attvar(ld)
+                        if attr == 0                        # rc = GLOBAL_OVERFLOW; goto out
+                            clearCellAgendaLR!(a)
+                            return GLOBAL_OVERFLOW
+                        end
+                        push!(ld.cp_lstack, p)              # TrailCyclic(p)
+                        push!(ld.cp_lstack, f)              # TrailCyclic(from)
+                        ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)
+                        ld.gstack[t] = makeRefG(attr)
+                        f = p                               # from = p; to = &attr[1]; goto again
+                        t = attr + 1
+                        continue
+                    else
+                        ld.gstack[t] = makeRefG(f)          # *to = makeRefG(from): copy_term/4
                     end
-                    push!(ld.cp_lstack, p)                  # TrailCyclic(p)
-                    push!(ld.cp_lstack, f)                  # TrailCyclic(from)
-                    ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)
-                    ld.gstack[t] = makeRefG(attr)
-                    f = p                                   # from = p; to = &attr[1]; goto again
-                    t = attr + 1
-                    continue
                 elseif (c & BOTH_MASK) == BOTH_MASK         # shared(*from)
                     if isVar(ld.gstack[p]) && (_cp_vm(ld, p) & _CPV_VARMARK) != 0   # *p == VAR_MARK
                         ld.gstack[t] = makeRefG(p)
@@ -507,7 +517,9 @@ function copy_term_cells(
                         push!(ld.cp_lstack, p)              # TrailCyclic(p)
                         push!(ld.cp_lstack, f)              # TrailCyclic(from)
                     end
-                else                                        # (no COPY_MARKED) setVar(*to)
+                elseif (flags & COPY_MARKED) != 0
+                    ld.gstack[t] = makeRefG(f)              # *to = makeRefG(from): copy_term/4
+                else                                        # setVar(*to)
                     ld.gstack[t] = word(0)
                 end
             elseif _is_gcompound(c)                         # TAG_COMPOUND
@@ -559,14 +571,18 @@ function do_copy_term_cells(
     end
     src = p > 0 ? p : from                                  # the location holding the compound's word
     fl = options.flags
-    rc = if (fl & COPY_SHARE) != 0
-        mark_for_copy_cells(ld, src, fl)
-    else
-        mark_for_duplicate_cells(ld, src, fl, options)
-    end
-    if rc != 1
-        cp_unmark_cells(ld, src, fl)
-        return rc
+    if (fl & COPY_SHARE) != 0
+        rc = mark_for_copy_cells(ld, src, fl)
+        if rc != 1
+            cp_unmark_cells(ld, src, fl)
+            return rc
+        end
+    elseif (fl & COPY_ABSTRACT) == 0                        # else if ( isoff(options, COPY_ABSTRACT) ): no marks
+        rc = mark_for_duplicate_cells(ld, src, fl, options)
+        if rc != 1
+            cp_unmark_cells(ld, src, fl)
+            return rc
+        end
     end
     rc2 = copy_term_cells(ld, src, to, fl)                  # initCyclicCopy: nothing to do
     exitCyclicCopy_cells(ld, fl)
