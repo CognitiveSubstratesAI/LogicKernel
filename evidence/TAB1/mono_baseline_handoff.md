@@ -24,3 +24,6 @@ See first_run_report.md: 20 upstream files plus abolish_bulk and min pass; 13 of
 - Row-by-row diagnosis of test_tabling_idg_swipl.jl (class TEST/DRIVER, mixed with possible engine rows), idg_sets unit load status, incr_dyn_nodes t_id01/t_id02, tabling_b t_tt22,
   supervisor driver rows (:662, :682, :684), then the NEW non-upstream test_tabling_* files of the branch.
 - Mutants EV1T T2-T10 were read valid by the dispatcher; T1 and T9 wait for the engine fix above.
+
+## Commits on wip/tab1-mono
+- 439908a7 FIXED: test_tabling_tb7rows_swipl.jl (extractor) + the three evidence files. Gates run for it: file on three types 633/633, tools/warm.sh fmt (0 rewritten), tools/warm.sh check PASS (949 s).
