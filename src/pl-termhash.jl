@@ -15,30 +15,31 @@
 #     implementation, ported below) or an incremental MurmurHash masked to 24 bits.
 #
 # DIVERGES (file-wide):
-#   1. ATOMIC DATA. The term interface hides names and payloads, so an atom contributes its
-#      process-independent `sym_hash` where upstream contributes its name (term_hash: the name's
-#      32-bit hash; variant_sha1: length, name and blob type), and a grounded value contributes its
-#      `gnd_key` where upstream contributes the number's or string's bytes; a value with no key
-#      contributes a constant. `sym_hash` and `gnd_key` are the term TYPE's own (src/term_interface.jl), so the
-#      digest of one term differs between the term implementations too (test_bootpred3_swipl.jl compares row bp3v15
-#      by shape on the alt types). So the VALUES are not SWI's (tests/core_lang/test_hash.jl asserts
-#      the properties upstream's pinned values stand for), and upstream's "same digest IFF variant"
-#      holds in one direction: variants ⇒ the same digest. The converse fails only where keys
-#      collide — by chance, for `sym_hash` and for `gnd_key`, which follows the term type's
-#      `gnd_equal` (SWI's identity in the reference type, so `1` and `1.0` hash apart as in SWI; a
-#      type matching by `==` would make them share a digest). Assumes, as every key function does,
-#      that identical grounded values have the same `gnd_key`. The variant hash of a trie blob is identity-based in the
+#   1. ATOMIC DATA is swipl's: an atom contributes its name's 32-bit MurmurHash (term_hash) or its length, name bytes
+#      and type name (variant digests); a number or string contributes its bytes as swipl lays them out (an integer
+#      from PLMINTAGGEDINT to PLMAXTAGGEDINT as one int64, any other integer and a rational as GMP words, a float as
+#      its double, a string as Latin-1 or, when a code exceeds 0xff, UTF-8 in term_hash and UCS-4 in a variant digest),
+#      so the VALUES equal swipl's (the pins of test/core_lang/test_termhash_preds_swipl.jl). The terms whose bytes the
+#      term interface does not give keep the term TYPE's own keys (src/term_interface.jl): a BLOB atom contributes
+#      its `sym_hash` (a variant digest: its 8 bytes as the name bytes, then the blob type's name), and a grounded
+#      value of kind NUM_OTHER its `gnd_key` (a constant when it has none); for those the digest differs between the
+#      term implementations (test_bootpred3_swipl.jl compares row bp3v15 by shape on the alt types), and "the same
+#      digest IFF variant" holds in one direction there: variants => the same digest. Assumes, as every key function
+#      does, that identical grounded values have the same `gnd_key`. The variant hash of a trie blob is identity-based in the
 #      kernel; lazy monotonic body re-run counts can differ from swipl 10.1.20 (kernel 22, swipl 30 in FIND/fn04 of
 #      test/core_lang/test_tabling_tb7rows_swipl.jl: a named consequence of this divergence, audit D-0894).
 #   2. HEADS. A compound whose first child is not a symbol has the functor `$expr/n` (Q2,
 #      src/pl-ressymbol.jl), every child an argument: term_hash hashes its name as 0, and
 #      variant_sha1 writes `C` and the child count where upstream writes `T`, name and arity (see
 #      `_comp_shape`).
-#   3. FINITE TREES. Interface terms have no cycles and no attributed variables, and no cells to
-#      mark: no `CYCLE_CONST`/`in_cycle`, no reuse of a shared subterm's hash (a finite shared
-#      subterm rehashes to the same value), no canonical-form rehash of a cyclic term
-#      (`hash_prefix`), no `E_ATTVAR`/`E_CYCLE`/`E_RESOURCE`. Variables are numbered in a map
-#      where upstream overwrites their cells and restores them afterwards.
+#   3. FINITE TREES. The registrations export their argument from its cells first (`export_cells`): an attributed
+#      variable is then a plain variable (term_hash/2 leaves A2 unbound for it, variant_hash/2 numbers it, and
+#      variant_sha1/2 raises `type_error(free_of_attvar, T)` after a `TV_ATTVAR` scan, as upstream's E_ATTVAR). A CYCLIC
+#      argument is refused by name (`_variant_arg`: `term_canonical_form` of pl-bisim.c, which hashes the canonical
+#      form upstream, `hash_prefix`; `_term_hash_arg`: the `CYCLE_CONST` path of term_hash), owner R2. The walks see
+#      finite trees: no `in_cycle`, no reuse of a shared subterm's hash (a finite shared subterm rehashes to the same
+#      value), no `E_CYCLE`/`E_RESOURCE`. Variables are numbered in a map where upstream overwrites their cells and
+#      restores them afterwards.
 #   4. BYTE ORDER. A word goes into the digest as its little-endian bytes — what upstream hashes
 #      on the machines it runs on — on every host.
 
@@ -55,34 +56,195 @@ mutable struct th_data{T}
     arg::Int                # current argument (0-based)
 end
 
+# ── atomic data as swipl lays it out ────────────────────────────────────────────────────────────
+# The helpers below read the bytes pl-termhash.c hashes through the term interface (src/term_interface.jl).
+"Whether every code point of `s` is at most `0xff`: an ISO Latin-1 text (pl-text.c `PL_chars_t` ENC_ISO_LATIN_1)."
+_text_is_latin1(s::AbstractString)::Bool = all(c -> UInt32(c) <= 0xff, s)
+
+"Append the `n` low bytes of `x` to `b`, little-endian (what upstream hashes on the machines it runs on)."
+function _push_le!(b::Vector{UInt8}, x::Unsigned, n::Int)::Nothing
+    for j in 0:(n - 1)
+        push!(b, (x >> (8 * j)) % UInt8)
+    end
+    return nothing
+end
+
+"""
+The bytes swipl stores and hashes for the text `s`: its ISO Latin-1 bytes, or UCS-4 little-endian
+(4 bytes a code) when a code exceeds `0xff`; and whether the text is wide.
+"""
+function _atom_text_bytes(s::AbstractString)::Tuple{Vector{UInt8}, Bool}
+    wide = !_text_is_latin1(s)
+    b = UInt8[]
+    for c in s
+        if wide
+            _push_le!(b, UInt32(c), 4)
+        else
+            push!(b, UInt8(UInt32(c)))
+        end
+    end
+    return (b, wide)
+end
+
+"""
+An atom's `hash_value` (pl-atom.c): the MurmurHash of its text bytes from `MURMUR_SEED`; a blob atom
+contributes the low 32 bits of its `sym_hash`.
+"""
+function _atom_hash(p)::UInt32
+    is_blob(p) && return sym_hash(p) % UInt32
+    b, _ = _atom_text_bytes(sym_text(p))
+    return MurmurHashAligned2(b, length(b), MURMUR_SEED)
+end
+
+"""
+What a variant digest writes after `A` for the atom `p` (pl-termhash.c `variant_sha1`): its name bytes
+and its type's name — `text`, `ucs_text` (a wide text) or `reserved_symbol` (`[]`); a blob atom: the 8
+bytes of its `sym_hash` and its blob type's name.
+"""
+function _atom_payload(p)::Tuple{Vector{UInt8}, String}
+    if is_blob(p)
+        b = UInt8[]
+        _push_le!(b, sym_hash(p), 8)
+        return (b, string(blob_type(p)))
+    end
+    b, wide = _atom_text_bytes(sym_text(p))
+    return (b, is_reserved_symbol(p) ? "reserved_symbol" : (wide ? "ucs_text" : "text"))
+end
+
+"The 64-bit limbs of `|v|`, least significant first (GMP's `mpz_t` limbs)."
+function _limbs(v::BigInt)::Vector{UInt64}
+    a = abs(v)
+    out = UInt64[]
+    while !iszero(a)
+        push!(out, a % UInt64)
+        a >>= 64
+    end
+    return out
+end
+
+"The int64 `i` as an unsigned word (two's complement)."
+_signed_word(i::Int)::UInt64 = reinterpret(UInt64, Int64(i))
+
+"The words swipl stores for an integer outside the inline range: `2*s` for the signed limb count `s`, then the limbs."
+function _mpz_words(v::BigInt)::Vector{UInt64}
+    l = _limbs(v)
+    s = v < 0 ? -length(l) : length(l)
+    return vcat(UInt64[_signed_word(2 * s)], l)
+end
+
+"The words swipl stores for a rational: `(2*sn)|1` and `(2*sd)|1` for the signed numerator and the denominator's limb counts, then both limb lists."
+function _mpq_words(q::Rational{BigInt})::Vector{UInt64}
+    ln = _limbs(numerator(q))
+    ld = _limbs(denominator(q))
+    sn = numerator(q) < 0 ? -length(ln) : length(ln)
+    return vcat(
+        UInt64[_signed_word((2 * sn) | 1), _signed_word((2 * length(ld)) | 1)], ln, ld
+    )
+end
+
+"The little-endian bytes of the words `w`."
+function _words_bytes(w::Vector{UInt64})::Vector{UInt8}
+    b = UInt8[]
+    for x in w
+        _push_le!(b, x, 8)
+    end
+    return b
+end
+
+"""
+The data of a string in a variant digest (pl-termhash.c `variant_sha1`, a `TAG_STRING` indirect): `B` and the
+Latin-1 bytes, or `W`, three zero bytes and the UCS-4 codes, zero-padded to a whole number of words — `(len+8)÷8` of
+them, `len` the bytes before the padding, so there is always at least one zero byte.
+"""
+function _string_data(s::AbstractString)::Vector{UInt8}
+    if _text_is_latin1(s)
+        b = UInt8[0x42]
+        for c in s
+            push!(b, UInt8(UInt32(c)))
+        end
+    else
+        b = UInt8[0x57, 0x00, 0x00, 0x00]
+        for c in s
+            _push_le!(b, UInt32(c), 4)
+        end
+    end
+    lw = (length(b) + 8) ÷ 8
+    append!(b, zeros(UInt8, lw * 8 - length(b)))
+    return b
+end
+
+"The bytes term_hash hashes for a string: its Latin-1 bytes, or UTF-8 when a code exceeds `0xff` (pl-termhash.c `primitiveHashValue`)."
+function _string_hash_bytes(s::AbstractString)::Vector{UInt8}
+    if _text_is_latin1(s)
+        return UInt8[UInt8(UInt32(c)) for c in s]
+    end
+    return Vector{UInt8}(codeunits(s))
+end
+
+"""
+The tag and bytes swipl hashes for the grounded value `p`: `i` and the int64 for an integer from `PLMINTAGGEDINT`
+to `PLMAXTAGGEDINT`, `I` and GMP words for any other integer and for a rational, `F` and the double, `S` and the
+string's data — the variant form (`_string_data`) when `variant`, else term_hash's (`_string_hash_bytes`). `nothing`
+for a value of kind NUM_OTHER (the term type's `gnd_key` stands for it).
+"""
+function _gnd_data(p, variant::Bool)::Union{Nothing, Tuple{Char, Vector{UInt8}}}
+    nk = number_kind(p)
+    if nk === NUM_INTEGER
+        if integer_is_int64(p)
+            v = int64_value(p)
+            if PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT
+                b = UInt8[]
+                _push_le!(b, reinterpret(UInt64, v), 8)
+                return ('i', b)
+            end
+        end
+        return ('I', _words_bytes(_mpz_words(bigint_value(p))))
+    elseif nk === NUM_RATIONAL
+        return ('I', _words_bytes(_mpq_words(rational_value(p))))
+    elseif nk === NUM_FLOAT
+        b = UInt8[]
+        _push_le!(b, reinterpret(UInt64, float_value(p)), 8)
+        return ('F', b)
+    elseif nk === NUM_STRING
+        s = string_value(p)
+        return ('S', variant ? _string_data(s) : _string_hash_bytes(s))
+    end
+    return nothing
+end
 # PORT: pl-termhash.c primitiveHashValue
+# DIVERGES: a blob atom adds the 4 low bytes of its `sym_hash`, and a grounded value of kind NUM_OTHER the 8
+# bytes of its `gnd_key` (0 when it has none): the term interface gives neither's bytes (file header 1).
 """
 Fold the atomic term `term` into `hval`; `nothing` for a variable (pl-termhash.c). An atom adds the
-4 low bytes of its `sym_hash` (upstream: its `unsigned int` name hash), a grounded value the 8
-bytes of its `gnd_key`, 0 when it has none (upstream: the integer's, float's or string's bytes).
+4 bytes of its name's hash (`_atom_hash`), a number or string its bytes (`_gnd_data`).
 """
 function primitiveHashValue(term, hval::UInt32)::Union{Nothing, UInt32}
     k = kind(term)
     if k === VAR
         return nothing
     elseif k === SYM
-        return MurmurHashAligned2((sym_hash(term),), 4, hval)
+        return MurmurHashAligned2((UInt64(_atom_hash(term)),), 4, hval)
     end
     @assert k === GND                       # upstream: default: assert(0)
-    g = gnd_key(term)
-    return MurmurHashAligned2((g === nothing ? UInt64(0) : g,), 8, hval)
+    d = _gnd_data(term, false)
+    if d === nothing
+        g = gnd_key(term)
+        return MurmurHashAligned2((g === nothing ? UInt64(0) : g,), 8, hval)
+    end
+    b = d[2]
+    return MurmurHashAligned2(b, length(b), hval)
 end
 
 # PORT: pl-termhash.c start_term as th_start_term
 """
 A node for compound `t` below node `parent`: its hash starts from `MURMUR_SEED` and its name's
-hash — `sym_hash` of a symbol head, 0 for any other head (pl-termhash.c `start_term`).
+hash — `_atom_hash` of a symbol head, 0 for any other head (pl-termhash.c `start_term`).
 """
 function th_start_term(t, parent::Int)
     T = term_type(t)
     off, arity = _comp_shape(t)
     hash = MURMUR_SEED
-    name = off == 2 ? sym_hash(child(t, 1)) : UInt64(0)
+    name = off == 2 ? UInt64(_atom_hash(child(t, 1))) : UInt64(0)
     hash = MurmurHashAligned2((name,), 4, hash)
     return th_data{T}(parent, t, off, arity, hash, 0)
 end
@@ -500,19 +662,14 @@ function _HASH_char!(state::sha1_state, c::Char)::Nothing
     return HASH!(state, state.word, 1)
 end
 
-"`HASH(s, strlen(s))`: the bytes of `s`, through the 8-byte scratch word — one `HASH` per 8 bytes."
-function _HASH_str!(state::sha1_state, s::String)::Nothing
-    n, i = ncodeunits(s), 0
-    while i < n
-        m = min(8, n - i)
-        for j in 1:m
-            state.word[j] = codeunit(s, i + j)
-        end
-        HASH!(state, state.word, m)
-        i += m
-    end
-    return nothing
+"`HASH(p, l)` for a whole byte vector."
+function _HASH_bytes!(state::sha1_state, b::Vector{UInt8})::Nothing
+    return HASH!(state, b, length(b))
 end
+
+"`HASH(s, strlen(s))`: the bytes of `s`."
+_HASH_str!(state::sha1_state, s::String)::Nothing =
+    _HASH_bytes!(state, Vector{UInt8}(codeunits(s)))
 
 "`HASH(&w, sizeof(w))`: the 8 bytes of a word, little-endian."
 function _HASH_word!(state::sha1_state, w::UInt64)::Nothing
@@ -523,12 +680,11 @@ function _HASH_word!(state::sha1_state, w::UInt64)::Nothing
 end
 
 # PORT: pl-termhash.c variant_sha1 as variant_sha1_walk
-# DIVERGES: what each kind of subterm writes (see the file header): a variable `V` and its numbered
-# word, as upstream; an atom `A`, its `sym_hash` and — as upstream — its blob type's name, `text`
-# or `reserved_symbol`; a grounded value `G` and its `gnd_key`, or `g` alone when it has none; a
-# compound `T`, its head's `sym_hash` and its arity, or `C` and its child count when its head is
-# not a symbol. What follows each letter is self-delimiting (fixed widths; the type names begin
-# `t`/`r`, no tag letter), so different terms never write the same bytes by running into each other.
+# DIVERGES: a blob atom writes the 8 bytes of its `sym_hash` as its name bytes, and a grounded value of kind NUM_OTHER
+# `G` and its `gnd_key` (or `g` alone when it has none); a compound whose head is not a symbol writes `C` and its child
+# count where upstream writes `T`, name and arity. Everything else is upstream's bytes: a variable `V` and its numbered
+# word; an atom `A`, its length, name bytes and type name; an integer `i` + int64 or `I` + GMP words; a float `F` +
+# double; a string `S` + data; a compound `T`, its name's length and bytes, and its arity (as a word).
 "Write the serialisation of every subterm the agenda walks into the digest (pl-termhash.c)."
 function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothing where {T}
     while true
@@ -544,32 +700,33 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
             _HASH_word!(state, (UInt64(i) << LMASK_BITS) | TAG_VAR | MARK_MASK)
         elseif k === SYM
             _HASH_char!(state, 'A')
-            _HASH_word!(state, sym_hash(p))
+            bytes, tname = _atom_payload(p)
+            _HASH_word!(state, UInt64(length(bytes)))       # av->length
+            _HASH_bytes!(state, bytes)                      # av->name
             # HASH(av->type->name, strlen(…)): the blob type's name, so `[]` (reserved_symbol)
-            # and `'[]'` (text) — one text hash — still hash apart, as in swipl
-            _HASH_str!(
-                state,
-                if is_blob(p)
-                    string(blob_type(p))
-                elseif is_reserved_symbol(p)
-                    "reserved_symbol"
-                else
-                    "text"
-                end
-            )
+            # and `'[]'` (text) — one text — still hash apart, as in swipl
+            _HASH_str!(state, tname)
         elseif k === GND
-            g = gnd_key(p)
-            if g === nothing
-                _HASH_char!(state, 'g')
+            d = _gnd_data(p, true)
+            if d !== nothing
+                _HASH_char!(state, d[1])
+                _HASH_bytes!(state, d[2])
             else
-                _HASH_char!(state, 'G')
-                _HASH_word!(state, g)
+                g = gnd_key(p)
+                if g === nothing
+                    _HASH_char!(state, 'g')
+                else
+                    _HASH_char!(state, 'G')
+                    _HASH_word!(state, g)
+                end
             end
         else
             off, arity = ac_pushTermAgenda(agenda, p)
             if off == 2
+                bytes, _ = _atom_payload(child(p, 1))
                 _HASH_char!(state, 'T')
-                _HASH_word!(state, sym_hash(child(p, 1)))
+                _HASH_word!(state, UInt64(length(bytes)))   # fn->length
+                _HASH_bytes!(state, bytes)                  # fn->name
             else
                 _HASH_char!(state, 'C')
             end
@@ -598,8 +755,8 @@ function variant_hash_walk(term, algorithm::hash_algo)::termhash_t
 end
 
 # PORT: pl-termhash.c variant_hash
-# DIVERGES: no cyclic terms and no attributed variables, so no canonical-form rehash and no
-# errors — the walk's digest is the answer.
+# DIVERGES: the walk's digest is the answer: a cyclic argument and an attributed variable are dealt with by the
+# registrations before the walk (`_variant_arg`, file header 3), so no canonical-form rehash and no `E_ATTVAR`.
 """
     variant_hash(term, algorithm) -> termhash_t
 
@@ -635,25 +792,99 @@ for `=@=` terms (pl-termhash.c).
 """
 pl_variant_hash(t)::Int = Int(variant_hash(t, HASH_MURMUR).murmur & PLMAXTAGGEDINT32)
 
+# PORT: pl-termhash.c variant_hash (the cyclic-term branch) as _variant_arg
+# DIVERGES: a cyclic argument is refused by name (upstream hashes its canonical form, pl-bisim.c `term_canonical_form`,
+# R2). The `E_ATTVAR` error of variant_sha1/2 is a `TV_ATTVAR` scan of the cells before the export (the exported term
+# holds an attributed variable as a plain one, as upstream's canonical form does for variant_hash/2).
+"""
+The term `A1` holds, exported from its cells, for a variant digest (pl-termhash.c `variant_hash`): a cyclic term is
+refused; with `sha1`, an attributed variable raises `type_error(free_of_attvar, A1)` and the result is `nothing`.
+"""
+function _variant_arg(
+    ld::PL_local_data{T}, A1::term_t, sha1::Bool
+)::Union{Nothing, T} where {T}
+    is_acyclic_cells(ld, -(A1 + 1)) || throw(
+        NotPortedError{T}(
+            mk_sym(T, :term_canonical_form),
+            "the digest of a cyclic term (its canonical form, pl-bisim.c term_canonical_form)",
+            "R2 (pl-bisim.c term_canonical_form)"
+        )
+    )
+    if sha1
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return nothing
+        n, _ = term_variables_to_termv_cells(ld, A1, 1, TV_ATTVAR)
+        PL_discard_foreign_frame(ld, fid)
+        if n > 0
+            PL_error(ld, ERR_TYPE, mk_sym(T, :free_of_attvar), A1)
+            return nothing
+        end
+    end
+    return export_cells(ld, cell_export{T}(), -(A1 + 1))
+end
+
+# PORT: pl-termhash.c term_hash (the cyclic-term branch) as _term_hash_arg
+# DIVERGES: a cyclic argument is refused by name (upstream's `CYCLE_CONST` path of pl-termhash.c, the `visited()` path
+# of pl-prims.c term_hash/4, R2); an attributed variable is a plain variable after the export, as upstream's tag test.
+"The term `A1` holds, exported from its cells, for term_hash/2 and term_hash/4; a cyclic term is refused."
+function _term_hash_arg(ld::PL_local_data{T}, A1::term_t)::T where {T}
+    is_acyclic_cells(ld, -(A1 + 1)) || throw(
+        NotPortedError{T}(
+            mk_sym(T, :term_hash),
+            "the hash of a cyclic term (pl-termhash.c CYCLE_CONST, pl-prims.c visited)",
+            "R2 (cyclic terms)"
+        )
+    )
+    return export_cells(ld, cell_export{T}(), -(A1 + 1))
+end
+
 # PORT: pl-termhash.c variant_sha1 as pl_variant_sha1_2_va
 # (PRED_IMPL("variant_sha1", 2, variant_sha1, 0), pl-termhash.c:659-681 at the pin)
 # DIVERGES: the registration wraps `pl_variant_sha1` (BOOTPRED3): the term is exported from its cells first
-# (`export_cells`), and the digest's 40 hex digits are unified as an ATOM (upstream: `PL_unify_chars(A2,
-# PL_ATOM|REP_ISO_LATIN_1, …)`, whatever its documentation says). The walk's own DIVERGES (no cyclic terms, no
-# attributed variables) stands.
+# (`_variant_arg`), and the digest's 40 hex digits are unified as an ATOM (upstream: `PL_unify_chars(A2,
+# PL_ATOM|REP_ISO_LATIN_1, …)`, whatever its documentation says).
 "`variant_sha1(@Term, -SHA1)`: the SHA-1 digest of `Term`'s variant class as an atom of 40 hex digits (pl-termhash.c)."
 function pl_variant_sha1_2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    t = export_cells(ld, cell_export{T}(), -(A1 + 1))
+    t = _variant_arg(ld, A1, true)
+    t === nothing && return FFALSE
 
     return PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t)))) ? FTRUE : FFALSE
 end
 
+# PORT: pl-termhash.c variant_hash as pl_variant_hash_2_va
+# (PRED_IMPL("variant_hash", 2, variant_hash, 0), pl-termhash.c:684-692 at the pin)
+"`variant_hash(@Term, -Hash)`: the MurmurHash of `Term`'s variant class, masked to 24 bits; an attributed variable counts as a plain one (pl-termhash.c)."
+function pl_variant_hash_2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    t = _variant_arg(ld, A1, false)
+    t === nothing && return FFALSE
+
+    return PL_unify_integer(ld, A2, pl_variant_hash(t)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-termhash.c term_hash as pl_term_hash_2_va
+# (PRED_IMPL("term_hash", 2, term_hash, 0), pl-termhash.c:306-319 at the pin)
+# DIVERGES: a cyclic argument is refused (`_term_hash_arg`).
+"`term_hash(+Term, -HashKey)`: a 32-bit hash of the ground `Term`; `HashKey` stays unbound when `Term` has a variable (pl-termhash.c)."
+function pl_term_hash_2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    h = pl_term_hash(_term_hash_arg(ld, A1))
+    h === nothing && return FTRUE                       # term is non-ground
+
+    return PL_unify_integer(ld, A2, Int(h)) ? FTRUE : FFALSE
+end
+
 # PORT: pl-termhash.c BeginPredDefs as PL_predicates_from_termhash
-# DIVERGES: variant_sha1/2 only (upstream's table: pl-termhash.c:698-701 also has variant_hash/2 and term_hash/2).
-"pl-termhash.c's registration table (`BeginPredDefs(termhash)`): variant_sha1/2."
+"pl-termhash.c's registration table (`BeginPredDefs(termhash)`): variant_sha1/2, variant_hash/2, term_hash/2."
 const PL_predicates_from_termhash = (
     PL_extension("variant_sha1", 2, pl_variant_sha1_2_va, PL_FA_VARARGS),
+    PL_extension("variant_hash", 2, pl_variant_hash_2_va, PL_FA_VARARGS),
+    PL_extension("term_hash", 2, pl_term_hash_2_va, PL_FA_VARARGS)
 )
