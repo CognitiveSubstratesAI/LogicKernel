@@ -934,7 +934,7 @@ end
 # so a caller holding it — a built-in that ran this cleanup, a nested fast path — reads its own again
 # (upstream: one on the C stack per call); a new one only outside any query. A new record per call
 # was one of the two allocations per findall/3 sync-2 added (D-0140). NOT PORTED: the profiler and debugger
-# tests (`LD->profile.active`, `debugstatus.debugging`: neither exists here).
+# tests (`LD->profile.active` does not exist here; `debugstatus.debugging` is set by `debug/0` and read only in S_TABLED).
 """
     call_internal_det_foreign(gd, ld, proc, av) -> (used, rc)
 
@@ -4357,7 +4357,8 @@ function PL_next_solution_guarded(
     # (LocalFrame)BFR; BFR = BFR->parent`) lowers `lTop` with `lowerLTop!`, which drops its record
     # (decision 3); no record lies above it — head unification makes no frame and no choice point
     # (asserted, design H3). No `DiscardMark`, as upstream (design D2). NOT PORTED: the debugger's
-    # branch (`BFR->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
+    # branch (`BFR->type = CHP_DEBUG`; its debugger branches are not taken: `debug/0` sets `debugstatus.debugging`
+    # since R2 F1c, but the run loop reads it only in S_TABLED).
     @label I_SSU_COMMIT
     if length(ld.trail) > ld.choices[ld.BFR].mark.trailtop     # tTop > BFR->mark.trailtop
         @goto unify_backtrack                       # CLAUSE_FAILED
@@ -4919,7 +4920,8 @@ function PL_next_solution_guarded(
     # record, since V9d): its region is reclaimed when `lTop` drops below it. The `CHP_DEBUG` records
     # stepped over (since SSU2: `I_CHP`'s, left by a `?=>` clause that exited without a cut) are only
     # stepped over, as upstream: `exit_continue`'s `lowerLTop!` releases them (D-0219). NOT PORTED:
-    # the debugger's branch (`bfr->type = CHP_DEBUG`; `debugstatus.debugging` is never set).
+    # the debugger's branch (`bfr->type = CHP_DEBUG`; not taken: `debug/0` sets `debugstatus.debugging` since R2 F1c,
+    # the run loop reads it only in S_TABLED).
     @label I_EXITCATCH
     iec_b = ld.BFR
     while iec_b != 0 && ld.choices[iec_b].type == CHP_DEBUG
@@ -5803,7 +5805,7 @@ function PL_next_solution_guarded(
     )
     if ss_cl === nothing
         if (ld.frames[FR].flags & (FR_SSU_DET | FR_DET | FR_DETGUARD)) != 0
-            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging`: no debugger)
+            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging` is read only in S_TABLED: no debugger CHP_DEBUG branches)
         end
         @goto deep_backtrack                        # FRAME_FAILED
     end
