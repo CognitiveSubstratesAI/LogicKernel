@@ -63,3 +63,39 @@ become Done rows.
 
 ## Hand-back state
 test_type_discipline.jl and warm.sh check NOT run; Julia NOT run; no gate or mutants branch pushed. No daemon used or freed by me.
+
+## STATE (TTY-3, stopped on audit ruling D-0794: no new code until the weekly reset)
+Note for the audit: the audit's tty_size stream-struct field (docs/r2_owners.tsv line about 105) does not match this upstream:
+tty_size/2 reads no stream field (it reads `Sfileno(Suser_input)` and calls `ioctl`).
+
+Committed on wip/tty (HEAD before this commit 1c437a58): 252ccd5e (src/pl-term.jl), a6519349 (rows program + this handoff),
+4e4ec74d (test_tty_swipl.pl/.jl/.out), 1c437a58 (four TTY2 owner rows).
+
+Items 1 and 2 of TTY-3 are NOT written: tools/mutants/TTY.py does not exist, and the cost lines of test/pkgtest_costs.tsv and
+test/unit_costs.tsv are not added (neighbours to copy: pkgtest `core_lang/test_tty...` goes after test_trie_swipl.jl 20.7 /
+before test_unifiable_cells.jl, copy test_term_interface-class small value e.g. 2.6; unit_costs after test_termhash.jl 11.6,
+copy 2.4; the line is `core_lang/test_tty_swipl.jl<TAB>estimate`).
+
+What exists only as a design (read from src/pl-term.jl, the .pl rows and the .jl; every `old` to be checked to occur exactly once):
+- format: DICT.py's (`TARGETS = [TTY_T, test/test_type_discipline.jl]`, `dict(id=..., file="src/pl-term.jl", targets=TARGETS, old=..., new=...)`).
+- `_tty_size_answer`: `iorval != 0` -> `== 0`; error errno -> 0; `"tty_size", 2, MSG_ERRNO` -> arity 3; `&&` between the two unifies -> `||`;
+  drop the second unify; swap rows/cols. Aimed by the direct `_tty_size_answer` rows (fake ioctl results, bound 24 / bound 30) and t3.
+- `_tty_winsize`: `zeros(UInt16, 4)` -> `fill(UInt16(7), 4)`; fd -> -1 in the ioctl call; `en = 0`; iorval answered as 0.
+  Aimed by the `_tty_winsize` rows on an opened file and fd 9999 (ENOTTY 25 / EBADF 9) and t3.
+  Candidate equivalent: rows/cols swapped in the returned tuple (a failed ioctl leaves both 0); needs the widened run and the audit's ruling.
+- `pl_tty_size2_va`: `_tty_winsize(fd)` -> `_tty_winsize(-1)` (aimed by t3); `? FTRUE : FFALSE` swapped (t3).
+  Candidate equivalents: removing `if fd < 0 ... fd = 0` and swapping A1/A2 in the `_tty_size_answer` call (the rows use a standard stream and a failing ioctl).
+- `initTerm`: `>= 100` -> `> 100` and the length test dropped (t7); `return false` -> `return true` (t4-t6); PL_error call removed (t4-t7);
+  `:TERM` -> `:term` and `:environment` -> other (t4-t7); step name "TTY2" -> "TTY9" at the tgetent site (lk2, lk3).
+- `lookupEntry`: `initTerm(ld) || return false` -> `initTerm(ld)` (t4-t6). Its own refusal step name and `pl_tty_goto2_va`'s tgoto refusal step name
+  sit behind `initTerm`'s refusal in every row (candidate equivalent: needs the widened run and the audit's ruling); tputs site step name: lk0, lk1.
+- `tty_get_capability/3`: A1/A2 read swapped (A1 read twice, A2 read twice), `A2 = PL__t0 + 1` -> `PL__t0`, the two `=== nothing && return FFALSE`
+  -> `FTRUE`, the final `return FFALSE` -> `FTRUE` (t0, t4). The context `lookupEntry(ld, n, t)` -> `(ld, t, n)` is a candidate equivalent.
+- `tty_goto/2`: `ix`/`iy` read from the wrong argument (t1), `if !lookupEntry` -> `if lookupEntry` (t5), `return FFALSE` after the existence error -> `FTRUE` (t5);
+  the existence_error term mutations are candidate equivalents (the pending TERM error wins).
+- `tty_put/2`: `CVT_ALL | CVT_EXCEPTION` -> `CVT_ALL`, `A1` -> `A2` in PL_get_text, `A2` -> `A1` in PL_get_integer_ex (t2).
+- Uniqueness traps found: `n === nothing && return FFALSE` occurs in tty_get_capability and tty_put (anchor with the next line);
+  `t === nothing && return FFALSE` is a substring of the `txt` line (anchor with four leading spaces).
+- Ids unique, each "aimed by <rows>", never the word KILL, no `equivalent=` field; check with python3 -I via runpy.run_path.
+
+Still to do after the weekly reset: items 1 and 2 above (two commits), then the first compile checks (list 6 above), the gate order of the brief.
