@@ -18,7 +18,8 @@
 # R1e refused (`NotPortedError`) is written as upstream writes it: a cyclic term, factorised to
 # `@(Template, Substitutions)` (`writeTopTerm`, `reunify_acyclic_substitutions`; src/pl-prims.jl
 # `PL_factorize_term`; decision 4a), `user:portray/1` when it is defined (`callPortray`, through
-# `PL_call_predicate`; decision 3a) and write_term's `portray_goal` (`put_write_options`).
+# `PL_call_predicate`; decision 3a), write_term's `portray_goal` (`put_write_options`) and `attributes(portray)`
+# (`writeAttVar`: `'$attvar':portray_attvar/1`, AV10).
 # Since R1e's floats, `format_float` (`~h`). Since R1e's write/1 family (the end of this file):
 # write/1,2, writeq/1,2, writeln/1,2, print/1,2, write_term/2,3 and their options, nl/0,1, over
 # the standard streams (src/os/pl-file.jl); since R1e's canonical write_canonical/1,2
@@ -1119,8 +1120,9 @@ end
 # PORT: pl-write.c writeAttVar
 # The pin cbf4e189 plus upstream fix ace539d7 (BP2, a named backport): an attributed variable met while its own
 # attributes are written is written as its name; the foreign frame is closed if writing the attributes fails.
-# DIVERGES: `attributes(portray)` (`'$attvar':portray_attvar/1`, pl-write.c:1022-1047) needs
-# format/2 (AV10, row wr05): refused (`NotPortedError`) instead of called.
+# DIVERGES: `attributes(portray)` calls `'$attvar':portray_attvar/1` (boot/attvar.pl, AV10) with the procedure looked up in
+# `$attvar` at each call — `lookupProcedure`, as `_PL_predicate` does the first time — where upstream caches it in
+# `GD->procedures.portray_attvar1`; `Scurout` is the current-output slot of the standard streams (src/os/pl-file.jl), as in `callPortray`.
 "Write the attributed variable term reference `av` holds: its name, then `{...}` per the `attributes` option (pl-write.c)."
 function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
     ld = options.ld
@@ -1151,14 +1153,25 @@ function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
         end
         PL_close_foreign_frame(ld, fid)
         return rc
-    elseif _ison(options, PL_WRT_ATTVAR_PORTRAY)
-        throw(
-            NotPortedError{T}(
-                mk_gnd(T, Int64(av)),                       # the term reference (a culprit is a term)
-                "write_term/2 attributes(portray): '\$attvar':portray_attvar/1",
-                "AV10"
-            )
+    elseif _ison(options, PL_WRT_ATTVAR_PORTRAY) && options.gd.halt_cleaning <= CLN_PROLOG
+        gd = options.gd
+        pred = lookupProcedure(                      # _PL_predicate("portray_attvar", 1, "$attvar", …)
+            mk_sym(T, :portray_attvar), 1, lookupModule(gd, mk_sym(T, Symbol("\$attvar")))
         )
+
+        enterPortray(ld) || return false
+        wstate = saveWakeup(ld, true)
+        wstate === nothing && return false
+        old = Scurout(ld)
+        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out
+        rc = PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av)
+        if !rc && PL_exception(ld, 0) == 0
+            rc = true
+        end
+        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = old            # Scurout = old
+        restoreWakeup(ld, wstate)
+        leavePortray(ld)
+        return rc
     end
     return true                                             # succeed
 end
