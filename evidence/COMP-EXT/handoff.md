@@ -1,3 +1,18 @@
+# DEC4 STATE (item 1 committed; items 2 and 3-of-the-brief partly; no julia run, nothing formatted or compiled, test_type_discipline.jl and warm.sh check NOT run)
+- COMMITTED: 7b82f146 `TEST: DEC4 test text, read-back assertions and the DBG1 refusal row` in test/core_lang/test_compext_swipl.jl: header and testset
+  name cover cx01-cx171 and the three new predicates; helpers `_cx_answer`, `_cx_a`, `_cx_c`, `_cx_l`, `_cx_pairs`; read-back assertions for cx116-cx171
+  against the pinned lines (in the "not vacuous" testset, a `pin` Dict by id); LK-ONLY testset for the DBG1 refusal (`t_dbg` raises NotPortedError step
+  "DBG1", what contains "break_at/3"; `t_dbg_clear` is the existence_error answer `ok`; `t_op` offset 1 of `vf1` is the permission_error, answer `got(1)`).
+  The helpers sit BEFORE the LK-ONLY testset that uses them (top-level order matters).
+- NOT STARTED (stopped at the D-0794 ruling): the DEC4 mutants in tools/mutants/COMPEXT.py (still 72): aimed at `pl_xr_member2_va`, `pl_break_pc3_va`,
+  `pl_break_at3_va`, `wouldBindToDefinition`, `_xr_operand_functor`, `_xr_operand_data`, `_break_culprit`, and the `how::Int=0` argument of
+  `get_procedure_findhere` (src/pl-proc.jl); each "aimed by <rows>", unique ids, `old` exactly once (python3 -I runpy over the file), no `equivalent=`.
+  Nothing of them exists beyond this list. Commit subject for them: `TEST: DEC4 mutants`.
+- Expected-value facts to remember: the assertions read the swipl PINS, the kernel's answers are compared in the main testset (the gate decides); the pins show
+  cx125 as `[bar, vc(V0), bar, bar]` (the DEC3 text said "bar x3 then vc"), cx160 `domain_error(not_less_than_zero, -1)`.
+- Left for the dispatcher after the mutants: `warm.sh fmt`, `warm.sh check`, the three-type run of test_compext_swipl.jl, `tools/pkgtest_way.sh test/core_lang/test_compext_swipl.jl`,
+  test_type_discipline.jl, then push `mutants/COMP-EXT` and `gate/comp-ext` at one SHA. No daemon was used; lanes.conf untouched.
+
 # DEC3 STATE (forced hand-back at the 150k cap; no julia run, nothing formatted or compiled, test_type_discipline.jl and warm.sh check NOT run)
 - Predicates: `$predefine_foreign/1` SKIPPED (already in src/pl-comp.jl, COMPEXT, rows cx14-cx21). WRITTEN: `$xr_member/2` (pl_xr_member2_va, enumerates and tests,
   redo state `(offset<<3)+operand`), `$break_pc/3` (pl_break_pc3_va, complete: the kernel's code never holds D_BREAK so fetchop is decode), `$break_at/3`
