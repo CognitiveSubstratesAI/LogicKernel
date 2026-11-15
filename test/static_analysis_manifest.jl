@@ -3115,7 +3115,7 @@ function _manifest_index(T)
             )
         ]...,
         # TAB1 TB8: the restraint flags, the tripwires, droppable_table and drop_intermediate_tables, '$tbl_sdg'/3 and '$tbl_incomplete'/3 (src/pl-tabling.jl)
-        (LK._tbl_is, Tuple{T, Symbol}, false),
+        (LK._tbl_is, Tuple{Type{T}, T, Symbol}, false),
         (LK._trie_atom, Tuple{GD, LK.trie{T}}, false),
         (LK.unify_restraint, Tuple{LD, Int, Int}, false),
         (LK.tbl_get_restraint_flag, Tuple{LD, Int, T}, false),

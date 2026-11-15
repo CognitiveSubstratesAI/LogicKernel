@@ -399,6 +399,64 @@ end
     @test ld.tabling.incomplete_tables == 0 && ld.tabling.active_components == 0
 end
 
+# The restraint flags compare their key atom with `mk_sym(T, name)`, `T` the TERM type (from `ld`): under the alternative term types a
+# key made by `lk_sym` is an `AltSym`, a SUBTYPE of the term type, which `mk_sym` cannot build. Read and set directly, each flag, with a
+# key made the way the reader of `current_prolog_flag/2` finds it. Expected values are the swipl pins above (tsd01-10 defaults, tsl01-05
+# limits, tsa action rows incl. complete_soundly = bounded_rationality).
+@testset "the restraint flags take the term type: every flag read and set with an lk_sym key" begin
+    gd, ld, st = _tg_load(_TG_COMMON)
+    @test st == "ok"
+    limits = (
+        "max_table_subgoal_size", "max_table_answer_size", "max_answers_for_subgoal",
+        "max_incomplete_subgoals", "max_scc_subgoals"
+    )
+    for n in limits
+        key = _tgs(n)
+        @test LK.tbl_is_restraint_flag(key)
+        t = LK.PL_new_term_ref(ld)
+        @test !LK.tbl_get_restraint_flag(ld, t, key)                    # unlimited: fails (tsd01-05)
+        v = LK.PL_new_term_ref(ld)
+        LK.PL_put_integer(ld, v, 7)
+        @test LK.tbl_set_restraint_flag(ld, v, key)
+        g = LK.PL_new_term_ref(ld)
+        @test LK.tbl_get_restraint_flag(ld, g, key)
+        @test LK.PL_get_integer(ld, g) == 7                             # (tsl01-05)
+        inf = LK.PL_new_term_ref(ld)
+        LK.PL_put_atom(ld, inf, _tgs("infinite"))
+        @test LK.tbl_set_restraint_flag(ld, inf, key)
+        @test !LK.tbl_get_restraint_flag(ld, LK.PL_new_term_ref(ld), key)
+    end
+    for n in map(l -> l * "_action", limits)
+        key = _tgs(n)
+        @test LK.tbl_is_restraint_flag(key)
+        g = LK.PL_new_term_ref(ld)
+        @test LK.tbl_get_restraint_flag(ld, g, key)
+        @test sym_text(LK.PL_get_atom(ld, g)) == "error"                # (tsd06-10)
+        w = LK.PL_new_term_ref(ld)
+        LK.PL_put_atom(ld, w, _tgs("warning"))
+        @test LK.tbl_set_restraint_flag(ld, w, key)
+        g = LK.PL_new_term_ref(ld)
+        @test LK.tbl_get_restraint_flag(ld, g, key)
+        @test sym_text(LK.PL_get_atom(ld, g)) == "warning"
+        e = LK.PL_new_term_ref(ld)
+        LK.PL_put_atom(ld, e, _tgs("error"))
+        @test LK.tbl_set_restraint_flag(ld, e, key)
+    end
+    # `complete_soundly` is XSB's name of bounded_rationality where that action is accepted
+    key = _tgs("max_answers_for_subgoal_action")
+    c = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, c, _tgs("complete_soundly"))
+    @test LK.tbl_set_restraint_flag(ld, c, key)
+    g = LK.PL_new_term_ref(ld)
+    @test LK.tbl_get_restraint_flag(ld, g, key)
+    @test sym_text(LK.PL_get_atom(ld, g)) == "bounded_rationality"
+    e = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, e, _tgs("error"))
+    @test LK.tbl_set_restraint_flag(ld, e, key)
+    # a name that is no restraint flag
+    @test !LK.tbl_is_restraint_flag(_tgs("max_answers"))
+end
+
 @testset "the restraint and graph rows are not vacuous" begin
     @test _TG_PINNED[1] == "ok"
     @test length(_TG_PINNED) == length(_TG_CASES) + 1

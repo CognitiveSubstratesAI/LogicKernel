@@ -10097,8 +10097,8 @@ end
 # (`tripwire_incomplete_subgoals`, TB2), table_complete_all (`droppable_table`, `drop_intermediate_tables`, TB2).
 
 # ORIGINAL (TAB1 TB8): whether the atom `a` is the atom `name`, by the atom's identity (`sym_key`), as upstream's `==` of atom handles.
-"Whether the atom `a` is `name` (upstream: the comparison of two atom handles)."
-function _tbl_is(a::T, name::Symbol)::Bool where {T}
+"Whether the atom `a` is `name` (upstream: the comparison of two atom handles); `T` is the TERM type, from the caller's `ld`/`gd`."
+function _tbl_is(::Type{T}, a, name::Symbol)::Bool where {T}
     return sym_key(a) == sym_key(mk_sym(T, name))
 end
 
@@ -10125,25 +10125,25 @@ end
 "Unify `t` with the value of the restraint flag `key`; the three limits and the two others that are unlimited fail (pl-tabling.c)."
 function tbl_get_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
     r = ld.tabling.restraint
-    if _tbl_is(key, :max_table_subgoal_size_action)
+    if _tbl_is(T, key, :max_table_subgoal_size_action)
         return PL_unify_atom(ld, t, r.max_table_subgoal_size_action)
-    elseif _tbl_is(key, :max_table_answer_size_action)
+    elseif _tbl_is(T, key, :max_table_answer_size_action)
         return PL_unify_atom(ld, t, r.max_table_answer_size_action)
-    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+    elseif _tbl_is(T, key, :max_answers_for_subgoal_action)
         return PL_unify_atom(ld, t, r.max_answers_for_subgoal_action)
-    elseif _tbl_is(key, :max_table_subgoal_size)
+    elseif _tbl_is(T, key, :max_table_subgoal_size)
         return unify_restraint(ld, t, r.max_table_subgoal_size)
-    elseif _tbl_is(key, :max_table_answer_size)
+    elseif _tbl_is(T, key, :max_table_answer_size)
         return unify_restraint(ld, t, r.max_table_answer_size)
-    elseif _tbl_is(key, :max_answers_for_subgoal)
+    elseif _tbl_is(T, key, :max_answers_for_subgoal)
         return unify_restraint(ld, t, r.max_answers_for_subgoal)
-    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+    elseif _tbl_is(T, key, :max_incomplete_subgoals_action)
         return PL_unify_atom(ld, t, r.max_incomplete_subgoals_action)
-    elseif _tbl_is(key, :max_incomplete_subgoals)
+    elseif _tbl_is(T, key, :max_incomplete_subgoals)
         return unify_restraint(ld, t, r.max_incomplete_subgoals)
-    elseif _tbl_is(key, :max_scc_subgoals_action)
+    elseif _tbl_is(T, key, :max_scc_subgoals_action)
         return PL_unify_atom(ld, t, r.max_scc_subgoals_action)
-    elseif _tbl_is(key, :max_scc_subgoals)
+    elseif _tbl_is(T, key, :max_scc_subgoals)
         return unify_restraint(ld, t, r.max_scc_subgoals)
     end
 
@@ -10159,18 +10159,18 @@ function set_restraint_action(
     act = PL_get_atom_ex(ld, t)
     act === nothing && return nothing
 
-    if _tbl_is(act, :error) || _tbl_is(act, :warning) || _tbl_is(act, :suspend)
+    if _tbl_is(T, act, :error) || _tbl_is(T, act, :warning) || _tbl_is(T, act, :suspend)
         return act
     end
 
-    _tbl_is(act, :complete_soundly) && (act = mk_sym(T, :bounded_rationality))      # XSB compatibility
+    _tbl_is(T, act, :complete_soundly) && (act = mk_sym(T, :bounded_rationality))      # XSB compatibility
 
-    _tbl_is(key, :max_table_subgoal_size_action) && _tbl_is(act, :abstract) && return act
-    if _tbl_is(key, :max_table_answer_size_action) &&
-        (_tbl_is(act, :bounded_rationality) || _tbl_is(act, :fail))
+    _tbl_is(T, key, :max_table_subgoal_size_action) && _tbl_is(T, act, :abstract) && return act
+    if _tbl_is(T, key, :max_table_answer_size_action) &&
+        (_tbl_is(T, act, :bounded_rationality) || _tbl_is(T, act, :fail))
         return act
     end
-    _tbl_is(key, :max_answers_for_subgoal_action) && _tbl_is(act, :bounded_rationality) &&
+    _tbl_is(T, key, :max_answers_for_subgoal_action) && _tbl_is(T, act, :bounded_rationality) &&
         return act
 
     PL_error(ld, ERR_DOMAIN, mk_sym(T, :restraint_action), t)
@@ -10184,7 +10184,7 @@ end
 "The limit `t` holds: `infinite` is -1, else a size (pl-tabling.c)."
 function set_restraint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     inf = PL_get_atom(ld, t)
-    (inf !== nothing && _tbl_is(inf, :infinite)) && return -1
+    (inf !== nothing && _tbl_is(T, inf, :infinite)) && return -1
 
     return PL_get_size_ex(ld, t)
 end
@@ -10195,43 +10195,43 @@ end
 "Set the restraint flag `key` from `t`: the actions and limits of `LD->tabling.restraint` (pl-tabling.c)."
 function tbl_set_restraint_flag(ld::PL_local_data{T}, t::term_t, key::T)::Bool where {T}
     r = ld.tabling.restraint
-    if _tbl_is(key, :max_table_subgoal_size_action)
+    if _tbl_is(T, key, :max_table_subgoal_size_action)
         a = set_restraint_action(ld, t, key)
         a === nothing && return false
         r.max_table_subgoal_size_action = a
-    elseif _tbl_is(key, :max_table_answer_size_action)
+    elseif _tbl_is(T, key, :max_table_answer_size_action)
         a = set_restraint_action(ld, t, key)
         a === nothing && return false
         r.max_table_answer_size_action = a
-    elseif _tbl_is(key, :max_answers_for_subgoal_action)
+    elseif _tbl_is(T, key, :max_answers_for_subgoal_action)
         a = set_restraint_action(ld, t, key)
         a === nothing && return false
         r.max_answers_for_subgoal_action = a
-    elseif _tbl_is(key, :max_table_subgoal_size)
+    elseif _tbl_is(T, key, :max_table_subgoal_size)
         v = set_restraint(ld, t)
         v === nothing && return false
         r.max_table_subgoal_size = v
-    elseif _tbl_is(key, :max_table_answer_size)
+    elseif _tbl_is(T, key, :max_table_answer_size)
         v = set_restraint(ld, t)
         v === nothing && return false
         r.max_table_answer_size = v
-    elseif _tbl_is(key, :max_answers_for_subgoal)
+    elseif _tbl_is(T, key, :max_answers_for_subgoal)
         v = set_restraint(ld, t)
         v === nothing && return false
         r.max_answers_for_subgoal = v
-    elseif _tbl_is(key, :max_incomplete_subgoals_action)
+    elseif _tbl_is(T, key, :max_incomplete_subgoals_action)
         a = set_restraint_action(ld, t, key)
         a === nothing && return false
         r.max_incomplete_subgoals_action = a
-    elseif _tbl_is(key, :max_incomplete_subgoals)
+    elseif _tbl_is(T, key, :max_incomplete_subgoals)
         v = set_restraint(ld, t)
         v === nothing && return false
         r.max_incomplete_subgoals = v
-    elseif _tbl_is(key, :max_scc_subgoals_action)
+    elseif _tbl_is(T, key, :max_scc_subgoals_action)
         a = set_restraint_action(ld, t, key)
         a === nothing && return false
         r.max_scc_subgoals_action = a
-    elseif _tbl_is(key, :max_scc_subgoals)
+    elseif _tbl_is(T, key, :max_scc_subgoals)
         v = set_restraint(ld, t)
         v === nothing && return false
         r.max_scc_subgoals = v
@@ -10254,7 +10254,7 @@ function generalise_answer_substitution(
         return PL_unify_functor(ld, gen, na[1], na[2])
     end
     a = PL_get_atom(ld, spec)
-    (a !== nothing && _tbl_is(a, :ret)) && return PL_unify_atom(ld, gen, a)
+    (a !== nothing && _tbl_is(T, a, :ret)) && return PL_unify_atom(ld, gen, a)
 
     return PL_type_error(ld, "answer_substitution", spec)
 end
@@ -10696,7 +10696,7 @@ end
 function _tbl_get_thread_id_ex(ld::PL_local_data{T}, t::term_t)::Bool where {T}
     a = PL_get_atom(ld, t)
     if a !== nothing
-        _tbl_is(a, :main) && return true
+        _tbl_is(T, a, :main) && return true
 
         return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)
     end
