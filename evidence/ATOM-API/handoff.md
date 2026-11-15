@@ -45,3 +45,24 @@ Registration order upstream (BeginPredDefs(atom)): blob_type_property, set_blob_
 ## Open facts to check first (not yet read)
 - `grep -n 'text_representation_error' src/os/pl-text.jl`; `atomValue`/`indexAtom` helpers (src/pl-inline.jl, `fetchAtomArray` at :45; `_atom_word!` :238/:277); `PL_unify_atom`, `PL_unify_integer`, `PL_unify_int64(ld,t,i)` (pl-fli.jl:1204/:1232), `PL_type_error(ld, "name", t)`, `PL_domain_error`, `PL_existence_error3` (pl-error.jl:134), `PL_get_size_ex` (:823, returns Union{Nothing,Int}; a negative raises domain_error(not_less_than_zero)), `PL_get_name_arity` returns (name::T, arity) or nothing; there is no `PL_unify_term`: build `Name(Int)` with `PL_unify_functor`/`PL_get_arg` or PL_unify_compound (read pl-fli.jl:227 `PL_unify_functor`); foreign frame: `PL_open_foreign_frame(ld)`, `PL_rewind_foreign_frame(ld, fid)`, `PL_close_foreign_frame(ld, fid)`; `PL_foreign_control(PL__ctx)`, `PL_foreign_context(PL__ctx)`, `PL_retry(i)`, FRG_FIRST_CALL/FRG_REDO.
 - tools/r2_status.jl refusal key = `refusal:file::fn::first(what,60)`; `what` must be a plain string literal at the throw site.
+
+## STATE (agent 3, TEST piece, partial)
+- COMMITTED dda5dcfe `TEST: ATOM-API rows (pl-atom.c)`: test/core_lang/test_atom_api_swipl.jl + .pl + .out (78 rows aa01-aa78, the
+  dwim harness; kernel lines vs the .out, a live swipl check, an LK-ONLY testset: PL_find_blob_type, live/space via lookupAtom,
+  add_type_live on a fresh blob_registration, global_atom, extendAtom (NUL cut, 1023/1024/1030-byte atoms), the 4 refusals). The pin
+  runs (swipl 10.1.20, capped, twice) were byte-identical (cmp). No julia run: every kernel answer is UNVERIFIED; test_type_discipline.jl
+  and warm.sh check NOT run.
+- LEFT OUT of the rows, for a ruling: reserved_symbol rank/padding (swipl rank(0)/padding(1); the kernel registers -1/0).
+- LEFT TO DO: tools/mutants/ATOMAPI.py (second commit `TEST: ATOM-API mutants`), then the two cost lines
+  (test/pkgtest_costs.tsv and test/unit_costs.tsv, tab-separated, sorted: `core_lang/test_atom_api_swipl.jl<TAB>3.0`, next to the
+  core_lang/test_atom_table.jl neighbours) and this file's final state. Sources for the mutants' `old` strings (check each occurs once
+  with python3 -I runpy): src/pl-atom.jl add_type_live (`reg.live += 1`, `reg.space += a.length`), the `add_type_live(reg, a)` call in lookupBlob,
+  PL_find_blob_type `r.type.name == name`, global_atom `!= 0`/`< atoms.builtin`, extendAtom (`sl < LINESIZ`, `sl >= lp`, `unique = false`,
+  `resize!(common, k)`, `first = false`); src/pl-fli.jl pl_complete_atom3_va (`t.length >= LINESIZ`, `u ? :unique : :not_unique`, the NUL cut),
+  current_blob (`reg.type.flags & PL_BLOB_TEXT == 0 && return FFALSE`, `elseif btype.flags & PL_BLOB_TEXT == 0`, `PL_retry(index + 1)`),
+  pl_blob_type_property2_va (`ti >= length(types)`, the both-given early return), unify_blob_property (`i == k` order, BT_NPROPS),
+  pl_set_blob_type2_va (`na[2] != 1`, `sym_text(pname) == "gc_margin"`, `reg.gc_margin = margin`), blob_type_from_name (ERR_EXISTENCE).
+  TARGETS = the new test + test/core_lang/test_atom_table.jl + test/core_lang/test_blob.jl + test/test_type_discipline.jl (confirm the
+  second and third exist: `ls` them; the agent was blocked before it could).
+- A hook BLOCKED agent 3's `grep -rln` (a recursive search I wrote by mistake, brief: no recursive grep): the pre-bash.sh
+  "recursive identifier search over a package src/ tree, without consulting CODEMAP first" message. Agent 3 stopped there.
