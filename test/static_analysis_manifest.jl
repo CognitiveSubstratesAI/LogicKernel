@@ -264,8 +264,9 @@ _manifest_per_type(T) = (
     (LK._cp_vm, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cp_vm!, Tuple{LK.PL_local_data{T}, Int, UInt8}, false),
     (LK._cp_word, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.can_share_cells, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.update_ground_cells, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.can_share_cells, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK.update_ground_cells, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK.mark_vars, Tuple{LK.PL_local_data{T}, Int, Bool}, false),             # PRIMS-B2: copy_term/4
     (LK.mark_for_copy_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.unshare_attvar_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.mark_for_duplicate_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
@@ -4917,7 +4918,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.atom_literal, Tuple{UInt64}, true), (LK.atom_operand_word, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
     (LK.sizeofClause, Tuple{Int}, true),
-    (LK.must_copy_attvar, Tuple{Int}, true),   # AV6: no T in its signature — once, not per term type
+    (LK.must_copy_attvar, Tuple{UInt64, Int, Int}, true),   # AV6: no T in its signature — once, not per term type
+    (LK._cp_must_copy, Tuple{UInt64}, true),                # PRIMS-B2
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),
     (LK.refFliP, Tuple{Int, Int}, true), (LK.f_hasSpace, Tuple{Int, Int, Int, Int}, true),
     (LK.NoMark, Tuple{}, true), (LK.isRealMark, Tuple{LK.mark}, true),

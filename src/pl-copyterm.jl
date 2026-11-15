@@ -141,26 +141,36 @@ function mark_vars(ld::PL_local_data{T}, t::term_t, set::Bool)::Bool where {T}
     return true
 end
 
+# PORT: pl-copyterm.c must_copy
+"Whether the marks `w` carries say `FIRST` only (pl-copyterm.c `must_copy`; `is_ground` is the same test on a functor word)."
+@inline _cp_must_copy(w::word)::Bool = (w & BOTH_MASK) == FIRST_MASK
+
 # PORT: pl-copyterm.c can_share as can_share_cells
+# DIVERGES: positions; `flags` for upstream's `options` (only `COPY_MARKED` and `COPYING_ATTVAR` are read). A virgin
+# variable cell's marks are its side-vector bits, an attributed variable's are in its word.
 "Whether the argument cell at global position `p` can be shared by a copy (pl-copyterm.c)."
-function can_share_cells(ld::PL_local_data, p::Int)::Bool
+function can_share_cells(ld::PL_local_data, p::Int, flags::Int)::Bool
     c = ld.gstack[p]
     while isRef(c)                                          # TAG_REFERENCE
         p = unRef(c)
         c = ld.gstack[p]
     end
-    (isVar(c) || isAttVar(c)) && return false               # TAG_VAR, TAG_ATTVAR: no COPY_MARKED
+    if isVar(c)                                             # TAG_VAR
+        return (flags & COPY_MARKED) != 0 && (_cp_vm(ld, p) & _CPV_BOTH) == 0 && (flags & COPYING_ATTVAR) == 0
+    elseif isAttVar(c)                                      # TAG_ATTVAR
+        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 && (flags & COPYING_ATTVAR) == 0
+    end
     _is_gcompound(c) && return (ld.gstack[valPtr(c)] & BOTH_MASK) == FIRST_MASK   # is_ground
     return true
 end
 
 # PORT: pl-copyterm.c update_ground as update_ground_cells
-"Mark the compound whose word is at location `l` ground when every argument can be shared (pl-copyterm.c)."
-function update_ground_cells(ld::PL_local_data, l::Int)::Nothing
+"Mark the compound whose word is at location `l` ground when every argument can be shared, `flags` the options' (pl-copyterm.c)."
+function update_ground_cells(ld::PL_local_data, l::Int, flags::Int)::Nothing
     q = valPtr(_cp_word(ld, l))
     f = ld.gstack[q]
     for a in (q + arityFunctor(ld.functors, f)):-1:(q + 1)
-        can_share_cells(ld, a) || return nothing
+        can_share_cells(ld, a, flags) || return nothing
     end
     ld.gstack[q] = (f & ~MARK_MASK) | FIRST_MASK            # set_ground
     return nothing
@@ -187,48 +197,64 @@ function unshare_attvar_cells(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     end
 end
 
+# PORT: pl-copyterm.c MC_MASK MC_WALK_REF MC_WALK_COPY
+"The mode bits of `mark_for_copy`'s walk (pl-copyterm.c): `MC_WALK_REF` (below a reference or an attvar), `MC_WALK_COPY` (inside an attvar's attributes)."
+const MC_MASK = 0x3
+const MC_WALK_REF = 0x1
+const MC_WALK_COPY = 0x2
+
 # PORT: pl-copyterm.c must_copy_attvar
-# DIVERGES: no `COPY_MARKED` (copy_term/4 is not ported), so no `w` and no `mode`.
-"Whether the marking walks into an attributed variable's attributes (pl-copyterm.c `must_copy_attvar`)."
-@inline must_copy_attvar(flags::Int)::Bool = (flags & COPY_ATTRS) != 0
+"Whether the marking walks into the attributes of the attributed variable with word `w` in walk mode `mode` (pl-copyterm.c `must_copy_attvar`)."
+@inline function must_copy_attvar(w::word, flags::Int, mode::Int)::Bool
+    if (flags & (COPY_ATTRS | COPY_MARKED)) != 0
+        if (flags & COPY_MARKED) != 0
+            (mode & MC_WALK_COPY) != 0 && return true
+            return _cp_must_copy(w) && (flags & COPY_ATTRS) != 0
+        else
+            return true
+        end
+    else
+        return false
+    end
+end
 
 # PORT: pl-copyterm.c mark_for_copy as mark_for_copy_cells
-# DIVERGES: on locations, the stack `ld.cp_stack` of `(loc << 1) | walk_ref`; no COPY_MARKED, so of the
-# mode only MC_WALK_REF (MC_WALK_COPY's readers are COPY_MARKED tests). An attributed variable's marks
-# are in its word, as upstream (its tag survives them). As upstream, a compound is dispatched again
+# DIVERGES: on locations, the stack `ld.cp_stack` of `(loc << 2) | mode` (upstream's `MC_TAG`). An attributed
+# variable's marks are in its word, as upstream (its tag survives them). As upstream, a compound is dispatched again
 # after `update_ground` (its functor visited once → shared). Returns 1.
 "Mark the term at location `start` for `copy_term` (pl-copyterm.c `mark_for_copy`): 1."
 function mark_for_copy_cells(ld::PL_local_data{T}, start::Int, flags::Int)::Int where {T}
     stack = ld.cp_stack
     base = length(stack)
     p = start
-    wr = false                                              # mode & MC_WALK_REF
+    mode = 0
     while true
         c = _cp_word(ld, p)                                 # switch(tag(*p))
+        copy_always = (flags & COPY_MARKED) == 0 || (mode & MC_WALK_COPY) != 0   # COPY_ALWAYS
         if isRef(c)                                         # TAG_REFERENCE
-            push!(stack, (p << 1) | Int(wr))
-            wr = true
+            push!(stack, (p << 2) | mode)
+            mode |= MC_WALK_REF
             p = unRef(c)                                    # deRef(p)
             while isRef(ld.gstack[p])
                 p = unRef(ld.gstack[p])
             end
             continue
-        elseif isAttVar(c) && must_copy_attvar(flags)       # TAG_ATTVAR
-            push!(stack, (p << 1) | Int(wr))
-            wr = true                                       # mode |= MC_WALK_REF|MC_WALK_COPY
+        elseif isAttVar(c) && must_copy_attvar(c, flags, mode)   # TAG_ATTVAR
+            push!(stack, (p << 2) | mode)
+            mode |= MC_WALK_REF | MC_WALK_COPY
             p = valPtr(c & ~BOTH_MASK)                      # p = valPAttVar(*p & ~BOTH_MASK)
             continue
         elseif isAttVar(c)                                  # TAG_ATTVAR → TAG_VAR: marks in the word
-            if (c & BOTH_MASK) == 0                         # virgin && COPY_ALWAYS
+            if (c & BOTH_MASK) == 0 && copy_always          # virgin && COPY_ALWAYS
                 ld.gstack[p] = c | MARK_MASK
             elseif (c & BOTH_MASK) == MARK_MASK             # visited_once
                 ld.gstack[p] = c | BOTH_MASK
-            elseif (c & BOTH_MASK) == FIRST_MASK            # must_copy
+            elseif _cp_must_copy(c)                         # must_copy
                 ld.gstack[p] = (c & ~BOTH_MASK) | MARK_MASK
             end
         elseif isVar(c)                                     # TAG_VAR
             m = _cp_vm(ld, p)
-            if (m & _CPV_BOTH) == 0                         # virgin && COPY_ALWAYS
+            if (m & _CPV_BOTH) == 0 && copy_always          # virgin && COPY_ALWAYS
                 _cp_vm!(ld, p, m | _CPV_MARK)
             elseif (m & _CPV_BOTH) == _CPV_MARK             # visited_once
                 _cp_vm!(ld, p, m | _CPV_BOTH)
@@ -242,8 +268,8 @@ function mark_for_copy_cells(ld::PL_local_data{T}, start::Int, flags::Int)::Int 
             if (f & BOTH_MASK) == 0                         # virgin(t->definition)
                 ld.gstack[q] = f | MARK_MASK
                 if arity >= 1
-                    push!(stack, (p << 1) | Int(wr))
-                    wr = false
+                    push!(stack, (p << 2) | mode)
+                    mode &= ~MC_WALK_REF
                     p = q + arity                           # last argument
                     continue
                 end
@@ -255,9 +281,9 @@ function mark_for_copy_cells(ld::PL_local_data{T}, start::Int, flags::Int)::Int 
             resize!(stack, base)
             return 1
         end
-        while wr
+        while (mode & MC_WALK_REF) != 0
             e = pop!(stack)
-            p, wr = e >> 1, (e & 1) != 0
+            p, mode = e >> 2, e & MC_MASK
             pw = _cp_word(ld, p)
             if isAttVar(pw)                                 # if ( isAttVar(*p) )
                 unshare_attvar_cells(ld, valPtr(pw & ~BOTH_MASK))
@@ -269,9 +295,10 @@ function mark_for_copy_cells(ld::PL_local_data{T}, start::Int, flags::Int)::Int 
         end
         p -= 1
         if isFunctor(ld.gstack[p])                          # functor (compound)
+            fl = (mode & MC_WALK_COPY) != 0 ? flags | COPYING_ATTVAR : flags   # opts.flags |= COPYING_ATTVAR
             e = pop!(stack)
-            p, wr = e >> 1, (e & 1) != 0
-            update_ground_cells(ld, p)
+            p, mode = e >> 2, e & MC_MASK
+            update_ground_cells(ld, p, fl)
         end
     end
 end
@@ -349,7 +376,7 @@ end
 
 # PORT: pl-copyterm.c cp_unmark as cp_unmark_cells
 # DIVERGES: a variable cell's marks are its side-vector bits (see the section header); an attributed
-# variable's are in its word, as upstream. No COPY_MARKED.
+# variable's are in its word, as upstream.
 "Clear the copy marks of the term at location `l` (pl-copyterm.c `cp_unmark`)."
 function cp_unmark_cells(ld::PL_local_data{T}, l::Int, flags::Int)::Nothing where {T}
     a = ld.walk_agenda
@@ -359,6 +386,7 @@ function cp_unmark_cells(ld::PL_local_data{T}, l::Int, flags::Int)::Nothing wher
         q == 0 && break
         k, w, p = _deref_loc(ld, q)
         while k == DU_ATTVAR && (flags & COPY_ATTRS) != 0   # TAG_ATTVAR, COPY_ATTRS:
+            (flags & COPY_MARKED) != 0 && (ld.gstack[p] = w & ~BOTH_MASK)   # COPY_MARKED: *p &= ~BOTH_MASK
             p = valPtr(w)                                   #   p = valPAttVar(*p); goto again
             w = ld.gstack[p]                                #   (no deRef: a reference has no case)
             k = if isVar(w)
