@@ -57,6 +57,7 @@ pred:$tbl_propagate_start/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_abandon/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare_top/2	TAB1	seed: missing_c_preds.tsv
+pred:$track_atom/2	REFUSED	debug build only (O_DEBUG_ATOMGC), atom GC family, D-0634 D5; left unregistered, as the pin
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
@@ -95,6 +96,7 @@ pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
+pred:track_atom/2	REFUSED	debug build only (O_ATOMGC with O_DEBUG_ATOMGC), atom GC family, D-0634 D5; left unregistered, as the pin
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
@@ -141,6 +143,10 @@ vmi:T_TRY_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): 
 cfile:pl-tabling.c	TAB1	PIN1 step C (D-0447 item 1): every pl-tabling.c row without an exact key, and the tabling groups of V10.1.20 that keep a TAB1 row (evidence/PIN1/step_c/part2_notes.md T0-T5; no key kind names a group): T1 IDG edge sets and node layout (pl-idgset.c/h, 211bb969 9f5da524 c77a0bff 99827823; `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3` are new); T2 trie and table memory (737686d3 fc7e0010 2125e711 486dc81d; T_DELAY flag); T3 reclaim and abolish (259429a2 30bdfd4f c9c81eeb c7037709); T4 answers and WFS (10205aec 14ba39be 9dcabe86 6aee153d); T5 diagnostics (780caea7 610742f9 0e201521; `$tbl_sdg/3`, `$tbl_incomplete/3`); S_TABLED has its body since TB3b, its single-answer path since the TB3 stack edit
 cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
+refusal:src/pl-fli.jl::PL_register_atom::PL_register_atom (pl-atom.c:1591)	REFUSED	atom GC family, D-0634 D5; the reference counts of an atom have no reader while no atom is collected
+refusal:src/pl-fli.jl::PL_unregister_atom::PL_unregister_atom (pl-atom.c:1751)	REFUSED	atom GC family, D-0634 D5; the reference counts of an atom have no reader while no atom is collected
+refusal:src/pl-fli.jl::_PL_debug_register_atom::_PL_debug_register_atom (pl-atom.c:1071)	REFUSED	atom GC family, D-0634 D5; the reference counts of an atom have no reader while no atom is collected
+refusal:src/pl-fli.jl::_PL_debug_unregister_atom::_PL_debug_unregister_atom (pl-atom.c:1090)	REFUSED	atom GC family, D-0634 D5; the reference counts of an atom have no reader while no atom is collected
 refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables, TH1 shared tables)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)

@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-fli.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-atom.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1996-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -1108,10 +1109,359 @@ function pl_blob2_va(
     return PL_unify_atom(ld, A2, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
 end
 
+# PORT: pl-atom.c blob_released as pl_blob_released1_va
+# (PRED_IMPL("blob_released", 1, blob_released, 0))
+# DIVERGES: the kernel has no `PL_free_blob`, so no atom has a NULL name (`!x->name`, upstream's test of a
+# released blob): the answer is failure for every term, as `blob/2` meets no released blob (`deadBlobType`).
+"`blob_released(@Term)` (pl-atom.c): `Term` is a blob whose data was released; here no blob is."
+function pl_blob_released1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    PL_get_atom(ld, A1) === nothing && return FFALSE        # PL_get_atom(A1, &a)
+    return FFALSE                                           # atomValue(a)->name is never NULL
+end
+
+# PORT: pl-atom.c current_blob
+# DIVERGES: placed after the FLI it calls (pl-atom.jl is loaded before `PL_local_data`); `type` is
+# `nothing` for upstream's NULL (`current_atom/1`: the text types only, `[]` is a reserved symbol and
+# no text). `call` and `state` are `PL_foreign_control` and `PL_foreign_context` of the call; the answer
+# is the foreign return value (upstream returns an `atom_t` that stands for it). The type of an atom is
+# its blob type's NAME, compared as text (upstream compares the name atoms); a type given as a blob or
+# `[]` names no type (no blob type has an empty name, so `tname` = "" matches none). The atoms
+# enumerated are those of the database's table that carry an interface symbol (`atomSymbol`, recorded
+# when the atom first got a word from a symbol, `_atom_word!`: the only atoms a Prolog term can hold);
+# an atom that has none is skipped. Left out with the atom GC (`bump_atom_references`,
+# `PL_unregister_atom`, `ATOM_garbage_collected`, `CHK_ATOM_GARBAGE_COLLECTED`): with no AGC an atom of
+# the table is never freed under the enumeration, so the walk takes no reference.
+"""
+The worker of `current_blob/2` and `current_atom/1`: enumerate the atoms of the table by index, `state`
+the next index to try (pl-atom.c).
+"""
+function current_blob(
+    ld::PL_local_data{T}, a::term_t, type::Union{Nothing, term_t}, call::Int, state::Int
+)::foreign_t where {T}
+    index = 0
+    if call == FRG_FIRST_CALL
+        name = PL_is_blob(ld, a)
+        if name !== nothing
+            if type !== nothing
+                return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
+            end
+            reg = PL_find_blob_type(ld.atoms, name)
+            reg === nothing && return FFALSE
+            reg.type.flags & PL_BLOB_TEXT == 0 && return FFALSE
+            return FTRUE
+        end
+        PL_is_variable(ld, a) || return FFALSE
+        index = 1
+    elseif call == FRG_REDO
+        index = state
+    else
+        return FTRUE                                        # FRG_CUTTED
+    end
+
+    have_type = false
+    tname = ""
+    if type !== nothing && !PL_is_variable(ld, type)
+        tn = PL_get_atom_ex(ld, type)
+        tn === nothing && return FFALSE
+        have_type = true
+        tname = (is_blob(tn) || is_reserved_symbol(tn)) ? "" : sym_text(tn)
+    end
+
+    atoms = ld.atoms
+    i = MSB(index)
+    last = false
+    while !last
+        upto = 2 << i
+        high = atoms.highest
+        b = atoms.array[i + 1]
+        if upto >= high
+            upto = high
+            last = true
+        end
+
+        if b === nothing
+            index = max(index, upto)
+        else
+            while index < upto
+                at = b[index - (1 << i) + 1]
+                btype = at.type
+                if ATOM_IS_VALID(at.references) && btype !== ATOM_TYPE_INVALID &&
+                    (!have_type || tname == btype.name)
+                    sym = atomSymbol(ld.atom_symbols, index)
+                    if sym !== nothing
+                        if type !== nothing
+                            if !have_type
+                                PL_unify_atom(ld, type, mk_sym(T, Symbol(btype.name))) ||
+                                    return FFALSE
+                            end
+                        elseif btype.flags & PL_BLOB_TEXT == 0
+                            index += 1
+                            continue                        # isoff(btype, PL_BLOB_TEXT)
+                        end
+                        PL_unify_atom(ld, a, sym) || return FFALSE
+                        return PL_retry(index + 1)          # ForeignRedoInt(index+1)
+                    end
+                end
+                index += 1
+            end
+        end
+        i += 1
+    end
+
+    return FFALSE
+end
+
+# PORT: pl-atom.c current_atom as pl_current_atom1_va
+# (PRED_IMPL("current_atom", 1, current_atom, PL_FA_NONDETERMINISTIC))
+"`current_atom(?Atom)` (pl-atom.c): `Atom` is a text atom, on backtracking every one."
+function pl_current_atom1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    return current_blob(
+        ld, A1, nothing, PL_foreign_control(PL__ctx), PL_foreign_context(PL__ctx)
+    )
+end
+
+# PORT: pl-atom.c complete_atom as pl_complete_atom3_va
+# (PRED_IMPL("$complete_atom", 3, complete_atom, 0))
+# DIVERGES: `PL_get_nchars(prefix, …, CVT_ALL|CVT_EXCEPTION)` is `PL_get_text` plus the refusal of a wide
+# text, `representation_error(encoding)` for ISO Latin-1 as upstream's `PL_mb_text`; the code list is
+# `PL_unify_text` of a canonical ISO Latin-1 text. Nothing unregisters an atom here, so `references`
+# of every atom stays 1 and `global_atom` holds for all: an atom swipl has collected is still offered.
+"""
+`'\$complete_atom'(+Prefix, -Common, -Unique)` (pl-atom.c): `Common` is the code list of `Prefix` and the
+text all atoms with that prefix share, `Unique` is `unique` or `not_unique`.
+"""
+function pl_complete_atom3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    t = PL_get_text(ld, A1, CVT_ALL | CVT_EXCEPTION)
+    t === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, t) || return FFALSE
+    t.encoding === ENC_WCHAR &&
+        return text_representation_error(ld, ENC_ISO_LATIN_1) ? FTRUE : FFALSE
+    t.length >= LINESIZ && return FFALSE                    # len >= sizeof(buf)
+    z = findfirst(==(0x00), view(t.text, 1:(t.length)))     # strcpy(buf, p): up to the first NUL
+    p = z === nothing ? t.text[1:(t.length)] : t.text[1:(z - 1)]
+
+    found, u, cmm = extendAtom(ld.atoms, p)
+    found || return FFALSE
+    buf = vcat(p, cmm)                                      # strcat(buf, cmm)
+    out = PL_chars_t(buf, length(buf), ENC_ISO_LATIN_1, true)
+    return if PL_unify_text(ld, A2, 0, out, PL_CODE_LIST) &&
+              PL_unify_atom(ld, A3, mk_sym(T, u ? :unique : :not_unique))
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# PORT: pl-atom.c blob_type_from_name
+# DIVERGES: returns the registration (which holds the type); the type's name atom is compared as text
+# (as `current_blob`); the error is `PL_error` with `ERR_EXISTENCE`.
+"The registration of the blob type named by the atom term reference `t`, or `nothing` after raising an error (pl-atom.c)."
+function blob_type_from_name(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, blob_registration} where {T}
+    name = PL_get_atom_ex(ld, t)
+    name === nothing && return nothing
+    tname = (is_blob(name) || is_reserved_symbol(name)) ? "" : sym_text(name)
+    reg = PL_find_blob_type(ld.atoms, tname)
+    reg === nothing || return reg
+    PL_error(ld, ERR_EXISTENCE, mk_sym(T, :blob_type), t)       # PL_existence_error("blob_type", t)
+    return nothing
+end
+
+# PORT: pl-atom.c BT_NPROPS
+"The number of properties of a blob type, in enumeration order (pl-atom.c)."
+const BT_NPROPS = 11
+
+# PORT: pl-atom.c unify_blob_property
+# DIVERGES: `PL_unify_term(prop, PL_FUNCTOR, …, PL_INT64, value)` is `PL_unify_functor` of `Name/1` and the
+# unification of its argument. `unregistered` and `non_garbage` are the atom GC's bookkeeping: always 0.
+"Unify `prop` with property `i` (from 0) of the registration `reg`; false for a flag the type lacks (pl-atom.c)."
+function unify_blob_property(
+    ld::PL_local_data{T}, prop::term_t, reg::blob_registration, i::Int
+)::Bool where {T}
+    flags = reg.type.flags
+    if i == 0
+        return flags & PL_BLOB_UNIQUE != 0 && PL_unify_atom(ld, prop, mk_sym(T, :unique))
+    elseif i == 1
+        return flags & PL_BLOB_TEXT != 0 && PL_unify_atom(ld, prop, mk_sym(T, :text))
+    elseif i == 2
+        return flags & PL_BLOB_NOCOPY != 0 && PL_unify_atom(ld, prop, mk_sym(T, :nocopy))
+    elseif i == 3
+        return flags & PL_BLOB_WCHAR != 0 && PL_unify_atom(ld, prop, mk_sym(T, :wchar))
+    end
+    name, value = if i == 4
+        :rank, reg.rank
+    elseif i == 5
+        :padding, reg.padding
+    elseif i == 6
+        :gc_margin, reg.gc_margin
+    elseif i == 7
+        :unregistered, reg.unregistered
+    elseif i == 8
+        :non_garbage, reg.non_garbage
+    elseif i == 9
+        :live, reg.live
+    elseif i == 10
+        :space, reg.space
+    else
+        error("unify_blob_property: no property $i")
+    end
+    PL_unify_functor(ld, prop, mk_sym(T, name), 1) || return false
+    arg = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, prop, arg)
+    return PL_unify_int64(ld, arg, value)
+end
+
+# PORT: pl-atom.c blob_type_property as pl_blob_type_property2_va
+# (PRED_IMPL("blob_type_property", 2, blob_type_property, PL_FA_NONDETERMINISTIC))
+"`blob_type_property(?Type, ?Property)` (pl-atom.c): the registered blob type `Type` has `Property`."
+function pl_blob_type_property2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    state = 0
+    call = PL_foreign_control(PL__ctx)
+
+    if call == FRG_FIRST_CALL
+        if !PL_is_variable(ld, A1) && !PL_is_variable(ld, A2)
+            # Both given: answer once rather than leaving a choice point on the remaining properties.
+            reg = blob_type_from_name(ld, A1)
+            reg === nothing && return FFALSE
+            for i in 0:(BT_NPROPS - 1)
+                unify_blob_property(ld, A2, reg, i) && return FTRUE
+            end
+            return FFALSE
+        end
+    elseif call == FRG_REDO
+        state = PL_foreign_context(PL__ctx)
+    else
+        return FTRUE
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return FFALSE
+    types = ld.atoms.types
+    while true
+        ti = state ÷ BT_NPROPS
+        ti >= length(types) && break
+        reg = types[ti + 1]
+        if PL_unify_atom(ld, A1, mk_sym(T, Symbol(reg.type.name))) &&
+            unify_blob_property(ld, A2, reg, state % BT_NPROPS)
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry(state + 1)                      # ForeignRedoInt(state+1)
+        end
+        PL_rewind_foreign_frame(ld, fid)
+        state += 1
+    end
+    PL_close_foreign_frame(ld, fid)
+    return FFALSE
+end
+
+# PORT: pl-atom.c set_blob_type as pl_set_blob_type2_va
+# (PRED_IMPL("set_blob_type", 2, set_blob_type, 0))
+"`set_blob_type(+Type, +Property)` (pl-atom.c): set `gc_margin(Units)` of the registered blob type `Type`."
+function pl_set_blob_type2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+
+    reg = blob_type_from_name(ld, A1)
+    reg === nothing && return FFALSE
+
+    na = PL_get_name_arity(ld, A2)
+    if na === nothing || na[2] != 1
+        return PL_type_error(ld, "blob_type_property", A2) ? FTRUE : FFALSE
+    end
+    pname = na[1]
+
+    arg = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, A2, arg)
+
+    if !(is_blob(pname) || is_reserved_symbol(pname)) && sym_text(pname) == "gc_margin"
+        margin = PL_get_size_ex(ld, arg)
+        margin === nothing && return FFALSE
+        reg.gc_margin = margin
+        return FTRUE
+    end
+    return PL_domain_error(ld, "blob_type_property", A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-atom.c PL_register_atom
+# DIVERGES: refused by name: the atom reference counts belong to the atom GC family (audit D-0634 D5); the
+# kernel's atoms are never collected, so a reference count has no reader.
+"Raise the named refusal of `PL_register_atom` (pl-atom.c)."
+function PL_register_atom(ld::PL_local_data{T}, a::T)::Nothing where {T}
+    throw(
+        NotPortedError{T}(
+            a, "PL_register_atom (pl-atom.c:1591)", "atom GC family, D-0634 D5"
+        )
+    )
+end
+
+# PORT: pl-atom.c PL_unregister_atom
+# DIVERGES: refused by name, as `PL_register_atom`.
+"Raise the named refusal of `PL_unregister_atom` (pl-atom.c)."
+function PL_unregister_atom(ld::PL_local_data{T}, a::T)::Nothing where {T}
+    throw(
+        NotPortedError{T}(
+            a, "PL_unregister_atom (pl-atom.c:1751)", "atom GC family, D-0634 D5"
+        )
+    )
+end
+
+# PORT: pl-atom.c _PL_debug_register_atom
+# DIVERGES: refused by name: the O_DEBUG_ATOMGC build's tracing of atom references, atom GC family.
+"Raise the named refusal of `_PL_debug_register_atom` (pl-atom.c)."
+function _PL_debug_register_atom(
+    ld::PL_local_data{T}, a::T, file::String, line::Int, func::String
+)::Nothing where {T}
+    throw(
+        NotPortedError{T}(
+            a, "_PL_debug_register_atom (pl-atom.c:1071)", "atom GC family, D-0634 D5"
+        )
+    )
+end
+
+# PORT: pl-atom.c _PL_debug_unregister_atom
+# DIVERGES: refused by name, as `_PL_debug_register_atom`.
+"Raise the named refusal of `_PL_debug_unregister_atom` (pl-atom.c)."
+function _PL_debug_unregister_atom(
+    ld::PL_local_data{T}, a::T, file::String, line::Int, func::String
+)::Nothing where {T}
+    throw(
+        NotPortedError{T}(
+            a, "_PL_debug_unregister_atom (pl-atom.c:1090)", "atom GC family, D-0634 D5"
+        )
+    )
+end
+
 # ORIGINAL: pl-atom.c BeginPredDefs(atom) as PL_predicates_from_atom
-# DIVERGES: the entries ported (`blob/2`).
+# DIVERGES: the entries ported, in upstream's order; `current_blob/2` is the Q10 step's, `$atom_references/2`
+# and `$atom_completions/2` the dict and arithmetic steps', `$track_atom/2` exists in the debug build only.
 "pl-atom.c's registration table (`BeginPredDefs(atom)`): the ported entries."
-const PL_predicates_from_atom = (PL_extension("blob", 2, pl_blob2_va, PL_FA_VARARGS),)
+const PL_predicates_from_atom = (
+    PL_extension(
+        "blob_type_property", 2, pl_blob_type_property2_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("set_blob_type", 2, pl_set_blob_type2_va, PL_FA_VARARGS),
+    PL_extension(
+        "current_atom", 1, pl_current_atom1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("blob", 2, pl_blob2_va, PL_FA_VARARGS),
+    PL_extension("blob_released", 1, pl_blob_released1_va, PL_FA_VARARGS),
+    PL_extension("\$complete_atom", 3, pl_complete_atom3_va, PL_FA_VARARGS)
+)
 
 # PORT: pl-fli.h PL_is_atomic
 # DIVERGES: on the WORDS (L1e e2): an atom word or a value word (`isAtomic(w)`: neither a variable nor a
