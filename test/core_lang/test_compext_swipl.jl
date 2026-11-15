@@ -1,5 +1,6 @@
 # ORIGINAL: a LIVE differential of COMP-EXT's predicates against swipl at the pin: `'$notrace'/1` (pl-pro.c:392-410), `'$predefine_foreign'/1`
-# `'$vmi_property'/2` and `'$fetch_vm'/4` (pl-comp.c:5277-5285, :8106-8206), `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx115:
+# `'$vmi_property'/2`, `'$fetch_vm'/4`, `'$xr_member'/2`, `'$break_pc'/3` and `'$break_at'/3` (pl-comp.c:5277-5285, :7697-7849, :8106-8206, :8874-8920, :9137-9180),
+# `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx171:
 #   * A PROGRAM of cases `t_<id>(R)` consulted by the kernel's loader and run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`, then `set_prolog_flag(debug, false)` (a row that switched the debug mode on leaves it off);
 #     the driver is test_notrace_swipl.jl's (`enc`oded answers), whose state discipline the `'$notrace'/1` rows follow (save first, restore last).
@@ -20,6 +21,12 @@
 #     the rows with a called or dynamic predicate (cx104-cx105) read the instruction NAMES only.
 #   * NOT REPLAYED (COMPEXT-1): the LK-only row that `thread_create/3` is REFUSED by name (NotPortedError, step "TH1"): the integration tip has
 #     the TH1 engines and no thread_create/3, so the refusal does not exist there (only the meta-spec was replayed, src/pl-ext.jl).
+#   * `'$xr_member'/2`, `'$break_pc'/3`, `'$break_at'/3` rows (cx116-cx171): enumeration and test of the objects a clause references, the break-points
+#     of a clause as `Start-End` offsets, the argument checks and error terms of `'$break_at'/3` (the offsets of cx148-cx158 are swipl's, pinned).
+#   * LK-ONLY row (no swipl answer): SETTING a break-point with
+#     `'$break_at'(Ref, Start, true)` at an instruction that carries VIF_BREAK is REFUSED by name (NotPortedError, step "DBG1": the debugger's
+#     `D_BREAK` rewrite of the code is DBG1's, Phase 1), and an offset inside an instruction's operands is the `permission_error` (DIVERGES in
+#     src/pl-comp.jl `pl_break_at3_va`).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -146,6 +153,10 @@ const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(S
 # cx85-cx90 a bound `NextPC` or `Instruction`; cx91-cx98 the error forms and the end of the code; cx99-cx107 the supervisor of a predicate: the head
 # form, `Name/Arity`, a qualified indicator, never called, called once, dynamic, undefined); cx108-cx115 a bound zero-argument instruction (match and
 # mismatch), `s_trustme(clause(_))`, body unifications and comparisons with an atom (`vr7`), `b_smallint` (`vr8`), a bound `h_functor` (match, wrong arity, wrong name).
+# cx116-cx171: `'$xr_member'/2` (cx116-cx126 the enumeration: atom, nil, compound, calls, qualified calls, module names, body unifications; cx127-cx142 a bound
+# object: atom, small int, functor skeleton, module, `user:`/`m1:` procedures, a float that no clause holds; cx143-cx146 a partly bound object and the error forms,
+# an erased clause); `'$break_pc'/3` (cx147-cx158 the `Start-End` pairs of a fact, calls, cut, `is`, a body unification, comparisons, a bound start, the error forms);
+# `'$break_at'/3` (cx159-cx171 the domain, type and instantiation errors, an offset past the code, clearing and setting at offset 0 of a fact).
 const _CX_CASES = [
     (
         "cx01",
@@ -1062,7 +1073,7 @@ function _cx_kernel(::Type{T}, path::String, names::Vector{String}) where {T}
     return out, gd, ld
 end
 
-@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1 and '\$fetch_vm'/4 as swipl's (cx01-cx115)" begin
+@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1, '\$fetch_vm'/4, '\$xr_member'/2, '\$break_pc'/3 and '\$break_at'/3 as swipl's (cx01-cx171)" begin
     f, names = _cx_file()
     kl, _, _ = _cx_kernel(_CX, f, names)
     @test length(kl) == length(_CX_PINNED)
@@ -1141,6 +1152,66 @@ end
     @test !ld.debugstatus_debugging
 end
 
+"The answer of a pin line `t_<id> c[..]/1(<answer>)`: the text between the wrapper's parentheses."
+function _cx_answer(l::AbstractString)::String
+    m = match(r"^t_cx\d+ c\[[\d,]+\]/1\((.*)\)$", l)
+    m === nothing && error("not a one-argument pin line: ", l)
+    return String(m.captures[1])
+end
+"The encoded atom `s`, compound `f(args...)` and proper list of `items`, as the driver writes them."
+_cx_a(s::String) = "a" * _cx_codes(s)
+_cx_c(f::String, args::String...) = "c" * _cx_codes(f) * "/$(length(args))(" * join(args, ",") * ")"
+_cx_l(items::String...) = isempty(items) ? "nil" : _cx_c("[|]", items[1], _cx_l(items[2:end]...))
+"The pairs `S-E` as an encoded list."
+_cx_pairs(ps::Tuple{Int, Int}...) = _cx_l([_cx_c("-", "i$s", "i$e") for (s, e) in ps]...)
+
+# LK-ONLY rows: SETTING a break-point at an instruction that carries VIF_BREAK is refused by name (the debugger's `D_BREAK` rewrite of the code is
+# DBG1's, Phase 1; the refusal is a sequencing step), and an offset inside an instruction's operands is the permission_error (DIVERGES: swipl reads
+# the operand word as an instruction; src/pl-comp.jl `pl_break_at3_va`).
+@testset "'\$break_at'/3 setting a break-point is refused by name, step DBG1 (LK-only)" begin
+    T = _CX
+    text = raw"""
+    vc(_).
+    vf1(a).
+    vr1(X) :- vc(X).
+    t_dbg(R) :- clause(vr1(_), _, Ref), '$break_pc'(Ref, S, _), '$break_at'(Ref, S, true), R = ok.
+    t_dbg_clear(R) :- clause(vr1(_), _, Ref), '$break_pc'(Ref, S, _), catch('$break_at'(Ref, S, false), error(existence_error(break, break(Ref2, O)), _), ( Ref2 == Ref, O == S -> R = ok ; R = other )).
+    t_op(R) :- clause(vf1(_), _, Ref), catch('$break_at'(Ref, 1, true), error(permission_error(set, break, break(Ref2, O)), _), ( Ref2 == Ref -> R = got(O) ; R = other )).
+    """
+    path = joinpath(mktempdir(), "dbg.pl")
+    write(path, text)
+    gd = LK.PL_global_data{T}()
+    ld = LK.PL_local_data{T}(gd)
+    st, _ = LK.load_file!(gd, ld, path)
+    @test st === :ok
+    proc = LK.isCurrentProcedure(sym_key(_cxs(T, "t_dbg")), 1, LK.MODULE_user(gd))
+    @test proc !== nothing
+    if proc !== nothing
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        LK.putSlotValue!(ld, a + 1, mk_var(T, LK.fresh_var_keys!(1)), LK.PutVarMap())
+        qid = LK.PL_open_query(
+            gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+        )
+        err = try
+            LK.PL_next_solution(gd, ld, qid)
+            nothing
+        catch e
+            e
+        end
+        @test err isa LK.NotPortedError
+        if err isa LK.NotPortedError
+            @test err.step == "DBG1"
+            @test occursin("break_at/3", err.what)
+        end
+    end
+    # the same database: clearing a break-point the kernel's code never holds, and an offset inside the operands of `vf1`'s first instruction
+    out, _, _ = _cx_kernel(T, path, ["t_dbg_clear", "t_op"])
+    @test out[1] == "ok"
+    @test _cx_answer("t_cx0 " * split(out[2], ' '; limit=2)[2]) == _cx_a("ok")              # `existence_error(break, break(Ref, Start))`
+    @test _cx_answer("t_cx0 " * split(out[3], ' '; limit=2)[2]) == _cx_c("got", "i1")        # `permission_error(set, break, break(Ref, 1))`
+end
+
 @testset "the CX rows are not vacuous" begin
     @test length(_CX_PINNED) == length(_CX_CASES) + 1
     @test _CX_PINNED[1] == "ok"
@@ -1178,6 +1249,42 @@ end
     @test count(l -> occursin(r"^t_cx11[345] ", l) && occursin("a[110,111])", l), _CX_PINNED) == 2   # cx113, cx114: a wrong arity or name does not match
     @test any(l -> l == "t_cx90 c[116,95,99,120,57,48]/1(a[110,111])", _CX_PINNED)          # a bound instruction that does not match fails
     @test length(unique(_CX_PINNED)) == length(_CX_PINNED)               # the rows differ from one another
+    # the `'$xr_member'/2`, `'$break_pc'/3` and `'$break_at'/3` rows are read back: values, offsets and the error forms
+    pin = Dict(split(l, ' ')[1] => _cx_answer(l) for l in _CX_PINNED if startswith(l, "t_cx"))
+    vc(n) = _cx_c("vc", "V$n")
+    err(kind, args...) = _cx_c("raised", _cx_c(kind, args...))
+    @test pin["t_cx116"] == _cx_l(_cx_a("a"))                            # `vf1(a)`: the atom
+    @test all(id -> pin["t_cx$id"] == "nil", (117, 119, 120, 147, 155))   # a small int, a float and a string are no object; `vf1` has an empty break-point list
+    @test pin["t_cx118"] == _cx_l(_cx_c("f", "V0", "V1"))                # `vf4(f(X, X))`: the functor skeleton
+    @test pin["t_cx121"] == _cx_l(vc(0), vc(1))                          # `vr1`: the one call is listed twice, by its two procedure operands
+    @test pin["t_cx122"] == _cx_l(_cx_a("m1"), _cx_c(":", _cx_a("m1"), vc(0)), vc(1), vc(2))
+    @test pin["t_cx123"] == _cx_l(_cx_a("lists"), _cx_c(":", _cx_a("lists"), _cx_c("append", "V0", "V1", "V2")))
+    @test pin["t_cx124"] == _cx_l(_cx_c("foo", "V0", "V1"), _cx_a("bar"))
+    @test pin["t_cx125"] == _cx_l(_cx_a("bar"), vc(0), _cx_a("bar"), _cx_a("bar"))   # `vr7`: three `bar` operands and the call
+    @test pin["t_cx126"] == _cx_l("i5", "i6")                            # `vr10`: both comparison constants
+    yes = (127, 129, 131, 134, 136, 138, 139, 141)
+    for id in 127:142                                                    # a bound object: found or not
+        @test pin["t_cx$id"] == _cx_a(id in yes ? "yes" : "no")
+    end
+    @test pin["t_cx143"] == vc(0)                                        # the call of `vr7`, found through a partly bound object
+    @test pin["t_cx144"] == err("type_error", _cx_a("db_reference"), _cx_a("a"))
+    @test pin["t_cx145"] == _cx_c("raised", _cx_a("instantiation_error"))
+    @test all(id -> pin["t_cx$id"] == _cx_a("no"), (146, 157, 165))      # an erased clause reference fails
+    @test pin["t_cx148"] == _cx_pairs((0, 1), (6, 8), (8, 9))            # `vr1`: the `Start-End` pairs
+    @test pin["t_cx149"] == _cx_pairs((0, 1), (2, 4), (4, 5), (10, 12), (12, 13))
+    @test pin["t_cx150"] == _cx_pairs((0, 1), (1, 5), (13, 15), (15, 16))
+    @test pin["t_cx151"] == _cx_pairs((6, 7), (7, 8))                    # `vr4`: the body's unification
+    @test pin["t_cx152"] == _cx_pairs((0, 1), (1, 4), (5, 7), (7, 10), (10, 13), (13, 14))
+    @test pin["t_cx153"] == _cx_pairs((0, 1), (3, 5), (10, 12), (12, 13))
+    @test pin["t_cx154"] == _cx_c("-", "i0", "i1")                       # the first answer of `once/1`
+    @test pin["t_cx158"] == _cx_c("-", "i6", "i7")                       # the first break-point after offset 0 of `vr4`
+    @test all(id -> pin["t_cx$id"] == err("type_error", _cx_a("db_reference"), _cx_a("a")), (156, 164))
+    @test all(id -> pin["t_cx$id"] == err("domain_error", _cx_a("program_counter"), "i100000"), (159, 167))
+    @test pin["t_cx160"] == err("domain_error", _cx_a("not_less_than_zero"), "i-1")
+    @test pin["t_cx161"] == err("type_error", _cx_a("integer"), _cx_a("a"))
+    @test all(id -> pin["t_cx$id"] == err("type_error", _cx_a("bool"), _cx_a("foo")), (162, 163))   # the Boolean is read before the offset
+    @test all(id -> pin["t_cx$id"] == _cx_c("got", "i0"), (166, 168, 169, 171))   # the culprit `break(Ref, 0)` of the clear and set errors
+    @test pin["t_cx170"] == _cx_c("raised", _cx_a("instantiation_error"))
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
