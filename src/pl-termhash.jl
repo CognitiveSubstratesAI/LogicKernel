@@ -790,7 +790,8 @@ for `=@=` terms (pl-termhash.c).
 """
 pl_variant_hash(t)::Int = Int(variant_hash(t, HASH_MURMUR).murmur & PLMAXTAGGEDINT32)
 
-# PORT: pl-termhash.c variant_hash (the cyclic-term branch) as _variant_arg
+# PORT: pl-termhash.c variant_hash as _variant_arg
+# (the cyclic-term branch of variant_hash)
 # DIVERGES: a cyclic argument is refused by name (upstream hashes its canonical form, pl-bisim.c `term_canonical_form`,
 # R2). The `E_ATTVAR` error of variant_sha1/2 is a `TV_ATTVAR` scan of the cells before the export (the exported term
 # holds an attributed variable as a plain one, as upstream's canonical form does for variant_hash/2).
@@ -821,7 +822,8 @@ function _variant_arg(
     return export_cells(ld, cell_export{T}(), -(A1 + 1))
 end
 
-# PORT: pl-termhash.c term_hash (the cyclic-term branch) as _term_hash_arg
+# PORT: pl-termhash.c term_hash as _term_hash_arg
+# (the cyclic-term branch of term_hash)
 # DIVERGES: a cyclic argument is refused by name (upstream's `CYCLE_CONST` path of pl-termhash.c, the `visited()` path
 # of pl-prims.c term_hash/4, R2); an attributed variable is a plain variable after the export, as upstream's tag test.
 "The term `A1` holds, exported from its cells, for term_hash/2 and term_hash/4; a cyclic term is refused."

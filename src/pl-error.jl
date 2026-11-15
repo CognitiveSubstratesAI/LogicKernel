@@ -789,22 +789,7 @@ function PL_get_long_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
     return nothing
 end
 
-# PORT: pl-error.c PL_get_int64_ex
-# DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_int64`).
-"""
-The `int64_t` term reference `t` holds, or `nothing` after raising `representation_error(int64_t)` (an
-integer out of range) or `type_error(integer, T)` (pl-error.c).
-"""
-function PL_get_int64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
-    i = PL_get_int64(ld, t)
-    i === nothing || return i
-    if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))
-        return nothing
-    end
-    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
-    return nothing
-end
+# PL_get_int64_ex lives in src/pl-string.jl (pl-error.c; main), the one definition term_hash/4 uses.
 
 # PORT: pl-error.c PL_get_intptr_ex
 # DIVERGES: the branch of a 64-bit platform whose `long` is a pointer's size (`SIZEOF_LONG ==

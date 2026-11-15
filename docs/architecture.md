@@ -1274,8 +1274,15 @@ graph LR
     pl_termhash --> SWI_Prolog
     pl_termhash --> pl_termwalk
     pl_termhash --> pl_global
+    pl_termhash --> pl_prims
     pl_termhash --> pl_comp
+    pl_termhash --> pl_variant
+    pl_termhash --> pl_wam
     pl_termhash --> pl_fli
+    pl_termhash --> pl_error
+    pl_termhash --> pl_tabling
+    pl_termhash --> pl_trie
+    pl_termhash --> pl_read
     pl_thread --> term_interface
     pl_thread --> default_term
     pl_thread --> pl_incl
@@ -2156,10 +2163,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 324 | 0 | 98 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 7 |
+| refusal sites | 0 | 75 | 0 | 0 | 9 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 586 | 88 | 154 | 3 | 43 |
+| **total** | 586 | 90 | 154 | 3 | 45 |
 
 #### The boot and library files
 
@@ -2234,7 +2241,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 43 | 21 | 22 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +35 |
+| NO OWNER | 45 | 21 | 24 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +37 |
 
 #### Missing and refused per category
 
@@ -2244,7 +2251,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [98, 0, 20, 36]
-    line [0, 73, 15, 0]
+    line [0, 75, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
