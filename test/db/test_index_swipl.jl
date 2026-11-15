@@ -693,7 +693,8 @@ const _XSEED = 20261002
             @test sort(dall) == sort(_XDET_TARGET_ONLY)
             # and through the VM: PL_S_LAST where swipl's call is deterministic (V4a)
             dv = setdiff(
-                _xline_diff(vmrun.lines, theirs.lines; limit=typemax(Int)), _XDET_TARGET_ONLY
+                _xline_diff(vmrun.lines, theirs.lines; limit=typemax(Int)),
+                _XDET_TARGET_ONLY
             )
             isempty(dv) ||
                 foreach(x -> println(stderr, "  vm determinism: ", x), dv[1:min(end, 8)])

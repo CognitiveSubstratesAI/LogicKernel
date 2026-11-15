@@ -3584,7 +3584,7 @@ end
         ("1 + [C] =:= 2", _bf("ac5", _bv(1)),
             _bf("=:=", _bf("+", _bg(1), _blist(_bv(1))), _bg(2))),
         ("1 + (2 * [C]) < 9", _bf("ac6", _bv(1)),
-            _bf("<", _bf("+", _bg(1), _bf("*", _bg(2), _blist(_bv(1)))), _bg(9))),
+            _bf("<", _bf("+", _bg(1), _bf("*", _bg(2), _blist(_bv(1)))), _bg(9)))
     )
         got = try
             _bc_kernel(_bclause(h, b; ld=ld))
@@ -3603,7 +3603,7 @@ end
         ("C =:= [0'a]", _bf("ad2", _bv(1)), _bf("=:=", _bv(1), _blist(_bg(97)))),
         ("C < 3", _bf("ad3", _bv(1)), _bf("<", _bv(1), _bg(3))),
         ("C + 1 =:= 3 * 4", _bf("ad4", _bv(1)),
-            _bf("=:=", _bf("+", _bv(1), _bg(1)), _bf("*", _bg(3), _bg(4)))),
+            _bf("=:=", _bf("+", _bv(1), _bg(1)), _bf("*", _bg(3), _bg(4))))
     )
         @test_throws LK.NotPortedError _bclause(h, b; ld=ld)
     end

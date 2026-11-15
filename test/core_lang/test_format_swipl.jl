@@ -618,38 +618,118 @@ end
 # `atom_length` of the output (the boundary rows: a limit is "more than", so the limit itself still prints).
 const _FM_TARGET = [
     # FMT_ARG_MAX(MAX_COLUMN, "repeat count too large") is the first statement of `~c` (:653) and `~n` (:916), before NEED_ARG
-    ("r01", raw"""catch(format(atom(R), "~1000001c", [0'x]), error(format(R), _), true)""", "repeat count too large"),
-    ("r02", raw"""catch(format(atom(R), "~1000001n", []), error(format(R), _), true)""", "repeat count too large"),
+    (
+        "r01",
+        raw"""catch(format(atom(R), "~1000001c", [0'x]), error(format(R), _), true)""",
+        "repeat count too large"
+    ),
+    (
+        "r02",
+        raw"""catch(format(atom(R), "~1000001n", []), error(format(R), _), true)""",
+        "repeat count too large"
+    ),
     # `~*n`: the count comes from the argument list (:575-591, arg = 1000001) and the same macro runs on it
-    ("r03", raw"""catch(format(atom(R), "~*n", [1000001]), error(format(R), _), true)""", "repeat count too large"),
+    (
+        "r03",
+        raw"""catch(format(atom(R), "~*n", [1000001]), error(format(R), _), true)""",
+        "repeat count too large"
+    ),
     # `~s` (:802): FMT_ARG_MAX(MAX_COLUMN, "column too large")
-    ("r04", raw"""catch(format(atom(R), "~1000001s", [[0'a]]), error(format(R), _), true)""", "column too large"),
+    (
+        "r04",
+        raw"""catch(format(atom(R), "~1000001s", [[0'a]]), error(format(R), _), true)""",
+        "column too large"
+    ),
     # `~d`, `~D` (:726-727): FMT_ARG_MAX(MAX_PRECISION, "precision too large"), tested BEFORE `NEED_ARG` (:731): an empty argument
     # list raises the precision error, not "not enough arguments"
-    ("r05", raw"""catch(format(atom(R), "~1000001d", [1]), error(format(R), _), true)""", "precision too large"),
-    ("r06", raw"""catch(format(atom(R), "~1000001D", [1]), error(format(R), _), true)""", "precision too large"),
-    ("r07", raw"""catch(format(atom(R), "~1000001d", []), error(format(R), _), true)""", "precision too large"),
+    (
+        "r05",
+        raw"""catch(format(atom(R), "~1000001d", [1]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r06",
+        raw"""catch(format(atom(R), "~1000001D", [1]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r07",
+        raw"""catch(format(atom(R), "~1000001d", []), error(format(R), _), true)""",
+        "precision too large"
+    ),
     # `~I` (:728-730): arg != DEFAULT and (arg < 0 or arg >= CHAR_MAX = 127) raises "invalid digit group size"; `~-1I` parses to -1
-    ("r08", raw"""catch(format(atom(R), "~127I", [1234567]), error(format(R), _), true)""", "invalid digit group size"),
-    ("r09", raw"""catch(format(atom(R), "~-1I", [1234567]), error(format(R), _), true)""", "invalid digit group size"),
+    (
+        "r08",
+        raw"""catch(format(atom(R), "~127I", [1234567]), error(format(R), _), true)""",
+        "invalid digit group size"
+    ),
+    (
+        "r09",
+        raw"""catch(format(atom(R), "~-1I", [1234567]), error(format(R), _), true)""",
+        "invalid digit group size"
+    ),
     # `~|` and `~+` (:957-961): `arg > MAX_COLUMN`, then `stop = (c == '+' ? tab_stop + arg : arg)` and `stop > MAX_COLUMN`
-    ("r10", raw"""catch(format(atom(R), "~1000001|", []), error(format(R), _), true)""", "column too large"),
-    ("r11", raw"""catch(format(atom(R), "~1000001+", []), error(format(R), _), true)""", "column too large"),
+    (
+        "r10",
+        raw"""catch(format(atom(R), "~1000001|", []), error(format(R), _), true)""",
+        "column too large"
+    ),
+    (
+        "r11",
+        raw"""catch(format(atom(R), "~1000001+", []), error(format(R), _), true)""",
+        "column too large"
+    ),
     # `~-5|` sets tab_stop to -5, so `~1000001+` has stop = 999996 (not above the limit): only the test on `arg` (:957) raises
-    ("r12", raw"""catch(format(atom(R), "~-5|~1000001+", []), error(format(R), _), true)""", "column too large"),
+    (
+        "r12",
+        raw"""catch(format(atom(R), "~-5|~1000001+", []), error(format(R), _), true)""",
+        "column too large"
+    ),
     # `~500000|` sets tab_stop to 500000; `~500001+` has arg = 500001 (not above the limit), stop = 1000001: the test on `stop` (:960)
-    ("r13", raw"""catch(format(atom(R), "~500000|~500001+", []), error(format(R), _), true)""", "column too large"),
+    (
+        "r13",
+        raw"""catch(format(atom(R), "~500000|~500001+", []), error(format(R), _), true)""",
+        "column too large"
+    ),
     # formatFloat (:1489): `arg > MAX_PRECISION` raises the format error for ~e ~f ~g ~h, whatever the number's type (a float, a small
     # integer, a big integer), once past the `arg < 0` domain test
-    ("r14", raw"""catch(format(atom(R), "~1000001f", [1.5]), error(format(R), _), true)""", "precision too large"),
-    ("r15", raw"""catch(format(atom(R), "~1000001e", [1.5]), error(format(R), _), true)""", "precision too large"),
-    ("r16", raw"""catch(format(atom(R), "~1000001g", [1.5]), error(format(R), _), true)""", "precision too large"),
-    ("r17", raw"""catch(format(atom(R), "~1000001h", [1.5]), error(format(R), _), true)""", "precision too large"),
-    ("r18", raw"""catch(format(atom(R), "~1000001f", [1]), error(format(R), _), true)""", "precision too large"),
-    ("r19", raw"""catch(format(atom(R), "~1000001e", [2**100]), error(format(R), _), true)""", "precision too large"),
+    (
+        "r14",
+        raw"""catch(format(atom(R), "~1000001f", [1.5]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r15",
+        raw"""catch(format(atom(R), "~1000001e", [1.5]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r16",
+        raw"""catch(format(atom(R), "~1000001g", [1.5]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r17",
+        raw"""catch(format(atom(R), "~1000001h", [1.5]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r18",
+        raw"""catch(format(atom(R), "~1000001f", [1]), error(format(R), _), true)""",
+        "precision too large"
+    ),
+    (
+        "r19",
+        raw"""catch(format(atom(R), "~1000001e", [2**100]), error(format(R), _), true)""",
+        "precision too large"
+    ),
     # the digit loop (:564-565): `arg > (INT_MAX - dw)/10` before `arg = arg*10 + dw`: 300000000 > 214748364 raises (the pin's
     # compiled binary wraps instead and prints `1`: row k03)
-    ("r20", raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""", "argument overflow"),
+    (
+        "r20",
+        raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""",
+        "argument overflow"
+    ),
     # the limits themselves are allowed (the tests are "above"): MAX_COLUMN newlines from `~n` (:916), a tab stop and an argument of
     # exactly MAX_COLUMN from `~|` (:957, :960): a column of 1000000 pads 1000000 spaces
     ("b01", raw"""format(atom(A), "~1000000n", []), atom_length(A, R)""", 1000000),
@@ -665,8 +745,11 @@ const _FM_TARGET = [
     @test kl[1] == "ok"
     for ((id, g, want), k) in zip(_FM_TARGET, kl[2:end])
         @test k == (
-            want isa Int ? "t_$id c" * _fm_codes("t_$id") * "/1(i$want)" :
-            _fm_atomline(id, want)
+            if want isa Int
+                "t_$id c" * _fm_codes("t_$id") * "/1(i$want)"
+            else
+                _fm_atomline(id, want)
+            end
         )
     end
     # not vacuous: both kinds of row are present
