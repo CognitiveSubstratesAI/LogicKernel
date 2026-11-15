@@ -57,7 +57,6 @@ pred:$tbl_propagate_start/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_abandon/1	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare/2	TAB1	seed: missing_c_preds.tsv
 pred:$tbl_reeval_prepare_top/2	TAB1	seed: missing_c_preds.tsv
-pred:$track_atom/2	REFUSED	debug build only (O_DEBUG_ATOMGC), atom GC family, D-0634 D5; left unregistered, as the pin
 pred:$transaction/2	TX1	seed: missing_c_preds.tsv
 pred:$transaction/3	TX1	seed: missing_c_preds.tsv
 pred:$undo/1	TX1	seed: missing_c_preds.tsv
@@ -96,7 +95,6 @@ pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
-pred:track_atom/2	REFUSED	debug build only (O_ATOMGC with O_DEBUG_ATOMGC), atom GC family, D-0634 D5; left unregistered, as the pin
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv

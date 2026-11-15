@@ -1853,7 +1853,8 @@ function _manifest_index(T)
                 LK.pl_blob2_va,
                 # ATOM-API — pl-atom.c's blob_type_property/2, set_blob_type/2, current_atom/1,
                 # blob_released/1, '$complete_atom'/3 (src/pl-fli.jl)
-                LK.pl_blob_type_property2_va, LK.pl_set_blob_type2_va, LK.pl_current_atom1_va,
+                LK.pl_blob_type_property2_va, LK.pl_set_blob_type2_va,
+                LK.pl_current_atom1_va,
                 LK.pl_blob_released1_va, LK.pl_complete_atom3_va
             )
         ]...,

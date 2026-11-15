@@ -148,7 +148,8 @@ end
 _aa_atom(s::String) = "a" * _aa_codes(s)
 _aa_pair(a::String, b::String) = "c[45]/2($a,$b)"
 _aa_list(xs) = foldr((x, acc) -> "c[91,124,93]/2($x,$acc)", xs; init="nil")
-_aa_c(f::String, args::String...) = "c" * _aa_codes(f) * "/$(length(args))(" * join(args, ",") * ")"
+_aa_c(f::String, args::String...) =
+    "c" * _aa_codes(f) * "/$(length(args))(" * join(args, ",") * ")"
 _aa_raised(x::String) = _aa_c("raised", x)
 _aa_err1(f::String, a::String) = _aa_raised(_aa_c(f, _aa_atom(a)))
 
@@ -172,9 +173,9 @@ const _AA_VALUES = Dict(
     "aa22" => _aa_list(
         _aa_atom.(
             [
-                "unique", "text", "rank", "padding", "gc_margin", "unregistered",
-                "non_garbage", "live", "space"
-            ]
+            "unique", "text", "rank", "padding", "gc_margin", "unregistered",
+            "non_garbage", "live", "space"
+        ]
         )
     ),
     "aa33" => _aa_list([_aa_atom("text")]), "aa34" => _aa_list([_aa_atom("text")]),
@@ -184,9 +185,11 @@ const _AA_VALUES = Dict(
     "aa60" => _aa_raised(_aa_atom("instantiation_error")),
     "aa61" => _aa_raised(_aa_atom("instantiation_error")),
     "aa08" => _aa_err1("representation_error", "encoding"),
-    "aa41" => _aa_raised(_aa_c("existence_error", _aa_atom("blob_type"), _aa_atom("nosuch"))),
+    "aa41" =>
+        _aa_raised(_aa_c("existence_error", _aa_atom("blob_type"), _aa_atom("nosuch"))),
     "aa53" => _aa_raised(_aa_c("domain_error", _aa_atom("not_less_than_zero"), "i-1")),
-    "aa56" => _aa_raised(_aa_c("type_error", _aa_atom("blob_type_property"), _aa_atom("foo"))),
+    "aa56" =>
+        _aa_raised(_aa_c("type_error", _aa_atom("blob_type_property"), _aa_atom("foo"))),
     "aa57" => _aa_raised(
         _aa_c("domain_error", _aa_atom("blob_type_property"), _aa_c("f", _aa_atom("x")))
     )
@@ -207,8 +210,11 @@ const _AA_VALUES = Dict(
         @test _aa_val(byid[id], id) == v
     end
     # the answering '$complete_atom' rows answer a code list with the prefix, then unique or not_unique
-    @test count(id -> _aa_val(byid[id], id) !== nothing, ["aa0$i" for i in (1, 2, 3, 5, 6, 7)]) == 6
-    @test occursin(_aa_atom("not_unique"), byid["aa01"]) && occursin(_aa_atom("unique"), byid["aa02"])
+    @test count(
+        id -> _aa_val(byid[id], id) !== nothing, ["aa0$i" for i in (1, 2, 3, 5, 6, 7)]
+    ) == 6
+    @test occursin(_aa_atom("not_unique"), byid["aa01"]) &&
+        occursin(_aa_atom("unique"), byid["aa02"])
     @test _aa_val(byid["aa14"], "aa14") == _aa_val(byid["aa01"], "aa01")      # the NUL cuts the prefix
     @test count(l -> occursin("[114,97,105,115,101,100]", l), expected) >= 16   # the error rows: `raised(...)`
 
@@ -262,7 +268,9 @@ _aa_bytes(s::AbstractString) = Vector{UInt8}(codeunits(s))
         @test (rs.live, rs.space) == (rl, rsp)
         # add_type_live on a fresh registration
         fresh = LK.blob_registration(LK.text_atom, 1, 1, UInt64(0))
-        @test (fresh.gc_margin, fresh.unregistered, fresh.non_garbage, fresh.live, fresh.space) ==
+        @test (
+            fresh.gc_margin, fresh.unregistered, fresh.non_garbage, fresh.live, fresh.space
+        ) ==
             (0, 0, 0, 0, 0)
         @test (fresh.rank, fresh.padding, fresh.atom_name) == (1, 1, UInt64(0))
         a = LK.atomValue(atoms, w)
@@ -298,10 +306,13 @@ _aa_bytes(s::AbstractString) = Vector{UInt8}(codeunits(s))
         a2.references = saved
         @test LK.global_atom(atoms, a2)
         # the name is a C string: cut at its first NUL
-        LK.lookupAtom(atoms, UInt8[_aa_bytes("aa_qzx_nul")..., 0x00, UInt8('t'), UInt8('l')])
+        LK.lookupAtom(
+            atoms, UInt8[_aa_bytes("aa_qzx_nul")..., 0x00, UInt8('t'), UInt8('l')]
+        )
         found, uniq, common = LK.extendAtom(atoms, _aa_bytes("aa_qzx_nu"))
         @test found && uniq && String(common) == "l"
-        @test LK.extendAtom(atoms, UInt8[_aa_bytes("aa_qzx_nul")..., 0x00]) == (false, true, UInt8[])
+        @test LK.extendAtom(atoms, UInt8[_aa_bytes("aa_qzx_nul")..., 0x00]) ==
+            (false, true, UInt8[])
         # strlen < LINESIZ: an atom of 1023 bytes is offered, one of 1024 and one of 1030 are not
         @test LK.LINESIZ == 1024
         LK.lookupAtom(atoms, _aa_bytes("aa_qzx_b3_" * 'x'^1013))

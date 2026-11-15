@@ -99,7 +99,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-arith.jl` | 129 | 36 |
 | swipl-devel `src/pl-arith.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-arith.h` | code | `18168e629eab` | `src/pl-arith.jl` | 10 | 2 |
-| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-atom.jl` | 11 | 6 |
+| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-atom.jl` | 15 | 8 |
+| swipl-devel `src/pl-atom.c` | code | `18168e629eab` | `src/pl-fli.jl` | 13 | 9 |
 | swipl-devel `src/pl-attvar.c` | code | `18168e629eab` | `src/pl-attvar.jl` | 42 | 35 |
 | swipl-devel `src/pl-attvar.h` | code | `18168e629eab` | `src/pl-attvar.jl` | 2 | 2 |
 | swipl-devel `src/pl-bag.c` | code | `18168e629eab` | `src/pl-bag.jl` | 9 | 6 |
@@ -149,7 +150,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/os/pl-file.jl` | 2 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 6 | 5 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-arith.jl` | 10 | 0 |
-| swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-atom.jl` | 12 | 3 |
+| swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-atom.jl` | 15 | 3 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-comp.jl` | 5 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-funct.jl` | 7 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-global.jl` | 6 | 3 |
@@ -289,7 +290,7 @@ checkout is pulled.
 | swipl-devel `src/pl-allocpool.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-arith.c` | `18168e629eab` | 102 | 166 | 34 | src/pl-arith.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-arith.h` | `18168e629eab` | 1 | 9 | 1 | src/pl-arith.jl |
-| swipl-devel `src/pl-atom.c` | `18168e629eab` | 10 | 82 | 6 | src/pl-atom.jl |
+| swipl-devel `src/pl-atom.c` | `18168e629eab` | 23 | 82 | 14 | src/pl-atom.jl, src/pl-fli.jl |
 | swipl-devel `src/pl-attvar.c` | `18168e629eab` | 32 | 42 | 29 | src/pl-attvar.jl |
 | swipl-devel `src/pl-attvar.h` | `18168e629eab` | 2 | 2 | 2 | src/pl-attvar.jl |
 | swipl-devel `src/pl-bag.c` | `18168e629eab` | 3 | 15 | 3 | src/pl-bag.jl, src/pl-incl.jl |
@@ -381,7 +382,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2455** | **5354** | **1449** | |
+| **total** | | **2468** | **5354** | **1457** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
