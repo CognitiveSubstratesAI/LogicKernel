@@ -3150,8 +3150,9 @@ end
 # that hold an answer trie, so the table exists and the answer is a trie.
 # `registry` is set on the table so that `release_node` finds the answer tries by number (TR1 field).
 "The variant table of this thread (shared: of all threads): the trie that maps call variants to answer tables (pl-tabling.c)."
-variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T} =
-    variant_table_create(ld, shared)::trie{T}
+function variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T}
+    return variant_table_create(ld, shared)::trie{T}
+end
 
 # PORT: pl-tabling.c variant_table as variant_table_create
 # DIVERGES: the body of `variant_table`, answering `nothing` for upstream's NULL (see the note above `variant_table`).
@@ -10185,12 +10186,14 @@ function set_restraint_action(
 
     _tbl_is(T, act, :complete_soundly) && (act = mk_sym(T, :bounded_rationality))      # XSB compatibility
 
-    _tbl_is(T, key, :max_table_subgoal_size_action) && _tbl_is(T, act, :abstract) && return act
+    _tbl_is(T, key, :max_table_subgoal_size_action) && _tbl_is(T, act, :abstract) &&
+        return act
     if _tbl_is(T, key, :max_table_answer_size_action) &&
         (_tbl_is(T, act, :bounded_rationality) || _tbl_is(T, act, :fail))
         return act
     end
-    _tbl_is(T, key, :max_answers_for_subgoal_action) && _tbl_is(T, act, :bounded_rationality) &&
+    _tbl_is(T, key, :max_answers_for_subgoal_action) &&
+        _tbl_is(T, act, :bounded_rationality) &&
         return act
 
     PL_error(ld, ERR_DOMAIN, mk_sym(T, :restraint_action), t)

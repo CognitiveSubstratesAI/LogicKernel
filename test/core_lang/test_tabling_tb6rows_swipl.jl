@@ -830,11 +830,9 @@ const _T6_BROKEN = Dict{String, String}(
     # refusal (the orphan has its IDG node); the refused case left `ad` and its node, which a06-a08 counted. The fix is ENG1
     # (`reset_answer_table_idg` before the `trie_delete`, as upstream pl-tabling.c:2654-2662, :2679-2689, :4545-4551). The lane-2 run of
     # wip/tab-a04 (2026-11-14, reference) passed a04-a08 UNEXPECTEDLY (5 errors = 5 unexpected passes): their entries are deleted, the rows are `@test`.
-    # DYNERR v01/v02: the kernel charges no trie memory to `table_space`
-    # (upstream pl-trie.c:238, :772, :1087, :1105, :1113 charge; :257, :269, :729, :1200, :1268, :1389 release), so the limit 1508 is never
-    # reached: owner TRIE-CHARGE (wip/trie-charge). The pins stay swipl's.
-    "DYNERR/v01" => "owner TRIE-CHARGE: trie memory is not charged to table_space yet (pl-trie.c:238 etc.); the dynamic-call edge then fits",
-    "DYNERR/v02" => "owner TRIE-CHARGE: same cause as v01 (the table completes instead of staying `none`)"
+    # DYNERR v01/v02: owner TRIE-CHARGE charges trie memory to `table_space` as upstream (pl-trie.c:238, :772, :1087, :1105, :1113 charge;
+    # :257, :269, :729, :1200, :1268, :1389 release). The lane-2 run of wip/tab1land cd4da0e0 (2026-11-15, three term types) passed v01 and v02
+    # UNEXPECTEDLY (6 errors = 6 unexpected passes) with trie-charge merged: their entries are deleted, the rows are `@test`.
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
