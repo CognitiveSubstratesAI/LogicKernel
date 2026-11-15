@@ -74,3 +74,53 @@ resolve at call time; `Cwchar_t` is Base's.
 ## Checks NOT run
 test_type_discipline.jl and warm.sh check were NOT run; no julia was run in this lane (brief: edit-only). The code was
 not parsed. Daemon: none started by this agent.
+
+## STATE after PRIMS-C2 (2026-11-15, Sonnet; edit-only, no julia run)
+
+COMMITTED on wip/prims-c (after 21529e62):
+- 77b6c654 collation_key/2 `pl_collation_key2_va` (libc wcsxfrm; a key character that is no code point -> NotPortedError owner CT1).
+- 2f2cc47d the nine PL_extension entries in upstream's order (flag 0 -> PL_FA_VARARGS), manifest entries (nine `_va`,
+  match_functor_type, is_code, is_char, is_text_list), owner row in docs/r2_owners.tsv
+  (`refusal:src/pl-prims.jl::pl_collation_key2_va::collation_key/2 with a key that is no code point	CT1`).
+- dd77500f rows: test/core_lang/test_prims_c_swipl.jl/.pl/.out (18 rows t0-t17). Two swipl 10.1.20 runs under systemd-run
+  were byte-identical (19 lines). The .jl was NOT run.
+- 531407e5 cost lines (pkgtest_costs.tsv 5.0, unit_costs.tsv 5.1, copied from the neighbours).
+
+NOT DONE: tools/mutants/PRIMSC.py (the next piece). The brief's step 4 stopped at a hook block: the command
+`grep -n "pl-prims" workflows/CODEMAP.md | cut -c1-300` was refused ("reading a curated INDEX row through a truncating filter";
+CODEMAP rows are read whole with `sed -n '<N>p' workflows/CODEMAP.md | fold -w 120 -s`). It was meant to find the existing
+test files that exercise functor/3 and the list/text helpers for TARGETS (audit D-0238). Then D-0794 stopped new code.
+
+Facts the next agent needs:
+- The rows' answers worth knowing (swipl 10.1.20): functor(T,foo,0,Var) -> instantiation_error (not domain_error: a variable
+  culprit), `functor(T,foo,0,bar)` -> domain_error(functor_type,bar); bignum arity -> representation_error(size_t); negative arity
+  -> domain_error(not_less_than_zero,-1); collation_key([a,b],K) -> type_error(string,[a,b]). The kernel's PL_domain_error on a
+  variable culprit must give instantiation_error: the first run of the rows will show it.
+- The rows use `f()`-free text, no NUL atom (the kernel refuses an atom holding character 0 at read), no non-C locale.
+
+MUTANT PLAN (all in my head, not written; each `old` must be checked to occur exactly once in src/pl-prims.jl; ids "aimed by <rows>",
+no word KILL, no `equivalent=`; TARGETS = test_prims_c_swipl.jl + the existing tests that reach functor/3, atom/text helpers
++ test/test_type_discipline.jl):
+- nonground: `p != 0 && return unify_ptrs_cells(...)` -> `return FTRUE` (t5); unify against A1 instead of A2 (t5).
+- functor/4: type error "atom" -> "atomic" (t1); drop match_functor_type in the compound branch (t0), in the atom branch
+  `:atom`->`:atomic` (t0), atomic branch `:atomic`->`:atom` (t0); `if arity > 0` -> `>= 0` (t3); drop the type check before
+  ensureGlobalSpace (t2); arity-0 `:compound` test -> `:atom` (t3); `:atomic` arm `return FFALSE` -> FTRUE (t3);
+  "functor_type" -> "functor_typ" (t3); drop the match in `PL_unify(ld, A2, A1) && match_functor_type(...)` (t3);
+  "atomic" error at the end -> "atom" (t3); match_functor_type: `if atype == ... :callable) &&` -> `if false &&` (t0), the unify of an
+  unbound type -> `return true` (t0).
+- $filled_array: `ld.gstack[p + i] = wv` -> `= ld.gstack[p + 1]` (t7); `if arity > 0` -> `> 1` (t7); PL_get_atom_ex -> PL_get_atom (t7);
+  final unify -> FTRUE (t7).
+- $unbind_template: `ld.gstack[unRef(c)] = word(0)` -> nothing (t9); the loop's else-branch type error -> `continue` (t9);
+  `elseif !(k == DU_WORD && isAtomW(w))` -> `elseif false` (t9); `for i in 1:arity` -> `1:min(arity, 1)` (t9).
+- is_text_list: cycle-check `return false` -> `return true` (t12, t13; no hang); is_code/is_char swapped (t10, t11, t13);
+  `PL_unify_integer(ld, lent, len)` -> `len + 1` (t10); head read `valPtr(w) + 1` -> `+ 2` (t10).
+  pl_is_code_list2_va passes `true`, pl_is_char_list2_va passes `false` (t10-t13).
+- is_code: `VALID_CODE_POINT(Int(v))` -> `Int(v) >= 0` (t10, t14); `k == DU_VALUE || return false` -> `return true` (t14).
+  is_char: `|| return false` on the atom test -> `return true` (t15). pl_is_char_code1_va / pl_is_char1_va call each other's test.
+- collation_key: flags add CVT_LIST (t16); PL_STRING -> PL_ATOM (t16); `utf8_put_char(b, c)` -> `c & 0x7f` (t16);
+  `n < buflen` -> `n <= buflen` (t17).
+  Candidate equivalents (comments only): `buflen = n + 1` -> `n` (the doubling reaches the same key; needs the widened run and the
+  audit's ruling); `charCode(...) != -1` -> `> 0` (a NUL atom cannot exist in the kernel); the `(size_t)-1` fail (no row can trigger it).
+
+The test_type_discipline.jl and warm.sh check were NOT run; nothing in this lane was parsed or executed by julia.
+No daemon was started or touched by this agent.
