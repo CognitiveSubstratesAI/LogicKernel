@@ -1885,6 +1885,7 @@ function _manifest_index(T)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
+                LK.pl_copy_term4_va, LK.pl_size_abstract_term3_va,       # PRIMS-B: refused by name
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,

@@ -22,7 +22,8 @@
 # (`alloc_attvar`), without it (`copy_term_nat/2`) an attvar is copied as a plain variable.
 # NOT PORTED: `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`, so `COPYING_ATTVAR` and
 # `MC_WALK_COPY`: their only readers are `COPY_MARKED` tests), `size_abstract_term/3`
-# (`COPY_ABSTRACT`) and `$fast_record/2`, `$fast_recorded/2` (testing bindings). The fast heap terms (`term_to_fastheap`,
+# (`COPY_ABSTRACT`) and `$fast_record/2`, `$fast_recorded/2` (testing bindings); `copy_term/4` and `size_abstract_term/3`
+# are registered and REFUSED by name since PRIMS-B (`NotPortedError`, owner rows in docs/r2_owners.tsv). The fast heap terms (`term_to_fastheap`,
 # R2 EV1) are the term's record. `duplicate_term`'s
 # `nshare`/`share` (the compounds kept shared) are `nb_setarg/3`'s (src/pl-prims.jl).
 
@@ -600,12 +601,54 @@ function put_fastheap(
     return copyRecordToGlobal(ld, t, record{T}(fht.gsize, fht.nvars, fht.code, fht.values))
 end
 
+# PORT: pl-copyterm.c copy_term as pl_copy_term4_va
+# (PRED_IMPL("copy_term", 4, copy_term, 0)): `copy_term_4(A1, A2, A3, A4, COPY_ATTRS)`.
+# REFUSED BY NAME (PRIMS-B): the copy is `copy_term_refs(Vs0-T0, Copy, Vs0, COPY_SHARE|COPY_MARKED|COPY_ATTRS)`, which
+# first runs `mark_vars` (pl-copyterm.c) over `Vs0` and has `mark_for_copy`, `do_copy_term` and `copy_term_refs` read
+# `COPY_MARKED`, `COPYING_ATTVAR` and `MC_WALK_COPY`: the copy of only the marked variables. The kernel's copy
+# (`copy_term_refs`, above) has none of them; the owner row is docs/r2_owners.tsv's.
+"`copy_term(+VarsIn, +Term, -VarsOut, -Copy)`: REFUSED (`NotPortedError`): needs pl-copyterm.c's `mark_vars` and `COPY_MARKED`."
+function pl_copy_term4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :copy_term), "copy_term/4 needs mark_vars and COPY_MARKED (pl-copyterm.c)", "PRIMS-B"
+        )
+    )
+end
+
+# PORT: pl-copyterm.c size_abstract_term as pl_size_abstract_term3_va
+# (PRED_IMPL("size_abstract_term", 3, size_abstract_term, 0)): `PL_get_size_ex(A1, &abstract)` first, as upstream, so a
+# bad size raises its error here too.
+# REFUSED BY NAME (PRIMS-B): the abstraction is `size_abstract_term(A2, copy, abstract)`, `copy_term_refs` with
+# `COPY_ATTRS|COPY_ABSTRACT` and the size budget `cp_options.abstract` that `do_copy_term` spends (`aleft`) and
+# replaces the compounds beyond it by variables with. The kernel's `cp_options` has no `abstract` field.
+"`size_abstract_term(+Size, +Term, -Abstract)`: REFUSED (`NotPortedError`) after `Size` is checked: needs pl-copyterm.c's `size_abstract_term` and `COPY_ABSTRACT`."
+function pl_size_abstract_term3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    abstract = PL_get_size_ex(ld, A1)
+    abstract === nothing && return FFALSE                   # the error is raised
+
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :size_abstract_term),
+            "size_abstract_term/3 needs size_abstract_term and COPY_ABSTRACT (pl-copyterm.c)",
+            "PRIMS-B"
+        )
+    )
+end
+
 # PORT: pl-copyterm.c BeginPredDefs as PL_predicates_from_copyterm
-# DIVERGES: the ported entries only (upstream's table also has `copy_term/4`, `copy_term_nat/4`,
-# `size_abstract_term/3`, `$fast_record/2`, `$fast_recorded/2`).
-"pl-copyterm.c's registration table (`BeginPredDefs(copyterm)`): the ported entries."
+# DIVERGES: the ported entries and the two refused by name (`copy_term/4`, `size_abstract_term/3`: PRIMS-B); upstream's
+# table also has `copy_term_nat/4`, `$fast_record/2`, `$fast_recorded/2`.
+"pl-copyterm.c's registration table (`BeginPredDefs(copyterm)`): the ported entries and the two refused ones."
 const PL_predicates_from_copyterm = (
     PL_extension("copy_term", 2, pl_copy_term2_va, PL_FA_VARARGS | PL_FA_ISO),
+    PL_extension("copy_term", 4, pl_copy_term4_va, PL_FA_VARARGS),                    # (PRIMS-B: refused)
     PL_extension("duplicate_term", 2, pl_duplicate_term2_va, PL_FA_VARARGS),
-    PL_extension("copy_term_nat", 2, pl_copy_term_nat2_va, PL_FA_VARARGS)
+    PL_extension("copy_term_nat", 2, pl_copy_term_nat2_va, PL_FA_VARARGS),
+    PL_extension("size_abstract_term", 3, pl_size_abstract_term3_va, PL_FA_VARARGS)
 )
