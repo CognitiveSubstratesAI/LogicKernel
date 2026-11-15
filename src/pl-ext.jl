@@ -78,6 +78,7 @@ const foreigns = (
 # copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), setup (TRIMST: trim_stacks/0), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
 # termhash and bisim, between op and attvar upstream, are not ported; strings (T2) is appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
+# Since TTY1 `PL_predicates_from_term` (pl-term.c: tty_size/2 and the termcap predicates) stands after termhash's.
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
     PL_predicates_from_comp, PL_predicates_from_init, PL_predicates_from_list,
@@ -95,8 +96,8 @@ const _PRED_TABLES = (
     PL_predicates_from_attvar, PL_predicates_from_gvar, PL_predicates_from_dict,
     PL_predicates_from_strings,
     PL_predicates_from_error, PL_predicates_from_event,
-    PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
-    PL_predicates_from_wrap
+    PL_predicates_from_termhash, PL_predicates_from_term, PL_predicates_from_trie,
+    PL_predicates_from_tabling, PL_predicates_from_wrap
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -115,8 +116,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...,
     PL_predicates_from_error..., PL_predicates_from_event...,
-    PL_predicates_from_termhash..., PL_predicates_from_trie...,
-    PL_predicates_from_tabling...,
+    PL_predicates_from_termhash..., PL_predicates_from_term...,
+    PL_predicates_from_trie..., PL_predicates_from_tabling...,
     PL_predicates_from_wrap...
 )
 const _FOREIGN_DET = foreigns

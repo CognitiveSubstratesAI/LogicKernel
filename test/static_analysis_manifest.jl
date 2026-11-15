@@ -2040,6 +2040,16 @@ function _manifest_index(T)
         (LK._dwim_chars, Tuple{LD, Int}, false),
         (LK._dwim_get_functor, Tuple{LD, Int}, false),
         (LK._dwim_stringAtom, Tuple{T}, false),
+        # TTY1 — tty_size/2, tty_get_capability/3, tty_goto/2, tty_put/2 (pl-term.c; src/pl-term.jl) and the helpers over T
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_tty_size2_va, LK.pl_tty_get_capability3_va, LK.pl_tty_goto2_va,
+                LK.pl_tty_put2_va
+            )
+        ]...,
+        (LK._tty_size_answer, Tuple{LD, Int, Int, Int, Int, Int, Int}, false),
+        (LK.initTerm, Tuple{LD}, false),
+        (LK.lookupEntry, Tuple{LD, T, T}, false),
         (LK.Setenv, Tuple{LD, String, String}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
@@ -4338,6 +4348,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # CT1a — setlocale/3: the table, and libc's setlocale through ccall (no term type: outside the per-type block)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype)}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
+    # TTY1 — pl-term.c's registration table and the `ioctl` of tty_size/2 (no term type: outside the per-type block)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_term)}, false),
+    (LK._tty_winsize, Tuple{Int}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),
