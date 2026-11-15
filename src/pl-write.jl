@@ -1164,7 +1164,9 @@ function writeAttVar(av::term_t, options::write_options{T})::Bool where {T}
         wstate === nothing && return false
         old = Scurout(ld)
         ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out
-        rc = PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av)
+        rc = PL_call_predicate(
+            gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av
+        )
         if !rc && PL_exception(ld, 0) == 0
             rc = true
         end

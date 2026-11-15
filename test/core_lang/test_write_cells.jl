@@ -424,7 +424,8 @@ const _WC_ATTP_GOALS = [
     @test ours[7] == "_V1{a = ...}\n\n---\n"                                          # at20
     @test ours[8] == "_V1{EX oops\n---\n"                                             # at21
     @test ours[9] == "_V1{m3 = ...}\n\n---\n"                                         # at22
-    @test ours[10] == "f(_V1{freeze(_V1, '\$and'(user:format(\"hi~n\"),user:true))})\n\n---\n"   # at23
+    @test ours[10] ==
+        "f(_V1{freeze(_V1, '\$and'(user:format(\"hi~n\"),user:true))})\n\n---\n"   # at23
     @test ours[11] == "_V1\nf(_V1,_V2)\n\n---\n"                                     # at24
     @test ours[12] == "_V1{"^100 * "_V1EX resource_error(portray_nesting)\n---\n"       # at25
     @test ours[13] == "_V1{x}\nf(_V2{x},_V2{x})\n\n---\n"                             # at26

@@ -2220,10 +2220,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 354 | 0 | 68 | 3 | 1 |
-| refusal sites | 0 | 69 | 0 | 0 | 3 |
+| refusal sites | 0 | 68 | 0 | 0 | 3 |
 | Prolog flags | 65 | 14 | 20 | 0 | 34 |
 | VM instructions | 198 | 0 | 35 | 0 | 0 |
-| **total** | 617 | 83 | 123 | 3 | 38 |
+| **total** | 617 | 82 | 123 | 3 | 38 |
 
 #### The boot and library files
 
@@ -2285,7 +2285,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
 | SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
-| AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
@@ -2306,7 +2305,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [68, 0, 20, 35]
-    line [0, 69, 14, 0]
+    line [0, 68, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->
