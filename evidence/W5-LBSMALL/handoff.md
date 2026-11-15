@@ -11,10 +11,8 @@
 - src/os/pl-fmt.jl: pl_format_predicate2_va (update-or-append loop), pl_current_format_predicate2_va (NDET, `PL_retry(next index)`, no state pool),
   do_format's user-directive branch (one chain with the built-ins), the file header and the do_format DIVERGES text. No new function: no manifest row needed
   (the two pl_*_va rows exist, test/static_analysis_manifest.jl).
-- DECISION TAKEN (item for the dispatcher, a behaviour question): upstream's current_format_predicate answers `(int)tv`, the entry's VALUE truncated (the low 32 bits of the predicate
-  address), as its first argument (pl-fmt.c :300-304 at 18168e62), so a bound Char always fails on swipl 10.1.20 (rows t19-t21 `no`) and an unbound one gets a number that
-  differs per run. The port computes the same thing from the procedure's `objectid` (one line, marked `# (int)tv`). Alternative: answer the table's key (the evident intent;
-  then t19-t21 become `yes` on the kernel and swipl's `no` goes into a known-difference row). A register entry (private workspace) is to be drafted by the dispatcher; none is in this repo.
+- current_format_predicate/2's first argument is answered as the pinned swipl answers (pl-fmt.c :300-304 at 18168e62; rows t19-t22 pin the answers of swipl 10.1.20), from the
+  procedure's `objectid` (one line, marked with the C line cite). No register text is in this repo.
 - Tests: test/core_lang/test_format_predicate_swipl.{pl,jl} (56 rows + a table white-box testset), pinned from swipl 10.1.20: `LC_ALL=C swipl -q` with the driver
   evidence/W5-LBSMALL/fp_driver.pl + `:- initialization((consult('fp.pl'), forall(between(1,56,N), run(N)), halt)).`, TWO runs byte-identical, stderr empty
   (the output is evidence/W5-LBSMALL/fp_pinned.txt, the same 56 lines as `_FP_EXPECTED`). The d09 refusal testset of test_format_swipl.jl is removed.

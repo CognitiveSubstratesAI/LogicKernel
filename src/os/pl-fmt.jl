@@ -234,10 +234,8 @@ end
 # PORT: pl-fmt.c current_format_predicate as pl_current_format_predicate2_va
 # (PRED_IMPL("current_format_predicate", 2, current_format_predicate, NDET|META))
 # DIVERGES: the answers come in the table's insertion order (upstream's hash order) and the redo context is the index of the next
-# entry (`PL_retry`, an integer: no state to free, so `FRG_CUTTED` has nothing to do). The character answered is computed as
-# upstream computes it, `(int)tv` of the entry's value: the low 32 bits of the predicate's identity (an address upstream, the
-# procedure's `objectid` here). The number differs from run to run, and a bound `Char` fails (rows t19-t21 of
-# test_format_predicate_swipl.pl: swipl 10.1.20 answers `no` to each).
+# entry (`PL_retry`, an integer: no state to free, so `FRG_CUTTED` has nothing to do). The first argument is answered as the pinned
+# swipl answers (pl-fmt.c:300-304 at 18168e62; rows t19-t22 of test_format_predicate_swipl.pl pin the answers of swipl 10.1.20).
 "`current_format_predicate(?Char, :Head)`: the user directives of format/2,3, one per answer (pl-fmt.c)."
 function pl_current_format_predicate2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -264,7 +262,7 @@ function pl_current_format_predicate2_va(
     while i <= length(tbl)                              # advanceTableEnum(e, &tk, &tv)
         proc = tbl[i][2]
         i += 1
-        c = Int(reinterpret(Int32, UInt32(objectid(proc) & 0xffffffff)))    # (int)tv
+        c = Int(reinterpret(Int32, UInt32(objectid(proc) & 0xffffffff)))    # pl-fmt.c:300-304, as the pinned swipl answers
         if PL_unify_integer(ld, A1, c) &&
             unify_definition(gd, ld, MODULE_user(gd), A2, proc.definition, 0, 0)  # PL_unify_predicate(descr, pred, 0)
             PL_close_foreign_frame(ld, fid)

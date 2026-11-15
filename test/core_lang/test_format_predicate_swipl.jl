@@ -8,8 +8,8 @@
 # another module, replacing a directive, a predicate that fails and one that throws, a predicate that writes a newline, the
 # column machinery (`~t`, `~N|` with a user directive between), the built-in directives `~a` and `~c` taken over (last: the table
 # is global state), and the errors of format_predicate/2 (type and instantiation errors, arity 0, a non-callable). The first argument
-# of current_format_predicate/2 is not compared: swipl answers the low bits of the predicate's address (a different number per run),
-# so rows t19-t21 pin that a bound character fails and t22 that an unbound one answers an integer other than the character.
+# of current_format_predicate/2 is answered as the pinned swipl answers (pl-fmt.c:300-304 at 18168e62): rows t19-t21 pin the answers
+# to a bound character and t22 the answer to an unbound one.
 # UNVERIFIED on the kernel: gate decides
 using Test, LogicKernel
 const LK = LogicKernel
