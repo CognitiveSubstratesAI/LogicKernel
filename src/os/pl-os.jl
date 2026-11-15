@@ -10,9 +10,10 @@
 # the process environment (`getenv3`, `Setenv`, `Unsetenv`) and `Pause`, which getenv/2, setenv/2,
 # unsetenv/1, get_time/1, sleep/1 (src/pl-sys.jl) and statistics/2 (src/pl-prims.jl) call.
 #
-# The C library is called with `ccall`, as upstream calls it (`clock_gettime`, `setenv`, `unsetenv`): for
-# the nanosecond clocks Julia does not give, and for the exact `errno` upstream reports. Each is on
-# the unchecked-access allowlist (test/test_type_discipline.jl, "os/pl-os.jl ccall").
+# The C library is called with `ccall`, as upstream calls it (`clock_gettime`, `setenv`, `unsetenv`, and `getpwnam` for `~user` in
+# `expandVars`): for the nanosecond clocks Julia does not give, and for the exact `errno` upstream reports. Each is on
+# the unchecked-access allowlist (test/test_type_discipline.jl, "os/pl-os.jl ccall"; `getpwnam`'s pw_dir read is "os/pl-os.jl
+# unsafe_load" and "os/pl-os.jl unsafe_string", D-0752 (1)).
 #
 # Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
 # Since R2 TOP1b: the terminal mode a stream records (`TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode`, `Sset_ttymode`); the kernel
@@ -363,10 +364,29 @@ function takeWord(
     return (String(b[start:(i - 1)]), i)
 end
 
+# ORIGINAL: the byte offset of `pw_dir` in `struct passwd`, known only where the layout is: Linux 64-bit (name 0, passwd 8, uid 16, gid 20,
+# gecos 24, dir 32, shell 40), `nothing` elsewhere, never a guessed offset (Julia's Base.Libc has no passwd struct).
+function _passwd_dir_offset(islinux::Bool, wordsize::Int)::Union{Nothing, Int}
+    return (islinux && wordsize == 64) ? 32 : nothing
+end
+
+# PORT: pl-os.c expandVars (the `~fred` branch: `getpwnam(user)`, then `pwent->pw_dir`, pl-os.c:1582-1598)
+# DIVERGES: the directory is copied into a `String` at once and the GD->os.fred/fredshome cache is not kept; `off` is `pw_dir`'s offset from
+# `_passwd_dir_offset`. The caller passes a word of letters and `_` (takeWord), so the Cstring conversion cannot meet a NUL.
+# `nothing` is the C's "no such user" (a NULL pointer, checked before any read).
+function _getpwnam_dir(user::String, off::Int)::Union{Nothing, String}
+    p = ccall((:getpwnam, LIBC), Ptr{Cvoid}, (Cstring,), user)
+    p == C_NULL && return nothing
+    d = unsafe_load(Ptr{Ptr{UInt8}}(p + off))                   # pwent->pw_dir
+    return unsafe_string(d)                                     # NUL-terminated (libc contract), a non-NULL result's
+end
+
 # PORT: pl-os.c expandVars
 # DIVERGES: `ld` is an argument and the result a `String`, or `nothing` after raising the error; the `~` of the
 # user's own home reads `HOME` each time (upstream caches it in `GD->os.myhome`, and `~user`'s directory in
-# `GD->os.fred`/`fredshome`); `~user` is refused by name (NotPortedError: getpwnam(3), the passwd database).
+# `GD->os.fred`/`fredshome`: not cached here, each `~user` asks getpwnam(3) again); `~user` reads pw_dir at a byte offset
+# of `struct passwd` that is known on Linux 64-bit only (`_passwd_dir_offset`), and is refused by name (NotPortedError)
+# on any other platform; a user that does not exist raises `existence_error(user, Name)` when `fileerrors` is set.
 """
     expandVars(ld, pattern) -> String or nothing
 
@@ -390,7 +410,19 @@ function expandVars(ld::PL_local_data{T}, pattern::String)::Union{Nothing, Strin
             home = getenv3("HOME")
             value = (home !== nothing && PrologPath(home) !== nothing) ? home : "/"
         else                                                    # ~fred
-            throw(NotPortedError{T}(mk_sym(T, :user), "expandVars: ~user (getpwnam)", "R2"))
+            off = _passwd_dir_offset(Sys.islinux(), Sys.WORD_SIZE)
+            off === nothing &&
+                throw(NotPortedError{T}(mk_sym(T, :user), "expandVars: ~user (getpwnam) off Linux 64-bit", "R2"))
+            dir = _getpwnam_dir(user, off)
+            if dir === nothing                                  # !(pwent = getpwnam(user))
+                if truePrologFlag(ld, PLFLAG_FILEERRORS)
+                    name = PL_new_term_ref(ld)
+                    PL_put_atom(ld, name, mk_sym(T, Symbol(user)))
+                    PL_error(ld, ERR_EXISTENCE, mk_sym(T, :user), name)
+                end
+                return nothing
+            end
+            value = dir
         end
         size += ncodeunits(value)
         if size + 1 >= maxlen

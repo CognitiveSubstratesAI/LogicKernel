@@ -6757,8 +6757,8 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
   `GD->paths.CWDdir` is the new field `paths_CWDdir` of `PL_global_data` (the logical working directory with its closing slash; a symlinked directory stays logical).
 - **pl-glob.c** (`src/os/pl-glob.jl`, NEW, registered as `PL_predicates_from_glob` after `_files`): `compilePattern` (`?`, `*`, `[...]` with ranges, `{a,b}`, backslash escapes),
   `matchPattern`, `wildcard_match/2,3` (option `case_sensitive`), `expand`, `sort_expand`, `expand_file_name/2`, `directory_files/2`.
-- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` is refused by name (`getpwnam`) and HOME is read each time (upstream
-  caches it in `GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
+- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
+  caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
 - **Refused by name:** `tmp_file/2` and `$tmp_file_stream/4` (NotPortedError, step "LB2b audit": `GD->os.tmp_files` has no field and the stream layer has no `Sfdopen`);
   an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.

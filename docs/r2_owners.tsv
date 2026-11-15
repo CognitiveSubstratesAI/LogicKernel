@@ -141,7 +141,6 @@ refusal:src/pl-write.jl::writeAttVar::write_term/2 attributes(portray): '\$attva
 refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
 refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
 refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
-refusal:src/os/pl-os.jl::expandVars::expandVars: ~user (getpwnam)	LB5-LB7	~user expansion (pl-os.c expandVars, getpwnam); off the load path, file_name_variables only
 refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in an encoding other than UTF-8 (pl-stream.c Sputcode); R1 decision
 refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in an encoding other than UTF-8 (pl-stream.c); R1 decision
 refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in an encoding other than UTF-8 (pl-stream.c); R1 decision
