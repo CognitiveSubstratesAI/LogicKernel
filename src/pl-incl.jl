@@ -107,6 +107,9 @@ const GP_FINDHERE = Int(1)
 # PORT: pl-incl.h GP_EXISTENCE_ERROR
 "`get_procedure`: raise `existence_error(procedure, Descr)` when it is not found (pl-incl.h)."
 const GP_EXISTENCE_ERROR = Int(0x800)
+# PORT: pl-incl.h GP_CREATE
+"`get_procedure`: create the procedure in this module (pl-incl.h)."
+const GP_CREATE = Int(2)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)

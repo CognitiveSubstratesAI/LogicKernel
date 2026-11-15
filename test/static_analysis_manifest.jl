@@ -2382,6 +2382,7 @@ function _manifest_index(T)
         (LK.get_bool_or_int_ex, Tuple{LD, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int, Int}, false),           # MOD4: `h`
+        (LK.get_module_how, Tuple{GD, LD, UInt64, Int}, false),            # W1-SRC2: get_procedure's module rule
         (LK.get_procedure_create, Tuple{GD, LD, Int, Int}, false),
         (LK.pl_retractall1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (
