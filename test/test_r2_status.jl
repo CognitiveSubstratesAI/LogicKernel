@@ -499,9 +499,11 @@ end
     # of 2026-11-15: five owner rows closed by the merged steps: `vmi:S_DET` and the setAttrDefinition attribute
     # refusal (SSU1b), writeAttVar's attributes(portray) refusal (AV10), format_predicate/2 (W5b) and expandVars'
     # ~user branch (W5c); the CONT1 row only changed its key (pl-vmi.c:7037-7038 cited) and stays owned.
+    # 163 -> 162 on merging gate/small1 (main c1c104f4) into the TAB1 landing line: TRIMSTACKS ported `trim_stacks/0` (pl-setup.c:1751) and its owner row
+    # `pred:trim_stacks/0 Q10` went (main: 200 -> 199); the row is owned on this line until the merge (D-0083 disclosure: derived, the floor test below measures it).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 163
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 162
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

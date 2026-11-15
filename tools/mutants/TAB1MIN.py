@@ -39,6 +39,8 @@
 # list test_pr1_swipl.jl and test_event_swipl.jl (the update listeners `resetProcedure!` destroys); the 2-argument
 # `freeCodesDefinition!` is also called by test_procedures.jl and test_assert_swipl.jl.
 TM = ["test/core_lang/test_tabling_min_swipl.jl"]
+WRAP = ["test/core_lang/test_wrap_swipl.jl"]
+TV = ["test/core_lang/test_tabling_variant_swipl.jl"]
 PR1 = ["test/core_lang/test_pr1_swipl.jl"]
 EV = ["test/core_lang/test_event_swipl.jl"]
 GET = TM + PR1                                 # the getter and the flag constants
@@ -188,6 +190,39 @@ MUTANTS = [
     #   * E10 (S_WRAP does nothing / skipped): WRAP1-M4 (never creates the wrapped supervisor), WRAP1-M5, WRAP1-M20, WRAP1-M21, WRAP1-M22 (tools/mutants/WRAP1.py).
     #   * E11 (S_CALLWRAPPER does nothing / skipped): WRAP1-M7 (the frame's predicate), WRAP1-M8 (equivalent, stated), WRAP1-M8b (the operand words) (WRAP1.py).
     #   * E12 (S_TABLED does nothing / skipped): TB3-V1 (the complete-table jump), TB3-V2 (ARGP), TB3-V3 (setFramePredicate), TB3-V5, TB3-V7 (tools/mutants/TB3.py).
+    # ── RETIRED (audit D-0710 item 5): TAB1MIN-E7 and TAB1MIN-E8 stood here. No row can kill them: the code they mutated has no error path.
+    #   * E7 mutated the step name of S_WRAP's refusal ("WRAP1" -> "TAB1", src/pl-wam.jl, killed by test_tabling_min_swipl.jl:492 while the
+    #     opcode still refused). E8 did the same for S_CALLWRAPPER's refusal (killed by :482).
+    #   * Proof, both sides. Kernel: `@label S_WRAP` (src/pl-wam.jl:5848-5862) runs to `@goto next_instruction`, and `@label S_CALLWRAPPER`
+    #     (src/pl-wam.jl:5870-5876) ends at `@goto TRUST_CLAUSE`; neither body holds a throw, a NotPortedError or a step name.
+    #     Upstream (swipl-devel 18168e62, src/pl-vmi.c): VMI(S_WRAP) :3560-3578 and VMI(S_CALLWRAPPER) :3624-3632 have no error path either
+    #     (S_WRAP creates the supervisor and continues, S_CALLWRAPPER ends at TRUST_CLAUSE). The `old` strings of E7/E8 no longer occur.
+    #   * No successor listed: a successor of S_WRAP without `DEF = sw_c.predicate`, or of S_CALLWRAPPER without `setFramePredicate`, would need
+    #     an existing test row that reads the frame predicate of a call through a closure / a wrapped call; none is named, so none is added.
+    #   retired D-0710 (5)
+    # ── RETIRED (staleref2 refit of the stale lists after batch 3): TAB1MIN-E9 and TAB1MIN-E12 stood here. No row can kill them: S_TABLED was PORTED by TAB1 batch 3 (TB3b).
+    #   * E9 mutated the step name of S_TABLED's refusal ("TAB1" -> "WRAP1", killed by test_tabling_min_swipl.jl:485 while the opcode still
+    #     refused). E12 made S_TABLED continue with the next instruction instead of throwing the NotPortedError (killed by :485).
+    #   * Proof, both sides. Kernel: `@label S_TABLED` (src/pl-wam.jl:5959-5981) opens with the debugging test, runs `tbl_complete_answer_clause`
+    #     and ends at `@goto TRUST_CLAUSE` (or the `trie_gen_single` jump); its body holds no throw, no NotPortedError and no step name.
+    #     Upstream (swipl-devel 18168e62, src/pl-vmi.c): VMI(S_TABLED) :3646-3668 has no error path either (the only failures are
+    #     FRAME_FAILED and THROW_EXCEPTION on the answer clause `fail` / `error`, which the kernel keeps as `deep_backtrack` / `b_throw`). The
+    #     `old` strings of E9 (the refusal's message and step) and E12 (`@label S_TABLED` followed by `throw(`) no longer occur (0 occurrences on b29b887d).
+    #   * No successor listed: a mutant of the ported body (skipping the complete-table path, the clearing of FR_SSU_DET, the `fail` / `error`
+    #     answer clauses) would need an existing test row that reads the frame flag or the answers of a second call of a complete table; the
+    #     rows of test_tabling_answers_swipl.jl (TB3K-1, :750) are the candidates, but no row is named here as killing a specific change
+    #     (none was run), so none is added.
+    #   retired (staleref2)
+    # E10 and E11 (S_WRAP / S_CALLWRAPPER continue instead of refusing) are REMOVED: their `old` text is gone from the ported bodies (BADMATCH on all three
+    # term types, mutants/TAB1MINR run 43610812021, 0 s); their replacements E10r and E11r below were CAUGHT on reference, alt and alt_interned in that run.
+    # ── REPLACEMENTS (audit D-0706 item 2) for E10 and E11 on the PORTED S_WRAP / S_CALLWRAPPER bodies (865f643b, WRAP1). E7 and E8 (the step name of a refusal) are RETIRED with their proof at the place where they stood (above, D-0710 item 5).
+    dict(id="TAB1MIN-E10r S_WRAP continues with the next instruction of the shared wrapper block (I_EXIT): a call through a closure succeeds at once and the wrapped predicate never runs (replaces E10; KILL test_wrap_swipl.jl `t0`, the wrapper's `W` leaves the argument of p0/1 unbound: `findall(Y, p0(Y), Ys)` is not [1,2]; `t1`, `t8`, `t17`, `t18`, the white-box `wb_r2`/`wb_r6`)", file=WM, targets=WRAP + TM + TV,
+         old="@label S_WRAP\n    sw_c = gd.closure_refs",
+         new="@label S_WRAP\n    @goto next_instruction\n    sw_c = gd.closure_refs"),
+    dict(id="TAB1MIN-E11r S_CALLWRAPPER fails the frame instead of running the wrapper clause: every call of a wrapped predicate fails (replaces E11; KILL test_tabling_min_swipl.jl the T3 white-box call of `tm_w02` (`rc == PL_S_TRUE || PL_S_LAST` and no error: the call answers false); test_wrap_swipl.jl `t0` (Ys == []), `t1`, `t2`)", file=WM, targets=WRAP + TM + TV,
+         old="# FR->predicate = DEF = cref->value.clause->predicate\n    setFramePredicate(ld.frames[FR], DEF)\n    @goto TRUST_CLAUSE",
+         new="# FR->predicate = DEF = cref->value.clause->predicate\n    setFramePredicate(ld.frames[FR], DEF)\n    @goto deep_backtrack"),
+    # (TAB1MIN-E12 is RETIRED with E9, proof above.)
     dict(id="TAB1MIN-E13 VMI_RUN does not list S_WRAP (KILL test_tabling_min_swipl.jl:479 `nm in VMI_RUN`; :492 the refusal is the unknown-instruction one, without the owner)", file=WM, targets=TM,
          old=":S_WRAP, :S_CALLWRAPPER, :S_TABLED",
          new=":S_CALLWRAPPER, :S_TABLED"),

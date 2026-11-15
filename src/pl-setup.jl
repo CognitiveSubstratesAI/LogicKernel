@@ -123,6 +123,27 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-setup.c trim_stacks as pl_trim_stacks0_va
+# (PRED_IMPL("trim_stacks", 0, trim_stacks, 0), pl-setup.c:1751 at the pin; registered in `PL_predicates_from_setup`.)
+# The body is upstream's: `trimStacks(true)`, then `succeed`; the call carries the `PRED_LD` and the `PL_FA_VARARGS`
+# convention of every `PRED_IMPL` (see `PL_predicates_from_bag`).
+"`trim_stacks/0`: shrink the stacks to their use, the spares reserved again (pl-setup.c)."
+function pl_trim_stacks0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    trimStacks!(ld, true)
+
+    return FTRUE
+end
+
+# PORT: pl-setup.c BeginPredDefs as PL_predicates_from_setup
+# DIVERGES: the ported entry only (upstream's table also has `'$set_prolog_stack'/4`, `'$on_signal'/4` and, under SIG_ALERT,
+# prolog_alert_signal/2); the table is registered after pl-ctype.c's and before pl-proc.c's, as `initBuildIns` does (pl-ext.c:526-529).
+"pl-setup.c's registration table (`BeginPredDefs(setup)`): the ported entries."
+const PL_predicates_from_setup = (
+    PL_extension("trim_stacks", 0, pl_trim_stacks0_va, PL_FA_VARARGS),
+)
+
 # PORT: pl-setup.c emptyStacks as emptyStacks!
 # DIVERGES: the argument stack is emptied.
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no

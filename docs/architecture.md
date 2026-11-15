@@ -2150,6 +2150,7 @@ graph LR
     pl_ext --> os_pl_files
     pl_ext --> os_pl_glob
     pl_ext --> os_pl_file
+    pl_ext --> pl_setup
     pl_ext --> pl_proc
     pl_ext --> pl_srcfile
     pl_ext --> pl_supervisor
@@ -2222,11 +2223,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 354 | 0 | 68 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 355 | 0 | 67 | 3 | 1 |
 | refusal sites | 0 | 66 | 0 | 0 | 4 |
 | Prolog flags | 65 | 14 | 20 | 0 | 34 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 618 | 80 | 122 | 3 | 39 |
+| **total** | 619 | 80 | 121 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2242,7 +2243,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 89 | 24 | 0 |
 | `boot/messages.pl` | loaded | 78 | 7 | 1 |
-| `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
+| `boot/toplevel.pl` | loaded | 87 | 12 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
@@ -2275,7 +2276,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
-| Q10 | 10 | 10 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +2 |
+| Q10 | 9 | 9 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +1 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
@@ -2306,7 +2307,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [68, 0, 20, 34]
+    bar [67, 0, 20, 34]
     line [0, 66, 14, 0]
 ```
 
