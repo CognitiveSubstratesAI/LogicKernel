@@ -4102,8 +4102,6 @@ _manifest_lb2b(T) = begin
         (LK._is_atom_named, Tuple{T, Type{T}, Symbol}, false),
         (LK.canonicalisePath, Tuple{LD, String}, false),
         (LK.takeWord, Tuple{LD, Vector{UInt8}, Int}, false),
-        (LK._passwd_dir_offset, Tuple{Bool, Int}, false),
-        (LK._getpwnam_dir, Tuple{String, Int}, false),
         (LK.expandVars, Tuple{LD, String}, false),
         (LK.AbsoluteFile, Tuple{LD, String}, false),
         (LK.PL_changed_cwd, Tuple{LD}, false), (LK.PL_cwd, Tuple{LD}, false),
@@ -4119,6 +4117,8 @@ end
 
 # the same, on plain values: one entry each
 const _MANIFEST_LB2B_FREE = (
+    (LK._passwd_dir_offset, Tuple{Bool, Int}, false),
+    (LK._getpwnam_dir, Tuple{String, Int}, false),
     (LK.file_name_is_iri, Tuple{String}, false), (LK.statfunc, Tuple{String}, false),
     (LK.LastModifiedFile, Tuple{String}, false), (LK.SizeFile, Tuple{String}, false),
     (LK.access_mode, Tuple{Int}, false), (LK.AccessFile, Tuple{String, Int}, false),
