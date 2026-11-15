@@ -125,7 +125,7 @@ function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
     return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE
 end
 
-# PORT: pl-thread.c _PL_mutexes
+# PORT: pl-thread.c _PL_mutexes as new_PL_mutexes
 # (pl-thread.c:302-337 at the pin: 30 `COUNT_MUTEX_INITIALIZER` entries, ids 0-29 of pl-thread.h:242-271)
 # DIVERGES (TH1-B, representation only): upstream's table is one process-wide array; the kernel has one table per database,
 # in `gd.mutexes`, because a database is a value and module-level mutable state is refused (tools/lint_globals.jl). A copy of the

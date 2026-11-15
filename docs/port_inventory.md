@@ -171,6 +171,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-list.c` | code | `18168e629eab` | `src/pl-list.jl` | 18 | 10 |
 | swipl-devel `src/pl-modul.c` | code | `18168e629eab` | `src/pl-modul.jl` | 64 | 44 |
 | swipl-devel `src/pl-mutex.c` | code | `18168e629eab` | `src/pl-mutex.jl` | 1 | 1 |
+| swipl-devel `src/pl-mutex.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-op.jl` | 20 | 16 |
 | swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-prims.jl` | 165 | 83 |
@@ -189,7 +190,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-rec.c` | code | `18168e629eab` | `src/pl-rec.jl` | 38 | 27 |
 | swipl-devel `src/pl-rec.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-ressymbol.c` | code | `18168e629eab` | `src/pl-ressymbol.jl` | 6 | 4 |
-| swipl-devel `src/pl-setup.c` | code | `18168e629eab` | `src/pl-setup.jl` | 11 | 8 |
+| swipl-devel `src/pl-setup.c` | code | `18168e629eab` | `src/pl-setup.jl` | 13 | 9 |
 | swipl-devel `src/pl-srcfile.c` | code | `18168e629eab` | `src/pl-srcfile.jl` | 47 | 32 |
 | swipl-devel `src/pl-string.c` | code | `18168e629eab` | `src/pl-string.jl` | 16 | 10 |
 | swipl-devel `src/pl-supervisor.c` | code | `18168e629eab` | `src/pl-supervisor.jl` | 18 | 10 |
@@ -202,7 +203,9 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-termhash.c` | code | `18168e629eab` | `src/pl-termhash.jl` | 37 | 9 |
 | swipl-devel `src/pl-termhash.h` | code | `18168e629eab` | `src/pl-termhash.jl` | 3 | 1 |
 | swipl-devel `src/pl-termwalk.c` | code | `18168e629eab` | `src/pl-termwalk.jl` | 21 | 8 |
-| swipl-devel `src/pl-thread.c` | code | `18168e629eab` | `src/pl-thread.jl` | 7 | 5 |
+| swipl-devel `src/pl-thread.c` | code | `18168e629eab` | `src/pl-thread.jl` | 9 | 5 |
+| swipl-devel `src/pl-thread.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
+| swipl-devel `src/pl-thread.h` | code | `18168e629eab` | `src/pl-thread.jl` | 5 | 0 |
 | swipl-devel `src/pl-trace.c` | code | `18168e629eab` | `src/pl-trace.jl` | 11 | 7 |
 | swipl-devel `src/pl-trace.h` | code | `18168e629eab` | `src/pl-trace.jl` | 1 | 0 |
 | swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-incl.jl` | 7 | 4 |
@@ -332,6 +335,7 @@ checkout is pulled.
 | swipl-devel `src/pl-list.c` | `18168e629eab` | 11 | 13 | 7 | src/pl-list.jl |
 | swipl-devel `src/pl-modul.c` | `18168e629eab` | 50 | 70 | 40 | src/pl-modul.jl |
 | swipl-devel `src/pl-mutex.c` | `18168e629eab` | 1 | 33 | 1 | src/pl-mutex.jl |
+| swipl-devel `src/pl-mutex.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-op.c` | `18168e629eab` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
 | swipl-devel `src/pl-prims.c` | `18168e629eab` | 118 | 188 | 69 | src/pl-prims.jl, src/pl-string.jl |
 | swipl-devel `src/pl-prims.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-prims.jl |
@@ -344,7 +348,7 @@ checkout is pulled.
 | swipl-devel `src/pl-rec.c` | `18168e629eab` | 35 | 76 | 24 | src/pl-incl.jl, src/pl-rec.jl |
 | swipl-devel `src/pl-rec.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-ressymbol.c` | `18168e629eab` | 3 | 7 | 2 | src/pl-ressymbol.jl |
-| swipl-devel `src/pl-setup.c` | `18168e629eab` | 8 | 62 | 8 | src/pl-setup.jl |
+| swipl-devel `src/pl-setup.c` | `18168e629eab` | 10 | 62 | 9 | src/pl-setup.jl |
 | swipl-devel `src/pl-srcfile.c` | `18168e629eab` | 37 | 74 | 27 | src/pl-srcfile.jl |
 | swipl-devel `src/pl-string.c` | `18168e629eab` | 15 | 18 | 9 | src/pl-string.jl |
 | swipl-devel `src/pl-supervisor.c` | `18168e629eab` | 16 | 28 | 9 | src/pl-supervisor.jl |
@@ -354,7 +358,8 @@ checkout is pulled.
 | swipl-devel `src/pl-termhash.c` | `18168e629eab` | 12 | 16 | 3 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termhash.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-termhash.jl |
 | swipl-devel `src/pl-termwalk.c` | `18168e629eab` | 16 | 28 | 5 | src/pl-termwalk.jl |
-| swipl-devel `src/pl-thread.c` | `18168e629eab` | 7 | 268 | 5 | src/pl-thread.jl |
+| swipl-devel `src/pl-thread.c` | `18168e629eab` | 8 | 268 | 5 | src/pl-thread.jl |
+| swipl-devel `src/pl-thread.h` | `18168e629eab` | 3 | 3 | 0 | src/pl-incl.jl, src/pl-thread.jl |
 | swipl-devel `src/pl-trace.c` | `18168e629eab` | 11 | 77 | 7 | src/pl-trace.jl |
 | swipl-devel `src/pl-trace.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-trace.jl |
 | swipl-devel `src/pl-trie.c` | `18168e629eab` | 130 | 171 | 79 | src/pl-incl.jl, src/pl-tabling.jl, src/pl-trie.jl |
@@ -381,7 +386,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2453** | **5354** | **1448** | |
+| **total** | | **2459** | **5357** | **1449** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

@@ -120,4 +120,4 @@ test_port_check.jl	19.4
 test_standalone_consumer.jl	2.0
 test_type_discipline.jl	2.8
 test_vendored_plunit.jl	0.5
-threads/test_th1b_locks.jl	20.0
+thread/test_th1b_locks.jl	20.0

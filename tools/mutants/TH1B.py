@@ -2,12 +2,12 @@
 # tools/mutants/TH1B.py — the mutation battery of step TH1-B (pl-thread.c:302-337 `_PL_mutexes[]`, :606-634 `enableThreads`; pl-thread.h:242-271 the ids,
 # :286-340 `IF_MT`, `countingMutexLock/Unlock`, `PL_LOCK/PL_UNLOCK`, `holdsLock`). Run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
 # tools/mutate_drive.py's: `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `targets`. The "aimed by" lists name the rows
-# (r01-r14 of test/threads/test_th1b_locks.jl) each mutant is WRITTEN to be caught by (read, not run): the battery's verdict is the evidence. Every `old` was
+# (r01-r14 of test/thread/test_th1b_locks.jl) each mutant is WRITTEN to be caught by (read, not run): the battery's verdict is the evidence. Every `old` was
 # counted in its file with a throwaway `python3 -I` script (a text count, no Julia). No mutant is suspected equivalent.
 # TARGETS (audit D-0238): every test file that reaches the mutated code: the new file, and test/db/test_gd_template.jl (it copies a database, so it
 # reaches the copy of the lock table: `Base.deepcopy_internal` of `counting_mutex` and the new GD fields).
 TARGETS = [
-    "test/threads/test_th1b_locks.jl",
+    "test/thread/test_th1b_locks.jl",
     "test/db/test_gd_template.jl",
 ]
 T = "src/pl-thread.jl"

@@ -211,4 +211,4 @@ test_standalone_consumer.jl	2.6
 test_type_discipline.jl	57.3
 test_vendored_plunit.jl	0.5
 test_vendored_swipl.jl	0.9
-threads/test_th1b_locks.jl	30.0
+thread/test_th1b_locks.jl	30.0

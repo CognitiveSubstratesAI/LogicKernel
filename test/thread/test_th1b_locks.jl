@@ -1,5 +1,5 @@
 # ORIGINAL: LK-ONLY — the rows of the kernel's L_* lock table (TH1-B): the expected values are the numbers, names and rules of swipl-devel 18168e62's pl-thread.c, pl-thread.h and pl-mutex.h, each testset naming its lines.
-# test/threads/test_th1b_locks.jl — the lock table of step TH1-B (design evidence/TH1/design.md §1b, §3, §6.B; ruled D-0789). The kernel
+# test/thread/test_th1b_locks.jl — the lock table of step TH1-B (design evidence/TH1/design.md §1b, §3, §6.B; ruled D-0789). The kernel
 # runs ONE thread; the table is the database's (`gd.mutexes`, DIVERGES: upstream's is the process-wide `_PL_mutexes[]`), and no call site
 # takes a lock yet (TH1-C places them). The rows:
 #   * the 30 names in upstream's order, the ids (L_MUTEX = 7, L_UMUTEX = 23), the fresh state of a table (pl-thread.c:302-337, pl-thread.h:242-271);

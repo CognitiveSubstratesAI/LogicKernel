@@ -3028,7 +3028,8 @@ mutable struct tbl_status{T}
 end
 tbl_status{T}() where {T} = tbl_status{T}(nothing, nothing, false, false, false)
 
-# PORT: pl-thread.h L_* (the mutex ids)
+# PORT: pl-thread.h L_MISC
+# (L_MISC .. L_GENERATION: the mutex ids)
 # (swipl-devel pl-thread.h:242-271 at the pin; the order is the order of `_PL_mutexes[]`, pl-thread.c:302-337)
 # DIVERGES (TH1-B, representation only): the ids start at 0 as the C enumeration; Int constants. The Windows-only
 # L_DDE (30) and L_CSTACK (31) are left out. Index 7 is L_MUTEX, and L_UMUTEX is 23.

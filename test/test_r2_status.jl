@@ -489,9 +489,12 @@ end
     # TH1a: 200 -> 199 (audit D-0734; the real count of this tree, measured with this expression): the one owned row TH1a
     # closed is `refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events` (owner TH1; th13 ports the thread
     # events). The 17 other TH1 owner lines changed their wording only and stay owned.
+    # 199 after TRIMSTACKS: it ported `trim_stacks/0` (pl-setup.c:1751) and its owner row `pred:trim_stacks/0 Q10` went (200 -> 199).
+    # 199 -> 198 on merging main c1c104f4 (TRIMSTACKS closed `pred:trim_stacks/0 Q10`, main 200 -> 199) into the TH1 line (TH1a closed one row, 200 -> 199):
+    # both closed a different owned row (D-0083 disclosure: derived, the floor test below measures it).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 199
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 198
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

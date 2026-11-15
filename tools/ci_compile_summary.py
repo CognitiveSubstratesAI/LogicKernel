@@ -6,8 +6,8 @@
 #
 # LOGDIR holds, per step, NAME.log (its output) and NAME.rc (its exit code, or `skipped`), written by
 # tools/ci_compile_run.sh. The table has one row per failure found in a failed step's log: step, file, line,
-# message. Recognised: `check_bool_atoms: path:line: text` (tools/check_bool_atoms.sh) and `check_where_return: path:line: text`
-# (tools/check_where_return.sh); Julia `Test Failed at
+# message. Recognised: `check_bool_atoms: path:line: text` (tools/check_bool_atoms.sh) `check_where_return: path:line: text`
+# (tools/check_where_return.sh) and `check_parse: path:line: text` (tools/check_parse.jl); Julia `Test Failed at
 # path:line` + its `Expression:` line and `Error During Test at path:line` + its exception line; an `ERROR:` line of
 # a failed load/precompile with the first stack frame `@ Module path:line` under src/, test/ or tools/;
 # port_check's two-space violation lines (`path:line: message` or `path: message`); the formatter's
@@ -127,6 +127,10 @@ def parse(step, text):
         if m:
             rows.append((m.group(1), m.group(2), "where binds to the return type: " + m.group(3)))
             continue
+        m = re.match(r"check_parse: (\S+?):(\d+): (.*)$", ln)
+        if m:
+            rows.append((m.group(1), m.group(2), "does not parse: " + m.group(3)))
+            continue
         m = re.match(r"\s*Test Failed at (\S+?):(\d+)\s*$", ln)
         if m:
             expr = next((x.strip() for x in lines[i + 1 : i + 4] if x.strip().startswith("Expression:")), "")
@@ -177,7 +181,7 @@ def parse(step, text):
 
 
 ANCHOR_TEST = re.compile(r"\s*(?:Test Failed|Error During Test) at \S+?:\d+\s*$")
-ANCHOR_CHECK = re.compile(r"check_(?:bool_atoms|where_return): \S+?:\d+: ")
+ANCHOR_CHECK = re.compile(r"check_(?:bool_atoms|where_return|parse): \S+?:\d+: ")
 ANCHOR_DIFF = re.compile(r"diff --git a/\S+ b/\S+")
 ANCHOR_ERROR = re.compile(r"(?:ERROR: )+.*")
 ERROR_LINE = re.compile(r"\s*(?:ERROR: )?\w*(?:Error|Exception)\b")

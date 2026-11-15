@@ -1,0 +1,52 @@
+# tools/ci_marker.sh's ONE definition of the jobs a gate/<step> push must have, BY NAME, per workflow (GET /actions/runs/{id}/jobs).
+# Columns (TAB): workflow, job name as the jobs API reports it, expected conclusion (success | skipped).
+# Source: evidence/GATE/ci_parity.md Part 5 at main a8cb295c: CI 15 executed + 13 skipped-by-design on a gate push (the Live swipl
+# differential and Static analysis jobs carry `if: !startsWith(github.ref_name, 'gate/')`: Evidence has the same checks), Evidence 19.
+# A job in the run that is not listed here is refused (fail closed): change a workflow's job names and this file together.
+CI	Julia min · files 1/3	success
+CI	Julia min · files 2/3	success
+CI	Julia min · files 3/3	success
+CI	Julia 1 · files 1/3	success
+CI	Julia 1 · files 2/3	success
+CI	Julia 1 · files 3/3	success
+CI	Julia min - ubuntu-24.04	success
+CI	Julia 1 - ubuntu-24.04	success
+CI	Format (Blue)	success
+CI	Secret scan	success
+CI	Tooling · main	success
+CI	Tooling · stale	success
+CI	Tooling · fast	success
+CI	Tooling · light	success
+CI	Tooling suites (warm lane, evidence, oracle cache)	success
+CI	Live swipl differential · reference	skipped
+CI	Live swipl differential · alt	skipped
+CI	Live swipl differential · alt_interned	skipped
+CI	Static analysis 1/9	skipped
+CI	Static analysis 2/9	skipped
+CI	Static analysis 3/9	skipped
+CI	Static analysis 4/9	skipped
+CI	Static analysis 5/9	skipped
+CI	Static analysis 6/9	skipped
+CI	Static analysis 7/9	skipped
+CI	Static analysis 8/9	skipped
+CI	Static analysis 9/9	skipped
+CI	Static analysis + live swipl differential	skipped
+Evidence (three term types)	reference · files 1/2	success
+Evidence (three term types)	reference · files 2/2	success
+Evidence (three term types)	alt · files 1/2	success
+Evidence (three term types)	alt · files 2/2	success
+Evidence (three term types)	alt_interned · files 1/2	success
+Evidence (three term types)	alt_interned · files 2/2	success
+Evidence (three term types)	static analysis 1/9	success
+Evidence (three term types)	static analysis 2/9	success
+Evidence (three term types)	static analysis 3/9	success
+Evidence (three term types)	static analysis 4/9	success
+Evidence (three term types)	static analysis 5/9	success
+Evidence (three term types)	static analysis 6/9	success
+Evidence (three term types)	static analysis 7/9	success
+Evidence (three term types)	static analysis 8/9	success
+Evidence (three term types)	static analysis 9/9	success
+Evidence (three term types)	reference	success
+Evidence (three term types)	alt	success
+Evidence (three term types)	alt_interned	success
+Evidence (three term types)	Verdict table	success
