@@ -3033,6 +3033,80 @@ function _predicate_number_of_clauses(
     return n
 end
 
+# PORT: pl-proc.c addr2line as pl_addr2line2_va
+# (PRED_IMPL("$addr2line", 2, addr2line, 0), pl-proc.c:4215-4228 at the pin)
+# DIVERGES: the address is a C function pointer and its description comes from the debug build's symbol reader; the kernel's
+# predicates are Julia functions without an address, so after the `size_t` check of `A1` the predicate is REFUSED by name
+# (`NotPortedError`, owner REFUSED: a debug build only).
+"""
+    '\$addr2line'(+Address, -Description)
+
+The source description of the C function at `Address` (pl-proc.c); `Address` must be a `size_t` (`type_error(integer, A)`,
+`domain_error(not_less_than_zero, A)`, `representation_error(size_t)`). Refused by name here: the kernel's predicates are Julia functions, with no C address to describe.
+"""
+function pl_addr2line2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    addr = PL_get_size_ex(ld, A1)
+    addr === nothing && return FFALSE
+
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :addr2line),
+            "addr2line/2: the description of a C function address (debug build only)",
+            "REFUSED"
+        )
+    )
+end
+
+# PORT: pl-proc.c local_definitions as pl_local_definitions2_va
+# (PRED_IMPL("$local_definitions", 2, local_definitions, PL_FA_TRANSPARENT), pl-proc.c:4232-4290 at the pin, under O_ENGINES)
+# DIVERGES: the kernel runs one thread, the main thread, and a thread-local predicate keeps its clauses in its own list
+# (`setThreadLocalDefinition!`), so the walk over the blocks of per-thread definitions (`MAX_BLOCKS`, `GD->thread.threads[tid]`,
+# `PL_LOCK(L_THREAD)`) is the one entry of the main thread: the list is `[main-N]`, N the clause count, and `[]` when N is 0
+# (upstream: `cc && ...`; its `unify_thread_id` unifies `main`, src/pl-thread.jl `pl_thread_self`).
+"""
+    '\$local_definitions'(:Head, -Counts)
+
+For the thread-local predicate `Head`, `Counts` is the list of `ThreadId-ClauseCount` pairs of the threads that hold clauses
+for it (pl-proc.c); fails when `Head` is no visible or current predicate, or is not thread-local.
+"""
+function pl_local_definitions2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2 = PL__t0, PL__t0 + 1
+    head = PL_new_term_ref(ld)
+
+    ok, mi = PL_strip_module(gd, ld, A1, 0, head)
+    ok || return FFALSE
+    module_ = gd.modules[mi]
+    fd = _cp_get_functor(ld, head)
+    fd === nothing && return FFALSE
+    proc = visibleProcedure(gd, fd[1], fd[2], module_)
+    if proc === nothing
+        proc = isCurrentProcedure(sym_key(fd[1]), fd[2], module_)
+        proc === nothing && return FFALSE
+    end
+    def = proc.definition
+    (def.flags & P_THREAD_LOCAL) == 0 && return FFALSE
+
+    tit = PL_new_term_ref(ld)
+    pair = PL_new_term_ref(ld)
+    list = PL_copy_term_ref(ld, A2)
+
+    cc = Int(def.impl_clauses.number_of_clauses)
+    if cc != 0
+        PL_unify_list(ld, list, pair, list) || return FFALSE
+        PL_put_atom(ld, tit, mk_sym(T, :main))          # unify_thread_id(tit, info)
+        PL_unify(ld, pair, _message_term(ld, :-, tit, _err_int(ld, cc))) || return FFALSE
+    end
+
+    return PL_unify_nil(ld, list) ? FTRUE : FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -3058,5 +3132,10 @@ const PL_predicates_from_proc = (
     PL_extension(
         "current_predicate", 1, pl_current_predicate1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension("\$addr2line", 2, pl_addr2line2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$local_definitions", 2, pl_local_definitions2_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
     )
 )
