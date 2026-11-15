@@ -178,9 +178,9 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-prims.h` | code | `18168e629eab` | `src/pl-prims.jl` | 2 | 0 |
 | swipl-devel `src/pl-privitf.c` | code | `18168e629eab` | `src/os/pl-file.jl` | 1 | 1 |
 | swipl-devel `src/pl-privitf.c` | code | `18168e629eab` | `src/pl-string.jl` | 1 | 1 |
-| swipl-devel `src/pl-pro.c` | code | `18168e629eab` | `src/pl-pro.jl` | 20 | 15 |
+| swipl-devel `src/pl-pro.c` | code | `18168e629eab` | `src/pl-pro.jl` | 21 | 16 |
 | swipl-devel `src/pl-proc.c` | code | `18168e629eab` | `src/pl-incl.jl` | 3 | 3 |
-| swipl-devel `src/pl-proc.c` | code | `18168e629eab` | `src/pl-proc.jl` | 96 | 75 |
+| swipl-devel `src/pl-proc.c` | code | `18168e629eab` | `src/pl-proc.jl` | 98 | 77 |
 | swipl-devel `src/pl-proc.h` | code | `18168e629eab` | `src/pl-proc.jl` | 1 | 0 |
 | swipl-devel `src/pl-qlf.c` | code | `18168e629eab` | `src/pl-qlf.jl` | 35 | 12 |
 | swipl-devel `src/pl-read.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 2 | 2 |
@@ -221,7 +221,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-wrap.c` | code | `18168e629eab` | `src/pl-wrap.jl` | 18 | 18 |
 | swipl-devel `src/pl-wrap.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 0 |
 | swipl-devel `src/pl-wrap.h` | code | `18168e629eab` | `src/pl-wrap.jl` | 1 | 1 |
-| swipl-devel `src/pl-write.c` | code | `18168e629eab` | `src/pl-write.jl` | 122 | 49 |
+| swipl-devel `src/pl-write.c` | code | `18168e629eab` | `src/pl-write.jl` | 123 | 49 |
 | swipl-devel `tests/core_lang/test_bips.pl` | code | `18168e629eab` | `test/core_lang/test_bips.jl` | 10 | 1 |
 | swipl-devel `tests/core_lang/test_exception.pl` | code | `18168e629eab` | `test/core_lang/test_exception.jl` | 4 | 0 |
 | swipl-devel `tests/core_lang/test_hash.pl` | code | `18168e629eab` | `test/core_lang/test_hash.jl` | 19 | 1 |
