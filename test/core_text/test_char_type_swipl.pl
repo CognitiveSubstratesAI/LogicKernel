@@ -4,6 +4,11 @@
 % row: its name and every solution). The characters are named by code, so the rows do not depend on the source encoding.
 % No row reads the locale (the classes are the Unicode map's, as the pin's swipl answers them).
 ct_codes([0'a, 0'Z, 0'5, 0' , 0'_, 0'., 0'(, 0'", 0'\n, 0xe9, 0x3b1, 0x660, 0x20ac, 0x2028, 0, 0x7f, 0'`]).
+% the same characters without code 0: char_code/2 on 0 makes the atom of the character 0, which the kernel refuses
+% (DIVERGES, settled: src/pl-read.jl `_atom_from_text`); the code-0 rows of t1 and t3 are t42 and t43, last in the program
+ct_codes_nz(Cs) :- ct_codes(All), ct_nz(All, Cs).
+ct_nz([], []).
+ct_nz([C|T], R) :- ( C =:= 0 -> R = R1 ; R = [C|R1] ), ct_nz(T, R1).
 ct_cls0([alnum, alpha, csym, csymf, prolog_var_start, prolog_atom_start, prolog_identifier_continue, decimal,
          prolog_symbol, prolog_solo, pattern_syntax, ascii, white, cntrl, digit, print, graph, lower, upper, punct,
          space, end_of_line, prolog_end_of_line, prolog_layout, newline, period, quote]).
@@ -11,11 +16,11 @@ ct_cls1([lower, upper, to_lower, to_upper, paren, quote, digit, xdigit, decimal,
 ct_res(G, R) :- catch(( G -> R = true ; R = false ), error(E, _), R = error(E)).
 % the arity-0 classes each character belongs to, by code_type/2 and by char_type/2
 t0(R) :- ct_codes(Cs), ct_cls0(Ts), member(C, Cs), findall(T, ( member(T, Ts), code_type(C, T) ), L), R = C-L.
-t1(R) :- ct_codes(Cs), ct_cls0(Ts), member(C, Cs), char_code(Ch, C), findall(T, ( member(T, Ts), char_type(Ch, T) ), L), R = C-L.
+t1(R) :- ct_codes_nz(Cs), ct_cls0(Ts), member(C, Cs), char_code(Ch, C), findall(T, ( member(T, Ts), char_type(Ch, T) ), L), R = C-L.
 % the arity-1 classes: the value each gives (code_type/2: codes, char_type/2: characters)
 t2(R) :- ct_codes(Cs), ct_cls1(Ns), member(C, Cs),
     findall(T, ( member(N, Ns), T =.. [N, _], code_type(C, T) ), L), R = C-L.
-t3(R) :- ct_codes(Cs), ct_cls1(Ns), member(C, Cs), char_code(Ch, C),
+t3(R) :- ct_codes_nz(Cs), ct_cls1(Ns), member(C, Cs), char_code(Ch, C),
     findall(N-V, ( member(N, Ns), T =.. [N, X], char_type(Ch, T), ( atom(X) -> char_code(X, V) ; V = X ) ), L),
     R = C-L.
 % the reverse mappings: the characters that have a given value
@@ -66,3 +71,8 @@ t38(R) :- ct_res(code_type(0'5, digit(5)), R).
 t39(R) :- ct_res(code_type(0'5, digit(6)), R).
 t40(R) :- ct_res(code_type(0'f, xdigit(15)), R).
 t41(R) :- code_type(0'f, xdigit(W)), R = W.
+% t1 and t3 for the character 0 alone (the atom of the character 0: the kernel refuses it, swipl answers)
+t42(R) :- ct_cls0(Ts), C = 0, char_code(Ch, C), findall(T, ( member(T, Ts), char_type(Ch, T) ), L), R = C-L.
+t43(R) :- ct_cls1(Ns), C = 0, char_code(Ch, C),
+    findall(N-V, ( member(N, Ns), T =.. [N, X], char_type(Ch, T), ( atom(X) -> char_code(X, V) ; V = X ) ), L),
+    R = C-L.

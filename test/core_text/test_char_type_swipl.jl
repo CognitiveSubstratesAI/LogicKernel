@@ -106,6 +106,24 @@ function kernel_lines(
     return out
 end
 
+# KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
+# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"). t42 and t43
+# are t1 and t3 for the character 0 (char_code/2 makes that atom); swipl's answer is in the .out, the kernel's line is
+# `<row> notported`. They are the last rows of the program, and a refused row ends one run (its ld is thrown away): the
+# rows after it are run again on a fresh engine, so no other row is lost.
+const _CT_NUL_ROWS = ("t42", "t43")
+
+# `kernel_lines`, continued after every refused row on a fresh engine (the lines of the rows that follow)
+function kernel_lines_all(
+    ::Type{T}, path::String, names::Vector{String}
+)::Vector{String} where {T}
+    out = kernel_lines(T, path, names)
+    while length(out) - 1 < length(names) && endswith(out[end], " notported")
+        out = vcat(out, kernel_lines(T, path, names[(length(out)):end])[2:end])
+    end
+    return out
+end
+
 # the driver swipl runs to print its lines (the .out is its output)
 const DRIVER = raw"""
 enc(T) :- enc(T, [], _).
@@ -164,10 +182,22 @@ end
     t8 = expected[findfirst(startswith("t8 "), expected)]
     @test occursin("i71386", t8)                                              # a full enumeration reaches the high planes
 
-    kl = kernel_lines(_TL, _CT_PL, names)
+    @test all(r -> r in names, _CT_NUL_ROWS)                                  # the known-difference rows are rows
+    @test all(
+        r -> occursin("c[45]/2(i0,", expected[findfirst(startswith(r * " "), expected)]),
+        _CT_NUL_ROWS
+    )  # swipl answers for 0
+
+    kl = kernel_lines_all(_TL, _CT_PL, names)
     @test length(kl) == length(expected)
     for i in eachindex(kl)
-        @test (i, kl[i]) == (i, expected[i])
+        row = i == 1 ? "ok" : names[i - 1]
+        if row in _CT_NUL_ROWS
+            @test kl[i] == row * " notported"                                 # the refusal, by name
+            @test_broken kl[i] == expected[i]                                 # swipl answers (the .out)
+        else
+            @test (i, kl[i]) == (i, expected[i])
+        end
     end
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
