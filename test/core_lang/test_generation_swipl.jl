@@ -4,9 +4,10 @@
 # the frame; upstream does not compare it with the generation the frame took at the call. The kernel had `@assert dref.generation ==
 # generationFrame(frame)` at both sites (a probe showed it fires for clause/2 on a predicate declared `autoload/2`, whose library `trapUndefined`
 # loads between the call and the access object); it is replaced by the store alone. The rows:
-#   * test_generation_swipl.pl holds the cases `p1aN`..`p1dN` (a: autoload in clause/2 and retract/1, b: a wakeup between the call and the first
+#   * test_generation_swipl.pl holds the cases `p1aN`..`p1eN` (a: autoload in clause/2 and retract/1, b: a wakeup between the call and the first
 #     clause, c: an erase listener, d: the logical update view of the redo of clause/2 and retract/1: a clause asserted, or a later clause retracted,
-#     while the first answer's choice point is open; BEHAVIOUR rows against the mutants AGEN-C2 and NF2-C5, audit D-0755); the kernel consults the program afresh for EVERY case (the cases assert foo/1) and enumerates the case's
+#     while the first answer's choice point is open; those rows run in the generation the call took, so they do NOT tell the frame's stored generation from the access object's; e: the autoload hook
+#     (user:exception/3) defines pe/1 INSIDE clause/2's window, between the call and the access object, so the access object's generation is newer than the call's: the rows against the mutants AGEN-C2 and NF2-C5, audit D-0758 (2)); the kernel consults the program afresh for EVERY case (the cases assert foo/1) and enumerates the case's
 #     answers (at most 20), the answer being the string the program printed;
 #   * test_generation_swipl.out holds swipl 10.1.20's answers, `id<TAB>answer`, two byte-identical runs of the driver below; when `swipl` is on PATH
 #     the .out is checked against a live run as well, so it cannot go stale;
@@ -154,7 +155,7 @@ end
     auto = _gn_autoids()
     pins = _gn_pins()
     # not a vacuous agreement: a pin per case, the autoload group is the eight declared cases, and the pins carry the evidence
-    @test length(ids) == 48 && length(unique(ids)) == length(ids)
+    @test length(ids) == 54 && length(unique(ids)) == length(ids)
     @test sort(collect(keys(pins))) == sort(ids)
     @test auto == ["p1a$i" for i in 12:19]
     @test count(id -> occursin("append(", pins[id]), auto) >= 6        # swipl loads library(lists) inside clause/2 and answers its clauses
@@ -165,6 +166,10 @@ end
         pins["p1d3"] == "1-true ;; 2-true ;; 3-true" &&     # clause/2: foo(3) retracted in the middle is STILL answered
         pins["p1d5"] == "1 ;; 2 ;; 3" && pins["p1d7"] == "[7]" &&   # retract/1: foo(7) is not retracted by the redo, and survives
         pins["p1d8"] == "1 ;; 2 ;; 3" && pins["p1d10"] == "[]"     # retract/1: foo(3), erased in the middle, is still answered
+
+    # a generation created between the call and the access object (pl-comp.c:7404-7405 trapUndefined, then :7409 pushPredicateAccessObj): the hook's clauses are answered
+    @test pins["p1e1"] == "[1-true,2-true]" && pins["p1e2"] == "1-true ;; 2-true" &&
+        pins["p1e4"] == "[1-true,2-true]" && pins["p1e6"] == "[1-true,2-true]"
 
     res = Dict{String, Union{String, Exception}}(id => gn_ask(_TL, id) for id in ids)
 

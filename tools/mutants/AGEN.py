@@ -32,8 +32,10 @@ MUTANTS = [
                     "get_head_and_body_clause, get_head_functor, isCurrentProcedure and the flag tests, and none of them creates a generation "
                     "(a wakeup runs before the call or after the exit: rows p1b1-p1b13); the assert never fires"),
     # ---- the frame keeps the generation it took at the call instead of the access object's: killed where trapUndefined loaded a library
-    # in between (a12-a19: the loaded clauses are not visible to the frame, the answers are `[]`)
-    dict(id="AGEN-C2 clause/2 keeps the frame's own generation (killed by rows p1d1-p1d4, D-0755)", file=C, targets=TG + TC,
+    # in between: the autoload hook of rows p1e1-p1e6 asserts the pe/1 clauses there, so the frame (the call's generation) would not see them and the
+# answers would be `[]`. The rows p1a12-p1a19 (library(lists) loaded there) and p1d1-p1d10 (the redo's view, in the generation the call took) were
+# found NOT to kill this mutant by the hand check at e40b41bb (audit D-0758 (2)); p1e* is not yet run on the kernel (written without Julia)
+    dict(id="AGEN-C2 clause/2 keeps the frame's own generation (aimed by rows p1e1-p1e6, a generation created between the call and the access object, D-0758 (2). NOT killed by p1a12-p1a19 or p1d1-p1d10)", file=C, targets=TG + TC,
          old=STORE_C,
          new='''        ld.frames[fr].generation = generationFrame(ld.frames[fr])  # (the frame's own: no store)
 '''),

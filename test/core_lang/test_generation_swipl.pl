@@ -26,6 +26,15 @@ foo(3).
 pr_on_erase(_) :- assertz(foo(9)).
 user:attr_unify_hook(_, _) :- assertz(foo(9)).
 
+% p1e*: the autoloader hook (user:exception/3, `fail` answer) DEFINES pe/1 inside clause/2's window between the call and the access object: pe/1
+% carries the autoload attribute, so clause/2 calls trapUndefined (pl-comp.c:7404-7405), whose `$undefined_procedure` runs this hook; the hook's
+% assertz creates the generations and `import/1` links pe/1 into user (what the library autoloader does), all before pushPredicateAccessObj.
+:- '$set_predicate_attribute'(user:pe(_), autoload, true).
+user:exception(undefined_predicate, pe/1, fail) :-
+    assertz(pe_impl:pe(1)),
+    assertz(pe_impl:pe(2)),
+    import(pe_impl:pe/1).
+
 %% p1a0: control, plain clause/2 on a dynamic predicate (no trigger)
 p1a0(R) :- pr_case(clause(foo(X), B), X-B, R).
 %% p1a1: clause/2 on an AUTOLOADABLE predicate not yet loaded, all solutions through findall
@@ -126,3 +135,16 @@ p1d8(R) :- retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ), pr_show(
 p1d9(R) :- pr_case(( retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ) ), X, R).
 %% p1d10: as d8, then what is left of foo/1
 p1d10(R) :- pr_case(( retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ) ), X, _), pr_case(foo(Y), Y, R).
+
+%% p1e1: clause/2 on pe/1, whose autoload hook asserts pe_impl:pe(1), pe(2) BETWEEN the call and the access object: the frame's generation is the access object's, so both clauses are answered; findall
+p1e1(R) :- pr_case(clause(pe(X), B), X-B, R).
+%% p1e2: as e1, as a plain body goal, every solution by REDO
+p1e2(R) :- clause(pe(X), B), pr_show(X-B, R).
+%% p1e3: as e1 with the body variable shared with the caller (the whole head)
+p1e3(R) :- pr_case(clause(pe(X), B), t(X, B), R).
+%% p1e4: as e1, then the logical update view from that generation: pe_impl:pe(7) asserted while the first answer's choice point is open is NOT answered
+p1e4(R) :- pr_case(( clause(pe(X), B), ( X == 1 -> assertz(pe_impl:pe(7)) ; true ) ), X-B, R).
+%% p1e5: clause/2 TWICE on pe/1 (the second finds it linked: no hook), then every solution of the second
+p1e5(R) :- pr_case(( clause(pe(_), _), clause(pe(X), B) ), X-B, R).
+%% p1e6: e1 in a goal after a wakeup that asserted foo(9) (a generation created before the call, the hook's after it): both are seen as in b1
+p1e6(R) :- pr_case(( freeze(V, assertz(foo(9))), V = 1, clause(pe(X), B) ), X-B, R).

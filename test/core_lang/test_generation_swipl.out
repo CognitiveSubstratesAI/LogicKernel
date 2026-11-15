@@ -46,3 +46,9 @@ p1d7	[7]
 p1d8	1 ;; 2 ;; 3
 p1d9	[1,2,3]
 p1d10	[]
+p1e1	[1-true,2-true]
+p1e2	1-true ;; 2-true
+p1e3	[t(1,true),t(2,true)]
+p1e4	[1-true,2-true]
+p1e5	[1-true,2-true,1-true,2-true]
+p1e6	[1-true,2-true]

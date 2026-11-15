@@ -8,8 +8,8 @@
 # (`setGenerationFrameVal`, NF2-R6 and NF2-C5): the frame's generation is set to the global generation at the call
 # (`setGenerationFrame`, pl-wam.jl depart_or_retry_continue / PL_open_query), and nothing between the call and
 # `pushPredicateAccessObj!` creates a generation, so both values are the same (retract/1, NF2-R6; ASSERT-GEN removed the assert that stood
-# as the argument, audit D-0713 (3): clause/2's NF2-C5 is now killed by tools/mutants/AGEN.py's rows, where `trapUndefined` loads a
-# library between the call and the access object). NOT listed: unprotectCRef/protectCRef (no-ops
+# as the argument, audit D-0713 (3): clause/2's NF2-C5 is the mutant of tools/mutants/AGEN.py's AGEN-C2, aimed by rows p1e1-p1e6 where the
+# autoload hook of `trapUndefined` asserts between the call and the access object, audit D-0758 (2)). NOT listed: unprotectCRef/protectCRef (no-ops
 # upstream without O_DEBUG); the `arity > 0` guard of clause's strip (stripping an atom head's qualifier first gives the same
 # answer: unify_head strips both sides anyway).
 # The `old` strings were written BEFORE `tools/warm.sh fmt`: re-check them after it (mutate_drive.py refuses a string that does
@@ -79,9 +79,9 @@ MUTANTS = [
     dict(id="NF2-C4 the first call's buffer is not copied into the pool", file=C, targets=TC,
          old='''                        k = alloc_foreign_state!(pool)      # allocForeignState(sizeof(*chp))''',
          new='''                        k = k                               # allocForeignState(sizeof(*chp))'''),
-    # KILLED since ASSERT-GEN (audit D-0713 (3)): clause/2 on a predicate declared autoload/2 loads library(lists) in trapUndefined, between the
-    # call and the access object: test_generation_swipl.jl p1a12-p1a19 (the same mutant as AGEN-C2)
-    dict(id="NF2-C5 the search generation is not stored in the frame (killed by rows p1d1-p1d4, D-0755)", file=C, targets=TC + ["test/core_lang/test_generation_swipl.jl"],
+    # the same mutant as AGEN-C2: clause/2 on a predicate with the autoload attribute runs trapUndefined between the call and the access object;
+    # rows p1e1-p1e6 of test_generation_swipl.jl have its hook assert there (p1a12-p1a19 and p1d1-p1d10 survived the hand check at e40b41bb, D-0758 (2))
+    dict(id="NF2-C5 the search generation is not stored in the frame (aimed by rows p1e1-p1e6, a generation created between the call and the access object, D-0758 (2). NOT killed by p1a12-p1a19 or p1d1-p1d10)", file=C, targets=TC + ["test/core_lang/test_generation_swipl.jl"],
          old='''        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, dref->generation)''',
          new='''        nothing                                             # setGenerationFrameVal(environment_frame, dref->generation)'''),
     dict(id="NF2-C6 a failed attempt is not rewound", file=C, targets=TC,
