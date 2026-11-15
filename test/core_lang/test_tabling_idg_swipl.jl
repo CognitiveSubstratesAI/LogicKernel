@@ -503,9 +503,9 @@ function _ti_tvt(ld, def; ground::Bool=false, v::Int=1, mono::Bool=false)
     st = "failed"
     mo = "unbound"
     if ok
-        s = lk_answers(ld, ((t + 4):(t + 4))...)[1]
+        s = lk_answers(ld, ((t + 3):(t + 3))...)[1]                       # Status is the 4th argument: term reference t + 3
         st = kind(s) === SYM ? sym_text(s) : "not an atom"
-        m = lk_answers(ld, ((t + 6):(t + 6))...)[1]
+        m = lk_answers(ld, ((t + 5):(t + 5))...)[1]                       # IsMono is the 7th argument of the C function, the 6th of the predicate: term reference t + 5
         mo = kind(m) === SYM ? sym_text(m) : "unbound"
     end
     LK.PL_close_foreign_frame(ld, fid)
@@ -638,7 +638,7 @@ function _ti_answer_trie_type(gd, ld, atrie)::String
     LK.putSlotValue!(ld, a + 2, mk_var(_TI, LK.fresh_var_keys!(1)), LK.PutVarMap())
     @assert LK.unify_trie(gd, ld, a, atrie)
     rc = LK.pl_is_answer_trie2_va(ld, a, 2, ctx)
-    out = rc == LK.FTRUE ? _ti_txt(lk_answers(ld, ((a + 2):(a + 2))...)[1]) : "failed"
+    out = rc == LK.FTRUE ? _ti_txt(lk_answers(ld, ((a + 1):(a + 1))...)[1]) : "failed"
     LK.PL_close_foreign_frame(ld, fid)
     return out
 end
@@ -709,10 +709,11 @@ end
     tp.flags = saved & ~(LK.TP_INCREMENTAL | LK.TP_MONOTONIC | LK.TP_LAZY)
     p = _ti_table!(ld, def, true, 3)
     @test _ti_call_complete(ld, p, def, clref) == ("clref", 1, "plain")
-    tp.flags = saved
 
-    # a must-fail corruption: the plain and the incremental table differ in the one extractor
+    # a must-fail corruption: the plain and the incremental table differ in the one extractor (under the same flags: the predicate's
+    # flags are restored after it, as a call under the restored flags would give `p` its node as well)
     @test _ti_call_complete(ld, p, def, clref) != _ti_call_complete(ld, b, def, clref)
+    tp.flags = saved
 end
 
 """
@@ -991,6 +992,7 @@ end
 
 @testset "idg29: an IDG node charges sizeof(idg_node) = 80 bytes to the table pool (pl-tabling.c idg_new alloc_from_pool, pl-tabling.h:225-254)" begin
     gd, ld = _ti_wb()
+    LK.variant_table(ld, false)          # the thread's table pool exists once its variant table does (pl-tabling.c:2604-2606)
     pool = ld.tabling.node_pool
     @test pool isa LK.alloc_pool
     # sizeof(idg_node) at the pin, 64-bit, with O_TRIE_STATS (pl-trie.h:43): magic 4 + concurrent 1 (padded to 8), five pointers
@@ -1063,14 +1065,16 @@ end
     @test !incr("ti_v6a")
     # PL_CREATE_INCREMENTAL on a new predicate: incremental
     @test LK.assert_term!(
-        gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL
+        gd, ld, fact("ti_v6b", 1), 0, LK.CL_END, nothing, nothing,
+        Int(LK.PL_CREATE_INCREMENTAL)
     ) !== nothing
     @test incr("ti_v6b")
     # a predicate that is already defined keeps its attributes (`!isDefinedProcedure(proc)`)
     @test LK.assert_term!(gd, ld, fact("ti_v6c", 1), 0, LK.CL_END, nothing, nothing, 0) !==
         nothing
     @test LK.assert_term!(
-        gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing, LK.PL_CREATE_INCREMENTAL
+        gd, ld, fact("ti_v6c", 2), 0, LK.CL_END, nothing, nothing,
+        Int(LK.PL_CREATE_INCREMENTAL)
     ) !== nothing
     @test !incr("ti_v6c")
 end
