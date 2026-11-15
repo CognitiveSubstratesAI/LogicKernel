@@ -465,12 +465,18 @@ function _T7_atoms(line::AbstractString)::Vector{String}
         m in eachmatch(r"a\[([0-9,]+)\]", line)
     ]
 end
-"The atoms AND functor names (`a[codes]`, `c[codes]`) of a pinned answer line, in order."
+"""
+The atoms AND functor names (`a[codes]`, `c[codes]`) of a pinned answer line, in order, WITHOUT the wrapper `t_<id>/1` of the answer: the
+pinned text of case `t_d01` is `t_d01(raised(...))` (swipl's own `~q` output of the row's answer `R`, not an assertion of this file), so the
+first name of the line is the case's own functor, and the rows below compare the answer `R` alone.
+"""
 function _T7_names(line::AbstractString)::Vector{String}
-    return [
+    ns = [
         String(Char.(parse.(Int, split(m.captures[1], ',')))) for
         m in eachmatch(r"[ac]\[([0-9,]+)\]", line)
     ]
+    @assert !isempty(ns) && startswith(ns[1], "t_")          # the wrapper of the answer line
+    return ns[2:end]
 end
 "The integers (`i<n>`) of a pinned answer line, in order."
 function _T7_ints(line::AbstractString)::Vector{BigInt}
