@@ -16,6 +16,9 @@
 #     call of the process fails (swipl's own state, not a behaviour to port).
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
+using Test, LogicKernel
+const LK = LogicKernel
+
 
 # TERM TYPES PER CHUNK: REFERENCE — the built-in rides the term layer through PL_unify_integer and PL_get_integer only
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -286,8 +289,8 @@ const _DL_PINNED = [
 
 # the kernel's lines where they differ from swipl's (see the header)
 const _DL_KERNEL_DIFF = Dict(
-    "dl19" => "t_dl19 c[116,95,100,108,49,57]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[100,101,112,116,104,95,108,105,109,105,116])))",
-    "dl20" => "t_dl20 c[116,95,100,108,50,48]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[115,105,122,101,95,116])))"
+    "t_dl19" => "t_dl19 c[116,95,100,108,49,57]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[100,101,112,116,104,95,108,105,109,105,116])))",
+    "t_dl20" => "t_dl20 c[116,95,100,108,50,48]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[115,105,122,101,95,116])))"
 )
 _dl_expected(p::String) = get(_DL_KERNEL_DIFF, first(split(p, ' ')), p)
 

@@ -301,7 +301,7 @@ end
     # the program loaded; every case has a line; answering rows answer, failing rows have none, raising rows raise
     @test _P2B_PINNED[1] == "ok"
     @test length(_P2B_PINNED) == length(_P2B_CASES) + 1
-    @test count(l -> occursin(" i", l) || occursin(" c[45]/2(i", l), _P2B_PINNED) >= 20
+    @test count(l -> occursin("/1(i", l) || occursin("/1(c[45]/2(i", l), _P2B_PINNED) >= 20
     @test any(l -> !occursin(" ", l) && startswith(l, "t_q"), _P2B_PINNED)           # a row without an answer: it failed
     @test count(l -> occursin("[114,97,105,115,101,100]", l), _P2B_PINNED) >= 8   # the error rows (raised)
     for id in ("q01", "q08", "q15", "q17", "q35", "q36", "q37", "q40", "q41", "q54")

@@ -7,6 +7,9 @@
 #     `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
+using Test, LogicKernel
+const LK = LogicKernel
+
 # TERM TYPES PER CHUNK: REFERENCE — the built-in rides the term layer through PL_unify_integer and PL_get_integer only
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _QX = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})

@@ -13,6 +13,9 @@
 #     `'$trie_property'` for `trie_property` in those two rows.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
+using Test, LogicKernel
+const LK = LogicKernel
+
 # TERM TYPES PER CHUNK: REFERENCE — the built-ins ride the term layer through PL_unify_integer, PL_get_integer and PL_unify_atom only
 
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
@@ -386,7 +389,7 @@ end
         _QB_PINNED
     )
     @test count(
-        l -> startswith(l, "t_pa") && occursin("a" * _qb_codes("domain_error"), l),
+        l -> startswith(l, "t_pa") && occursin("c" * _qb_codes("domain_error"), l),
         _QB_PINNED
     ) ==
         4   # pa04, pa12, pa13, pa17
