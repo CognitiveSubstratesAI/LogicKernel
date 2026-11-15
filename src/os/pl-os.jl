@@ -370,8 +370,8 @@ function _passwd_dir_offset(islinux::Bool, wordsize::Int)::Union{Nothing, Int}
     return (islinux && wordsize == 64) ? 32 : nothing
 end
 
-# PORT: pl-os.c expandVars (the `~fred` branch: `getpwnam(user)`, then `pwent->pw_dir`, pl-os.c:1582-1598)
-# DIVERGES: the directory is copied into a `String` at once and the GD->os.fred/fredshome cache is not kept; `off` is `pw_dir`'s offset from
+# The `~fred` branch of expandVars (marker below): `getpwnam(user)`, then `pwent->pw_dir`, pl-os.c:1582-1598.
+# Differences (covered by expandVars' DIVERGES below): the directory is copied into a `String` at once and the GD->os.fred/fredshome cache is not kept; `off` is `pw_dir`'s offset from
 # `_passwd_dir_offset`. The caller passes a word of letters and `_` (takeWord), so the Cstring conversion cannot meet a NUL.
 # `nothing` is the C's "no such user" (a NULL pointer, checked before any read).
 function _getpwnam_dir(user::String, off::Int)::Union{Nothing, String}
