@@ -93,6 +93,7 @@ core_lang/test_op_swipl.jl	4.1
 core_lang/test_p1_swipl.jl	4.6
 core_lang/test_p2_swipl.jl	2.3
 core_lang/test_pr1_swipl.jl	5.0
+core_lang/test_prims_c_swipl.jl	5.0
 core_lang/test_prolog_flag_swipl.jl	10.3
 core_lang/test_push_flag_swipl.jl	3.3
 core_lang/test_read_dict_swipl.jl	8.2

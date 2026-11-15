@@ -51,6 +51,7 @@ core_lang/test_numbervars_cells.jl	9.9
 core_lang/test_occurs_cells.jl	3.6
 core_lang/test_occurs_check.jl	1.6
 core_lang/test_op_swipl.jl	5.1
+core_lang/test_prims_c_swipl.jl	5.1
 core_lang/test_read_swipl.jl	38.0
 core_lang/test_resource_error.jl	0.4
 core_lang/test_rules_swipl.jl	65.5
