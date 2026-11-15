@@ -17,8 +17,7 @@
 # nothing here depends on it except the order `get_dict/3` enumerates in (upstream: undefined).
 #
 # WAITING for their steps: the writer's dict arm (src/pl-write.jl), `is_most_general_dict/1`, the public `PL_for_dict` (its core
-# `pl_for_dict` is here), the functional notation's `./3` (boot/dicts.pl defines it); `b_set_dict/3`, `nb_set_dict/3`
-# and `nb_link_dict/3` wait for `setarg` (pl-prims.c: NOT STARTED); the `dict_functors` cache (`lookupFunctorDef` is
+# `pl_for_dict` is here), the functional notation's `./3` (boot/dicts.pl defines it); the `dict_functors` cache (`lookupFunctorDef` is
 # called each time). The reader reads dict syntax since RDDICT (src/pl-read.jl `read_dict_start` and the rest).
 # Since BOOTPRED-dict the rest of pl-dict.c's table is here too (`dict_pairs/3`, `put_dict/4`, `del_dict/4`, `get_dict/5`, `:</2`,
 # `>:</2`, `$get_dict_ex/3`, `dict_same_keys/2`, `$get_dict_kv/4,6,8`), for R2b (boot/dicts.pl, library/dicts.pl).
@@ -910,6 +909,56 @@ function pl_put_dict4_va(
     return put_dict4(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3)
 end
 
+# PORT: pl-dict.c setdict
+# DIVERGES: `dict_lookup_ptr` returns the pair's index `m` (1-based) beside the value position; the value is argument
+# `2*m` of the dict compound (upstream's `arg*2`), the argument number `setarg` takes. The type check of the dict comes
+# before the check of the key, as upstream's `&&` order.
+"The body of `b_set_dict/3`, `nb_set_dict/3` and `nb_link_dict/3`: assign `value` to the value cell of `key` in `dict`, as `flags` say (pl-dict.c)."
+function setdict(
+    ld::PL_local_data{T}, key::term_t, dict::term_t, value::term_t, flags::UInt32
+)::Bool where {T}
+    m = get_dict_ex(ld, dict, true)
+    m === nothing && return false
+    k = get_name_ex(ld, key)
+    k === nothing && return false
+
+    r = dict_lookup_ptr(ld, m, k)
+    if r !== nothing
+        return setarg(ld, r[2] * 2, dict, value, flags)
+    end
+
+    PL_existence_error3(ld, mk_sym(T, :key), key, dict)
+    return false
+end
+
+# PORT: pl-dict.c b_set_dict as pl_b_set_dict3_va
+# (PRED_IMPL("b_set_dict", 3, b_set_dict, 0))
+"`b_set_dict(+Key, !Dict, +Value)`: backtrackable destructive assignment of the value of `Key`, similar to `setarg/3` (pl-dict.c)."
+function pl_b_set_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    ok = setdict(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, SETARG_BACKTRACKABLE)
+    return ok ? FTRUE : FFALSE
+end
+
+# PORT: pl-dict.c nb_set_dict as pl_nb_set_dict3_va
+# (PRED_IMPL("nb_set_dict", 3, nb_set_dict, 0))
+"`nb_set_dict(+Key, !Dict, +Value)`: destructive assignment of a duplicate of `Value`, NOT undone on backtracking (pl-dict.c)."
+function pl_nb_set_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return setdict(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, UInt32(0)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-dict.c nb_link_dict as pl_nb_link_dict3_va
+# (PRED_IMPL("nb_link_dict", 3, nb_link_dict, 0))
+"`nb_link_dict(+Key, !Dict, +Value)`: as `nb_set_dict/3` without duplicating `Value` (pl-dict.c)."
+function pl_nb_link_dict3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return setdict(ld, PL__t0, PL__t0 + 1, PL__t0 + 2, SETARG_LINK) ? FTRUE : FFALSE
+end
+
 # PORT: SWI-Prolog.h PL_FOR_DICT_SORTED
 "`PL_for_dict`' flag: the pairs are visited in the standard order of terms of their keys (SWI-Prolog.h)."
 const PL_FOR_DICT_SORTED = Int(0x1)
@@ -1412,7 +1461,7 @@ end
 
 # PORT: pl-dict.c BeginPredDefs as PL_predicates_from_dict
 # DIVERGES: the entries in the order they were written (upstream's table is `is_dict`, `dict_create`, `dict_pairs`,
-# `dict_same_keys`, `put_dict`, …); `b_set_dict/3`, `nb_set_dict/3` and `nb_link_dict/3` follow `setarg`.
+# `dict_same_keys`, `put_dict`, …); `b_set_dict/3`, `nb_set_dict/3` and `nb_link_dict/3` follow `put_dict/4`, as upstream.
 "pl-dict.c's registration table (`BeginPredDefs(dict)`): the ported entries."
 const PL_predicates_from_dict = (
     PL_extension("is_dict", 1, pl_is_dict1_va, PL_FA_VARARGS),
@@ -1426,6 +1475,9 @@ const PL_predicates_from_dict = (
     ),
     PL_extension("get_dict", 5, pl_get_dict5_va, PL_FA_VARARGS),
     PL_extension("put_dict", 4, pl_put_dict4_va, PL_FA_VARARGS),
+    PL_extension("b_set_dict", 3, pl_b_set_dict3_va, PL_FA_VARARGS),
+    PL_extension("nb_set_dict", 3, pl_nb_set_dict3_va, PL_FA_VARARGS),
+    PL_extension("nb_link_dict", 3, pl_nb_link_dict3_va, PL_FA_VARARGS),
     PL_extension("dict_pairs", 3, pl_dict_pairs3_va, PL_FA_VARARGS),
     PL_extension("del_dict", 4, pl_del_dict4_va, PL_FA_VARARGS),
     PL_extension(":<", 2, pl_unify_left_dict2_va, PL_FA_VARARGS),
