@@ -30,3 +30,19 @@ under the enumeration empties the nodes the enumeration still walks) aborts the 
 The 2 fails per type: the E4 white-box row (:326 references == 1, :329 node_count kept after destroy).
 Per-row kernel numbers for t39-t46 on main (the reported 0,0,0,0,1,1,2,2,3,3 N=1..10, 6 at 16, 18 at 40) still to be printed per row
 (the t47 error hides them in the differential): the next agent prints them with t47 run separately.
+
+## AFTER the fix (src/pl-trie.jl acquire_trie/release_trie; lane 1, 2026-11-15)
+tools/warm.sh file test/core_lang/test_trie_gen_swipl.jl: 600 pass / 600 (reference 200, alt 200, alt_interned 200), 0 fail, 0 error,
+0 SKIP/Warning lines. Every row t39-t47 green on all three types (before: 75 pass, 2 fail, 5 error per type).
+Other files, all three types, exit 0, 0 SKIP/Warning/Test Failed/Error During lines: test_trie_swipl 1110, test_trie_preds_swipl 552,
+test_trie_attvar_swipl 147, test_trie_compiled_swipl 306, test_tabling_answers_swipl 423, test_tabling_min_swipl 456,
+test_tabling_tb4rows_swipl 249, test_tabling_tb4rows2_swipl 258, test_tabling_variant_swipl 324, test_tabling_wfs_swipl 207,
+test_tabling_worklist_swipl 249, test_type_discipline 45.
+tools/warm.sh check: PASS (965 s) after fmt of the test file, `tools/warm.sh inventory` (two new PORT headers), manifest entries.
+Mutants (tools/mutate.sh run-in-tree, reference type, target = test_trie_gen_swipl.jl, baseline before and after green): 4 of 4 caught
+  E4-A1 (no acquire)             caught: Error During Test, differential testset (test_trie_gen_swipl.jl:165)
+  E4-R1 (no release)             caught: Test Failed, differential testset :180 (t46 node_count)
+  E4-R2 (release, no trie_clean) caught: Test Failed, white box :334 (node_count == 1 after the release)
+  E4-D1 (empty_trie ignores references) caught: Error During Test, differential testset :165 (t47)
+Not decided here: stat_trie upstream does acquire_trie/release_trie around its walk (pl-trie.c :2307-2313); the kernel's stat_trie leaves
+them out (comment reworded, code unchanged): REPORTED.

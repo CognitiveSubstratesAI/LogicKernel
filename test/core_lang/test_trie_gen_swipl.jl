@@ -229,7 +229,11 @@ end
     @test kl["t39"] == _row("t39", _el(fill(_ei(0), 40)))                           # N = 1..40: nothing remains
     @test kl["t40"] == _row(                                                         # no pruning under the enumeration
         "t40",
-        _ec("-", _ec("-", _ec("-", _ks(1:9), _ei(0)), _pc("node_count", 10)), _pc("value_count", 0))
+        _ec(
+            "-",
+            _ec("-", _ec("-", _ks(1:9), _ei(0)), _pc("node_count", 10)),
+            _pc("value_count", 0)
+        )
     )
     @test kl["t42"] == _row("t42", _ec("-", _el(_ei.(1:2:9)), _el(_ei.(1:2:9))))    # the next sibling deleted
     @test kl["t43"] == _row("t43", _ec("-", _el(_ei.(1:10)), _el([_ei(10)])))        # the previous sibling deleted
