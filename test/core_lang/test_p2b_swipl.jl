@@ -94,6 +94,13 @@ p2_wide(A) :- atom_codes(A, [945, 98, 233]).
 p2_ty(X, T) :- ( atom(X) -> T = atom ; string(X) -> T = string ; T = other ).
 """
 
+# KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
+# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0 (a Symbol cannot
+# hold it)"), here from atom_codes/2 in q17's goal; the refusal is a Julia exception, not a Prolog error, so the row's own
+# catch/3 does not see it. The kernel's line for q17 is `t_q17 notported` (a refused row ends one run: `_p2b_kernel_all`
+# runs the rows after it on a fresh engine, so no other row is lost); swipl's pinned answer (`i0`) stays in _P2B_PINNED.
+const _P2B_NUL_ROWS = ("t_q17",)
+
 const _P2B_CASES = [
     ("q01", raw"sub_atom_icasechk('Hello World', S, world), R = S"),
     ("q02", raw"sub_atom_icasechk('Hello World', S, 'World'), R = S"),
@@ -263,8 +270,15 @@ function _p2b_kernel(path::String, names::Vector{String})
             gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
         )
         n = 0
+        notported = false
         while (n += 1) <= 50
-            rc = LK.PL_next_solution(gd, ld, qid)
+            rc = try
+                LK.PL_next_solution(gd, ld, qid)
+            catch e
+                e isa LK.NotPortedError || rethrow()
+                notported = true
+                break
+            end
             if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
                 push!(
                     sols,
@@ -278,9 +292,23 @@ function _p2b_kernel(path::String, names::Vector{String})
                 break
             end
         end
+        if notported
+            push!(out, "$name notported")    # the run's ld is thrown away: the query stays open
+            return out, gd, ld
+        end
         LK.PL_close_query(ld, qid)
         LK.PL_close_foreign_frame(ld, fid)
         push!(out, "$name" * join(" " .* sols))
+    end
+    return out, gd, ld
+end
+
+# `_p2b_kernel`, continued after every refused row on a fresh engine (the lines of the rows that follow)
+function _p2b_kernel_all(path::String, names::Vector{String})
+    out, gd, ld = _p2b_kernel(path, names)
+    while length(out) - 1 < length(names) && endswith(out[end], " notported")
+        more, gd, ld = _p2b_kernel(path, names[(length(out)):end])
+        out = vcat(out, more[2:end])
     end
     return out, gd, ld
 end
@@ -289,11 +317,17 @@ end
 
 @testset "P2b predicates as swipl's (q01-q59)" begin
     f, names = _p2b_file()
-    kl, _, _ = _p2b_kernel(f, names)
+    kl, _, _ = _p2b_kernel_all(f, names)
     @test length(kl) == length(_P2B_PINNED)
     for (k, p) in zip(kl, _P2B_PINNED)
-        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
-        @test k == p
+        row = first(split(p, ' '))
+        if row in _P2B_NUL_ROWS
+            @test k == row * " notported"                  # the refusal, by name
+            @test_broken k == p                            # swipl's pinned line
+        else
+            k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+            @test k == p
+        end
     end
 end
 
