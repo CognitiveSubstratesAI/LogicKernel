@@ -2109,11 +2109,13 @@ graph LR
     os_pl_fmt --> pl_arith
     os_pl_fmt --> os_pl_text
     os_pl_fmt --> os_pl_file
+    os_pl_fmt --> pl_proc
     os_pl_fmt --> pl_pro
     os_pl_fmt --> pl_tabling
     os_pl_fmt --> pl_trie
     os_pl_fmt --> pl_write
     os_pl_fmt --> pl_read
+    os_pl_fmt --> pl_string
     pl_dwim --> term_interface
     pl_dwim --> default_term
     pl_dwim --> os_pl_ctype
@@ -2275,10 +2277,10 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
 | Q10 | 10 | 10 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +2 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
-| LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
+| LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
@@ -2295,7 +2297,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 38 | 21 | 17 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +30 |
+| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +31 |
 
 #### Missing and refused per category
 
@@ -6625,8 +6627,7 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
   `toldString(ld)::Bool` (:2642), `redir_context` with its `.stream`, `setupOutputRedirect(ld, to, ctx, redir)::Bool` (:1708, `to == 0` is the current output),
   `closeOutputRedirect(ld, ctx)::Bool` (:1774), `discardOutputRedirect(ld, ctx)::Nothing` (:1826), and the six-argument `callProlog` (wip/o1b 3cb3a13) that `~@` calls.
   The merge needs O1B's commits first.
-- **Refused by name:** `format_predicate/2` raises `NotPortedError` (step LB5); the table `format_predicates` stays empty, so `current_format_predicate/2` fails and `do_format`
-  never looks up a user directive. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
+- **User directives (W5b):** `format_predicate/2` fills `gd.format_predicates` (a vector of (character, procedure) pairs in insertion order; upstream's `GD->format.predicates` is a hash table), `current_format_predicate/2` answers its entries (redo context = the next index) and `do_format` looks a directive up there before the built-in ones. The first argument of `current_format_predicate/2` is answered as the pinned swipl answers (pl-fmt.c:300-304 at 18168e62; rows t19-t22). Rows: test/core_lang/test_format_predicate_swipl.{pl,jl}. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
 - **DIVERGES, kept (the audit decides the behaviour-changing ones; O1A decided none):**
   `~:d`, `~:D`, `~:f` use the C locale: the stream has no locale field (D9), swipl groups the digits (`~:f` of 10**10 is `10,000,000,000.000000` there); the K rows pin the kernel's answer
   with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` is refused in the kernel (handoff flag b). a bignum `formatInteger` with
@@ -6782,8 +6783,8 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
   `GD->paths.CWDdir` is the new field `paths_CWDdir` of `PL_global_data` (the logical working directory with its closing slash; a symlinked directory stays logical).
 - **pl-glob.c** (`src/os/pl-glob.jl`, NEW, registered as `PL_predicates_from_glob` after `_files`): `compilePattern` (`?`, `*`, `[...]` with ranges, `{a,b}`, backslash escapes),
   `matchPattern`, `wildcard_match/2,3` (option `case_sensitive`), `expand`, `sort_expand`, `expand_file_name/2`, `directory_files/2`.
-- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` is refused by name (`getpwnam`) and HOME is read each time (upstream
-  caches it in `GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
+- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
+  caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
 - **Refused by name:** `tmp_file/2` and `$tmp_file_stream/4` (NotPortedError, step "LB2b audit": `GD->os.tmp_files` has no field and the stream layer has no `Sfdopen`);
   an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.

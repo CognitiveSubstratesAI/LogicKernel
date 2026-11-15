@@ -4100,6 +4100,8 @@ _manifest_lb2b(T) = begin
         (LK._is_atom_named, Tuple{T, Type{T}, Symbol}, false),
         (LK.canonicalisePath, Tuple{LD, String}, false),
         (LK.takeWord, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK._passwd_dir_offset, Tuple{Bool, Int}, false),
+        (LK._getpwnam_dir, Tuple{String, Int}, false),
         (LK.expandVars, Tuple{LD, String}, false),
         (LK.AbsoluteFile, Tuple{LD, String}, false),
         (LK.PL_changed_cwd, Tuple{LD}, false), (LK.PL_cwd, Tuple{LD}, false),

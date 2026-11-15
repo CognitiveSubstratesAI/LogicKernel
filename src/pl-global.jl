@@ -182,6 +182,7 @@ mutable struct PL_global_data{T}
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
     const undo_refs::Vector{record{T}}                          # (pl-undo.c: the record an undo blob names, by its number in the payload; TX1e)
     procedures_drun_undo1::Procedure{T}                         # procedures.drun_undo1: '$syspreds':'$run_undo'/1, run_undo_hooks's (TX1e; set by setBuiltinPredicateProperties!)
+    const format_predicates::Vector{Tuple{Int, Procedure{T}}}   # format.predicates (GD->format.predicates): directive character -> procedure, in insertion order (pl-fmt.c format_predicate/2; DIVERGES: upstream's hash table has no order)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with

@@ -69,7 +69,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-file.h` | code | `18168e629eab` | `src/os/pl-file.jl` | 9 | 0 |
 | swipl-devel `src/os/pl-files.c` | code | `18168e629eab` | `src/os/pl-files.jl` | 41 | 24 |
 | swipl-devel `src/os/pl-files.h` | code | `18168e629eab` | `src/os/pl-files.jl` | 6 | 0 |
-| swipl-devel `src/os/pl-fmt.c` | code | `18168e629eab` | `src/os/pl-fmt.jl` | 45 | 22 |
+| swipl-devel `src/os/pl-fmt.c` | code | `18168e629eab` | `src/os/pl-fmt.jl` | 45 | 24 |
 | swipl-devel `src/os/pl-fmt.h` | code | `18168e629eab` | `src/os/pl-fmt.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-glob.c` | code | `18168e629eab` | `src/os/pl-glob.jl` | 29 | 11 |
 | swipl-devel `src/os/pl-option.c` | code | `18168e629eab` | `src/os/pl-option.jl` | 4 | 2 |
@@ -278,7 +278,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-file.h` | `18168e629eab` | 0 | 0 | 0 | src/os/pl-file.jl |
 | swipl-devel `src/os/pl-files.c` | `18168e629eab` | 35 | 44 | 21 | src/os/pl-files.jl |
 | swipl-devel `src/os/pl-files.h` | `18168e629eab` | 0 | 0 | 0 | src/os/pl-files.jl |
-| swipl-devel `src/os/pl-fmt.c` | `18168e629eab` | 27 | 29 | 15 | src/os/pl-fmt.jl |
+| swipl-devel `src/os/pl-fmt.c` | `18168e629eab` | 27 | 29 | 17 | src/os/pl-fmt.jl |
 | swipl-devel `src/os/pl-fmt.h` | `18168e629eab` | 0 | 1 | 0 | src/os/pl-fmt.jl |
 | swipl-devel `src/os/pl-glob.c` | `18168e629eab` | 13 | 23 | 10 | src/os/pl-glob.jl |
 | swipl-devel `src/os/pl-option.c` | `18168e629eab` | 2 | 6 | 2 | src/os/pl-option.jl |
@@ -398,7 +398,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2641** | **5437** | **1554** | |
+| **total** | | **2641** | **5437** | **1556** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

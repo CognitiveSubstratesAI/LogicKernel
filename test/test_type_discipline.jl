@@ -83,12 +83,30 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "and the read never passes the name's end"
     ),
     "os/pl-os.jl ccall" => (
-        3,
+        4,
         "Y1: pl-os.c's three C-library calls, as upstream makes them: clock_gettime (CpuTime, WallTime, " *
         "ThreadCPUTime: the nanosecond clocks Julia does not give), setenv and unsetenv (the errno " *
         "setenv/2 and unsetenv/1 report, EINVAL for an empty name or one with `=`); each is handed " *
         "Cstring arguments (Julia's conversion refuses a NUL, the callers cut the name at one) or a " *
-        "Ref the call fills with two Int64s, and returns an Int32"
+        "Ref the call fills with two Int64s, and returns an Int32; W5c (D-0752 (1)): getpwnam, called by " *
+        "_getpwnam_dir (src/os/pl-os.jl:378; its only caller, itself called only by expandVars) exactly as " *
+        "pl-os.c:1582 calls it (`getpwnam(user)`, expandVars's `~user` branch); it is handed a Cstring of a word takeWord cut " *
+        "(letters and `_`) and returns a pointer that is compared with C_NULL before any read (NULL = " *
+        "\"no such user\", pinned by rows t5, t6, t9, t10, t12, t13 of test/files/test_expand_user_swipl.pl)"
+    ),
+    "os/pl-os.jl unsafe_load" => (
+        1,
+        "W5c (D-0752 (1)): _getpwnam_dir reads `pwent->pw_dir`, the pointer at byte offset 32 of the passwd " *
+        "record getpwnam returned (src/os/pl-os.jl:380; pl-os.c:1598), only after that result was checked non-NULL, and the " *
+        "offset comes from _passwd_dir_offset, which answers 32 on Linux 64-bit only (name 0, passwd 8, " *
+        "uid 16, gid 20, gecos 24, dir 32, shell 40) and `nothing` elsewhere, where expandVars refuses by " *
+        "name; its only caller is expandVars (through _getpwnam_dir)"
+    ),
+    "os/pl-os.jl unsafe_string" => (
+        1,
+        "W5c (D-0752 (1)): _getpwnam_dir copies the NUL-terminated pw_dir string of a non-NULL getpwnam " *
+        "result at once (src/os/pl-os.jl:381; pl-os.c:1598 store_string(pwent->pw_dir)), before any later libc call can reuse " *
+        "libc's static passwd buffer; its only caller is expandVars (through _getpwnam_dir)"
     ),
     "os/pl-files.jl ccall" => (
         10,
