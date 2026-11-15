@@ -3508,8 +3508,11 @@ _manifest_tr1(T) = begin
         (LK.new_block, Tuple{TR, Int}, false),
         (LK.add_child, Tuple{TR, Int, Int}, false),
         (LK.replace_block, Tuple{TR, Int, Int}, false),
+        (LK.replace_block, Tuple{TR, Int, Int, Union{Nothing, LD}}, false),
         (LK.compact_children, Tuple{TR, Int}, false),
+        (LK.compact_children, Tuple{TR, Int, Union{Nothing, LD}}, false),
         (LK.delete_child, Tuple{TR, Int, Int, Bool}, false),
+        (LK.delete_child, Tuple{TR, Int, Int, Bool, Union{Nothing, LD}}, false),
         (LK.new_node_slot!, Tuple{TR, LK.trie_node}, false),
         (LK.alloc_trie_node, Tuple{TR}, false),
         (LK.new_trie_node, Tuple{TR, UInt64}, false),
@@ -3520,8 +3523,14 @@ _manifest_tr1(T) = begin
         (LK.clear_node, Tuple{GD, TR, Int, Int, SNK}, false),
         (LK.destroy_node, Tuple{GD, TR, Int}, false),
         (LK.prune_node, Tuple{GD, TR, Int}, false),
+        (LK.prune_node, Tuple{GD, TR, Int, Union{Nothing, LD}}, false),
         (LK.prune_trie, Tuple{GD, TR, Int}, false),
         (LK.prune_trie, Tuple{GD, TR, Int, SNK}, false),
+        (
+            LK.prune_trie,
+            Tuple{GD, TR, Int, Union{Nothing, Function}, Union{Nothing, LD}},
+            false
+        ),
         (LK.insert_child, Tuple{TR, Int, UInt64}, false),
         (LK.follow_node, Tuple{TR, Int, UInt64, Bool}, false),
         # TRIECH: the allocation pool of a trie (pl-trie.c trie_create ... free_chunk_list)
@@ -3537,6 +3546,7 @@ _manifest_tr1(T) = begin
         (LK.insert_child, Tuple{TR, Int, UInt64, Union{Nothing, LD}}, false),
         (LK.follow_node, Tuple{TR, Int, UInt64, Bool, Union{Nothing, LD}}, false),
         (LK.prune_error, Tuple{GD, TR, Int}, false),
+        (LK.prune_error, Tuple{GD, TR, Int, Union{Nothing, LD}}, false),
         (LK.trie_of_word, Tuple{GD, UInt64}, false),
         (LK.trie_symbol, Tuple{GD, TR}, false),
         (LK.symbol_trie, Tuple{GD, UInt64}, false),
@@ -3567,6 +3577,7 @@ _manifest_tr1(T) = begin
             false
         ),
         (LK.follow_node_add, Tuple{TR, Int, UInt64}, false),
+        (LK.follow_node_add, Tuple{TR, Int, UInt64, Union{Nothing, LD}}, false),
         (
             LK.trie_lookup_flat,
             Tuple{GD, LD, TR, Int, LK.Definition{T}, Vector{Int}, Vector{Int}},
