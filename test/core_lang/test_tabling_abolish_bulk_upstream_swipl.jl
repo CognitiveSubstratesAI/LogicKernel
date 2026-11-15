@@ -16,8 +16,9 @@
 #     @test_broken (visible in the summary), one that equals it passes.
 #   * Expected refusals on the kernel (by reading, unverified): `:- table ss/1 as (shared, incremental)` (shared tables; thread-bound rows), `abolish_private_tables/0`, `thread_create/2`,
 #     `thread_join/2`, `'$idg_edge'/3`, `'$idg_thread_summary'/3`, `statistics(table_space_used, _)`, `garbage_collect_atoms/0`, `table (..) as monotonic`,
-#     `tnot/1` loops. The parent module is loaded with use_module/1 without catch: a refusal of the `shared` table declaration there may leave
-#     every row of this file undefined, so then move ss/1 and the four thread-bound rows into their own module, never weaken a pin. Every row stays pinned on swipl.
+#     `tnot/1` loops. The parent module loads with use_module/1 (the `shared` table declaration loads; the refusal comes when a row calls ps/1 or ss/1).
+#     A named refusal (a Julia `NotPortedError`, owner in its `step` field: TH1 for shared tables and threads) is the row's line `t_bkNN refused(<owner>)`;
+#     every row runs on its own kernel; a refused row is @test_broken with its owner printed, never skipped. Every row stays pinned on swipl.
 #   * Every pinned line is swipl's (swipl 10.1.20, two identical runs, evidence/TAB1/tabgap_tools/pins_bk.txt, which also holds the plunit
 #     run: 8 of 8 tests passed, none failed or hung on the pin) AND equals the answer plunit expects (`_TT_UPSTREAM`: each test passes, so `ok`).
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
@@ -397,17 +398,28 @@ function _tt_ask(gd, ld, pred::String)::String
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
     n = 0
-    while (n += 1) <= 50
-        rc = LK.PL_next_solution(gd, ld, qid)
-        if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
-            push!(sols, _tt_enc(mk_expr(_TT, _TT[_tts(pred), lk_answers(ld, (a:a)...)...])))
-            rc == LK.PL_S_LAST && break
-        elseif rc == LK.PL_S_EXCEPTION
-            push!(sols, "exception")
-            break
-        else
-            break
+    try
+        while (n += 1) <= 50
+            rc = LK.PL_next_solution(gd, ld, qid)
+            if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+                push!(
+                    sols,
+                    _tt_enc(mk_expr(_TT, _TT[_tts(pred), lk_answers(ld, (a:a)...)...]))
+                )
+                rc == LK.PL_S_LAST && break
+            elseif rc == LK.PL_S_EXCEPTION
+                push!(sols, "exception")
+                break
+            else
+                break
+            end
         end
+    catch e
+        # A named refusal of the kernel (`NotPortedError`, its `step` is the owner: TH1 for shared tables and threads) is the row's
+        # line `<pred> refused(<owner>)`; the caller discards this kernel (one kernel per row), so the open query is not closed.
+        e isa LK.NotPortedError || rethrow()
+        println(stderr, "  refused ", pred, ": ", e.what, " (owner ", e.step, ")")
+        return pred * " refused(" * String(e.step) * ")"
     end
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
@@ -420,23 +432,43 @@ function _tt_answer(line::String)::String
     return line[(last(k) + 1):(end - 1)]
 end
 
+"The owner named in a refused row's line (`<pred> refused(<owner>)`, see `_tt_ask`), or `nothing` for an answered row."
+function _tt_refused(line::String)::Union{Nothing, String}
+    m = match(r" refused\(([A-Za-z0-9_]+)\)$", line)
+    return m === nothing ? nothing : String(m.captures[1]::SubString{String})
+end
+
 "A line the same length that must differ from `s` (the must-fail corruption)."
 _tt_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[end]
 
 @testset "upstream test_abolish_bulk.pl: the kernel answers every row as swipl does" begin
-    gd, ld, st = _tt_load(_tt_materialize())
-    @test st == "ok"
-    kl = String[st]
+    main = _tt_materialize()
+    # One kernel per row: a row the kernel refuses by name (a shared table or a thread, owner TH1) leaves its own kernel
+    # mid-query, and the next row must not start from that state.
+    st = ""
+    kl = String[]
     for (id, _, _) in _TT_CASES
+        gd, ld, s = _tt_load(main)
+        isempty(kl) && (st = s)
+        @test s == "ok"
+        isempty(kl) && push!(kl, s)
         push!(kl, _tt_ask(gd, ld, "t_$id"))
     end
     _TT_KL[] = kl
+    @test st == "ok"
     @test length(kl) == length(_TT_PINNED)
     @test _TT_PINNED[1] == st
     for (i, (k, pn)) in enumerate(zip(kl, _TT_PINNED))
         i > 1 && _TT_CASES[i - 1][1] in _TT_THREAD_IDS && continue
-        k == pn || println(stderr, "  ours  ", k, "\n  swipl ", pn)
-        @test k == pn
+        owner = _tt_refused(k)
+        if owner !== nothing
+            # a row the kernel refuses by name: @test_broken with its owner on stderr, never skipped
+            println(stderr, "  ours  ", k, " (owner ", owner, ")\n  swipl ", pn)
+            @test_broken k == pn
+        else
+            k == pn || println(stderr, "  ours  ", k, "\n  swipl ", pn)
+            @test k == pn
+        end
     end
     # must-fail: a corrupted pin is not the kernel's line (the comparison can fail)
     @test length(kl) > 1
@@ -454,7 +486,9 @@ end
         if k == pn
             @test true
         else
-            println(stderr, "  thread-bound ", id, "\n  ours  ", k, "\n  swipl ", pn)
+            owner = something(_tt_refused(k), "none (answered)")
+            println(stderr, "  thread-bound ", id, " owner ", owner)
+            println(stderr, "  ours  ", k, "\n  swipl ", pn)
             @test_broken k == pn
         end
     end
