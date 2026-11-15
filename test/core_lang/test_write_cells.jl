@@ -292,8 +292,8 @@ end
 
 # ── attributed variables (AV5: pl-write.c writeAttVar / writeAttributes; rows.tsv wr01-wr04, wr06, wr07) ──────
 # A program of its own: one goal per row. swipl 10.1.19's text (the expected text is swipl's, as above: the
-# variable names are renamed by first occurrence). `attributes(portray)` (wr05) is NOT a row: it needs format/2
-# (AV10) — the kernel refuses it (NotPortedError). An attributed variable whose attribute contains the variable
+# variable names are renamed by first occurrence). `attributes(portray)` (wr05) is the next testset's (AV10). An
+# attributed variable whose attribute contains the variable
 # itself (at13, at14) is written as its name where it is met inside its own attributes (upstream fix ace539d7,
 # BP2; swipl 10.1.19 recursed until the C stack was gone, so the file had no such row until then).
 const _WC_ATT_PROGRAM = raw"""
@@ -362,6 +362,79 @@ const _WC_ATT_GOALS = ["at$(lpad(i, 2, '0'))" for i in 1:14]
         @test length(theirs) == length(_WC_ATT_GOALS)
         for (i, g) in enumerate(_WC_ATT_GOALS)
             o, s = (i == 11 ? ours11 : ours[i]), get(theirs, i, "—")
+            @test o == s
+            o == s || @info "the attributed variable: $g differs" ours = o swipl = s
+        end
+    elseif _R_SWIPL_REQUIRED
+        @test false
+    end
+end
+
+# ── attributes(portray) (AV10: pl-write.c writeAttVar calls '$attvar':portray_attvar/1, boot/attvar.pl's) ──────
+# The expected text is swipl 10.1.20's (`LC_ALL=C swipl -q -g main -t halt`, run twice, the two outputs byte-identical;
+# the variable names renamed by first occurrence). m, m2, m3 are modules with an `attr_portray_hook/2`: m writes, m2 throws,
+# m3 fails (portray_attvar/1 then writes `m3 = ...`); m4's hook writes the same variable again (at25: the nesting stops at
+# MAX_PORTRAY_NESTING = 100 with resource_error(portray_nesting)); m5's hook writes `x` (at26: the second write goes through
+# with_output_to/2, so the hook's output follows `Scurout`, the write's stream; at27 writes to a null stream: the hook's `x` goes
+# there and `Scurout` is the user's output again after it); an attribute of a module with no hook is written `a = ...`; the
+# `freeze` attribute is written as `freeze(Var, Goal)` (rows.tsv wr05). The text of an exception thrown by the hook
+# follows the `{` the writer already wrote (at21). at19 sets the write_attributes flag to `portray` and puts it back;
+# at19d, the next goal, shows the flag is `ignore` again. print/1 under the default flags (at24) writes the name only.
+const _WC_ATTP_PROGRAM = raw"""
+m:attr_portray_hook(V, _) :- write(hooked(V)).
+m2:attr_portray_hook(_, _) :- throw(oops).
+m3:attr_portray_hook(_, _) :- fail.
+m4:attr_portray_hook(_, V) :- write_term(V, [attributes(portray)]).
+m5:attr_portray_hook(_, _) :- write(x).
+at15 :- put_attr(X,a,1), write_term(X, [attributes(portray)]), nl.
+at16 :- put_attr(X,a,1), put_attr(X,b,g(Y,'A b')), write_term(f(X,Y), [attributes(portray)]), nl,
+    write_term(f(X,Y), [attributes(portray), quoted(true)]), nl.
+at17 :- freeze(X,true), write_term(X, [attributes(portray)]), nl.
+at18 :- put_attr(X,m,1), put_attr(X,a,2), write_term(X, [attributes(portray)]), nl.
+at19 :- put_attr(X,a,1), set_prolog_flag(write_attributes, portray), print(X), nl, write(X), nl, writeq(f(X)), nl,
+    write_canonical(X), nl, set_prolog_flag(write_attributes, ignore).
+at19d :- put_attr(X,a,1), write(X), nl.
+at20 :- put_attr(X,a,1), write_term(X, [attributes(portray), portray(true)]), nl.
+at21 :- put_attr(X,m2,1), write_term(X, [attributes(portray)]), nl.
+at22 :- put_attr(X,m3,1), write_term(X, [attributes(portray)]), nl.
+at23 :- freeze(X,format("hi~n")), freeze(X,true), write_term(f(X), [attributes(portray), quoted(true)]), nl.
+at24 :- put_attr(X,a,1), print(X), nl, print(f(X,Y)), nl.
+at25 :- put_attr(X,m4,1), write_term(X, [attributes(portray)]), nl.
+at26 :- put_attr(X,m5,1), write_term(X, [attributes(portray)]), nl, put_attr(Y,m5,1),
+    with_output_to(string(S), write_term(f(Y,Y), [attributes(portray)])), write(S), nl.
+at27 :- put_attr(X,m5,1), open_null_stream(N), write_term(N, X, [attributes(portray)]), close(N), write(done), nl.
+"""
+const _WC_ATTP_GOALS = [
+    "at15", "at16", "at17", "at18", "at19", "at19d", "at20", "at21", "at22", "at23", "at24",
+    "at25", "at26", "at27"
+]
+
+@testset "an attributed variable written with attributes(portray): '\$attvar':portray_attvar/1, as swipl writes it" begin
+    db = _wc_load(_WC_ATTP_PROGRAM)
+    ours = [_wc_norm(_wc_run(db, g)) for g in _WC_ATTP_GOALS]
+    @test !any(o -> occursin("NOTPORTED", o), ours)
+    @test !any(o -> occursin("existence_error(procedure", o), ours)
+    # the kernel's side alone (the text of swipl 10.1.20, pinned)
+    @test ours[1] == "_V1{a = ...}\n\n---\n"                                          # at15
+    @test ours[2] == "f(_V1{a = ..., b = ...},_V2)\nf(_V1{a = ..., b = ...},_V2)\n\n---\n"   # at16
+    @test ours[3] == "_V1{freeze(_V1, user:true)}\n\n---\n"                           # at17 (wr05)
+    @test ours[4] == "_V1{hooked(1), a = ...}\n\n---\n"                               # at18
+    @test ours[5] == "_V1{a = ...}\n_V1{a = ...}\nf(_V1{a = ...})\n_V1\n\n---\n"        # at19
+    @test ours[6] == "_V1\n\n---\n"                                                  # at19d
+    @test ours[7] == "_V1{a = ...}\n\n---\n"                                          # at20
+    @test ours[8] == "_V1{EX oops\n---\n"                                             # at21
+    @test ours[9] == "_V1{m3 = ...}\n\n---\n"                                         # at22
+    @test ours[10] ==
+        "f(_V1{freeze(_V1, '\$and'(user:format(\"hi~n\"),user:true))})\n\n---\n"   # at23
+    @test ours[11] == "_V1\nf(_V1,_V2)\n\n---\n"                                     # at24
+    @test ours[12] == "_V1{"^100 * "_V1EX resource_error(portray_nesting)\n---\n"       # at25
+    @test ours[13] == "_V1{x}\nf(_V2{x},_V2{x})\n\n---\n"                             # at26
+    @test ours[14] == "done\n\n---\n"                                                # at27: to a null stream; Scurout put back
+    if _R_SWIPL
+        theirs = [_wc_norm(t) for t in _wc_swipl(_WC_ATTP_PROGRAM, _WC_ATTP_GOALS)]
+        @test length(theirs) == length(_WC_ATTP_GOALS)
+        for (i, g) in enumerate(_WC_ATTP_GOALS)
+            o, s = ours[i], get(theirs, i, "—")
             @test o == s
             o == s || @info "the attributed variable: $g differs" ours = o swipl = s
         end
