@@ -45,3 +45,6 @@ After the src commit (items 1-3 of the plan; nothing run, no julia):
 - RISKS not checked (no julia): the generated inventory (tools/port_check.jl write_inventory) and any field-count test were not regenerated; the new UPSTREAM headers (pl-thread.h, pl-mutex.h) in pl-incl.jl / pl-thread.jl may need an inventory row; test_type_discipline.jl and warm.sh check were NOT run.
 - Open question for the audit: `thread_enabled` starts true (pl-init.c:1609) while the kernel's `threads` flag is false until TH1-C; nothing reads it yet.
 - Left: plan items 4-5 (test/threads/test_th1b_locks.jl, manifest entries, cost lines, tools/mutants/TH1B.py).
+
+## STATE after the stop (second note)
+The agent stopped at a pre-bash hook block (its own mistake: `grep -ln ... test/*/*.jl | head` was a search piped into head). Exact hook message: "BLOCKED: truncating a FILE-LIST enumeration — the count IS the answer here." Nothing was worked around. Items 4-5 (test file, manifest entries, cost lines, tools/mutants/TH1B.py) are NOT started; no file for them exists even in draft. The next agent starts at item 4; to learn how a test gets an engine whose PL_error works, read test/db/test_gd_template.jl (`LK.PL_local_data{_P}(gd)`, `_bare_local_data`) and one test that calls PL_error directly (name the file by its path, no pipe into head/tail).
