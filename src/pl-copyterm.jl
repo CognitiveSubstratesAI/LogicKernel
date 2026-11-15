@@ -447,8 +447,8 @@ function exitCyclicCopy_cells(ld::PL_local_data, flags::Int)::Nothing
 end
 
 # PORT: pl-copyterm.c copy_term as copy_term_cells
-# DIVERGES: on locations, the two-sided cell agenda (upstream's term_agendaLRD; no COPY_ABSTRACT, so
-# no depth); `to` is always a global position; a copy's cell holding VAR_MARK is an unbound cell
+# DIVERGES: on locations, the two-sided cell agenda with depth (`cell_agendaLRD`, upstream's term_agendaLRD);
+# `abstract` is upstream's `options->abstract` (`typemax(Int)`: no limit; `aleft`); `to` is always a global position; a copy's cell holding VAR_MARK is an unbound cell
 # with the side-vector bit (also under an attributed variable's forwarded word, without COPY_ATTRS).
 # `*to = makeRefG(from)` (COPY_MARKED, COPY_ABSTRACT) is `makeRefG(f)`: `f` is a global position there (the
 # copy of an unmarked variable is the original cell; the start of `copy_term/4` is a compound, never a variable).
@@ -456,13 +456,17 @@ end
 # `GLOBAL_OVERFLOW` when they pass the limit (since L1f f1b), as upstream's.
 "Copy the marked term at location `from` into the unbound global cell `to` (pl-copyterm.c `copy_term`): `BOOLEX_TRUE` or `GLOBAL_OVERFLOW`."
 function copy_term_cells(
-    ld::PL_local_data{T}, from::Int, to::Int, flags::Int
+    ld::PL_local_data{T}, from::Int, to::Int, flags::Int, abstract::Int
 )::boolex_t where {T}
     a = ld.cp_agenda
-    initCellAgendaLR!(a, 1, from, to, 0)
+    aleft = typemax(Int)                                    # size_t aleft = (size_t)-1
+    initCellAgendaLRD!(a, 1, from, to, 0)
     while true
-        found, f, t = nextCellAgendaLR!(a)
+        found, f, t = nextCellAgendaLRD!(a)
         found || break
+        if a.depth == 1                                     # if ( agenda.work.depth == 1 )
+            aleft = abstract                                #   aleft = options->abstract
+        end
         while true                                          # again:
             c = _cp_word(ld, f)
             if isRef(c)                                     # TAG_REFERENCE
@@ -494,7 +498,7 @@ function copy_term_cells(
                     if (flags & COPY_MARKED) == 0 || _cp_must_copy(c)   # isoff(COPY_MARKED) || must_copy(*from)
                         attr = alloc_attvar(ld)
                         if attr == 0                        # rc = GLOBAL_OVERFLOW; goto out
-                            clearCellAgendaLR!(a)
+                            clearCellAgendaLRD!(a)
                             return GLOBAL_OVERFLOW
                         end
                         push!(ld.cp_lstack, p)              # TrailCyclic(p)
@@ -525,6 +529,12 @@ function copy_term_cells(
             elseif _is_gcompound(c)                         # TAG_COMPOUND
                 ff = valPtr(c)
                 fd = ld.gstack[ff]
+                if aleft == 0                               # abstracted: setVar(*to); continue
+                    ld.gstack[t] = word(0)
+                    break
+                elseif aleft != typemax(Int)
+                    aleft -= 1
+                end
                 if isRef(fd)                                # copied already (forwarded)
                     ld.gstack[t] = consPtr(unRef(fd), TAG_COMPOUND | STG_GLOBAL)
                 elseif (fd & BOTH_MASK) == FIRST_MASK       # is_ground: shared
@@ -533,7 +543,7 @@ function copy_term_cells(
                     arity = arityFunctor(ld.functors, fd)
                     ft = allocGlobalNoShift(ld, arity + 1)
                     if ft == 0                              # rc = GLOBAL_OVERFLOW; goto out
-                        clearCellAgendaLR!(a)
+                        clearCellAgendaLRD!(a)
                         return GLOBAL_OVERFLOW
                     end
                     ld.gstack[ft] = fd & ~BOTH_MASK
@@ -542,7 +552,7 @@ function copy_term_cells(
                         push!(ld.cp_lstack, ff)             # TrailCyclic(&ff->definition)
                     end
                     ld.gstack[t] = consPtr(ft, TAG_COMPOUND | STG_GLOBAL)
-                    pushWorkCellAgendaLR!(a, arity, ff, ft, 1)
+                    pushWorkCellAgendaLRD!(a, arity, ff, ft, 1)
                 end
             else                                            # an atomic word (an indirect shared)
                 ld.gstack[t] = c
@@ -550,7 +560,7 @@ function copy_term_cells(
             break
         end
     end
-    clearCellAgendaLR!(a)
+    clearCellAgendaLRD!(a)
     return BOOLEX_TRUE
 end
 
@@ -584,7 +594,7 @@ function do_copy_term_cells(
             return rc
         end
     end
-    rc2 = copy_term_cells(ld, src, to, fl)                  # initCyclicCopy: nothing to do
+    rc2 = copy_term_cells(ld, src, to, fl, options.abstract)   # initCyclicCopy: nothing to do
     exitCyclicCopy_cells(ld, fl)
     cp_unmark_cells(ld, src, fl)
     return Int(rc2)

@@ -273,7 +273,7 @@ _manifest_per_type(T) = (
     (LK.mark_for_duplicate_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.cp_unmark_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.exitCyclicCopy_cells, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int}, false),
     (LK.do_copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
     # =@= on cells (L1d step 8a): the side vector, the node buffer and the agenda grow
     (LK._vt_id, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -5528,6 +5528,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.vt_next_arg!, Tuple{LK.vt_pairs}, false),
     (LK._vt_loc, Tuple{Int, Int}, true),
     (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
+    (LK.initCellAgendaLRD!, Tuple{LK.cell_agendaLRD, Int, Int, Int, Int}, true),       # PRIMS-B2: copy_term's depth agenda
+    (LK.clearCellAgendaLRD!, Tuple{LK.cell_agendaLRD}, true),
+    (LK.nextCellAgendaLRD!, Tuple{LK.cell_agendaLRD}, true),
+    (LK.pushWorkCellAgendaLRD!, Tuple{LK.cell_agendaLRD, Int, Int, Int, Int}, false),
     # the one-sided cell agenda of the walks (L1d step 5): the push may grow its stack
     (LK.initCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, true),
     # L1f f1a — reading a record's code (src/pl-rec.jl)
