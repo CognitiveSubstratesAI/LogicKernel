@@ -13,11 +13,10 @@
 #
 # DIVERGES (D9): the default C locale only. `~:d` and `~:f` take the C locale (`.` as decimal point, no
 # grouping) because a stream here has no locale (`fd->locale`); `~D` and `~I` build their own, as upstream does.
-# NOT PORTED: the user-defined directives of `format_predicate/2` (upstream's `GD->format.predicates` table is
-# empty unless a program sets it: `format_predicate/2` is refused by name, `current_format_predicate/2` finds
-# no entry, and `do_format` goes straight to the built-in directives, which is upstream's behaviour with an
-# empty table). The arithmetic and the stream lock calls (`AR_BEGIN`, `Slock`) have no counterpart: no
-# arithmetic stack, no threads.
+# The user-defined directives: `format_predicate/2` fills `gd.format_predicates` (upstream's `GD->format.predicates`, a hash table;
+# here a vector in insertion order), `current_format_predicate/2` reads it, and `do_format` looks a directive up in it before
+# the built-in ones. The arithmetic and the stream lock calls (`AR_BEGIN`, `Slock`) are left out: a single
+# thread, a plain arithmetic path.
 
 # PORT: pl-fmt.c MAXRUBBER
 "The most fill points (`~t`) one column section holds (pl-fmt.c)."
@@ -194,27 +193,87 @@ end
 
 # PORT: pl-fmt.c format_predicate as pl_format_predicate2_va
 # (PRED_IMPL("format_predicate", 2, format_predicate, META))
-# DIVERGES (D9): refused by name. The table `GD->format.predicates` would hold the predicate of a directive
-# character; no program the R2 steps run sets one, and `do_format` ignores the table (see the file header).
-"`format_predicate(+Char, :Head)`: refused by name (D9); the call is left to the step that needs user directives."
+# DIVERGES: the table `GD->format.predicates` is `gd.format_predicates`, a vector of (character, procedure) pairs in insertion
+# order, where upstream's `newHTableWP(8)` is a hash table (`updateHTableWP` replaces the value of a character the table holds,
+# as the loop here does); `PL_get_char_ex(A1, &c, false)` is `PL_get_char` (it raises the error); `get_procedure(A2, &proc, 0,
+# GP_CREATE)` is `get_procedure_create`, `h` a fresh term reference; `PL_predicate_info` is the definition's arity.
+"`format_predicate(+Char, :Head)`: the procedure of `Head` becomes the directive `~Char` of format/2,3 (pl-fmt.c)."
 function pl_format_predicate2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :format_predicate), "format_predicate/2 (GD->format.predicates)",
-            "LB5"
+    A1, A2 = PL__t0, PL__t0 + 1
+    gd = _query_gd(ld)
+
+    c = PL_get_char(ld, A1)
+    c === nothing && return FFALSE
+    proc = get_procedure_create(gd, ld, A2, PL_new_term_ref(ld))
+    proc === nothing && return FFALSE
+
+    arity = proc.definition.arity
+    if arity == 0
+        PL_error(
+            ld, "", 0, "arity must be > 0", ERR_DOMAIN, mk_sym(T, :format_predicate), A2
         )
-    )
+        return FFALSE
+    end
+
+    tbl = gd.format_predicates                          # if ( !format_predicates ) newHTableWP(8): the vector is always there
+    i = 1
+    while i <= length(tbl) && tbl[i][1] != c
+        i += 1
+    end
+    if i <= length(tbl)
+        tbl[i] = (c, proc)                              # updateHTableWP(format_predicates, c, proc)
+    else
+        push!(tbl, (c, proc))
+    end
+
+    return FTRUE
 end
 
 # PORT: pl-fmt.c current_format_predicate as pl_current_format_predicate2_va
 # (PRED_IMPL("current_format_predicate", 2, current_format_predicate, NDET|META))
-# DIVERGES (D9): the table is empty, so the first call fails (upstream's `if ( !format_predicates ) fail`).
-"`current_format_predicate(?Char, ?Head)`: no user directive is defined (D9), so it fails."
+# DIVERGES: the answers come in the table's insertion order (upstream's hash order) and the redo context is the index of the next
+# entry (`PL_retry`, an integer: no state to free, so `FRG_CUTTED` has nothing to do). The character answered is computed as
+# upstream computes it, `(int)tv` of the entry's value: the low 32 bits of the predicate's identity (an address upstream, the
+# procedure's `objectid` here). The number differs from run to run, and a bound `Char` fails (rows t19-t21 of
+# test_format_predicate_swipl.pl: swipl 10.1.20 answers `no` to each).
+"`current_format_predicate(?Char, :Head)`: the user directives of format/2,3, one per answer (pl-fmt.c)."
 function pl_current_format_predicate2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    gd = _query_gd(ld)
+    tbl = gd.format_predicates
+
+    ctl = PL_foreign_control(PL__ctx)
+    if ctl == FRG_FIRST_CALL
+        isempty(tbl) && return FFALSE                   # if ( !format_predicates ) fail
+        i = 1                                           # newTableEnumWP(format_predicates)
+    elseif ctl == FRG_REDO
+        i = PL_foreign_context(PL__ctx)                 # e = CTX_PTR
+    else                                                # FRG_CUTTED
+        return FTRUE
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid == 0
+        return FFALSE
+    end
+
+    while i <= length(tbl)                              # advanceTableEnum(e, &tk, &tv)
+        proc = tbl[i][2]
+        i += 1
+        c = Int(reinterpret(Int32, UInt32(objectid(proc) & 0xffffffff)))    # (int)tv
+        if PL_unify_integer(ld, A1, c) &&
+            unify_definition(gd, ld, MODULE_user(gd), A2, proc.definition, 0, 0)  # PL_unify_predicate(descr, pred, 0)
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry(i)                          # ForeignRedoPtr(e)
+        end
+        PL_rewind_foreign_frame(ld, fid)
+    end
+
+    PL_close_foreign_frame(ld, fid)
     return FFALSE
 end
 
@@ -406,8 +465,8 @@ end
     argc > 0 || (PL_format_error(ld, "not enough arguments"); false)
 
 # PORT: pl-fmt.c do_format
-# DIVERGES: the format text is a vector of code points (`_text_code_points`); the user-defined directive lookup
-# of `format_predicates` is left out (empty table, D9); `~@` needs `callProlog`'s `ex` argument (O1B,
+# DIVERGES: the format text is a vector of code points (`_text_code_points`); the lookup of a user-defined directive is a
+# loop over `gd.format_predicates`, whose directive and the built-in chain below are one chain (upstream's `else { switch }`); `~@` needs `callProlog`'s `ex` argument (O1B,
 # src/pl-pro.jl: `ex::Ref{Int}` for upstream's `term_t *ex`); `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
 """
     do_format(ld, fd, fmt, argc, argv, m) -> Bool
@@ -489,9 +548,38 @@ function do_format(
                 c = get_chr_from_text(fmt, here)
             end
 
-            # NOT PORTED (D9): the check for a user defined format (`format_predicates`), the table is empty.
+            # Check for user defined format
+            uproc = nothing
+            for (uc, up) in gd.format_predicates                # lookupHTableWP(format_predicates, c)
+                if uc == c
+                    uproc = up
+                    break
+                end
+            end
+            if uproc !== nothing
+                arity = uproc.definition.arity                  # PL_predicate_info(proc, NULL, &arity, NULL)
+                av = PL_new_term_refs(ld, arity)
+                if arg == FMT_DEFAULT
+                    PL_put_atom(ld, av, mk_sym(T, :default))
+                else
+                    PL_put_integer(ld, av, arg)
+                end
 
-            if c == Int('a')                    # atomic
+                for i in 1:(arity - 1)
+                    _fmt_need_arg(ld, argc) || return false
+                    PL_put_term(ld, av + i, argv)
+                    argc -= 1                                   # SHIFT
+                    argv += 1
+                end
+
+                sstate = prepare_sub_format(ld, state, fd)
+                rc = PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, uproc, av)
+                rc = end_sub_format(ld, sstate, rc)
+
+                rc || return false
+
+                here += 1
+            elseif c == Int('a')                # atomic
                 _fmt_need_arg(ld, argc) || return false
                 txt = PL_get_text(ld, argv, CVT_ATOM | CVT_STRING)
                 txt === nothing && return PL_format_arg_error(ld, "a", argv)

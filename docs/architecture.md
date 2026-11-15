@@ -6601,8 +6601,7 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
   `toldString(ld)::Bool` (:2642), `redir_context` with its `.stream`, `setupOutputRedirect(ld, to, ctx, redir)::Bool` (:1708, `to == 0` is the current output),
   `closeOutputRedirect(ld, ctx)::Bool` (:1774), `discardOutputRedirect(ld, ctx)::Nothing` (:1826), and the six-argument `callProlog` (wip/o1b 3cb3a13) that `~@` calls.
   The merge needs O1B's commits first.
-- **Refused by name:** `format_predicate/2` raises `NotPortedError` (step LB5); the table `format_predicates` stays empty, so `current_format_predicate/2` fails and `do_format`
-  never looks up a user directive. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
+- **User directives (W5b):** `format_predicate/2` fills `gd.format_predicates` (a vector of (character, procedure) pairs in insertion order; upstream's `GD->format.predicates` is a hash table), `current_format_predicate/2` answers its entries (redo context = the next index) and `do_format` looks a directive up there before the built-in ones. The first argument of `current_format_predicate/2` is upstream's `(int)tv` of the entry's value, here the low 32 bits of the procedure's `objectid`. Rows: test/core_lang/test_format_predicate_swipl.{pl,jl}. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
 - **DIVERGES, kept (the audit decides the behaviour-changing ones; O1A decided none):**
   `~:d`, `~:D`, `~:f` use the C locale: the stream has no locale field (D9), swipl groups the digits (`~:f` of 10**10 is `10,000,000,000.000000` there); the K rows pin the kernel's answer
   with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` is refused in the kernel (handoff flag b). a bignum `formatInteger` with
