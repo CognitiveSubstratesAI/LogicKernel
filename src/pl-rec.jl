@@ -96,7 +96,8 @@ end
 # last with its 8th bit set.
 "Add the size `val` (a variable number, an offset, an index) to the code (pl-rec.c)."
 function addSizeInt(info::compile_info, val::Int)::Nothing
-    if (val & ~0x7f) == 0
+    # upstream's `!(val & ~0x7f)` on a size_t; `~0x7f` of a bare literal is the UInt8 0x80 in Julia, so the mask is an Int: val < 128
+    if (val & ~Int(0x7f)) == 0
         push!(info.code, val % UInt8)
     else
         zips = (8 * 8 + 7 - 1) ÷ 7 - 1                     # ((sizeof(val))*8+7-1)/7 - 1
