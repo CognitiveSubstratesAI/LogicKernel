@@ -1519,41 +1519,77 @@ function get_bool_or_int_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int
     return b === nothing ? nothing : Int(b)
 end
 
+# PORT: pl-proc.c get_module as get_module_how
+# DIVERGES: the database and the local data are arguments; `mname` is the qualifier's atom WORD (0: none, as
+# `stripModuleName_cells` gives it); the module is returned, `contextModule(environment_frame)` an index into
+# `gd`'s table. `lookupModule` (a `GP_CREATE`/`GP_DEFINE` qualifier) creates the module, `isCurrentModule` (the
+# others) never does.
+"The module `get_procedure` looks in: the qualifier `mname` names (created for `GP_CREATE`/`GP_DEFINE`), else the context module (pl-proc.c)."
+function get_module_how(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, mname::word, how::Int
+)::module_t{T} where {T}
+    if mname != 0
+        hm = how & GP_HOW_MASK
+        if hm == GP_CREATE || hm == GP_DEFINE
+            return lookupModule(gd, _atom_value(ld, mname))
+        elseif hm == GP_FIND || hm == GP_FINDHERE || hm == GP_RESOLVE
+            m = isCurrentModule(gd.modules, _atom_value(ld, mname))
+            return m === nothing ? MODULE_user(gd) : m
+        end
+    end
+    if ld.environment_frame != 0                        # environment_frame ? contextModule(…) : MODULE_user
+        return gd.modules[contextModule(gd, ld, ld.environment_frame)]
+    end
+    return MODULE_user(gd)
+end
+
 # PORT: pl-proc.c get_procedure
-# DIVERGES: the `GP_DEFINE` path only (the ones `'$set_predicate_attribute'/3` and `meta_predicate/1`
-# ask for): the term stripped of its module, its functor from a head or a `Name/Arity` (`get_functor`),
-# and `lookupProcedureToDefine` in that module (which exists: no module is created). The procedure is
-# returned (`nothing`: false), where upstream's writes it through `proc`; `h` (upstream's `term_t h`,
-# since MOD4) receives the stripped term — 0: a reference of its own.
-"The procedure the term `descr` (`M:Head` or `M:Name/Arity`) names, to define; the stripped term into `h` (pl-proc.c)."
+# DIVERGES: the procedure is returned (`nothing`: false, with the error raised where upstream raises one), where upstream
+# writes it through `proc`; the functor is its parts (`get_head_functor`, `get_functor`: `(name, arity)`); `h` (upstream's
+# `term_t h`, since MOD4; 0: none) receives the plain term. The split `get_procedure_*` functions below are kept for their
+# callers (they take the context module, or no `h`, as arguments); this is every mode of the C function: `GP_FIND`,
+# `GP_FINDHERE`, `GP_CREATE`, `GP_DEFINE`, `GP_RESOLVE`, with or without `GP_NAMEARITY`, `GP_TYPE_QUIET`, `GP_EXISTENCE_ERROR`.
+"The procedure the term `descr` (`M:Head` or, with `GP_NAMEARITY`, `M:Name/Arity`) names, found or made as `how` says; the plain term into `h` (pl-proc.c)."
 function get_procedure(
     gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int, h::term_t=0
 )::Union{Nothing, Procedure{T}} where {T}
-    (how & GP_HOW_MASK) == GP_DEFINE || throw(
-        NotPortedError{T}(
-            mk_sym(T, :get_procedure), "get_procedure: other than GP_DEFINE", "V9"
+    if (how & GP_NAMEARITY) != 0
+        name, arity, mi = get_functor(
+            gd, ld, descr, 0, h, GF_PROCEDURE | (how & GP_TYPE_QUIET)
         )
-    )
-    head = h == 0 ? PL_new_term_ref(ld) : h
-    ok, m = PL_strip_module(gd, ld, descr, 0, head)
-    ok || return nothing
-    if PL_is_functor(ld, head, mk_sym(T, :/), 2)        # PL_is_functor(head, FUNCTOR_divide2)
-        a = PL_new_term_ref(ld)
-        _PL_get_arg(ld, 1, head, a)
-        name = PL_get_atom_ex(ld, a)                    # PL_get_atom_ex(a, &name)
-        name === nothing && return nothing
-        _PL_get_arg(ld, 2, head, a)
-        arity = PL_get_integer_ex(ld, a)                # get_arity(a, …): PL_get_integer_ex
-        arity === nothing && return nothing
-        if arity < 0
-            PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
-            return nothing
-        end
+        arity < 0 && return nothing
+        m = gd.modules[mi]
     else
-        name, arity = get_head_functor(ld, head, 0)
+        head = PL_new_term_ref(ld)
+        ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))    # stripModuleName(valTermRef(descr), &mname)
+        ok || return nothing
+        _slot_link_loc!(ld, head + 1, loc)                          # *valTermRef(head) = linkValNoG(p)
+        m = get_module_how(gd, ld, mname, how)
+        h != 0 && PL_put_term(ld, h, head)                          # if ( h ) PL_put_term(h, head)
+        name, arity = get_head_functor(ld, head, how)
         arity < 0 && return nothing
     end
-    return lookupProcedureToDefine(gd, ld, name, arity, gd.modules[m])
+
+    hm = how & GP_HOW_MASK
+    if hm == GP_CREATE
+        return lookupBodyProcedure(gd, name, arity, m)
+    elseif hm == GP_DEFINE
+        return lookupProcedureToDefine(gd, ld, name, arity, m)      # nothing: the permission error is raised
+    elseif hm == GP_RESOLVE
+        return resolveProcedure(gd, name, arity, m)                 # creates an undefined one: no notfound
+    end
+    p = if hm == GP_FINDHERE
+        isCurrentProcedure(sym_key(name), arity, m)
+    elseif hm == GP_FIND
+        visibleProcedure(gd, name, arity, m)
+    else
+        error("get_procedure: unknown mode $hm (assert(0) upstream)")
+    end
+    p !== nothing && return p
+    if (how & GP_EXISTENCE_ERROR) != 0                              # notfound:
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :procedure), descr)
+    end
+    return nothing
 end
 
 # PORT: pl-proc.c get_procedure as get_procedure_findhere
@@ -1940,7 +1976,7 @@ end
 
 # PORT: pl-proc.c get_procedure as get_procedure_create
 # (the `GP_CREATE` case, as retractall/1 asks it; the `GP_DEFINE` case above is the other port)
-# DIVERGES: `GP_CREATE` only, as a function of its own (`get_procedure` above refuses it); the term stripped of its
+# DIVERGES: `GP_CREATE` only, as a function of its own (the generic `get_procedure` above does the same with `GP_CREATE`); the term stripped of its
 # module (`PL_strip_module`, which puts the plain head in `h`), its functor from the head (`get_head_functor`: the
 # `callable` type error) and `lookupBodyProcedure` in that module. A qualifier naming no module creates it
 # (`PL_strip_module` -> `stripModule_cells`, since MOD1).
@@ -1960,7 +1996,7 @@ end
 # PORT: pl-proc.c get_procedure as get_procedure_find
 # (the `GP_FIND` case, as clause/2 asks it: `get_procedure(head, &proc, 0, GP_FIND)`)
 # DIVERGES: `GP_FIND` without `GP_NAMEARITY`, no `h` and no `GP_EXISTENCE_ERROR`, as a function of its own
-# (`get_procedure` above refuses it). The term is stripped of its qualifiers (`stripModuleName_cells`) and
+# (the generic `get_procedure` above does the same). The term is stripped of its qualifiers (`stripModuleName_cells`) and
 # `get_module`'s `GP_FIND` case is inlined: the module a qualifier names if it is current (`isCurrentModule`:
 # none is created), else `user`; no qualifier, the context module (since MOD2; pl-proc.c:727-728). Not found:
 # `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`.
@@ -2015,8 +2051,8 @@ end
 
 # PORT: pl-proc.c get_functor as get_functor_procedure
 # (the body of `get_functor` after the module is stripped; `how` as upstream's: `GF_PROCEDURE`, `GF_NAMEARITY`)
-# DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`;
-# `GP_TYPE_QUIET` is not passed by any caller here (the type error is always raised).
+# DIVERGES: returns `(name, arity)`, arity -1 with the error raised where upstream returns false and writes `fdef`; no `h`.
+# `GP_TYPE_QUIET` in `how` (since W1-SRC2: `get_procedure` passes it on) raises no `type_error(predicate_indicator, Head)`.
 "The `(name, arity)` of `Name/Arity`, `Name//Arity` (+2) or, without `GF_NAMEARITY`, a head in `head`, else arity -1 with an error raised (pl-proc.c)."
 function get_functor_procedure(
     ld::PL_local_data{T}, head::term_t, how::Int=GF_PROCEDURE
@@ -2047,7 +2083,8 @@ function get_functor_procedure(
     end
     fd = (how & GF_NAMEARITY) == 0 ? PL_get_functor(ld, head) : nothing   # !(how&GF_NAMEARITY) && PL_get_functor(head, fdef)
     if fd === nothing
-        PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)
+        (how & GP_TYPE_QUIET) == 0 &&           # if ( how & GP_TYPE_QUIET ) return false
+            PL_error(ld, ERR_TYPE, mk_sym(T, :predicate_indicator), head)
         return (mk_nil(T), -1)
     end
     return (fd[1], fd[2])
@@ -2056,7 +2093,7 @@ end
 # PORT: pl-proc.c get_functor
 # DIVERGES: returns `(name, arity, m)` - arity -1 with the error raised for upstream's false; the module is an
 # index into `gd`'s table, passed in (0 for upstream's NULL: the context module, `PL_strip_module`'s rule) and
-# returned; `h` (0: none) receives the plain term as upstream's. `GP_TYPE_QUIET` is not passed by any caller here.
+# returned; `h` (0: none) receives the plain term as upstream's. `GP_TYPE_QUIET` in `how` is `get_functor_procedure`'s.
 "The `(name, arity, m)` of the `M:Name/Arity` (or head) in `descr`; `GP_NOT_QUALIFIED` leaves `m` and the term as given (pl-proc.c)."
 function get_functor(
     gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, m::Int, h::term_t, how::Int
