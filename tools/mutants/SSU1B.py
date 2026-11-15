@@ -16,6 +16,7 @@
 #   TD (test_det_swipl.jl: `$`/1 and det/1 programs through the frame flags); MP (test_meta_predicate_swipl.jl: chainPredicateSupervisor's meta branch shares the emission code);
 #   WR (test_wrap_swipl.jl: S_WRAP, skipWrapperPrefix on wrapped supervisors); SS (test_ssu_swipl.jl) and SC (test_ssu_compile_swipl.jl): SSU predicates take the S_SSU_DET branch of the
 #   same emission; AS (test_assert_swipl.jl: the setters reached through assert and the attribute entry points). NOT listed: test_static_analysis.jl (the CI's static job).
+# S9, S10 (fix_det of pl-srcfile.jl, pl-srcfile.c fix_det) are killed by RB = test_reload_blocks_swipl.jl testset "r19b" (written edit-only at W2b-SSU1B; the white-box rows call fix_det directly: a reload cannot be run end to end before LB6b).
 # EQUIVALENT mutants: none claimed. Every `old` was counted EXACTLY once in its file at wip/ssu1b by python3 -I ~/code/lk-t27-scratch/oldscan.py SSU1B (no Julia ran). RE-FIT any `old`
 # that `tools/warm.sh fmt` rewraps.
 DS = "test/core_lang/test_det_ssu_swipl.jl"
@@ -26,11 +27,13 @@ WR = "test/core_lang/test_wrap_swipl.jl"
 SS = "test/core_lang/test_ssu_swipl.jl"
 SC = "test/compile/test_ssu_compile_swipl.jl"
 AS = "test/db/test_assert_swipl.jl"
+RB = "test/db/test_reload_blocks_swipl.jl"
 TARGETS = [DS, TM, TD, MP, WR, SS, SC, AS]
 SUP = "src/pl-supervisor.jl"
 WAM = "src/pl-wam.jl"
 PROC = "src/pl-proc.jl"
 WRAP = "src/pl-wrap.jl"
+SRCFILE = "src/pl-srcfile.jl"
 MUTANTS = [
     # ── pl-supervisor.jl chainPredicateSupervisor (pl-supervisor.c:383-392) ──
     dict(id="SSU1B-S1 chainPredicateSupervisor does not emit S_DET for a P_DET predicate (KILL DS 'supervisor codes': `det.codes[1] == S_DET`, `both.codes[1:2] == [S_SSU_DET, S_DET]`, the length row; the `tdt` row of 'skipWrapperPrefix')",
@@ -68,4 +71,13 @@ MUTANTS = [
          file=WRAP, targets=TARGETS,
          old="        elseif op == S_SSU_DET || op == S_DET\n",
          new="        elseif op == S_SSU_DET\n"),
+    # ── pl-srcfile.jl fix_det (pl-srcfile.c fix_det): the reload drops a det declaration the file no longer makes ──
+    dict(id="SSU1B-S9 fix_det keeps the supervisor of a predicate whose det declaration is gone (KILL RB 'r19b': `def2.codes === def2.code_data.virgin` after fix_det, `def2.codes[1] != S_DET` after the next install)",
+         file=SRCFILE, targets=[RB],
+         old="        def.flags &= ~P_DET\n        freeCodesDefinition!(gd, def, true)\n    end\n    return nothing\nend\n\n# PORT: pl-srcfile.c fix_ssu",
+         new="        def.flags &= ~P_DET\n    end\n    return nothing\nend\n\n# PORT: pl-srcfile.c fix_ssu"),
+    dict(id="SSU1B-S10 fix_det drops P_DET although the reload declared det again (KILL RB 'r19b': `def.codes === installed` and P_DET kept after fix_det on the reload whose record carries P_DET; 'r18-r19' d2)",
+         file=SRCFILE, targets=[RB],
+         old="    if (def.flags & P_DET) != 0 && (r.flags & P_DET) == 0\n",
+         new="    if (def.flags & P_DET) != 0\n"),
 ]
