@@ -1,3 +1,29 @@
+# DEC3 STATE (forced hand-back at the 150k cap; no julia run, nothing formatted or compiled, test_type_discipline.jl and warm.sh check NOT run)
+- Predicates: `$predefine_foreign/1` SKIPPED (already in src/pl-comp.jl, COMPEXT, rows cx14-cx21). WRITTEN: `$xr_member/2` (pl_xr_member2_va, enumerates and tests,
+  redo state `(offset<<3)+operand`), `$break_pc/3` (pl_break_pc3_va, complete: the kernel's code never holds D_BREAK so fetchop is decode), `$break_at/3`
+  (pl_break_at3_va: argument checks and error terms as upstream; the not-breakable `permission_error(set, break, break(Ref,Off))` and the clear
+  `existence_error(break, break(Ref,Off))` written out; SETTING on a VIF_BREAK instruction throws NotPortedError, owner DBG1). Helpers `wouldBindToDefinition`,
+  `_xr_operand_functor`, `_xr_operand_data`, `_break_culprit`; `get_procedure_findhere` (src/pl-proc.jl) takes `how::Int=0` (GP_TYPE_QUIET). Registered after `$fetch_vm`
+  in upstream's order (break_pc, break_at, xr_member). Owner row in docs/r2_owners.tsv; manifest entries added.
+- COMMITTED: 1af70d49 `UPSTREAM: pl-comp.c $xr_member $break_pc $break_at (swipl-devel 18168e62)` (src, manifest, owner row).
+- ROWS: cx116-cx171 (56 rows: xr_member cx116-cx146, break_pc cx147-cx158, break_at cx159-cx171) appended to test/core_lang/test_compext_swipl.jl by
+  scratchpad/dec3/addrows.py; program gained `vr9(X) :- m1:vc(X).` and `vr10(X) :- X == 5, X \== 6.`; gen_rows.py asserts 171 and ran: swipl 10.1.20, TWO runs
+  byte-identical (cmp), `_CX_PINNED` regenerated (172 lines). These are committed by the `TEST: DEC3 rows` commit if it exists in `git log`, else they sit in the worktree.
+- NOT DONE (the cap hit before this edit ran): (a) the header/testset-name text of test_compext_swipl.jl still says cx01-cx115 and names only the old predicates;
+  (b) the non-vacuous assertions for cx116-cx171 (read back from cx_rows.out in the scratchpad compext dir: cx116 `[a]`; cx117/119/120 nil; cx118 `f(V0,V1)`;
+  cx125 bar x3 then vc(V0); cx126 [5,6]; cx127-cx142 yes for 127,129,131,134,136,138,139,141 else no; cx143 vc(V0); cx144 type_error db_reference; cx145
+  instantiation_error; cx146/cx157/cx165 no; cx148 three `S-E` pairs 0-1,6-8,8-9; cx154 0-1; cx155 nil; cx158 6-7; cx159/167 domain_error program_counter i100000;
+  cx160 domain_error not_less_than_zero; cx161 type_error integer; cx162/163 type_error bool (the Boolean is read before the offset); cx164 type_error
+  db_reference; cx166/168/169/171 got(0); cx170 instantiation_error); (c) the LK-ONLY testset: `'$break_at'(Ref, S, true)` with S the first start from
+  `'$break_pc'` throws NotPortedError (step "DBG1", what contains "break_at/3"), and an offset inside an instruction's operands (offset 1 of `vf1`) is the
+  permission_error (DIVERGES line); (d) the MUTANTS (tools/mutants/COMPEXT.py: xr_member, break_pc, break_at, wouldBindToDefinition, the two operand helpers, aimed by
+  the cx116-cx171 rows; TARGETS = the file's TS; `old` exactly once, python3 -I runpy check; no `equivalent=`); (e) the `TEST: DEC3 mutants` commit.
+- To check on the kernel at the gate (likely mismatches, swipl facts): cx121 `vr1(X) :- vc(X)` enumerates `vc(_)` TWICE (two LPROC operands); cx122 `vr6` gives
+  `m1, m1:vc(_), vc(_), vc(_)`; cx137 an unqualified `vc(_)` is NOT found (the context of the non-transparent predicate is `system`); cx139 `user:vc(_)` IS reached from
+  `m1:vc` through the super module; cx148 break_pc of `vr1` = 0-1, 6-8, 8-9 (the kernel's VIF_BREAK flags and offsets may differ); cx147 `vf1` has no break-point.
+- Left for the dispatcher after (a)-(e): `warm.sh fmt`, `warm.sh check`, the three-type run of test_compext_swipl.jl, `tools/pkgtest_way.sh test/core_lang/test_compext_swipl.jl`,
+  test_type_discipline.jl, then push `mutants/COMP-EXT` and `gate/comp-ext` at one SHA. No daemon was used; lanes.conf untouched.
+
 # DEC2 STATE (rows and mutants WRITTEN, committed; no julia run, nothing formatted or compiled, test_type_discipline.jl and warm.sh check NOT run)
 - Rows: test/core_lang/test_compext_swipl.jl cx65-cx115 (51 `$fetch_vm/4` rows; 115 cases, `_CX_PINNED` 116 lines), commits f5ccdb27 (cx65-cx107) and 05937b73 (cx108-cx115).
   `_CX_PINNED` from swipl 10.1.20 (explicit pin binary, each run in a capped scope; gen_rows.py now caps the `--version` call too), TWO runs byte-identical.
