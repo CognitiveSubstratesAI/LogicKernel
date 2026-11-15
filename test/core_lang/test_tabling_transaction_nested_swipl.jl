@@ -400,7 +400,7 @@ function _tn_abolish_obs()::Vector{String}
     f = joinpath(mktempdir(), "tabling_transaction_nested_wb.pl")
     write(
         f,
-        _TN_COMMON * _TN_MONO *
+        _TN_COMMON * _TN_MONO.program *
         "tn_run(G) :- call(G).\ntn_setup :- assertz(d(1)), assertz(d(2)), forall(p(_), true).\n" *
         "tn_destroy_p :- tn_destroy(p(_)).\n"
     )
