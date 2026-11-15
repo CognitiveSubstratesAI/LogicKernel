@@ -820,19 +820,19 @@ const _T6_GROUPS = [
 
 # Rows whose kernel side cannot answer yet: `GROUP/case => owner`. Each is `@test_broken` below, the same comparison as its neighbours.
 const _T6_BROKEN = Dict{String, String}(
-    # UPDATED (TB6-HAND): the owner builtin of every entry below is NOW ON this branch (wip/tb6p2), so each row is EXPECTED TO PASS. The entries stay
-    # `@test_broken` until the kernel run shows the unexpected passes (an unexpected pass is an error by design: the run decides); the dispatcher then
-    # flips the rows to `@test` and deletes the entries. The old owner text follows in each entry after `was:`.
-    # TABM-DIAG2: the lane-2 run of 2026-11-14 (tb6rows, after b222a5a9) passed SINGLE s02-s04, ABOLISH a02-a03 and EXPAND x02-x05 unexpectedly: their entries are
-    # deleted (the rows are `@test` now).
-    # ABOLISH a04-a08: TAB-A04 DIAGNOSIS: the cases run in one load, each on the state the previous left; a04 and a05 each delete a table whose
-    # dependent dynamic pseudo table `ad` becomes an orphan, and `delete_dynamic_table` (src/pl-tabling.jl) reached `reset_answer_table`'s IDG
-    # refusal (the orphan has its IDG node); the refused case left `ad` and its node, which a06-a08 counted. The fix is ENG1
-    # (`reset_answer_table_idg` before the `trie_delete`, as upstream pl-tabling.c:2654-2662, :2679-2689, :4545-4551). The lane-2 run of
-    # wip/tab-a04 (2026-11-14, reference) passed a04-a08 UNEXPECTEDLY (5 errors = 5 unexpected passes): their entries are deleted, the rows are `@test`.
-    # DYNERR v01/v02: owner TRIE-CHARGE charges trie memory to `table_space` as upstream (pl-trie.c:238, :772, :1087, :1105, :1113 charge;
-    # :257, :269, :729, :1200, :1268, :1389 release). The lane-2 run of wip/tab1land cd4da0e0 (2026-11-15, three term types) passed v01 and v02
-    # UNEXPECTEDLY (6 errors = 6 unexpected passes) with trie-charge merged: their entries are deleted, the rows are `@test`.
+# UPDATED (TB6-HAND): the owner builtin of every entry below is NOW ON this branch (wip/tb6p2), so each row is EXPECTED TO PASS. The entries stay
+# `@test_broken` until the kernel run shows the unexpected passes (an unexpected pass is an error by design: the run decides); the dispatcher then
+# flips the rows to `@test` and deletes the entries. The old owner text follows in each entry after `was:`.
+# TABM-DIAG2: the lane-2 run of 2026-11-14 (tb6rows, after b222a5a9) passed SINGLE s02-s04, ABOLISH a02-a03 and EXPAND x02-x05 unexpectedly: their entries are
+# deleted (the rows are `@test` now).
+# ABOLISH a04-a08: TAB-A04 DIAGNOSIS: the cases run in one load, each on the state the previous left; a04 and a05 each delete a table whose
+# dependent dynamic pseudo table `ad` becomes an orphan, and `delete_dynamic_table` (src/pl-tabling.jl) reached `reset_answer_table`'s IDG
+# refusal (the orphan has its IDG node); the refused case left `ad` and its node, which a06-a08 counted. The fix is ENG1
+# (`reset_answer_table_idg` before the `trie_delete`, as upstream pl-tabling.c:2654-2662, :2679-2689, :4545-4551). The lane-2 run of
+# wip/tab-a04 (2026-11-14, reference) passed a04-a08 UNEXPECTEDLY (5 errors = 5 unexpected passes): their entries are deleted, the rows are `@test`.
+# DYNERR v01/v02: owner TRIE-CHARGE charges trie memory to `table_space` as upstream (pl-trie.c:238, :772, :1087, :1105, :1113 charge;
+# :257, :269, :729, :1200, :1268, :1389 release). The lane-2 run of wip/tab1land cd4da0e0 (2026-11-15, three term types) passed v01 and v02
+# UNEXPECTEDLY (6 errors = 6 unexpected passes) with trie-charge merged: their entries are deleted, the rows are `@test`.
 )
 
 @testset "TB6 rows as swipl's: $(g.label)" for g in _T6_GROUPS
