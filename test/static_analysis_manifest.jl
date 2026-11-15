@@ -67,6 +67,7 @@ _manifest_per_type(T) = (
     (LK.is_variant_ptr, Tuple{T, T}, false),
     # copy_term/2 (src/pl-copyterm.jl)
     (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
+    (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, Int, LK.cp_options}, false),   # PRIMS-B2: the `vars` form
     (LK.allocGlobalNoShift, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_same_term, Tuple{LK.PL_local_data{T}, Int, Int}, false),       # L1f f1c
     (LK.makeMoreStackSpace, Tuple{LK.PL_local_data{T}, LK.boolex_t, Int}, false),
