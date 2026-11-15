@@ -313,6 +313,8 @@ _manifest_per_type(T) = (
     # (L1f f1b, D-0049: `resize` → growStacks_trim!, which can GROW the local stack — its record pools — as
     # upstream's growStacks allocates; on exception recovery only)
     (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, false),
+    # TRIMST: trim_stacks/0 (pl-setup.c): a call of trimStacks!(ld, true), so as that
+    (LK.pl_trim_stacks0_va, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false),
     (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),
@@ -4571,6 +4573,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
+    # TRIMST: the registration table of src/pl-setup.jl
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB0: pl-allocpool.c (src/pl-allocpool.jl) and the sentinel tests of pl-tabling.c (src/pl-tabling.jl); they name no term type

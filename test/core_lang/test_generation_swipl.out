@@ -1,0 +1,54 @@
+p1a0	[1-true,2-true,3-true]
+p1a1	[]
+p1a2	[]
+p1a3	[]
+p1a4	[true,append(A,B,C)]
+p1a5	[true]
+p1a6	no
+p1a7	[]
+p1a8	[]
+p1a9	[]
+p1a10	[]
+p1a11	[]
+p1a12	[true,append(A,B,C)]
+p1a13	true ;; append(A,B,C)
+p1a14	[last_(A,B,C)]
+p1a15	[]
+p1a16	[true,append(A,B,C),true,append(D,E,F)]
+p1a17	[true,append(A,B,C)]
+p1a18	[t([],A,A,true),t([B|C],D,[B|E],append(C,D,E))]
+p1a19	[true,append(A,B,C)]
+p1b0	[1,2,3]
+p1b1	[1,2,3,9]
+p1b2	[1,3]
+p1b3	[1,2,3,9]
+p1b4	[1-true,2-true,3-true,9-true]
+p1b5	[1-true,3-true]
+p1b6	[1-true,2-true,3-true,9-true]
+p1b7	[1,2,3]
+p1b8	[1-true,2-true,3-true]
+p1b9	1 ;; 2 ;; 3 ;; 9
+p1b10	1-true ;; 2-true ;; 3-true ;; 9-true
+p1b11	[1,2,3,9]
+p1b12	[1-true,2-true,3-true,9-true]
+p1b13	[2-true,3-true,9-true]
+p1c1	[1,2,3]
+p1c2	[2-true,3-true]
+p1c3	1 ;; 2 ;; 3
+p1c4	[1-true,3-true]
+p1d1	1-true ;; 2-true ;; 3-true
+p1d2	[1-true,2-true,3-true]
+p1d3	1-true ;; 2-true ;; 3-true
+p1d4	[1-true,2-true,3-true]
+p1d5	1 ;; 2 ;; 3
+p1d6	[1,2,3]
+p1d7	[7]
+p1d8	1 ;; 2 ;; 3
+p1d9	[1,2,3]
+p1d10	[]
+p1e1	[1-true,2-true]
+p1e2	1-true ;; 2-true
+p1e3	[t(1,true),t(2,true)]
+p1e4	[1-true,2-true]
+p1e5	[1-true,2-true,1-true,2-true]
+p1e6	[1-true,2-true]

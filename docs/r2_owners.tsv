@@ -95,7 +95,6 @@ pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
-pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv

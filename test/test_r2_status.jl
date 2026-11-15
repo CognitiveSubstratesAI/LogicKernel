@@ -490,9 +490,11 @@ end
     # rows A_ENTER A_INTEGER A_MPZ A_MPQ A_DOUBLE A_VAR A_VAR0 A_VAR1 A_VAR2 A_FUNC0 A_FUNC1 A_FUNC2 A_FUNC A_ROUNDTOWARDS_A A_ROUNDTOWARDS_V A_ADD A_MUL
     # A_LT A_LE A_GT A_GE A_EQ A_NE A_IS A_FIRSTVAR_IS, `pred:succ/2`, `vmi:A_INTEGERW`, and the `compileArith (optimise)` refusal row of
     # src/pl-comp.jl) and three owned rows came back (the two AR1 refusal rows of `set_arith_flag` and `vmi:A_INTEGERW` under owner REFUSED).
+    # 175 -> 174 on merging main 87a88328 (small1's TRIMSTACKS closed `pred:trim_stacks/0 Q10`, main 200 -> 199) into the AR1 line (D-0083 disclosure: derived,
+    # the floor test below measures it).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 175
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 174
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

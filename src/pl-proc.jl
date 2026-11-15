@@ -2232,12 +2232,9 @@ function pl_retract1_va(
 
         # enterDefinition(def): (void)0 upstream
         dref = pushPredicateAccessObj!(ld, gd, def)
-        # D-0147 / D-0100 (asserted invariant; NF2-R6 equivalent, NF2-G1 breaks it)
-        @assert(
-            dref.generation == generationFrame(ld.frames[fr]),
-            "retract: nothing ran between the call and pushPredicateAccessObj!",
-        )
-        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, …)
+        # The frame's generation is the access object's, as upstream stores it (pl-proc.c:3179-3180), whatever generation the
+        # frame took at the call (audit D-0713 (3): no assert that the two are equal).
+        ld.frames[fr].generation = dref.generation      # setGenerationFrameVal(environment_frame, dref->generation)
         ctxbuf.chp.cref = nothing
         ctxbuf.chp.key = word(0)
         cref = firstClause!(

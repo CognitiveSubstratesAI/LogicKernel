@@ -330,6 +330,37 @@ const _RC_CASES = [
     (
         "r101",
         raw"recordz(ka, 1, Ref), recordz(kb, 2), erase(Ref), findall(K-T, recorded(K, T), R)"
+    ),
+    # r102-r108: addSizeInt (pl-rec.c addUintBuffer) writes every size, variable number and offset of 128 and above in 7-bit groups: a record of 256, 300 and
+    # 384 variables (the variable count, then the numbers up to 383), a term of 300 arguments (the arity), sharing of variables numbered above 255, findall/3's copy
+    # (the same compiler). A size whose bit 7 is clear and which is 256 or more (256..383, 512..639) was written as ONE wrong byte (the mask was a UInt8): these rows failed then.
+    (
+        "r102",
+        raw"length(L, 256), recordz(k, f(L)), recorded(k, f(M)), term_variables(M, Vs), length(Vs, R)"
+    ),
+    (
+        "r103",
+        raw"length(L, 300), recordz(k, f(L)), recorded(k, f(M)), term_variables(M, Vs), length(Vs, R)"
+    ),
+    (
+        "r104",
+        raw"length(L, 384), recordz(k, f(L)), recorded(k, f(M)), term_variables(M, Vs), length(Vs, R)"
+    ),
+    (
+        "r105",
+        raw"findall(N, between(1, 300, N), L), T =.. [f|L], recordz(k, T), recorded(k, U), U =.. [_|M], length(M, Len), ( U == T -> E = same ; E = diff ), R = Len-E"
+    ),
+    (
+        "r106",
+        raw"length(L, 300), recordz(k, g(L, L)), recorded(k, g(M1, M2)), term_variables(g(M1, M2), Vs), length(Vs, NV), ( M1 == M2 -> E = shared ; E = apart ), R = NV-E"
+    ),
+    (
+        "r107",
+        raw"findall(T, ( length(L, 300), T = f(L) ), [U]), arg(1, U, M), term_variables(M, Vs), length(Vs, R)"
+    ),
+    (
+        "r108",
+        raw"length(L, 300), recordz(k, f(L)), recorded(k, f(M)), M = [A, B|_], ( A == B -> R = same ; R = apart )"
     )
 ]
 
@@ -436,7 +467,15 @@ const _RC_PINNED = [
     "t_r98 c[116,95,114,57,56]/1(c[45]/2(i1,i2)) c[116,95,114,57,56]/1(a[110,111,110,101])",
     "t_r99 c[116,95,114,57,57]/1(c[91,124,93]/2(i3,nil))",
     "t_r100 c[116,95,114,49,48,48]/1(c[91,124,93]/2(a[107,98],nil))",
-    "t_r101 c[116,95,114,49,48,49]/1(c[91,124,93]/2(c[45]/2(a[107,98],i2),nil))"
+    "t_r101 c[116,95,114,49,48,49]/1(c[91,124,93]/2(c[45]/2(a[107,98],i2),nil))",
+    # r102-r108: swipl 10.1.20 (the pin binary, ~/.local/bin/swipl), this program and this driver, two runs byte-identical, 2026-11-15
+    "t_r102 c[116,95,114,49,48,50]/1(i256)",
+    "t_r103 c[116,95,114,49,48,51]/1(i300)",
+    "t_r104 c[116,95,114,49,48,52]/1(i384)",
+    "t_r105 c[116,95,114,49,48,53]/1(c[45]/2(i300,a[115,97,109,101]))",
+    "t_r106 c[116,95,114,49,48,54]/1(c[45]/2(i300,a[115,104,97,114,101,100]))",
+    "t_r107 c[116,95,114,49,48,55]/1(i300)",
+    "t_r108 c[116,95,114,49,48,56]/1(a[97,112,97,114,116])"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -494,7 +533,7 @@ function _rc_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the recorded database == swipl's pinned answers (r01-r101)" begin
+@testset "the recorded database == swipl's pinned answers (r01-r108)" begin
     f, names = _rc_file()
     kl, _, ld = _rc_kernel(f, names)
     @test length(kl) == length(_RC_PINNED)

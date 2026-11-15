@@ -486,6 +486,23 @@ ok "ci_api: curl was called (the argv side is non-empty)" 1 "$([ -s "$W/tok_argv
 ok "ci_api: the token is not in the output" 0 "$(printf '%s' "$got" | grep -c "$FAKETOK")"
 ok "ci_api: no temp file is left behind" 0 "$(ls "$W/tmpd" | wc -l)"
 ok "ci_api: the token is stored in no file under tools/" 0 "$(grep -rIlF "$FAKETOK" "$ROOT/tools" | wc -l)"
+# N8: the same call under `bash -x` (stderr merged into the output): xtrace is off while the token lives, so the
+# trace never prints it; the trace itself must be non-empty (else the zero proves nothing: a guard that cannot fail).
+: > "$W/tok_argv"; : > "$W/tok_stdin"
+xt="$(env -u LOGICKERNEL_CI_FIXTURE_DIR PATH="$W/tokbin:$PATH" TMPDIR="$W/tmpd" TOK_ARGV="$W/tok_argv" TOK_STDIN="$W/tok_stdin" ROOT="$ROOT" \
+    bash -x -c '. "$ROOT/tools/ci_api.sh"; ci_job_log 123 777' 2>&1)"
+ok "ci_api under bash -x: the token appears 0 times in the trace" 0 "$(printf '%s\n' "$xt" | grep -c "$FAKETOK")"
+ok "ci_api under bash -x: the trace is non-empty (the guard can fail)" 1 "$([ "$(printf '%s\n' "$xt" | grep -c '^+')" -gt 5 ] && echo 1 || echo 0)"
+ok "ci_api under bash -x: the token still reached curl on stdin" 1 "$(grep -c "$FAKETOK" "$W/tok_stdin")"
+# review2 N10: the other two callers of the shared helper, each under `bash -x`: one pinned row each
+for fn in "ci_runs_for_sha 0123456789abcdef0123456789abcdef01234567" "ci_jobs_page 123 1"; do
+    : > "$W/tok_argv"; : > "$W/tok_stdin"
+    xt="$(env -u LOGICKERNEL_CI_FIXTURE_DIR PATH="$W/tokbin:$PATH" TMPDIR="$W/tmpd" TOK_ARGV="$W/tok_argv" TOK_STDIN="$W/tok_stdin" ROOT="$ROOT" \
+        bash -x -c '. "$ROOT/tools/ci_api.sh"; '"$fn" 2>&1)"
+    ok "${fn%% *} under bash -x: the token appears 0 times in the trace" 0 "$(printf '%s\n' "$xt" | grep -c "$FAKETOK")"
+    ok "${fn%% *} under bash -x: the trace is non-empty" 1 "$([ "$(printf '%s\n' "$xt" | grep -c '^+')" -gt 5 ] && echo 1 || echo 0)"
+    ok "${fn%% *} under bash -x: the token still reached curl on stdin" 1 "$(grep -c "$FAKETOK" "$W/tok_stdin")"
+done
 
 # ---------------------------------------------------------------- the local Julia pin (tools/lib_julia.sh, audit D-0465/D-0466)
 # A throwaway HOME holds juliaup-shaped installs whose `julia` is a STUB that prints a version: no real Julia starts.
@@ -658,6 +675,102 @@ jobsjson success > "$W/pc/fx/777/jobs_1.json"
 rm "$W/pc/fx/777/1002.log"
 LOGICKERNEL_CI_FIXTURE_DIR="$W/pc/fx" python3 -I "$PC" fetch-logs 777 > /dev/null 2>&1; rc=$?
 ok "pkgtest_costs fetch-logs: an unreadable log is exit 2" 2 "$rc"
+
+# ---------------------------------------------------------------- tools/mutate_ci.py: a RED BASELINE names its cause (D-0709 item 3)
+# THE ONE EXTRACTOR is mutate_ci.baseline_cause(log): the failing file, the first failing test and its message, the Test Summary,
+# at most 30 lines; a green log gives nothing. `baseline` prints it in the job log, `collect` once in the table. Run from a
+# copy of the tool (mc_check DIR) so a hand-broken copy is judged by the SAME rows (mutation proof at verdict level).
+MCW="$W/mc"
+mkdir -p "$MCW"
+printf '=== test/test_ok.jl: exit 0\nTest Failed at /r/test/passing_should_not_show.jl:1\n  Expression: shown_by_a_passing_target\n=== test/test_b.jl: exit 1\nPrecompiling LogicKernel\nTest Failed at /r/test/test_b.jl:12\n  Expression: f(1) == 2\n   Evaluated: 1 == 2\n\nStacktrace:\n [1] top\nTest Failed at /r/test/test_b.jl:99\n  Expression: the_later_failure\nTest Summary: | Pass  Fail  Total\ntest_b        |    3     2      5\nERROR: LoadError: Some tests did not pass\n' > "$MCW/red.log"
+printf '=== test/test_e.jl: exit 1\nError During Test at /r/test/test_e.jl:30\n  Got exception outside of a @test\n  LoadError: UndefVarError: `g` not defined\n' > "$MCW/err.log"
+printf '=== test/test_l.jl: exit 1\nERROR: LoadError: ParseError: unexpected token at test_l.jl:4\nin expression starting at test_l.jl:4\nl1\nl2\nl3\nl4\nl5\nl6\nl7\n' > "$MCW/noload.log"
+printf '=== test/test_n.jl: exit 1\nn1\nn2\n\nn3\nn4\nn5\nn6\nn7\n' > "$MCW/plain.log"
+printf '=== test/test_a.jl: exit 0\nTest Summary: | Pass  Total\nall           |    5      5\n=== test/test_b.jl: exit 0\nok\n' > "$MCW/green.log"
+{ printf '=== test/test_big.jl: exit 1\nTest Failed at /r/test/test_big.jl:7\n  Expression: big\n'; for i in $(seq 1 25); do printf '  Evaluated: term %s\n' "$i"; done
+  printf 'Stacktrace:\n [1] x\nTest Summary: | Pass  Fail  Total\n'; for i in $(seq 1 20); do printf 'row%s | 1 | 1 | 2\n' "$i"; done; } > "$MCW/big.log"
+mc_cause() { python3 -B -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import mutate_ci; print("\n".join(mutate_ci.baseline_cause(open(sys.argv[2]).read())))' "$1" "$2" 2>&1; }
+mc_in() { printf '%s\n' "$1" | grep -qxF -- "$2"; }      # mc_in TEXT LINE — LINE is a whole line of TEXT
+mc_check() {   # mc_check DIR — the number of row groups that do NOT hold for the tool copy in DIR (0 for the real tool)
+    local d="$1" n=0 out cnt
+    export GITHUB_ACTIONS=true       # CI's setting: no Julia pin, no Julia (the targets here are `sh:` commands)
+    # (a) a red log: the failing file first, the first failing test, its Evaluated line, the Summary; not the passing target's text, not the later failure
+    out="$(mc_cause "$d" "$MCW/red.log")"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'failing file: test/test_b.jl (exit 1)' ] || n=$((n + 1))
+    mc_in "$out" 'Test Failed at /r/test/test_b.jl:12' && mc_in "$out" '  Expression: f(1) == 2' && mc_in "$out" '   Evaluated: 1 == 2' || n=$((n + 1))
+    mc_in "$out" 'Test Summary: | Pass  Fail  Total' && mc_in "$out" 'test_b        |    3     2      5' || n=$((n + 1))
+    { ! printf '%s' "$out" | grep -qE 'passing_should_not_show|the_later_failure|test_b.jl:99'; } || n=$((n + 1))
+    out="$(mc_cause "$d" "$MCW/err.log")"
+    mc_in "$out" 'failing file: test/test_e.jl (exit 1)' && mc_in "$out" 'Error During Test at /r/test/test_e.jl:30' && mc_in "$out" '  LoadError: UndefVarError: `g` not defined' || n=$((n + 1))
+    out="$(mc_cause "$d" "$MCW/noload.log")"
+    mc_in "$out" 'failing file: test/test_l.jl (exit 1)' && mc_in "$out" 'ERROR: LoadError: ParseError: unexpected token at test_l.jl:4' && ! mc_in "$out" 'l7' || n=$((n + 1))
+    out="$(mc_cause "$d" "$MCW/plain.log")"
+    mc_in "$out" 'failing file: test/test_n.jl (exit 1)' && mc_in "$out" 'n7' && mc_in "$out" 'n3' && ! mc_in "$out" 'n2' || n=$((n + 1))
+    # (b) a GREEN log (non-empty: it holds a Test Summary) and an empty one print nothing
+    out="$(mc_cause "$d" "$MCW/green.log")"
+    [ -s "$MCW/green.log" ] && [ -z "$out" ] || n=$((n + 1))
+    # (c) the cap: a failure block and a summary of 50 lines together give EXACTLY 30, the failing file first
+    out="$(mc_cause "$d" "$MCW/big.log")"
+    [ "$(printf '%s\n' "$out" | grep -c '')" = 30 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'failing file: test/test_big.jl (exit 1)' ] || n=$((n + 1))
+    # the job log: `baseline` on a red and a green target, through the CLI (sh: targets, no Julia)
+    mkdir -p "$MCW/run"
+    out="$(cd "$MCW/run" && python3 -I "$d/mutate_ci.py" baseline 20 "sh:cat $MCW/red.log | sed 1,4d; exit 1" 2>&1)"; rc=$?
+    [ "$rc" = 1 ] && mc_in "$out" 'baseline exit 1' && mc_in "$out" '  Expression: f(1) == 2' && mc_in "$out" '   Evaluated: 1 == 2' && printf '%s' "$out" | grep -qF 'failing file: sh:cat' || n=$((n + 1))
+    out="$(cd "$MCW/run" && python3 -I "$d/mutate_ci.py" baseline 20 "sh:cat $MCW/green.log" 2>&1)"; rc=$?
+    [ "$rc" = 0 ] && [ "$out" = 'baseline exit 0' ] || n=$((n + 1))
+    # the gather: a red baseline gives ONE cause section (not one per mutant) and every NO VERDICT row points at it; a green one none
+    mkdir -p "$MCW/g" && cd "$MCW/g" || return 1
+    printf 'MUTANTS = [{"id": "M1 a", "file": "f", "old": "a", "new": "b"}, {"id": "M2 b", "file": "f", "old": "a", "new": "b"}, {"id": "M3 c", "file": "f", "old": "a", "new": "b"}]\n' > m.py
+    rm -rf mutation-out; mkdir mutation-out
+    printf '{"name": "baseline", "exit": 1, "seconds": 3}' > mutation-out/baseline.json
+    sed 1,3d "$MCW/red.log" > mutation-out/baseline.log
+    out="$(python3 -I "$d/mutate_ci.py" collect m.py 3 2>&1)"; rc=$?
+    [ "$rc" = 1 ] && [ "$(printf '%s\n' "$out" | grep -c '^### Baseline cause$')" = 1 ] && [ "$(printf '%s\n' "$out" | grep -cF 'Evaluated: 1 == 2')" = 1 ] || n=$((n + 1))
+    [ "$(printf '%s\n' "$out" | grep -c '^| M. | NO VERDICT .*baseline red, failing file: test/test_b.jl (exit 1) |$')" = 3 ] || n=$((n + 1))
+    rm -rf mutation-out; mkdir mutation-out
+    printf '{"name": "baseline", "exit": 0, "seconds": 3}' > mutation-out/baseline.json
+    for m in M1 M2 M3; do printf '{"name": "%s", "verdict": "caught", "seconds": 1}' "$m" > "mutation-out/$m.json"; done
+    cp "$MCW/green.log" mutation-out/baseline.log
+    out="$(python3 -I "$d/mutate_ci.py" collect m.py 3 2>&1)"; rc=$?
+    [ "$rc" = 0 ] && printf '%s' "$out" | grep -qF 'Baseline (unmutated targets): **green**' && ! printf '%s' "$out" | grep -qE 'Baseline cause|baseline red' || n=$((n + 1))
+    cd "$MCW" || return 1
+    echo "$n"
+}
+MCD="$W/mcd"
+mkdir -p "$MCD"
+cp "$ROOT/tools/mutate_ci.py" "$ROOT/tools/mutate_drive.py" "$ROOT/tools/ci_compile_summary.py" "$ROOT/tools/julia_pin.sh" "$ROOT/tools/lib_julia.sh" "$MCD/"
+n="$(mc_check "$MCD")"
+ok "mutate_ci baseline cause: failing file + first failing test + message, nothing on green, capped at 30, job log and gather (rows broken: $n)" 0 "$n"
+mc_mutant() {   # mc_mutant LABEL OLD NEW — a hand-broken copy of the tool must break at least one row
+    local label="$1" cnt
+    mkdir -p "$W/mcb" && cp "$MCD"/* "$W/mcb/"
+    python3 - "$W/mcb/mutate_ci.py" "$2" "$3" <<'PYEOF'
+import sys
+p, old, new = sys.argv[1:4]
+s = open(p).read()
+assert s.count(old) == 1, "mutant text matches %d times: %r" % (s.count(old), old)
+open(p, "w").write(s.replace(old, new))
+PYEOF
+    [ $? = 0 ] || { fail=$((fail + 1)); echo "  FAIL mutant $label: could not be built"; return; }
+    cnt="$(mc_check "$W/mcb")"
+    if [ "$cnt" != 0 ]; then pass=$((pass + 1)); echo "  ok   mutate_ci mutant caught: $label ($cnt row group(s) fail)"
+    else fail=$((fail + 1)); echo "  FAIL mutate_ci mutant SURVIVED: $label"; fi
+}
+mc_mutant "the first target, not the first red one" 'm.group(2) != "0"), None)' 'True), None)'
+mc_mutant "no cap" '[x[:300] for x in out][:MAX_CAUSE_LINES]' '[x[:300] for x in out]'
+mc_mutant "cap of 31" 'MAX_CAUSE_LINES = 30' 'MAX_CAUSE_LINES = 31'
+mc_mutant "the LAST failing test" $'for i, ln in enumerate(sec):\n        if ANCHOR_TEST.match(ln):' $'for i, ln in reversed(list(enumerate(sec))):\n        if ANCHOR_TEST.match(ln):'
+mc_mutant "no Evaluated line" 'for x in sec[i + 1 : i + 21]:' 'for x in sec[i + 1 : i + 2]:'
+mc_mutant "no Test Summary" 'if SUMMARY_LINE.match(ln):' 'if False and SUMMARY_LINE.match(ln):'
+mc_mutant "no load-error line" 'if LOAD_ERROR.match(ln):' 'if False:'
+mc_mutant "fallback the FIRST five lines" '[-5:]' '[:5]'
+mc_mutant "the failing file line dropped" 'out = ["failing file: %s (exit %s)" % (red[1].group(1), red[1].group(2))]' 'out = ["failing file"]'
+mc_mutant "baseline prints no cause" 'if rc != 0:                       # the cause in the JOB LOG' 'if False:                       # the cause in the JOB LOG'
+mc_mutant "baseline prints for a green run too" 'if rc != 0:                       # the cause in the JOB LOG' 'if True:                       # the cause in the JOB LOG'
+mc_mutant "collect: no cause section" 'if not base_ok:                   # once' 'if False:                   # once'
+mc_mutant "collect: a cause section on a green baseline" 'if not base_ok:                   # once' 'if True:                   # once'
+mc_mutant "collect: NO VERDICT rows do not point" 'if cause and v.startswith("NO VERDICT"):' 'if False:'
+mc_mutant "collect: the cause repeated" '+ ["~~~", ""] if cause else []' '+ ["~~~", ""] + cause if cause else []'
 
 echo "tools/test_ci_tools.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
