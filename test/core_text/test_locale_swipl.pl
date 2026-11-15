@@ -116,10 +116,9 @@ t10(R) :- findall(N-Ps, ( member(N, ["C", "POSIX", 'C', 'POSIX']), locale_create
     lc_res(( locale_create(_, "C", [alias(lc10), grouping([2])]), locale_property(lc10, grouping(G)) ), R3), lc_destroy(lc10),
     lc_res(( locale_create(_, "C", [alias(lc10), decimal_point('')]), lc_props(lc10, Pe) ), R4), lc_destroy(lc10),
     lc_res(( locale_create(Lb, "C", []), findall(P, locale_property(Lb, P), Pb) ), R5),
-    lc_res(( locale_create(_, "C", [alias(lc10), decimal_point('a\000\b')]), locale_property(lc10, decimal_point(Dn)) ), R6), lc_destroy(lc10),
     lc_res(( locale_create(_, 'C', [alias(lc10), grouping([1,2])]), locale_property(lc10, alias(A10)) ), R7), lc_destroy(lc10),
     lc_en(R8),
-    R = [R0, R1, R2, R3, S, G, R4-Pe, R5-Pb, R6-Dn, R7-A10, R8].
+    R = [R0, R1, R2, R3, S, G, R4-Pe, R5-Pb, R7-A10, R8].
 % setlocale/3 refreshes the default locale (updateLocale, pl-ctype.c): LC_NUMERIC and LC_ALL do, the other categories do not. A host without
 % en_US.UTF-8 cannot set it: the row then answers `ok` for that category (the .out is the same on every host).
 lc_def(Ps) :- findall(P, locale_property(default, P), Ps).
@@ -133,3 +132,9 @@ lc_upd(Cat, Want, R) :-
 t11(R) :- setlocale(numeric, _, 'C'), lc_base(B), lc_us(U), lc_def(P0),
     lc_upd(numeric, U, R1), lc_upd(all, U, R2), lc_upd(ctype, B, R3), lc_upd(time, B, R4), lc_upd(messages, B, R5), lc_upd(collate, B, R6),
     lc_def(P1), R = [P0, R1, R2, R3, R4, R5, R6, P1].
+% t10's decimal_point('a\000\b') row (a decimal point holding the character 0), apart from t10: the atom of the character 0 is
+% refused by the kernel (DIVERGES, settled: src/pl-read.jl:2061-2064), whether the reader makes it from the program text or
+% atom_codes/2 makes it at run time; the atom is built at run time here so that only this row meets the refusal, and it is the last row.
+t12(R) :- atom_codes(Dp, [97, 0, 98]),
+    lc_res(( locale_create(_, "C", [alias(lc10), decimal_point(Dp)]), locale_property(lc10, decimal_point(Dn)) ), R6), lc_destroy(lc10),
+    R = R6-Dn.

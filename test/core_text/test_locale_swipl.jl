@@ -108,6 +108,25 @@ function kernel_lines(
     return out
 end
 
+# KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
+# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"), whether the
+# reader makes it from program text (`'a\000\b'` loses the whole consult) or atom_codes/2 makes it at run time. t12 is the row
+# of a decimal_point holding the character 0 (it was part of t10); its atom is built at run time, so only t12 meets the
+# refusal: the kernel's line is `t12 notported`, swipl's answer is in the .out. t12 is the last row of the program, and
+# a refused row ends one run (its ld is thrown away): `kernel_lines_all` continues after it on a fresh engine.
+const _LCS_NUL_ROWS = ("t12",)
+
+# `kernel_lines`, continued after every refused row on a fresh engine (the lines of the rows that follow)
+function kernel_lines_all(
+    ::Type{T}, path::String, names::Vector{String}
+)::Vector{String} where {T}
+    out = kernel_lines(T, path, names)
+    while length(out) - 1 < length(names) && endswith(out[end], " notported")
+        out = vcat(out, kernel_lines(T, path, names[(length(out)):end])[2:end])
+    end
+    return out
+end
+
 # the driver swipl runs to print its lines (the .out is its output)
 const DRIVER = raw"""
 enc(T) :- enc(T, [], _).
@@ -172,10 +191,19 @@ end
     @test occursin(_codes("default"), expected[findfirst(startswith("t8 "), expected)])      # the initial current locale's alias
     @test !occursin(_codes("bad"), expected[findfirst(startswith("t11 "), expected)])         # setlocale/3 refreshes the default locale (or the host has no en_US.UTF-8)
 
-    kl = kernel_lines(_TL, _LCS_PL, names)
+    @test all(r -> r in names, _LCS_NUL_ROWS)                                 # the known-difference rows are rows
+    @test occursin(_codes("true"), expected[findfirst(startswith("t12 "), expected)])  # swipl answers: the decimal point was made
+
+    kl = kernel_lines_all(_TL, _LCS_PL, names)
     @test length(kl) == length(expected)
     for i in eachindex(kl)
-        @test (i, kl[i]) == (i, expected[i])
+        row = i == 1 ? "ok" : names[i - 1]
+        if row in _LCS_NUL_ROWS
+            @test kl[i] == row * " notported"                                 # the refusal, by name
+            @test_broken kl[i] == expected[i]                                 # swipl answers (the .out)
+        else
+            @test (i, kl[i]) == (i, expected[i])
+        end
     end
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
