@@ -21,6 +21,7 @@
 #   * PIN1-I5: the size flags' -1 default: `unify_prolog_flag_value` (pl-prologflag.jl:486, `_tbl_restraint_unlimited`) answers false before `f.i` is read, and TP:305 only asks `!== nothing`.
 #   * PIN1-T3, PIN1-T4: set_prolog_flag/2 on `max_incomplete_subgoals_action` / `max_scc_subgoals_action`: `_SF_REFUSED` (TS:576-585, since TAB1 TB0; run at TS:593-601, the @test_throws at TS:599) names no
 #     `*_action` flag, not the three of the old pin either. TB0 (wip/tb0) shifts src/os/pl-prologflag.jl by +17 lines above `tbl_is_restraint_flag` (now :1461, the refusal at :1534-1535); I5's lines (:412, :486, TP:302-305) did not move.
+#   * PIN1-I1, PIN1-I2 (D-0810 item 2, DEFKILL4): the same reader gap as I5 for the atom flags: `unify_prolog_flag_value` (pl-prologflag.jl:471) answers the five `*_action` flags from the restraint record (`initTabling!`, pl-tabling.jl:153-164), so TP:260's t_defaults and t_enum_error cannot see `f.a`; the row is the testset at TP:914-940 (kill line TP:939).
 # OWNERS (audit D-0446 item 2, PIN1 step C; D-0451 item 2): the step that gives the flag or constant its consumer. V5 = FLI1 (the validateAPI gate); I5, T3, T4 = TAB1 (restraint
 # checks and tripwire actions); the reader of ATOM_RESERVE_BATCH = ATOM1 (R1, R2 are PLAIN mutants of the VALUE, killed by the literal row of test_atom_table.jl; a mutant of a READER of the constant has nothing to mutate until ATOM1 ports `reserveAtomSlots`, fde0211d: that gap is ATOM1's, not a row of this list). None of V5, I5, T3, T4 has a flag: row in docs/r2_owners.tsv (the flags are set, so a row would be R2-OWNER-STALE):
 # the owner is named here and in docs/architecture.md (PIN1 step C).
@@ -80,11 +81,11 @@ MUTANTS = [
          old="const PLFLAG_VALIDATE_API = 37\n",
          new="const PLFLAG_VALIDATE_API = 38\n"),
     # ── _init_tabling_flags! (pl-tabling.c:12709-12712) ──
-    dict(id="PIN1-I1 max_incomplete_subgoals_action starts as `warning`, not `error` (KILL TP:260: t_defaults and t_enum_error read swipl's `error`)",
+    dict(id="PIN1-I1 max_incomplete_subgoals_action starts as `warning`, not `error` (KILL TP:939: the testset `the start value of the *_action restraint flags, off the flag, == swipl` compares `f.a` of the flag on a fresh global data to swipl's `error`; NOT TP:260: t_defaults and t_enum_error read the restraint record, tbl_get_restraint_flag, never `f.a`)",
          file=P, targets=TF,
          old='    setPrologFlag(gd, "max_incomplete_subgoals_action", FT_ATOM, "error")\n',
          new='    setPrologFlag(gd, "max_incomplete_subgoals_action", FT_ATOM, "warning")\n'),
-    dict(id="PIN1-I2 max_scc_subgoals_action starts as `warning`, not `error` (KILL TP:260: t_defaults and t_enum_error read swipl's `error`)",
+    dict(id="PIN1-I2 max_scc_subgoals_action starts as `warning`, not `error` (KILL TP:939: the testset `the start value of the *_action restraint flags, off the flag, == swipl` compares `f.a` of the flag on a fresh global data to swipl's `error`; NOT TP:260: t_defaults and t_enum_error read the restraint record, tbl_get_restraint_flag, never `f.a`)",
          file=P, targets=TF,
          old='    setPrologFlag(gd, "max_scc_subgoals_action", FT_ATOM, "error")\n',
          new='    setPrologFlag(gd, "max_scc_subgoals_action", FT_ATOM, "warning")\n'),
