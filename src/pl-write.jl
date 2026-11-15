@@ -2573,6 +2573,25 @@ function write_size(
     return PL_unify_int64(ld, A2, width) && PL_unify_int64(ld, A3, height)
 end
 
+# PORT: pl-write.c needs_quotes as pl_needs_quotes1_va
+# (PRED_IMPL("$needs_quotes", 1, needs_quotes, 0), pl-write.c:3256-3263 at the pin)
+"""
+    '\$needs_quotes'(+Atom)
+
+True when `Atom` is not written without quotes under `quoted(true)`: the negation of `unquoted_atom` (pl-write.c). A
+non-atom raises `type_error(atom, Atom)`; `[]` (a reserved symbol) and a blob are not text atoms, so they need quotes.
+"""
+function pl_needs_quotes1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    a = PL_get_atom_ex(ld, A1)
+    a === nothing && return FFALSE
+
+    return !unquoted_atom(a) ? FTRUE : FFALSE
+end
+
 # PORT: pl-write.c write_size as pl_write_size4_va
 # (PRED_IMPL("write_size", 4, write_size, PL_FA_TRANSPARENT))
 function pl_write_size4_va(
@@ -2584,7 +2603,7 @@ end
 
 # PORT: pl-write.c BeginPredDefs as PL_predicates_from_write
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (write:3423-3432). Left to a later step: `$put_token/2`, `$put_quoted/4`, `$needs_quotes/1`.
+# (write:3423-3432). Left to a later step: `$put_token/2`, `$put_quoted/4`.
 "pl-write.c's registration table (`BeginPredDefs(write)`): the ported entries."
 const PL_predicates_from_write = (
     PL_extension(
@@ -2595,5 +2614,6 @@ const PL_predicates_from_write = (
     ),
     PL_extension("nl", 0, pl_nl0_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\$needs_quotes", 1, pl_needs_quotes1_va, PL_FA_VARARGS),
     PL_extension("write_size", 4, pl_write_size4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)
 )
