@@ -20,7 +20,7 @@
 # `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
 # outside a toplevel); `prologToplevel`, `pl_break1`, `pl_break` (`break/0`) and, from pl-fli.c, `PL_toplevel`.
 #
-# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
+# Since MISC-1: `'$notrace'/1`. LEFT OUT: the rest of pl-pro.c — `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -305,6 +305,49 @@ function pl_restore_trace2_va(
     updateAlerted(ld)
 
     return FTRUE
+end
+
+# PORT: pl-pro.c notrace as pl_notrace1_va
+# (PRED_IMPL("$notrace", 1, notrace, PL_FA_TRANSPARENT|PL_FA_NOTRACE), pl-pro.c:392-409 at the pin)
+# DIVERGES: the query flag `PL_Q_NODEBUG` of upstream's `callProlog` call is carried out here, as far as the kernel's local
+# data allows: `PL_open_query` and `restore_after_query` keep no debugger state in the kernel (DBG1, src/pl-trace.jl `debugmode`),
+# so this function does what pl-wam.c:3072-3078 and :3156-3160 do for the debugger status — `debugstatus.debugging` off and the
+# normal run mode for the call, the saved `debugging` back after it. `suspendTrace` and the `NDEBUG_SAVE_FLAGS` bits of the
+# same two places are DBG1's (the local data holds no field for them). `ex` is a `Ref{Int}` (upstream's `term_t ex`).
+"""
+    '\$notrace'(:Goal)
+
+Call `Goal` once with the debugger switched off, passing its exception on, then restore the skip level, the tracing
+status and the debugging status as they were (pl-pro.c); `callProlog` runs `Goal` in a query of its own with
+`PL_Q_CATCH_EXCEPTION|PL_Q_NODEBUG`. boot/init.pl's callers and several library files use it for a goal the tracer must not
+step into.
+"""
+function pl_notrace1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+
+    skipSave = ld.debugstatus_skiplevel                 # uintptr_t skipSave  = debugstatus.skiplevel
+    traceSave = ld.debugstatus_tracing                  # bool      traceSave = debugstatus.tracing
+    debugSave = ld.debugstatus_debugging                # qf->debugSave (PL_Q_NODEBUG, pl-wam.c:3075)
+
+    ld.debugstatus_debugging = false                    # debugstatus.debugging = false (pl-wam.c:3076)
+    setPrologRunMode!(ld, RUN_MODE_NORMAL)              # setPrologRunMode(RUN_MODE_NORMAL) (pl-wam.c:3078)
+    updateAlerted(ld)
+
+    ex = Ref(0)
+    rval = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_CATCH_EXCEPTION | PL_Q_NODEBUG, ex)
+
+    ld.debugstatus_debugging = debugSave                # debugstatus.debugging = qf->debugSave (pl-wam.c:3158)
+    ld.debugstatus_skiplevel = skipSave                 # debugstatus.skiplevel = skipSave
+    ld.debugstatus_tracing = traceSave                  # debugstatus.tracing   = traceSave
+    updateAlerted(ld)
+
+    if !rval && ex[] != 0
+        return PL_raise_exception(ld, ex[]) ? FTRUE : FFALSE
+    end
+
+    return rval ? FTRUE : FFALSE
 end
 
 # PORT: pl-pro.c resetProlog
@@ -626,5 +669,9 @@ const PL_predicates_from_pro = (
     ),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension(
+        "\$notrace", 1, pl_notrace1_va,
+        PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_NOTRACE
+    ),
     PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)
 )
