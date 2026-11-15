@@ -2,9 +2,9 @@
 % '$local_definitions'/2 and '$addr2line'/2 of pl-proc.c, and malloc_property/1 of pl-alloc.c).
 % test/core_lang/test_misc1_swipl.pl - MISC-1's rows. Each `tN(R)` is one row (a family of cases); test_misc1_swipl.out holds
 % swipl 10.1.20's answers to them, as the test's driver prints them (`ok`, then one line per row: its name and every
-% solution). Rows t0-t3 are '$needs_quotes'/1, t4-t8 '$notrace'/1, t9-t12 '$local_definitions'/2, t13 '$addr2line'/2,
-% t14 malloc_property/1. The row lk1 is LK-ONLY: the kernel refuses by name where swipl fails (no .out line, the test pins the
-% kernel's refusal). Characters above 0x7F are written as escapes, so the file is the same in every encoding.
+% solution). Rows t0-t3 are '$needs_quotes'/1, t4-t8 '$notrace'/1, t9-t12 '$local_definitions'/2, t13 and t15 '$addr2line'/2,
+% t14 malloc_property/1. Every row runs on both sides. Characters above 0x7F are written as escapes, so the file is the same
+% in every encoding.
 
 % -- '$needs_quotes'/1 -----------------------------------------------------------------------------------------------
 
@@ -82,12 +82,12 @@ nt_goal(true).
 nt_goal(fail).
 nt_goal(_ = f(_)).
 nt_goal(member(_, [a, b, c])).
-nt_goal(( X = 1 ; X = 2 )) :- var(X).
+nt_goal(( X = 1 ; X = 2 )).
 nt_goal(( member(X, [a, b]), X == b )).
-nt_goal(( member(X, [a, b]), ! )) :- var(X).
+nt_goal(( member(X, [a, b]), ! )).
 nt_goal(\+ fail).
 nt_goal(call(atom_length, abc, _)).
-nt_goal(( Y = g(Z), Z = 2 )) :- var(Y).
+nt_goal(( Y = g(Z), Z = 2 )).
 nt_goal(nt_helper(_)).
 
 % the goal runs once, its bindings kept, a failure fails
@@ -171,7 +171,7 @@ t9(R) :-
     retractall(ldp(_)), ld_list(ldp(_), L4),
     R = [L0, L1, L2, L3, L4].
 
-% a predicate that is no thread-local predicate, or no predicate at all, or no head: the call fails
+% a static or a dynamic predicate, an undefined one, a term that is no head: the call fails
 t10(R) :-
     member(H, [ldstatic(_), ldd(_), no_such_ld(_), 1, _, "s", ldp, 1.5, [a]]),
     ld_list(H, L),
@@ -209,12 +209,13 @@ t13(R) :-
 
 % -- malloc_property/1 -------------------------------------------------------------------------------------------
 
-% the pin's allocator is ptmalloc, which defines no malloc_property/1 (pl-alloc.c registers it with tcmalloc only)
+% pl-alloc.c registers malloc_property/1 under tcmalloc only (initTCMalloc); the pin's allocator is ptmalloc, so the call raises existence_error(procedure, malloc_property/1), which the kernel raises as well
 t14(R) :-
     catch(( malloc_property(_) -> S = true ; S = false ), error(F, _), S = F),
     R = S.
 
-% -- LK-ONLY ---------------------------------------------------------------------------------------------------------
-
-% a valid address: swipl fails (no description is available); the kernel refuses by name, owner REFUSED (debug build only)
-lk1(R) :- ( '$addr2line'(1, _) -> R = true ; R = false ).
+% a valid address: the call fails silently (the description of a C function address is read in a debug build only)
+t15(R) :-
+    member(A, [0, 1, 4096, 123456789]),
+    ( '$addr2line'(A, _) -> S = true ; S = false ),
+    R = A-S.

@@ -3036,29 +3036,22 @@ end
 # PORT: pl-proc.c addr2line as pl_addr2line2_va
 # (PRED_IMPL("$addr2line", 2, addr2line, 0), pl-proc.c:4215-4228 at the pin)
 # DIVERGES: the address is a C function pointer and its description comes from the debug build's symbol reader; the kernel's
-# predicates are Julia functions without an address, so after the `size_t` check of `A1` the predicate is REFUSED by name
-# (`NotPortedError`, owner REFUSED: a debug build only).
+# predicates are Julia functions, so after the `size_t` check of `A1` the call fails silently, as the pin does for a valid
+# address (its description is read in a debug build only).
 """
     '\$addr2line'(+Address, -Description)
 
 The source description of the C function at `Address` (pl-proc.c); `Address` must be a `size_t` (`type_error(integer, A)`,
-`domain_error(not_less_than_zero, A)`, `representation_error(size_t)`). Refused by name here: the kernel's predicates are Julia functions, with no C address to describe.
+`domain_error(not_less_than_zero, A)`, `representation_error(size_t)`). A valid address fails silently.
 """
 function pl_addr2line2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
 
-    addr = PL_get_size_ex(ld, A1)
-    addr === nothing && return FFALSE
+    PL_get_size_ex(ld, A1) === nothing && return FFALSE
 
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :addr2line),
-            "addr2line/2: the description of a C function address (debug build only)",
-            "REFUSED"
-        )
-    )
+    return FFALSE
 end
 
 # PORT: pl-proc.c local_definitions as pl_local_definitions2_va
