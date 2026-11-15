@@ -26,6 +26,7 @@ TOP1B = "test/core_lang/test_top1b_swipl.jl"
 TARGETS_NODE = [W2, TM, AB, TI]
 TARGETS_TAKE = [W2, AB, TI, TM]
 TARGETS_STATUS = [W2, TOP1B, AB]
+TARGETS = [W2, TM, AB, TI, TOP1B]    # the union of the per-mutant `targets` below (mutation.yml's Baseline job of a push-started run reads this)
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
     dict(id='TBW2-node-decode-swapped (KILL lz03-lz10, lc15, lz99: the trie of the handle is read from its node field, the lookup fails or names the wrong trie)',
