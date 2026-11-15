@@ -124,7 +124,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-cont.c` | code | `18168e629eab` | `src/pl-cont.jl` | 11 | 9 |
 | swipl-devel `src/pl-copyterm.c` | code | `18168e629eab` | `src/pl-copyterm.jl` | 25 | 16 |
 | swipl-devel `src/pl-copyterm.h` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
-| swipl-devel `src/pl-coverage.c` | code | `18168e629eab` | `src/pl-coverage.jl` | 17 | 11 |
+| swipl-devel `src/pl-coverage.c` | code | `18168e629eab` | `src/pl-coverage.jl` | 17 | 12 |
 | swipl-devel `src/pl-coverage.c` | code | `18168e629eab` | `src/pl-incl.jl` | 5 | 2 |
 | swipl-devel `src/pl-coverage.h` | code | `18168e629eab` | `src/pl-coverage.jl` | 0 | 0 |
 | swipl-devel `src/pl-coverage.h` | code | `18168e629eab` | `src/pl-incl.jl` | 2 | 1 |
@@ -332,7 +332,7 @@ checkout is pulled.
 | swipl-devel `src/pl-cont.c` | `18168e629eab` | 9 | 11 | 9 | src/pl-cont.jl |
 | swipl-devel `src/pl-copyterm.c` | `18168e629eab` | 18 | 29 | 15 | src/pl-copyterm.jl |
 | swipl-devel `src/pl-copyterm.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-incl.jl |
-| swipl-devel `src/pl-coverage.c` | `18168e629eab` | 11 | 23 | 7 | src/pl-coverage.jl, src/pl-incl.jl |
+| swipl-devel `src/pl-coverage.c` | `18168e629eab` | 11 | 23 | 8 | src/pl-coverage.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-coverage.h` | `18168e629eab` | 0 | 1 | 0 | src/pl-coverage.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-data.h` | `18168e629eab` | 3 | 4 | 0 | src/pl-incl.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-dbref.c` | `18168e629eab` | 14 | 18 | 13 | src/pl-dbref.jl |
@@ -420,7 +420,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2707** | **5691** | **1577** | |
+| **total** | | **2707** | **5691** | **1578** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

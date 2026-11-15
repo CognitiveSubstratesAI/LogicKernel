@@ -2217,6 +2217,7 @@ graph LR
     os_pl_locale --> pl_error
     os_pl_locale --> os_pl_text
     os_pl_locale --> os_pl_os
+    os_pl_locale --> os_pl_file
     os_pl_locale --> pl_srcfile
     os_pl_locale --> pl_read
     os_pl_locale --> os_pl_tai

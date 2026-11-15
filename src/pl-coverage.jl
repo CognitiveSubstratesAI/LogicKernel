@@ -43,10 +43,12 @@ function newCoverageData(::Type{T})::coverage{T} where {T}
 end
 
 # PORT: pl-coverage.c share_coverage_data
+# DIVERGES: the declared result is `Union{Nothing, coverage}`, not `coverage{T}`: `T` is known here only through the union
+# argument, and a result type built from it is a run-time `convert` for JET (the value returned is `cov` itself).
 "Count one more user of `cov` (a `nothing` is passed through); `cov` (pl-coverage.c)."
 function share_coverage_data(
     cov::Union{Nothing, coverage{T}}
-)::Union{Nothing, coverage{T}} where {T}
+)::Union{Nothing, coverage} where {T}
     cov === nothing || (cov.references += 1)           # ATOMIC_INC(&cov->references)
     return cov
 end
