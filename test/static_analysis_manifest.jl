@@ -682,6 +682,9 @@ function _manifest_index(T)
         (LK.popPredicateAccess!, Tuple{LD, D}, false),
         (LK.markAccessedPredicates!, Tuple{LD, GD}, false),
         (LK.markPredicatesInEnvironments!, Tuple{LD, GD}, false),
+        # TH1-B — the lock table of the database (src/pl-thread.jl): PL_LOCK/PL_UNLOCK, holdsLock, enableThreads
+        (LK.PL_LOCK, Tuple{GD, Int}, false), (LK.PL_UNLOCK, Tuple{GD, Int}, false),
+        (LK.holdsLock, Tuple{GD, Int}, false), (LK.enableThreads, Tuple{LD, Bool}, false),
         # clause/2 (src/pl-comp.jl)
         (LK.pl_clause!, Tuple{GD, LD, D, Int, SNK}, false),
         (LK._head_argv, Tuple{LD, D, Int}, false),
@@ -4124,6 +4127,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Pause, Tuple{Float64}, false), (LK.RemoveFile, Tuple{String}, false),
     (LK.text_string, Tuple{LK.PL_chars_t}, false), (LK.ld_statistics, Tuple{}, false),
     (LK._errno_msg, Tuple{String, Int}, false),
+    # TH1-B — the lock table's own functions (src/pl-thread.jl) and the copy of a mutex (src/pl-incl.jl); no term type
+    (LK.new_PL_mutexes, Tuple{}, false),
+    (LK.countingMutexLock, Tuple{LK.counting_mutex}, false),
+    (LK.countingMutexUnlock, Tuple{LK.counting_mutex}, false),
+    (Base.deepcopy_internal, Tuple{LK.counting_mutex, IdDict{Any, Any}}, false),   # allow-any: deepcopy's own stack-dict type
     # arith-c (arith_funcs_design.md §2): the C library's other functions, maxr/minr, eval, the
     # constants, the bit helpers, and the number layer's cmpReals and mpq_set_double
     [
