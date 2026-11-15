@@ -364,6 +364,23 @@ function trie_clean(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-trie.h acquire_trie
+# DIVERGES: a plain increment (upstream `ATOMIC_INC`; one thread here).
+"Take a reference on `tr`: `trie_delete` does not prune while it is held (pl-trie.h macro `acquire_trie`)."
+function acquire_trie(tr::trie{T})::Nothing where {T}
+    tr.references += 1
+    return nothing
+end
+
+# PORT: pl-trie.h release_trie
+# DIVERGES: a plain decrement (upstream `ATOMIC_DEC`); the database is an argument (`trie_clean`).
+"Drop a reference on `tr`; the last one empties it when it is destroyed meanwhile (pl-trie.h macro `release_trie`)."
+function release_trie(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
+    tr.references -= 1
+    tr.references == 0 && trie_clean(gd, tr)
+    return nothing
+end
+
 # ---- CHILDREN (get_child, next_child!, is_leaf_trie_node) ----
 
 # PORT: pl-trie.c child_hash
@@ -1490,8 +1507,8 @@ function stat_node(stats::trie_stats, tr::trie{T}, nid::Int)::Nothing where {T}
 end
 
 # PORT: pl-trie.c stat_trie
-# DIVERGES: the bytes are upstream's, from its sizes (the records here are not that big); `acquire_trie` and `release_trie` are O_PLMT
-# (owner TH1); returns the statistics (upstream fills `*stats`).
+# DIVERGES: the bytes are upstream's, from its sizes (the records here are not that big); upstream's `acquire_trie`/`release_trie` around the
+# walk are left out (the walk frees nothing; the unconditional pl-trie.h macros: reported, E4); returns the statistics (upstream fills `*stats`).
 "The statistics of `tr` (pl-trie.c `stat_trie`): the bytes of upstream's trie, nodes, hashed blocks and values."
 function stat_trie(tr::trie{T})::trie_stats where {T}
     stats = trie_stats(SIZEOF_TRIE - SIZEOF_TRIE_NODE, 0, 0, 0)
@@ -2317,7 +2334,7 @@ end
 # - the query's locations are global positions (0: NULL) or `-(t+1)` for the slot of the term reference `t` (the root's query);
 # - `st` is a record of `ld.trie_gens` (a `foreign_state_pool`), the buffers are Vectors (`choices` and `branches` hold records made
 #   once, used up to `nch` and `nbr`), so a step allocates nothing;
-# - no `acquire_trie`/`release_trie` (O_PLMT, owner TH1), no `DEBUG` prints.
+# - `acquire_trie` (first call) and `release_trie` (`clear_trie_state!`) are pl-trie.h's, unconditional; no `DEBUG` prints.
 
 # PORT: pl-trie.c query_token as Q_DONE
 "What `peek_query` finds at the cursor (pl-trie.c `query_token`): `Q_DONE` the frame has no argument left, `Q_VAR` a variable, `Q_KEY` a nonvar with its trie key."
@@ -2398,18 +2415,21 @@ end
 end
 
 # PORT: pl-trie.c clear_trie_state
-# DIVERGES: idempotent (the state is freed only while it holds a trie); the buffers are kept for the next use of the record.
-"Release the state at index `k` of `pool` (pl-trie.c `clear_trie_state`)."
+# DIVERGES: idempotent (the state is freed, and its trie released, only while it holds a trie); the buffers are kept for the next use of
+# the record; the database is an argument (`release_trie` runs `trie_clean`).
+"Release the state at index `k` of `pool` and its reference on the trie (pl-trie.c `clear_trie_state`)."
 function clear_trie_state!(
-    pool::foreign_state_pool{trie_gen_state{T}}, k::Int
+    gd::PL_global_data{T}, pool::foreign_state_pool{trie_gen_state{T}}, k::Int
 )::Nothing where {T}
     st = pool.states[k]
-    if st.tr !== nothing
+    tr = st.tr
+    if tr !== nothing
         st.tr = nothing
         st.nch = 0
         st.nbr = 0
         empty!(st.frames)
         free_foreign_state!(pool, k)
+        release_trie(gd, tr)
     end
     return nothing
 end
@@ -2903,7 +2923,7 @@ end
 # of `ld.trie_gens` from the first call on (upstream: a C-stack copy until the first retry); `Mark`/`Undo` are a foreign frame
 # (`PL_rewind_foreign_frame`), closed before a retry (as nb_current/2); a GLOBAL_OVERFLOW from `unify_trie_path!` is raised by
 # `raiseStackOverflow` (no `makeMoreStackSpace` retry, the stacks grow on demand); an exception (a `TrieRefusal` of `unify_key`)
-# releases the state and is rethrown; no `acquire_trie`/`release_trie` (O_PLMT, owner TH1). On the first call `tr` is the trie, on a
+# releases the state and is rethrown; `gd` is the query's database (`clear_trie_state!`). On the first call `tr` is the trie, on a
 # redo or a cut it is ignored (the state holds it).
 """
     trie_gen_raw(ld, tr, root, Key, Value, Data, data_kind, PL__ctx) -> foreign_t
@@ -2918,11 +2938,13 @@ function trie_gen_raw(
     data_kind::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     pool = ld.trie_gens
+    gd = _query_gd(ld)
     ctl = PL_foreign_control(PL__ctx)
     if ctl == FRG_FIRST_CALL
         tr === nothing && error("trie_gen_raw: a first call needs the trie")     # (a typeassert on the `nothing` method is a JET-invalid call)
         trf = tr
         trf.gen_call += 1                               # TRIE_STAT_INC(trie, gen_call)
+        acquire_trie(trf)
         k = alloc_foreign_state!(pool)
         st = pool.states[k]
         init_trie_state!(st, trf, root, Key)
@@ -2932,11 +2954,11 @@ function trie_gen_raw(
             chi != 0 && (chi = descent_node!(ld, st, st.cur, chi))
             if !(chi != 0 && (trf.nodes[st.choices[chi].child].flags & st.vflags) != 0) &&
                 next_choice!(ld, st, false) == 0
-                clear_trie_state!(pool, k)
+                clear_trie_state!(gd, pool, k)
                 return FFALSE
             end
         catch
-            clear_trie_state!(pool, k)
+            clear_trie_state!(gd, pool, k)
             rethrow()
         end
     elseif ctl == FRG_REDO
@@ -2945,15 +2967,15 @@ function trie_gen_raw(
         st.key = Key                                    # this activation's reference
         try
             if st.resume && next_choice!(ld, st, false) == 0
-                clear_trie_state!(pool, k)
+                clear_trie_state!(gd, pool, k)
                 return FFALSE
             end
         catch
-            clear_trie_state!(pool, k)
+            clear_trie_state!(gd, pool, k)
             rethrow()
         end
     else                                                # FRG_CUTTED
-        clear_trie_state!(pool, PL_foreign_context_address(PL__ctx))
+        clear_trie_state!(gd, pool, PL_foreign_context_address(PL__ctx))
         return FTRUE
     end
 
@@ -2972,7 +2994,7 @@ function trie_gen_raw(
             if rc != BOOLEX_TRUE
                 PL_rewind_foreign_frame(ld, fid)        # Undo(fli_context->mark)
                 if rc != BOOLEX_FALSE
-                    clear_trie_state!(pool, k)
+                    clear_trie_state!(gd, pool, k)
                     PL_close_foreign_frame(ld, fid)
                     raiseStackOverflow(ld, rc)
                     return FFALSE                       # resource error
@@ -2987,7 +3009,7 @@ function trie_gen_raw(
                     PL_close_foreign_frame(ld, fid)
                     return PL_retry_address(k)
                 else
-                    clear_trie_state!(pool, k)
+                    clear_trie_state!(gd, pool, k)
                     PL_close_foreign_frame(ld, fid)
                     return FTRUE
                 end
@@ -2997,11 +3019,11 @@ function trie_gen_raw(
             next_choice!(ld, st, false)                 # Undo() unbound Key
         end
     catch
-        clear_trie_state!(pool, k)
+        clear_trie_state!(gd, pool, k)
         rethrow()
     end
 
-    clear_trie_state!(pool, k)
+    clear_trie_state!(gd, pool, k)
     PL_close_foreign_frame(ld, fid)
     return FFALSE
 end
