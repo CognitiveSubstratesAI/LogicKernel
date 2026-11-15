@@ -392,28 +392,44 @@ end
     # GP_FIND: the visible predicate (clause(q(_), B) answers; clause(nothere(_), B) fails and current_predicate(nothere/1) stays false)
     @test gp(_gp_x("q", _gp_v()), LK.GP_FIND) === qp
     @test gp(_gp_x(":", _tls("nomod_w1"), _gp_x("q", _gp_v())), LK.GP_FIND) === qp  # a missing module is `user` (clause(nomod_w1:foo(_), B) answers)
-    @test gp(_gp_x("nothere", _gp_v()), LK.GP_FIND) === nothing && _gp_pending(ld) === nothing
+    @test gp(_gp_x("nothere", _gp_v()), LK.GP_FIND) === nothing &&
+        _gp_pending(ld) === nothing
     @test cur("nothere", 1) === nothing                                                 # GP_FIND creates nothing
     @test gp(_gp_x(":", _tls("m_w4"), _gp_x("nothere", _gp_v())), LK.GP_FIND) === nothing
     @test modof("m_w4") === nothing                                                     # no module is created (swipl: current_module(m_w4) false after)
     @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND) === nothing                             # clause(1, _): type_error(callable, 1)
-    @test _gp_pending(ld) == enc(_gp_x("type_error", _tls("callable"), mk_gnd(_TL, Int64(1))))
-    @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND | LK.GP_TYPE_QUIET) === nothing && _gp_pending(ld) === nothing  # pl-proc.c:661-664
+    @test _gp_pending(ld) ==
+        enc(_gp_x("type_error", _tls("callable"), mk_gnd(_TL, Int64(1))))
+    @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND | LK.GP_TYPE_QUIET) === nothing &&
+        _gp_pending(ld) === nothing  # pl-proc.c:661-664
     # h receives the plain head
     h = LK.PL_new_term_ref(ld)
     @test gp(_gp_x(":", _tls("user"), _gp_x("q", _gp_v())), LK.GP_FIND, h) === qp
     @test LK.PL_get_name_arity(ld, h)[2] == 1
     # GP_FIND | GP_EXISTENCE_ERROR ('$nospy': nothere(_) and nothere/0 both raise it, the culprit the term as given; q(_) answers)
-    @test gp(_gp_x("q", _gp_v()), LK.GP_FIND | LK.GP_EXISTENCE_ERROR) === qp && _gp_pending(ld) === nothing
+    @test gp(_gp_x("q", _gp_v()), LK.GP_FIND | LK.GP_EXISTENCE_ERROR) === qp &&
+        _gp_pending(ld) === nothing
     @test gp(_gp_x("nothere", _gp_v()), LK.GP_FIND | LK.GP_EXISTENCE_ERROR) === nothing
-    @test _gp_pending(ld) == enc(_gp_x("existence_error", _tls("procedure"), _gp_x("nothere", _gp_v())))
-    @test gp(_gp_x("/", _tls("nothere"), mk_gnd(_TL, Int64(0))), LK.GP_FIND | LK.GP_EXISTENCE_ERROR) === nothing
     @test _gp_pending(ld) ==
-        enc(_gp_x("existence_error", _tls("procedure"), _gp_x("/", _tls("nothere"), mk_gnd(_TL, Int64(0)))))
+        enc(_gp_x("existence_error", _tls("procedure"), _gp_x("nothere", _gp_v())))
+    @test gp(
+        _gp_x("/", _tls("nothere"), mk_gnd(_TL, Int64(0))),
+        LK.GP_FIND | LK.GP_EXISTENCE_ERROR
+    ) === nothing
+    @test _gp_pending(ld) ==
+        enc(
+        _gp_x(
+            "existence_error",
+            _tls("procedure"),
+            _gp_x("/", _tls("nothere"), mk_gnd(_TL, Int64(0)))
+        )
+    )
     # GP_FINDHERE: in that module only; a missing module is `user` ('$source_file'(m_w7:foo(_), F) answers the file)
     @test gp(_gp_x("q", _gp_v()), LK.GP_FINDHERE) === qp
-    @test gp(_gp_x(":", _tls("m_w7"), _gp_x("q", _gp_v())), LK.GP_FINDHERE) === qp && modof("m_w7") === nothing
-    @test gp(_gp_x("nothere", _gp_v()), LK.GP_FINDHERE) === nothing && _gp_pending(ld) === nothing
+    @test gp(_gp_x(":", _tls("m_w7"), _gp_x("q", _gp_v())), LK.GP_FINDHERE) === qp &&
+        modof("m_w7") === nothing
+    @test gp(_gp_x("nothere", _gp_v()), LK.GP_FINDHERE) === nothing &&
+        _gp_pending(ld) === nothing
     # the module's own procedures only: user holds no atom_length/2 of its own, `system` does. swipl: '$nospy'(user:atom_length(_, _)) answers
     # (GP_FIND sees it through the super module); the GP_FINDHERE half is hand-written from pl-proc.c:785-790 (isCurrentProcedure)
     al = _gp_x(":", _tls("user"), _gp_x("atom_length", _gp_v(), _gp_v()))
@@ -423,16 +439,21 @@ end
     # foo/(-1) domain_error(not_less_than_zero, -1), foo/9999999 representation_error(max_procedure_arity), 1 type_error(predicate_indicator, 1)
     @test gp(_gp_x("/", _tls("q"), mk_gnd(_TL, Int64(1))), LK.GP_FIND | NA) === qp
     @test gp(_gp_x("q", _gp_v()), LK.GP_FIND | NA) === qp
-    @test gp(_gp_x("//", _tls("q"), mk_gnd(_TL, Int64(1))), LK.GP_FIND | NA) === nothing && _gp_pending(ld) === nothing  # q/3: none
+    @test gp(_gp_x("//", _tls("q"), mk_gnd(_TL, Int64(1))), LK.GP_FIND | NA) === nothing &&
+        _gp_pending(ld) === nothing  # q/3: none
     @test gp(_gp_x("/", _tls("q"), _tls("a")), LK.GP_FIND | NA) === nothing
     @test _gp_pending(ld) == enc(_gp_x("type_error", _tls("integer"), _tls("a")))
     @test gp(_gp_x("/", _tls("q"), mk_gnd(_TL, Int64(-1))), LK.GP_FIND | NA) === nothing
-    @test _gp_pending(ld) == enc(_gp_x("domain_error", _tls("not_less_than_zero"), mk_gnd(_TL, Int64(-1))))
-    @test gp(_gp_x("/", _tls("q"), mk_gnd(_TL, Int64(9999999))), LK.GP_FIND | NA) === nothing
+    @test _gp_pending(ld) ==
+        enc(_gp_x("domain_error", _tls("not_less_than_zero"), mk_gnd(_TL, Int64(-1))))
+    @test gp(_gp_x("/", _tls("q"), mk_gnd(_TL, Int64(9999999))), LK.GP_FIND | NA) ===
+        nothing
     @test _gp_pending(ld) == enc(_gp_x("representation_error", _tls("max_procedure_arity")))
     @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND | NA) === nothing
-    @test _gp_pending(ld) == enc(_gp_x("type_error", _tls("predicate_indicator"), mk_gnd(_TL, Int64(1))))
-    @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND | NA | LK.GP_TYPE_QUIET) === nothing && _gp_pending(ld) === nothing  # pl-proc.c:661-662
+    @test _gp_pending(ld) ==
+        enc(_gp_x("type_error", _tls("predicate_indicator"), mk_gnd(_TL, Int64(1))))
+    @test gp(mk_gnd(_TL, Int64(1)), LK.GP_FIND | NA | LK.GP_TYPE_QUIET) === nothing &&
+        _gp_pending(ld) === nothing  # pl-proc.c:661-662
     # GP_CREATE: retractall(newp_w1(_)) creates newp_w1/1 (swipl: dynamic after); a qualifier creates its module (m_w6)
     @test cur("newp_w1", 1) === nothing
     p = gp(_gp_x("newp_w1", _gp_v()), LK.GP_CREATE)
@@ -440,21 +461,28 @@ end
     @test gp(_gp_x("newp_w1", _gp_v()), LK.GP_CREATE) === p                              # found again, not made twice
     @test modof("m_w6") === nothing
     p6 = gp(_gp_x(":", _tls("m_w6"), _gp_x("newq", _gp_v())), LK.GP_CREATE)
-    @test p6 !== nothing && modof("m_w6") !== nothing && p6 === cur("newq", 1, modof("m_w6"))
+    @test p6 !== nothing && modof("m_w6") !== nothing &&
+        p6 === cur("newq", 1, modof("m_w6"))
     @test gp(mk_gnd(_TL, Int64(1)), LK.GP_CREATE) === nothing                            # retractall(1): type_error(callable, 1)
-    @test _gp_pending(ld) == enc(_gp_x("type_error", _tls("callable"), mk_gnd(_TL, Int64(1))))
+    @test _gp_pending(ld) ==
+        enc(_gp_x("type_error", _tls("callable"), mk_gnd(_TL, Int64(1))))
     # GP_DEFINE | GP_NAMEARITY ('$set_predicate_attribute'(m_w5:bar/0, trace, true) creates m_w5 and bar/0)
     @test modof("m_w5") === nothing
-    p5 = gp(_gp_x(":", _tls("m_w5"), _gp_x("/", _tls("bar"), mk_gnd(_TL, Int64(0)))), LK.GP_DEFINE | NA)
+    p5 = gp(
+        _gp_x(":", _tls("m_w5"), _gp_x("/", _tls("bar"), mk_gnd(_TL, Int64(0)))),
+        LK.GP_DEFINE | NA
+    )
     @test p5 !== nothing && modof("m_w5") !== nothing && p5 === cur("bar", 0, modof("m_w5"))
     @test gp(_gp_x("/", _tls("q"), mk_gnd(_TL, Int64(1))), LK.GP_DEFINE | NA) === qp     # the defined one, found
     # GP_RESOLVE: the visible one; none visible -> an UNDEFINED procedure made in the module; a missing module is `user`, not created
     @test gp(_gp_x("q", _gp_v()), LK.GP_RESOLVE) === qp
-    @test gp(_gp_x(":", _tls("m_w8"), _gp_x("q", _gp_v())), LK.GP_RESOLVE) === qp && modof("m_w8") === nothing
+    @test gp(_gp_x(":", _tls("m_w8"), _gp_x("q", _gp_v())), LK.GP_RESOLVE) === qp &&
+        modof("m_w8") === nothing
     @test cur("nothere_w1", 1) === nothing
     pr = gp(_gp_x("nothere_w1", _gp_v()), LK.GP_RESOLVE)
     @test pr !== nothing && pr === cur("nothere_w1", 1) && !LK.isDefinedProcedure(gd, pr)
-    @test gp(_gp_x("/", _tls("nothere_w2"), mk_gnd(_TL, Int64(2))), LK.GP_RESOLVE | NA) === cur("nothere_w2", 2)
+    @test gp(_gp_x("/", _tls("nothere_w2"), mk_gnd(_TL, Int64(2))), LK.GP_RESOLVE | NA) ===
+        cur("nothere_w2", 2)
     @test cur("nothere_w2", 2) !== nothing
     # a mode of no case: the C's assert(0)
     @test_throws ErrorException gp(_gp_x("q", _gp_v()), 3)
