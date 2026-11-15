@@ -61,3 +61,17 @@
 
 ## Daemon
 No daemon used or started by this agent; lanes.conf untouched.
+
+## STATE (MISC-2, stopped at audit ruling D-0794: no new code until the weekly reset)
+Committed (wip/misc-1): 1c1896b6 = brief item 1 complete. `$addr2line/2` in src/pl-proc.jl fails silently for a valid
+size_t (type_error(integer), domain_error(not_less_than_zero) kept; the refusal is gone); docs/r2_owners.tsv carries no
+addr2line row, so none was removed. test/core_lang/test_misc1_swipl.pl: the five text cleanups applied, lk1 replaced by
+the pinned row t15 (addresses 0, 1, 4096, 123456789, each `A-true|false`), header updated. Rows now t0-t15, all run on both sides.
+Left (nothing of it exists in any file; julia, the pin runs and the .jl were not started):
+- item 2: test/core_lang/test_misc1_swipl.jl modelled on test_dwim_swipl.jl; rows t0-t15 (16 rows, no lk rows, no kernel-only
+  expectation); the .out from ~/.local/bin/swipl twice under the systemd-run scope, cmp identical.
+- item 3: test/db/test_boot_image_swipl.jl line 158 `_BI_KERNEL_MISSING_FOREIGN = 322` -> 318 plus a "322 before MISC-1" comment line.
+- items 4-5 (plan 5, 6, 8): tools/mutants/MISC1.py (candidates in plan item 5; the `$addr2line` candidates are dropped, its
+  body is a constant failure), cost lines in test/pkgtest_costs.tsv and test/unit_costs.tsv, manifest entries.
+- plan item 7 (owner row) is dropped. Guards in the .jl: 16 rows; .out has `ok` + 16 lines.
+test_type_discipline.jl and warm.sh check NOT run. No daemon used; lanes.conf untouched.
