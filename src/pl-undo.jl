@@ -22,6 +22,10 @@
 
 # PORT: pl-undo.c undo_blob
 # DIVERGES: no `release`, `write`, `acquire`, `save` or `load` slots (`PL_blob_t` has none): see the file header.
+# Synced to cf6960c2: the target's type is `PL_BLOB_NOCOPY|PL_BLOB_LOCAL` (was `PL_BLOB_UNIQUE`): the blob's data is the record itself,
+# not a copy of its pointer, and the blob belongs to the thread (it is on the thread's undo list, its goal runs there). Every
+# `'$undo'/1` call records its own goal, so each call makes its own blob under either flag set; here the payload is the record's
+# number in `gd.undo_refs`, one per call, and the kernel is single-threaded: the flag change is a representation matter only.
 "The blob type of an undo goal (pl-undo.c `undo_blob`): unique by payload, non-text, named `undo`."
 const undo_blob = PL_blob_t(PL_BLOB_UNIQUE, "undo")
 
@@ -60,6 +64,7 @@ end
 
 # PORT: pl-undo.c release_undo_blob
 # DIVERGES: no caller (no atom GC); the atom is the argument; the record is freed by Julia's GC (`PL_erase` does nothing).
+# Synced to cf6960c2: the target reads the blob data as the `record_t` (was a pointer to it); see `undo_blob_record`.
 "An undo blob is released: erase its record (pl-undo.c)."
 function release_undo_blob(gd::PL_global_data{T}, aref::word)::Bool where {T}
     PL_erase(undo_blob_record(gd, aref))            # PL_erase(r)
@@ -77,7 +82,8 @@ end
 
 # PORT: pl-undo.c save_undo
 # DIVERGES: the record's number in `gd.undo_refs` is the payload (see `undo_blob_record`); the atom's WORD is returned and its
-# term is recorded (`_blob_term!`) so that a term over it reads back.
+# term is recorded (`_blob_term!`) so that a term over it reads back. Synced to cf6960c2: the target types `new` as `bool` and passes
+# the record pointer as the data (`(const char*)r`, was `&r`): C types and blob layout only.
 "The undo blob atom of a record of the goal `goal` references (pl-undo.c)."
 function save_undo(
     gd::PL_global_data{T}, ld::PL_local_data{T}, goal::term_t
@@ -91,6 +97,7 @@ function save_undo(
 end
 
 # PORT: pl-undo.c put_undo
+# DIVERGES: see `undo_blob_record`. Synced to cf6960c2: the target reads the blob data as the `record_t` (was a pointer to it).
 "Make `t` the goal the undo blob atom `u` records (pl-undo.c)."
 function put_undo(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, u::word
@@ -102,6 +109,9 @@ end
 # (PRED_IMPL("$undo", 1, undo, 0), pl-undo.c:133-157)
 # DIVERGES: the room for the three cells and the saved old value of the trailed assignment is ensured first (`ensureGlobalSpace`;
 # `allocGlobal` and `TrailAssignment` do it upstream); `*ul` after `deRef` is the cell itself (the list's cell is never a reference).
+# Synced to cf6960c2: the target calls `PL_unregister_atom(u)` once the atom is on the undo list (the list's reference
+# is the only one kept) and on the failing arm (`allocGlobal` failed); atoms are never collected here and carry no reference count,
+# so the answer of `'$undo'/1` and the list it builds are the target's.
 "`'\$undo'(:Goal)`: run `Goal` when the binding state in which this call succeeded is undone, i.e. on backtracking (pl-undo.c)."
 function pl_undo1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -138,6 +148,8 @@ end
 # PORT: pl-undo.c push_undo
 # DIVERGES: `p` is a global position; the schedule is `ld.undo_scheduled` (a Vector of atom words: no `PL_register_atom`, no atom GC);
 # `updateAlerted` is called without the `ALERT_UNDO` test only to set the bit.
+# Synced to cf6960c2: the target registers the scheduled atom with `registerAtomLocally(u)` (the buffer belongs to this thread; was
+# `PL_register_atom`): atom reference counting is a matter of the atom GC, which this kernel has not.
 "Schedule the undo goals of the list in the cell at `p`, which is being undone, when its head is an undo blob (pl-undo.c)."
 function push_undo(ld::PL_local_data, p::Int)::Nothing
     p, w = deRefM(ld, p)                            # deRef(p)
