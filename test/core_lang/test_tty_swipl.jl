@@ -236,7 +236,8 @@ _tt_syserr(msg::String) =
     t3ok = let (rc, _, _, en) = LK._tty_winsize(0)
         rc != 0 && en == 25                                         # ENOTTY: stdin is no terminal
     end
-    t3ok || @info "TTY1 row t3 NOT COMPARED: this process's stdin is a terminal (swipl's pin run is not)"
+    t3ok ||
+        @info "TTY1 row t3 NOT COMPARED: this process's stdin is a terminal (swipl's pin run is not)"
     for i in eachindex(kl)
         i == 5 && !t3ok && continue
         @test (i, kl[i]) == (i, expected[i])

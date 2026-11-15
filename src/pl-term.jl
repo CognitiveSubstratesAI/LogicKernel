@@ -22,7 +22,8 @@
 # on Linux, as `LIBC` assumes glibc). Upstream takes it from <sys/ioctl.h> (pl-term.c:418-428).
 const TIOCGWINSZ = 0x00005413
 
-# PORT: pl-term.c tty_size (the `ioctl` of its TIOCGWINSZ branch, pl-term.c:425-430)
+# PORT: pl-term.c tty_size as _tty_winsize
+# (the `ioctl` of its TIOCGWINSZ branch, pl-term.c:425-430)
 # DIVERGES: the result is a tuple `(iorval, rows, cols, errno)` where upstream fills `struct winsize ws` and reads
 # the global `errno` later: `ws` is four `UInt16` (`ws_row`, `ws_col`, `ws_xpixel`, `ws_ypixel`), zeroed first (upstream
 # reads `ws_row` and `ws_col` also when the `ioctl` failed, and never uses them then); `ioctl` is variadic, called here
@@ -35,7 +36,8 @@ function _tty_winsize(fd::Int)::Tuple{Int, Int, Int, Int}
     return (Int(iorval), Int(ws[1]), Int(ws[2]), en)
 end
 
-# PORT: pl-term.c tty_size (the tail after the `ioctl`, pl-term.c:447-455)
+# PORT: pl-term.c tty_size as _tty_size_answer
+# (the tail after the `ioctl`, pl-term.c:447-455)
 "The answer of `tty_size/2` to an `ioctl` result: `system_error` for a failed one, else `(Rows, Columns)` unified (pl-term.c)."
 function _tty_size_answer(
     ld::PL_local_data{T}, r::term_t, c::term_t, iorval::Int, rows::Int, cols::Int,
@@ -97,7 +99,8 @@ function lookupEntry(ld::PL_local_data{T}, name::T, type::T)::Bool where {T}
     initTerm(ld) || return false
     throw(
         NotPortedError{T}(
-            name, "tgetnum(), tgetflag() and tgetstr() (the capabilities of libtinfo)", "TTY2"
+            name, "tgetnum(), tgetflag() and tgetstr() (the capabilities of libtinfo)",
+            "TTY2"
         )
     )
 end

@@ -902,6 +902,7 @@ fixed it or a public issue exists.
 | `test/rational/test_ieee754.jl` | SWI's identity and standard-order assertions on IEEE floats (`0.0 \== -0.0`, `nan == nan`, the order of NaN, ±Inf, ±0.0) | `tests/rational/test_ieee754.pl` |
 | `test/core_lang/test_bindings.jl` | the trail on the cells (`Mark`/`Undo!`, marks nest, a failed unification's partial bindings undone); the keyed store's testsets went in L1f f3 | — |
 | `test/core_lang/test_unify_swipl.jl` | live differential: `=/2` on 1500 hard random pairs in each `occurs_check` mode, outcomes and bindings identical to swipl's | — |
+| `src/pl-term.jl` | `tty_size/2` (the `ioctl(TIOCGWINSZ)` of the user's input descriptor, `system_error` when it is not a terminal), and `tty_get_capability/3`, `tty_goto/2`, `tty_put/2` with upstream's argument checks and error terms: their terminal-library calls (tgetent, tgetnum, tgetflag, tgetstr, tgoto, tputs) are refused by name, owner TTY2 | `src/pl-term.c` |
 | `src/pl-termhash.jl` | `term_hash/2`, `variant_sha1/2`, `variant_hash/2`; Gladman's SHA-1 and the incremental MurmurHash — atoms hash by `sym_hash` and grounded values by `gnd_key`, so the digests are reproducible across processes but are not SWI's values | `src/pl-termhash.c`, `src/pl-termhash.h` |
 | `test/core_lang/test_term.jl` | SWI's own `variant` (`=@=`) tests, the rational-tree ones on the cells and (AV5, UNRUN when written) the two attvar ones | `tests/core_lang/test_term.pl` |
 | `test/core_lang/test_hash.jl` | SWI's own `variant_sha1`, `variant_hash`, `term_hash2` tests (term_hash's pinned values as the properties they stand for) | `tests/core_lang/test_hash.pl` |
@@ -1020,6 +1021,7 @@ graph LR
     pl_string["pl-string.jl"]
     os_pl_fmt["os/pl-fmt.jl"]
     pl_dwim["pl-dwim.jl"]
+    pl_term["pl-term.jl"]
     pl_ext["pl-ext.jl"]
     gd_template["gd_template.jl"]
     boot_image["boot_image.jl"]
@@ -2061,6 +2063,18 @@ graph LR
     pl_dwim --> os_pl_text
     pl_dwim --> pl_proc
     pl_dwim --> pl_tabling
+    pl_term --> term_interface
+    pl_term --> default_term
+    pl_term --> os_pl_stream
+    pl_term --> pl_incl
+    pl_term --> SWI_Prolog
+    pl_term --> pl_global
+    pl_term --> pl_comp
+    pl_term --> pl_fli
+    pl_term --> pl_error
+    pl_term --> os_pl_text
+    pl_term --> os_pl_os
+    pl_term --> os_pl_file
     pl_ext --> term_interface
     pl_ext --> default_term
     pl_ext --> pl_incl
@@ -2108,6 +2122,7 @@ graph LR
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
     pl_ext --> pl_dwim
+    pl_ext --> pl_term
     gd_template --> default_term
     gd_template --> pl_incl
     gd_template --> pl_global
@@ -2156,10 +2171,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 324 | 0 | 98 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 7 |
+| refusal sites | 0 | 77 | 0 | 0 | 7 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 586 | 88 | 154 | 3 | 43 |
+| **total** | 586 | 92 | 154 | 3 | 43 |
 
 #### The boot and library files
 
@@ -2217,6 +2232,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
+| TTY2 | 4 | 0 | 4 | `refusal tgetent() (the terminal database of libt…`, `refusal tgetnum(), tgetflag() and tgetstr() (the…`, `refusal tgoto() and tputs() (the cursor motion s…`, `refusal tputs() (output with padding, libtinfo)` |
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
@@ -2244,7 +2260,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [98, 0, 20, 36]
-    line [0, 73, 15, 0]
+    line [0, 77, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->
