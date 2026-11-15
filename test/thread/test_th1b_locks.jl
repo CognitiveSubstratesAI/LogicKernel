@@ -49,11 +49,11 @@ function _ball(ld::LK.PL_local_data)
     c = LK.PL_new_term_ref(ld)
     x = LK.PL_new_term_ref(ld)
     shape(t) = (
-        r = LK.PL_get_name_arity(ld, t);
+        r=LK.PL_get_name_arity(ld, t);
         r === nothing ? nothing : (String(lk_name(r[1])), r[2])
     )
     atom(t) = (
-        r = LK.PL_get_atom(ld, t);
+        r=LK.PL_get_atom(ld, t);
         r === nothing ? "?" : String(lk_name(r))
     )
     top = shape(ex)
@@ -115,7 +115,8 @@ end
         @test gd.statistics_threads_finished == 0
     end
     for cm in TMPL.mutexes
-        @test cm.count == 0 && cm.lock_count == 0 && cm.collisions == 0 && !islocked(cm.mutex)
+        @test cm.count == 0 && cm.lock_count == 0 && cm.collisions == 0 &&
+            !islocked(cm.mutex)
     end
     @test TMPL.mutexes[1] !== GDT.mutexes[1]                        # two databases: two tables
     @test TMPL.mutexes[1].mutex !== GDT.mutexes[1].mutex
@@ -158,7 +159,10 @@ end
         LK.PL_UNLOCK(GDT, id)
     end
     @test !any(LK.holdsLock(GDT, id) for id in 0:29)
-    @test all(x.lock_count == 0 && !islocked(x.mutex) && _owner(x) === nothing for x in GDT.mutexes)
+    @test all(
+        x.lock_count == 0 && !islocked(x.mutex) && _owner(x) === nothing for
+        x in GDT.mutexes
+    )
 end
 
 @testset "r06 a relock by the owning task is an error and changes nothing (pl-thread.h:288-302; DIVERGES: upstream's mutex would wait for itself)" begin
@@ -288,7 +292,8 @@ end
             c0 = cm.count
             @test LK.enableThreads(LDT, false) === alone
             @test GDT.thread_enabled === !alone                     # the flag is cleared only when this thread is alone
-            @test cm.count == c0 + 1 && cm.lock_count == 0 && !LK.holdsLock(GDT, LK.L_THREAD)   # released on both paths
+            @test cm.count == c0 + 1 && cm.lock_count == 0 &&
+                !LK.holdsLock(GDT, LK.L_THREAD)   # released on both paths
             @test (LDT.exception_term != 0) === !alone
             LK.PL_clear_exception(LDT)
             @test LDT.exception_term == 0
@@ -310,7 +315,13 @@ end
         @test GDT.thread_enabled === true
         @test !LK.holdsLock(GDT, LK.L_THREAD)
         @test _ball(LDT) ==
-            (("error", 2), ("permission_error", 3), ["modify", "flag", "threads"], ("context", 2), "Active threads")
+            (
+            ("error", 2),
+            ("permission_error", 3),
+            ["modify", "flag", "threads"],
+            ("context", 2),
+            "Active threads"
+        )
         LK.PL_clear_exception(LDT)
         @test _ball(LDT) === nothing
         # the counters back at 1 and 0: the next call answers true, with no exception
@@ -337,7 +348,8 @@ end
     @test c.name == "L_X"
     @test c.count == 0 && c.lock_count == 0 && c.collisions == 0
     @test _owner(c) === nothing && !islocked(c.mutex)
-    @test cm.count == 1 && cm.lock_count == 1 && islocked(cm.mutex) && _owner(cm) === current_task()   # the source is untouched
+    @test cm.count == 1 && cm.lock_count == 1 && islocked(cm.mutex) &&
+        _owner(cm) === current_task()   # the source is untouched
     LK.countingMutexLock(c)                                         # the copy locks while the source is held, and is no relock
     @test c.lock_count == 1 && cm.lock_count == 1
     LK.countingMutexUnlock(c)
@@ -358,8 +370,10 @@ end
         @test c.mutexes !== TMPL.mutexes && length(c.mutexes) == 30
         @test [cm.name for cm in c.mutexes] == _NAMES
         for i in 1:30
-            @test c.mutexes[i] !== TMPL.mutexes[i] && c.mutexes[i].mutex !== TMPL.mutexes[i].mutex
-            @test c.mutexes[i].count == 0 && c.mutexes[i].lock_count == 0 && c.mutexes[i].collisions == 0
+            @test c.mutexes[i] !== TMPL.mutexes[i] &&
+                c.mutexes[i].mutex !== TMPL.mutexes[i].mutex
+            @test c.mutexes[i].count == 0 && c.mutexes[i].lock_count == 0 &&
+                c.mutexes[i].collisions == 0
             @test !islocked(c.mutexes[i].mutex) && _owner(c.mutexes[i]) === nothing
         end
         @test LK.holdsLock(TMPL, LK.L_MISC) && LK.holdsLock(TMPL, LK.L_TABLE)   # the source keeps its holds
