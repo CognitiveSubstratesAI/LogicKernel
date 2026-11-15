@@ -1836,8 +1836,27 @@ function setClausableDefinition!(
     return true
 end
 
+# PORT: pl-proc.c setDetDefinition
+# DIVERGES: the database `gd` is an argument (`freeCodesDefinition!` resets a wrapped predicate through its closure).
+"Set (`isdet`) or clear `P_DET` on `def`; either way the supervisor is reset to `S_VIRGIN`, so the next call chains `S_DET` in or out (pl-proc.c)."
+function setDetDefinition!(
+    gd::PL_global_data{T}, def::Definition{T}, isdet::Bool
+)::Bool where {T}
+    if (isdet && (def.flags & P_DET) != 0) || (!isdet && (def.flags & P_DET) == 0)
+        return true
+    end
+    if isdet                                        # nondet --> det
+        def.flags |= P_DET
+        freeCodesDefinition!(gd, def, true)         # reset to S_VIRGIN
+    else                                            # det --> nondet
+        def.flags &= ~P_DET
+        freeCodesDefinition!(gd, def, true)         # reset to S_VIRGIN
+    end
+    return true
+end
+
 # PORT: pl-proc.c setAttrDefinition
-# DIVERGES: `P_DET` (its own setter) is refused; `ld` is an argument (the thread-local setter raises).
+# DIVERGES: `ld` is an argument (the thread-local setter raises).
 "Set (or clear) attribute `attr` of `def` (pl-proc.c)."
 function setAttrDefinition(
     ld::PL_local_data{T}, def::Definition{T}, attr::UInt64, val::Bool
@@ -1845,9 +1864,7 @@ function setAttrDefinition(
     attr == P_DYNAMIC && return setDynamicDefinition!(_query_gd(ld), def, val)
     attr == P_THREAD_LOCAL && return setThreadLocalDefinition!(ld, def, val)
     attr == P_CLAUSABLE && return setClausableDefinition!(_query_gd(ld), ld, def, val)
-    attr == P_DET && throw(
-        NotPortedError{T}(def.name, "setAttrDefinition: attribute $attr", "not ported")
-    )
+    attr == P_DET && return setDetDefinition!(_query_gd(ld), def, val)
     if val
         def.flags |= attr
     else

@@ -256,10 +256,10 @@ MUTANTS = [
          old="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) != 0\n        trie_delete(gd, atrie, nid, false)",
          new="    if (atrie.nodes[nid].flags & TN_IDG_ADDED) == 0\n        trie_delete(gd, atrie, nid, false)"),
     # ── the supervisor, the opcode, the assert flag, the registrations ──
-    dict(id="TB6-V1 S_INCR_DYNAMIC takes S_WRAP's code, 162 (KILL TC: the opcode-order row, the tail of the opcode table is 13 numbers in pl-vmi.c's order; WR: a wrapped predicate runs the incremental branch)",
+    dict(id="TB6-V1 S_INCR_DYNAMIC takes S_WRAP's code, 163 (KILL TC: the opcode-order row, the tail of the opcode table is 13 numbers in pl-vmi.c's order; WR: a wrapped predicate runs the incremental branch)",
          file=VMI, targets=[TC, WR],
-         old="const S_INCR_DYNAMIC = code(161)\n",
-         new="const S_INCR_DYNAMIC = code(162)\n"),
+         old="const S_INCR_DYNAMIC = code(162)\n",
+         new="const S_INCR_DYNAMIC = code(163)\n"),
     dict(id="TB6-V2 an incremental dynamic predicate gets S_DYNAMIC, no edge to the current table (KILL idg01 at the stack: `r([dependent-(dynamic)],0)`, ti_p has no dynamic child)",
          file=SUP, targets=STACK,
          old="        code[S_INCR_DYNAMIC, I_EXIT],       # MAKE_SV1(incr_dynamic, S_INCR_DYNAMIC) (TAB1 TB6)\n",

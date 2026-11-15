@@ -2320,6 +2320,7 @@ function _manifest_index(T)
         (LK.SYSTEM_MODE, Tuple{LD}, false),   # LB2
         (LK.setAccessLevel!, Tuple{LD, Int64}, false),   # LB2
         (LK.setClausableDefinition!, Tuple{GD, LD, D, Bool}, false),   # TAB1 (library(error) `$clausable`)
+        (LK.setDetDefinition!, Tuple{GD, D, Bool}, false),   # SSU1b (`det/1`)
         (LK.setAttrDefinition, Tuple{LD, D, UInt64, Bool}, false),
         (LK.isTransparentMetamask, Tuple{D, Vector{LK.arg_info}}, false),  # MOD4
         (LK.setMetapredicateMask, Tuple{D, Vector{LK.arg_info}}, false),   # MOD4

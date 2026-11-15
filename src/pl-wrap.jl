@@ -109,15 +109,14 @@ isCallWrapper(c::code)::Bool = c == S_CALLWRAPPER || c == S_TABLED
 
 # PORT: pl-wrap.c skipWrapperPrefix
 # DIVERGES: `codes` and the index of the first instruction (1-based) replace the program counter; the result is the index of
-# the first instruction that is no prefix. `S_DET` is left out until the opcode is declared (`chainPredicateSupervisor`
-# never emits it, `P_DET` cannot be set: src/pl-supervisor.jl).
+# the first instruction that is no prefix.
 "The index in `codes` of the first instruction after the prefix `chainPredicateSupervisor` prepends (pl-wrap.c)."
 function skipWrapperPrefix(codes::Vector{code}, pc::Int=1)::Int
     while true
         op = codes[pc]                                          # fetchop(PC)
         if op == S_MQUAL || op == S_LMQUAL
             pc += 2                                             # stepPC(PC): the opcode and the argument offset
-        elseif op == S_SSU_DET
+        elseif op == S_SSU_DET || op == S_DET
             pc += 1                                             # stepPC(PC): the opcode
         else
             return pc

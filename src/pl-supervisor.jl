@@ -254,20 +254,22 @@ function staticSupervisor(
 end
 
 # PORT: pl-supervisor.c chainPredicateSupervisor
-# (pl-supervisor.c:379-418 at the pin; the meta-argument branch since MOD4)
-# DIVERGES: no `S_DET`: `P_DET` cannot be set here (`setAttrDefinition` refuses it). The chained supervisor
-# is a new code vector (the shared block `post` is not changed, nor freed: `freeCodesMem` is Julia's); the
+# (pl-supervisor.c:379-418 at the pin; the meta-argument branch since MOD4, `S_DET` since SSU1b)
+# DIVERGES: the chained supervisor is a new code vector (the shared block `post` is not changed, nor freed: `freeCodesMem` is Julia's); the
 # side table is `post`'s, as the `CA1_CLAUSEREF` operands index it by entry, not by position. The
 # argument masks are `def.impl_clauses.args` (upstream's `def->impl.any.args`, the union's common field).
-"Prepend `post` with the checks the predicate's declarations need — `S_SSU_DET` for an SSU predicate, `S_MQUAL`/`S_LMQUAL` for a transparent meta-predicate (pl-supervisor.c)."
+"Prepend `post` with the checks the predicate's declarations need — `S_SSU_DET` for an SSU predicate, `S_DET` for a `det/1` one (SSU1b), `S_MQUAL`/`S_LMQUAL` for a transparent meta-predicate (pl-supervisor.c)."
 function chainPredicateSupervisor(
     def::Definition{T}, post::Tuple{Vector{code}, Vector{ClauseRef{T}}}
 )::Tuple{Vector{code}, Vector{ClauseRef{T}}} where {T}
     meta = (def.flags & P_META) != 0 && (def.flags & P_TRANSPARENT) != 0
-    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)
+    if meta || (def.flags & (P_SSU_DET | P_DET)) != 0   # ison(def, P_SSU_DET|P_DET)
         codes = code[]                              # initBuffer(&buf)
         if (def.flags & P_SSU_DET) != 0
             push!(codes, S_SSU_DET)                 # addBuffer(&buf, encode(S_SSU_DET), code)
+        end
+        if (def.flags & P_DET) != 0
+            push!(codes, S_DET)                     # addBuffer(&buf, encode(S_DET), code)
         end
         if meta && def.arity > 0                    # ison(def, P_META) && ison(def, P_TRANSPARENT)
             # (`def.arity > 0`: an arity-0 predicate has no masks, `impl_clauses.args === nothing`;

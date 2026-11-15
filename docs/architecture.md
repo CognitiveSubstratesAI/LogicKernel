@@ -2221,10 +2221,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 354 | 0 | 68 | 3 | 1 |
-| refusal sites | 0 | 69 | 0 | 0 | 3 |
+| refusal sites | 0 | 68 | 0 | 0 | 3 |
 | Prolog flags | 65 | 14 | 20 | 0 | 34 |
-| VM instructions | 198 | 0 | 35 | 0 | 0 |
-| **total** | 617 | 83 | 123 | 3 | 38 |
+| VM instructions | 199 | 0 | 34 | 0 | 0 |
+| **total** | 618 | 82 | 122 | 3 | 38 |
 
 #### The boot and library files
 
@@ -2284,7 +2284,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
-| SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
 | AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
@@ -2306,8 +2305,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [68, 0, 20, 35]
-    line [0, 69, 14, 0]
+    bar [68, 0, 20, 34]
+    line [0, 68, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -3868,15 +3867,15 @@ pin `8609e216`, upstream names.
 * **DIVERGES, representation:** the slot of a block holds the choice point's POSITION (as every
   conditional's); the block's choice point that `C_DETTRUE` takes out of the chain while its stack
   region stays in use is marked `unlinked`, as `C_SOFTCUT`'s (the pools hold live records only).
-* **NOT PORTED:** the `det/1` declaration (`P_DET`'s setter, `FR_DET`: R2 — the `property` branch
-  is ported and unreachable); the debugger's
-  `CHP_DEBUG`; `frameFinished` on a failed `FR_WATCHED` frame (V9g). (The SSU branch of `ssu_or_det_failed`,
-  not ported here and asserted, runs since SSU2.)
+* **NOT PORTED:** the debugger's `CHP_DEBUG` branches (the `if ( debugstatus.debugging )` ones of pl-vmi.c; the
+  run loop reads the flag only in `S_TABLED`; the choice points that det and SSU frames take are kept). (`frameFinished` on a failed `FR_WATCHED` frame runs since V9g, in
+  `frameFailed`; the SSU branch of `ssu_or_det_failed` runs since SSU2; `det/1`'s setter and `FR_DET` are SSU1b's:
+  the `property` branch is reachable since.)
 * **R2 checklist:** `$/1` and `$/0` as PREDICATES (boot/init.pl: `$(Goal) :- $(Goal).`, `$ :- $.`
-  — what `call($)` reaches); `det/1` and `'$set_predicate_attribute'(…, det, …)`;
-  `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
-  tests/core_lang/test_det_decl.pl under plunit (its `det_decl` unit needs `det/1`, its
-  `with_debug/1` cases the debugger, `garbage_collect/0`).
+  — what `call($)` reaches); (`det/1`'s setter, `'$set_predicate_attribute'(…, det, …)`, is SSU1b's: see
+  its section); `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
+  tests/core_lang/test_det_decl.pl under plunit (its `det_decl` unit runs since SSU1b as
+  rows of test/core_lang/test_det_ssu_swipl.jl; the plunit mirror needs `with_debug/1`'s debugger and `garbage_collect/0`).
 * **Gates — against the oracle, all three term types:** test/core_lang/test_det_swipl.jl — 37
   cases, 49 goals: every answer, ball and determinism equal swipl's under `error`, `silent` and
   `warning` (there the reported terms too, in order — including the frame no clause matches, which
@@ -5951,6 +5950,32 @@ Tests: test/core_lang/test_ssu_swipl.jl (the s-, d- and a01/a04/a09 rows of evid
 call flipped from the refusal to `ok`; test/compile/test_ssu_compile_swipl.jl's refusal testset removed. Mutants:
 tools/mutants/SSU2.py.
 
+## SSU1b — the `det/1` supervisor prefix `S_DET` and its setter (R2, evidence/TAB1/ssu1b_handoff.md)
+
+`S_DET` is NOT the SSU opcode: at the pin it is the `det/1` supervisor prefix (pl-vmi.c:3749 `VMI(S_DET,0,0,()) { setLocal(FR, FR_DET); }`;
+the SSU one is `S_SSU_DET`, :3743, SSU1/SSU2). What SSU1b ports:
+
+- **The opcode** `S_DET` in the table (src/pl-vmi.jl, right after `S_SSU_DET`; every later number is derived by tools/renumber_vmi.py) and its
+  label in the run loop (src/pl-wam.jl: one store, `FR_DET` into the frame's flags). With the label, `exit_det_error`'s `property` branch is
+  reachable (the frame a `det/1` predicate leaves with a choice point or fails).
+- **The emission** (`chainPredicateSupervisor`, pl-supervisor.c:379-418): when `P_DET` is set the supervisor starts `S_DET`, after `S_SSU_DET`
+  when both flags are set, before the `S_MQUAL` run of a transparent meta-predicate, as upstream orders them. A tabled predicate gets the prefix
+  through the same chain (`$c_wrap_predicate` calls it). `skipWrapperPrefix` (pl-wrap.c:181) steps over the one-word `S_DET` as over `S_SSU_DET`.
+- **The setter** `setDetDefinition!` (pl-proc.c:3744-3758) reached from `setAttrDefinition` (`'$set_predicate_attribute'(P, det, Bool)`): set or
+  clear `P_DET`, then reset the supervisor to `S_VIRGIN` (`freeCodesDefinition!`), so the next call chains `S_DET` in or out. The refusal
+  `setAttrDefinition: attribute $attr` is deleted.
+- **The reload half:** `fix_det` (pl-srcfile.c:1302-1310, src/pl-srcfile.jl) was ported with LB6a and matches the C line by line; it drops `P_DET`
+  and, through `freeCodesDefinition!`, the `S_DET` supervisor of a predicate whose reload no longer declares det (`setAttrProcedureSource` records
+  `P_DET` in the reload and also applies it, as `P_DET` is outside `P_ATEND`). White-box rows: test/db/test_reload_blocks_swipl.jl `r19b`; the second
+  consult itself is LB6b's.
+- **Not here:** the `det/1` directive and `$/1` as predicates (boot/init.pl: R2's consult); `PRED_DET` of the saved state (pl-qlf.c:1162 in
+  `loadPredicateFlags`, :3136 in `predicateFlags`): both functions are unwritten in the kernel, on main and on the QLF line (`wip/qlfrd2`: the
+  predicate writer and reader of the state file are unwritten, `state` is `nothing`); owner LB3 (docs/r2_owners.tsv `kfile:pl-qlf.jl`).
+
+Tests: test/core_lang/test_det_ssu_swipl.jl (upstream's `det_decl` unit of tests/core_lang/test_det_decl.pl and the tabled SSU case
+`ssu_complete_fails` of tests/tabling/test_tabled_supervisor.pl as kernel rows, answers pinned on the pinned swipl; white-box rows on the supervisor
+and the frame flag; the wrapper-skip rows). Mutants: tools/mutants/SSU1B.py.
+
 ## S1 — stream blobs, user aliases, open/3,4 and close/1,2 (R2, D-0149, flags_rest.md §4 D10)
 
 What S1 adds (pl-file.c, pl-files.c `PL_get_file_name`, pl-stream.c `Sopen_file`/BOM/references, pl-error.c `ERR_FILE_OPERATION`):
@@ -6309,8 +6334,7 @@ What MOD4 ports (pl-proc.c, pl-supervisor.c, pl-vmi.c, pl-wam.c at the pin):
   attvar.pl:109-110/250-251 and when.pl:40-41 declare them; findall/4, call_residue_vars/2, when/2 and freeze/2 take
   their goal as upstream's clauses do (qualified on entry). `setBuiltinPredicateProperties!` makes pl-ext.c:391-421's
   `PL_meta_predicate` calls for the predicates the kernel defines.
-- **Not here:** `setMetapredicateSource` and the `:- meta_predicate` directive in a consulted file (LB2); `S_DET`
-  (`P_DET` is refused by `setAttrDefinition`); the masks' reader `'$get_predicate_attribute'(P, meta_predicate, Spec)`
+- **Not here:** `setMetapredicateSource` and the `:- meta_predicate` directive in a consulted file (LB2); the masks' reader `'$get_predicate_attribute'(P, meta_predicate, Spec)`
   (pl-proc.c; not in the kernel's PRED_DEF table, checked 2026-10-29); goal expansion of meta-arguments (no expansion).
 
 Tests and mutants: see evidence/MOD4/handoff.md (rows vs swipl 10.1.19; tools/mutants/MOD4.py).
@@ -7332,7 +7356,7 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   6. T3's opcode numbers (161..163) follow the tail of the table (from `B_ARG_CF`) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
   7. The code behind `S_TABLED` is a named refusal (owner TAB1); `S_WRAP` and `S_CALLWRAPPER` are ported by WRAP1 (see the WRAP1 section).
 - **Left out (each needs its subsystem):** (`wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2`: ported by WRAP1); the other `$tbl_*` predicates, the
-  tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie
+  tries, worklists, answer tables and `start_tabling/3` (TAB1); `tbl_set_incremental_predicate`'s effect on a trie
   (the incremental dependency graph is TAB1's).
 - **ORIGINAL (no upstream counterpart):** the payload of a closure blob (`_closure_bytes`, `closure_of_word`), the zero-argument `table_props()`, the layout of a wrapper
   supervisor (`code[op, 1, closure atom word, wrapper name atom word]` with the clause reference in `codes_crefs`), tools/mutants/TAB1MIN.py and the LK-only white-box rows.
