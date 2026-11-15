@@ -606,7 +606,7 @@ sc(X) :- between(1, 3000, X).
 
 # Cases in ONE database, in order (the residue of an abolish carries into the next row, as pinned).
 #   s01 s02  sa: 3 answers, 4 nodes (<= TRIE_SINGLE_NODES = 8: allocated one by one) fill, abolish. The abolish frees the individual nodes through
-#            free_trie_node (pl-trie.c:1200, kills TRIECH-TC-N) and the children blocks through free_block (:729, TC-F); s01 is the charge side.
+#            free_trie_node (pl-trie.c:1200, aims TRIECH-TC-N) and the children blocks through free_block (:729, TC-F); s01 is the charge side.
 #   s03 s04  sb: 40 answers: the trie grows past 8 nodes, so nodes come from chunks (alloc_trie_node :1113) and the children block of the root is replaced as it
 #            grows (add_child retire_block, :891: the fill's U1 carries the free_block of every outgrown block, TC-F). The abolish frees the chunks
 #            (free_node_chunks -> free_chunk_list :1268, kills TC-O, TC-P) and the children block (:1439, TC-F).
@@ -646,7 +646,7 @@ ia(X) :- id(X).
 
 # PRUNE: an answer trie of 3000 answers loses 2999 of them in a re-evaluation. The deleted nodes go on the chunk free list, which holds more nodes than the trie and
 # more than TRIE_SWEEP_MIN = 1024, so sweep_node_chunks drops the chunks with no node in use and returns their bytes (pl-trie.c sweep_node_chunks -> free_chunk_list
-# of the dropped chunks, kills TRIECH-TC-Q: p03 reads the bytes the table keeps afterwards, 50664 in swipl, of which trie_property(size) of the answer trie
+# of the dropped chunks, aims TRIECH-TC-Q: p03 reads the bytes the table keeps afterwards, 50664 in swipl, of which trie_property(size) of the answer trie
 # is 49384). p01 is the table after the first evaluation (the compiled trie's nodes are discarded: free_node_chunks, TC-O, TC-P), p04 the second re-evaluation
 # (two answers), p05 the abolish. Wrong order of rows would change the pins: the sequence is the program's.
 const _T6_CASES_PRUNE = [
@@ -745,14 +745,14 @@ const _T6_GROUPS = [
     ),
     (
         key="SPACE",
-        label=raw"SPACE: table_space_used after building and abolishing tables of 3, 40 and 3000 answers (TRIE-CHARGE: kills TRIECH-TC-N, -F, -O, -P)",
+        label=raw"SPACE: table_space_used after building and abolishing tables of 3, 40 and 3000 answers (TRIE-CHARGE: aims TRIECH-TC-N, -F, -O, -P)",
         program=_T6_PROG_SPACE,
         cases=_T6_CASES_SPACE,
         pins=_T6_PINS_SPACE
     ),
     (
         key="PRUNE",
-        label=raw"PRUNE: table_space_used after a re-evaluation deleted 2999 of 3000 answers (TRIE-CHARGE: kills TRIECH-TC-Q, with -O and -P)",
+        label=raw"PRUNE: table_space_used after a re-evaluation deleted 2999 of 3000 answers (TRIE-CHARGE: aims TRIECH-TC-Q, with -O and -P)",
         program=_T6_PROG_PRUNE,
         cases=_T6_CASES_PRUNE,
         pins=_T6_PINS_PRUNE
@@ -1011,11 +1011,11 @@ end
     end
 end
 
-# THE TRIE-STRUCT WHITE-BOX ROW (TRIE-CHARGE: kills TRIECH-TC-C, -D, -E; written WITHOUT a kernel run). swipl cannot answer it: a table's tries carry a symbol, so
+# THE TRIE-STRUCT WHITE-BOX ROW (TRIE-CHARGE: aims TRIECH-TC-C, -D, -E; written WITHOUT a kernel run). swipl cannot answer it: a table's tries carry a symbol, so
 # their trie_destroy waits for the atom GC (the caveat above the SPACE group), and trie_destroy/1 only empties a trie_new trie, which has no pool. The expectations
 # are hand-written from the C text (swipl-devel 18168e62, src/pl-trie.c): trie_create charges sizeof(*trie) = 152 bytes (:238), trie_destroy of a trie that is
 # not a table gives them back with free_to_pool (:269), and of a table (TRIE_ISTABLE) through idg_free_or_defer(free_trie_struct, ...) (:267, free_trie_struct :257).
-@testset "TRIE-CHARGE white-box: trie_destroy returns the struct's bytes to the pool (kills TRIECH-TC-C, -D, -E)" begin
+@testset "TRIE-CHARGE white-box: trie_destroy returns the struct's bytes to the pool (aims TRIECH-TC-C, -D, -E)" begin
     gd = LK.PL_global_data{_T6_T}()
     ld = LK.PL_local_data{_T6_T}(gd)
     for (istable, label) in ((false, "plain trie"), (true, "answer table"))
