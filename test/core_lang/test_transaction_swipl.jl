@@ -827,7 +827,9 @@ end
     @test !LK.UNDO_SCHEDULED(ld)                                      # the hook ran at the backtrack
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
-    @test _tx_ask(gd, ld, "tx_pushed") == "tx_pushed c[91,124,93]/2(a[97],nil)"   # [a]
+    # [a]: `_tx_ask` encodes the whole answer `tx_pushed([a])`, as every row of the file reads it (the functor is part of the line)
+    @test _tx_ask(gd, ld, "tx_pushed") ==
+        "tx_pushed c[116,120,95,112,117,115,104,101,100]/1(c[91,124,93]/2(a[97],nil))"
 end
 
 # txx18 (WHITE-BOX, kernel only; pl-undo.c:160-189 push_undo, TX1-N1 and TX1-N2): the cell of the undo list is scheduled only when it
