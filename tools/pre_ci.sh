@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ORIGINAL: no swipl-devel counterpart — the LOCAL run of the cheap steps of the `compile` job of
-# .github/workflows/ci-compile.yml (audit D-0677 item 1): fmt, port_check, bool_atoms, where_return, the tool cases and
+# .github/workflows/ci-compile.yml (audit D-0677 item 1): fmt, port_check, bool_atoms, where_return, parse_check, the tool cases and
 # the cheap test files, in the workflow's order and with the workflow's own step lines, before a push to a ci/ ref.
 #
 #   tools/pre_ci.sh [--only STEP] [--list]       (cwd: ignored, the script works in the repo root it lives in)

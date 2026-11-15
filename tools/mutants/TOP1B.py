@@ -245,8 +245,8 @@ MUTANTS = [
          new="nothing"),
     dict(id="TOP1B-P10 a freed registry entry reads end of file (0) instead of an error (-1) (KILL test_top1b_wrap_swipl.jl:410-411: -1 and SIO_FERR)",
          file=PFI, targets=TARGETS_EF,
-         old="::Vector{UInt8}, ::Int, ::Int\n)::Int = -1",
-         new="::Vector{UInt8}, ::Int, ::Int\n)::Int = 0"),
+         old="::Vector{UInt8}, ::Int,\n    ::Int\n)::Int = -1",
+         new="::Vector{UInt8}, ::Int,\n    ::Int\n)::Int = 0"),
     # ── pl-file.c closeWrappedIO ──
     dict(id="TOP1B-P11 closeWrappedIO does not give the cleared flag back (KILL test_top1b_wrap_swipl.jl:322, :333)",
          file=PFI, targets=TARGETS_EF,

@@ -486,9 +486,10 @@ end
     # 229 before it (> 200): the owner lines of the rows TB2-TB4 ported went (the tbl and idg predicates and refusals,
     # owners TB2, TB3, TB4). Both sides stay non-empty and a dead owner lookup (0 owned rows) fails. D-0083: the real-tree
     # count is internal identity; lower it only with the rows a step closed, named in that commit.
+    # 199 after TRIMSTACKS: it ported `trim_stacks/0` (pl-setup.c:1751) and its owner row `pred:trim_stacks/0 Q10` went (200 -> 199).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 200
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 199
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

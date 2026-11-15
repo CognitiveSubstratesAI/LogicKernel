@@ -2323,10 +2323,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 353 | 0 | 69 | 3 | 1 |
-| refusal sites | 0 | 93 | 0 | 0 | 12 |
+| refusal sites | 0 | 92 | 0 | 0 | 12 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 615 | 108 | 125 | 3 | 48 |
+| **total** | 615 | 107 | 125 | 3 | 48 |
 
 #### The boot and library files
 
@@ -2384,13 +2384,13 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | CT1 | 2 | 0 | 2 | `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
-| PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
 | SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
 | AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
+| PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | R2 F1b | 1 | 0 | 1 | `refusal set_stack_limit (a changed stack limit)` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
@@ -2408,7 +2408,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [69, 0, 20, 36]
-    line [0, 93, 15, 0]
+    line [0, 92, 15, 0]
 ```
 
 <!-- END GENERATED R2 status -->

@@ -62,7 +62,7 @@ lst="$(bash "$PRE" --list 2>&1)"
 # the REAL workflow: every step line found
 unset PRE_CI_WORKFLOW
 lst="$(bash "$PRE" --list 2>&1)"; n="$(printf '%s\n' "$lst" | grep -c .)"
-{ [ "$n" -ge 8 ] && for s in fmt port_check bool_atoms where_return tools_modes test_attvar_words; do printf '%s\n' "$lst" | grep -qx "$s" || exit 1; done; } && ok "the real workflow: $n step lines found (>= 8), the named cheap steps among them" || bad "real workflow list ($n)" "$lst"
+{ [ "$n" -ge 8 ] && for s in fmt port_check bool_atoms where_return parse_check tools_parse tools_modes test_attvar_words; do printf '%s\n' "$lst" | grep -qx "$s" || exit 1; done; } && ok "the real workflow: $n step lines found (>= 8), the named cheap steps among them" || bad "real workflow list ($n)" "$lst"
 # MUTATION PROOF at verdict level
 pre_rows() { # SCRIPT — number of the rows that do not hold for the pre_ci.sh copy SCRIPT (0 for the real one)
     local s="$1" o r n=0

@@ -77,7 +77,7 @@ const foreigns = (
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
-# copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
+# copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), setup (pl-setup.c: $set_prolog_stack/4, trim_stacks/0, $on_signal/4, prolog_alert_signal/2; TRIMST and R2), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
 # termhash and bisim (lane F), between op and attvar upstream, sit after error/event here; strings (T2), tabling and wrap, then ctype_pred (CT1b: char_type/2, code_type/2, in src/os/pl-ctype-pred.jl), then tai (TAI1: stamp_date_time/3, date_time_stamp/2, format_time/3,4, in src/os/pl-tai.jl), then locale (CT1 LOCALE: locale_property/2, locale_create/3, locale_destroy/1, set_locale/1, current_locale/1, in src/os/pl-locale.jl) then coverage (lane F: the $cov_* predicates, in src/pl-coverage.jl), then profile (lane F: pl-prof.c, in src/pl-prof.jl) then zip (ZIP1: the zip predicates, in src/pl-zip.jl) are appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
@@ -88,7 +88,7 @@ const _PRED_TABLES = (
     PL_predicates_from_prologflag,
     PL_predicates_from_trace, PL_predicates_from_pro, PL_predicates_from_read,
     PL_predicates_from_wic, PL_predicates_from_file, PL_predicates_from_files,
-    PL_predicates_from_glob, PL_predicates_from_ctype,
+    PL_predicates_from_glob, PL_predicates_from_ctype, PL_predicates_from_setup,
     PL_predicates_from_proc,
     PL_predicates_from_srcfile, PL_predicates_from_write,
     PL_predicates_from_redirect,
@@ -99,7 +99,7 @@ const _PRED_TABLES = (
     PL_predicates_from_error, PL_predicates_from_event,
     PL_predicates_from_termhash, PL_predicates_from_bisim, PL_predicates_from_trie,
     PL_predicates_from_tabling,
-    PL_predicates_from_wrap, PL_predicates_from_alloc, PL_predicates_from_setup,
+    PL_predicates_from_wrap, PL_predicates_from_alloc,
     PL_predicates_from_ctype_pred,
     PL_predicates_from_tai,
     PL_predicates_from_locale,
@@ -116,7 +116,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_pro...,
     PL_predicates_from_read..., PL_predicates_from_wic..., PL_predicates_from_file...,
     PL_predicates_from_files..., PL_predicates_from_glob..., PL_predicates_from_ctype...,
-    PL_predicates_from_proc..., PL_predicates_from_srcfile..., PL_predicates_from_write...,
+    PL_predicates_from_setup..., PL_predicates_from_proc...,
+    PL_predicates_from_srcfile..., PL_predicates_from_write...,
     PL_predicates_from_redirect...,
     PL_predicates_from_format...,
     PL_predicates_from_system...,
@@ -125,7 +126,7 @@ const _FOREIGN_VA = (
     PL_predicates_from_error..., PL_predicates_from_event...,
     PL_predicates_from_termhash..., PL_predicates_from_bisim..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
-    PL_predicates_from_wrap..., PL_predicates_from_alloc..., PL_predicates_from_setup...,
+    PL_predicates_from_wrap..., PL_predicates_from_alloc...,
     PL_predicates_from_ctype_pred...,
     PL_predicates_from_tai...,
     PL_predicates_from_locale...,

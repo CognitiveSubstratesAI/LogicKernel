@@ -71,7 +71,7 @@ MAIN_ONLY=0; [ "${1:-}" = main ] && MAIN_ONLY=1       # `main`: the cases that a
 _unless_main() { [ "$MAIN_ONLY" = 1 ] || "$@"; }
 mkdir -p "$ROOT/.warm"
 T="$(mktemp -d "$ROOT/.warm/test.XXXXXX")"
-trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; [ -f "$T/coverage_zero_known.bak" ] && cp "$T/coverage_zero_known.bak" "$ROOT/tools/coverage_zero_known.txt"; "$W" stop >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
+trap '[ -f "$T/rules_common.jl.bak" ] && cp "$T/rules_common.jl.bak" "$ROOT/test/core_lang/rules_common.jl"; [ -f "$T/term_interface.jl.bak" ] && cp "$T/term_interface.jl.bak" "$ROOT/src/term_interface.jl"; [ -f "$T/manifest.bak" ] && cp "$T/manifest.bak" "$ROOT/test/static_analysis_manifest.jl"; [ -f "$T/port_check.jl.bak" ] && cp "$T/port_check.jl.bak" "$ROOT/tools/port_check.jl"; [ -f "$T/coverage_zero_known.bak" ] && cp "$T/coverage_zero_known.bak" "$ROOT/tools/coverage_zero_known.txt"; "$W" stop >/dev/null 2>&1; systemctl --user stop "logickernel-warm-decoy$$" "logickernel-warm-decoy$$two" "logickernel-warm-decoy$$sib" >/dev/null 2>&1; rm -rf "$T"; rm -f "$ROOT"/src/_preflight_probe_*.jl "$ROOT"/src/_struct_probe_*.jl "$ROOT"/test/core_lang/test_preflight_probe_*.jl' EXIT
 pass=0 fail=0
 check() {   # check NAME WANT_EXIT GOT_EXIT
     if [ "$2" = "$3" ]; then pass=$((pass + 1)); echo "  ok   $1"
@@ -418,7 +418,12 @@ _guard_cases() {
     has "…to 1 worker" "$T/sc2n" "^1$" 1
     export LOGICKERNEL_SHARED_BUDGET=1                   # the rest exercises it, on a runner too
     "$W" stop > /dev/null 2>&1
-    systemd-run --user --unit="$decoy" --collect --quiet --working-directory="$T" sleep 600
+    # THE DECOY'S LIFETIME is a TEST BUDGET, not a design value: the cases after it run for as long as the slowest CI runner takes
+    # (a preflight with a daemon restart is minutes), and a decoy that has EXPIRED makes a later `start` SUCCEED (exit 0, want 6)
+    # and leaves a real daemon of this checkout running, which then makes every following `start` exit 0 as well (CI run
+    # 43615006431: the stale-marker case and the mutant-worktree case, 2 failures from ONE expired decoy). 3600 s, and the
+    # late cases first assert that their decoy is still alive, so an expiry is a NAMED failure of its own, not a cascade.
+    systemd-run --user --unit="$decoy" --collect --quiet --working-directory="$T" sleep 3600
     dpid=$(systemctl --user show "$decoy" -p MainPID --value)
     "$W" start > "$T/g1" 2>&1; check "guard: start is REFUSED while another checkout's daemon runs (exit 6)" 6 $?
     has "…naming its pid" "$T/g1" "pid $dpid," 1
@@ -435,7 +440,7 @@ _guard_cases() {
     LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_SECOND_MIN_GB=100000 "$W" start > "$T/g2" 2>&1
     check "second: refused without the memory it needs (exit 6)" 6 $?
     has "…saying how much it needs" "$T/g2" "needs 100000 GB available" 1
-    systemd-run --user --unit="${decoy}two" --collect --quiet --working-directory="$T" sleep 600
+    systemd-run --user --unit="${decoy}two" --collect --quiet --working-directory="$T" sleep 3600
     LOGICKERNEL_WARM_SECOND=1 LOGICKERNEL_WARM_SECOND_MIN_GB=0 "$W" start > "$T/g3" 2>&1
     check "second: refused beside TWO other daemons, never a third (exit 6)" 6 $?
     systemctl --user stop "${decoy}two" > /dev/null 2>&1
@@ -502,12 +507,16 @@ _guard_cases() {
     check "second: …and the daemon is still in lk-warm2.slice" 0 $?
     "$W" stop > /dev/null 2>&1
     [ ! -e "$ROOT/.warm/second" ]; check "second: a deliberate stop forgets it" 0 $?
+    systemctl --user is-active --quiet "$decoy"
+    check "second: …the other daemon (the decoy) is still ALIVE for the stale-marker case (its lifetime outlasts the cases before)" 0 $?
     : > "$ROOT/.warm/second"                              # a STALE marker (a crashed second daemon's)…
     "$W" start > "$T/g6" 2>&1; check "second: …does not excuse a plain start beside another daemon (exit 6)" 6 $?
     rm -f "$ROOT/.warm/second"
     systemctl --user stop "$decoy" > /dev/null 2>&1
     mkdir -p "$T/sibling/.warm"; echo "$ROOT" > "$T/sibling/.warm/MUTANT_WORKTREE"
-    systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 600
+    systemd-run --user --unit="${decoy}sib" --collect --quiet --working-directory="$T/sibling" sleep 3600
+    systemctl --user is-active --quiet "${decoy}sib"
+    check "guard: …the mutant worktree's decoy is alive before the start that must refuse" 0 $?
     env -u LOGICKERNEL_WARM_SIBLING_MUTANTS "$W" start > /dev/null 2>&1
     check "guard: a mutant worktree's daemon refuses a start WITHOUT the opt-in (exit 6)" 6 $?
     LOGICKERNEL_WARM_SIBLING_MUTANTS=1 "$W" start > /dev/null 2>&1
