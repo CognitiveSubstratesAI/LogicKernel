@@ -2384,11 +2384,11 @@ end
 # The caller's `compileArith` call is unwritten here (see `compileSubClause!`): a goal this function
 # accepts under `optimise` is refused there, a goal it rejects is compiled as a call.
 """
-`arithCompilable(arg)` (pl-comp.c): false when the arithmetic goal `arg` contains a list cell `[X|Y]`
+`arithCompilable(T, arg)` (pl-comp.c; `T` the term type, which the stack of arguments is built on): false when the arithmetic goal `arg` contains a list cell `[X|Y]`
 whose head or tail is a variable, as in `[C] =:= 0'a` (such a list is evaluated at run time); true
 otherwise. Iterative: an arithmetic expression may be deep.
 """
-function arithCompilable(arg::T)::Bool where {T}
+function arithCompilable(::Type{T}, arg::T)::Bool where {T}
     stack = T[]
     while true
         if kind(arg) === EXPR
@@ -2465,7 +2465,7 @@ function compileSubClause!(
             end
             # O_COMPILE_ARITH (c:3511): under `optimise` upstream compiles it inline (`compileArith`) when
             # `arithCompilable`: refused; otherwise it is compiled as a call
-            truePrologFlag(ld, PLFLAG_OPTIMISE) && arithCompilable(arg) &&
+            truePrologFlag(ld, PLFLAG_OPTIMISE) && arithCompilable(T, arg) &&
                 throw(NotPortedError{T}(arg, "compileArith (optimise)", "the user's Q-AR3"))
         end
         # O_COMPILE_IS (c:3484-3519), `!ci->islocal`: upstream's chain, in its order; a `false` falls

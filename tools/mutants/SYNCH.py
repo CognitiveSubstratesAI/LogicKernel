@@ -20,7 +20,7 @@ T = TARGETS
 P = "src/pl-comp.jl"
 MUTANTS = [
     dict(id="SH-1 the optimise guard no longer asks arithCompilable", file=P, targets=T,
-         old='''            truePrologFlag(ld, PLFLAG_OPTIMISE) && arithCompilable(arg) &&''',
+         old='''            truePrologFlag(ld, PLFLAG_OPTIMISE) && arithCompilable(T, arg) &&''',
          new='''            truePrologFlag(ld, PLFLAG_OPTIMISE) &&'''),
     dict(id="SH-2 arithCompilable: a list cell is refused only when head AND tail are unbound", file=P, targets=T,
          old='''                if kind(child(arg, 2)) === VAR || kind(child(arg, 3)) === VAR''',
