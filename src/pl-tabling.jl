@@ -9585,7 +9585,7 @@ end
 function pl_idg_mono_empty_queue2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    r = PL_get_integer_ex(ld, PL__t0)
+    r = PL_get_pointer_ex(ld, PL__t0)                           # PL_get_pointer_ex(A1, (void**)&mdep)
     r === nothing && return FFALSE
     mdep = mdep_of_ref(ld, r)
     mdep === nothing && return FFALSE
@@ -9704,8 +9704,8 @@ end
 
 # PORT: pl-tabling.c idg_mono_index_deps as pl_idg_mono_index_deps4_va
 # (PRED_IMPL("$idg_mono_index_deps", 4, idg_mono_index_deps, PL_FA_NONDETERMINISTIC), pl-tabling.c:8908-8960 at the pin)
-# DIVERGES: the leaf is the integer id of a node of the index trie (what `'\$trie_gen_node'/3` returns here; upstream: a node
-# pointer); the REDO context is the integer reference of the next dependency (`mdep_ref!`), a stale one ends the enumeration.
+# DIVERGES: the leaf is the int64 handle `serial << 32 | nid` of a node of the index trie (what `'\$trie_gen_node'/3` returns here; upstream: a node
+# pointer, read by `PL_get_pointer_ex`: no Int32 limit; the deps table is keyed by the node id `leaf & 0xffffffff`, the serial half must be the index trie's); the REDO context is the integer reference of the next dependency (`mdep_ref!`), a stale one ends the enumeration.
 "`'\$idg_mono_index_deps'(+SrcTrie, +Leaf, +DstTrie, ?Dependency)`: the dependencies stored at `Leaf` (pl-tabling.c)."
 function pl_idg_mono_index_deps4_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -9720,13 +9720,18 @@ function pl_idg_mono_index_deps4_va(
         n === nothing && return FFALSE
         deps = idg_mono_index_deps(n)
         deps === nothing && return FFALSE
-        leaf = PL_get_integer_ex(ld, PL__t0 + 1)
+        leaf = PL_get_pointer_ex(ld, PL__t0 + 1)                # PL_get_pointer_ex(A2, &leaf): the int64 `serial<<32|nid` of '$trie_gen_node'/3
         leaf === nothing && return FFALSE
         dtrie = get_trie(gd, ld, PL__t0 + 2)
         dtrie === nothing && return FFALSE
         (di = dtrie.IDG) !== nothing && di.force_reeval && return FFALSE
 
-        mdep = get(deps, leaf, nothing)
+        # lookupHTablePP(deps, leaf): the table is keyed by the node id, a handle of another trie (serial) names no leaf of this index
+        mdep = if (leaf >> 32) == idg_mono_index(n)
+            get(deps, leaf & 0xffffffff, nothing)
+        else
+            nothing
+        end
     elseif ctl == FRG_REDO
         mdep = mdep_of_ref(ld, PL_foreign_context_address(PL__ctx))
     else                                                # FRG_CUTTED
