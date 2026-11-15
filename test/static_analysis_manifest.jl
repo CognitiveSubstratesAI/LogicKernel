@@ -2571,6 +2571,7 @@ function _manifest_index(T)
         (LK.cleanDefinition!, Tuple{GD, LD, D, DDI, UInt64, Base.RefValue{Bool}}, false),
         # BOOTPRED-dict — the remaining pl-dict.c predicates (src/pl-dict.jl)
         (LK.put_dict4, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.setdict, Tuple{LD, Int, Int, Int, UInt32}, false),
         (LK.pl_dict_pairs, Tuple{LD, Int}, false),
         (LK.pl_dict_sort_indexes, Tuple{LD, Int, Int}, false),
         (LK.pl_dict_pair, Tuple{LD, Int, Union{Nothing, Vector{Int}}, Int, Int}, false),
@@ -2593,6 +2594,7 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_get_dict_ex3_va, LK.pl_get_dict5_va, LK.pl_put_dict4_va,
+                LK.pl_b_set_dict3_va, LK.pl_nb_set_dict3_va, LK.pl_nb_link_dict3_va,
                 LK.pl_dict_pairs3_va, LK.pl_del_dict4_va, LK.pl_unify_left_dict2_va,
                 LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
                 LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
