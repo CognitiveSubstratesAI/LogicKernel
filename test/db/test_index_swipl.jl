@@ -555,14 +555,69 @@ function _xidx_diff(ours::Vector{_XIdx}, theirs::Vector{_XIdx})::Vector{String}
     return out
 end
 
+# TARGET-ONLY (SYNC-F): the kernel's pl-index.jl is at swipl-devel cf6960c2, the live oracle is still the
+# pin (18168e62). Three changes of pl-index.c between them reach this differential on the seeded program;
+# the pin's answer is pinned BESIDE the target's below, never reverted (D-0736 (4)). Pin when the oracle
+# moves to cf6960c2: delete `_XDET_TARGET_ONLY`, `_XIDX_PIN_ONLY`, `_xidx_split` and the net-count test.
+#   * indexableCompound (pl-index.c:2829-2838 at the target): the argument list of a deep index also ends
+#     at I_EXITCATCH, I_EXITRESET, I_EXITFACT, I_EXIT, I_ENTER, I_SSU_COMMIT, I_SSU_CHOICE (an H_R* last
+#     argument has no H_POP), where the pin ran on and called the clause "indexable": the pin has deep
+#     indexes the target no longer builds, so a call on a compound argument is nondet at the target and
+#     det at the pin.
+#   * assess_remove_duplicates (pl-index.c:2676-2682): a variable-heavy small table whose catch-all
+#     clauses take at most the space of the clauses (var_count*size <= clause_count) keeps its index,
+#     which the pin refuses: the target is det where the pin is nondet.
+#   * sort_indexes (pl-index.c:3476-3495): the candidate indexes are sorted by decreasing speedup, so
+#     the index a call uses can differ from the pin's creation order (either direction).
+# The seven determinism lines the pin and the target answer differently (the answers are identical):
+const _XDET_TARGET_ONLY = String[
+    "line 1105: ours `113 p14(1056,a2,f(a1),1,1056) det`  swipl `113 p14(1056,a2,f(a1),1,1056) nondet`",
+    "line 2448: ours `129 p17(f(a1),a0,_,f(g(a1,u13),a0)) nondet`  swipl `129 p17(f(a1),a0,_,f(g(a1,u13),a0)) det`",
+    "line 4170: ours `274 p33(f(g(a3,u20),_),f(g(a0,u20),a0),u20,_) nondet`  swipl `274 p33(f(g(a3,u20),_),f(g(a0,u20),a0),u20,_) det`",
+    "line 4191: ours `276 p34(g(u3,_),a3,a0) nondet`  swipl `276 p34(g(u3,_),a3,a0) det`",
+    "line 4228: ours `284 p34(g(u7,_),a2,a0) nondet`  swipl `284 p34(g(u7,_),a2,a0) det`",
+    "line 5745: ours `505 p57(u3,a1,f(g(a2,u3),_),f(zz)) det`  swipl `505 p57(u3,a1,f(g(a2,u3),_),f(zz)) nondet`",
+    "line 5764: ours `510 p57(u6,a1,f(g(a2,u6),a2),a0) nondet`  swipl `510 p57(u6,a1,f(g(a2,u6),a2),a0) det`"
+]
+# Indexes the pin builds and the target does not (key: predicate, arguments, deep list, realised, virtual):
+# the first of them is known from the run (p1/4's deep index on argument 1, list [4]); the net count of the
+# pin's over the target's is 4 (174 against 170). TARGET-ONLY: pin the other keys from the next run's stderr.
+const _XIDX_PIN_ONLY = [("p1/4", [1], [4], false, true)]
+const _XIDX_NET_PIN_ONLY = 4
+
+_xidx_key(i::_XIdx) = (i[1], i[2], i[3], i[5], i[6])
+
+"""
+`ours` and `theirs` paired key by key (`_xidx_key`), in `_xorder`: the pairs `mo`/`mt` (compared as `_xidx_diff`
+compares), then `ours_only` and `pin_only`, the indexes of a key that one side has more of.
+"""
+function _xidx_split(ours::Vector{_XIdx}, theirs::Vector{_XIdx})
+    ob = Dict{Any, Vector{_XIdx}}()
+    tb = Dict{Any, Vector{_XIdx}}()
+    foreach(i -> push!(get!(ob, _xidx_key(i), _XIdx[]), i), _xorder(ours))
+    foreach(i -> push!(get!(tb, _xidx_key(i), _XIdx[]), i), _xorder(theirs))
+    mo, mt, ours_only, pin_only = _XIdx[], _XIdx[], _XIdx[], _XIdx[]
+    for k in union(keys(ob), keys(tb))
+        o, t = get(ob, k, _XIdx[]), get(tb, k, _XIdx[])
+        n = min(length(o), length(t))
+        append!(mo, o[1:n])
+        append!(mt, t[1:n])
+        append!(ours_only, o[(n + 1):end])
+        append!(pin_only, t[(n + 1):end])
+    end
+    return (; mo, mt, ours_only, pin_only)
+end
+
 "The first lines where two outputs differ."
-function _xline_diff(a::Vector{String}, b::Vector{String})::Vector{String}
+function _xline_diff(
+    a::Vector{String}, b::Vector{String}; limit::Int=8
+)::Vector{String}
     out = String[]
     for i in 1:max(length(a), length(b))
         x = i <= length(a) ? a[i] : "<none>"
         y = i <= length(b) ? b[i] : "<none>"
         x == y || push!(out, "line $i: ours `$x`  swipl `$y`")
-        length(out) >= 8 && break
+        length(out) >= limit && break
     end
     return out
 end
@@ -628,25 +683,41 @@ const _XSEED = 20261002
             isempty(d) || foreach(x -> println(stderr, "  answers: ", x), d)
             @test isempty(d)
             # every call: the same determinism too
-            d = _xline_diff(ours.lines, theirs.lines)
+            # (TARGET-ONLY: see `_XDET_TARGET_ONLY`; both ways: the pinned lines must still differ, and
+            # nothing else may)
+            dall = _xline_diff(ours.lines, theirs.lines; limit=typemax(Int))
+            d = setdiff(dall, _XDET_TARGET_ONLY)
             isempty(d) ||
                 foreach(x -> println(stderr, "  determinism: ", x), d[1:min(end, 8)])
             @test isempty(d)
+            @test sort(dall) == sort(_XDET_TARGET_ONLY)
             # and through the VM: PL_S_LAST where swipl's call is deterministic (V4a)
-            dv = _xline_diff(vmrun.lines, theirs.lines)
+            dv = setdiff(
+                _xline_diff(vmrun.lines, theirs.lines; limit=typemax(Int)), _XDET_TARGET_ONLY
+            )
             isempty(dv) ||
                 foreach(x -> println(stderr, "  vm determinism: ", x), dv[1:min(end, 8)])
             @test isempty(dv)
-            di = _xidx_diff(ours.idx, theirs.idx)
+            sp = _xidx_split(ours.idx, theirs.idx)
+            # TARGET-ONLY (see `_xidx_split`'s header): the indexes the pin builds beyond the target's, and the
+            # net count; every other index is compared as before
+            pk = _xidx_key.(sp.pin_only)
+            isempty(pk) ||
+                foreach(k -> println(stderr, "  pin-only index: ", k), pk)
+            foreach(i -> println(stderr, "  target-only index: ", i), sp.ours_only)
+            @test all(k -> k in pk, _XIDX_PIN_ONLY)
+            @test length(sp.pin_only) - length(sp.ours_only) == _XIDX_NET_PIN_ONLY
+            @test all(i -> !isempty(i[3]), sp.pin_only)     # indexableCompound: deep indexes
+            di = _xidx_diff(sp.mo, sp.mt)
             isempty(di) ||
                 foreach(x -> println(stderr, "  indexed: ", x), di[1:min(end, 8)])
             @test isempty(di)
             @test ours.pidx == theirs.pidx
             # non-vacuity: many calls and indexes, the speedups bit-identical almost everywhere
             @test count(l -> !endswith(l, " end"), ours.lines) > 1500
-            pairs = collect(zip(_xorder(ours.idx), _xorder(theirs.idx)))
+            pairs = collect(zip(_xorder(sp.mo), _xorder(sp.mt)))
             exact = count(((o, t),) -> o[4] == t[4], pairs)
-            @test length(pairs) == length(theirs.idx) > 80
+            @test length(pairs) == length(sp.mt) > 80
             @test exact >= 0.9 * length(pairs)
             # the predicates with an argument after a run of voids are among them, indexed in
             # swipl too (upstream defect, fixed in 0728e8c)
