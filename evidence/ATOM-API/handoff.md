@@ -1,6 +1,7 @@
 # ATOM-API handoff (Sonnet writer, edit-only; worktree ~/code/lk-atomapi, branch wip/atom-api off 281ca507)
 
-STATE: src/ and test/ are still unwritten. Agent 1 hit the 150k cap after reading (no commit but this file).
+STATE (agent 2): piece 1 (UPSTREAM) COMMITTED as 89b319f6: src/pl-atom.jl (PL_find_blob_type, add_type_live, blob_registration 9 fields + 4-arg constructor, global_atom, extendAtom, ATOM_REF_COUNT, LINESIZ), src/pl-fli.jl (current_blob worker with `type::Union{Nothing,term_t}`, pl_current_atom1_va, pl_blob_released1_va, pl_complete_atom3_va, blob_type_from_name, unify_blob_property, pl_blob_type_property2_va, pl_set_blob_type2_va, 4 refusals, table in upstream order), docs/r2_owners.tsv (6 rows), test/static_analysis_manifest.jl. test_type_discipline.jl and warm.sh check NOT run; no julia run at all (never parsed). Piece 2 (TEST commit) is next.
+Agent 1 hit the 150k cap after reading (no commit but this file).
 Scratchpad (agent 1's, may be gone): rows.txt, pl-atom.c (= `git -C ~/dev-zone/swipl-devel show 18168e62:src/pl-atom.c`),
 probe1.pl/probe2.pl (swipl probes). Re-make with the commands in the brief. swipl for pins: `~/.local/bin/swipl` (10.1.20, the pin).
 
