@@ -1735,9 +1735,16 @@ function _manifest_index(T)
                 LK.pl_arg3_va, LK.pl_compound_name_arity3_va,                       # P1
                 LK.pl_compound_name_arguments3_va, LK.pl_subsumes_term2_va,
                 LK.pl_factorize_term3_va, LK.pl_term_size3_va, LK.pl_term_singletons2_va,
-                LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va
+                LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va,
+                LK.pl_nonground2_va, LK.pl_functor4_va, LK.pl_filled_array4_va,     # PRIMS-C
+                LK.pl_unbind_template1_va, LK.pl_is_char_code1_va, LK.pl_is_char1_va,
+                LK.pl_is_code_list2_va, LK.pl_is_char_list2_va, LK.pl_collation_key2_va
             )
         ]...,
+        (LK.match_functor_type, Tuple{LD, Int, LK.word, T}, false),
+        (LK.is_code, Tuple{LD, UInt8, LK.word}, false),
+        (LK.is_char, Tuple{LD, UInt8, LK.word}, false),
+        (LK.is_text_list, Tuple{LD, Int, Int, Bool}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
