@@ -13,15 +13,15 @@ test/test_r2_status.jl was run before this step: 119 passed (not repeated).
 | core_lang/test_cstack.jl | 0 | 20/0/0 | 20/0/0 | 20/0/0 | 0 | 0 | 0 | 0 |
 | core_lang/test_depth_limit_swipl.jl | 1 | 135/1/0 | 135/1/0 | 135/1/0 | 0 | 0 | 3 | 0 |
 | core_lang/test_htable.jl | 0 | 69/0/0 | 69/0/0 | 69/0/0 | 0 | 0 | 0 | 0 |
-| core_lang/test_p2b_swipl.jl | 1 | 27/0/1 | 27/0/1 | 27/0/1 | 0 | 0 | 0 | 3 |
+| core_lang/test_p2b_swipl.jl | 0 | 86/0/0 (1 broken) | 86/0/0 (1 broken) | 86/0/0 (1 broken) | 0 | 0 | 0 | 0 |
 | core_lang/test_prof_swipl.jl | 0 | 148/0/0 | 148/0/0 | 148/0/0 | 0 | 0 | 0 | 0 |
 | core_lang/test_q10_swipl.jl | 1 | 351/1/0 | 351/1/0 | 351/1/0 | 0 | 120 | 3 | 0 |
 | core_lang/test_q10b_swipl.jl | 0 | 139/0/0 | 139/0/0 | 139/0/0 | 0 | 0 | 0 | 0 |
 | core_lang/test_zip1_swipl.jl | 0 | 131/0/0 | 131/0/0 | 131/0/0 | 0 | 0 | 0 | 0 |
-| core_text/test_char_type_swipl.jl | 1 | 14/2/0 | 14/2/0 | 14/2/0 | 0 | 0 | 6 | 0 |
+| core_text/test_char_type_swipl.jl | 0 | 60/0/0 (2 broken) | 60/0/0 (2 broken) | 60/0/0 (2 broken) | 0 | 0 | 0 | 0 |
 | core_text/test_ctype_text_swipl.jl | 0 | 50/0/0 | 50/0/0 | 50/0/0 | 0 | 0 | 0 | 0 |
 | core_text/test_libtai.jl | 0 | n/a | n/a | n/a | 0 | 0 | 0 | 0 |
-| core_text/test_locale_swipl.jl | 1 | 17/0/1 | 17/0/1 | 17/0/1 | 0 | 0 | 0 | 3 |
+| core_text/test_locale_swipl.jl | 1 | 19/0/1 | 19/0/1 | 19/0/1 | 0 | 0 | 0 | 3 |
 | core_text/test_tai_format_swipl.jl | 0 | 60/0/0 | 60/0/0 | 60/0/0 | 0 | 0 | 0 | 0 |
 | core_text/test_tai_swipl.jl | 0 | 31/0/0 | 31/0/0 | 31/0/0 | 0 | 0 | 0 | 0 |
 | db/test_boot_image_swipl.jl | 1 | 79/1/0 | 79/1/0 | 79/1/0 | 0 | 0 | 3 | 0 |
@@ -46,3 +46,19 @@ Warning column: all 120 of test_q10_swipl.jl's are the ENGINE's Prolog messages 
 - test_char_type_swipl.jl:168/170 row t1: kernel `notported` where swipl enumerates 43 lines (3 vs 43 lines; the row after the enumerated chr 0 atom). Same NUL-atom refusal.
 - test_bisim_swipl.jl:153 (kernel_lines, test:75): AssertionError "dropRecords!: a frame being filled above lTop (normal_call, vmi:1887) must not be dropped" at src/pl-wam.jl:126, reached from restore_after_query (pl-wam.jl:2697) <- _end_query <- _abandon_query (pl-wam.jl:2840) <- PL_next_solution (pl-wam.jl:2821): an exception inside a query is turned into this assertion while abandoning it, so the original exception is hidden. 42 passed, 3 errored (1 per type). The bisim run takes 5m25s warm (alt 2m57s, alt_interned 2m18s).
 - test_boot_image_swipl.jl:247, `_BI_KERNEL_MISSING_FOREIGN`: derived constant 320 ("DERIVED, NOT RUN: the gate measures"), measured and printed by the PIN line on all three types: 253. Reported, NOT edited (brief: do not guess; the value is 67 lower than derived). 237 passed, 3 failed (1 per type); every other row passes.
+
+## R3 (audit D-0818 item 2): the three NUL-atom test files, on 0f801aa4 (commits 1c933b99, e7f13112, 0f801aa4 on wip/r2land-s2)
+
+The refusal is the settled DIVERGES of src/pl-read.jl:2061-2064 (`_atom_from_text`: NotPortedError "an atom containing the character 0 (a Symbol cannot hold it)", user 2026-10-10). No engine change. Runner `tools/warm.sh file <f>` (lane-1 daemon, swipl = ~/.local/bin/swipl 10.1.20), grepped: SKIP 0, Warning 0, Test Failed 0.
+
+| file | before (per type: P/F/E) | after (per type) | known difference pinned by name |
+|---|---|---|---|
+| core_text/test_char_type_swipl.jl | 14/2/0 | 60 pass, 2 broken, 0 fail, 0 error | rows t42, t43 (t1 and t3 for the character 0): the kernel line `tN notported` is asserted, swipl's line (.out) is `@test_broken` |
+| core_text/test_locale_swipl.jl | 17/0/1 | 19 pass, 0 fail, 1 error (see below) | row t12 (t10's decimal_point('a\000\b'), now built by atom_codes/2 at run time as the last row): `t12 notported` asserted, swipl's line `@test_broken` |
+| core_lang/test_p2b_swipl.jl | 27/0/1 | 86 pass, 1 broken, 0 fail, 0 error | row q17 (`atom_codes(N, [0])`): `t_q17 notported` asserted, swipl's pinned line `@test_broken`; q01-q59 all run again |
+
+How: `kernel_lines_all` / `_p2b_kernel_all` continue after a refused row on a fresh engine (the refusal ends one run: its ld is thrown away), so no row after a refused one is lost. char_type: t1/t3 take `ct_codes_nz` (ct_codes without 0); the code-0 answers are the new last rows t42/t43; the .out is regenerated from swipl 10.1.20 by the file's own driver, two identical runs, and the old t1/t3 solution lists equal the new ones plus the t42/t43 solution (checked by script). locale: t10 loses the R6 element and the new t12 carries it; the .out regenerated the same way, two identical runs; the old t10 line equals the new one plus t12's cons cell (a 50-character segment, checked); swipl's t12 answer is `true-a` (swipl cuts the decimal point at the character 0). p2b: no pinned line changed.
+
+OPEN, NOT NUL, NOT FIXED (engine, brief says no engine change): test_locale_swipl.jl still errors once per type, now one step later. With the program loaded, the first row that calls locale_create/3 raises `UndefVarError: nl not defined in local scope` at src/os/pl-locale.jl:725: the line `nl::PL_locale_rec{T}` at the head of pl_locale_create3_va is a bare statement, which Julia evaluates as a type assertion on an unset variable (probe on the daemon: the same statement in a scratch function raises it, `local nl::Int` returns 1). Every call of locale_create/3 raises it. Blame 38c2ad4df (2026-11-11, R2 stack 1). One-line fix: `local nl::PL_locale_rec{T}`. Unknown until it is fixed: what the other locale rows show.
+
+Gates for the three files: `tools/warm.sh fmt` clean (char_type reformatted before its commit), `tools/warm.sh check` PASS (464 s), `tools/pkgtest_way.sh`: char_type passed (peak 2983 MiB of 3G), p2b passed (2055 MiB), locale FAILED (the UndefVarError above; 19 passed, 1 errored on reference).
