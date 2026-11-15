@@ -20,10 +20,9 @@
 #
 # Attributed variables (AV6): `COPY_ATTRS` copies an attvar's attribute list into a new attvar
 # (`alloc_attvar`), without it (`copy_term_nat/2`) an attvar is copied as a plain variable.
-# NOT PORTED: `copy_term/4`, `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`, so `COPYING_ATTVAR` and
-# `MC_WALK_COPY`: their only readers are `COPY_MARKED` tests), `size_abstract_term/3`
-# (`COPY_ABSTRACT`) and `$fast_record/2`, `$fast_recorded/2` (testing bindings); `copy_term/4` and `size_abstract_term/3`
-# are registered and REFUSED by name since PRIMS-B (`NotPortedError`, owner rows in docs/r2_owners.tsv). The fast heap terms (`term_to_fastheap`,
+# `copy_term/4` (`COPY_MARKED`, `mark_vars`, `COPYING_ATTVAR`, `MC_WALK_COPY`) and `size_abstract_term/3` (`COPY_ABSTRACT`,
+# `cp_options.abstract`, the depth agenda) are PRIMS-B2's. Later: `copy_term_nat/4` and `$fast_record/2`,
+# `$fast_recorded/2` (testing bindings). The fast heap terms (`term_to_fastheap`,
 # R2 EV1) are the term's record. `duplicate_term`'s
 # `nshare`/`share` (the compounds kept shared) are `nb_setarg/3`'s (src/pl-prims.jl).
 
@@ -34,16 +33,29 @@ const COPY_SHARE = 0x01
 "Copy attributes (pl-copyterm.c `COPY_ATTRS`)."
 const COPY_ATTRS = 0x02
 
+# PORT: pl-copyterm.c COPY_ABSTRACT
+"Abstract compounds beyond `cp_options.abstract` (pl-copyterm.c `COPY_ABSTRACT`; `size_abstract_term/3`)."
+const COPY_ABSTRACT = 0x04
+# PORT: pl-copyterm.c COPY_MARKED
+"Only copy the marked variables (pl-copyterm.c `COPY_MARKED`; `copy_term/4`)."
+const COPY_MARKED = 0x08
+# PORT: pl-copyterm.c COPYING_ATTVAR
+"Set while `mark_for_copy` closes a compound met inside an attributed variable's attributes (pl-copyterm.c `COPYING_ATTVAR`)."
+const COPYING_ATTVAR = 0x10
+
 # PORT: pl-copyterm.c cp_options
-# DIVERGES: `flags`, `nshare` and `share` only (no `abstract`: `size_abstract_term/3` is not ported). `share`
-# is the first of `nshare` consecutive term references whose compounds `duplicate_term` keeps shared.
-"The options of a copy (pl-copyterm.c `cp_options`): its `flags`, `COPY_SHARE` and `COPY_ATTRS`, and the `nshare` terms at `share`."
+# DIVERGES: `abstract` is the last field (upstream's first), `(size_t)-1` is `typemax(Int)`; `share` is the first of
+# `nshare` consecutive term references whose compounds `duplicate_term` keeps shared.
+"The options of a copy (pl-copyterm.c `cp_options`): its `flags` (`COPY_*`), the `nshare` terms at `share`, and the `abstract` budget."
 struct cp_options
     flags::Int
     nshare::Int
     share::Int
+    abstract::Int
 end
-cp_options(flags::Integer) = cp_options(Int(flags), 0, 0)
+cp_options(flags::Integer) = cp_options(Int(flags), 0, 0, typemax(Int))
+cp_options(flags::Integer, nshare::Integer, share::Integer) =
+    cp_options(Int(flags), Int(nshare), Int(share), typemax(Int))
 
 # ── copying on the CELLS (L1d step 6; the workspace's L1_plan/stageL1d_design.md §3f) ───────────
 # Upstream's three passes on locations: mark (`mark_for_copy`, `mark_for_duplicate`), copy
@@ -82,6 +94,52 @@ end
 
 # ORIGINAL: the word at location `l` (a global position, or `-i` for slot `i`), not dereferenced.
 @inline _cp_word(ld::PL_local_data, l::Int)::word = l > 0 ? ld.gstack[l] : ld.slots[-l]
+
+# PORT: pl-copyterm.c mark_vars
+# DIVERGES: on locations: the walk is `cell_agenda` over the cells (the slot of `t` is the start location), a variable
+# cell's marks are its side-vector bits (see the section header), an attributed variable's are in its word, as upstream.
+# A compound word met in a SLOT (only the start, a term reference's own word) is not marked visited: nothing refers back
+# to a slot, so it is met once, and the second pass descends from it unconditionally. The agenda cannot refuse, so
+# `MEMORY_OVERFLOW` never happens: returns true.
+"Mark (`set`) or unmark the variables of the term `t` references for `copy_term/4`: `set_copy` on each (pl-copyterm.c `mark_vars`): true."
+function mark_vars(ld::PL_local_data{T}, t::term_t, set::Bool)::Bool where {T}
+    a = ld.walk_agenda
+    start = -(t + 1)                                        # p = valTermRef(t)
+    initCellAgenda!(a, 1, start)
+    while true                                              # the first pass
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)
+        if k == DU_ATTVAR                                   # TAG_ATTVAR: set_copy / clear_marks of its word
+            ld.gstack[p] = set ? (w & ~MARK_MASK) | FIRST_MASK : w & ~BOTH_MASK
+        elseif k == DU_CELL                                 # TAG_VAR: the side vector's bits
+            m = _cp_vm(ld, p)
+            _cp_vm!(ld, p, set ? (m & ~_CPV_MARK) | _CPV_FIRST : m & ~_CPV_BOTH)
+        elseif k == DU_WORD && _is_gcompound(w)             # TAG_COMPOUND
+            if (w & BOTH_MASK) == 0                         # !visited(*p)
+                p != 0 && (ld.gstack[p] = w | MARK_MASK)    # set_visited(*p)
+                c = valPtr(w)
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+            end
+        end
+    end
+    clearCellAgenda!(a)                                     # clearTermAgenda
+    initCellAgenda!(a, 1, start)
+    while true                                              # the second pass (rc == true: the variables stay)
+        q = nextCellAgendaNoDeRef!(a)
+        q == 0 && break
+        k, w, p = _deref_loc(ld, q)
+        if k == DU_WORD && _is_gcompound(w)                 # TAG_COMPOUND
+            if p == 0 || (w & BOTH_MASK) != 0               # visited(*p) (a slot's word was not marked)
+                p != 0 && (ld.gstack[p] = w & ~BOTH_MASK)   # clear_marks(*p)
+                c = valPtr(w)
+                pushWorkCellAgenda!(a, arityFunctor(ld.functors, ld.gstack[c]), c + 1)
+            end
+        end
+    end
+    clearCellAgenda!(a)
+    return true
+end
 
 # PORT: pl-copyterm.c can_share as can_share_cells
 "Whether the argument cell at global position `p` can be shared by a copy (pl-copyterm.c)."
