@@ -28,7 +28,8 @@ function _eu_pr(t)::String
     elseif k === VAR
         return "_"
     end
-    return _eu_pr(child(t, 1)) * "(" * join([_eu_pr(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
+    return _eu_pr(child(t, 1)) * "(" *
+           join([_eu_pr(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
 end
 
 # the row `name`/1 on the loaded program: its first answer printed, `none` / `exception` when it has none / raises
@@ -102,11 +103,13 @@ run(N) :- atom_concat(t, N, Name), G =.. [Name, R], format("~w ", [Name]),
                 f = joinpath(d, "drv.pl")
                 write(
                     f,
-                    drv * ":- initialization((consult('$(_EU_PL)'), forall(between(1, $(_EU_ROWS), N), run(N)), halt)).\n"
+                    drv *
+                    ":- initialization((consult('$(_EU_PL)'), forall(between(1, $(_EU_ROWS), N), run(N)), halt)).\n"
                 )
                 read(pipeline(`$swipl -q $f`; stdin=devnull, stderr=devnull), String)
             end
-            @test String[rstrip(l) for l in split(chomp(live), '\n'; keepempty=false)] == _EU_EXPECTED
+            @test String[rstrip(l) for l in split(chomp(live), '\n'; keepempty=false)] ==
+                _EU_EXPECTED
         end
     else
         @info "~user rows NOT RUN: the pw_dir offset is known on Linux 64-bit only."

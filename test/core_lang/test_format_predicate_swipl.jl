@@ -31,7 +31,8 @@ function _fp_pr(t)::String
     elseif k === VAR
         return "_"
     end
-    return _fp_pr(child(t, 1)) * "(" * join([_fp_pr(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
+    return _fp_pr(child(t, 1)) * "(" *
+           join([_fp_pr(child(t, i)) for i in 2:nchildren(t)], ",") * ")"
 end
 
 # the row `name`/1 on the loaded program: its first answer printed, `none` / `exception` when it has none / raises
@@ -146,11 +147,13 @@ run(N) :- atom_concat(t, N, Name), G =.. [Name, R], format("~w ", [Name]),
             f = joinpath(d, "drv.pl")
             write(
                 f,
-                drv * ":- initialization((consult('$(_FP_PL)'), forall(between(1, $(_FP_ROWS), N), run(N)), halt)).\n"
+                drv *
+                ":- initialization((consult('$(_FP_PL)'), forall(between(1, $(_FP_ROWS), N), run(N)), halt)).\n"
             )
             read(pipeline(`$swipl -q $f`; stdin=devnull, stderr=devnull), String)
         end
-        @test String[rstrip(l) for l in split(chomp(live), '\n'; keepempty=false)] == _FP_EXPECTED
+        @test String[rstrip(l) for l in split(chomp(live), '\n'; keepempty=false)] ==
+            _FP_EXPECTED
     end
 end
 
@@ -167,5 +170,16 @@ end
     @test [c for (c, _) in tbl] == Int.(collect("xyzmjulvac"))
     @test [p.definition.arity for (_, p) in tbl] == [2, 1, 3, 2, 2, 2, 2, 2, 2, 2]
     @test [sym_text(p.definition.name) for (_, p) in tbl] ==
-          ["fp_x2", "fp_y", "fp_z", "fp_w", "fp_x", "fp_fail", "fp_col", "fp_seen", "fp_x2", "fp_x"]
+        [
+        "fp_x2",
+        "fp_y",
+        "fp_z",
+        "fp_w",
+        "fp_x",
+        "fp_fail",
+        "fp_col",
+        "fp_seen",
+        "fp_x2",
+        "fp_x"
+    ]
 end

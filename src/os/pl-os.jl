@@ -412,7 +412,13 @@ function expandVars(ld::PL_local_data{T}, pattern::String)::Union{Nothing, Strin
         else                                                    # ~fred
             off = _passwd_dir_offset(Sys.islinux(), Sys.WORD_SIZE)
             off === nothing &&
-                throw(NotPortedError{T}(mk_sym(T, :user), "expandVars: ~user (getpwnam) off Linux 64-bit", "R2"))
+                throw(
+                    NotPortedError{T}(
+                        mk_sym(T, :user),
+                        "expandVars: ~user (getpwnam) off Linux 64-bit",
+                        "R2"
+                    )
+                )
             dir = _getpwnam_dir(user, off)
             if dir === nothing                                  # !(pwent = getpwnam(user))
                 if truePrologFlag(ld, PLFLAG_FILEERRORS)
