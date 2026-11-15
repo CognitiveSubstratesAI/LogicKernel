@@ -588,6 +588,90 @@ const _T6_PINS_TRIEKEYS = [
     "t_k03 c[116,95,107,48,51]/1(c[114]/3(c[114]/5(i1,i1,i80,i1,i1),c[114]/5(i0,i1,i80,i1,i1),c[114]/5(i1,i0,i80,i1,i0)))"
 ]
 
+# TRIE-CHARGE rows (TAB1 TRIE-CHARGE, tools/mutants/TRIECH.py): `statistics(table_space_used, U)` after a table is built and after its release. Every number is
+# swipl 10.1.20's, PINNED from two byte-identical runs (LC_ALL=C), the program text the same on both sides; written WITHOUT a kernel run. DESIGN CAVEAT: a table's
+# tries (the answer trie, the variant trie) carry a symbol in swipl, so `trie_destroy` of them waits for the atom GC and the kernel has none: after an abolish
+# swipl keeps 152 bytes (SIZEOF_TRIE) per trie, 304 for the first table, and the pins show exactly that (304, 608, 912: +304 for each new table, the answer trie and
+# the variant node's trie). No row calls garbage_collect_atoms: the released bytes below are the nodes, chunks and blocks, which do not depend on it.
+const _T6_PROG_SPACE = raw"""
+sp(U) :- statistics(table_space_used, U).
+
+:- table sa/1.
+:- table sb/1.
+:- table sc/1.
+sa(X) :- between(1, 3, X).
+sb(X) :- between(1, 40, X).
+sc(X) :- between(1, 3000, X).
+"""
+
+# Cases in ONE database, in order (the residue of an abolish carries into the next row, as pinned).
+#   s01 s02  sa: 3 answers, 4 nodes (<= TRIE_SINGLE_NODES = 8: allocated one by one) fill, abolish. The abolish frees the individual nodes through
+#            free_trie_node (pl-trie.c:1200, kills TRIECH-TC-N) and the children blocks through free_block (:729, TC-F); s01 is the charge side.
+#   s03 s04  sb: 40 answers: the trie grows past 8 nodes, so nodes come from chunks (alloc_trie_node :1113) and the children block of the root is replaced as it
+#            grows (add_child retire_block, :891: the fill's U1 carries the free_block of every outgrown block, TC-F). The abolish frees the chunks
+#            (free_node_chunks -> free_chunk_list :1268, kills TC-O, TC-P) and the children block (:1439, TC-F).
+#   s05 s06  sc: 3000 answers, chunks of 1024 to 16384 bytes (TRIE_CHUNK_MAX): the same sites with several chunks.
+#   s07      two tables at once: both released by one abolish.
+const _T6_CASES_SPACE = [
+    ("s01", raw"sp(U0), findall(X, sa(X), L), sp(U1), R = r(L, U0, U1)"),
+    ("s02", raw"abolish_all_tables, sp(U), R = U"),
+    ("s03", raw"sp(U0), findall(X, sb(X), L), length(L, N), sp(U1), R = r(N, U0, U1)"),
+    ("s04", raw"abolish_all_tables, sp(U), R = U"),
+    ("s05", raw"sp(U0), findall(X, sc(X), L), length(L, N), sp(U1), R = r(N, U0, U1)"),
+    ("s06", raw"abolish_all_tables, sp(U), R = U"),
+    (
+        "s07",
+        raw"findall(X, sa(X), _), findall(X, sb(X), _), sp(U0), abolish_all_tables, sp(U1), R = r(U0, U1)"
+    )
+]
+
+const _T6_PINS_SPACE = [
+    "ok",
+    "t_s01 c[116,95,115,48,49]/1(c[114]/3(c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,nil))),i0,i720))",
+    "t_s02 c[116,95,115,48,50]/1(i304)",
+    "t_s03 c[116,95,115,48,51]/1(c[114]/3(i40,i304,i5728))",
+    "t_s04 c[116,95,115,48,52]/1(i608)",
+    "t_s05 c[116,95,115,48,53]/1(c[114]/3(i3000,i608,i229776))",
+    "t_s06 c[116,95,115,48,54]/1(i912)",
+    "t_s07 c[116,95,115,48,55]/1(c[114]/2(i6888,i1368))"
+]
+
+const _T6_PROG_PRUNE = raw"""
+sp(U) :- statistics(table_space_used, U).
+
+:- table ia/1 as incremental.
+:- dynamic([id/1], [incremental(true)]).
+ia(X) :- id(X).
+"""
+
+# PRUNE: an answer trie of 3000 answers loses 2999 of them in a re-evaluation. The deleted nodes go on the chunk free list, which holds more nodes than the trie and
+# more than TRIE_SWEEP_MIN = 1024, so sweep_node_chunks drops the chunks with no node in use and returns their bytes (pl-trie.c sweep_node_chunks -> free_chunk_list
+# of the dropped chunks, kills TRIECH-TC-Q: p03 reads the bytes the table keeps afterwards, 50664 in swipl, of which trie_property(size) of the answer trie
+# is 49384). p01 is the table after the first evaluation (the compiled trie's nodes are discarded: free_node_chunks, TC-O, TC-P), p04 the second re-evaluation
+# (two answers), p05 the abolish. Wrong order of rows would change the pins: the sequence is the program's.
+const _T6_CASES_PRUNE = [
+    (
+        "p01",
+        raw"forall(between(1, 3000, X), assertz(id(X))), sp(U0), findall(X, ia(X), L), length(L, N), sp(U1), R = r(N, U0, U1)"
+    ),
+    ("p02", raw"retractall(id(_)), assertz(id(1)), sp(U), R = U"),
+    ("p03", raw"findall(X, ia(X), L), sp(U), R = r(L, U)"),
+    (
+        "p04",
+        raw"retractall(id(_)), assertz(id(1)), assertz(id(2)), findall(X, ia(X), L), sp(U), R = r(L, U)"
+    ),
+    ("p05", raw"abolish_all_tables, sp(U), R = U")
+]
+
+const _T6_PINS_PRUNE = [
+    "ok",
+    "t_p01 c[116,95,112,48,49]/1(c[114]/3(i3000,i0,i1432))",
+    "t_p02 c[116,95,112,48,50]/1(i1432)",
+    "t_p03 c[116,95,112,48,51]/1(c[114]/2(c[91,124,93]/2(i1,nil),i50664))",
+    "t_p04 c[116,95,112,48,52]/1(c[114]/2(c[91,124,93]/2(i1,c[91,124,93]/2(i2,nil)),i1432))",
+    "t_p05 c[116,95,112,48,53]/1(i456)"
+]
+
 const _T6_GROUPS = [
     (
         key="CHAIN",
@@ -658,6 +742,20 @@ const _T6_GROUPS = [
         program=_T6_PROG_TRIEKEYS,
         cases=_T6_CASES_TRIEKEYS,
         pins=_T6_PINS_TRIEKEYS
+    ),
+    (
+        key="SPACE",
+        label=raw"SPACE: table_space_used after building and abolishing tables of 3, 40 and 3000 answers (TRIE-CHARGE: kills TRIECH-TC-N, -F, -O, -P)",
+        program=_T6_PROG_SPACE,
+        cases=_T6_CASES_SPACE,
+        pins=_T6_PINS_SPACE
+    ),
+    (
+        key="PRUNE",
+        label=raw"PRUNE: table_space_used after a re-evaluation deleted 2999 of 3000 answers (TRIE-CHARGE: kills TRIECH-TC-Q, with -O and -P)",
+        program=_T6_PROG_PRUNE,
+        cases=_T6_CASES_PRUNE,
+        pins=_T6_PINS_PRUNE
     )
 ]
 
@@ -916,4 +1014,26 @@ end
             @test _T6_swipl_lines(f, ["t_$id" for (id, _) in g.cases]) == g.pins
         end
     end
+end
+
+# THE TRIE-STRUCT WHITE-BOX ROW (TRIE-CHARGE: kills TRIECH-TC-C, -D, -E; written WITHOUT a kernel run). swipl cannot answer it: a table's tries carry a symbol, so
+# their trie_destroy waits for the atom GC (the caveat above the SPACE group), and trie_destroy/1 only empties a trie_new trie, which has no pool. The expectations
+# are hand-written from the C text (swipl-devel 18168e62, src/pl-trie.c): trie_create charges sizeof(*trie) = 152 bytes (:238), trie_destroy of a trie that is
+# not a table gives them back with free_to_pool (:269), and of a table (TRIE_ISTABLE) through idg_free_or_defer(free_trie_struct, ...) (:267, free_trie_struct :257).
+@testset "TRIE-CHARGE white-box: trie_destroy returns the struct's bytes to the pool (kills TRIECH-TC-C, -D, -E)" begin
+    gd = LK.PL_global_data{_T6_T}()
+    ld = LK.PL_local_data{_T6_T}(gd)
+    for (istable, label) in ((false, "plain trie"), (true, "answer table"))
+        pool = LK.new_alloc_pool("table_space", 1_000_000)
+        tr = LK.trie_create(ld, _T6_T, pool)
+        @test tr !== nothing
+        istable && (tr.flags |= LK.TRIE_ISTABLE)
+        @test pool.size == 152                                # pl-trie.c:238, sizeof(trie) at the pin
+        LK.trie_destroy(gd, tr)
+        @test pool.size == 0                                  # :269 (plain), :267 + :257 (table)
+    end
+    # not vacuous: a trie that is not destroyed keeps its charge
+    pool = LK.new_alloc_pool("table_space", 1_000_000)
+    @test LK.trie_create(ld, _T6_T, pool) !== nothing
+    @test pool.size == 152
 end

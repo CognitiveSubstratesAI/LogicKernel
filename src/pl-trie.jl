@@ -123,9 +123,25 @@ end
 
 # ---- THE TRIE (trie_create, trie_destroy, trie_empty) ----
 
+# ORIGINAL: the charge of a trie's bytes to its pool, for every allocation site below (upstream calls `alloc_from_pool(trie->alloc_pool, n)`).
+# Without a pool nothing is counted and cannot fail (a trie of `trie_new/1`). `ld` raises the resource error of `alloc_from_pool`; a
+# caller that has none (the prune and delete path, whose callers hold the database only) gets the same answer without the error.
+"Charge `bytes` to the pool of `tr`; false (the error raised when `ld` is given) when that exceeds its limit (pl-allocpool.c `alloc_from_pool`)."
+function trie_alloc_from_pool(
+    tr::trie{T}, bytes::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Bool where {T}
+    pool = tr.alloc_pool
+    pool === nothing && return true
+    ld !== nothing && return alloc_from_pool(ld, pool, bytes)
+    pool.size + bytes <= pool.limit || return false
+    pool.size += bytes
+    return true
+end
+
 # PORT: pl-trie.c trie_create
-# DIVERGES: the term type is the argument and there is no allocation pool (`alloc_pool`: TB1 adds it, `trie_new/1` passes NULL; src/pl-allocpool.jl is TB0's); the root is node 1.
-"A new, empty trie of terms `T` (pl-trie.c)."
+# DIVERGES: the term type is the argument; the root is node 1; this method is for a trie without a pool (`trie_new/1` passes NULL),
+# the next one takes the pool.
+"A new, empty trie of terms `T` without an allocation pool (pl-trie.c)."
 function trie_create(::Type{T})::trie{T} where {T}
     root = trie_node(UInt64(0), UInt64(0), 0, 0, UInt32(0), nothing)
     return trie{T}(
@@ -134,8 +150,22 @@ function trie_create(::Type{T})::trie{T} where {T}
         nothing, UInt64(0), nothing, nothing, Int[],            # indirects, clause, clause_cref, chunks, lingering
         0, 0, nothing, 0, nothing, nothing, 0,                  # lookups, gen_call, worklist, variant, IDG, predicate, serial
         Union{Nothing, record{T}}[], Int[],                     # records, free_records
-        trie{T}[]                                               # registry (TB1: set to `gd.tries` by variant_table / get_answer_table)
+        trie{T}[],                                              # registry (TB1: set to `gd.tries` by variant_table / get_answer_table)
+        nothing                                                 # alloc_pool
     )
+end
+
+# PORT: pl-trie.c trie_create
+# DIVERGES: the term type is the argument, the local data raises the resource error; the answer is `nothing` where upstream's is NULL
+# (pl-trie.c:238: `alloc_from_pool(pool, sizeof(*trie))` failed, the error is raised).
+"A new, empty trie of terms `T` whose nodes are charged to `pool`; `nothing` if the pool cannot hold the trie itself (pl-trie.c)."
+function trie_create(
+    ld::PL_local_data{T}, ::Type{T}, pool::Union{Nothing, alloc_pool}
+)::Union{Nothing, trie{T}} where {T}
+    alloc_from_pool(ld, pool, SIZEOF_TRIE) || return nothing   # pl-trie.c:238
+    tr = trie_create(T)
+    tr.alloc_pool = pool                                        # pl-trie.c:242
+    return tr
 end
 
 # PORT: pl-trie.c release_node
@@ -348,13 +378,27 @@ function trie_empty_take(
     return empty_trie(gd, tr, take)
 end
 
+# PORT: pl-trie.c free_trie_struct
+# DIVERGES: the pointer is the trie, nothing is freed (the garbage collector); only its `sizeof(*trie)` goes back to the pool.
+"Return the bytes of the trie struct to `pool` (pl-trie.c `free_trie_struct`, the deferred free of an answer table)."
+function free_trie_struct(tr::trie{T}, pool::Union{Nothing, alloc_pool})::Nothing where {T}
+    free_to_pool(pool, SIZEOF_TRIE)                             # pl-trie.c:257
+    return nothing
+end
+
 # PORT: pl-trie.c trie_destroy
-# DIVERGES: nothing frees the record (Julia's garbage collector); the trie stays in `gd.tries` (no atom-GC), marked destroyed.
-"Destroy `tr`: mark it destroyed, empty it and free its lingering blocks (pl-trie.c)."
+# DIVERGES: nothing frees the record (Julia's garbage collector); the trie stays in `gd.tries` (no atom-GC), marked destroyed; the
+# struct's bytes go back to the pool (pl-trie.c:267/:269), an answer table's through `idg_free_or_defer` as upstream.
+"Destroy `tr`: mark it destroyed, empty it, free its lingering blocks and return its bytes to the pool (pl-trie.c)."
 function trie_destroy(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
     tr.magic = TRIE_CMAGIC
     trie_empty(gd, tr)
     free_lingering_blocks(tr)
+    if (tr.flags & TRIE_ISTABLE) != 0
+        idg_free_or_defer(free_trie_struct, tr, tr.alloc_pool)  # pl-trie.c:267
+    else
+        free_to_pool(tr.alloc_pool, SIZEOF_TRIE)                # pl-trie.c:269
+    end
     return nothing
 end
 
@@ -480,8 +524,10 @@ end
 # ---- BLOCKS (new_block, block_append, add_child, delete_child) ----
 
 # PORT: pl-trie.c free_block
-"Free the block `bid` (pl-trie.c `free_block`): its slot is reused."
+# DIVERGES: the slot is reused; the bytes of the block go back to the pool (pl-trie.c:729).
+"Free the block `bid` (pl-trie.c `free_block`): its bytes go back to the pool, its slot is reused."
 function free_block(tr::trie{T}, bid::Int)::Nothing where {T}
+    free_to_pool(tr.alloc_pool, sizeof_block(block_at(tr, bid)))  # pl-trie.c:729
     tr.blocks[bid] = nothing
     push!(tr.free_blocks, bid)
     return nothing
@@ -511,10 +557,13 @@ function free_lingering_blocks(tr::trie{T})::Nothing where {T}
 end
 
 # PORT: pl-trie.c new_block
-# DIVERGES: returns the id of the new block in `tr.blocks`.
-"A new, empty block of `capacity` entries in `tr`; its id (pl-trie.c)."
-function new_block(tr::trie{T}, capacity::Int)::Int where {T}
+# DIVERGES: returns the id of the new block in `tr.blocks`, 0 where upstream's is NULL (the pool cannot hold it, pl-trie.c:772).
+"A new, empty block of `capacity` entries in `tr`, charged to its pool; its id or 0 (pl-trie.c)."
+function new_block(
+    tr::trie{T}, capacity::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Int where {T}
     bits = capacity <= TRIE_LINEAR_MAX ? 0 : MSB(capacity) + 1
+    trie_alloc_from_pool(tr, block_size(capacity, bits), ld) || return 0   # pl-trie.c:772
     b = trie_children_block(
         0, capacity, 0, UInt32(0), UInt32(0), bits,
         fill(trie_child(UInt64(0), 0), capacity),
@@ -593,9 +642,11 @@ function block_copy(
 end
 
 # PORT: pl-trie.c add_child
-# DIVERGES: nodes are ids; no write lock; there is no resource error, so it always returns true.
+# DIVERGES: nodes are ids; no write lock; false when a block cannot be charged to the pool (pl-trie.c:869/:886), the node unchanged.
 "Add the node `child` to node `nid`, which has no live child with the same key (pl-trie.c)."
-function add_child(tr::trie{T}, nid::Int, child::Int)::Bool where {T}
+function add_child(
+    tr::trie{T}, nid::Int, child::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Bool where {T}
     n = tr.nodes[nid]
     c = n.children
     key = tr.nodes[child].key
@@ -603,7 +654,8 @@ function add_child(tr::trie{T}, nid::Int, child::Int)::Bool where {T}
         n.children = single_child_code(child)
     elseif is_single_child(c)
         old = single_child(c)
-        bid = new_block(tr, 2)
+        bid = new_block(tr, 2, ld)
+        bid == 0 && return false                                # pl-trie.c:869
         b = block_at(tr, bid)
         block_append(b, tr.nodes[old].key, old)
         block_append(b, key, child)
@@ -616,7 +668,8 @@ function add_child(tr::trie{T}, nid::Int, child::Int)::Bool where {T}
             b.entries[pos] = trie_child(key, child)             # revive the entry
             b.dead -= 1
         elseif b.count == b.capacity
-            nbid = new_block(tr, b.capacity * 2)
+            nbid = new_block(tr, b.capacity * 2, ld)
+            nbid == 0 && return false                           # pl-trie.c:886
             nb = block_at(tr, nbid)
             block_copy(nb, b, false)
             block_append(nb, key, child)
@@ -630,8 +683,11 @@ function add_child(tr::trie{T}, nid::Int, child::Int)::Bool where {T}
 end
 
 # PORT: pl-trie.c replace_block
+# DIVERGES: `ld` raises the pool's error; the callers that hold the database only pass none, then the old block stays without the error.
 "Replace the block `bid` of node `nid` by a compacted one, a single child or nothing (pl-trie.c)."
-function replace_block(tr::trie{T}, nid::Int, bid::Int)::Nothing where {T}
+function replace_block(
+    tr::trie{T}, nid::Int, bid::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Nothing where {T}
     n = tr.nodes[nid]
     b = block_at(tr, bid)
     live = b.count - b.dead
@@ -649,7 +705,8 @@ function replace_block(tr::trie{T}, nid::Int, bid::Int)::Nothing where {T}
         while capacity < live
             capacity *= 2
         end
-        nbid = new_block(tr, capacity)
+        nbid = new_block(tr, capacity, ld)
+        nbid == 0 && return nothing                             # keep the old one (pl-trie.c:921)
         block_copy(block_at(tr, nbid), b, true)
         n.children = block_code(nbid)
     end
@@ -660,13 +717,15 @@ end
 # PORT: pl-trie.c compact_children
 # DIVERGES: no write lock.
 "Compact the children of node `nid` if many of them are deleted (pl-trie.c)."
-function compact_children(tr::trie{T}, nid::Int)::Nothing where {T}
+function compact_children(
+    tr::trie{T}, nid::Int, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Nothing where {T}
     c = tr.nodes[nid].children
     if c != 0 && !is_single_child(c)
         bid = children_block_id(c)
         b = block_at(tr, bid)
         if b.dead == b.count || b.dead * 2 > b.count
-            replace_block(tr, nid, bid)
+            replace_block(tr, nid, bid, ld)
         end
     end
     return nothing
@@ -675,7 +734,10 @@ end
 # PORT: pl-trie.c delete_child
 # DIVERGES: no write lock; nodes are ids.
 "Delete `child` from its parent `pid`, compacting the block if `compact` and many are deleted; true if `pid` has no children left (pl-trie.c)."
-function delete_child(tr::trie{T}, pid::Int, child::Int, compact::Bool)::Bool where {T}
+function delete_child(
+    tr::trie{T}, pid::Int, child::Int, compact::Bool,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Bool where {T}
     p = tr.nodes[pid]
     c = p.children
     empty = true
@@ -697,7 +759,7 @@ function delete_child(tr::trie{T}, pid::Int, child::Int, compact::Bool)::Bool wh
             end
             empty = (b.dead == b.count)
             if compact && (empty || b.dead * 2 > b.count)
-                replace_block(tr, pid, bid)
+                replace_block(tr, pid, bid, ld)
             end
         end
     end
@@ -726,12 +788,16 @@ end
 # PORT: pl-trie.c alloc_trie_node
 # DIVERGES: returns `(id, chunk, bump)`: `id` is the id of a recycled chunk node (a slot already of the arena), or 0 for
 # "a new slot" (`new_trie_node` makes it); `chunk` is `nothing` for an individual node; `bump` says a new node in `chunk`
-# (upstream's out parameters `*cp` and `*bump`).
-"Allocate a node of `tr`: `(id or 0, chunk or nothing, bump)` (pl-trie.c `alloc_trie_node`)."
+# (upstream's out parameters `*cp` and `*bump`). `nothing` is upstream's NULL: the pool cannot hold the node or chunk (the error is raised
+# when `ld` is given); an individual node's bytes (`sizeof(trie_node)`) and a chunk's `bytes` are charged (pl-trie.c:1087/:1105/:1113).
+"Allocate a node of `tr`: `(id or 0, chunk or nothing, bump)`, or `nothing` (pl-trie.c `alloc_trie_node`)."
 function alloc_trie_node(
-    tr::trie{T}
-)::Tuple{Int, Union{Nothing, trie_node_chunk}, Bool} where {T}
-    (tr.flags & TRIE_CONCURRENT) != 0 && return (0, nothing, false)
+    tr::trie{T}, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Union{Nothing, Tuple{Int, Union{Nothing, trie_node_chunk}, Bool}} where {T}
+    if (tr.flags & TRIE_CONCURRENT) != 0
+        trie_alloc_from_pool(tr, SIZEOF_TRIE_NODE, ld) || return nothing    # pl-trie.c:1087
+        return (0, nothing, false)
+    end
     c = tr.chunks
     if c !== nothing
         if c.free != 0
@@ -748,10 +814,12 @@ function alloc_trie_node(
             return (0, c, true)
         end
     elseif tr.node_count <= TRIE_SINGLE_NODES
+        trie_alloc_from_pool(tr, SIZEOF_TRIE_NODE, ld) || return nothing    # pl-trie.c:1105
         return (0, nothing, false)
     end
     bytes = c !== nothing ? Int(c.bytes) * 2 : TRIE_CHUNK_MIN
     bytes > TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)
+    trie_alloc_from_pool(tr, bytes, ld) || return nothing                   # pl-trie.c:1113
     nc = trie_node_chunk(
         c, 0, UInt16(0), UInt16(0), UInt32(bytes),
         UInt32((bytes - OFFSETOF_TRIE_NODE_CHUNK_NODES) ÷ SIZEOF_TRIE_NODE),
@@ -763,10 +831,14 @@ function alloc_trie_node(
 end
 
 # PORT: pl-trie.c new_trie_node
-# DIVERGES: returns the node's id; `acquire_key` and `mark_new_key` are left out (no atom reference counts).
-"A new node with key `key` in `tr`; its id (pl-trie.c)."
-function new_trie_node(tr::trie{T}, key::word)::Int where {T}
-    id, c, bump = alloc_trie_node(tr)
+# DIVERGES: returns the node's id, 0 where upstream's is NULL; `acquire_key` and `mark_new_key` are left out (no atom reference counts).
+"A new node with key `key` in `tr`; its id, or 0 when the pool cannot hold it (pl-trie.c)."
+function new_trie_node(
+    tr::trie{T}, key::word, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Int where {T}
+    r = alloc_trie_node(tr, ld)
+    r === nothing && return 0
+    id, c, bump = r
     tr.node_count += 1
     if c === nothing
         n = trie_node(UInt64(0), key, 0, 0, UInt32(0), nothing)
@@ -802,22 +874,42 @@ function free_trie_node(tr::trie{T}, nid::Int)::Nothing where {T}
             sweep_node_chunks(tr)
         end
     else
+        free_to_pool(tr.alloc_pool, SIZEOF_TRIE_NODE)           # pl-trie.c:1200
         push!(tr.free_ids, nid)
     end
     return nothing
 end
 
+# PORT: pl-trie.c free_chunk_list
+# DIVERGES: only the pool side of upstream's function (the global chunk list and the atom keys are atom-GC's, no atom-GC here): each
+# chunk's `bytes` go back to the pool (pl-trie.c:1268); the chunks are the list linked through `next`.
+"Return the bytes of the chunks of the list `all`, linked through `next`, to the pool of `tr` (pl-trie.c `free_chunk_list`)."
+function free_chunk_list(
+    tr::trie{T}, all::Union{Nothing, trie_node_chunk}
+)::Nothing where {T}
+    c = all
+    while c !== nothing
+        free_to_pool(tr.alloc_pool, Int(c.bytes))               # pl-trie.c:1268
+        c = c.next
+    end
+    return nothing
+end
+
 # PORT: pl-trie.c free_node_chunks
-# DIVERGES: nothing is freed (Julia's garbage collector); the chunks are dropped. `clear_nodes` resets the arena.
+# DIVERGES: nothing is freed (Julia's garbage collector); the chunks are dropped and their bytes go back to the pool (`free_chunk_list`).
+# `clear_nodes` resets the arena.
 "Drop the chunks of a trie that is cleared (pl-trie.c `free_node_chunks`)."
 function free_node_chunks(tr::trie{T})::Nothing where {T}
     (tr.flags & TRIE_CONCURRENT) != 0 && return nothing
+    all = tr.chunks
+    all === nothing && return nothing
     tr.chunks = nothing
+    free_chunk_list(tr, all)
     return nothing
 end
 
 # PORT: pl-trie.c sweep_node_chunks
-# DIVERGES: `free_chunk_list` is left out (the dropped chunks go to the garbage collector); the ids of the nodes of a dropped
+# DIVERGES: `free_chunk_list` returns the pool bytes only (the dropped chunks go to the garbage collector); the ids of the nodes of a dropped
 # chunk (every one is on the free list, as its chunk has no live node) go on `trie.free_ids`.
 "Drop the chunks of `tr` that have no nodes in use, the newest excepted (pl-trie.c)."
 function sweep_node_chunks(tr::trie{T})::Nothing where {T}
@@ -844,15 +936,19 @@ function sweep_node_chunks(tr::trie{T})::Nothing where {T}
 
     prev = head
     c = head.next
+    empty = nothing                                             # the chunks with no live node, linked through `next`
     while c !== nothing
         next = c.next
         if c.live == 0
             prev.next = next
+            c.next = empty
+            empty = c
         else
             prev = c
         end
         c = next
     end
+    empty === nothing || free_chunk_list(tr, empty)             # free_chunk_list(empty)
     return nothing
 end
 
@@ -911,13 +1007,17 @@ destroy_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int) where {T} =
 # PORT: pl-trie.c prune_node
 # DIVERGES: the trie is an argument and not optional (a node does not know its trie: `get_trie_from_node` is left out).
 "Prune the branch of the trie that does not end in a node, from node `nid` up (pl-trie.c)."
-function prune_node(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
+function prune_node(
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Nothing where {T}
+    nid == 0 && return nothing                                  # prune_error's node when the pool refused it (upstream reads it)
     empty = true
     while empty
         n = tr.nodes[nid]
         (n.parent != 0 && (n.flags & (TN_PRIMARY | TN_SECONDARY | TN_PINNED)) == 0) || break
         p = n.parent
-        empty = delete_child(tr, p, nid, true)
+        empty = delete_child(tr, p, nid, true, ld)
         destroy_node(gd, tr, nid)
         nid = p
     end
@@ -929,7 +1029,8 @@ end
 # of the node id (upstream: a function and a context pointer); `@goto` stands for upstream's labels `prune` and `next_choice`.
 "Prune all branches below `root` that do not end in a value; `free(id)` is called for each removed leaf (pl-trie.c)."
 function prune_trie(
-    gd::PL_global_data{T}, tr::trie{T}, root::Int, free::Union{Nothing, Function}=nothing
+    gd::PL_global_data{T}, tr::trie{T}, root::Int, free::Union{Nothing, Function}=nothing,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
 )::Nothing where {T}
     stack = Tuple{Int, Int, Bool}[]
     n = root
@@ -979,7 +1080,7 @@ function prune_trie(
                 pp, ppos, pact = pop!(stack)
                 ps_it = child_iter(pp, ppos)
                 ps_active = pact
-                compact_children(tr, n)
+                compact_children(tr, n, ld)
                 trie_has_children(tr.nodes[n]) || @goto prune
                 @goto next_choice
             end
@@ -991,29 +1092,41 @@ function prune_trie(
 end
 
 # PORT: pl-trie.c insert_child
-# DIVERGES: nodes are ids; no write lock. The failure path (`destroy_node(trie, child)` after a failed `add_child`) is left out:
-# `add_child` has no resource error and always returns true, so the path cannot be taken (and `destroy_node` takes the database).
-"Insert a new child with key `key` under node `nid`; its id (pl-trie.c)."
-function insert_child(tr::trie{T}, nid::Int, key::word)::Int where {T}
-    child = new_trie_node(tr, key)
+# DIVERGES: nodes are ids; no write lock; 0 where upstream's is NULL. The failure path (`destroy_node(trie, child)` after a failed
+# `add_child`) takes the database from `ld`, which a failing pool charge implies (a trie without a pool never fails).
+"Insert a new child with key `key` under node `nid`; its id, or 0 when the pool cannot hold it (pl-trie.c)."
+function insert_child(
+    tr::trie{T}, nid::Int, key::word, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Int where {T}
+    child = new_trie_node(tr, key, ld)
+    child == 0 && return 0
     tr.nodes[child].parent = nid
-    add_child(tr, nid, child)
+    if !add_child(tr, nid, child, ld)
+        destroy_node(_query_gd(ld::PL_local_data{T}), tr, child)    # pl-trie.c:1575
+        child = 0
+    end
     return child
 end
 
 # PORT: pl-trie.c follow_node
 "The child of node `nid` with key `value`; if there is none and `add`, a new one; else 0 (pl-trie.c)."
-function follow_node(tr::trie{T}, nid::Int, value::word, add::Bool)::Int where {T}
+function follow_node(
+    tr::trie{T}, nid::Int, value::word, add::Bool,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Int where {T}
     child = get_child(tr, nid, value)
     child != 0 && return child
-    add && return insert_child(tr, nid, value)
+    add && return insert_child(tr, nid, value, ld)
     return 0
 end
 
 # PORT: pl-trie.c prune_error
 "Prune the part of the trie an error leaves: first add a node under `nid`, then prune from it (pl-trie.c)."
-function prune_error(gd::PL_global_data{T}, tr::trie{T}, nid::Int)::Nothing where {T}
-    prune_node(gd, tr, follow_node(tr, nid, TRIE_ERROR_VAL, true))
+function prune_error(
+    gd::PL_global_data{T}, tr::trie{T}, nid::Int,
+    ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Nothing where {T}
+    prune_node(gd, tr, follow_node(tr, nid, TRIE_ERROR_VAL, true, ld), ld)
     return nothing
 end
 
@@ -1177,14 +1290,14 @@ function trie_lookup_abstract(
         if popn > 0
             compounds -= popn
             if compounds > 0
-                node = follow_node(tr, node, TRIE_KEY_POP(popn), add)
+                node = follow_node(tr, node, TRIE_KEY_POP(popn), add, ld)
                 node == 0 && break
                 if attvars !== nothing && !isempty(attvars) && attvars[end][1] == compounds
                     w = consTagged(
                         valTagged(ld.gstack[attvars[end][2]]), TAGEX_TRIE_ATTVAR_END
                     )
                     pop!(attvars)
-                    node = follow_node(tr, node, w, add)        # finished the attvar
+                    node = follow_node(tr, node, w, add, ld)        # finished the attvar
                     node == 0 && break
                 end
                 continue
@@ -1193,8 +1306,8 @@ function trie_lookup_abstract(
                     w = consTagged(
                         valTagged(ld.gstack[attvars[end][2]]), TAGEX_TRIE_ATTVAR_END
                     )
-                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add)
-                    node == 0 || (node = follow_node(tr, node, w, add))
+                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add, ld)
+                    node == 0 || (node = follow_node(tr, node, w, add, ld))
                 end
                 break                                           # finished toplevel
             end
@@ -1208,7 +1321,7 @@ function trie_lookup_abstract(
         isvar = false
         if tag(w) == TAG_VAR
             isvar = isVar(w)
-            isvar || (node = follow_node(tr, node, w, add))     # a numbered variable
+            isvar || (node = follow_node(tr, node, w, add, ld))     # a numbered variable
         elseif isAttVar(w)
             if tagex(w) != TAGEX_TRIE_ATTVAR                    # the first encounter: open the attvar
                 ap = valPtr(w)                                  # valPAttVar(w): the attribute list
@@ -1217,7 +1330,7 @@ function trie_lookup_abstract(
                 push!(vl, ap)
                 w = consTagged(var_number, TAGEX_TRIE_ATTVAR)
                 ld.gstack[p] = w
-                node = follow_node(tr, node, w, add)
+                node = follow_node(tr, node, w, add, ld)
                 if node != 0
                     attvars === nothing && (attvars = Tuple{Int, Int}[])
                     push!(attvars, (compounds, p))
@@ -1225,7 +1338,7 @@ function trie_lookup_abstract(
                     pushWorkCellAgenda_P0!(agenda, 1, ap)
                 end
             else                                                # a shared attvar
-                node = follow_node(tr, node, w, add)
+                node = follow_node(tr, node, w, add, ld)
             end
         elseif _is_gcompound(w)
             if aleft == 0
@@ -1239,18 +1352,18 @@ function trie_lookup_abstract(
                 compounds += 1
                 if compounds == 1000 && add && !is_acyclic_cells(ld, l)
                     rc = TRIE_LOOKUP_CYCLIC
-                    prune_error(_query_gd(ld), tr, node)
+                    prune_error(_query_gd(ld), tr, node, ld)
                     node = 0
                 else
-                    node = follow_node(tr, node, fd, add)
+                    node = follow_node(tr, node, fd, add, ld)
                     pushWorkCellAgenda_P!(agenda, arity, f + 1)
                 end
             end
         elseif is_indirect_word(w)
             i = trie_intern_indirect(tr, _indirect_value(ld, w), add)
-            node = i != 0 ? follow_node(tr, node, i, add) : 0
+            node = i != 0 ? follow_node(tr, node, i, add, ld) : 0
         else
-            node = follow_node(tr, node, w, add)
+            node = follow_node(tr, node, w, add, ld)
         end
 
         if isvar                                                # add_var:
@@ -1258,7 +1371,7 @@ function trie_lookup_abstract(
             push!(vl, p == 0 ? l : p)
             w2 = consTagged(var_number, TAGEX_VAR)
             tag(w) == TAG_VAR && p > 0 && (ld.gstack[p] = w2)   # otherwise abstracted
-            node = follow_node(tr, node, w2, add)
+            node = follow_node(tr, node, w2, add, ld)
         end
     end
     clearCellAgenda_P!(agenda)
@@ -1286,10 +1399,12 @@ end
 
 # PORT: pl-trie.c follow_node_add
 "As `follow_node` with `add` true, the lookup first (pl-trie.c)."
-@inline function follow_node_add(tr::trie{T}, nid::Int, key::word)::Int where {T}
+@inline function follow_node_add(
+    tr::trie{T}, nid::Int, key::word, ld::Union{Nothing, PL_local_data{T}}=nothing
+)::Int where {T}
     child = get_child(tr, nid, key)
     child != 0 && return child
-    return insert_child(tr, nid, key)
+    return insert_child(tr, nid, key, ld)
 end
 
 # PORT: pl-trie.c trie_lookup_flat
@@ -1372,7 +1487,7 @@ function trie_insert_flat(
     _, w = trie_deref(ld, k)
     if isAtomW(w)
         tr.lookups += 1
-        node = follow_node_add(tr, 1, w)
+        node = follow_node_add(tr, 1, w, ld)
         node == 0 && return (0, 0)
         return (1, node)
     end
@@ -1394,7 +1509,7 @@ function trie_insert_flat(
     end
 
     tr.lookups += 1
-    node = follow_node_add(tr, 1, fd)
+    node = follow_node_add(tr, 1, fd, ld)
     vars = Int[]
     i = 1
     while node != 0 && i <= arity
@@ -1417,7 +1532,7 @@ function trie_insert_flat(
                 break
             end
         end
-        node = follow_node_add(tr, node, w)
+        node = follow_node_add(tr, node, w, ld)
         i += 1
     end
 

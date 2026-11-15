@@ -1951,6 +1951,7 @@ graph LR
     pl_trie --> pl_fli
     pl_trie --> pl_attvar
     pl_trie --> pl_error
+    pl_trie --> pl_allocpool
     pl_trie --> pl_idgset
     pl_trie --> pl_dbref
     pl_trie --> pl_arith

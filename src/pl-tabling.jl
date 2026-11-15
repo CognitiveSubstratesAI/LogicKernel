@@ -3144,11 +3144,21 @@ end
 
 # PORT: pl-tabling.c variant_table
 # DIVERGES: the private table only (`O_PLMT` shared tables: `shared` is refused by name, owner TH1); the trie is made with
-# `trie_create(T)`, no pool is used by the trie (the pool is kept in `ld.tabling.node_pool` as TB0 declares it); the table is
+# `trie_create(ld, T, pool)` with the pool in `ld.tabling.node_pool` (TRIECH: the trie charges its nodes to it); the table is
 # `ld.tabling.variant_table`, the trie's number in `gd.tries`; `trie_symbol` is called as upstream's and registers the trie.
+# `variant_table_create` answers `nothing` where upstream's is NULL (the pool cannot hold the trie); `variant_table` is for the callers
+# that hold an answer trie, so the table exists and the answer is a trie.
 # `registry` is set on the table so that `release_node` finds the answer tries by number (TR1 field).
 "The variant table of this thread (shared: of all threads): the trie that maps call variants to answer tables (pl-tabling.c)."
-function variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T}
+variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T} =
+    variant_table_create(ld, shared)::trie{T}
+
+# PORT: pl-tabling.c variant_table as variant_table_create
+# DIVERGES: the body of `variant_table`, answering `nothing` for upstream's NULL (see the note above `variant_table`).
+"As `variant_table`, `nothing` when the table cannot be created (pl-tabling.c `variant_table` answering NULL)."
+function variant_table_create(
+    ld::PL_local_data{T}, shared::Bool
+)::Union{Nothing, trie{T}} where {T}
     gd = _query_gd(ld)
     shared && tbl_refuse(
         T,
@@ -3161,7 +3171,8 @@ function variant_table(ld::PL_local_data{T}, shared::Bool)::trie{T} where {T}
     end
 
     if ld.tabling.variant_table == 0
-        t = trie_create(T)
+        t = trie_create(ld, T, ld.tabling.node_pool)
+        t === nothing && return nothing
         t.flags |= TRIE_ISVARIANT
         trie_symbol(gd, t)
         t.registry = gd.tries
@@ -3447,7 +3458,8 @@ function get_answer_table(
     end
 
     size = def !== nothing ? pred_max_table_subgoal_size(ld, def) : -1
-    variants = variant_table(ld, false)
+    variants = variant_table_create(ld, false)
+    variants === nothing && return nothing
     vars = Int[]
 
     sa = size_abstract(2, size == -1 ? typemax(Int) : size)
@@ -3489,7 +3501,9 @@ function get_answer_table(
     if node.value != 0
         atrie = value_trie(gd, node.value)
     elseif (flags & AT_CREATE) != 0
-        atrie = trie_create(T)
+        newtrie = trie_create(ld, T, ld.tabling.node_pool)  # TRIECH: the answer trie charges its nodes to the table pool
+        newtrie === nothing && return nothing
+        atrie = newtrie
         atrie.flags |= TRIE_ISTABLE | ((flags & AT_MODED) != 0 ? TRIE_ISMAP : TRIE_ISSET)
         atrie.predicate = def
         atrie.variant = nid
@@ -4531,7 +4545,7 @@ function update_subsuming_answers(
             end
         else                                        # monotonic tabling
             # (idg = atrie->data.IDG) && idg->lazy: prune_deleted_mdeps(idg), TB6 (`IDG` is `nothing` until then)
-            prune_trie(_query_gd(ld), atrie, root, nothing)
+            prune_trie(_query_gd(ld), atrie, root, nothing, ld)
         end
     end
 
@@ -8266,7 +8280,7 @@ function reeval_complete(ld::PL_local_data{T}, atrie::trie{T})::Nothing where {T
         else
             trie_discard_clause(_query_gd(ld), atrie)
             if atrie.references == 0                # remove the deleted answers
-                prune_trie(_query_gd(ld), atrie, 1, nothing)
+                prune_trie(_query_gd(ld), atrie, 1, nothing, ld)
             end
         end
 
@@ -8552,11 +8566,15 @@ end
 
 # PORT: pl-tabling.c mono_index_build
 # (pl-tabling.c:10118-10164 at the pin)
-# DIVERGES: the trie is `trie_create(T)` entered in `gd.tries` (`trie_symbol`), its serial `m.index`; no alloc pool.
+# DIVERGES: the trie is entered in `gd.tries` (`trie_symbol`), its serial `m.index`; its pool is the answer trie's (TRIECH).
 "Index every monotonic dependency `src` holds; on failure `src` keeps no index (pl-tabling.c `mono_index_build`)."
 function mono_index_build(ld::PL_local_data{T}, src::idg_node{T})::Bool where {T}
     gd = _query_gd(ld)
-    t = trie_create(T)
+    t = trie_create(ld, T, gd.tries[src.atrie].alloc_pool)
+    if t === nothing
+        PL_resource_error(ld, "table_space")
+        return false
+    end
 
     trie_symbol(gd, t)                                  # reference until mono_index_release()
     m = idg_ensure_mono(ld, src)
@@ -9500,7 +9518,7 @@ function pl_mono_reeval_done3_va(
                 qn = (n !== nothing && atrie.nodes[n].value != 0) ? n : nothing    # queue = (n && n->value != 0), kept as the node
                 if gc[] != 0
                     prune_deleted_mdeps(ld, idg)
-                    prune_trie(_query_gd(ld), atrie, 1, nothing)
+                    prune_trie(_query_gd(ld), atrie, 1, nothing, ld)
                 end
                 qn !== nothing && (rc = mono_idg_changed(ld, atrie, qn))
             end
