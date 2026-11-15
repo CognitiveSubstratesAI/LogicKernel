@@ -3260,7 +3260,10 @@ function match_functor_type(
     tw = _atom_word!(ld, type)
     atype == tw && return true
     if atype == _atom_word!(ld, mk_sym(T, :callable)) &&
-        (tw == _atom_word!(ld, mk_sym(T, :atom)) || tw == _atom_word!(ld, mk_sym(T, :compound)))
+        (
+        tw == _atom_word!(ld, mk_sym(T, :atom)) ||
+        tw == _atom_word!(ld, mk_sym(T, :compound))
+    )
         return true
     end
 
@@ -3291,27 +3294,27 @@ function pl_functor4_va(
         na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
 
         return if (
-                PL_unify_atom(ld, A2, na[1]) && PL_unify_integer(ld, A3, na[2]) &&
-                match_functor_type(ld, A4, atype, mk_sym(T, :compound))
-            )
+            PL_unify_atom(ld, A2, na[1]) && PL_unify_integer(ld, A3, na[2]) &&
+            match_functor_type(ld, A4, atype, mk_sym(T, :compound))
+        )
             FTRUE
         else
             FFALSE
         end
     elseif k == DU_WORD && isAtomW(w)                   # isAtom(*p)
         return if (
-                PL_unify_atom(ld, A2, _atom_value(ld, w)) && PL_unify_integer(ld, A3, 0) &&
-                match_functor_type(ld, A4, atype, mk_sym(T, :atom))
-            )
+            PL_unify_atom(ld, A2, _atom_value(ld, w)) && PL_unify_integer(ld, A3, 0) &&
+            match_functor_type(ld, A4, atype, mk_sym(T, :atom))
+        )
             FTRUE
         else
             FFALSE
         end
     elseif !(k == DU_CELL || k == DU_ATTVAR)            # !canBind(*p)
         return if (
-                PL_unify(ld, A2, A1) && PL_unify_integer(ld, A3, 0) &&
-                match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
-            )
+            PL_unify(ld, A2, A1) && PL_unify_integer(ld, A3, 0) &&
+            match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
+        )
             FTRUE
         else
             FFALSE
@@ -3336,7 +3339,7 @@ function pl_functor4_va(
             f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), 0)
             return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
         elseif atype == _atom_word!(ld, mk_sym(T, :callable)) ||
-                atype == _atom_word!(ld, mk_sym(T, :atom))
+            atype == _atom_word!(ld, mk_sym(T, :atom))
             return PL_unify_atom(ld, A1, name) ? FTRUE : FFALSE
         elseif atype == _atom_word!(ld, mk_sym(T, :atomic))
             return FFALSE
@@ -3345,8 +3348,8 @@ function pl_functor4_va(
         end
     elseif PL_is_atomic(ld, A2)
         return if (
-                PL_unify(ld, A2, A1) && match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
-            )
+            PL_unify(ld, A2, A1) && match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
+        )
             FTRUE
         else
             FFALSE

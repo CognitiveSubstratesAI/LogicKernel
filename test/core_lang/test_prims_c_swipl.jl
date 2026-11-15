@@ -163,7 +163,8 @@ _pc_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     @test _pc_count(body, "ok") >= 100 && _pc_count(body, "fail") >= 120 &&
         _pc_count(body, "err") >= 40                                       # successes, failures and errors are all answered
     for w in (
-        "instantiation_error", "type_error", "domain_error", "representation_error", "same", "shared"
+        "instantiation_error", "type_error", "domain_error", "representation_error", "same",
+        "shared"
     )
         @test _pc_count(body, w) >= 2                                     # the error kinds, and the rows that compare two builds
     end
