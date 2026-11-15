@@ -2223,10 +2223,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 354 | 0 | 68 | 3 | 1 |
-| refusal sites | 0 | 68 | 0 | 0 | 3 |
+| refusal sites | 0 | 66 | 0 | 0 | 4 |
 | Prolog flags | 65 | 14 | 20 | 0 | 34 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 618 | 82 | 122 | 3 | 38 |
+| **total** | 618 | 80 | 122 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2307,7 +2307,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [68, 0, 20, 34]
-    line [0, 68, 14, 0]
+    line [0, 66, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->

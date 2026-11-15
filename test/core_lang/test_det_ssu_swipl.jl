@@ -449,11 +449,12 @@ end
     @test LK.skipWrapperPrefix(c(LK.S_LMQUAL, 7, LK.S_DET, LK.S_TABLED, 1, 0, 0)) == 4
     @test LK.skipWrapperPrefix(c(LK.S_DET, LK.S_DET, LK.S_CALLWRAPPER, 1, 0, 0)) == 3
     # the pc argument: the prefix is skipped from any start
-    @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_DET, LK.S_CALLWRAPPER, 1, 0, 0), 3) == 4
+    @test LK.skipWrapperPrefix(c(LK.S_MQUAL, 7, LK.S_DET, LK.S_CALLWRAPPER, 1, 0, 0), 3) ==
+        4
     # the control: without S_DET the first instruction after the prefix is the same one
     @test LK.skipWrapperPrefix(c(LK.S_CALLWRAPPER, 1, 0, 0)) == 1
     @test LK.skipWrapperPrefix(c(LK.S_DET, LK.S_CALLWRAPPER, 1, 0, 0)) !=
-          LK.skipWrapperPrefix(c(LK.S_CALLWRAPPER, 1, 0, 0))
+        LK.skipWrapperPrefix(c(LK.S_CALLWRAPPER, 1, 0, 0))
     # a det predicate that was tabled after its det declaration (`:- det(tdt/1). :- table tdt/1.`): the wrapper chain starts with S_DET
     f, _ = _ds_file()
     gd, ld, st = _ds_load(f)

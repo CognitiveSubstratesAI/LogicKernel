@@ -495,9 +495,13 @@ end
     # `pred:\=@=/2` (Q10, pl-variant.c) and the PL_CREATE_INCREMENTAL half of the assert_term refusal (TB6). The owner line
     # `cfile:pl-tabling.c` is gone (TABINT-PC). 165 -> 168 (the ratchet sits AT the measured count, audit D-0736 (1)):
     # re-measured with this expression on wip/tabm-diag 397efdd3 (main b29b887d merged): 168 owned rows.
+    # 168 -> 163 on the TAB1 landing line (wip/tab1land 551af2b6), measured with this expression by the generator run
+    # of 2026-11-15: five owner rows closed by the merged steps: `vmi:S_DET` and the setAttrDefinition attribute
+    # refusal (SSU1b), writeAttVar's attributes(portray) refusal (AV10), format_predicate/2 (W5b) and expandVars'
+    # ~user branch (W5c); the CONT1 row only changed its key (pl-vmi.c:7037-7038 cited) and stays owned.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 168
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 163
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
