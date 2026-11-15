@@ -98,7 +98,6 @@ pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
 pred:track_atom/2	REFUSED	debug build only (O_ATOMGC with O_DEBUG_ATOMGC), atom GC family, D-0634 D5; left unregistered, as the pin
 pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
-pred:trim_stacks/0	Q10	seed: missing_c_preds.tsv
 pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
 pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv

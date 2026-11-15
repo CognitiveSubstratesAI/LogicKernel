@@ -844,7 +844,7 @@ fixed it or a public issue exists.
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-dwim.jl` | since DWIM1 (R2), pl-dwim.c's two foreign predicates: `dwim_match/3` (`pl_dwim_match`, pl-ext.c:155) and `'$dwim_predicate'/2` (`pl_dwim_predicate`, NDET, pl-ext.c:156) over `dwimMatch` and its rules (`oneTypo`, `twoTransposed`, `oneInserted`, `differentSeparated`, `subWord`, `subwordsTransposed`) on NUL-terminated byte vectors (the C strings); the text of an argument is `PL_get_chars(CVT_ALL)` as ISO Latin-1 (`_dwim_chars`: a character above 0xFF fails silently), the name of an atom `stringAtom` (`_dwim_stringAtom`: a wide atom is read as UTF-32LE bytes up to the first NUL, as swipl's rows show); `dwim_match/2` is Prolog (boot/syspred.pl) | `src/pl-dwim.c` |
-| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
+| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception); since TRIMST `trim_stacks/0` (`pl_trim_stacks0_va`, a call of `trimStacks!(ld, true)`; `PL_predicates_from_setup`, registered between ctype and proc as pl-ext.c:526-529) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
 | `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7) and, since V5d, Q-AR8's real cyclic culprit; the kernel-only terms | — |
@@ -2084,6 +2084,7 @@ graph LR
     pl_ext --> os_pl_files
     pl_ext --> os_pl_glob
     pl_ext --> os_pl_file
+    pl_ext --> pl_setup
     pl_ext --> pl_proc
     pl_ext --> pl_srcfile
     pl_ext --> pl_supervisor
@@ -2154,11 +2155,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 323 | 0 | 99 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 324 | 0 | 98 | 3 | 1 |
 | refusal sites | 0 | 73 | 0 | 0 | 7 |
 | Prolog flags | 65 | 15 | 20 | 0 | 35 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 585 | 88 | 155 | 3 | 43 |
+| **total** | 586 | 88 | 154 | 3 | 43 |
 
 #### The boot and library files
 
@@ -2174,7 +2175,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 85 | 28 | 0 |
 | `boot/messages.pl` | loaded | 78 | 7 | 1 |
-| `boot/toplevel.pl` | loaded | 86 | 13 | 2 |
+| `boot/toplevel.pl` | loaded | 87 | 12 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
@@ -2208,7 +2209,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
-| Q10 | 10 | 10 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +2 |
+| Q10 | 9 | 9 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +1 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
@@ -2242,7 +2243,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [99, 0, 20, 36]
+    bar [98, 0, 20, 36]
     line [0, 73, 15, 0]
 ```
 
