@@ -25,7 +25,11 @@ TP = "test/core_lang/test_trie_property_idg_swipl.jl"   # the `'$trie_property'/
 TG = "test/core_lang/test_trie_gen_swipl.jl"
 TZ = "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl"
 TRP = [TR6, TP, TG, TZ]                                 # every file that calls `'$trie_property'/2` with an IDG key (TR6 first)
-TARGETS = [TR6, TI, TV, TW, TA, TF, TT, TM, TC, TB, WR, TP, TG, TZ]  # every file a mutant lists
+TABO = "test/core_lang/test_tabling_abolish_swipl.jl"   # TB6-INV's testset `reset_answer_table's IDG arm ...` (the abolish rows, the white-box rows of the callers)
+TB5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"
+TNS = "test/core_lang/test_tabling_transaction_nested_swipl.jl"
+INV = [TABO, TB5R, TNS] + ALL                           # TB6-INV: every file that reaches the callers of reset_answer_table_idg (TABO FIRST)
+TARGETS = [TR6, TI, TV, TW, TA, TF, TT, TM, TC, TB, WR, TP, TG, TZ, TABO, TB5R, TNS]  # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 MUTANTS = [
     dict(id="TB6R-S6 (= TB6-S6; KILLS: the white-box testset `TB6 S6 white-box` of TR6 (a delete in a block of 4, the add that grows it to 8: block.dead == 1 and idg_set_size 4, the mutant gives 0 and 5) and, once TB5 lands, EXPAND x03 (after abolish_table_subgoals the fifth table revives the dead slot: swipl has 4 edges, the mutant 5))",
@@ -86,6 +90,25 @@ MUTANTS = [
          new=''),
     dict(id="TB6R-A1 (ABOLISH a04/a05: delete_dynamic_table does not destroy the orphan's IDG node before the trie_delete (= ENG1-D1, tools/mutants/ENG1.py; KILLS: ABOLISH a05 (`abolish_table_subgoals(ap(_))` deletes the dependent-less dynamic table `ad` with `ap`: [1,1,2,1,0,592], the plain @test of TR6; the mutant raises the named IDG refusal of reset_answer_table) and, once a04-a08 are plain @tests, a04, a06-a08 too))",
          file='src/pl-tabling.jl', targets=[TR6, "test/core_lang/test_tabling_tb5rows_swipl.jl"] + ALL[1:],
+         old='        reset_answer_table_idg(ld, atrie, vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)\n        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n',
+         new='        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n'),
+    # TB6-INV (audit D-0740 item 4): reset_answer_table's IDG arm stays a refusal; each caller that holds a node clears it first. One mutant per caller removes
+    # the clear (once-each counts: every `old` is unique in src/pl-tabling.jl); each reaches the refusal and TABO's testset `reset_answer_table's IDG arm is refused,
+    # and every caller clears the node first (TB6-INV)` fails on it.
+    dict(id="TB6R-INV1 (destroy_answer_trie does not clear the IDG node before trie_delete; KILLS: TB6-INV caller 1 (the named IDG refusal of reset_answer_table is raised), the abolish rows' `abolish: the IDG node goes with the table`)",
+         file='src/pl-tabling.jl', targets=INV,
+         old='            reset_answer_table_worklist(ld, atrie, rat_flags)\n            reset_answer_table_idg(ld, atrie, rat_flags)\n            reset_answer_table_tracked(ld, atrie)\n            trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n\n            return true\n',
+         new='            reset_answer_table_worklist(ld, atrie, rat_flags)\n            reset_answer_table_tracked(ld, atrie)\n            trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n\n            return true\n'),
+    dict(id="TB6R-INV2 (abolish_table does not clear the IDG node of a complete table before trie_delete; KILLS: TB6-INV caller 2 (the named IDG refusal is raised))",
+         file='src/pl-tabling.jl', targets=INV,
+         old='                reset_answer_table_worklist(ld, atrie, rat_flags)\n                reset_answer_table_idg(ld, atrie, rat_flags)\n                reset_answer_table_tracked(ld, atrie)\n                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n',
+         new='                reset_answer_table_worklist(ld, atrie, rat_flags)\n                reset_answer_table_tracked(ld, atrie)\n                trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n                delete_orphan_dynamic_tables(ld, b)\n'),
+    dict(id="TB6R-INV3 (reset_table_bulk does not clear the IDG node before reset_answer_table; KILLS: TB6-INV caller 4 (clear_variant_table reaches the named IDG refusal), the registry rows of the abolish file)",
+         file='src/pl-tabling.jl', targets=INV,
+         old='    reset_answer_table_idg(ld, atrie, Int(RAT_CLEANUP | RAT_BULK))\n    reset_answer_table_tracked(ld, atrie)\n    reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))\n',
+         new='    reset_answer_table_tracked(ld, atrie)\n    reset_answer_table(gd, atrie, Int(RAT_CLEANUP | RAT_BULK))\n'),
+    dict(id="TB6R-INV4 (delete_dynamic_table does not clear the IDG node before trie_delete; = TB6R-A1's edit; KILLS: TB6-INV caller 3 and 3b (delete_dynamic_table directly, and abolish_table of an orphan) as well as ABOLISH a05)",
+         file='src/pl-tabling.jl', targets=INV,
          old='        reset_answer_table_idg(ld, atrie, vtrie.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)\n        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n',
          new='        trie_delete(_query_gd(ld), vtrie, atrie.variant, true)\n    end\n\n    return nothing\nend\n\n# PORT: pl-tabling.c delete_orphan_dynamic_tables\n'),
 ]

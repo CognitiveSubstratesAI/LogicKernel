@@ -729,6 +729,85 @@ end
     @test ans(_AB_PINNED_U, "abu01") != ans(_AB_PINNED_U, "abu04")      # a no, an instantiation error
 end
 
+# TB6-INV (audit D-0740 item 4): `reset_answer_table`'s IDG arm (pl-tabling.c:2659-2670 at the pin) is a named refusal in the kernel (owner TB6) that no
+# ported caller reaches: each caller clears the node through `reset_answer_table_idg` first (the list at the refusal, src/pl-tabling.jl). LK-only white-box
+# rows, hand-written from the code (swipl cannot be asked: the refusal is ours). Each caller path starts from three complete tables WITH a node
+# (the `.IDG` attached as `idg_init_variant` does), calls the caller and reads: the node is gone AND the named refusal was not raised. The direct
+# call of `reset_answer_table` on a table with a node must raise it (the guard is live: a future caller that skips the clear fails loudly), and
+# after the clear the same call passes (the refusal is the node's, not the table's). tools/mutants/TB6R.py TB6R-INV1..INV4 remove the clear from one
+# caller each; every one reaches the refusal (INV4 is TB6R-A1's text too). NOT RUN on the kernel (nothing was compiled when these rows were written).
+"Whether `f()` raised `reset_answer_table`'s IDG refusal (any other exception is rethrown)."
+function _ab_idg_refused(f)::Bool
+    try
+        f()
+        return false
+    catch e
+        e isa LK.NotPortedError || rethrow()
+        return e.step == "TB6" && occursin("reset_answer_table: an IDG node", e.what)
+    end
+end
+
+"Three complete tables, each with its own IDG node attached, and the variant table."
+function _ab_fresh_idg()
+    gd, ld, atries, variants = _ab_fresh()
+    for a in atries
+        n = LK.idg_new(ld, a)
+        @test n !== nothing
+        a.IDG = n
+    end
+    return gd, ld, atries, variants
+end
+
+@testset "reset_answer_table's IDG arm is refused, and every caller clears the node first (TB6-INV)" begin
+    # the guard is live: a table with a node reaches the named refusal
+    gd, ld, atries, variants = _ab_fresh_idg()
+    @test all(a -> a.IDG !== nothing, atries)
+    @test _ab_idg_refused(() -> LK.reset_answer_table(gd, atries[1], 0))
+    @test _ab_idg_refused(
+        () -> LK.reset_answer_table(gd, atries[2], Int(LK.RAT_CLEANUP | LK.RAT_BULK))
+    )
+    @test atries[1].IDG !== nothing                           # the refusal does not touch the node
+    # after the clear the same call passes: the refusal is the node's
+    @test LK.reset_answer_table_idg(ld, atries[3], 0) === nothing
+    @test atries[3].IDG === nothing
+    @test !_ab_idg_refused(() -> LK.reset_answer_table(gd, atries[3], 0))
+    # a table without a node is never refused
+    @test !_ab_idg_refused(
+        () -> LK.reset_answer_table(gd, atries[3], Int(LK.RAT_CLEANUP | LK.RAT_BULK))
+    )
+
+    # caller 1: destroy_answer_trie (src/pl-tabling.jl, then trie_delete)
+    gd, ld, atries, variants = _ab_fresh_idg()
+    @test !_ab_idg_refused(() -> LK.destroy_answer_trie(ld, atries[1]))
+    @test atries[1].IDG === nothing && variants.value_count == 2
+
+    # caller 2: abolish_table of a complete table
+    gd, ld, atries, variants = _ab_fresh_idg()
+    @test !_ab_idg_refused(() -> LK.abolish_table(ld, atries[2]))
+    @test atries[2].IDG === nothing && variants.value_count == 2
+    @test atries[1].IDG !== nothing && atries[3].IDG !== nothing   # the others keep theirs
+
+    # caller 3: delete_dynamic_table, directly (an orphan: WL_DYNAMIC, no dependent)
+    gd, ld, atries, variants = _ab_fresh_idg()
+    atries[3].worklist = LK.WL_DYNAMIC
+    @test LK.orphan_dynamic_table(atries[3])
+    @test !_ab_idg_refused(() -> LK.delete_dynamic_table(ld, atries[3]))
+    @test atries[3].IDG === nothing && variants.value_count == 2
+
+    # caller 3b: abolish_table of an orphan dynamic table goes through delete_dynamic_table
+    gd, ld, atries, variants = _ab_fresh_idg()
+    atries[1].worklist = LK.WL_DYNAMIC
+    @test LK.orphan_dynamic_table(atries[1])
+    @test !_ab_idg_refused(() -> LK.abolish_table(ld, atries[1]))
+    @test atries[1].IDG === nothing && variants.value_count == 2
+
+    # caller 4: reset_table_bulk, through clear_variant_table (it runs the clear, then reset_answer_table with RAT_CLEANUP | RAT_BULK)
+    gd, ld, atries, variants = _ab_fresh_idg()
+    @test !_ab_idg_refused(() -> LK.clear_variant_table(ld))
+    @test all(a -> a.IDG === nothing && a.variant == 0, atries)
+    @test ld.tabling.variant_table == 0
+end
+
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
