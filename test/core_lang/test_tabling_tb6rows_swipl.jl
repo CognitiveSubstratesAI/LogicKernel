@@ -636,6 +636,58 @@ const _T6_PINS_SPACE = [
     "t_s07 c[116,95,115,48,55]/1(c[114]/2(i6888,i1368))"
 ]
 
+# DIVERGES (representation: the per-trie residue; reopens with E3 (atom GC), audit D-0766 E2): after an abolish the kernel keeps SIZEOF_TRIE = 152 bytes per
+# table trie in `table_space_used` and never returns them, because the kernel has no atom GC. swipl keeps them too UNTIL its atom GC runs (a table's tries carry a
+# symbol, so `trie_destroy` waits: pl-trie.c:1375-1391 at the pin 18168e62); after `garbage_collect_atoms` swipl's number is back to 0 (probed on swipl 10.1.20: one
+# table built, abolished: 304; after garbage_collect_atoms: 0), the kernel's stays. The rows above pin swipl's words BEFORE any atom GC; this group is the
+# DIVERGES row: it compares SHAPE and MONOTONICITY, not words (D-0634 Q4 style), so it holds on both sides and is the pinned form of the difference:
+#   c01  one table built and abolished three times: each residue is positive, a multiple of 152, and the same every cycle (the residue grows by a constant per cycle:
+#        it does not shrink, it does not depend on the cycle);
+#   c02  the residue does not depend on the answer count (3 answers vs 40): equal across sa, sb, sa;
+#   c03  two tables abolished at once leave MORE than one table does, still a multiple of 152;
+#   c04  the accounting is additive and monotone: the total after a mixed sequence is the start plus the sum of the per-cycle residues, every one positive.
+# The expectations are swipl's: `r(yes, yes)` from two byte-identical runs (LC_ALL=C, swipl 10.1.20, capped scope); the same program printed the per-cycle
+# residues 304, 304, 304 (sa three times), 304 (sb), 456 (sa and sb at once), which the rows do not pin. No row calls `garbage_collect_atoms`.
+const _T6_PROG_SPACEC = raw"""
+sp(U) :- statistics(table_space_used, U).
+yn(G, R) :- ( call(G) -> R = yes ; R = no ).
+
+:- table sa/1.
+:- table sb/1.
+sa(X) :- between(1, 3, X).
+sb(X) :- between(1, 40, X).
+cyc_a(D) :- sp(U0), findall(X, sa(X), _), abolish_all_tables, sp(U1), D is U1 - U0.
+cyc_b(D) :- sp(U0), findall(X, sb(X), _), abolish_all_tables, sp(U1), D is U1 - U0.
+cyc_ab(D) :- sp(U0), findall(X, sa(X), _), findall(X, sb(X), _), abolish_all_tables, sp(U1), D is U1 - U0.
+"""
+
+const _T6_CASES_SPACEC = [
+    (
+        "c01",
+        raw"cyc_a(D1), cyc_a(D2), cyc_a(D3), yn((D1 > 0, D1 mod 152 =:= 0, D2 mod 152 =:= 0, D3 mod 152 =:= 0), M), yn((D1 =:= D2, D2 =:= D3), S), R = r(M, S)"
+    ),
+    (
+        "c02",
+        raw"cyc_a(Da), cyc_b(Db), cyc_a(Da2), yn(Da =:= Db, E1), yn(Db =:= Da2, E2), R = r(E1, E2)"
+    ),
+    (
+        "c03",
+        raw"cyc_a(Da), cyc_ab(Dab), yn(Dab > Da, G), yn(Dab mod 152 =:= 0, M), R = r(G, M)"
+    ),
+    (
+        "c04",
+        raw"sp(U0), cyc_a(D1), cyc_b(D2), cyc_ab(D3), sp(U1), yn(U1 =:= U0 + D1 + D2 + D3, A), yn((D1 > 0, D2 > 0, D3 > 0), P), R = r(A, P)"
+    )
+]
+
+const _T6_PINS_SPACEC = [
+    "ok",
+    "t_c01 c[116,95,99,48,49]/1(c[114]/2(a[121,101,115],a[121,101,115]))",
+    "t_c02 c[116,95,99,48,50]/1(c[114]/2(a[121,101,115],a[121,101,115]))",
+    "t_c03 c[116,95,99,48,51]/1(c[114]/2(a[121,101,115],a[121,101,115]))",
+    "t_c04 c[116,95,99,48,52]/1(c[114]/2(a[121,101,115],a[121,101,115]))"
+]
+
 const _T6_PROG_PRUNE = raw"""
 sp(U) :- statistics(table_space_used, U).
 
@@ -749,6 +801,13 @@ const _T6_GROUPS = [
         program=_T6_PROG_SPACE,
         cases=_T6_CASES_SPACE,
         pins=_T6_PINS_SPACE
+    ),
+    (
+        key="SPACEC",
+        label=raw"SPACEC: the per-trie residue after abolish, shape and monotonicity (DIVERGES, reopens with E3 atom GC, audit D-0766 E2)",
+        program=_T6_PROG_SPACEC,
+        cases=_T6_CASES_SPACEC,
+        pins=_T6_PINS_SPACEC
     ),
     (
         key="PRUNE",
@@ -995,6 +1054,11 @@ end
     end
     @test _T6_ans("TRIEKEYS", "k01") != _T6_ans("TRIEKEYS", "k02")
     @test _T6_ans("TRIEKEYS", "k02") != _T6_ans("TRIEKEYS", "k03")
+    # SPACEC (the DIVERGES row of the per-trie residue, audit D-0766 E2): every shape check answers `yes`, both sides of each `r/2` (a `no` is a residue that
+    # shrank, varied with the answer count or was not a multiple of 152)
+    for id in ("c01", "c02", "c03", "c04")
+        @test _T6_atoms(_T6_ans("SPACEC", id)) == ["yes", "yes"]
+    end
 end
 
 @testset "the TB6 pins are swipl's (live, when swipl is on PATH)" begin

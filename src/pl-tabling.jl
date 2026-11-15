@@ -3190,15 +3190,35 @@ const RAT_CLEANUP = Int(0x1)
 const RAT_BULK = Int(0x2)
 
 # PORT: pl-tabling.c reset_answer_table
-# DIVERGES: the worklist branch (an answer table with a worklist) is refused by name, owner TB5 (the abolish callers hold the
-# engine `ld` that `destroy_depending_worklists`, `destroy_delay_info_worklist` and `free_worklist` need; this function and the
-# release chain above it carry only `gd`; docs/architecture.md TAB1 TB2, "named refusal"). DISPATCHER RULING (option c): the callers
-# that hold `ld` (`destroy_answer_trie`, `abolish_table`, `delete_dynamic_table`) run the worklist branch and the IDG branch BEFORE `trie_delete`
-# (`reset_answer_table_worklist`, `reset_answer_table_idg`), so the chain finds neither; the refusals below stay for every other
-# path into the chain (`reset_table_bulk` now runs both branches itself, it holds `ld`);
-# a sentinel (WL_GROUND, WL_DYNAMIC) is
-# `data.worklist = Int` and is made fresh again; the IDG node is refused by name, owner TB6 (`idg_reset`, `idg_destroy`,
-# `idg_destroy_private`); the tracked branch (`tt_abolish_table`) is `reset_answer_table_tracked`, run by the same callers.
+# DIVERGES (representation: where the arms run; reopened with TH1, audit D-0766 E1): upstream's `reset_answer_table` (pl-tabling.c:2640-2689
+# at the pin 18168e62) runs the worklist arm (:2646-2656, with `destroy_depending_worklists`, `destroy_delay_info_worklist`,
+# `free_worklist`), the IDG arm (:2659-2669: `idg_reset`, `idg_destroy_private`, `idg_destroy`) and the tracked arm (:2671-2672,
+# `tt_abolish_table`, then `trie_empty` :2674) INSIDE the release chain (`trie_delete`, `prune_node`, `destroy_node`, `clear_node`, `release_node`, `tbl_release_node`,
+# `release_variant_table_node`), where the engine is the global `LD`. Here that chain carries `gd` and no engine; the arms need `ld`, and
+# threading `ld` through the seven functions is about 70 call sites in src/pl-trie.jl, src/pl-tabling.jl and the trie tests, or a
+# database-to-engine reference (`PL_global_data` holds no engine; owner TH1). So the CALLERS that hold `ld` run the arms BEFORE `trie_delete`
+# (`reset_answer_table_worklist`, `reset_answer_table_idg`, `reset_answer_table_tracked`), and the refusals below guard the chain for any other path.
+# THE ANSWERS ARE IDENTICAL: the refusals inside the chain are unreachable from any user-visible path today, because every way into the
+# chain with a variant table runs the arms first (each function the arms call is ported; the calls are at):
+#   * `destroy_answer_trie`      src/pl-tabling.jl:3780-3783 (worklist, IDG, tracked; then `trie_delete`),
+#   * `abolish_table`            src/pl-tabling.jl:9817-9820 (the same three, then `trie_delete`; its WL_DYNAMIC branch goes through `delete_dynamic_table`),
+#   * `reset_table_bulk`         src/pl-tabling.jl:9899-9902 (the three arms, then this function with `RAT_CLEANUP | RAT_BULK`),
+#   * `delete_dynamic_table`     src/pl-tabling.jl:3829-3830 (the IDG arm only, then `trie_delete`: its table's worklist is the sentinel
+#     `WL_DYNAMIC`, an `Int`, and a pseudo table is never given an answer, so never tracked),
+#   * `drop_intermediate_tables` src/pl-tabling.jl:10465 (`trie_delete` of a `droppable_table`, whose one call, src/pl-tabling.jl:2394, is guarded by
+#     `leader.IDG === nothing`, pl-tabling.c:6495-6497, so the table has no monotonic dependency: the tracked flag is set only by `tt_add_answer`,
+#     whose one caller is `'\$tbl_monotonic_add_answer'/2`; a worklist is gone after completion),
+#   * `empty_variant_table`      src/pl-tabling.jl:9972-10003, its one call src/pl-tabling.jl:10028 (`clear_variant_table`): the bulk branch goes through
+#     `reset_table_bulk` (above); the other branch is reached with `delays_done` false (the call needs `references == 0` after the decrement,
+#     `readers` needs more than one before it) and so with no values, which releases no answer table.
+# TWO STRUCTURAL DIFFERENCES, in words: (1) ORDER: the arms run before `trie_delete` starts, so before the variant table's node is
+# unlinked, where upstream runs them while the release chain visits that node; no caller observes the difference (each is a single
+# thread of control that deletes the node right after). (2) `reset_answer_table_tracked` CLEARS `TRIE_ISTRACKED` where upstream leaves
+# the flag set after `tt_abolish_table`; the chain then finds the flag off, the table is orphaned right after in each caller, and the
+# flag is read only by `answer_nodes_discardable` and this function.
+# The worklist branch of this function is refused by name for a table that still holds a worklist (owner TB5: `reset_answer_table_worklist`
+# empties it first); a sentinel (WL_GROUND, WL_DYNAMIC) is `data.worklist = Int` and is made fresh again; the IDG node is refused by name,
+# owner TB6; the tracked branch is refused by name, owner TB9 (`tt_abolish_table` is `reset_answer_table_tracked`, run by the callers).
 "Make the answer table `atrie` fresh again: no worklist, not complete, no answers (pl-tabling.c)."
 function reset_answer_table(
     gd::PL_global_data{T}, atrie::trie{T}, flags::Int
@@ -3221,11 +3241,11 @@ function reset_answer_table(
     # table, else idg_destroy_private under RAT_BULK, idg_destroy otherwise); the guard that keeps `droppable_table` off a table with a
     # node is pl-tabling.c:6495-6497 (`!leader->data.IDG`).
     # THE INVARIANT: every caller that can hold an answer table with an IDG node clears it through `reset_answer_table_idg` first:
-    #   * `destroy_answer_trie`  src/pl-tabling.jl:3747 (then `trie_delete`),
-    #   * `delete_dynamic_table` src/pl-tabling.jl:3795 (then `trie_delete`),
-    #   * `abolish_table`        src/pl-tabling.jl:9780 (then `trie_delete`; its WL_DYNAMIC branch goes through `delete_dynamic_table`),
-    #   * `reset_table_bulk`     src/pl-tabling.jl:9862 (then this function, with `RAT_CLEANUP | RAT_BULK`);
-    # `drop_intermediate_tables` (src/pl-tabling.jl:10383) cannot meet a node: its tables come from `droppable_table`, whose one call
+    #   * `destroy_answer_trie`  src/pl-tabling.jl:3781 (then `trie_delete`),
+    #   * `delete_dynamic_table` src/pl-tabling.jl:3829 (then `trie_delete`),
+    #   * `abolish_table`        src/pl-tabling.jl:9818 (then `trie_delete`; its WL_DYNAMIC branch goes through `delete_dynamic_table`),
+    #   * `reset_table_bulk`     src/pl-tabling.jl:9900 (then this function, with `RAT_CLEANUP | RAT_BULK`);
+    # `drop_intermediate_tables` (src/pl-tabling.jl:10465) cannot meet a node: its tables come from `droppable_table`, whose one call
     # (src/pl-tabling.jl:2393-2394) is guarded by `leader.IDG === nothing`, as the C is at :6495-6497.
     # A future caller that skips the clear fails here, loudly: the test `reset_answer_table's IDG arm ...` of
     # test/core_lang/test_tabling_abolish_swipl.jl pins the refusal and each caller above (tools/mutants/TB6R.py, TB6R-INV1).
