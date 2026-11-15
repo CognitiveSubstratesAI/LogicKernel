@@ -66,3 +66,18 @@ Registration order upstream (BeginPredDefs(atom)): blob_type_property, set_blob_
   second and third exist: `ls` them; the agent was blocked before it could).
 - A hook BLOCKED agent 3's `grep -rln` (a recursive search I wrote by mistake, brief: no recursive grep): the pre-bash.sh
   "recursive identifier search over a package src/ tree, without consulting CODEMAP first" message. Agent 3 stopped there.
+
+## STATE (agent 4, TEST piece finished, edit-only)
+- COMMITTED: e768bdc4 `TEST: ATOM-API mutants` (tools/mutants/ATOMAPI.py, 41 mutants; every `old` occurs exactly once in its file, checked
+  with python3 -I runpy; ids unique, each "aimed by <rows>"; no `equivalent=` field; TARGETS = test_atom_api_swipl.jl, test_atom_table.jl,
+  test_blob.jl, test_type_discipline.jl, all four exist (`ls`)); 5abf19b5 `TEST: ATOM-API cost lines` (3.0 in test/pkgtest_costs.tsv and
+  test/unit_costs.tsv: an ESTIMATE from a neighbouring file, replace with the measured cost).
+- Candidate equivalents (comments in ATOMAPI.py, for the widened run and the audit's ruling): ATOMAPI-7 (global_atom built-in bound: every
+  non-built-in atom keeps references 1), ATOMAPI-24 (current_atom of a non-variable: fails at the first unify either way).
+  ATOMAPI-17 (`>` for `>=` at LINESIZ) is aimed by aa13 (1100 chars) only: the 1024 boundary of the prefix has no row, a survivor there
+  is a row to add.
+- In my head only: nothing. NOT run: julia, warm.sh check, test_type_discipline.jl, the Pkg.test-way run; the whole branch (UPSTREAM
+  89b319f6, rows dda5dcfe) is uncompiled; every kernel answer of the rows is UNVERIFIED.
+- Left: `tools/warm.sh fmt` then `check`, the three term types for test_atom_api_swipl.jl, test_type_discipline.jl, the manifest and
+  owner-row checks, pkgtest_way.sh on the new file, push mutants/ATOMAPI and gate/atom-api at one SHA (the dispatcher's lane step);
+  the reserved_symbol rank/padding difference (swipl rank(0)/padding(1), kernel -1/0) for a ruling.
