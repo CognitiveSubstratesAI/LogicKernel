@@ -20,6 +20,7 @@ core_lang/test_arith_cells.jl	9.0
 core_lang/test_arith_swipl.jl	182.9
 core_lang/test_assert_cells.jl	4.0
 core_lang/test_at_body_swipl.jl	64.3
+core_lang/test_atom_api_swipl.jl	3.0
 core_lang/test_atom_table.jl	2.4
 core_lang/test_atom_words.jl	2.6
 core_lang/test_attvar_store.jl	7.2
