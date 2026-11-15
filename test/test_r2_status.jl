@@ -487,9 +487,18 @@ end
     # owners TB2, TB3, TB4). Both sides stay non-empty and a dead owner lookup (0 owned rows) fails. D-0083: the real-tree
     # count is internal identity; lower it only with the rows a step closed, named in that commit.
     # 199 after TRIMSTACKS: it ported `trim_stacks/0` (pl-setup.c:1751) and its owner row `pred:trim_stacks/0 Q10` went (200 -> 199).
+    # 184 at the R2 landing line (measured with the generator's own r2_collect on the tree, D-0813): 199 on main 87a88328 minus the
+    # 30 owner lines of the rows the line closed (29 pred: rows done now: $depth_limit/3, $depth_limit_except/3, $depth_limit_false/3,
+    # $depth_limit_true/5, $inference_limit/2, $inference_limit_except/3, $inference_limit_false/1, $inference_limit_true/3,
+    # $urgent_exception/3 (P3); $on_signal/4, $put_token/2, $set_prolog_stack/4, $suspend_findall_bag/0, current_blob/2,
+    # garbage_collect_atoms/0, shell/2, thread_idle/2, trim_heap/0 (Q10); $rc_handle/1, zip_clone/2, zip_close_/2,
+    # zip_file_info_/3, zipper_goto/2, zipper_open_current/3 (ZIP1); $seek_list/4, sub_atom_icasechk/3 (P2); char_type/2,
+    # code_type/2 (CT1); format_time/3 (TAI1); and the refusal row get_procedure: other than GP_DEFINE, PR1) plus 15 refusal rows
+    # that gained an owner (13 ZIP1 minizip refusals in pl-zip.jl, pl_on_signal4_va TH1, pl_set_prolog_stack4_va R2 F1b; the
+    # set_module code-accounting row only changed its owner to REFUSED). No owner row was lost.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 199
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 184
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

@@ -1671,7 +1671,6 @@ function _manifest_index(T)
         (LK.pl_thread_idle2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_on_signal4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_set_prolog_stack4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
-        (LK.pl_trim_stacks0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.get_meta_arg, Tuple{LD, Int, Int, Int}, false),
         (LK.signal_name, Tuple{Int}, false),
         (LK.SIGNAL_INDEX, Tuple{Int}, false),
@@ -3473,13 +3472,6 @@ _index_entry_points(T) = (
             LK.pl_seek_list4_va, LK.pl_sub_atom_icasechk3_va                  # P2b
         )
     ]...,
-    (LK._c_char, Tuple{Int}, false),                                          # P2b
-    (LK._pl_tolower, Tuple{Int}, false),
-    (
-        LK._icasechk_search,
-        Tuple{LK.PL_chars_t, LK.PL_chars_t, Int, Bool, Bool},
-        false
-    ),
     (
         LK.atomic_list_concat,
         Tuple{LK.PL_local_data{T}, Int, Int, Int, Int},
@@ -4354,6 +4346,14 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.condc, Tuple{}, false),
     (LK.qlfEndPart, Tuple{Nothing}, false),
     (LK.addDirectiveWic, Tuple{Nothing, Int}, false),
+    # P2b: the entries of its block (_index_entry_points) that name no term type (listed once, not once per type)
+    (LK._c_char, Tuple{Int}, false),
+    (LK._pl_tolower, Tuple{Int}, false),
+    (
+        LK._icasechk_search,
+        Tuple{LK.PL_chars_t, LK.PL_chars_t, Int, Bool, Bool},
+        false
+    ),
     # S2a: the stream-layer entries that name no term type (listed once, not once per type)
     (LK.Sgetcode_intr, Tuple{LK.IOSTREAM}, false),
     (LK.Ssetbuffer, Tuple{LK.IOSTREAM, Union{Nothing, Vector{UInt8}}, Int}, false),
@@ -4900,7 +4900,6 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._ct_reverse, Tuple{Int64, Int64}, true),
     (LK.advanceGen, Tuple{LK.generator}, false),
     # CT1c — the text half: the case predicates' code-point walk, normalize_space/2's skippers, the locale's encoding
-    (LK.get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
     (LK.ctype_get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
     (LK.PROF_IS_CPU, Tuple{Int64}, false),
     (LK.PROF_IS_EXACT, Tuple{Int64}, false),
