@@ -81,7 +81,7 @@ MUTANTS = [
          new='''                        k = k                               # allocForeignState(sizeof(*chp))'''),
     # KILLED since ASSERT-GEN (audit D-0713 (3)): clause/2 on a predicate declared autoload/2 loads library(lists) in trapUndefined, between the
     # call and the access object: test_generation_swipl.jl p1a12-p1a19 (the same mutant as AGEN-C2)
-    dict(id="NF2-C5 the search generation is not stored in the frame", file=C, targets=TC + ["test/core_lang/test_generation_swipl.jl"],
+    dict(id="NF2-C5 the search generation is not stored in the frame (killed by rows p1d1-p1d4, D-0755)", file=C, targets=TC + ["test/core_lang/test_generation_swipl.jl"],
          old='''        ld.frames[fr].generation = dref.generation          # setGenerationFrameVal(environment_frame, dref->generation)''',
          new='''        nothing                                             # setGenerationFrameVal(environment_frame, dref->generation)'''),
     dict(id="NF2-C6 a failed attempt is not rewound", file=C, targets=TC,

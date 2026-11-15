@@ -33,7 +33,7 @@ MUTANTS = [
                     "(a wakeup runs before the call or after the exit: rows p1b1-p1b13); the assert never fires"),
     # ---- the frame keeps the generation it took at the call instead of the access object's: killed where trapUndefined loaded a library
     # in between (a12-a19: the loaded clauses are not visible to the frame, the answers are `[]`)
-    dict(id="AGEN-C2 clause/2 keeps the frame's own generation", file=C, targets=TG + TC,
+    dict(id="AGEN-C2 clause/2 keeps the frame's own generation (killed by rows p1d1-p1d4, D-0755)", file=C, targets=TG + TC,
          old=STORE_C,
          new='''        ld.frames[fr].generation = generationFrame(ld.frames[fr])  # (the frame's own: no store)
 '''),

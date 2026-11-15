@@ -36,3 +36,13 @@ p1c1	[1,2,3]
 p1c2	[2-true,3-true]
 p1c3	1 ;; 2 ;; 3
 p1c4	[1-true,3-true]
+p1d1	1-true ;; 2-true ;; 3-true
+p1d2	[1-true,2-true,3-true]
+p1d3	1-true ;; 2-true ;; 3-true
+p1d4	[1-true,2-true,3-true]
+p1d5	1 ;; 2 ;; 3
+p1d6	[1,2,3]
+p1d7	[7]
+p1d8	1 ;; 2 ;; 3
+p1d9	[1,2,3]
+p1d10	[]

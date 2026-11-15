@@ -1,5 +1,5 @@
 % ORIGINAL: the program of test_generation_swipl.jl (ASSERT-GEN, audit D-0713 (3)): clause/2 and retract/1 take the frame generation from the
-% predicate access object (pl-comp.c:7413, pl-proc.c:3180). The cases are the probes of evidence/PROBES (channel repo), p1a*/p1b*/p1c*;
+% predicate access object (pl-comp.c:7413, pl-proc.c:3180). The cases are the probes of evidence/PROBES (channel repo), p1a*/p1b*/p1c*, and the p1d* rows of the redo's logical update view (audit D-0755);
 % a case whose comment starts with [autoload-decl] runs with `:- autoload(library(lists), [append/3, last/2, subtract/3]).` in front of this text.
 % The same text goes to swipl and to the kernel.
 % shared by both probe programs: the case helpers (consulted by swipl AND by the kernel, the same text).
@@ -105,3 +105,24 @@ p1c2(R) :- prolog_listen(erase, pr_on_erase), pr_case(( freeze(V, retract(foo(1)
 p1c3(R) :- prolog_listen(erase, pr_on_erase), retract(foo(X)), pr_show(X, R).
 %% p1c4: erase listener, retract(foo(2)) then clause/2
 p1c4(R) :- prolog_listen(erase, pr_on_erase), pr_case(( retract(foo(2)), clause(foo(X), B) ), X-B, R0), prolog_unlisten(erase, pr_on_erase), R = R0.
+
+%% p1d1: the LOGICAL UPDATE VIEW of clause/2's redo: a clause asserted while the first answer's choice point is open is NOT answered (the frame keeps the generation of the call); plain body goal, every solution by REDO
+p1d1(R) :- clause(foo(X), B), ( X == 1 -> assertz(foo(7)) ; true ), pr_show(X-B, R).
+%% p1d2: as d1, every answer through findall
+p1d2(R) :- pr_case(( clause(foo(X), B), ( X == 1 -> assertz(foo(7)) ; true ) ), X-B, R).
+%% p1d3: clause/2's redo, the LATER clause foo(3) is retracted while the first answer's choice point is open: it is still answered (the older generation sees it); by REDO
+p1d3(R) :- clause(foo(X), B), ( X == 1 -> once(retract(foo(3))) ; true ), pr_show(X-B, R).
+%% p1d4: as d3, every answer through findall
+p1d4(R) :- pr_case(( clause(foo(X), B), ( X == 1 -> once(retract(foo(3))) ; true ) ), X-B, R).
+%% p1d5: retract/1's redo, a clause asserted between two solutions is NOT retracted by the redo (the logical update view); by REDO
+p1d5(R) :- retract(foo(X)), ( X == 1 -> assertz(foo(7)) ; true ), pr_show(X, R).
+%% p1d6: as d5, every answer through findall; foo(7) is left in the database (asserted, never retracted: d7 shows it)
+p1d6(R) :- pr_case(( retract(foo(X)), ( X == 1 -> assertz(foo(7)) ; true ) ), X, R).
+%% p1d7: as d6, then what is left of foo/1 (the asserted clause survives the redo)
+p1d7(R) :- pr_case(( retract(foo(X)), ( X == 1 -> assertz(foo(7)) ; true ) ), X, _), pr_case(foo(Y), Y, R).
+%% p1d8: retract/1's redo, the LATER clause foo(3) is retracted by someone else while the first answer's choice point is open; by REDO
+p1d8(R) :- retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ), pr_show(X, R).
+%% p1d9: as d8, every answer through findall
+p1d9(R) :- pr_case(( retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ) ), X, R).
+%% p1d10: as d8, then what is left of foo/1
+p1d10(R) :- pr_case(( retract(foo(X)), ( X == 1 -> once(retract(foo(3))) ; true ) ), X, _), pr_case(foo(Y), Y, R).

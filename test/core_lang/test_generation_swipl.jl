@@ -4,8 +4,9 @@
 # the frame; upstream does not compare it with the generation the frame took at the call. The kernel had `@assert dref.generation ==
 # generationFrame(frame)` at both sites (a probe showed it fires for clause/2 on a predicate declared `autoload/2`, whose library `trapUndefined`
 # loads between the call and the access object); it is replaced by the store alone. The rows:
-#   * test_generation_swipl.pl holds the cases `p1aN`..`p1cN` (a: autoload in clause/2 and retract/1, b: a wakeup between the call and the first
-#     clause, c: an erase listener); the kernel consults the program afresh for EVERY case (the cases assert foo/1) and enumerates the case's
+#   * test_generation_swipl.pl holds the cases `p1aN`..`p1dN` (a: autoload in clause/2 and retract/1, b: a wakeup between the call and the first
+#     clause, c: an erase listener, d: the logical update view of the redo of clause/2 and retract/1: a clause asserted, or a later clause retracted,
+#     while the first answer's choice point is open; BEHAVIOUR rows against the mutants AGEN-C2 and NF2-C5, audit D-0755); the kernel consults the program afresh for EVERY case (the cases assert foo/1) and enumerates the case's
 #     answers (at most 20), the answer being the string the program printed;
 #   * test_generation_swipl.out holds swipl 10.1.20's answers, `id<TAB>answer`, two byte-identical runs of the driver below; when `swipl` is on PATH
 #     the .out is checked against a live run as well, so it cannot go stale;
@@ -153,12 +154,17 @@ end
     auto = _gn_autoids()
     pins = _gn_pins()
     # not a vacuous agreement: a pin per case, the autoload group is the eight declared cases, and the pins carry the evidence
-    @test length(ids) == 38 && length(unique(ids)) == length(ids)
+    @test length(ids) == 48 && length(unique(ids)) == length(ids)
     @test sort(collect(keys(pins))) == sort(ids)
     @test auto == ["p1a$i" for i in 12:19]
     @test count(id -> occursin("append(", pins[id]), auto) >= 6        # swipl loads library(lists) inside clause/2 and answers its clauses
     @test pins["p1b1"] == "[1,2,3,9]" && pins["p1b2"] == "[1,3]" &&
         pins["p1b13"] == "[2-true,3-true,9-true]"   # the wakeup's assert/retract is seen
+    # the logical update view of the redo (D-0755, D-0756): the answers of the frame's own generation, taken at the first call (pl-comp.c:7413, pl-proc.c:3180)
+    @test pins["p1d1"] == "1-true ;; 2-true ;; 3-true" &&   # clause/2: foo(7) asserted in the middle is NOT answered
+        pins["p1d3"] == "1-true ;; 2-true ;; 3-true" &&     # clause/2: foo(3) retracted in the middle is STILL answered
+        pins["p1d5"] == "1 ;; 2 ;; 3" && pins["p1d7"] == "[7]" &&   # retract/1: foo(7) is not retracted by the redo, and survives
+        pins["p1d8"] == "1 ;; 2 ;; 3" && pins["p1d10"] == "[]"     # retract/1: foo(3), erased in the middle, is still answered
 
     res = Dict{String, Union{String, Exception}}(id => gn_ask(_TL, id) for id in ids)
 
