@@ -1,6 +1,6 @@
 # PIN1-I1 and PIN1-I2: why TP:260 did not fail, and the row that does (audit D-0810 item 2)
 
-Branch wip/tab1-pin1b, base 99e5975c. Edit-only: no Julia ran. ROW NOT YET RUN ON A LANE.
+Branch wip/tab1-pin1b, base 99e5975c (cherry-picked onto wip/tab1-mono as 7bf45b4d). Written edit-only; RUN ON LANE 2 2026-11-15, see the last section.
 
 ## Why test_prolog_flag_swipl.jl:260 passed on both mutants
 The mutants change the value `setPrologFlag(gd, "max_incomplete_subgoals_action" / "max_scc_subgoals_action", FT_ATOM, ...)` stores
@@ -42,3 +42,19 @@ Testset "the start value of the *_action restraint flags, off the flag, == swipl
 2. Format check (`tools/warm.sh fmt`): the file was wrapped by hand to margin 92 (long comments and the testset title string are as elsewhere).
 3. `tools/pkgtest_way.sh test/core_lang/test_prolog_flag_swipl.jl` (changed test file, D-0245).
 4. PIN1 I1 and I2 hand-run on one lane (one mutant, TARGETS TP) must end FAILED (killed); I3-I5, V1-V6, C1-C2 unaffected by an appended testset.
+
+## RUN ON LANE 2 (wip/tab1-mono 7bf45b4d, 2026-11-15, Julia 1.13.3, swipl 10.1.20)
+1. `tools/warm.sh file test/core_lang/test_prolog_flag_swipl.jl`, three types, unmutated: reference 483/483, alt 483/483, alt_interned 483/483
+   (1449/1449 total); grep `SKIP|Warning|Test Failed|Error During` = 0 lines. The new row passes unmutated.
+2. Hand-run through the WARM DAEMON (`tools/mutate.sh run-in-tree tools/mutants/PIN1.py <TP> -- PIN1-I1 PIN1-I2`, reference): BOTH SURVIVED
+   (TP, TS, TD all 483/117/117 pass under each mutant; no revise error). CAUSE: `PL_global_data{T}()` is a COPY of a booted per-process template
+   (src/gd_template.jl `PL_global_data_from_template`, `_GD_TEMPLATES`, built once per process and type); `_init_tabling_flags!` runs only
+   when the template is booted, and the daemon booted it before the mutant was revised in. So the daemon cannot see a mutant of any
+   flag-start line read through a fresh `PL_global_data`. This is a property of the warm daemon, not of the row.
+3. Hand-run in a FRESH process, the way CI's battery runs a target (`LOGICKERNEL_TERM=reference julia --project=. test/core_lang/test_prolog_flag_swipl.jl`,
+   swipl 10.1.20 on PATH; mutate.sh run-in-tree with a copy of PIN1.py whose `TF` is that `sh:` target, kept outside the tree):
+   baseline exit 0; PIN1-I1 caught: `Test Failed at test/core_lang/test_prolog_flag_swipl.jl:939`; PIN1-I2 caught: `Test Failed at test/core_lang/test_prolog_flag_swipl.jl:939`;
+   final baseline exit 0; "SUMMARY 2 of 2 caught; 0 blocking". `git diff --stat` empty after both (tree restored).
+   The failing testset: `the start value of the *_action restraint flags, off the flag, == swipl (PIN1-I1, PIN1-I2)`.
+4. `tools/pkgtest_way.sh test/core_lang/test_prolog_flag_swipl.jl`: passed the way Pkg.test runs it (peak 1984 MiB, oom_kill 0; no swipl there, so the swipl half is `@test true`).
+NOTE for any local re-run of I1/I2: use a fresh process (item 3), not the warm file target; CI's battery (tools/mutate_ci.py) runs a fresh process per target.
