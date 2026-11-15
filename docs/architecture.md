@@ -5963,8 +5963,13 @@ the SSU one is `S_SSU_DET`, :3743, SSU1/SSU2). What SSU1b ports:
 - **The setter** `setDetDefinition!` (pl-proc.c:3744-3758) reached from `setAttrDefinition` (`'$set_predicate_attribute'(P, det, Bool)`): set or
   clear `P_DET`, then reset the supervisor to `S_VIRGIN` (`freeCodesDefinition!`), so the next call chains `S_DET` in or out. The refusal
   `setAttrDefinition: attribute $attr` is deleted.
-- **Not here:** the `det/1` directive and `$/1` as predicates (boot/init.pl: R2's consult); `fix_det` of src/pl-srcfile.jl and `PRED_DET` of the
-  saved state (pl-qlf.c:1162, :3136; owner in evidence/TAB1/ssu1b_handoff.md, SSU1B-3).
+- **The reload half:** `fix_det` (pl-srcfile.c:1302-1310, src/pl-srcfile.jl) was ported with LB6a and matches the C line by line; it drops `P_DET`
+  and, through `freeCodesDefinition!`, the `S_DET` supervisor of a predicate whose reload no longer declares det (`setAttrProcedureSource` records
+  `P_DET` in the reload and also applies it, as `P_DET` is outside `P_ATEND`). White-box rows: test/db/test_reload_blocks_swipl.jl `r19b`; the second
+  consult itself is LB6b's.
+- **Not here:** the `det/1` directive and `$/1` as predicates (boot/init.pl: R2's consult); `PRED_DET` of the saved state (pl-qlf.c:1162 in
+  `loadPredicateFlags`, :3136 in `predicateFlags`): both functions are unwritten in the kernel, on main and on the QLF line (`wip/qlfrd2`: the
+  predicate writer and reader of the state file are unwritten, `state` is `nothing`); owner LB3 (docs/r2_owners.tsv `kfile:pl-qlf.jl`).
 
 Tests: test/core_lang/test_det_ssu_swipl.jl (upstream's `det_decl` unit of tests/core_lang/test_det_decl.pl and the tabled SSU case
 `ssu_complete_fails` of tests/tabling/test_tabled_supervisor.pl as kernel rows, answers pinned on the pinned swipl; white-box rows on the supervisor
