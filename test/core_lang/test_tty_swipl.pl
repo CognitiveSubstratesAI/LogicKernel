@@ -1,6 +1,6 @@
 % ORIGINAL: the rows of test/core_lang/test_tty_swipl.jl (its predicates, tty_size/2, tty_get_capability/3, tty_goto/2 and tty_put/2, are pl-term.c's).
 % test/core_lang/test_tty_swipl.pl - TTY1's rows. Each `tN(R)` is one row (a family of cases); test_tty_swipl.out holds
-% swipl 10.1.19's answers to them, as the test's driver prints them (`ok`, then one line per row: its name and every
+% swipl 10.1.20's answers to them, as the test's driver prints them (`ok`, then one line per row: its name and every
 % solution). A pin run is NOT on a terminal: stdin is /dev/null, so the answers are the non-terminal ones.
 % Rows t0-t2 are the argument checks of tty_get_capability/3, tty_goto/2 and tty_put/2 (each is answered before the terminal
 % library is reached, whatever TERM holds); row t3 is tty_size/2 on a descriptor that is no terminal.
