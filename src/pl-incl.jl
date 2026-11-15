@@ -23,6 +23,8 @@
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-mutex.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -3025,3 +3027,64 @@ mutable struct tbl_status{T}
     iap::Bool                                           # We are in assert propagation
 end
 tbl_status{T}() where {T} = tbl_status{T}(nothing, nothing, false, false, false)
+
+# PORT: pl-thread.h L_* (the mutex ids)
+# (swipl-devel pl-thread.h:242-271 at the pin; the order is the order of `_PL_mutexes[]`, pl-thread.c:302-337)
+# DIVERGES (TH1-B, representation only): the ids start at 0 as the C enumeration; Int constants. The Windows-only
+# L_DDE (30) and L_CSTACK (31) are left out. Index 7 is L_MUTEX, and L_UMUTEX is 23.
+const L_MISC = 0
+const L_ALLOC = 1
+const L_REHASH_ATOMS = 2
+const L_FLAG = 3
+const L_FUNCTOR = 4
+const L_RECORD = 5
+const L_THREAD = 6
+const L_MUTEX = 7
+const L_PREDICATE = 8
+const L_MODULE = 9
+const L_SRCFILE = 10
+const L_TABLE = 11
+const L_BREAK = 12
+const L_FILE = 13
+const L_SEETELL = 14
+const L_PLFLAG = 15
+const L_OP = 16
+const L_INIT = 17
+const L_TERM = 18
+const L_FOREIGN = 19
+const L_OS = 20
+const L_LOCALE = 21
+const L_SORTR = 22
+const L_UMUTEX = 23
+const L_INIT_ATOMS = 24
+const L_CGCGEN = 25
+const L_EVHOOK = 26
+const L_OSDIR = 27
+const L_ALERT = 28
+const L_GENERATION = 29
+
+# PORT: pl-mutex.h counting_mutex
+# (pl-mutex.h:151-159 at the pin)
+# DIVERGES (TH1-B, representation only): (1) the type is declared here, not in src/pl-thread.jl, because the field type of
+# `PL_global_data.mutexes` must exist before src/pl-global.jl. (2) `mutex` is a `ReentrantLock` (upstream: a `simpleMutex`);
+# `owner` is the task that holds it (`nothing`: free), which `PL_LOCK` reads to turn a relock into an error. (3) `next` and
+# `prev` (the chain of allocated mutexes) are not kept: the table is a vector. (4) `Base.deepcopy_internal` gives a copy of the
+# database its own unlocked mutex of the same name and the counters at 0: a lock object is never shared between two databases.
+"A counted mutex (pl-mutex.h `struct counting_mutex`): the lock, its name, how often it was taken, how many holds are open and how often taking it collided."
+mutable struct counting_mutex
+    const mutex::ReentrantLock                          # mutex itself
+    const name::String                                  # name of the mutex
+    count::UInt64                                       # # times locked
+    lock_count::UInt32                                  # # holds open (upstream's comment reads "times unlocked")
+    collisions::UInt32                                  # # contentions
+    @atomic owner::Union{Nothing, Task}                 # the task holding the lock
+end
+counting_mutex(name::AbstractString) =
+    counting_mutex(ReentrantLock(), String(name), UInt64(0), UInt32(0), UInt32(0), nothing)
+
+function Base.deepcopy_internal(cm::counting_mutex, stay::IdDict)
+    haskey(stay, cm) && return stay[cm]::counting_mutex
+    y = counting_mutex(cm.name)
+    stay[cm] = y
+    return y
+end

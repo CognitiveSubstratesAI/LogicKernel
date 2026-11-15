@@ -1,4 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-thread.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1999-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -10,6 +11,8 @@
 # clause garbage collection keeps every clause those enumerations can still see. The rest of
 # pl-thread.c is threads, which the kernel does not have; since Y1 `ThreadCPUTime`, the CPU time of the
 # calling thread, which statistics/2 reads.
+# Since TH1-B the lock table: the L_* mutexes of the database (`new_PL_mutexes`), `PL_LOCK`/`PL_UNLOCK` (pl-thread.h),
+# `holdsLock` and `enableThreads`; no call site takes a lock yet (the sites are placed by TH1-C).
 
 # PORT: pl-thread.c cgcActivatePredicate
 "Record that `def` is accessed in generation `gen`, if it is dirty (pl-thread.c)."
@@ -120,4 +123,110 @@ end
 "`thread_self(-Thread)`: the identifier of the calling thread; here always `main` (pl-thread.c)."
 function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
     return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c _PL_mutexes
+# (pl-thread.c:302-337 at the pin: 30 `COUNT_MUTEX_INITIALIZER` entries, ids 0-29 of pl-thread.h:242-271)
+# DIVERGES (TH1-B, representation only): upstream's table is one process-wide array; the kernel has one table per database,
+# in `gd.mutexes`, because a database is a value and module-level mutable state is refused (tools/lint_globals.jl). A copy of the
+# database gets its own unlocked table (`Base.deepcopy_internal` of `counting_mutex`, src/pl-incl.jl). The Windows-only L_DDE
+# and L_CSTACK are left out.
+"The lock table of a new database: one unlocked `counting_mutex` per L_* id, in upstream's order (pl-thread.c `_PL_mutexes[]`); entry `id + 1` is `L_*`."
+function new_PL_mutexes()::Vector{counting_mutex}
+    names = (
+        "L_MISC", "L_ALLOC", "L_REHASH_ATOMS", "L_FLAG", "L_FUNCTOR", "L_RECORD",
+        "L_THREAD", "L_MUTEX", "L_PREDICATE", "L_MODULE", "L_SRCFILE", "L_TABLE",
+        "L_BREAK", "L_FILE", "L_SEETELL", "L_PLFLAG", "L_OP", "L_INIT", "L_TERM",
+        "L_FOREIGN", "L_OS", "L_LOCALE", "L_SORTR", "L_UMUTEX", "L_INIT_ATOMS",
+        "L_CGCGEN", "L_EVHOOK", "L_OSDIR", "L_ALERT", "L_GENERATION"
+    )
+    return counting_mutex[counting_mutex(n) for n in names]
+end
+
+# PORT: pl-thread.h countingMutexLock
+# (pl-thread.h:288-302 at the pin, the O_CONTENTION_STATISTICS branch)
+# DIVERGES (TH1-B): the mutex is a `ReentrantLock` where upstream's is a non-recursive pthread mutex, so a task that locks a
+# mutex it holds would wait for itself; the kernel raises an error instead (`owner` is the holding task).
+"Take `cm`: count a collision when it is held, wait for it, then count the lock (pl-thread.h)."
+function countingMutexLock(cm::counting_mutex)::Nothing
+    me = current_task()
+    (@atomic cm.owner) === me &&
+        error("countingMutexLock: $(cm.name) is locked by this task already")
+    if !trylock(cm.mutex)
+        cm.collisions += UInt32(1)
+        lock(cm.mutex)
+    end
+    cm.count += UInt64(1)
+    cm.lock_count += UInt32(1)
+    @atomic cm.owner = me
+    return nothing
+end
+
+# PORT: pl-thread.h countingMutexUnlock
+# (pl-thread.h:304-309 at the pin)
+"Release `cm`; it requires an open hold (`lock_count > 0`) (pl-thread.h)."
+function countingMutexUnlock(cm::counting_mutex)::Nothing
+    @assert cm.lock_count > 0 "countingMutexUnlock: $(cm.name) is not locked"
+    cm.lock_count -= UInt32(1)
+    @atomic cm.owner = nothing
+    unlock(cm.mutex)
+    return nothing
+end
+
+# PORT: pl-thread.h PL_LOCK
+# (pl-thread.h:325 at the pin: `IF_MT(id, countingMutexLock(&_PL_mutexes[id]))`; `IF_MT` is
+# `if ( id == L_THREAD || GD->thread.enabled ) g`, pl-thread.h:286)
+# DIVERGES (TH1-B): a function of the database and the id (upstream: a macro over the global GD and `_PL_mutexes`).
+"`PL_LOCK(id)`: take the L_* mutex `id` while threads are enabled; L_THREAD is always taken (pl-thread.h)."
+function PL_LOCK(gd::PL_global_data, id::Int)::Nothing
+    (id == L_THREAD || gd.thread_enabled) && countingMutexLock(gd.mutexes[id + 1])
+    return nothing
+end
+
+# PORT: pl-thread.h PL_UNLOCK
+# (pl-thread.h:326 at the pin)
+"`PL_UNLOCK(id)`: release the L_* mutex `id` under the same condition as `PL_LOCK` (pl-thread.h)."
+function PL_UNLOCK(gd::PL_global_data, id::Int)::Nothing
+    (id == L_THREAD || gd.thread_enabled) && countingMutexUnlock(gd.mutexes[id + 1])
+    return nothing
+end
+
+# PORT: pl-thread.h holdsLock
+# (pl-thread.h:336-340 at the pin)
+# The table is the database's (see `new_PL_mutexes`); as upstream, the answer is true when any owner holds it (`lock_count > 0`).
+"Is the L_* mutex `id` held, by any owner? (pl-thread.h `holdsLock`, meant for assertions)"
+function holdsLock(gd::PL_global_data, id::Int)::Bool
+    return gd.mutexes[id + 1].lock_count > 0
+end
+
+# PORT: pl-thread.c enableThreads
+# (pl-thread.c:606-634 at the pin)
+# DIVERGES (TH1-B): takes the engine `ld` (upstream reads the global GD and calls `PL_error(NULL, ...)` on the calling thread's
+# LD); the database is the running query's (`_query_gd`).
+"""
+    enableThreads(ld, enable) -> Bool
+
+Enable or disable threads at run time (pl-thread.c): enabling always succeeds; disabling holds L_THREAD and succeeds
+when one thread is alive (`threads_created - threads_finished == 1`), else raises `permission_error(modify, flag, threads)`.
+"""
+function enableThreads(ld::PL_local_data{T}, enable::Bool)::Bool where {T}
+    gd = _query_gd(ld)
+    if enable
+        gd.thread_enabled = true                        # print system message?
+    else
+        PL_LOCK(gd, L_THREAD)
+        if gd.statistics_threads_created - gd.statistics_threads_finished == 1  # I am alone :-(
+            gd.thread_enabled = false
+        else
+            key = PL_new_term_ref(ld)
+            PL_put_atom(ld, key, mk_sym(T, :threads))
+            PL_UNLOCK(gd, L_THREAD)
+            return PL_error(
+                ld, "", 0, "Active threads", ERR_PERMISSION, mk_sym(T, :modify),
+                mk_sym(T, :flag), key
+            )
+        end
+        PL_UNLOCK(gd, L_THREAD)
+    end
+    return true
 end

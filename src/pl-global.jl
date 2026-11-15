@@ -181,6 +181,10 @@ mutable struct PL_global_data{T}
     const ld_table::LDTable                                     # the local data a wrapped stream names by number (IOSTREAM.wrapped; src/os/pl-stream.jl, R2 TOP1b E; owner TH1)
     tabling_answer_delay_infos::Dict{Int, delay_info}           # (pl-tabling.c static `answer_delay_infos`: trie node id -> delay_info; TAB1 TB0)
     tabling_start_node_ids::Int                                 # (pl-tabling.c static `start_node_ids`: the last start-node id handed out, 0: none; TAB1 TB1)
+    thread_enabled::Bool                                        # thread.enabled: PL_LOCK takes a mutex only while true (pl-global.h; pl-thread.c enableThreads; TH1-B)
+    statistics_threads_created::Int                             # statistics.threads_created: starts at 1, the main thread (pl-thread.c:952; TH1-B)
+    statistics_threads_finished::Int                            # statistics.threads_finished: starts at 0 (pl-thread.c:953; TH1-B)
+    const mutexes::Vector{counting_mutex}                       # _PL_mutexes[]: the L_* lock table, indexed by id + 1 (pl-thread.c:302; DIVERGES, TH1-B: one table per database)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with

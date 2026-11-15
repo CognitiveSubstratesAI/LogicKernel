@@ -339,7 +339,11 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         nothing,                                # defaults_home: set with the `home` flag by initPrologFlags!
         LDTable(),                              # ld_table: no wrapped stream yet (R2 TOP1b E)
         Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
-        0                                       # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
+        0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
+        true,                                   # thread_enabled: enableThreads(!GD->options.nothreads), pl-init.c:1609 (TH1-B)
+        1,                                      # statistics_threads_created: the main thread, pl-thread.c:952 (TH1-B)
+        0,                                      # statistics_threads_finished: pl-thread.c:953 (TH1-B)
+        new_PL_mutexes()                        # mutexes: the L_* table, unlocked (TH1-B)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
