@@ -115,7 +115,7 @@ MUTANTS = [
          file=C, targets=RUN,
          old="ld.environment_frame = rf.parent",
          new="ld.environment_frame = resetfr"),
-    dict(id="CONT1-S6 shift drops the records down to upstream's temporary lTop, the newest choice point's included (TAB-A3-FIX revert; KILL test_tabling_tb5rows_swipl.jl groups A3N, A3P: '$tbl_wkl_work'/6's choice point lies between completion_step/1's variables and '$tbl_reset'/6, BFR names a dropped record and newChoice's BFR < ch check fails)",
+    dict(id="CONT1-S6 shift drops the records down to upstream's temporary lTop, the newest choice point's included (TAB-A3-FIX revert; KILL test_tabling_tb5rows_swipl.jl group A3N, hand-run 2026-11-15 on 122fd117: an Error During Test in its A3 testset; '$tbl_wkl_work'/6's choice point lies between completion_step/1's variables and '$tbl_reset'/6, BFR names a dropped record and newChoice's BFR < ch check fails)",
          file=C, targets=RUN + ["test/core_lang/test_tabling_tb5rows_swipl.jl"],
          old="dropRecords!(ld, max(top, ld.choices[ld.BFR].base + SIZEOF_CHOICE))",
          new="dropRecords!(ld, top)"),
