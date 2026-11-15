@@ -57,7 +57,7 @@
    -> "addr2line/2: the description of a C function address (debug build "), TAB `REFUSED` TAB note "debug build only"; insert in the refusal block (keys sorted by file).
    Verify the key with tools/r2_status.jl logic (`r2_refusal_rows`: `refusal:$file::$fn::` * first(what, 60), file = `src/pl-proc.jl`).
 8. Manifest entries in test/static_analysis_manifest.jl (small window around a neighbour entry) for the new functions; commit `TEST: MISC-1 mutants, cost lines and owner rows`.
-9. Gate order after: fmt, check (with Pkg.test way), the three files on three term types, test_type_discipline.jl, mutants/MISC-1 push, branch-gate, crash-term grep, gate/misc-1 + mutants/MISC-1 at one SHA. Dispatcher does these (julia not run by this agent).
+9. Gate order after: fmt, check (with Pkg.test way), the three files on three term types, test_type_discipline.jl, mutants/MISC-1 push, branch-gate, the D-0164 text check, gate/misc-1 + mutants/MISC-1 at one SHA. Dispatcher does these (julia not run by this agent).
 
 ## Daemon
 No daemon used or started by this agent; lanes.conf untouched.
