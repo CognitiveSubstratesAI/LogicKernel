@@ -161,7 +161,14 @@ function System(ld::PL_local_data{T}, cmd::String)::Int where {T}
     shell = prog_shell(ld)
     c = addenv(Cmd(String[shell, "-c", cmd]), "PROLOGCHILD" => "yes")
     p = try
-        run(pipeline(ignorestatus(c); stdin=Base.stdin, stdout=Base.stdout, stderr=Base.stderr))
+        run(
+            pipeline(
+                ignorestatus(c);
+                stdin=Base.stdin,
+                stdout=Base.stdout,
+                stderr=Base.stderr
+            )
+        )::Base.Process
     catch e
         e isa Base.IOError || rethrow()
         PL_error(ld, "shell", 2, MSG_ERRNO, ERR_SYSCALL, "fork", -Int(e.code))

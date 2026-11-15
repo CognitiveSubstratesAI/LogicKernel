@@ -52,14 +52,15 @@ const LOCALE_NEWLOCALE_MASK = (1 << Int(LC_CTYPE)) | (1 << Int(LC_NUMERIC))
 # ── the numeric strings ──────────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-locale.c ls_to_wcs
-# DIVERGES: the bytes of the C string are the argument; see the header (UTF-8, `Sdprintf` is a line on stderr).
+# DIVERGES: the bytes of the C string are the argument; see the header (UTF-8, `Sdprintf` is a line on stderr: the kernel's
+# `Serror` IO, `_std_io(Base.stderr, 2)`, a concrete union of IO types so the call does not dispatch at run time).
 "The wide text of the C string `bytes` (a numeric string of a locale); `on_error` when it has no valid text (pl-locale.c)."
 function ls_to_wcs(bytes::Vector{UInt8}, on_error::String)::String
     s = String(copy(bytes))
     if isvalid(s) && length(s) < LSTR_MAX                       # mbsrtowcs(buf, &in, LSTR_MAX, &state); in == NULL
         return s
     end
-    println(stderr, "Illegal locale string: ", s)               # Sdprintf("Illegal locale string: %s\n", in)
+    println(_std_io(Base.stderr, 2), "Illegal locale string: ", s)   # Sdprintf("Illegal locale string: %s\n", in): to Serror
     return on_error
 end
 
