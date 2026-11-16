@@ -383,19 +383,15 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
 
 @testset "the table: creation order, a name index, the record of a created module" begin
     gd, ld = _db0()
-    # D-0083 disclosure: the table holds three modules, not two: setupProlog makes '$syspreds' (index 3, supers
-    # [system]) through the cached procedure '$run_undo'/1 (src/pl-ext.jl, TX1e; upstream makes it at the first
-    # run_undo_hooks call, pl-undo.c:232). Internal-identity counts only: the first created module is index 4.
-    @test gd.modules isa LK.module_table && length(gd.modules) == 3
-    @test [m.index for m in gd.modules] == [1, 2, 3]               # gd.modules[i].index == i (design H3)
+    @test gd.modules isa LK.module_table && length(gd.modules) == 2
+    @test [m.index for m in gd.modules] == [1, 2]                  # gd.modules[i].index == i (design H3)
     @test LK.isCurrentModule(gd.modules, _tls(:wb_none)) === nothing &&
-        length(gd.modules) == 3
-    sys, user, syspreds = gd.modules
-    @test lk_eq(syspreds.atom, _tls("\$syspreds")) && syspreds.supers == [sys.index]
+        length(gd.modules) == 2
+    sys, user = gd.modules
     a = LK.lookupModule(gd, _tls(:wb_a))
-    @test length(gd.modules) == 4 && a.index == 4 && gd.modules[4] === a
-    @test LK.lookupModule(gd, _tls(:wb_a)) === a && length(gd.modules) == 4
-    @test LK.isCurrentModule(gd.modules, _tls(:wb_a)) === a && gd.modules.names[a.name] == 4
+    @test length(gd.modules) == 3 && a.index == 3 && gd.modules[3] === a
+    @test LK.lookupModule(gd, _tls(:wb_a)) === a && length(gd.modules) == 3
+    @test LK.isCurrentModule(gd.modules, _tls(:wb_a)) === a && gd.modules.names[a.name] == 3
     # pl-modul.c:108-120: `user`'s super is system; system has none and is class system with `unknown` = error; a name
     # starting with `$` is a system-class module under system; any other a user-class module under user. The record's
     # flags, level and counters are not answerable by swipl (class and supers are: the program's last lines).
@@ -421,7 +417,7 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
     # a name's identity is its sym_key: `[]` (reserved) and '[]' (text) are two modules, as swipl's s09/s10 rows show
     nilm = LK.lookupModule(gd, LK.mk_nil(_TL))
     txtm = LK.lookupModule(gd, _tls("[]"))
-    @test nilm !== txtm && length(gd.modules) == 7          # system, user, \$syspreds, wb_a, \$wb_d, [], '[]'
+    @test nilm !== txtm && length(gd.modules) == 6          # system, user, wb_a, \$wb_d, [], '[]'
     # a module is never removed from the vector, and a definition holds its index
     @test LK.lookupProcedure(_tls(:p), 1, a).definition.module_ == a.index
     @test LK.M_DESTROYED == UInt32(0x00010000)                     # pl-incl.h

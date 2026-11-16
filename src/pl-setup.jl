@@ -369,7 +369,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Dict{Int, delay_info}(),                # tabling_answer_delay_infos: initTabling's newHTablePP(64) (pl-tabling.c:12696; TAB1 TB0)
         0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
         record{T}[],                            # undo_refs: no undo goal has a blob yet (TX1e)
-        dc_proc,                                # procedures_drun_undo1: set by setBuiltinPredicateProperties! (TX1e)
+        dc_proc,                                # procedures_drun_undo1: set by run_undo_hooks at its first call (TX1e)
         Tuple{Int, Procedure{T}}[]              # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask

@@ -194,12 +194,19 @@ function put_scheduled_undo(
 end
 
 # PORT: pl-undo.c run_undo_hooks
-# DIVERGES: the procedure is `GD->procedures.drun_undo1`, made by `setBuiltinPredicateProperties!` (src/pl-ext.jl) and not at the first
-# call; `'$syspreds'` is the module of boot/syspred.pl. A raising goal is `'$run_undo'/1`'s: named refusal, owner P3 (see the file header).
+# DIVERGES: `'$syspreds'` is the module of boot/syspred.pl. A raising goal is `'$run_undo'/1`'s: named refusal, owner P3 (see the file
+# header). The procedure is made at the first call and kept in `GD->procedures.drun_undo1`, as upstream does (`_PL_predicate`); the
+# placeholder the global data starts with has arity 0 (as `findReset`'s `findall_loop/4`).
 "Run `'\$syspreds':'\$run_undo'/1` on the scheduled goals in a frame of its own; false with the exception pending (pl-undo.c)."
 function run_undo_hooks(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool where {T}
     fid = PL_open_foreign_frame(ld)                 # if ( (fid=PL_open_foreign_frame()) )
     if fid != 0
+        if gd.procedures_drun_undo1.definition.arity != 1     # _PL_predicate(…, &GD->procedures.drun_undo1): the first call
+            gd.procedures_drun_undo1 = lookupProcedure(
+                mk_sym(T, Symbol("\$run_undo")), 1,
+                lookupModule(gd, mk_sym(T, Symbol("\$syspreds")))
+            )
+        end
         pred = gd.procedures_drun_undo1             # _PL_predicate("$run_undo", 1, "$syspreds", &GD->procedures.drun_undo1)
 
         ld.undo_running += 1                        # LD->undo.running++
