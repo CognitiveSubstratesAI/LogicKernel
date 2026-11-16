@@ -38,7 +38,7 @@ EQUIVALENT in its answers by reading the code, or the row cannot observe the eff
 | LC-B1 `_locale_serial!` always new number | t6 R21 `B3 == B4` | NO | src/os/pl-locale.jl:296-300, :315-: `unifyLocale` returns the cached `l.symbol` (`ls !== nothing`) after the first call, so `_locale_serial!` runs once per locale (and at :590 as a retry token): a fresh number there is invisible. Catalogue's "every unify makes a new blob" is false while the cache stays | EQUIVALENT in answers (only B1+B3 together differ) |
 | LC-B3 cached blob not kept (`l.symbol` not set) | t6 | NO | :315-: without the cache `lookupBlob(bytes)` of the SAME serial gives the same blob word (bytes identical), so B3 == B4 still holds | EQUIVALENT in answers |
 | LC-C2 set_chars no cut at NUL | t10 'a\0b' | NO | the NUL row is now **t12** (commit e7f13112; test_locale_swipl.pl:128-): the kernel refuses the atom of character 0 (`t12 notported`, pinned by name in test_locale_swipl.jl), so no row reaches `_cstr` with a NUL. t10 no longer holds it | row cannot run (DIVERGES: refusal of the NUL atom) |
-| LC-D1, LC-I2, LC-O4, LC-O9, LC-S10, LC-U2 | t4 t9 / t8 / t10 / t4 / t7 t8 / t11 | NO | NOT YET READ. LC-U2: t11 answers `ok` when `setlocale(Cat,Old,'en_US.UTF-8')` raises (host without that locale): CHECK `locale -a` on the runner and on this host; the catalogue header says the same | UNKNOWN |
+| LC-D1, LC-I2, LC-O4, LC-O9, LC-S10, LC-U2 | (see PART 2 below) | NO | read in PART 2 | see PART 2 |
 
 CT1B-C* / BISIM / P2B / LOCALE-B* rows above are the reading of the code; the fresh-process runs below are the proof.
 
@@ -77,3 +77,48 @@ CT1B-C* / BISIM / P2B / LOCALE-B* rows above are the reading of the code; the fr
 * Expected by the reading above (to be confirmed or refuted by the TSV): BISIM-24, P2B-I16, P2B-I2, CT1b-A11, LC-B1 survive for the
   stated equivalence reasons; BISIM-7, CT1b-C3, LC-D1 survive for want of a row.
 * The machine ran one foreign Julia (lane daemon, 3.3 GB) at the start; mine are the two scoped runners.
+
+## PART 2 (agent 2 of R2-SURVIVOR-TABLE-2): LOCALE rest and TAI1, by reading the code at 604d6acc (src/os/pl-locale.jl, pl-tai.jl, pl-libtai.jl)
+
+Cause (i) is NO for every row of this part (each mutant's own `targets` lists the file holding its KILL rows: LOCALE: test_locale_swipl.jl,
+test_setlocale_swipl.jl, test_format_swipl.jl, test_char_type_swipl.jl, test_ctype_text_swipl.jl; TAI1: test_libtai.jl, test_tai_swipl.jl,
+test_tai_format_swipl.jl; the "tz t5" row is test_tai_format_tz_swipl.pl, run by the SECOND testset of test_tai_format_swipl.jl, TZ fixed to
+CET-1CEST,M3.5.0/2,M10.5.0/3 on both sides). Probes marked [py] are my own Python models of the quoted Julia code (no Julia run).
+
+| id | (iii) finding | class |
+|---|---|---|
+| LC-D1 (no deleteat! on destroy) | pl-locale.jl `_locale_table_index` (:213-221) skips every table entry whose `alias === nothing` (`la === nothing && continue`), and destroy still sets `l.alias = nothing` (:825): the stale entry is invisible to every alias lookup, so t4's re-create succeeds either way. The only reader that walks the vector by position is the unbound-locale enumeration of locale_property/2 (:593 `gd.locale.table[x]`), and every row filters it with `locale_property(L, alias(A))` (t7 L2-L10), which fails for the stale entry. Catalogue "the alias is free to take again" is false while the lookup skips alias-less entries | EQUIVALENT in the rows' answers; row candidate: `findall(L, locale_property(L, decimal_point(_)), Ls), length(Ls, N)` before and after create+destroy must be equal (swipl deletes the entry; the mutant leaves N+1) |
+| LC-I2 (default_locale not acquired) | the mutant only lowers the reference count of the `default` locale by one (alias 1 + current 1 instead of 3). releaseLocale frees only at 0 with no symbol and no alias (:192-197); t8 never destroys `default`, so the count never reaches 0 and `current_locale(C0)` answers the alias either way | EQUIVALENT for the rows; a kill needs `set_locale(other)`, `locale_destroy(default)`, then a read of the default (e.g. `locale_create(_, "default", ..)`): destructive for later rows of the process, so it must be the LAST row of the .pl (swipl pins it) |
+| LC-O4 (no trailing 0 in grouping) | the only reader of the vector, `locale_grouping_property`, goes through `_grouping_at` (:391) which answers 0 past the end, and pl-fmt.jl uses its own `PL_locale` struct (pl-fmt.jl:55-67), not `PL_locale_rec`. For en_US `[3,3]` and `[3,3,0]` both give `[repeat(3)]`; for "C" `[]` and `[0]` both give none. Also t10's en_US branch (`lc_en`) is host-dependent (below) | EQUIVALENT in answers; host-locale dependent in the row too |
+| LC-O9 (alias check dropped in `_alias_locale_table!`) | the same test is made by its only caller `alias_locale` (:251-257), which raises permission_error before `_alias_locale_table!` runs; the other caller (initLocale!, :872) runs on an empty table. t4's R1 hits the check in `alias_locale`, so the second one is dead | EQUIVALENT (redundant check) |
+| LC-S10 (enumeration unifies the blob, not the alias) | t7/t8 enumerate with the locale unbound and then call `locale_property(L, alias(A))` on it, which works for an alias or a blob alike; no row tests `L == lc7a` after the enumeration. (t8's `locale_property(C1,P)` has the locale BOUND, never reaching :528) | row gap: row `locale_property(L, decimal_point(':')), locale_property(L, alias(A)), L == A` (swipl: true) |
+| LC-U2 (update_locale refreshes every category) | independent of the host: `update_locale` re-reads `_read_lconv()` (LC_NUMERIC of the thread), and a ctype/time/messages/collate setlocale does not change LC_NUMERIC, which t11's first goal sets to C; the refresh writes the strings it already holds. On a host WITHOUT en_US.UTF-8 `lc_upd` answers ok before any refresh (setlocale raises). So the row cannot kill it on any host | EQUIVALENT in answers; row host-dependent |
+
+HOST LOCALE (task item): `locale -a` on this host prints C, C.utf8, en_US.utf8, POSIX and LANG=en_US.UTF-8. The CI workflow files (.github/workflows/*.yml
+and .github/actions/*) name only `runs-on: ubuntu-24.04` (mutation.yml:81,96,166,245) and install no locale: the only apt-get is the oracle action's
+`cmake ninja-build libgmp-dev zlib1g-dev` (.github/actions/oracle/action.yml:29). Per the image's known contents (my knowledge; not checkable here) the runner
+has C, C.utf8, POSIX and no en_US.UTF-8, so on CI `lc_en` (t10 R8) and `lc_upd` (t11 R1-R6) answer `ok` without running: the mutants whose catalogue KILL
+needs the host locale are LC-U2 (t11) and LC-O4 (t10 'en_US.UTF-8'); LC-P11 (declared) also needs a host locale with a CHAR_MAX group. All other LOCALE rows
+build their locales from "C" with explicit properties. Both host-dependent mutants are equivalent in answers anyway (above), so the host locale is not the cause.
+
+Declared equivalents of LOCALE (catalogue words; none rests on a probe: all are readings of the code with file:line, "no row: count only"):
+B4 the blob's reference is not taken: `l.symbol` is set on first unify and never cleared, so releaseLocale never frees it (no atom GC); D3 the alias's reference is
+not dropped: a destroyed locale is unreachable by name, freeing is unobservable; D5 `l !== ol` always true: the reference of the old current locale is released
+once more, frees nothing while the alias/blob holds it; O8 releaseLocale ignores the alias: the alias holds a reference so a locale with an alias never reaches 0;
+P11 CHAR_MAX ends the list: reached only by a host grouping with a CHAR_MAX group followed by another; S11 FRG_CUTTED answer: the result is ignored. I checked S11:
+`discardForeignFrame` calls the foreign function and returns `nothing` (pl-wam.jl:1378-1405 at 604d6acc); the catalogue cites it as pl-wam.jl:1203-1207, now a
+different function: a STALE CITATION (argument still true). B4, D3, D5, O8: the arguments are sound by the count arithmetic read above.
+
+### TAI1 (cause (iii) throughout; one row gap each, no equivalent among the seven except L1/L4)
+
+| id | finding | class |
+|---|---|---|
+| F58, F59, F60, F61 (`_wrap32` dropped from `Int(tm_year)+1900`) | `tm_year` is an `Int32` (pl-tai.jl:49) already wrapped by `year % Int32` (:288, :326). Row t5's stamps 6 and 7 (67768036191676799/800, UTC year 2147485547, local year 2147485548 under TZ CET) have local year 2147485548, so tm_year = 2147483648 wraps to -2147483648 and `Int(tm_year)+1900` = -2147481748 NEEDS NO WRAP (expected line of t5: -2147481748). The wrap32 matters only when tm_year is in 2147481748..2147483647, i.e. a LOCAL year 2147483648..2147485547: t5 has no such stamp, t6's date/9 years stop at 2147483647 (tm_year 2147481747, +1900 = 2147483647). [py] year 2147485548 = tm_year 2147483648 | EQUIVALENT for every row; ONE row kills all four: stamp 67767987355891200 (year 2147484000, [py]) with %Y %C %y %G, answer from swipl |
+| L1 (`m >= 2` -> `m > 2`) | for m == 2 the mutant takes the else branch (m = 12, y -= 1) and the next lines `y += m ÷ 12; m %= 12` give m = 0, y unchanged: same as the then branch. [py] model of the quoted function, 0 differences over years -3000..3000 x 12 months x 3 days; 2000-03-01 = 51604 in both | EQUIVALENT (redundant branch) |
+| L4 (`y < 0` -> `y < -1`) | y == -1 left unfolded gives d += 1095 - 1461 = -366 and the folded path 1095 + 35064 + 109572 - 146097 = -366: same. [py] 0 differences, same range | EQUIVALENT |
+| T12 (`fp < 0.0` -> `fp < -1.0`) | `modf` leaves fp in (-1, 0] or -0.0, so `< -1.0` never holds: the fixup is dead in the mutant. The named row t10 (test_tai_swipl.pl:35-38) has seconds `-1` (an integer): modf(-1.0) = (-0.0, -1.0), fp < 0 is false in BOTH. No row has a negative FRACTIONAL second | row gap: `date(2020,3,1,0,0,-0.5,0,-,-)` (needs a fractional negative second), answer from swipl |
+
+TAI1 declared equivalents: F57 (`year-1` of %G cannot reach INT_MIN, tm_year+1900 >= -2147481748: arithmetic, sound as read); F71 (the 400-year rule of `__isleap`: the catalogue
+says "an exhaustive comparison of every day of 1600, 2000, 2400 and the next years gives 0 differences (computed 2026-11-13)": a computation of unnamed process; my [py] model
+of iso_week_days + the %G/%V branch over every day of 1599-1601, 1999-2001, 2399-2401 also gives 0 differences in 4019 days, so the claim holds); F8 (posix %a/%b read the C tables
+vs strftime: "read, not run": same names in C/English locale; the tz rows t2/t3 force LC_TIME=C, so on CI it is equivalent; a non-English LC_TIME host would tell them apart).
