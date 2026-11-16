@@ -107,3 +107,23 @@ MUTANTS = [
          old='        newtrie === nothing && return nothing\n',
          new='        nothing\n'),
 ]
+
+# TAB1 GATE: the files of evidence/TAB1/tab1_late.md are not in the gate tree (they stay on wip/tab1-late, each with the line it waits for): a target that is not in the tree makes the
+# Baseline job fail (`exit notest`), so they are dropped from TARGETS and from every mutant's `targets`. A mutant whose kill row
+# lived only in such a file keeps the remaining targets and shows in the verdict table as it is (survivor or caught).
+# Remove this block when the late files return to the gate.
+_TAB1_LATE = [
+    "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl",
+    "test/core_lang/test_tabling_supervisor_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_children_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_index_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_upstream_swipl.jl",
+    "test/core_lang/test_tabling_table_statistics_upstream_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_b_swipl.jl",
+    "test/core_lang/test_tabling_trie_attvars_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl",
+    "test/core_lang/test_transaction_swipl.jl",
+]
+TARGETS = [_t for _t in TARGETS if _t not in _TAB1_LATE]
+for _m in MUTANTS:
+    _m["targets"] = [_t for _t in _m.get("targets", TARGETS) if _t not in _TAB1_LATE] or list(TARGETS)
