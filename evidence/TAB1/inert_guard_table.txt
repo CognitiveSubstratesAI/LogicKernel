@@ -1,0 +1,31 @@
+selected 30; refused 0
+test_tabling_abolish_bulk_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_abolish_delay_deps_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_abolish_depending_table_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_abolish_swipl.jl | _AB_PINNED,_AB_PINNED_U | inserted
+test_tabling_abstract_completion_upstream_swipl.jl | _TA_PINNED,_TA_LEFT_PINNED | inserted
+test_tabling_answer_insert_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_answer_subsumption_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_delay_after_simplify_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_drop_intermediate_upstream_swipl.jl | _TD_PINNED,_TD_LEFT_PINNED | inserted
+test_tabling_engine_finding_cleanup_throw_swipl.jl | _EF_GROUPS (g.pins) | inserted
+test_tabling_idg_sets_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_incr_answer_subsumption_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_incr_dyn_nodes_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_incr_retractall_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_incr_subsumptive_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_mono_reuse_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_mono_subsumptive_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_monotonic_lazy_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_monotonic_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_reeval_exceptions_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_reeval_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_reeval_wfs_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_restraint_wb_swipl.jl | _TW_PINNED | inserted
+test_tabling_sdg_swipl.jl | _TG_PINNED | inserted
+test_tabling_simplify_completed_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_tabled_shortest_path_upstream_swipl.jl | _TT_PINNED | inserted
+test_tabling_tabling_upstream_a_swipl.jl | _TT_PINNED | inserted
+test_tabling_tabling_upstream_c_swipl.jl | _TT_PINNED | inserted
+test_tabling_tbl_sdg_upstream_swipl.jl | _TU_PINNED,_TU_LEFT_PINNED | inserted
+test_tabling_wfs_upstream_swipl.jl | _TT_PINNED | inserted

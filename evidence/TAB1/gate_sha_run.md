@@ -157,3 +157,10 @@ Left to the branch-gate: the other 35 added files, all in the 38-file live-tests
 ## Step 7: ancestry and D-0164 (tip dd78febb at the time of the run)
 
 See the report; raw outputs recorded in evidence/TAB1/gate_sha_ancestry.txt.
+
+## inert guard (TAB1-INERT, state at the stop: UNCOMMITTED, lane-2 daemon gone)
+
+- Selection: evidence/TAB1/inert_guard_edit.py (python3 -I, match-counted, refuses on any mismatch) over the files ADDED vs origin/main. 30 files need the fix, not 38: the live testset of 8 others (test_tabling_tb4_tb5, tb5rows, tb6rows, tb7rows, tb8rows, tb9rows, transaction_nested, transaction) already asserts on the swipl-less side, and test_det_ssu_swipl.jl asserts before its `if`. Table (file | constant | inserted): evidence/TAB1/inert_guard_table.txt. Constants: `_TT_PINNED` in 20 files, one per file elsewhere; `_AB_PINNED && _AB_PINNED_U` (abolish), `_TA_PINNED && _TA_LEFT_PINNED`, `_TD_PINNED && _TD_LEFT_PINNED`, `_TU_PINNED && _TU_LEFT_PINNED`, `_TW_PINNED`, `_TG_PINNED`; engine_finding_cleanup_throw has no PINNED constant (pins live in `_EF_GROUPS[i].pins`), so it uses `!isempty(_EF_GROUPS) && all(g -> !isempty(g.pins), _EF_GROUPS)`.
+- Edit: 2 lines per file (comment + `@test !isempty(...)`) immediately before `if swipl === nothing`; 30 files changed, 60 insertions.
+- pkgtest_way AFTER the edit (before: all three failed with 0 assertions): test_tabling_answer_insert_upstream_swipl.jl passed (peak 1895 MiB), test_tabling_reeval_upstream_swipl.jl passed (peak 1923 MiB), test_tabling_answer_subsumption_upstream_swipl.jl passed (peak 1832 MiB), cap 3G, oom_kill 0.
+- NOT DONE: the 30-file three-type lane run (the first call answered `warm lane: not running`; no julia process was alive, so the lane-2 daemon had died between the Pkg.test-way runs and the lane run), `warm.sh fmt`, `warm.sh check`, the 6 more pkgtest_way runs, the commits. Resume: start the daemon (dispatcher), run the lane runner over `git diff --name-only`, baseline pass counts in gate_sha_run.tsv (+1 per type expected), fmt, check, commit.

@@ -514,6 +514,8 @@ end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # the inert-testset guard: an assertion either way (main's convention, test_arg_body_swipl.jl:613)
+    @test !isempty(_TT_PINNED)
     if swipl === nothing
         @info "LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
