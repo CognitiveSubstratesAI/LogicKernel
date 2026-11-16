@@ -4969,7 +4969,9 @@ end
 
 # PORT: pl-prims.c pl_inference_limit as pl_inference_limit2_va
 # (PRED_IMPL("$inference_limit", 2, pl_inference_limit, 0), pl-prims.c:5825-5849 at the pin)
-# DIVERGES: the sum wraps (`Int` for `int64_t`, whose overflow is undefined in C).
+# The sum wraps as upstream's does: `LD->statistics.inferences` is `uint64_t`, so `inferences + limit + INFERENCE_LIMIT_OVERHEAD` is an
+# unsigned sum stored in an `int64_t` (`limit = infinite` = INT64_MAX gives a negative `nlimit`, which `nlimit < limit` installs). It
+# is never reached because the check in `depart_alerted` (pl-wam.jl) compares unsigned, as C does.
 """
     '\$inference_limit'(+Limit, -OldLimit)
 

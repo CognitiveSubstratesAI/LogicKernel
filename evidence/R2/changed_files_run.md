@@ -39,7 +39,7 @@ Warning column: all 120 of test_q10_swipl.jl's are the ENGINE's Prolog messages 
 
 ## Reds left, all ENGINE answers or a derived number (named, not fixed, not pinned)
 
-- test_depth_limit_swipl.jl:358 row il05, `call_with_inference_limit(true, infinite, R)`: swipl `!` (a[33]), kernel `inference_limit_exceeded`. Cause at src/pl-prims.jl:4987 (`nlimit = inferences + limit + INFERENCE_LIMIT_OVERHEAD`, limit = INFERENCE_NO_LIMIT = typemax(Int), pl-incl.jl:1804: the sum wraps negative, `nlimit < limit` installs it). The "DIVERGES: the sum wraps" comment at pl-prims.jl:4975 names the wrap for the kernel; at the pin swipl answers `!`.
+- test_depth_limit_swipl.jl row il05: FIXED by R1 (below).
 - test_q10_swipl.jl:614 row cb11 (current_blob/2 over a stream): swipl `yes`, kernel raised existence_error(procedure, open_null_stream/1).
 - test_p2b_swipl.jl:290 (the whole q01-q59 program, exception outside any @test): atom_codes/2 on text with the character 0 -> NotPortedError "an atom containing the character 0 (a Symbol cannot hold it)" (src/pl-read.jl:2064 via pl-text.jl:604, pl-prims.jl:2559). The refusal is the settled DIVERGES of src/pl-read.jl:2061-2063 (user 2026-10-10, keep refusing); the rows expect swipl's atoms.
 - test_locale_swipl.jl:152: the same NUL-atom NotPortedError, raised in the reader (pl-read.jl:2064 from get_token, pl-read.jl:2317) while consulting the program.
@@ -80,3 +80,19 @@ test/core_text/test_locale_swipl.jl, `tools/warm.sh file` on three types (greppe
 The one broken per type is t12 (the NUL decimal_point, the named known difference). Every row t0-t11 equals swipl's line on all three types: no ENGINE answer differs, no TEST/DRIVER red. The file's existing rows already fail if locale_create/3 raises (every row builds its locales through it; the testset errors at the kernel_lines_all call). Mutation at verdict level, reference type: the bare statement put back -> `UndefVarError: nl not defined` in the testset, 19 passed, 1 errored (file FAILS); restored, git diff shows only the two fixes.
 
 Gates: `tools/warm.sh fmt` clean, `tools/warm.sh check` PASS (256 s; the F2 push_template.jl parse Warning is the old formatter noise on a template), test/test_type_discipline.jl 45/45, `tools/pkgtest_way.sh test/core_text/test_locale_swipl.jl` passed (peak 1781 MiB of 3G).
+
+## R1 (audit D-0818 item 2): `call_with_inference_limit(true, infinite, R)` (row il05), wip/r2land-s2
+
+Upstream arithmetic (swipl-devel 18168e62): src/pl-prims.c:5831 `int64_t nlimit = LD->statistics.inferences + limit + INFERENCE_LIMIT_OVERHEAD;`
+(`inferences` is `uint64_t`, pl-incl.h:2767, so the sum is an unsigned wrap stored in an int64), :5841 `if ( nlimit < LD->inference_limit.limit )`
+(a signed compare: the wrapped negative sum IS installed), and the check, pl-vmi.c:2014 / :6875 / :6942 `if ( LD->statistics.inferences >= LD->inference_limit.limit )`
+compares `uint64_t` with `int64_t`, i.e. UNSIGNED: a negative limit is a huge value, never reached. INFERENCE_NO_LIMIT = INT64_MAX (pl-incl.h:2984). No saturation anywhere.
+Pin probe (~/.local/bin/swipl, two identical runs): limits 2^63-2 and 2^63-1 answer `!`; 2^63 raises representation_error(int64_t); `'$inference_limit'(2^63-2, O)` then `'$inference_limit'(infinite, O2)` gives O2 = -9223372036854758076 (the wrapped value is stored and printed).
+The kernel's sum already wrapped the same way (src/pl-prims.jl pl_inference_limit2_va); the divergence was the check at src/pl-wam.jl (depart_alerted site) comparing SIGNED. Fix: that compare is unsigned (`reinterpret(UInt64, ...)` of both sides); a DIVERGES comment names the representation, and the stale "DIVERGES: the sum wraps" comment in pl-prims.jl now says it wraps as upstream's does. The brief's `pl-prims.jl:4987` line is unchanged (it is faithful).
+Rows: il24 (limit 9223372036854775806) and il25 (9223372036854775807), pins from the pin binary through the file's own driver, two identical runs: `!` both.
+| state | per type (reference, alt, alt_interned) |
+|---|---|
+| before (HEAD, 5b1847ae) | 135 pass, 1 fail (il05, `ours inference_limit_exceeded, want !`), on each type; SKIP/Warning 0 |
+| after | 140 pass, 0 fail, 0 error on each type; SKIP/Warning/Test Failed/Error During 0 |
+| mutation: the old signed compare put back (reference) | 137 pass, 3 fail: il05, il24, il25 (each `ours inference_limit_exceeded, want !`); fix restored |
+Gates (R1): `tools/warm.sh fmt` 0 rewritten; the first `check` failed only on INVENTORY-DRIFT of docs/port_inventory.md (source lines moved), `tools/warm.sh inventory` rewrote it (1 line; the landing SHA writes it again after the R4 edits), `check` PASS (507 s); `tools/pkgtest_way.sh test/core_lang/test_depth_limit_swipl.jl` passed (peak 2952 MiB, rc 0). Final file run on the committed tree: 140 pass per type, 0 fail.

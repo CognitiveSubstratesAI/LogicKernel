@@ -4515,7 +4515,11 @@ function PL_next_solution_guarded(
         end
         @goto deep_backtrack                        # FRAME_FAILED
     end
-    if ld.statistics.inferences >= ld.inference_limit_limit
+    # DIVERGES: upstream compares `uint64_t inferences` with `int64_t limit`, so the limit is converted to unsigned; a limit
+    # `$inference_limit/2` stored as a wrapped (negative) sum is a huge unsigned value that is never reached. `Int64` here, so the
+    # same unsigned compare is spelled with `reinterpret`.
+    if reinterpret(UInt64, ld.statistics.inferences) >=
+        reinterpret(UInt64, ld.inference_limit_limit)
         @SAVE_REGISTERS(QID)
         raiseInferenceLimitException(gd, ld)
         @LOAD_REGISTERS(QID)

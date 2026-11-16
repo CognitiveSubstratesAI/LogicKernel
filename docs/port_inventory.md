@@ -191,7 +191,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-mutex.c` | code | `18168e629eab` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-op.jl` | 20 | 16 |
-| swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-prims.jl` | 184 | 93 |
+| swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-prims.jl` | 184 | 92 |
 | swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-string.jl` | 7 | 4 |
 | swipl-devel `src/pl-prims.h` | code | `18168e629eab` | `src/pl-prims.jl` | 2 | 0 |
 | swipl-devel `src/pl-privitf.c` | code | `18168e629eab` | `src/os/pl-file.jl` | 1 | 1 |

@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of P3's `call_with_depth_limit/3`, `call_with_inference_limit/3` (boot/syspred.pl over pl-prims.c
 # `$depth_limit*`, `$inference_limit*`, pl-vmi.c depart_alerted) and `'$urgent_exception'/3` (pl-prims.c) against swipl at the pin — P3's rows
-# test/core_lang/test_depth_limit_swipl.jl — dl01-dl26, il01-il23, ue01-ue12 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_depth_limit_swipl.jl — dl01-dl26, il01-il25, ue01-ue12 against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -204,6 +204,8 @@ const _DL_CASES = [
     ("il21", raw"call_with_inference_limit(dl_chain(5), 5, R)"),   # the boundary, one short
     ("il22", raw"call_with_inference_limit(dl_chain(5), 6, R)"),   # the boundary, exact
     ("il23", raw"call_with_inference_limit(true, 100, _), dl_chain(2000), R = ok"),   # no limit after a successful goal
+    ("il24", raw"call_with_inference_limit(true, 9223372036854775806, R)"),   # INT64_MAX-1: inferences+limit+2 wraps negative, never reached (unsigned compare)
+    ("il25", raw"call_with_inference_limit(true, 9223372036854775807, R)"),   # INT64_MAX (the value of `infinite`): the same wrap
     ("ue01", raw"'$urgent_exception'(foo, error(type_error(a, b), _), R)"),   # error beats other
     ("ue02", raw"'$urgent_exception'(error(type_error(a, b), _), foo, R)"),   # error against other
     ("ue03", raw"'$urgent_exception'(a, b, R)"),   # equal: the first
@@ -273,6 +275,8 @@ const _DL_PINNED = [
     "t_il21 c[116,95,105,108,50,49]/1(a[105,110,102,101,114,101,110,99,101,95,108,105,109,105,116,95,101,120,99,101,101,100,101,100])",
     "t_il22 c[116,95,105,108,50,50]/1(a[33])",
     "t_il23 c[116,95,105,108,50,51]/1(a[111,107])",
+    "t_il24 c[116,95,105,108,50,52]/1(a[33])",
+    "t_il25 c[116,95,105,108,50,53]/1(a[33])",
     "t_ue01 c[116,95,117,101,48,49]/1(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[97],a[98]),V0))",
     "t_ue02 c[116,95,117,101,48,50]/1(c[101,114,114,111,114]/2(c[116,121,112,101,95,101,114,114,111,114]/2(a[97],a[98]),V0))",
     "t_ue03 c[116,95,117,101,48,51]/1(a[97])",
