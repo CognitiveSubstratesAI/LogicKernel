@@ -219,6 +219,29 @@ end
     @test kl["t13"] == _row("t13", _el([_ei(i) for i in 2:40]))
 end
 
+# E4 kill rows: a trie deleted while it is enumerated (the .pl's t39-t47; the answers are the .out's, swipl's). trie_gen_raw holds a
+# reference on the trie for the whole enumeration (pl-trie.c acquire_trie/release_trie), so trie_delete/3 under it does not prune.
+@testset "E4 kill rows: a trie deleted while it is enumerated" begin
+    names = _trie_names()
+    kl = Dict(zip(["ok"; names], kernel_lines(_TRIE_PL, names)))
+    _ks(is) = _el([_ec("k", _ei(i)) for i in is])
+    _pc(name, n) = _ec(name, _ei(n))
+    @test kl["t39"] == _row("t39", _el(fill(_ei(0), 40)))                           # N = 1..40: nothing remains
+    @test kl["t40"] == _row(                                                         # no pruning under the enumeration
+        "t40",
+        _ec(
+            "-",
+            _ec("-", _ec("-", _ks(1:9), _ei(0)), _pc("node_count", 10)),
+            _pc("value_count", 0)
+        )
+    )
+    @test kl["t42"] == _row("t42", _ec("-", _el(_ei.(1:2:9)), _el(_ei.(1:2:9))))    # the next sibling deleted
+    @test kl["t43"] == _row("t43", _ec("-", _el(_ei.(1:10)), _el([_ei(10)])))        # the previous sibling deleted
+    @test kl["t44"] == _row("t44", _ec("-", _el(_ei.(1:12)), _el(_ei.(1:2:11))))     # every second deleted
+    @test kl["t46"] == _row("t46", _el(fill(_pc("node_count", 1), 3)))              # released after a cut, a throw, the end
+    @test kl["t47"] == _row("t47", _ks(1:6))                                          # destroyed while enumerated
+end
+
 # The replay path: with the epoch advancing at every call the kept cursors are rebuilt from the root; the answers must not change.
 @testset "TR2: restore_cursor! replay (ld.trie_gen_force_epoch) gives the same answers" begin
     names = _trie_names()
@@ -277,6 +300,42 @@ end
     ctx.context = rc2
     @test LK.pl_trie_gen2_va(ld, c, 2, ctx) == LK.FTRUE
     @test ld.trie_gens.live == 0
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
+# E4 white box: trie_gen_raw holds a reference on the trie from its first call to the release of its state (pl-trie.c trie_gen_raw
+# `acquire_trie`, clear_trie_state `release_trie`), and the release that drops the count to 0 runs trie_clean (pl-trie.h release_trie),
+# which empties a trie destroyed under the enumeration. swipl cannot answer this: the count and the nodes of a destroyed trie are the
+# engine's (t47 shows the answers that go on; this row shows the nodes are freed at the end).
+@testset "E4: trie_gen holds a reference on the trie; the last release empties a trie destroyed under it (white box)" begin
+    gd, ld, st = _tp_load(_TP, _TRIE_PL)
+    @test st == "ok"
+    proc = LK.isCurrentProcedure(sym_key(lk_sym(_TP, :wb_trie)), 1, LK.MODULE_user(gd))
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_TP, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    @test LK.PL_next_solution(gd, ld, qid) in (LK.PL_S_TRUE, LK.PL_S_LAST)
+    tr = LK.get_trie_noex(gd, ld, a)
+    @test tr.references == 0
+    b = LK.PL_new_term_refs(ld, 2)
+    LK.PL_put_term(ld, b, a)
+    LK.PL_put_variable(ld, b + 1)
+    ctx = LK.foreign_context{_TP}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+    rc = LK.pl_trie_gen2_va(ld, b, 2, ctx)
+    @test rc != LK.FTRUE && rc != LK.FFALSE
+    @test tr.references == 1                                # acquired for the enumeration
+    nc = tr.node_count
+    LK.trie_destroy(gd, tr)                                 # in use: empty_trie leaves the nodes
+    @test tr.node_count == nc
+    ctx.control = LK.FRG_CUTTED
+    ctx.context = rc
+    @test LK.pl_trie_gen2_va(ld, b, 2, ctx) == LK.FTRUE
+    @test tr.references == 0                                # released once
+    @test tr.node_count == 1                                # trie_clean emptied the destroyed trie
     LK.PL_close_query(ld, qid)
     LK.PL_close_foreign_frame(ld, fid)
 end

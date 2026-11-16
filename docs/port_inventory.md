@@ -233,7 +233,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-trie.c` | code | `18168e629eab` | `src/pl-trie.jl` | 162 | 85 |
 | swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-incl.jl` | 36 | 1 |
 | swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-tabling.jl` | 4 | 2 |
-| swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-trie.jl` | 6 | 3 |
+| swipl-devel `src/pl-trie.h` | code | `18168e629eab` | `src/pl-trie.jl` | 8 | 5 |
 | swipl-devel `src/pl-umap.c` | code | `18168e629eab` | `src/pl-umap.jl` | 10 | 4 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-global.jl` | 2 | 2 |
 | swipl-devel `src/pl-variant.c` | code | `18168e629eab` | `src/pl-variant.jl` | 17 | 5 |

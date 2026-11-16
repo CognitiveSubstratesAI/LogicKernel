@@ -105,3 +105,39 @@ t37(R) :- mk(T, [f(a, 1), f(a, 2), f(b, 1), f(b, 2)]),
     findall(K-D, ( K = f(_, 2), call_cleanup(trie_gen(T, K), D = det), ( K == f(a, 2) -> trie_delete(T, f(b, 2), _) ; true ) ), R).
 % t38: a variable first argument, a constant second: the choice over the first argument is advanced to a key that differs from the constant
 t38(R) :- mk(T, [f(a, b), f(c, b), f(d, e)]), findall(X, trie_gen(T, f(X, b)), R).
+% t39-t47 (E4): a trie deleted while it is enumerated. trie_gen_raw holds a reference on the trie (pl-trie.c acquire_trie), so a
+% trie_delete/3 under it clears the value and does not prune (trie_delete: `prune && trie->references == 0`); release_trie at the end.
+nk(N, T) :- trie_new(T), forall(between(1, N, I), trie_insert(T, k(I), I)).
+cnt(T, C) :- findall(x, trie_gen(T, _), Xs), length(Xs, C).
+gdel(T) :- ( trie_gen(T, K, V), trie_delete(T, K, V), fail ; true ).
+% t39: what remains after deleting each answer as it is enumerated, N = 1..40 (the 4/5 boundary, 8, 16, 40)
+t39(R) :- findall(C, ( between(1, 40, N), nk(N, T), gdel(T), cnt(T, C) ), R).
+% t40: the answers enumerated while each is deleted (N = 9) and the node and value counts after the loop (no pruning under it)
+t40(R) :- nk(9, T), findall(K, ( trie_gen(T, K, V), trie_delete(T, K, V) ), Ks), cnt(T, C),
+    prop(T, node_count(_), P1), prop(T, value_count(_), P2), R = Ks-C-P1-P2.
+% t41: nested keys with shared prefixes, all deleted while enumerated; then only those with an even J
+t41(R) :- trie_new(T), forall(( between(1, 6, I), between(1, 6, J) ), trie_insert(T, f(g(I), h(J)), I-J)),
+    forall(between(1, 6, I), trie_insert(T, f(g(I)), I)), gdel(T), cnt(T, C1),
+    trie_new(T2), forall(( between(1, 6, I), between(1, 6, J) ), trie_insert(T2, f(g(I), h(J)), I-J)),
+    findall(I-J, ( trie_gen(T2, f(g(I), h(J)), V), J mod 2 =:= 0, trie_delete(T2, f(g(I), h(J)), V) ), D),
+    length(D, ND), findall(I-J, trie_gen(T2, f(g(I), h(J))), Left), msort(Left, LS), R = C1-ND-LS.
+% t42: the NEXT sibling deleted while k(I) is enumerated (N = 10): the answers and what remains
+t42(R) :- nk(10, T), findall(I, ( trie_gen(T, k(I)), J is I+1, ( trie_lookup(T, k(J), _) -> trie_delete(T, k(J), _) ; true ) ), A),
+    findall(I, trie_gen(T, k(I)), L), msort(L, LS), R = A-LS.
+% t43: the PREVIOUS sibling deleted while k(I) is enumerated (N = 10)
+t43(R) :- nk(10, T), findall(I, ( trie_gen(T, k(I)), J is I-1, ( trie_lookup(T, k(J), _) -> trie_delete(T, k(J), _) ; true ) ), A),
+    findall(I, trie_gen(T, k(I)), L), msort(L, LS), R = A-LS.
+% t44: every second answer deleted while enumerated (N = 12)
+t44(R) :- nk(12, T), findall(I, ( trie_gen(T, k(I)), ( I mod 2 =:= 0 -> trie_delete(T, k(I), _) ; true ) ), A),
+    findall(I, trie_gen(T, k(I)), L), msort(L, LS), R = A-LS.
+% t45: a pruning query f(a, X) over a hashed node, each answer deleted (f(b, _) stays)
+t45(R) :- trie_new(T), forall(between(1, 10, I), ( trie_insert(T, f(a, I), I), trie_insert(T, f(b, I), I) )),
+    findall(X, ( trie_gen(T, f(a, X)), trie_delete(T, f(a, X), _) ), A),
+    findall(Y-X, trie_gen(T, f(Y, X)), L), msort(L, LS), R = A-LS.
+% t46: the reference is released after a cut, an exception and a complete run: a delete after each prunes (the node count falls)
+t46(R) :- nk(8, T1), once(trie_gen(T1, _)), forall(between(1, 8, I), trie_delete(T1, k(I), _)), prop(T1, node_count(_), P1),
+    nk(8, T2), catch(( trie_gen(T2, _), throw(x) ), x, true), forall(between(1, 8, I), trie_delete(T2, k(I), _)), prop(T2, node_count(_), P2),
+    nk(8, T3), findall(K, trie_gen(T3, K), _), forall(between(1, 8, I), trie_delete(T3, k(I), _)), prop(T3, node_count(_), P3),
+    R = [P1, P2, P3].
+% t47: the trie destroyed while it is enumerated: the enumeration goes on over the nodes it holds
+t47(R) :- nk(6, T), findall(K, ( trie_gen(T, K), ( K == k(2) -> trie_destroy(T) ; true ) ), R).
