@@ -80,7 +80,7 @@ MUTANTS = [
          new='    nothing\n'),
     dict(id='TRIECH-TC-R insert_child keeps the node after a failed add_child',
          file='src/pl-trie.jl', targets=TARGETS,
-         old='        destroy_node(_query_gd(ld::PL_local_data{T}), tr, child)    # pl-trie.c:1575\n',
+         old='        ld === nothing || destroy_node(_query_gd(ld), tr, child)    # pl-trie.c:1575 (a failing pool charge implies `ld`)\n',
          new='        nothing\n'),
     dict(id='TRIECH-TC-S trie_alloc_from_pool raises no error for a caller with ld',
          file='src/pl-trie.jl', targets=TARGETS,

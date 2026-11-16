@@ -83,8 +83,8 @@ MUTANTS = [
     # ── variant_table (pl-tabling.c variant_table) ──
     dict(id="TB1-V1 variant_table creates the table when it exists and not when it does not, `!= 0` (KILL tvb04: the first lookup reads `gd.tries[0]`, BoundsError; tvb01-tvb06 follow)",
          file=TAB, targets=[TV],
-         old="    if ld.tabling.variant_table == 0\n        t = trie_create(T)\n",
-         new="    if ld.tabling.variant_table != 0\n        t = trie_create(T)\n"),
+         old="    if ld.tabling.variant_table == 0\n        t = trie_create(ld, T, ld.tabling.node_pool)\n",
+         new="    if ld.tabling.variant_table != 0\n        t = trie_create(ld, T, ld.tabling.node_pool)\n"),
     dict(id="TB1-V2 the variant table is not flagged TRIE_ISVARIANT (KILL TV:344 `(variants.flags & TRIE_ISVARIANT) != 0` and TV:358 `is_variant_trie(variants)`)",
          file=TAB, targets=[TV],
          old="        t.flags |= TRIE_ISVARIANT\n",
@@ -283,8 +283,8 @@ MUTANTS = [
     # ── reset_answer_table and the release functions (pl-tabling.c): called by the abolish (TB5) and the trie's release_node ──
     dict(id="TB1-L1 reset_answer_table leaves the table complete (KILL TV the DEFKILL3 release testset, after release_variant_table_node `TRIE_COMPLETE` is unset and the worklist (also WL_GROUND) is nothing (pl-tabling.c:2642,2679; kernel pl-tabling.jl:3190-3250))",
          file=TAB, targets=[TV],
-         old="    atrie.flags &= ~TRIE_COMPLETE\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table",
-         new="    nothing\n\n    atrie.IDG === nothing || tbl_refuse(\n        T,\n        :reset_answer_table"),
+         old="    atrie.flags &= ~TRIE_COMPLETE\n\n    # THE IDG ARM IS UNREACHABLE BY A PORTED CALLER, AND STAYS A REFUSAL",
+         new="    nothing\n\n    # THE IDG ARM IS UNREACHABLE BY A PORTED CALLER, AND STAYS A REFUSAL"),
     dict(id="TB1-L3 reset_answer_table's flags argument is read nowhere (EQUIVALENT: RAT_CLEANUP and 0 give the same reset)",
          file=TAB, targets=[TV],
          old="reset_answer_table(gd, atrie, variant_table.magic == TRIE_CMAGIC ? RAT_CLEANUP : 0)",
