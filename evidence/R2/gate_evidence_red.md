@@ -37,3 +37,13 @@ Both failing files REPRODUCE on the lane on all three types (reference, alt, alt
   the TAB1 lane run at 5bdaa2d9 was before them.
 - Fix: a76f2035 (`FIXED: test_load_swipl.jl: two pins of closed differences flipped to swipl's own answer`), one commit for both rows (same file, same class). Lane: 309 pass, 0 fail,
   three types (103 each), warm.sh fmt clean. Old lines back (HEAD 01d7a9af, same lane): 6 fail, 2 per type (the mutation proof).
+
+## (3) t_cb11 broken (audit D-0826 (1)(c)), commit 2f4bd05a
+
+- Rule applied: a row that depends on a named missing foreign predicate is a named `@test_broken` with its reason, not a red row.
+- Edit: test/core_lang/test_q10_swipl.jl, inside the row loop of the testset "the Q10 built-ins as swipl's": for the row `t_cb11` the kernel's answer is pinned by name (the line holds `raised` and `open_null_stream`), `@test_broken k == want` keeps swipl's `yes` (from the .out) as the expected value, then `continue`. Convention as test/core_text/test_locale_swipl.jl:203 (row t12).
+- Reason text: open_null_stream/1, pl-file.c:4701-4713 (`Snew` over `nullFunctions`), owner `cfile:pl-file.c`; the predicate needs a new IOFUNCTIONS member (pl-stream.jl:203-208), arms in S_read / S_write / S_seek64 / S_close, the predicate and inventory rows, so it is not a body change.
+- Lane run, three types (warm.sh file): reference 352 pass / 1 broken, alt 352 / 1, alt_interned 352 / 1; file 1056 pass / 3 broken, 0 fail, 0 error. Each type gains one pass over the earlier 351: the new pin on the kernel's answer matched on all three.
+- Mutation proof (verdict level): the plain `@test k == want` back makes the row fail at :619 on all three types (rc 1); the @test_broken restored, the file is byte-identical to the edited copy.
+- Gates: `warm.sh fmt` rewrote this one file (Blue-clean after), `warm.sh check` PASS in 419 s, `tools/pkgtest_way.sh` passed (peak 1908 MiB, cap 3G, oom_kill 0).
+- Warm-log grep: no SKIP, no Test Failed; the Warning lines are the Prolog messages of the generated q10.pl (singleton variables) and set_prolog_stack/2 "limit(Size) sets the combined limit" from the ss rows.
