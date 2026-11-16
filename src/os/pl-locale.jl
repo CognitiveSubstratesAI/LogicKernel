@@ -201,8 +201,9 @@ end
 # ── the table of aliased locales ─────────────────────────────────────────────────────────────────────
 
 # ORIGINAL: equality of two atoms: the symbol of a text atom, the handle of a blob.
+# (untyped arguments: a stored alias and a looked-up atom may be different concrete subtypes of the term type, as on the alt types.)
 "Are the atoms `a` and `b` the same atom?"
-function _loc_atoms_equal(a::T, b::T)::Bool where {T}
+function _loc_atoms_equal(a, b)::Bool
     a === b && return true
     return !is_blob(a) && !is_blob(b) && sym_key(a) == sym_key(b)
 end
@@ -722,7 +723,7 @@ function pl_locale_create3_va(
 )::foreign_t where {T}
     gd = ld.GD::PL_global_data{T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    nl::PL_locale_rec{T}
+    local nl::PL_locale_rec{T}
 
     def = getLocale(gd, ld, A2)
     if def !== nothing

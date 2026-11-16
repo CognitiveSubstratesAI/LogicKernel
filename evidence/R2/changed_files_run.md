@@ -62,3 +62,21 @@ How: `kernel_lines_all` / `_p2b_kernel_all` continue after a refused row on a fr
 OPEN, NOT NUL, NOT FIXED (engine, brief says no engine change): test_locale_swipl.jl still errors once per type, now one step later. With the program loaded, the first row that calls locale_create/3 raises `UndefVarError: nl not defined in local scope` at src/os/pl-locale.jl:725: the line `nl::PL_locale_rec{T}` at the head of pl_locale_create3_va is a bare statement, which Julia evaluates as a type assertion on an unset variable (probe on the daemon: the same statement in a scratch function raises it, `local nl::Int` returns 1). Every call of locale_create/3 raises it. Blame 38c2ad4df (2026-11-11, R2 stack 1). One-line fix: `local nl::PL_locale_rec{T}`. Unknown until it is fixed: what the other locale rows show.
 
 Gates for the three files: `tools/warm.sh fmt` clean (char_type reformatted before its commit), `tools/warm.sh check` PASS (464 s), `tools/pkgtest_way.sh`: char_type passed (peak 2983 MiB of 3G), p2b passed (2055 MiB), locale FAILED (the UndefVarError above; 19 passed, 1 errored on reference).
+
+## R3b (D-0818 item 7a follow-up): `locale_create/3` raised on every call; test_locale_swipl.jl runs its rows
+
+Two defects in src/os/pl-locale.jl, found in sequence (the first hid the second):
+1. `nl::PL_locale_rec{T}` at the head of `pl_locale_create3_va` was a bare statement (a type assertion on an unset variable): `UndefVarError: nl not defined in local scope` on every call, every type. Fix: `local nl::PL_locale_rec{T}` (upstream's `PL_locale *def, *new = NULL` declaration; blame 38c2ad4df).
+2. With 1 fixed, the alt and alt_interned types raised `MethodError: no method matching _loc_atoms_equal(::AltSym, ::AltRSym)` (`getLocale` -> `_locale_lookup` -> `_locale_table_index`, pl-locale.jl:217): the signature `(a::T, b::T) where {T}` needs ONE concrete type, and a stored alias and a looked-up atom are different concrete subtypes of the term type there. Fix: untyped arguments (the body is unchanged). Not in the brief; it is the next failure of the same call, it blocks the three-type run, so it is in the same commit and can be split off.
+
+Probe on the daemon (tools/warm.sh send, scratch program: a locale made from "C" with alias and the three properties, one made from an existing alias, a nonexistent name, a taken alias, a bad group size), kernel vs the pin swipl 10.1.20 (~/.local/bin/swipl): all five answers equal (blob locale with the four properties read back; the pb/pc properties inherited; existence_error(locale,nonexistent_xyz); permission_error(create,locale,pd); domain_error(digit_group_size,0)); two identical kernel runs, two identical swipl runs.
+
+test/core_text/test_locale_swipl.jl, `tools/warm.sh file` on three types (grepped: SKIP 0, Warning 0, Test Failed 0, Error During 0):
+| state | reference | alt | alt_interned |
+|---|---|---|---|
+| R3 base (204b5825) | 19 pass, 1 error (UndefVarError) | same | same |
+| defect 1 fixed only | 35 pass, 1 broken, 0 error | 19 pass, 1 error (the MethodError above) | same |
+| both fixed | 35 pass, 1 broken | 35 pass, 1 broken | 35 pass, 1 broken |
+The one broken per type is t12 (the NUL decimal_point, the named known difference). Every row t0-t11 equals swipl's line on all three types: no ENGINE answer differs, no TEST/DRIVER red. The file's existing rows already fail if locale_create/3 raises (every row builds its locales through it; the testset errors at the kernel_lines_all call). Mutation at verdict level, reference type: the bare statement put back -> `UndefVarError: nl not defined` in the testset, 19 passed, 1 errored (file FAILS); restored, git diff shows only the two fixes.
+
+Gates: `tools/warm.sh fmt` clean, `tools/warm.sh check` PASS (256 s; the F2 push_template.jl parse Warning is the old formatter noise on a template), test/test_type_discipline.jl 45/45, `tools/pkgtest_way.sh test/core_text/test_locale_swipl.jl` passed (peak 1781 MiB of 3G).
