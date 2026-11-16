@@ -9,13 +9,13 @@ variables, redefined static procedure, discontiguous, import/export notices, `Lo
 Note: the lane-2 daemon was down at the start (my first wrapper was killed mid-restart: my mistake); I started it with
 `LOGICKERNEL_WARM_SECOND=1 tools/warm.sh start` (unit logickernel-warm-78a7647c, FIRST slice, lane 1's daemon is in lk-warm2.slice). It is still up.
 
-## Result: 79 of 80 GREEN on three types (76 at 5bdaa2d9, the three D-0083 files: two re-pins 2933e730 893902f0 REVERTED by 36f08764 (D-0822 (4) ruling a), the rank-chain row b07cc1b1 kept), 1 RED (test_transaction_swipl.jl)
+## Result (per-file counts of the three D-0083 files corrected to d0083_verify.md, tree 7f415a15: 186 / 288 / 702 over three types; the earlier 189 and 291 were written before the revert): 79 of 80 GREEN on three types (76 at 5bdaa2d9, the three D-0083 files: two re-pins 2933e730 893902f0 REVERTED by 36f08764 (D-0822 (4) ruling a), the rank-chain row b07cc1b1 kept), 1 RED (test_transaction_swipl.jl)
 
 ### RED (rc 1) at 5bdaa2d9; the first three rows are fixed since
 | file | group | PASS / FAIL (3 types) | class |
 |---|---|---|---|
-| test/core_lang/test_module_path.jl | TB5 | NOW GREEN: 189 / 0, 63 per type (was 168 / 18) | ORIGINAL expectations again (unbooted table 2 modules, first created index 3): 2933e730 reverted by 36f08764 after the cause was fixed in the kernel (`'$run_undo'/1` is made at the first run_undo_hooks call, pl-undo.c:232); three types green, mutation proof (eager creation back) fails :29 :41 :44 :46; pkgtest_way passed |
-| test/core_lang/test_module_swipl.jl | LB2c | NOW GREEN: 291 / 0, 97 per type (was 267 / 21; +3 rows: the modules[3] pin) | ORIGINAL expectations again: 893902f0 reverted by 36f08764, same cause; mutation proof fails :386-:393; pkgtest_way passed |
+| test/core_lang/test_module_path.jl | TB5 | NOW GREEN: 186 / 0, 62 per type (was 168 / 18; measured at 7f415a15, d0083_verify.md) | ORIGINAL expectations again (unbooted table 2 modules, first created index 3): 2933e730 reverted by 36f08764 after the cause was fixed in the kernel (`'$run_undo'/1` is made at the first run_undo_hooks call, pl-undo.c:232); three types green, mutation proof (eager creation back) fails :29 :41 :44 :46; pkgtest_way passed |
+| test/core_lang/test_module_swipl.jl | LB2c | NOW GREEN: 288 / 0, 96 per type (was 267 / 21; measured at 7f415a15, d0083_verify.md; the +3 rows of the modules[3] pin went with the revert) | ORIGINAL expectations again: 893902f0 reverted by 36f08764, same cause; mutation proof fails :386-:393; pkgtest_way passed |
 | test/db/test_clause_ref_swipl.jl | LB2c | NOW GREEN: 702 / 0, 234 per type (was 699 / 3) | KEPT, b07cc1b1 (D-0083: undo blob in the rank chain, a faithful registration: initUndo! sits where pl-setup.c:151 calls initUndo; zipper entry WAITS-FOR-LINE: zip line); mutation proof (initUndo! registers nothing) fails the row; pkgtest_way passed (first run killed in the 3G scope while precompiling after the src edit, rerun passed) |
 | test/core_lang/test_transaction_swipl.jl | TB9 | 567 / 6 (2 rows per type: :757 t_txx11, :827 txx16) | ENGINE / WAITS-FOR-LINE (as first_run_report.md: `$bags:$suspend_findall_bag/0` undefined, owner R2; UNDO_SCHEDULED at the end of `( undo(tx_push(a)), fail ; R = x )`, class (d)) |
 
