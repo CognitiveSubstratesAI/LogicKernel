@@ -26,7 +26,7 @@ The block has index_bits=0 for N<=8: the earlier "hash node" reading was wrong; 
 ## Kernel test run on main: tools/warm.sh file test/core_lang/test_trie_gen_swipl.jl (all three types), 12m24s
 225 passed, 6 failed, 15 errored. Per type (reference / alt / alt_interned identical): 75 pass, 2 fail, 5 error.
 The 5 errors per type: a BoundsError (node index 5 into a 1-element nodes vector, trie_gen_raw src/pl-trie.jl:2965) on t47 (trie_destroy
-under the enumeration empties the nodes the enumeration still walks) aborts the differential, kill, E4-kill, replay and live-state testsets.
+under the enumeration empties the nodes the enumeration still walks) ends the differential, kill, E4-kill, replay and live-state testsets with an error.
 The 2 fails per type: the E4 white-box row (:326 references == 1, :329 node_count kept after destroy).
 Per-row kernel numbers for t39-t46 on main (the reported 0,0,0,0,1,1,2,2,3,3 N=1..10, 6 at 16, 18 at 40) still to be printed per row
 (the t47 error hides them in the differential): the next agent prints them with t47 run separately.
