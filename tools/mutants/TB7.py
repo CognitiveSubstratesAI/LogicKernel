@@ -43,7 +43,10 @@ TMREU = "test/core_lang/test_tabling_mono_reuse_upstream_swipl.jl"
 # TR7 FIRST (the driver stops at the first failing target), then the files that drive the monotonic code through their own programs (D-0238): the four upstream
 # monotonic files (queued answers of lazy tables, `(subsumptive, monotonic)`, table reuse) run the same functions as TM.
 UPMONO = [TMON, TMONL, TMSUB, TMREU]
-TARGETS = [TR7, TM, TI, TMIN] + UPMONO
+# W2 (test_tabling_w2_swipl.jl) is the one file that walks the dependency chain (find_dep walk 96, found 36; evidence/TAB1/mono_probe.md): without it the
+# TB7-find-dep-* mutants survived for want of a target (D-0238, D-0867 S1). Listed after TMIN: the driver stops at the first failing target.
+TW2 = "test/core_lang/test_tabling_w2_swipl.jl"
+TARGETS = [TR7, TM, TI, TMIN, TW2] + UPMONO
 # TB7M5 (the refusal sites lifted from the merged tree, audit D-0238): every file that reaches the lifted code through start_tabling, a tabled call or the
 # variant-table predicates. KILL ROWS: idg08-idg10 (swipl-pinned, TI), idg16-idg27 (white-box, TI), mono09 (swipl-pinned, TM).
 TARGETS5 = [TR7, TM, TI, TMIN, TV, TW, TA, TF, AB] + UPMONO
