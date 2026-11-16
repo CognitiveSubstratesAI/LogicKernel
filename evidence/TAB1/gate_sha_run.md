@@ -121,3 +121,39 @@ Julia-side warnings (`┌ Warning`, `┌ Error`) and `SKIP`: none in any of the 
 | test/files/test_load_swipl.jl | 6 | Prolog: `Redefined static procedure q/1` (the reload rows) |
 
 The wfs_upstream directive failures are the only line class that names a missing library in the kernel; whether earlier runs of the file printed them was not compared here.
+
+## Step 6: tools/pkgtest_way.sh (the Pkg.test way: NO_SWIPL, pipes, inert-testset guard), foreground, one at a time
+
+Candidates: the 45 files ADDED on the gate (status A vs origin/main) that were run in step 5 (list: 38 with a "the pins are swipl's (live, when swipl is on PATH)" testset, 7 without). The limit is 12; 10 were run (peaks: evidence/TAB1/gate_sha_pkgtest_way_peaks.tsv, cap 3G, LOGICKERNEL_INERT_MEM_MAX left at the default, oom_kill 0 on all):
+
+| file | result | peak MiB |
+|---|---|---|
+| test_tabling_monotonic_swipl.jl | passed | 3001 (cap 3072: the cold precompile is the peak; no oom kill) |
+| test_tabling_answer_insert_upstream_swipl.jl | FAILED: inert testset | 1718 |
+| test_tabling_reeval_upstream_swipl.jl | FAILED: inert testset | 1867 |
+| test_tabling_answer_subsumption_upstream_swipl.jl | FAILED: inert testset | 1988 |
+| test_trie_property_idg_swipl.jl | passed | 1852 |
+| test_tabling_events_swipl.jl | passed | 1857 |
+| test_tabling_w2_swipl.jl | passed | 1972 |
+| test_tabling_tb4_tb5_guard_swipl.jl | passed | 419 |
+| test_tabling_transaction_wb_swipl.jl | passed | 1917 |
+| test_tabling_idg_swipl.jl | passed | 1911 |
+
+(10 files: the 12 limit was not reached because the three failures share one cause and the same shape is in 35 more files, all of which would fail the same way.)
+
+THE FINDING. Each failure reads `pkgtest-way: <file> › <file> › the pins are swipl's (live, when swipl is on PATH)   (0 assertions)`: the live testset is
+
+    @testset "the pins are swipl's (live, when swipl is on PATH)" begin
+        swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+        if swipl === nothing
+            @info "LIVE CHECK NOT RUN: ..."
+        else ... @test ...
+
+so without swipl it asserts nothing and the inert-testset guard (test/inert_testset_guard.jl, called by test/runtests.jl and tools/pkgtest_way.jl) fails it. A script over the 45 added files (the window from the testset line to the "not on PATH" line holds no `@test`) finds the same shape in ALL 38 tabling files that carry the live testset (list: every added test_tabling_*_upstream_swipl.jl, abolish_swipl, restraint_wb, sdg, tb4_tb5, tb5rows..tb9rows, tbl_sdg_upstream, transaction_nested, transaction, wfs_upstream); only the 3 above were measured. Files on origin/main use the form that asserts either way (test/core_lang/test_arg_body_swipl.jl:616: `@test length(_AG_PINNED) == length(_AG_CASES) + 1` before the swipl branch, comment "the inert-testset guard: an assertion either way"). The 7 added files without a live testset (events, idg, monotonic, tb4_tb5_guard, transaction_wb, w2, trie_property_idg) were all run and passed.
+CI.yml's `test` job (Pkg.test) states it has no swipl, so the guard would fail those 38 files there; left unedited by this agent (not in the brief), reported to the dispatcher.
+
+Left to the branch-gate: the other 35 added files, all in the 38-file live-testset group (45 added - 10 run).
+
+## Step 7: ancestry and D-0164 (tip dd78febb at the time of the run)
+
+See the report; raw outputs recorded in evidence/TAB1/gate_sha_ancestry.txt.
