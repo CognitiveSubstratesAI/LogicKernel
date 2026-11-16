@@ -4720,9 +4720,12 @@ function PL_next_solution_guarded(
     mc_cl = try
         compileGoalClause(gd, ld, mc_gloc, gd.modules[mc_mi], mc_nb)
     catch mc_e
-        # a construct the compiler refuses by name (`Module:Goal`, …): a Julia
-        # exception, which unwinds the frame being filled from below lTop
-        mc_e isa NotPortedError && setLTop!(ld, argFrameP(mc_nb, 1))
+        # A Julia exception out of the compiler (a construct it refuses by name, `Module:Goal`, …; a failed
+        # assertion; an out-of-memory) is no Prolog error (those return `nothing`, as upstream's
+        # `compileClause` returns false): it unwinds the frame being filled from below lTop, so that
+        # `_abandon_query`'s `dropRecords!` does not find the frame above lTop and replace the exception
+        # with its own assertion. `PrologThrow` is the one exception the run loop continues at its `except` arm.
+        mc_e isa PrologThrow || setLTop!(ld, argFrameP(mc_nb, 1))
         rethrow()
     end
     mc_cl === nothing && @goto b_throw              # case false: THROW_EXCEPTION

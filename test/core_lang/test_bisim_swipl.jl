@@ -199,3 +199,40 @@ _bs_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
         @test swipl_lines(_BS_PL, names) == expected                          # the .out is swipl's, still
     end
 end
+
+# i_metacall_clause (src/pl-wam.jl): a Julia exception out of the temporary clause's compiler is the one the caller sees.
+# The injection is the key counter itself (`fresh_var_keys!` refuses when the process-wide counter is exhausted): set to
+# its last value after the query is open, so the first variable key `compileGoalClause` asks for (an argvar of the
+# goal `p(f(a))` under catch/3's `call/1`) raises the AssertionError, then restored. Before the unwinding of the frame
+# being filled, `_abandon_query`'s `dropRecords!` assertion replaced it.
+function metacall_compile_exception(::Type{T}) where {T}
+    gd = LK.PL_global_data{T}()
+    ld = LK.PL_local_data{T}(gd)
+    path = joinpath(mktempdir(), "mc.pl")
+    write(path, "t(R) :- catch((p(f(a)), true), _, R = caught).\np(_).\n")
+    st, _ = LK.load_file!(gd, ld, path)
+    st === :ok || return "load: $st"
+    proc = LK.isCurrentProcedure(sym_key(_tls(T, "t")), 1, LK.MODULE_user(gd))
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(T, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    saved = Threads.atomic_xchg!(LK._KERNEL_VAR_COUNTER, typemax(UInt64))
+    try
+        return LK.PL_next_solution(gd, ld, qid)
+    catch e
+        return e
+    finally
+        Threads.atomic_xchg!(LK._KERNEL_VAR_COUNTER, saved)
+    end
+end
+
+@testset "i_metacall_clause: a non-Prolog exception from the clause compiler surfaces as itself" begin
+    e = metacall_compile_exception(_TL)
+    @test e isa AssertionError
+    @test e isa AssertionError && occursin("kernel variable keys exhausted", e.msg)
+    @test !(e isa AssertionError && occursin("dropRecords!", e.msg))
+    # the counter is restored: the kernel issues keys again
+    @test LK.fresh_var_keys!(1) >= LK.KERNEL_VAR_BASE
+end
