@@ -24,6 +24,14 @@ TV = TD + [
 ]
 P = "src/pl-prims.jl"
 W = "src/pl-wam.jl"
+# the union of every mutant's `targets` (mutate_ci.py plan and the pre-push hook read TARGETS; audit D-0834 era, R2 gate)
+TARGETS = [
+    "test/core_lang/test_depth_limit_swipl.jl",
+    "test/core_lang/test_autoload_trap.jl",
+    "test/foreign/test_query.jl",
+    "test/core_lang/test_catch_swipl.jl",
+    "test/core_lang/test_cleanup_swipl.jl",
+]
 MUTANTS = [
     # ---- pl-prims.c: the depth limit
     dict(id="P3-1 `inf` is not written for DEPTH_NO_LIMIT (KILL dl01: the old limit of the first call)", file=P, targets=TD,
@@ -204,18 +212,16 @@ MUTANTS = [
          old='''    if da_depth > ld.depth_info_limit''',
          new='''    if da_depth >= ld.depth_info_limit'''),
     dict(id="P3-39 a frame past the limit does not fail (KILL dl05: R is a number, not depth_limit_exceeded)", file=W, targets=TV,
-         old='''            newChoice(ld, CHP_DEBUG, FR)
-        end
-        @goto deep_backtrack                        # FRAME_FAILED
+         old='''        @goto deep_backtrack                        # FRAME_FAILED
     end
-    if ld.statistics.inferences >= ld.inference_limit_limit''',
-         new='''            newChoice(ld, CHP_DEBUG, FR)
-        end
-    end
-    if ld.statistics.inferences >= ld.inference_limit_limit'''),
+    # DIVERGES: upstream compares `uint64_t inferences` with `int64_t limit`, so the limit is converted to unsigned; a limit''',
+         new='''    end
+    # DIVERGES: upstream compares `uint64_t inferences` with `int64_t limit`, so the limit is converted to unsigned; a limit'''),
     dict(id="P3-40 the limit is reached one inference late (KILL il21/il22: the boundary of dl_chain(5))", file=W, targets=TV,
-         old='''    if ld.statistics.inferences >= ld.inference_limit_limit''',
-         new='''    if ld.statistics.inferences > ld.inference_limit_limit'''),
+         old='''    if reinterpret(UInt64, ld.statistics.inferences) >=
+        reinterpret(UInt64, ld.inference_limit_limit)''',
+         new='''    if reinterpret(UInt64, ld.statistics.inferences) >
+        reinterpret(UInt64, ld.inference_limit_limit)'''),
     dict(id="P3-41 the exception of an exceeded limit is not thrown (KILL il03: the loop runs on; the row would not end)", file=W, targets=TV,
          old='''        raiseInferenceLimitException(gd, ld)
         @LOAD_REGISTERS(QID)

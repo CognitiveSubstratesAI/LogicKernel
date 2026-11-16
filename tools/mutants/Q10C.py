@@ -19,6 +19,12 @@ SU = "src/pl-setup.jl"
 AL = "src/pl-alloc.jl"
 W = "src/pl-write.jl"
 F = "src/pl-fli.jl"
+# the union of every mutant's `targets` (mutate_ci.py plan and the pre-push hook read TARGETS; audit D-0834 era, R2 gate)
+TARGETS = [
+    "test/core_lang/test_q10_swipl.jl",
+    "test/core_lang/test_variant_cells.jl",
+    "test/core_lang/test_halt_swipl.jl",
+]
 MUTANTS = [
     # ---- pl-variant.c: \=@=
     dict(id="Q10-1 `\\=@=` succeeds for variants (KILL vr01, vr03, vr07: the answer flips)", file=V, targets=TVC,

@@ -19,6 +19,11 @@ BG = "src/pl-bag.jl"
 FL = "src/pl-fli.jl"
 EX = "src/pl-ext.jl"
 SU = "src/pl-setup.jl"
+# the union of every mutant's `targets` (mutate_ci.py plan and the pre-push hook read TARGETS; audit D-0834 era, R2 gate)
+TARGETS = [
+    "test/core_lang/test_q10b_swipl.jl",
+    "test/db/test_boot_image_swipl.jl",
+]
 MUTANTS = [
     # ---- pl-bag.c: $suspend_findall_bag/0
     dict(id="Q10B-B1 the suspend does not reset the chunk's solution count (KILL fb01: the next chunk is cut at the wrong place)", file=BG, targets=TB,
@@ -35,8 +40,11 @@ MUTANTS = [
         bag.suspended = true''',
          new='''        bag.gsize = 0'''),
     dict(id="Q10B-B4 the foreign state is the top bag, not the current one (KILL fb08: the bag below a suspended inner one is resumed wrongly)", file=BG, targets=TB,
-         old='''        at = findlast(b -> b === bag, ld.bags)          # the bag's address''',
-         new='''        at = length(ld.bags)                            # the bag's address'''),
+         old='''        while at > 0 && ld.bags[at].suspended
+            at -= 1                                     # bag = bag->parent
+        end
+        @assert at > 0''',
+         new='''        @assert at > 0'''),
     dict(id="Q10B-B5 the redo does not resume the bag (KILL fb01: the bag stays suspended, current_bag skips it and the next chunk is lost)", file=BG, targets=TB,
          old='''        bag = ld.bags[at]
         bag.suspended = false

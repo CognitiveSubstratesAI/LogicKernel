@@ -16,6 +16,18 @@ TD = TC + [
 ]
 TF = TC + ["test/db/test_nth_clause_swipl.jl", "test/core_lang/test_event_swipl.jl", "test/core_lang/test_meta_predicate_swipl.jl"]
 P = "src/pl-proc.jl"
+# the union of every mutant's `targets` (mutate_ci.py plan and the pre-push hook read TARGETS; audit D-0834 era, R2 gate)
+TARGETS = [
+    "test/db/test_clause_swipl.jl",
+    "test/core_lang/test_meta_predicate_swipl.jl",
+    "test/files/test_load_swipl.jl",
+    "test/core_lang/test_wrap_swipl.jl",
+    "test/core_lang/test_det_swipl.jl",
+    "test/core_lang/test_autoload_flag_swipl.jl",
+    "test/core_lang/test_debug_flag_swipl.jl",
+    "test/db/test_nth_clause_swipl.jl",
+    "test/core_lang/test_event_swipl.jl",
+]
 MUTANTS = [
     # ---- get_module_how
     dict(id="W1-1 a GP_DEFINE qualifier names an existing module only", file=P, targets=TD,
