@@ -52,3 +52,7 @@ t14(R) :- member(D, [date(2020,1,2), date(1999,12,31), date(2000,2,29)]), tf_run
 % the date/9 argument errors reach format_time too
 t15(R) :- member(D, [date(a,1,1,0,0,0,0,-,-), date(2020,1,1,0,0,x,0,'UTC',-), date(2020,1,1,0,0,0,0,'UTC',maybe)]),
     tf_res(format_time(atom(_), '%Y', D), R0), R = D-R0.
+% a negative FRACTIONAL second folds into the previous second (pl-tai.c get_ftm's fixup, T12): tm_sec becomes -1 (glibc prints %S as "0/"), and the weekday
+% and year day are those of 2020-02-29 (Saturday, 060) while %m %d keep 03 01; without the fold they are Sunday 061; 0.5 is the control, no fold
+t16(R) :- member(Sec, [-0.5, -1.25, -59.75, 0.5]),
+    tf_run('%Y-%m-%d %H:%M:%S %j %u %a %U', date(2020,3,1,0,0,Sec,0,'UTC',-), O), R = Sec-O.

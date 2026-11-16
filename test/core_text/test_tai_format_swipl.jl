@@ -184,12 +184,13 @@ end
 
 @testset "TAI1: format_time/3,4 == swipl's answers (the .out), through a program" begin
     expected = String.(readlines(_TAF_OUT))
-    @test length(_taf_names()) >= 16
+    @test length(_taf_names()) >= 17
     @test count(l -> occursin(_codes("existence_error"), l), expected) >= 1
     @test count(l -> occursin(_codes("domain_error"), l), expected) >= 2
     @test count(l -> occursin(_codes("type_error"), l), expected) >= 3
     @test occursin(_codes("Thursday"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("1577934246"), expected[findfirst(startswith("t3 "), expected)])   # %s of 2020-01-02 03:04:05.5 UTC
+    @test occursin("83,97,116,32,48,56", expected[findfirst(startswith("t16 "), expected)])   # seconds -0.5 folds into 2020-02-29: Saturday, week 08 (T12)
     taf_check(_TAF_PL, _TAF_OUT, nothing)
 end
 
