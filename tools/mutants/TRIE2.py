@@ -124,12 +124,12 @@ MUTANTS = [
       "    st.nch = 0\n    st.nbr = 0\n    empty!(st.frames)\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch"),
     # ---- the state record
     m("TR2-L1 the last answer keeps its state (KILL L: `ld.trie_gens.live != 0` after the row)",
-      "                else\n                    clear_trie_state!(pool, k)\n                    PL_close_foreign_frame(ld, fid)\n                    return FTRUE\n",
+      "                else\n                    clear_trie_state!(gd, pool, k)\n                    PL_close_foreign_frame(ld, fid)\n                    return FTRUE\n",
       "                else\n                    PL_close_foreign_frame(ld, fid)\n                    return FTRUE\n"),
     m("TR2-L2 a cut enumeration keeps its state (KILL L: t9, t10, t27 leave `live == 1`)",
-      "        clear_trie_state!(pool, PL_foreign_context_address(PL__ctx))\n        return FTRUE\n", "        return FTRUE\n"),
+      "        clear_trie_state!(gd, pool, PL_foreign_context_address(PL__ctx))\n        return FTRUE\n", "        return FTRUE\n"),
     m("TR2-L3 a failed enumeration keeps its state (KILL L: t4, t23 expected: `live` stays above 0)",
-      "    clear_trie_state!(pool, k)\n    PL_close_foreign_frame(ld, fid)\n    return FFALSE\nend\n", "    PL_close_foreign_frame(ld, fid)\n    return FFALSE\nend\n"),
+      "    clear_trie_state!(gd, pool, k)\n    PL_close_foreign_frame(ld, fid)\n    return FFALSE\nend\n", "    PL_close_foreign_frame(ld, fid)\n    return FFALSE\nend\n"),
     # ---- the predicates ($trie_property: D t14, t19, t20, t21, t22)
     m("TR2-P1 $trie_property node_count is one more (KILL D t14, t19)",
       "return PL_unify_integer(ld, arg, tr.node_count) ? FTRUE : FFALSE", "return PL_unify_integer(ld, arg, tr.node_count + 1) ? FTRUE : FFALSE"),
