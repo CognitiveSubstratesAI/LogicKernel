@@ -25,7 +25,8 @@
 #   * TR2-K1 (a stored variable key against a constant query, in a block without the scan bit) and TR2-K2 (the equal constant first, then the
 #     variables): rows t5 and t28 query with variables only, t13 reaches the scan path; a row `trie_insert(T, f(X, Y), 1), trie_insert(T, f(a, b), 2),
 #     trie_gen(T, f(a, b))` (swipl answers both) kills both.
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR2-Q1 .. TR2-Q8.
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR2-C2, TR2-S7, TR2-Q1, TR2-Q3 .. TR2-Q8
+#   (TR2-S8 and TR2-Q2 were declared too; CI run 43827841817 REFUTED both, they are killed mutants: audit D-0830).
 # Every `old` was counted EXACTLY once in its file by a python3 -I script (exec of this file, `src/pl-trie.jl`.count(old) == 1 for each of the 53
 #   mutants; no Julia ran) at the commit that adds this list; `new` != `old`; no duplicate id.
 #   RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
@@ -91,9 +92,12 @@ MUTANTS = [
     m("TR2-S7 next_choice0! does not restore the cursor before the node (output equivalent)",
       "            restore_cursor!(ld, st, ch, st.before)\n", "",
       eq="src/pl-trie.jl:2690-2696 next_choice0!: the restore result is read only through `st.before.prune` (:2693) and the cursor `cp`. Without the call `st.before` keeps its initial non-pruning value, so backtracking prunes less (align_key! :2459-2461 accepts every key of a non-pruning cursor), never more; a non-pruning kept cursor is restored to `prune = false` (restore_cursor! :2646-2649) which is that initial value. The det flag is read at the bound=true call (:2686-2688), which returns before the restore when the kept cursor prunes (:2686), so the restore cannot change it. Probes: TG file green with the mutant, fuzz equal"),
-    m("TR2-S8 next_choice0! returns at every advance, not only where a cursor is kept (output equivalent)",
-      "if bound && st.branches[st.choices[ch].branch].cursor.prune\n", "if bound\n",
-      eq="src/pl-trie.jl:2686 next_choice0!: at a non-pruning kept cursor the real code restores (prune = false), aligns without a test (:2459-2461) and descends (descent_node! :2618-2638) to a valued leaf, so it returns nonzero exactly where the mutant returns at once: both leave a choice point (retry). A valueless leaf listed by advance_node! would differ: it is not reachable, trie_delete (:1670-1684, its only caller :2120 passes prune = true) prunes the emptied leaf from its parent (prune_node :808-818, guarded by `tr.references == 0`, written only at its init :130), TN_PINNED is tested at :812 and :855 and not found set, TN_SECONDARY is cleared (:782, :1674) and not found set, st.vflags is TN_PRIMARY for root 1 (:2213), so every inner node has a valued leaf below it. Rows t34-t37 (the det flag through call_cleanup, expected from swipl) pass with the mutant and stay as pins; revisit with TB1 (tabling sets references). Revisit when a step ports a setter of tr.references or TN_PINNED (tabling, trie_gen acquire): the equivalence holds only while nothing sets them (git grep over src: only pl-trie.jl:130 init, :223/:1675 reads, :812/:855 tests)."),
+    # TR2-S8 was declared EQUIVALENT (audit D-0830 (2)(3), CI run 43827841817 at 1cf52388: the declaration is REFUTED, the file fails with the
+    # mutant at test_trie_gen_swipl.jl:180, the mutant is KILLED). The written argument rested on a probe in a warm daemon and on "nothing sets
+    # tr.references or TN_PINNED"; E4's acquire_trie/release_trie set tr.references (the revisit condition the declaration itself named), and the
+    # fresh process of CI kills the mutant. It is a plain killed mutant now: KILL TG:180.
+    m("TR2-S8 next_choice0! returns at every advance, not only where a cursor is kept (KILL TG:180)",
+      "if bound && st.branches[st.choices[ch].branch].cursor.prune\n", "if bound\n"),
     m("TR2-S9 restore_cursor! replay: the key of the node itself is stepped over (KILL R t38: the replayed advanced choice is aligned one query argument too far; trie_gen(T, f(X, b)) over [f(a,b), f(c,b), f(d,e)] loses f(c, b); the rows t32/t33 with the query f(a, a) pass with it)",
       "        i == upto && break\n        align_key!(ld, st, c, ch.key) || (c.prune = false)\n", "        align_key!(ld, st, c, ch.key) || (c.prune = false)\n        i == upto && break\n"),
     # ---- the answer
@@ -166,9 +170,11 @@ MUTANTS = [
     m("TR2-Q1 skip of a nonvar query: the cut is a continuation (a cut that does not cut; output equivalent)",
       "        return false                                    # cut\n", "        @goto stepped                                   # cut\n",
       eq="src/pl-trie.jl:2325 align_pruning_key! (`return false  # cut`): pruning less changes no answer: unify_trie_path! (:2596) decides every leaf, so a path that is not cut is found and refused there; only the work differs"),
-    m("TR2-Q2 concrete_ahead always true (the cursor never stops pruning; output equivalent)",
-      "    return (c.size != 0 && c.last != 0 && c.term <= c.last) ||\n           (c.frame != 0 && st.frames[c.frame].rest)\n", "    return true\n",
-      eq="src/pl-trie.jl:2239 concrete_ahead: it only decides when `c.prune` is cleared (align_pruning_key!, label `stop`); a cursor that keeps pruning reads `Q_DONE` and clears it there (`popn != 0 && pop_query_frame!(st, c)` or `@goto stop`); a longer prune cannot cut a path the query unifies with (a `Q_DONE` is not a cut)"),
+    # TR2-Q2 was declared EQUIVALENT (audit D-0830 (2)(3), CI run 43827841817 at 1cf52388: the declaration is REFUTED, the file fails with the
+    # mutant at test_trie_gen_swipl.jl:180, the mutant is KILLED). The argument ("a longer prune cannot cut a path the query unifies with")
+    # rested on a probe in a warm daemon; the fresh process of CI kills the mutant. It is a plain killed mutant now: KILL TG:180.
+    m("TR2-Q2 concrete_ahead always true (the cursor never stops pruning; KILL TG:180)",
+      "    return (c.size != 0 && c.last != 0 && c.term <= c.last) ||\n           (c.frame != 0 && st.frames[c.frame].rest)\n", "    return true\n"),
     m("TR2-Q3 enter_query_compound!: `last` is the first nonvar argument (pruning stops earlier; output equivalent)",
       "    for a in (f + arity):-1:(f + 1)\n", "    for a in (f + 1):1:(f + arity)\n",
       eq="src/pl-trie.jl:2213 enter_query_compound!: `last` only feeds concrete_ahead (see TR2-Q2): an earlier `last` stops the pruning earlier, never cuts"),
