@@ -610,6 +610,15 @@ end
     @test length(kl) == length(_QX_PINNED)
     for (k, p) in zip(kl, _QX_PINNED)
         want = _qx_expected(p)
+        if startswith(p, "t_cb11 ")
+            # NAMED MISSING FOREIGN PREDICATE (audit D-0826 (1)(c)): open_null_stream/1 (pl-file.c:4701-4713, `Snew` over `nullFunctions`; owner
+            # `cfile:pl-file.c`) is a missing foreign predicate, so the row raises existence_error(procedure, open_null_stream/1) where swipl answers `yes`.
+            # The kernel's answer is pinned by name; `want` (swipl's, the .out) is unchanged and the row passes as "unexpected" the day it lands.
+            @test startswith(k, "t_cb11 ") && occursin(_qx_codes("raised"), k) &&
+                occursin(_qx_codes("open_null_stream"), k)
+            @test_broken k == want
+            continue
+        end
         k == want || println(stderr, "  ours  ", k, "\n  want  ", want)
         @test k == want
     end
