@@ -9,14 +9,14 @@ variables, redefined static procedure, discontiguous, import/export notices, `Lo
 Note: the lane-2 daemon was down at the start (my first wrapper was killed mid-restart: my mistake); I started it with
 `LOGICKERNEL_WARM_SECOND=1 tools/warm.sh start` (unit logickernel-warm-78a7647c, FIRST slice, lane 1's daemon is in lk-warm2.slice). It is still up.
 
-## Result: 76 of 80 GREEN on three types (rc 0), 4 RED
+## Result: 79 of 80 GREEN on three types (76 at 5bdaa2d9, the three D-0083 files fixed since: 2933e730 893902f0 b07cc1b1), 1 RED (test_transaction_swipl.jl)
 
-### RED (rc 1)
+### RED (rc 1) at 5bdaa2d9; the first three rows are fixed since
 | file | group | PASS / FAIL (3 types) | class |
 |---|---|---|---|
-| test/core_lang/test_module_path.jl | TB5 | 168 / 18 (6 rows per type: :29 :41 :44 :46 :157 :158) | TEST/DRIVER, D-0083 (internal-identity count), not yet fixed |
-| test/core_lang/test_module_swipl.jl | LB2c | 267 / 21 (7 rows per type: :386 :387 :388 :392 :393 :394 :420) | TEST/DRIVER, D-0083, same cause, not yet fixed |
-| test/db/test_clause_ref_swipl.jl | LB2c | 699 / 3 (1 row per type: :539) | TEST/DRIVER, D-0083 (blob rank chain), not yet fixed |
+| test/core_lang/test_module_path.jl | TB5 | NOW GREEN: 189 / 0, 63 per type (was 168 / 18) | fixed in 2933e730 (D-0083: unbooted table 3 modules, first created index 4, new row pins modules[3]); pkgtest_way passed |
+| test/core_lang/test_module_swipl.jl | LB2c | NOW GREEN: 291 / 0, 97 per type (was 267 / 21; +3 rows: the modules[3] pin) | fixed in 893902f0 (D-0083, same cause); pkgtest_way passed |
+| test/db/test_clause_ref_swipl.jl | LB2c | NOW GREEN: 702 / 0, 234 per type (was 699 / 3) | fixed in b07cc1b1 (D-0083: undo blob in the rank chain; zipper entry WAITS-FOR-LINE: zip line); pkgtest_way passed |
 | test/core_lang/test_transaction_swipl.jl | TB9 | 567 / 6 (2 rows per type: :757 t_txx11, :827 txx16) | ENGINE / WAITS-FOR-LINE (as first_run_report.md: `$bags:$suspend_findall_bag/0` undefined, owner R2; UNDO_SCHEDULED at the end of `( undo(tx_push(a)), fail ; R = x )`, class (d)) |
 
 Diagnosis already measured (probe on the lane-2 daemon, `LK.setupProlog(DefaultTerm)`):
@@ -56,11 +56,10 @@ Everything of the first_run_report.md "pass on three types" lists + the committe
 tb7rows, tb4_tb5*, tb5rows, tb6rows, tb9rows, w2, abolish, events, restraint_wb, sdg, transaction_wb, trie*, tb8rows) + the 76 GREEN files above
 + test_prolog_flag_swipl.jl (pin1_i1_i2.md) + the E1 files (e1_getter.md: monotonic 39/39, mono_subsumptive 129, mono_reuse 75, monotonic_upstream 99).
 Not green at this SHA (kept for wip/tab1-late or a fix): the first_run_report.md ENGINE files (trie_attvars, answer_discard, trie_children, trie_index,
-incr_dyn_nodes, table_statistics, tabling_upstream_b t_tt22, trie_upstream :616, supervisor 8 rows), test_transaction_swipl.jl (this file's table), and the three D-0083
-files above until fixed (a TEST fix, expected to turn green: module_path, module_swipl, clause_ref).
+incr_dyn_nodes, table_statistics, tabling_upstream_b t_tt22, trie_upstream :616, supervisor 8 rows), test_transaction_swipl.jl (this file's table), (the three D-0083 files are green since their fixes).
 
 ## NOT RUN / TO DO (next agent)
-1. Fix the three D-0083 test rows named above (edit one file, run on three types, commit `FIXED: <file>: ...`; stage and commit in separate Bash calls);
+1. DONE (2933e730 893902f0 b07cc1b1; fmt clean, check PASS, pkgtest_way passed on the three files). Was: fix the three D-0083 test rows named above (edit one file, run on three types, commit `FIXED: <file>: ...`; stage and commit in separate Bash calls);
    run test_module_path.jl, test_module_swipl.jl, test_clause_ref_swipl.jl on three types and grep logs for `SKIP|Warning|Test Failed|Error During`.
 2. `tools/warm.sh fmt`, then `tools/warm.sh check` ONCE, pkgtest_way on each changed test file (`tools/pkgtest_way.sh <file>`, one at a time).
 3. Files of the 135 NOT run by this agent: test_tabling_monotonic_swipl.jl (21 min; run by the E1 agent: 39/39 green, e1_getter.md) and nothing else:
