@@ -130,6 +130,12 @@ t_lz00(R) :- set_prolog_flag(access_level, system),
 t_lz03(R) :- abolish_all_tables, retractall(l3_d(_)), forall(l3_p2(_), true), assertz(l3_d(1)),
     lz_f(l3_p1(_), I1), lz_f(l3_p2(_), I2), lz_ex(X, l3_p2(X), A1), lz_f(l3_p1(_), V1), lz_f(l3_p2(_), V2),
     assertz(l3_d(2)), lz_ex(X, l3_p2(X), A2), R = r(I1, I2, A1, V1, V2, A2).
+% lz03n: the lazy dependency's node handles read DIRECTLY (kills TBW2 node-decode-swapped, node-result-negated, mdep-bare-node-id): the
+% `'$tbl_node_answer'/2` of every node the lazy affects list hands over, its decoded answer (`ret(1)`, `ret(2)`), and `failed` when it fails.
+t_lz03n(R) :- abolish_all_tables, retractall(l3_d(_)), forall(l3_p2(_), true), assertz(l3_d(1)), assertz(l3_d(2)),
+    lz_ex(X, l3_p1(X), A1), '$tbl_existing_variant_table'(0, user:l3_p2(_), T2, _, _),
+    findall(Sk, ('$idg_mono_affects_lazy'(T2, _, dependency(Sk, true, _, _), _, Ns), member(N, Ns),
+                 ( '$tbl_node_answer'(N, Sk0) -> Sk = Sk0 ; Sk = failed )), L0), msort(L0, L), R = r(A1, L).
 t_lz04(R) :- abolish_all_tables, retractall(l4_d(_)), assertz(l4_d(1)), lz_ex(X, l4_p1(X), A1), lz_ex(X, l4_p2(X), A2),
     assertz(l4_d(2)), lz_ex(X, l4_p1(X), A3), lz_f(l4_p2(_), I), lz_ex(X, l4_p2(X), A4), R = r(A1, A2, A3, I, A4).
 t_lz05a(R) :- abolish_all_tables, retractall(l5_d(_)), assertz(l5_d(1)), lz_ex(X, l5_p1(X), A1), lz_ex(X, l5_p2(X), A2),
@@ -161,7 +167,8 @@ t_lz99(R) :- findall(G-D, lz_calls(G, D), L0), sort(L0, R).
 """
 
 const _TI_CASES = [
-    "t_lz00", "t_lz03", "t_lz04", "t_lz05a", "t_lz05b", "t_lz06", "t_lz10", "t_lc15",
+    "t_lz00", "t_lz03", "t_lz03n", "t_lz04", "t_lz05a", "t_lz05b", "t_lz06", "t_lz10",
+    "t_lc15",
     "t_ab01", "t_ab02", "t_ab03", "t_ab04", "t_na01", "t_na02", "t_na03", "t_na04", "t_lz99"
 ]
 
@@ -169,6 +176,7 @@ const _TI_CASES = [
 const _TI_PINNED = String[
     "wrapped",
     "r(invalid,invalid,[1],valid,valid,[1,2])",
+    "r([1,2],[ret(1),ret(2)])",
     "r([1],[1],[1,2],invalid,[1,2])",
     "r([1],[1],invalid,[1,2])",
     "r([1],[1],invalid,[1,2],invalid,invalid,[2],[2])",
@@ -183,7 +191,7 @@ const _TI_PINNED = String[
     "raised(instantiation_error)",
     "raised(type_error(address,1.5))",
     "raised(type_error(address,f(x)))",
-    "[t_lc15-36,t_lz03-2,t_lz04-1,t_lz05a-1,t_lz05b-1,t_lz06-3,t_lz10-3,t_na01-1,t_na02-1,t_na03-1,t_na04-1]"
+    "[t_lc15-36,t_lz03-2,t_lz03n-2,t_lz04-1,t_lz05a-1,t_lz05b-1,t_lz06-3,t_lz10-3,t_na01-1,t_na02-1,t_na03-1,t_na04-1]"
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."

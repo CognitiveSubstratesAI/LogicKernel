@@ -4,7 +4,7 @@
 # count restraint of `tbl_add_answer` (`bounded_rationality`: `generalise_answer_substitution` + `add_answer_count_restraint`; a passed tripwire:
 # `add_anyway`), the answer size restraint (`bounded_rationality`: `add_radial_restraint`; `fail`; `error`) and the answer flag of an incremental
 # re-evaluation (`TN_IDG_ADDED`, `idg.new_answer`), and `'$tbl_sdg'/3` inside an evaluation with a COMPLETED child (`sdg_collect`). tests/tabling/test_tabling.pl and the other upstream files set these flags only with the
-# action `error` below the limit or not at all, so these rows are ours: twelve programs `t_wb01..t_wb12`, each answer PINNED by running the exact
+# action `error` below the limit or not at all, so these rows are ours: thirteen programs `t_wb01..t_wb13`, each answer PINNED by running the exact
 # program on swipl 10.1.20 (two byte-identical runs; evidence/TAB1/w1_verify.md, section W1d).
 #   * The `prolog:tripwire/2` hook (boot/tabling.pl `tripwire/3`: `prolog:tripwire(Wire, Context)` succeeding makes the tripwire pass) lets an
 #     evaluation go on past a limit without `print_message`: a row with `hooked/1` reads the wires that tripped.
@@ -113,6 +113,11 @@ big(g(h(i))).
 dd(1).
 ii(X) :- dd(X).
 jj(X) :- ii(X).
+:- table und/0 as incremental.
+und :- tnot(und).
+:- table n8i/1 as incremental, n8j/1 as incremental.
+n8i(X) :- dd(X), ( X == 1 -> true ; und ).
+n8j(X) :- n8i(X).
 :- dynamic snapshot/1.
 take :- '$tbl_sdg'(Components, Tables, Edges), assertz(snapshot(sdg(Components, Tables, Edges))).
 :- table pa/0, pb/0.
@@ -217,6 +222,12 @@ abolish_all_tables, findall(X, jj(X), L0), retract(dd(1)), assertz(dd(2)), finda
         "the dependency graph inside an evaluation that has a COMPLETED child component: only the active component is listed (sdg_collect)",
         raw"""
 sdg(pa, Cs, Ts, Es), R = r(Cs, Ts, Es)"""
+    ),
+    (
+        "wb13",
+        "an incremental re-evaluation whose new answer is CONDITIONAL (a delay on the undefined und): the changed answer sets new_answer, the dependent table follows with its residual program",
+        raw"""
+abolish_all_tables, findall(X-P, call_residual_program(n8j(X), P), L0), retract(dd(1)), assertz(dd(2)), findall(X-P, call_residual_program(n8j(X), P), L1), retract(dd(2)), assertz(dd(1)), R = L0-L1"""
     )
 ]
 
@@ -233,7 +244,8 @@ const _TW_PINNED = [
     "t_wb09 c[116,95,119,98,48,57]/1(c[91,124,93]/2(c[102]/3(a[97],a[98],a[99]),c[91,124,93]/2(a[97],nil)))",
     "t_wb10 c[116,95,119,98,49,48]/1(c[114,97,105,115,101,100]/2(a[109,97,120,95,116,97,98,108,101,95,97,110,115,119,101,114,95,115,105,122,101],a[116,114,105,101]))",
     "t_wb11 c[116,95,119,98,49,49]/1(c[45]/2(c[91,124,93]/2(i1,nil),c[91,124,93]/2(i2,nil)))",
-    "t_wb12 c[116,95,119,98,49,50]/1(c[114]/3(c[91,124,93]/2(c[45]/2(i0,a[112,97]),nil),c[91,124,93]/2(c[116,97,98,108,101]/4(a[112,97],i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil),nil))"
+    "t_wb12 c[116,95,119,98,49,50]/1(c[114]/3(c[91,124,93]/2(c[45]/2(i0,a[112,97]),nil),c[91,124,93]/2(c[116,97,98,108,101]/4(a[112,97],i0,i0,c[91,124,93]/2(a[112,101,110,100,105,110,103],nil)),nil),nil))",
+    "t_wb13 c[116,95,119,98,49,51]/1(c[45]/2(c[91,124,93]/2(c[45]/2(i1,nil),nil),c[91,124,93]/2(c[45]/2(i2,c[91,124,93]/2(c[58,45]/2(c[110,56,106]/1(i2),c[110,56,105]/1(i2)),c[91,124,93]/2(c[58,45]/2(c[110,56,105]/1(i2),a[117,110,100]),c[91,124,93]/2(c[58,45]/2(a[117,110,100],c[116,110,111,116]/1(a[117,110,100])),nil)))),nil)))"
 ]
 
 "The program text with the cases appended."
