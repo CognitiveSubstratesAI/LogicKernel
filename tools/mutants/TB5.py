@@ -385,10 +385,8 @@ MUTANTS = [
          file=PROC, targets=DYN,
          old="        freeCodesDefinition!(gd, def, true)             # reset to S_VIRGIN\n",
          new="        freeCodesDefinition!(def, true)             # reset to S_VIRGIN\n"),
-    dict(id="TB5-P2 `_setDynamicDefinition!` takes the gd branch when there is none, `gd !== nothing` (KILL every caller of the 2-argument method: `freeCodesDefinition!(nothing, def, true)` is a MethodError; src/pl-ext.jl:228 is the boot path, so the boot fails; test_procedures.jl, test_assert_swipl.jl and the other DYN files)",
-         file=PROC, targets=DYN,
-         old="    if gd === nothing\n        freeCodesDefinition!(def, true)                 # reset to S_VIRGIN\n",
-         new="    if gd !== nothing\n        freeCodesDefinition!(def, true)                 # reset to S_VIRGIN\n"),
+    # TB5-P2 (`gd !== nothing` in `_setDynamicDefinition!`) REMOVED as DOMINATED by TB5-P1 (audit D-0856 (1)(c)): a mutant that cannot load (MethodError at boot)
+    # is no verdict (D-0750 family); P1 and P3 mutate the same hole (the 2-argument freeCodesDefinition! against the gd one).
     dict(id="TB5-P3 `_resetProcedure!` takes the 2-argument freeCodesDefinition! with a database (" + WRAP + ")",
          file=PROC, targets=DYN,
          old="        freeCodesDefinition!(gd, def, !isnew)\n",

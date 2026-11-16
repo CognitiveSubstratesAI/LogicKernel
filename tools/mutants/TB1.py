@@ -218,15 +218,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    return unify_table_status(ld, A2, atrie, nothing, false) ? FTRUE : FFALSE\n",
          new="    return unify_table_status(ld, A2, atrie, nothing, true) ? FTRUE : FFALSE\n"),
-    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (KILL TV, testset `TB1-P7: ...` rows tvw01-tvw04: pinned `same` for the Trie found by `$tbl_existing_variant_table`, and `no` for a non-table `a`)",
+    dict(id="TB1-P7 `$tbl_variant_table/6` does not unify its Trie argument (KILL TV; the D-0852 CI run REFUTED the DEFERRED KILL declaration, the mutant is caught; testset `TB1-P7: ...` rows tvw01-tvw04: pinned `same` for the Trie found by `$tbl_existing_variant_table`, and `no` for a non-table `a`)",
          file=TAB, targets=[TV],
          old="    return unify_trie(gd, ld, Trie, atrie) &&\n           unify_table_status(ld, status, atrie, def, true)\n",
-         new="    return unify_table_status(ld, status, atrie, def, true)\n",
-         equivalent="DEFERRED KILL: owner TB2 (start_tabling, boot/tabling.pl, the only caller of `$tbl_variant_table/6`, `$tbl_abstract_table/6` and `$tbl_moded_variant_table/6`): "
-                    "no TV row calls the three (src/pl-tabling.jl:895-927; TV's tables are made white-box by `get_answer_table`, TV:343); a call that finds an EXISTING complete "
-                    "table does not reach the refused create path: TB1's test could add it (rows with Closure = a `get_closure_predicate` of tv_p) or TB2 does; "
-                    "DEFKILL3 left it open: the row needs a pinned swipl line (two identical runs of the pin 18168e62, `tvv`-style case in evidence/TB1/tv_gen.py) "
-                    "and a Closure term; engine blocker: none (pl_tbl_variant_table6_va, src/pl-tabling.jl:3885, runs for an existing table)"),
+         new="    return unify_table_status(ld, status, atrie, def, true)\n"),
     dict(id="TB1-P8 `$tbl_table_pi/2` puts the arity plus one in the indicator (KILL tvp01 and tvp02: the pin is `user:tv_p/1`; tvp04)",
          file=TAB, targets=[TV],
          old="    PL_put_integer(ld, r + 1, arity)\n",

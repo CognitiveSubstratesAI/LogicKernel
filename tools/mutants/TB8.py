@@ -20,7 +20,7 @@
 #   testset), named per mutant below. T9 is killed by the white-box testset of TR8 (TB8-ROWS2): only `recompute == factor * own` exactly tells `>` from `>=` apart and no Prolog row builds
 #   the equality, so the testset builds it by hand. T8 is EQUIVALENT: `droppable_table` is only called for a component with a parent (src/pl-tabling.jl:2390-2394).
 # R-SERIES (TB8-ROWS2): the per-predicate options as consumed, killed by the rows of TR8 (ANSABS a01-a07, MAXANS m01-m05, SUBABS u01-u06, pinned from swipl 10.1.20).
-# EQUIVALENT: four (T8, E1, E2, E3), each with the file:line of its reason below.
+# EQUIVALENT: three (T8, E1, E3; E2 was REFUTED, D-0859), each with the file:line of its reason below.
 # TARGETS (audit D-0238): TG for every mutant; TS for the code of `set_prolog_flag/2` (`set_prolog_flag_unlocked`, the setters). NOT listed:
 #   test_tabling_state_swipl.jl (it reads the restraint STRUCT after initTabling!, never the flag setters or getters), test_prolog_flag_swipl.jl
 #   (no row sets or reads a `max_*` restraint flag), test_static_analysis.jl (the CI's static job).
@@ -322,9 +322,11 @@ MUTANTS = [
          equivalent="src/os/pl-prologflag.jl:471 (`elseif` at :471, the call at :472) guards the call by `tbl_is_restraint_flag(key)` (src/os/pl-prologflag.jl:1446) and src/pl-tabling.jl:415-435 has a branch for each of its ten keys; the fall-through `return false` (src/pl-tabling.jl:437) is unreachable",
          old="        return unify_restraint(ld, t, r.max_scc_subgoals)\n    end\n\n    return false\nend\n",
          new="        return unify_restraint(ld, t, r.max_scc_subgoals)\n    end\n\n    return true\nend\n"),
-    dict(id="TB8-E2 tbl_set_restraint_flag answers false for a key that is no restraint flag (EQUIVALENT)",
+    # TB8-E2: the declaration of equivalence (the guard at src/os/pl-prologflag.jl:1519 makes the answer unreachable) was REFUTED by the CI run
+    # 43902255757 (audit D-0859 (1)): the guard does not make the mutated answer unreachable. It counts as a mutant again; it needs a killing row or a
+    # corrected argument with a probe (a later step); the kill rows named in the TARGETS stay.
+    dict(id="TB8-E2 tbl_set_restraint_flag answers false for a key that is no restraint flag (declaration of equivalence REFUTED, D-0859: killing row or probe pending)",
          file=TAB, targets=[TG, TS],
-         equivalent="src/os/pl-prologflag.jl:1519 guards the call by `tbl_is_restraint_flag(k)` and src/pl-tabling.jl:481-521 has a branch for each of the ten keys; the tail `return true` (src/pl-tabling.jl:523, `return true` after the last branch at :519-521) follows a branch that stored a value",
          old="        r.max_scc_subgoals = v\n    end\n\n    return true\nend\n",
          new="        r.max_scc_subgoals = v\n    end\n\n    return false\nend\n"),
     dict(id="TB8-E3 unify_restraint treats every negative limit as unlimited, `val < 0` for `val == -1` (EQUIVALENT)",

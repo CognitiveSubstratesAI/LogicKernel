@@ -242,9 +242,10 @@ MUTANTS = [
          file="src/pl-modul.jl", targets=TAB,
          old="            abolishProcedure!(gd, ld, proc, module_)\n",
          new="            nothing\n"),
-    dict(id="PR1-R7 overruleImportedProcedure: the ignored_weak_import warning is printed when the flag is OFF (no row reads stderr)",
+    dict(id="PR1-R7 overruleImportedProcedure: the ignored_weak_import warning is printed when the flag is OFF (ROW GAP, audit D-0865: no row reads stderr yet)",
          file=P, targets=TAB,
          old="        if truePrologFlag(ld, PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT)\n            pi = new_term_ref(ld)",
-         new="        if !truePrologFlag(ld, PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT)\n            pi = new_term_ref(ld)",
-         equivalent="PENDING (the dispatcher rules): the warning goes to stderr through printMessage and no row captures messages; src/pl-proc.jl overruleImportedProcedure, read, not run"),
+         new="        if !truePrologFlag(ld, PLFLAG_WARN_OVERRIDE_IMPLICIT_IMPORT)\n            pi = new_term_ref(ld)"),
+    # PR1-R7 is NOT an equivalent (audit D-0865 (2)): the mutant changes an observable output that no row captures (a ROW GAP), so it counts as a
+    # mutant; the row (print_message_hook or message_to_codes through the driver, pinned to swipl's own text) is a later step.
 ]
