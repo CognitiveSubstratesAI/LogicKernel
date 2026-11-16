@@ -185,7 +185,7 @@ function pl_suspend_findall_bag0_va(
         @assert bag !== nothing "'\$suspend_findall_bag'/0: no bag"
         # `let bag = bag`: the closure captures its own binding, so `bag` (assigned in all three branches) is not boxed
         at = let bag = bag
-            findlast(b -> b === bag, ld.bags)           # the bag's address
+            something(findlast(b -> b === bag, ld.bags))   # the bag's address (always found: it is in ld.bags)
         end
         bag.suspended_solutions += bag.solutions
         bag.solutions = 0

@@ -106,7 +106,7 @@ function _c_strftime(fmt::String, tm::CTm)::Vector{UInt8}
         (:strftime, LIBC), Csize_t, (Ptr{UInt8}, Csize_t, Cstring, Ref{CTm}), buf, 256, fmt,
         tm
     )
-    n = findfirst(==(0x00), buf)
+    n = something(findfirst(==(0x00), buf), length(buf) + 1)   # strftime NUL-terminates the buffer it fills
     return buf[1:(n - 1)]
 end
 
@@ -116,7 +116,7 @@ end
 function _c_asctime_r(tm::CTm)::Vector{UInt8}
     buf = zeros(UInt8, 64)
     ccall((:asctime_r, LIBC), Ptr{UInt8}, (Ref{CTm}, Ptr{UInt8}), tm, buf)
-    n = findfirst(==(0x00), buf)
+    n = something(findfirst(==(0x00), buf), length(buf) + 1)   # asctime_r NUL-terminates the buffer it fills
     return buf[1:(n - 1)]
 end
 
@@ -851,8 +851,9 @@ function format_time(
                 altO && Sputcode(Int(':'), fd)
                 _out2digits(fd, mins % 60)
             elseif cc == 'Z'                                # time zone as name
-                if tb.tzname !== nothing
-                    _out_string(fd, tb.tzname)
+                tzn = tb.tzname                             # a local: the narrowing of a mutable field is not seen by inference
+                if tzn !== nothing
+                    _out_string(fd, tzn)
                 else
                     name = tz_name(Int(tb.tm.tm_isdst))
                     name === nothing || foutstra(Vector{UInt8}(codeunits(name)), fd)
