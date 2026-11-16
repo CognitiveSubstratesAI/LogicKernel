@@ -167,7 +167,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false                # every mutant gets its verdict
-      max-parallel: 20
+      max-parallel: 40
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
