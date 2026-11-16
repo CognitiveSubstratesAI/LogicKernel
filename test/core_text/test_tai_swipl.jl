@@ -150,7 +150,7 @@ end
     names = _tai_names()
     expected = String.(readlines(_TAI_OUT))
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
-    @test length(names) >= 18
+    @test length(names) >= 19
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test all(l -> !endswith(l, " "), expected)                               # every row has at least one answer
@@ -163,6 +163,7 @@ end
     @test occursin(
         "i2023,i11,i14,i22,i13,f20.5", expected[findfirst(startswith("t1 "), expected)]
     )   # 1700000000.5 in UTC
+    @test occursin("i1583020799,f0.5", expected[findfirst(startswith("t18 "), expected)])   # seconds -0.5 of 2020-03-01: 0.5 into the previous second (T12)
 
     kl = kernel_lines(_TL, _TAI_PL, names)
     @test length(kl) == length(expected)

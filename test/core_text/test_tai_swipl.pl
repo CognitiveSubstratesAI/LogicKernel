@@ -59,3 +59,6 @@ t15(R) :- member(S, [0, 1700000000, 1700000000.5, -86400, 951782400.25]), stamp_
 t16(R) :- stamp_date_time(12345.678, date(Y,Mo,D,H,Mi,Sec,Off,TZ,DST), 'UTC'), I is truncate(Sec), F is Sec - I,
     R = [Y,Mo,D,H,Mi,I,Off,TZ,DST]-F.
 t17(R) :- stamp_date_time(12345.678, date(_,_,_,_,_,_,Off,TZ,DST), 7200), R = Off-TZ-DST.
+% a negative FRACTIONAL second: its fraction is folded into the previous second (the integer second -1 of t10 has no fraction to fold)
+t18(R) :- member(D, [date(2020,3,1,0,0,-0.5,0,-,-), date(2020,3,1,0,0,-1.25,0,-,-), date(2020,3,1,0,0,-59.75,0,-,-), date(2020,3,1,0,0,0.5,0,-,-)]),
+    date_time_stamp(D, S), tai_split(S, X), R = D-X.

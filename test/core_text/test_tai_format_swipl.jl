@@ -195,7 +195,7 @@ end
 
 @testset "TAI1: format_time/3,4 under a fixed host zone and locale == swipl's answers, through a program" begin
     expected = String.(readlines(_TAFZ_OUT))
-    @test length(_taf_names(_TAFZ_PL)) == 13
+    @test length(_taf_names(_TAFZ_PL)) == 14
     # the evidence the rows exist for: the zone names of both halves of the year, the C-locale %c, the wrapped year, the sinks
     @test occursin(_codes("CEST"), expected[findfirst(startswith("t0 "), expected)])
     @test occursin(_codes("CET"), expected[findfirst(startswith("t0 "), expected)])
@@ -203,6 +203,7 @@ end
         _codes("Thu Jan  1 01:00:00 1970"), expected[findfirst(startswith("t2 "), expected)]
     )
     @test occursin(_codes("-2147483648"), expected[findfirst(startswith("t6 "), expected)])   # %G of year 2147483647 wraps
+    @test occursin(_codes("-2147483296"), expected[findfirst(startswith("t13 "), expected)])   # local year 2147484000: tm_year + 1900 wraps (F58-F61)
     @test occursin(_codes("ab"), expected[findfirst(startswith("t8 "), expected)])           # output before an error stays
     @test occursin(
         _codes("permission_error"), expected[findfirst(startswith("t9 "), expected)]

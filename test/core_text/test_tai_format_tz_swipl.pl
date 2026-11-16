@@ -64,3 +64,6 @@ t11(R) :- member(D-F, [date(2020,1,1,0,0,0.0,0,'ÜTC',-)-'%Z', date(2020,1,1,0,0
 t12(R) :- member(Y-M-Dy, [2101-1-1, 2101-1-2, 1800-12-29, 1800-12-31, 2200-12-30, 1502-12-31, 1508-12-30, 1521-1-1, 1510-1-2, 1701-1-1,
                           2020-12-31, 2021-1-3, 2024-12-30, 2026-1-1, 2000-12-31, 2001-1-1, 1900-12-31, 1901-1-1]),
     member(F, ['%G %V', '%g']), tz_run(F, date(Y,M,Dy,0,0,0.0,0,'UTC',-), O), R = Y-M-Dy-F-O.
+% the wrap of tm_year + 1900 itself: local year 2147484000 has tm_year 2147482100 (an int, no wrap), +1900 leaves 32 bits and wraps to -2147483296
+% (t5's stamps have tm_year 2147483648 = -2147483648 already wrapped, so the sum never leaves the range there)
+t13(R) :- member(F, ['%Y', '%C', '%y', '%G']), tz_run(F, 67767987355891200, O), R = F-O.
