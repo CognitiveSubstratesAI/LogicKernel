@@ -95,3 +95,6 @@ t71(R) :- compound_name_arguments(A, automaton, []), err(term_automaton(_, A), R
 % the option defaults of term_factorized/4: minimal(true) and dollar_var(true) when the other is given
 t72(R) :- T = f('$VAR'(1), '$VAR'(1), g(a), g(a)), term_factorized(T, S, Sub, [minimal(true)]), R = r(S, Sub).
 t73(R) :- T = f(g(a), g(a), '$VAR'(1), '$VAR'(1)), term_factorized(T, S, Sub, [dollar_var(true)]), R = r(S, Sub).
+
+% an arity-1 compound as the argument of a goal under catch/3, beside t63/t71's arity 0 (both are argvars of the temporary clause)
+t74(R) :- compound_name_arguments(A, automaton, [a]), err(automaton_minimal(A, _), R).

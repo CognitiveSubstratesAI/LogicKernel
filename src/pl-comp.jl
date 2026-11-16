@@ -3374,7 +3374,9 @@ function _argvar_placeholder(ld::PL_local_data{T}, w::word)::T where {T}
     name = nameFunctor(ld.functors, fd)
     n = arityFunctor(ld.functors, fd)
     kids = name == ld.atom_dexpr ? T[] : T[_atom_value(ld, name)]
-    k = fresh_var_keys!(n)
+    # an argvar of arity 0 (`automaton()`, pl-comp.c:986 and :3167-3191: the word `*arg` is stored whole, no
+    # argument is looked at) has no argument to be a variable: no key is reserved (`fresh_var_keys!(0)` is refused)
+    k = n == 0 ? UInt64(0) : fresh_var_keys!(n)
     for i in 1:n
         push!(kids, mk_var(T, k + UInt64(i - 1)))
     end
