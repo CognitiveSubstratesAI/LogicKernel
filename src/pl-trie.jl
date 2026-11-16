@@ -1119,7 +1119,7 @@ function insert_child(
     child == 0 && return 0
     tr.nodes[child].parent = nid
     if !add_child(tr, nid, child, ld)
-        destroy_node(_query_gd(ld::PL_local_data{T}), tr, child)    # pl-trie.c:1575
+        ld === nothing || destroy_node(_query_gd(ld), tr, child)    # pl-trie.c:1575 (a failing pool charge implies `ld`)
         child = 0
     end
     return child

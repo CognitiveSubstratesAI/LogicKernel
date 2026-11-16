@@ -3530,7 +3530,7 @@ _manifest_tr1(T) = begin
         (LK.prune_trie, Tuple{GD, TR, Int, SNK}, false),
         (
             LK.prune_trie,
-            Tuple{GD, TR, Int, Union{Nothing, Function}, Union{Nothing, LD}},
+            Tuple{GD, TR, Int, Nothing, LD},     # the form the callers use (pl-tabling.jl: `free` nothing, `ld` given); an abstract `Function` makes `free(n)` a dispatch
             false
         ),
         (LK.insert_child, Tuple{TR, Int, UInt64}, false),
