@@ -1,7 +1,7 @@
 # R2 survivor table at 604d6acc — PARTIAL (agent 1 of the step R2-SURVIVOR-TABLE-1; handed back at the 150k cap)
 
-State: BISIM, P2B, CT1B, LOCALE done statically (LOCALE except LC-I2, LC-O4, LC-O9, LC-S10, LC-U2 and the six declared
-equivalents); TAI1, CT1C, Q10B, Q10C, ZIP1, P3 NOT read yet; part (B) (the evidence's words on "which process") NOT done;
+State (agent 2 added PART 2 and PART 3 at the end): BISIM, P2B, CT1B, LOCALE, TAI1, CT1C done statically; Q10B, Q10C, ZIP1, P3 (survivors, the
+ZIP1 does-not-load pair, the declared equivalents) NOT read yet (the P3 hang declarations ARE read, PART 3); part (B) (the evidence's words on "which process") NOT done;
 part (C) (fresh-process proofs) RUNNING in the background (see the end). The next agent continues from this file.
 
 Method facts (read in tools/mutate_ci.py and .github/workflows/mutation.yml at 604d6acc):
@@ -122,3 +122,38 @@ TAI1 declared equivalents: F57 (`year-1` of %G cannot reach INT_MIN, tm_year+190
 says "an exhaustive comparison of every day of 1600, 2000, 2400 and the next years gives 0 differences (computed 2026-11-13)": a computation of unnamed process; my [py] model
 of iso_week_days + the %G/%V branch over every day of 1599-1601, 1999-2001, 2399-2401 also gives 0 differences in 4019 days, so the claim holds); F8 (posix %a/%b read the C tables
 vs strftime: "read, not run": same names in C/English locale; the tz rows t2/t3 force LC_TIME=C, so on CI it is equivalent; a non-English LC_TIME host would tell them apart).
+
+## PART 3: CT1C (A7 survivor; A8, B1, B2 NO VERDICT) and the P3 hang declarations, by reading at 604d6acc
+
+| id | finding | class |
+|---|---|---|
+| CT1c-A7 (`PL_chars_t(bytes, length(cin) + 1, ..)`) | pl-ctype-pred.jl:568. The only consumers are `PL_unify_text(.., text_type)` with PL_ATOM or PL_STRING, and both call `PL_canonicalise_text` first, which for an ENC_UTF8 text RECOMPUTES `text.length` from the bytes (pl-text.jl:277-291: `text.length = e` or `= length(cps)`), so the length passed in is overwritten before any use. Rows t0/t9 cannot see a length that nothing reads | EQUIVALENT in answers (dead argument for atom and string output) |
+| CT1c-A8 (`index >= length(cps)`) | HANG, not a kill: `ctype_get_chr_from_text` (pl-ctype-pred.jl:528) now answers `(-1, index)` at the LAST character without advancing. In `write_normalize_space` (:650-668, `end_ = length(cps) + 1`) the loop `while i < end_` has `i` stuck at the last position: `skip_separators` and `copy_non_separators` both return at `c == -1` with `i` unchanged, `i < end_` stays true, and `Sputcode(' ', out)` (:664) runs every iteration: an endless loop whose output sink (an atom/string/codes buffer, or a stream) grows without bound. Every normalize_space row (t19, t24 ..) reaches it, even one-character text. The catalogue's KILL "t0, t1" is wrong: t0/t1 use a variable output, which never calls get_chr_from_text (:561-568 walks `cin` directly); the bound-output branch (t8) would answer true at the last character | HANG (iv): infinite loop with unbounded output growth, dies by memory/job limit (exit 143) before LIMIT_S 1500 |
+| CT1c-B1 (`skip_separators` skips non-space) | HANG: skip_separators (:617-627) now advances over non-space and returns at the first space; copy_non_separators (unchanged) returns at once on that space, and skip_separators at the same position returns again: in `write_normalize_space` the pair makes no progress while `i < end_` and `' '` is written each pass: the same endless loop (text with a space; text without a space just ends with empty output) | HANG (iv), same site :660-664 |
+| CT1c-B2 (`copy_non_separators` copies the white space) | HANG: copy_non_separators (:633-646) returns `(true, i)` at the first NON-space without advancing; skip_separators returns at the same non-space; same endless loop at :660-664 for any text with a non-space after the leading white space | HANG (iv), same site |
+
+Hang declaration in the catalogue: NONE for A8, B1, B2: no `expect` key in CT1C.py or P3.py (checked: the key does not occur in either file), no word "hang"/"loop"/"endless" in their ids,
+and the header of CT1C.py lists "`while i < end_` as `i <= end_`: an endless loop, which the battery's time-out would count as killed without evidence" under NOT LISTED, i.e. the
+author knew the loop class and did not mark these three. Mutate_ci's `expect: "hang"` (verdict "caught (hang)") needs the key on each of the three, plus the site
+(pl-ctype-pred.jl:660-664 `write_normalize_space`) in the id text, plus a bound shorter than the runner's life (the harness change in the method notes above: `limit` per mutant).
+
+### P3 timeouts: does the catalogue text declare the hang? (the sites are in the mutated lines; I did not read the test rows of il03/il14/il23)
+
+| id | text | declared? | site (the mutated line) |
+|---|---|---|---|
+| P3-35 (no alert bit for an inference limit) | "KILL il03: the loop is never stopped; the row would not end" | YES (the effect), no `expect`, site is the mutated line | pl-wam.jl updateAlerted mask line |
+| P3-41 (the exception of an exceeded limit is not thrown) | "KILL il03: the loop runs on; the row would not end" | YES (effect) | pl-wam.jl, the `raiseInferenceLimitException ... @goto b_throw` block |
+| P3-25 (a redo of `$inference_limit_true` installs no limit) | "KILL il14: the looping clause must be stopped" | by implication (a looping clause is run unbounded) | pl-prims.jl `$inference_limit_true` redo branch |
+| P3-36 (a call does not look at the alert bits) | "KILL dl05, il03" | NO; il03 is the same unbounded loop as P3-35 | pl-wam.jl `depart_alerted` test |
+| P3-17 (non-deterministic exit leaves no retry) | "KILL dl22 no redo ... il14" | NO; il14 is a looping row, the effect is that the deeper clause (the one that loops/needs the limit) is run differently | pl-prims.jl `PL_retry(1)` |
+| P3-24 (`$inference_limit_true` leaves the old limit set) | "KILL il23: the recursion after a successful call" | NO | pl-prims.jl `ld.inference_limit_limit = olimit` |
+
+Per D-0847 each of the six needs `expect="hang"` (or a bounded per-mutant limit) and the hang site named; P3-17, P3-24 and P3-36 also need the declaration text, since their ids do not say the effect is a hang.
+
+## STILL TO DO (agent 3)
+
+1. Q10B-B4 (fb08), Q10-39 (pt23, pt13), Q10-44 (cb03, cb04, cb05): (iii) reading in test/core_lang/test_q10_swipl.pl (rows NEW on the R2 line) and the mutated code; the declared equivalents Q10B A4/B8, Q10C Q10-13/-33/-34/-4/-42.
+2. ZIP1-C6 (t49, t50), ZIP1-N2 (kr3-kr6), ZIP1-C5; ZIP1-T-ext / T-ext2 (why the mutated text does not load: read `old`/`new` in tools/mutants/ZIP1.py and src/pl-ext.jl).
+3. P3-1 (dl01), P3-29 (il11), P3-31 (il18), P3-5 (dl03, dl04) survivors; P3-9, P3-26 declared (their written arguments are in the catalogue dump above: "the second read cannot fail on the boot's path" and "the boot calls it only on the branch where Result0 is unbound"; both are readings of the boot, no probe).
+4. Part (B) (the evidence files' own words on the process of each recorded proof), the fresh-process column from the TSV (its files were empty when this agent ran), and the 10-line cause distribution.
+5. Row candidates so far (for the dispatcher): LC-D1 (count of locales before/after create+destroy), LC-S10 (`L == A`), LC-I2 (last row: destroy `default`), TAI1 F58-F61 (stamp 67767987355891200 in 2147483648..2147485547), TAI1-T12 (`-0.5` second), BISIM-7, CT1b-A22, C1, C2, C3 (the previous agent's list). Equivalent by reading: LC-O4, O9, U2, B1, B3, TAI1 L1 L4, CT1c-A7, BISIM-24, P2B-I16, I17, I2, CT1b-A11, A12, A25, BISIM-13.
