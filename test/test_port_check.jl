@@ -5,6 +5,7 @@
 # instance of every violation `tools/port_check.jl` exists to catch next to correct ports, and
 # asserts the reported set is EXACTLY the planted set — every check fires on its case, none on a
 # correct file. A clean fixture must pass, and must FAIL again after one deliberate mutation.
+# allow-docstring-interp: fixture text, not a docstring (audit D-0831)
 using Test, LogicKernel
 
 include(joinpath(@__DIR__, "..", "tools", "port_check.jl"))
@@ -570,9 +571,17 @@ _pc_codes(vs) = sort!([
             # fixture's tree: it exists, HEAD does not move), an unknown repo, a missing commit.
             full = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $sha`)
             tree = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $(sha * "^{tree}")`)
-            other = readchomp(
-                `git -C $(dirs["swipl-devel"]) commit-tree $tree -p $full -m other`
-            )
+            # commit-tree needs an identity and the CI runner carries none: give this one its own.
+            other = withenv(
+                "GIT_AUTHOR_NAME" => "lk-fixture",
+                "GIT_AUTHOR_EMAIL" => "lk-fixture@example.invalid",
+                "GIT_COMMITTER_NAME" => "lk-fixture",
+                "GIT_COMMITTER_EMAIL" => "lk-fixture@example.invalid"
+            ) do
+                readchomp(
+                    `git -C $(dirs["swipl-devel"]) commit-tree $tree -p $full -m other`
+                )
+            end
             @test other != full
             got, f = mixcase("pin_ok"; pin=full)
             @test length(f.markers) == 2 && length(f.parts) == 2
