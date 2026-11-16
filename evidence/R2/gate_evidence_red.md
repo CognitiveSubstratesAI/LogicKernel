@@ -1,0 +1,39 @@
+# Evidence red at 01d7a9af (CI 43813910955, Evidence 43813911077): diagnosis
+
+Lane run: `LOGICKERNEL_WARM_SECOND=1 WARM_TIMEOUT_S=9000 tools/warm.sh file <f>`, lane-1 daemon, swipl ~/.local/bin/swipl 10.1.20, Julia 1.13.3, three term types.
+Both failing files REPRODUCE on the lane on all three types (reference, alt, alt_interned): the lane and CI agree.
+
+## (1) test/core_lang/test_q10_swipl.jl:614, row t_cb11
+
+- Reproduces: yes, all three types (1 fail per type, 167 pass of 168; 1053 pass / 3 fail in the file).
+- Pin (swipl): `t_cb11 yes`. Ours: `raised(existence_error(procedure, open_null_stream/1))`.
+- Row text (line 353): `open_null_stream(S), ( current_blob(S2, stream), S2 == S -> R = yes ; R = no ), close(S)`.
+- Class: ENGINE gap, not a test error: pl-file.c `open_null_stream/1` (upstream 18168e62 src/os/pl-file.c:4701-4713, `Snew` over `nullFunctions` :4650-4695) has no kernel
+  predicate. It is the SAME row already named known-red in evidence/R2/changed_files_run.md (R2 findings list) and ruled in audit D-0623 (3): open_null_stream/1 has
+  no owner row; ruling = a `cfile:pl-file.c` row/note naming it and the pl-file.c group's owner, coverage "stays OPEN, not dropped".
+- Why main was green: test_q10_swipl.jl does not exist on 87a88328 (`git show 87a88328:test/core_lang/test_q10_swipl.jl` -> not in that tree); lane C's
+  commit c52ec2de (current_blob/2, rows cb01-cb20) ADDED the file and the row on the R2 line. Main never ran it.
+- Cause (file:line): src/os/pl-stream.jl:203-208 `@enum IOFUNCTIONS` has Smemfunctions, Sstringfunctions, Siofunctions, Sstderrfunctions; there is no null function set, and no
+  `open_null_stream` registration anywhere in src/os/pl-file.jl.
+- Fix: NOT applied. The faithful fix is not a small function-body change: a new IOFUNCTIONS member (the enum's `_enum_hash` manifest entry), its arms in `S_read`/`S_write`/
+  `S_seek64`/`S_close`, the predicate in pl-file.jl, the r2_upstream/r2_owners rows. Status: known-red, owner = the pl-file.c group (dispatcher names it, D-0623 (3)).
+- Option NOT applied (the auto-mode classifier refused the edit; the row is a failing row, so it needs the dispatcher's word): D-0623 (3) says "the test row keeps
+  `open('/dev/null', write, S)` with its pinned answer"; the row text on the line uses open_null_stream/1, never /dev/null. With the goal
+  `open('/dev/null', write, S), ( current_blob(S2, stream), S2 == S -> R = yes ; R = no ), close(S)` swipl 10.1.20 prints `yes` (two identical runs; the same for
+  open_null_stream/1). Same property (a stream is enumerated as a stream blob), same pinned answer; the open_null_stream/1 coverage gap stays recorded in the owner row.
+
+## (2) test/files/test_load_swipl.jl:606 and :738
+
+- Reproduces: yes, all three types (2 fails per type: 303 pass / 6 fail in the file).
+- Class: TEST (stale pins of DIVERGES the engine closed on the line). The engine answers are swipl's; nothing weakened.
+- :606 `'$set_predicate_attribute'(1, dynamic, true)`: swipl `type_error(predicate_indicator, 1)`; ours NOW `type_error(predicate_indicator, 1)` (the failing
+  expression `line("callable") in ours` compared against ours = ["ok", "error ...predicate_indicator...", "warning goal_failed(...)"]). The row pinned the old kernel answer
+  `callable`. Cause: 3852e280 (UPSTREAM: pl-proc.c get_procedure, every mode: GP_NAMEARITY -> get_functor, src/pl-proc.jl) removed the DIVERGES that read a
+  non-indicator head with get_head_functor. Row now asserts `predicate_indicator` in ours (and in swipl).
+- :738 `!(isempty(pin)) && dl == pin`, case "initialization": printed `DIVERGES (initialization): []` (an empty list). The pinned difference was line 2
+  `existence_error(procedure, $syspreds:'$on_signal'/4)`; Q10's `$on_signal/4` (34183573 / pl_on_signal4_va, src/pl-setup.jl:611) closed it, ours == swipl.
+  The "initialization" pin is removed from `_TL_KNOWN_DIFFS`; the case goes through `@test ours == theirs`.
+- Why main was green: neither commit was on main (`git log -S set_predicate_attribute 87a88328..HEAD`: 3852e280; `-S on_signal`: afc47fe1, 34183573, 8f8aa07c);
+  the TAB1 lane run at 5bdaa2d9 was before them.
+- Fix: a76f2035 (`FIXED: test_load_swipl.jl: two pins of closed differences flipped to swipl's own answer`), one commit for both rows (same file, same class). Lane: 309 pass, 0 fail,
+  three types (103 each), warm.sh fmt clean. Old lines back (HEAD 01d7a9af, same lane): 6 fail, 2 per type (the mutation proof).
