@@ -98,3 +98,9 @@ t73(R) :- T = f(g(a), g(a), '$VAR'(1), '$VAR'(1)), term_factorized(T, S, Sub, [d
 
 % an arity-1 compound as the argument of a goal under catch/3, beside t63/t71's arity 0 (both are argvars of the temporary clause)
 t74(R) :- compound_name_arguments(A, automaton, [a]), err(automaton_minimal(A, _), R).
+
+% a class that only `refine` splits: nodes that agree in functor and in the leaves of their arguments (split_colours' whole signature) and
+% differ deeper. t75: a chain of differing depth (f(f(a)) and f(f(f(a))) beside the f(a) both contain); t76: two cyclic terms equal in
+% their first steps and different where the b is, one term_factorized/3 of the pair.
+t75(R) :- T = h(f(f(a)), f(f(f(a)))), term_factorized(T, S, Sub), R = r(S, Sub).
+t76(R) :- X = f(f(X, a), a), Y = f(f(Y, a), b), T = h(X, Y), term_factorized(T, S, Sub), R = r(S, Sub).

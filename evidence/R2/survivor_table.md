@@ -239,3 +239,20 @@ Every other mutant: not scheduled. Uptime at 15:41Z: load 3.57, 3.40, 2.92 (unde
 4. The fresh-process TSV (scratchpad fresh/s1.tsv, s2.tsv) was empty at 15:27 (load 4.2): fill the fresh column when it has rows; copy the TSV into evidence/R2/.
 5. The closing 10-line cause distribution over ALL rows: NOT written (rows are not yet reworded). Provisional count of causes by row (iii unless stated): row gap (needs a row): BISIM-7, CT1b-A22/C1/C2/C3, LC-C2(cannot run), LC-D1, LC-S10, LC-I2, TAI1 F58-F61 (one row), TAI1-T12, Q10-39, Q10-44, ZIP1-N2, P3-29, P3-1 (row gap only by a direct call; else hypothesis equivalent); hypothesis equivalent: BISIM-13/24, P2B-I16/I17/I2, CT1b-A11/A12/A25, LC-B1/B3/O4/O9/U2, TAI1-L1/L4, CT1c-A7, Q10B-B4, ZIP1-C6, P3-1, P3-5; hang class (iv): CT1c-A8/B1/B2, P3-35/36/41/25; catalogue defect: ZIP1-T-ext/T-ext2; OPEN: P3-31, P3-17, P3-24. Cause (ii) (warm daemon) not yet established for any row (Part (B)).
 6. Row candidates so far (for the dispatcher): LC-D1 (count of locales before/after create+destroy), LC-S10 (`L == A`), LC-I2 (last row: destroy `default`), TAI1 F58-F61 (stamp 67767987355891200 in 2147483648..2147485547), TAI1-T12 (`-0.5` second), BISIM-7, CT1b-A22, C1, C2, C3 (the previous agent's list). Equivalent by reading: LC-O4, O9, U2, B1, B3, TAI1 L1 L4, CT1c-A7, BISIM-24, P2B-I16, I17, I2, CT1b-A11, A12, A25, BISIM-13.
+
+## BISIM-7 row (R2-ROW-BISIM7)
+
+Why the existing rows could not kill it: `split_colours` (src/pl-bisim.jl:349-) separates cells of one functor by the LEAF children only
+(`group_signature`, :272-: a compound child is the single key LEAF_SAME, a leaf child its own number). Every row named in the catalogue
+(t8, t20, t24, t31, t45) has nodes already separated by their leaves, so `refine` (:426-) splits nothing. `refine` is the only code that
+separates two nodes of one functor and equal leaf signature whose compound children lie in different classes.
+
+New rows (test/core_lang/test_bisim_swipl.pl, t75 and t76; the .out lines are the pin's, swipl 10.1.20, two identical driver runs, cmp-equal):
+* t75: `T = h(f(f(a)), f(f(f(a)))), term_factorized(T, S, Sub), R = r(S, Sub)`. Pin: `r(h(V0,f(V0)), [V0=f(f(a))])` (the two f-chains of
+  depth 2 and 3 are NOT merged; f(f(a)) is shared once; f(a) alone has a leaf child, f(f(a)) and f(f(f(a))) both have a compound child).
+* t76: `X = f(f(X,a),a), Y = f(f(Y,a),b), T = h(X,Y), term_factorized(T, S, Sub)`. Pin: `r(h(V0,V1), [V0=f(V0,a), V1=f(f(V1,a),b)])`
+  (X collapses to f(X,a); Y, equal to X for two steps and different at the b, stays apart).
+Mutant BISIM-7 (no `refine(g)`): by reading (HYPOTHESIS, to be confirmed by the fresh run) the initial partition after `split_colours` keeps
+f(f(a)) and f(f(f(a))) in one class (t75), and Y1 = f(Y2,a) in the class of X1, X2 (t76; only Y2 = f(Y1,b) is split off by its leaf b), so the
+minimal term merges what the pin keeps apart and the printed `r(S, Sub)` differs on both rows.
+Fresh-process proof owed (D-0849 (3)): the two-scope runner entry `BISIM BISIM-7` on the commit that adds the rows.
