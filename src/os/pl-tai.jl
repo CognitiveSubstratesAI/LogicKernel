@@ -102,12 +102,11 @@ _c_mktime(tm::CTm)::Int = ccall((:mktime, LIBC), Int64, (Ref{CTm},), tm)
 "`strftime(buf, 256, fmt, tm)`: the bytes it wrote."
 function _c_strftime(fmt::String, tm::CTm)::Vector{UInt8}
     buf = zeros(UInt8, 256)
-    ccall(
+    n = ccall(
         (:strftime, LIBC), Csize_t, (Ptr{UInt8}, Csize_t, Cstring, Ref{CTm}), buf, 256, fmt,
         tm
     )
-    n = something(findfirst(==(0x00), buf), length(buf) + 1)   # strftime NUL-terminates the buffer it fills
-    return buf[1:(n - 1)]
+    return buf[1:min(Int(n), length(buf))]              # strftime answers the bytes written, without the NUL
 end
 
 # PORT: pl-os.c PL_asctime_r as _c_asctime_r
@@ -116,8 +115,8 @@ end
 function _c_asctime_r(tm::CTm)::Vector{UInt8}
     buf = zeros(UInt8, 64)
     ccall((:asctime_r, LIBC), Ptr{UInt8}, (Ref{CTm}, Ptr{UInt8}), tm, buf)
-    n = something(findfirst(==(0x00), buf), length(buf) + 1)   # asctime_r NUL-terminates the buffer it fills
-    return buf[1:(n - 1)]
+    n = findfirst(==(0x00), buf)
+    return n === nothing ? buf : buf[1:(n - 1)]         # asctime_r NUL-terminates the buffer it fills
 end
 
 # ORIGINAL: libc's `mbstowcs` over the multibyte text `bytes` (to at most `max` wide characters) in the process's

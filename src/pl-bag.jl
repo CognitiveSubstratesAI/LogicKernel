@@ -181,12 +181,12 @@ function pl_suspend_findall_bag0_va(
     ctl = PL_foreign_control(PL__ctx)
 
     if ctl == FRG_FIRST_CALL
-        bag = current_bag(ld)
-        @assert bag !== nothing "'\$suspend_findall_bag'/0: no bag"
-        # `let bag = bag`: the closure captures its own binding, so `bag` (assigned in all three branches) is not boxed
-        at = let bag = bag
-            something(findlast(b -> b === bag, ld.bags))   # the bag's address (always found: it is in ld.bags)
+        at = length(ld.bags)                            # the bag's address: its position in ld.bags, found as current_bag does
+        while at > 0 && ld.bags[at].suspended
+            at -= 1                                     # bag = bag->parent
         end
+        @assert at > 0 "'\$suspend_findall_bag'/0: no bag"
+        bag = ld.bags[at]
         bag.suspended_solutions += bag.solutions
         bag.solutions = 0
         bag.gsize = 0
