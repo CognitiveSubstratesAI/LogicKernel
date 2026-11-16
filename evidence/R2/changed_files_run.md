@@ -96,3 +96,32 @@ Rows: il24 (limit 9223372036854775806) and il25 (9223372036854775807), pins from
 | after | 140 pass, 0 fail, 0 error on each type; SKIP/Warning/Test Failed/Error During 0 |
 | mutation: the old signed compare put back (reference) | 137 pass, 3 fail: il05, il24, il25 (each `ours inference_limit_exceeded, want !`); fix restored |
 Gates (R1): `tools/warm.sh fmt` 0 rewritten; the first `check` failed only on INVENTORY-DRIFT of docs/port_inventory.md (source lines moved), `tools/warm.sh inventory` rewrote it (1 line; the landing SHA writes it again after the R4 edits), `check` PASS (507 s); `tools/pkgtest_way.sh test/core_lang/test_depth_limit_swipl.jl` passed (peak 2952 MiB, rc 0). Final file run on the committed tree: 140 pass per type, 0 fail.
+
+## R4 (audit D-0820 item 2, diagnosis A-0599 (1)/(4)): the bisim rows t63/t71 and the unwinding in i_metacall_clause, wip/r2land-s2
+
+Upstream read (swipl-devel 18168e62, pl-comp.c): :978-981 (a compound under a `subclausearg` goal in a local compile is an argvar, `ci->argvars++`), :986-990 (the goal itself with
+`fd->arity == 0`: `depth--; goto resume`), :3167-3191 (`compileArgument`: an argvar stores `*k = *arg`, the compound word whole, and emits `B_VAR0+n`/`B_VAR`; no argument of the
+compound is looked at, so no variable per argument exists, whatever the arity). The faithful shape for arity 0 is therefore "no variable keys for the placeholder's arguments":
+`k = n == 0 ? UInt64(0) : fresh_var_keys!(n)` in `_argvar_placeholder` (src/pl-comp.jl) is the same behaviour (the loop over `1:n` is empty). pl-vmi.c:5536-5575 (`i_metacall_common`):
+a compile error is `rc == false` then THROW_EXCEPTION with `lTop = NFR` (nothing unwound, nothing Julia-side raised); the Julia exception out of the compiler is the kernel's own case,
+which must leave `lTop` above the frame being filled before `_abandon_query`'s `dropRecords!` runs.
+
+(a) 9b7e9c43, src/pl-comp.jl + test_bisim_swipl.{jl,pl,out}: the guard above; row t74 added (the arity-1 neighbour of t63/t71: `compound_name_arguments(A, automaton, [a]), err(automaton_minimal(A, _), R)`;
+pin answer `true`, from the file's own driver run with ~/.local/bin/swipl, two identical runs; the 74 old lines unchanged), names count 74 -> 75.
+(b) 00b8c5be, src/pl-wam.jl + test_bisim_swipl.jl: `mc_e isa PrologThrow || setLTop!(ld, argFrameP(mc_nb, 1))` (was `mc_e isa NotPortedError && ...`), then `rethrow()`. The row's injection needs no engine hook: the process-wide key counter
+`LK._KERNEL_VAR_COUNTER` is set to typemax after the query is open (so the first key `compileGoalClause` asks for, the argvar of `p(f(a))` under `catch((p(f(a)), true), _, ...)`, raises
+the AssertionError "kernel variable keys exhausted") and restored in `finally`; the row checks `PL_next_solution` throws that AssertionError and not the `dropRecords!` one, and that keys are issued again.
+
+| state | reference | alt | alt_interned |
+|---|---|---|---|
+| before (R4 base-run, A-0599 / bisim_base_run.md; wip/r2land-s2 c305e75d) | 14 pass, 1 error (t63, dropRecords! assertion; original `fresh_var_keys!(0)` chained) | same shape (not re-run) | same shape (not re-run) |
+| after (a): 9b7e9c43 | 101 pass | 101 pass | 101 pass |
+| after (a)+(b): 00b8c5be | 105 pass | 105 pass | 105 pass |
+grep of both full-file logs for `SKIP|Warning|Test Failed|Error During`: 0 lines.
+
+Mutation at verdict level (hand edit, run, restore from a saved copy, `git diff` shows only the fixes afterwards), reference type:
+- (a) the old `k = fresh_var_keys!(n)` put back: 14 pass, 1 error: the BISIM testset errors with the `dropRecords!` assertion (caused by `kernel variable keys exhausted`): t63/t71 reach it; file FAILS.
+- (b) the old `mc_e isa NotPortedError && setLTop!(...)` put back: 103 pass, 2 FAIL, both in the new testset (the exception is not the compiler's AssertionError / it is the dropRecords! one; test_bisim_swipl.jl:234, :235); file FAILS. The BISIM testset (100 rows) still passes, as (a) is in.
+
+Gates: `tools/warm.sh fmt` 0 rewritten; `tools/warm.sh check` PASS (359 s; no INVENTORY-DRIFT this time, port_check clean over 339 files; the push_template.jl parse Warning is the old formatter noise on a template);
+`tools/pkgtest_way.sh test/core_lang/test_bisim_swipl.jl`: the first run was KILLED by its own 3G scope during the fresh precompile of this checkout's cache (the last cache was another checkout's, "REFUSED ... building this checkout's own cache"; peak 3072 MiB, oom_kill 1: no test verdict), the second with `LOGICKERNEL_INERT_MEM_MAX=5G` (the tool's documented knob) passed the way Pkg.test runs it (peak 3134 MiB).
