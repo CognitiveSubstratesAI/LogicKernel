@@ -740,6 +740,103 @@ const _T7_PINS_ROLL = [
     "t_ro06 c[116,95,114,111,48,54]/1(c[114]/6(c[91,124,93]/2(c[114,111,95,113]/1(i5),c[91,124,93]/2(c[114,111,95,113]/1(i7),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i2),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,101],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))),c[91,124,93]/2(c[45]/2(a[114,111,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[102]),i3),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[102]),i2),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,101],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[102]),i2),nil)),nil))),c[91,124,93]/2(c[114,111,95,113]/1(i5),c[91,124,93]/2(c[114,111,95,113]/1(i7),c[91,124,93]/2(c[114,111,95,113]/1(i10),nil))),c[91,124,93]/2(a[112],nil),c[91,124,93]/2(c[45]/2(a[114,111,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[114,111,95,101],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[102]),i2),nil)),nil)))))"
 ]
 
+const _T7_PROG_ALIVE = raw"""tp(G, T) :- '$tbl_existing_variant_table'(0, user:G, T, _, _).
+st1(G, S) :- ( tp(G, T) -> '$tbl_table_status'(T, S0), ( '$idg_forced'(T) -> F = f ; F = n ), ( '$idg_falsecount'(T, C) -> true ; C = nofc ),
+      findall(Q, ('$idg_mono_affects_lazy'(T, _, _, _, A), length(A, Q)), Qs), S = S0/F/C/Qs ; S = none ).
+dump(R) :- findall(N-S, (member(G, [lq_p(_), lq_q(_)]), functor(G, N, _), st1(G, S)), R).
+ex(G, L) :- findall(G, G, L0), msort(L0, L).
+lg(L) :- findall(X, lq_log(X), L), retractall(lq_log(_)).
+rolled(G) :- ( transaction((G, fail)) -> true ; true ).
+:- dynamic lq_d/1 as monotonic.
+:- dynamic (lq_log/1, lq_flag/0).
+:- table (lq_p/1, lq_q/1) as (monotonic, lazy).
+lq_p(X) :- lq_d(X), assertz(lq_log(p(X))), ( X == 2, \+ lq_flag -> assertz(lq_flag), assertz(lq_d(100)) ; true ).
+lq_q(X) :- lq_p(X).
+"""
+
+const _T7_CASES_ALIVE = [
+    (
+        "al01",
+        raw"abolish_all_tables, retractall(lq_d(_)), retractall(lq_flag), retractall(lq_log(_)), assertz(lq_d(1)), ex(lq_p(_), A), lg(L), dump(D), R = r(A, L, D)"
+    ),
+    (
+        "al02",
+        raw"assertz(lq_d(5)), dump(D1), ex(lq_q(_), A), lg(L), dump(D2), R = r(D1, A, L, D2)"
+    ),
+    (
+        "al03",
+        raw"assertz(lq_d(2)), dump(D1), ex(lq_q(_), A), lg(L), dump(D2), ex(lq_p(_), A2), lg(L2), dump(D3), R = r(D1, A, L, D2, A2, L2, D3)"
+    ),
+    (
+        "al04",
+        raw"rolled(assertz(lq_d(7))), dump(D1), ex(lq_q(_), A), lg(L), dump(D2), R = r(D1, A, L, D2)"
+    ),
+    (
+        "al05",
+        raw"assertz(lq_d(8)), rolled(assertz(lq_d(9))), dump(D1), ex(lq_p(_), A), lg(L), dump(D2), ex(lq_q(_), A2), dump(D3), R = r(D1, A, L, D2, A2, D3)"
+    ),
+    (
+        "al06",
+        raw"assertz(lq_d(11)), assertz(lq_d(12)), dump(D1), ex(lq_q(_), A), lg(L), dump(D2), R = r(D1, A, L, D2)"
+    )
+]
+
+const _T7_PINS_ALIVE = [
+    "ok",
+    "t_al01 c[116,95,97,108,48,49]/1(c[114]/3(c[91,124,93]/2(c[108,113,95,112]/1(i1),nil),c[91,124,93]/2(c[112]/1(i1),nil),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],a[110,111,110,101]),nil))))",
+    "t_al02 c[116,95,97,108,48,50]/1(c[114]/4(c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i1,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],a[110,111,110,101]),nil)),c[91,124,93]/2(c[108,113,95,113]/1(i1),c[91,124,93]/2(c[108,113,95,113]/1(i5),nil)),c[91,124,93]/2(c[112]/1(i5),c[91,124,93]/2(c[112]/1(i5),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))",
+    "t_al03 c[116,95,97,108,48,51]/1(c[114]/7(c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i2,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i2),c[91,124,93]/2(i2,nil))),nil)),c[91,124,93]/2(c[108,113,95,113]/1(i1),c[91,124,93]/2(c[108,113,95,113]/1(i2),c[91,124,93]/2(c[108,113,95,113]/1(i5),c[91,124,93]/2(c[108,113,95,113]/1(i100),nil)))),c[91,124,93]/2(c[112]/1(i2),c[91,124,93]/2(c[112]/1(i100),c[91,124,93]/2(c[112]/1(i100),c[91,124,93]/2(c[112]/1(i2),nil)))),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil)),c[91,124,93]/2(c[108,113,95,112]/1(i1),c[91,124,93]/2(c[108,113,95,112]/1(i2),c[91,124,93]/2(c[108,113,95,112]/1(i5),c[91,124,93]/2(c[108,113,95,112]/1(i100),nil)))),nil,c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))",
+    "t_al04 c[116,95,97,108,48,52]/1(c[114]/4(c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i2),nil)),nil)),c[91,124,93]/2(c[108,113,95,113]/1(i1),c[91,124,93]/2(c[108,113,95,113]/1(i2),c[91,124,93]/2(c[108,113,95,113]/1(i5),c[91,124,93]/2(c[108,113,95,113]/1(i100),nil)))),nil,c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))",
+    "t_al05 c[116,95,97,108,48,53]/1(c[114]/6(c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),c[91,124,93]/2(i1,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i1,nil))),nil)),c[91,124,93]/2(c[108,113,95,112]/1(i1),c[91,124,93]/2(c[108,113,95,112]/1(i2),c[91,124,93]/2(c[108,113,95,112]/1(i5),c[91,124,93]/2(c[108,113,95,112]/1(i8),c[91,124,93]/2(c[108,113,95,112]/1(i100),nil))))),c[91,124,93]/2(c[112]/1(i8),nil),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),c[91,124,93]/2(i1,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i1,nil))),nil)),c[91,124,93]/2(c[108,113,95,113]/1(i1),c[91,124,93]/2(c[108,113,95,113]/1(i2),c[91,124,93]/2(c[108,113,95,113]/1(i5),c[91,124,93]/2(c[108,113,95,113]/1(i8),c[91,124,93]/2(c[108,113,95,113]/1(i100),nil))))),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),c[91,124,93]/2(i1,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))",
+    "t_al06 c[116,95,97,108,48,54]/1(c[114]/4(c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),c[91,124,93]/2(i3,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i2,nil))),nil)),c[91,124,93]/2(c[108,113,95,113]/1(i1),c[91,124,93]/2(c[108,113,95,113]/1(i2),c[91,124,93]/2(c[108,113,95,113]/1(i5),c[91,124,93]/2(c[108,113,95,113]/1(i8),c[91,124,93]/2(c[108,113,95,113]/1(i11),c[91,124,93]/2(c[108,113,95,113]/1(i12),c[91,124,93]/2(c[108,113,95,113]/1(i100),nil))))))),c[91,124,93]/2(c[112]/1(i11),c[91,124,93]/2(c[112]/1(i12),nil)),c[91,124,93]/2(c[45]/2(a[108,113,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),c[91,124,93]/2(i3,nil))),c[91,124,93]/2(c[45]/2(a[108,113,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))"
+]
+
+const _T7_PROG_FIND = raw"""tp(G, T) :- '$tbl_existing_variant_table'(0, user:G, T, _, _).
+st1(G, S) :- ( tp(G, T) -> '$tbl_table_status'(T, S0), ( '$idg_forced'(T) -> F = f ; F = n ), ( '$idg_falsecount'(T, C) -> true ; C = nofc ),
+      ( '$idg_mono_index'(T, _) -> I = idx ; I = noidx ),
+      findall(Q, ('$idg_mono_affects_lazy'(T, _, _, _, A), length(A, Q)), Qs), S = S0/F/C/I/Qs ; S = none ).
+dump(R) :- findall(N-S, (member(G, [fn_s(_), fn_u(_), fn_w(_), fn_l(_)]), functor(G, N, _), st1(G, S)), R).
+ex(G, L) :- findall(G, G, L0), msort(L0, L).
+lg(L) :- findall(T-N, (member(T, [u, w, l]), aggregate_all(count, (fn_log(X), functor(X, T, _)), N)), L), retractall(fn_log(_)).
+cnt(G, N) :- aggregate_all(count, G, N).
+:- dynamic fn_d/1 as monotonic.
+:- dynamic fn_log/1.
+:- table fn_s/1 as monotonic.
+:- table (fn_u/1, fn_w/1) as monotonic.
+:- table fn_l/1 as (monotonic, lazy).
+fn_s(X) :- fn_d(X).
+fn_u(Y-Z) :- fn_s(Y), fn_s(Z), assertz(fn_log(u(Y-Z))).
+fn_w(X-Y-Z) :- fn_s(X), fn_s(Y), fn_s(Z), assertz(fn_log(w(X-Y-Z))).
+fn_l(Y-Z) :- fn_s(Y), fn_s(Z), assertz(fn_log(l(Y-Z))).
+"""
+
+const _T7_CASES_FIND = [
+    (
+        "fn01",
+        raw"abolish_all_tables, retractall(fn_d(_)), retractall(fn_log(_)), assertz(fn_d(1)), cnt(fn_u(_), A1), cnt(fn_w(_), A2), cnt(fn_l(_), A3), lg(L), dump(D), R = r(A1, A2, A3, L, D)"
+    ),
+    (
+        "fn02",
+        raw"assertz(fn_d(2)), dump(D1), cnt(fn_u(_), A1), cnt(fn_w(_), A2), lg(L), dump(D2), R = r(D1, A1, A2, L, D2)"
+    ),
+    (
+        "fn03",
+        raw"assertz(fn_d(3)), cnt(fn_u(_), A1), lg(L1), assertz(fn_d(4)), cnt(fn_w(_), A2), lg(L2), dump(D), R = r(A1, L1, A2, L2, D)"
+    ),
+    (
+        "fn04",
+        raw"assertz(fn_d(5)), dump(D1), cnt(fn_l(_), A1), lg(L1), assertz(fn_d(6)), cnt(fn_l(_), A2), lg(L2), cnt(fn_u(_), A3), lg(L3), dump(D2), R = r(D1, A1, L1, A2, L2, A3, L3, D2)"
+    )
+]
+
+const _T7_PINS_FIND = [
+    "ok",
+    "t_fn01 c[116,95,102,110,48,49]/1(c[114]/5(i1,i1,i1,c[91,124,93]/2(c[45]/2(a[117],i1),c[91,124,93]/2(c[45]/2(a[119],i1),c[91,124,93]/2(c[45]/2(a[108],i1),nil))),c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),nil))))))",
+    "t_fn02 c[116,95,102,110,48,50]/1(c[114]/5(c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),a[110,111,105,100,120]),c[91,124,93]/2(i1,c[91,124,93]/2(i1,nil)))),nil)))),i4,i8,c[91,124,93]/2(c[45]/2(a[117],i3),c[91,124,93]/2(c[45]/2(a[119],i7),c[91,124,93]/2(c[45]/2(a[108],i3),nil))),c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),a[110,111,105,100,120]),c[91,124,93]/2(i1,c[91,124,93]/2(i1,nil)))),nil))))))",
+    "t_fn03 c[116,95,102,110,48,51]/1(c[114]/5(i9,c[91,124,93]/2(c[45]/2(a[117],i5),c[91,124,93]/2(c[45]/2(a[119],i19),c[91,124,93]/2(c[45]/2(a[108],i5),nil))),i64,c[91,124,93]/2(c[45]/2(a[117],i7),c[91,124,93]/2(c[45]/2(a[119],i37),c[91,124,93]/2(c[45]/2(a[108],i7),nil))),c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),a[110,111,105,100,120]),c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,c[91,124,93]/2(i3,nil)))))),nil))))))",
+    "t_fn04 c[116,95,102,110,48,52]/1(c[114]/8(c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),a[110,111,105,100,120]),c[91,124,93]/2(i1,c[91,124,93]/2(i2,c[91,124,93]/2(i3,c[91,124,93]/2(i4,c[91,124,93]/2(i4,nil))))))),nil)))),i25,c[91,124,93]/2(c[45]/2(a[117],i9),c[91,124,93]/2(c[45]/2(a[119],i61),c[91,124,93]/2(c[45]/2(a[108],i39),nil))),i36,c[91,124,93]/2(c[45]/2(a[117],i11),c[91,124,93]/2(c[45]/2(a[119],i91),c[91,124,93]/2(c[45]/2(a[108],i30),nil))),i36,c[91,124,93]/2(c[45]/2(a[117],i0),c[91,124,93]/2(c[45]/2(a[119],i0),c[91,124,93]/2(c[45]/2(a[108],i0),nil))),c[91,124,93]/2(c[45]/2(a[102,110,95,115],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,117],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,119],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),c[91,124,93]/2(c[45]/2(a[102,110,95,108],c[47]/2(c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),a[110,111,105,100,120]),nil)),nil))))))"
+]
+
 # S3C-END
 const _T7_GROUPS = [
     (
@@ -826,12 +923,34 @@ const _T7_GROUPS = [
         program=_T7_PROG_ROLL,
         cases=_T7_CASES_ROLL,
         pins=_T7_PINS_ROLL
+    ),
+    (
+        key="ALIVE",
+        label=raw"ALIVE: a lazy monotonic table `lq_p` over a monotonic dynamic predicate and a lazy table `lq_q` over it; the body of `lq_p` asserts a NEW clause of its own dynamic predicate while a queued clause is being pulled in (the reevaluation ends with a live queued clause reference: the table is not complete), a new lazy parent that calls an INVALID lazy table, a rolled-back transaction (invalid, nothing queued) and a queued clause next to it: answers, the side effect of every continuation, status, forced, `'$idg_falsecount'/2` and queue lengths after each step (kills TB7-answer-live-erased, TB7-invalid-deps-queued, TB7-invalid-deps-count, TB7-monotonic-edge-lazy)",
+        program=_T7_PROG_ALIVE,
+        cases=_T7_CASES_ALIVE,
+        pins=_T7_PINS_ALIVE
+    ),
+    (
+        key="FIND",
+        label=raw"FIND: monotonic tables that call a monotonic TABLE (`fn_s`) at several call points, so that its dependency index is built, and whose later calls re-register a dependency that already exists in that index while a propagated answer runs the rest of the body (a variant dependency FOUND in the index of the child; a duplicate would run a continuation twice): answers, the side effect of every continuation, status, forced, `'$idg_falsecount'/2`, index and queue lengths after each clause and call, eager and lazy parents (kills TB7-index-find-value, TB7-index-find-hash)",
+        program=_T7_PROG_FIND,
+        cases=_T7_CASES_FIND,
+        pins=_T7_PINS_FIND
     )
     # S3C-GROUPS-END
 ]
 
 # Rows whose kernel side cannot answer yet: `GROUP/case => owner`. Each is `@test_broken` below, the same comparison as its neighbours.
-const _T7_BROKEN = Dict{String, String}()
+# FIND/fn04 KNOWINGLY DIFFERS from swipl 10.1.20 (TAB1 S3h, found by the new FIND group; measured on the reference term type): the lazy monotonic table
+# `fn_l` re-runs its body (one `fn_log(l(_))` per run) 30 times in swipl and 22 times in the kernel after the second `assertz(fn_d(6))` and the call
+# `cnt(fn_l(_), A2)` (A2 = 36 answers in both; the eager tables `fn_u` (11) and `fn_w` (91) agree exactly). Position 949 of the 1670-character `~q` answer:
+# `l-30` in swipl against `l-22` in the kernel, byte-identical on the reference, alt and alt_interned term types (a representation cause is ruled out).
+# AUDIT RULING D-0889 (1): a side-effect count a program can observe is behaviour, NOT a DIVERGES until it is traced and shown forced: this row stays
+# `@test_broken` with these numbers; the trace is the S3i step (`$mono_reeval_prepare/done` and the lazy queue of pl-tabling.c against pl-tabling.jl).
+const _T7_BROKEN = Dict{String, String}(
+    "FIND/fn04" => "lazy monotonic body runs 22 times, swipl 30 (audit ruling)"
+)
 
 @testset "TB7 rows as swipl's: $(g.label)" for g in _T7_GROUPS
     gd, ld, st = _T7_load(g.program, g.cases)
@@ -1038,6 +1157,26 @@ end
         count(==("complete"), _T7_atoms(_T7_ans("ROLL", "ro05"))) == 5
     @test count(==("invalid"), _T7_atoms(_T7_ans("ROLL", "ro06"))) == 6 &&
         count(==("complete"), _T7_atoms(_T7_ans("ROLL", "ro06"))) == 3
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al01"))) == 0 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al01"))) == 1
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al02"))) == 1 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al02"))) == 2
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al03"))) == 2 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al03"))) == 4
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al04"))) == 2 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al04"))) == 2
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al05"))) == 2 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al05"))) == 4
+    @test count(==("invalid"), _T7_atoms(_T7_ans("ALIVE", "al06"))) == 1 &&
+        count(==("complete"), _T7_atoms(_T7_ans("ALIVE", "al06"))) == 3
+    @test count(==("invalid"), _T7_atoms(_T7_ans("FIND", "fn01"))) == 0 &&
+        count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn01"))) == 4
+    @test count(==("invalid"), _T7_atoms(_T7_ans("FIND", "fn02"))) == 2 &&
+        count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn02"))) == 6
+    @test count(==("invalid"), _T7_atoms(_T7_ans("FIND", "fn03"))) == 1 &&
+        count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn03"))) == 3
+    @test count(==("invalid"), _T7_atoms(_T7_ans("FIND", "fn04"))) == 1 &&
+        count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn04"))) == 7
     # S3C-ASSERT-END
 end
 
