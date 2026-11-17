@@ -978,6 +978,7 @@ let pin = raw"$fmt_pin", have = string(pkgversion(JuliaFormatter))
     isempty(pin) && error("preflight: no single JuliaFormatter version is pinned in .github/workflows/CI.yml")
     have == pin || error("preflight: JuliaFormatter ", have, " in the daemon, CI pins ", pin)
 end
+_t0 = time()                                           # sub-stage timers (audit D-0876 item 1): the seconds of each part
 if !format("."; overwrite=false)
     bad = String[]
     for (dir, dirs, files) in walkdir(".")
@@ -990,6 +991,8 @@ if !format("."; overwrite=false)
     error("preflight: NOT Blue-formatted: ", join(bad, ", "), " — tools/run_tests.sh shows each diff")
 end
 println("preflight: Blue-clean (JuliaFormatter ", pkgversion(JuliaFormatter), ")")
+println("check: substage blue ", round(Int, time() - _t0), "s")
+_t0 = time()
 # the CURRENT tools/port_check.jl, in a fresh module every time: a daemon that kept the first one
 # it loaded would check an edited tree with an old checker (measured 2026-10-04: M1's own docs were
 # held to the pre-M1 inventory format)
@@ -1002,6 +1005,8 @@ let pc = Module(:PreflightPortCheck)
     println("preflight: port_check clean (", length(r.files), " files; markers: ", mk.diverges,
         " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
+println("check: substage port_check ", round(Int, time() - _t0), "s")
+_t0 = time()
 # THE MANIFEST, in seconds (user, 2026-10-14): every entry of test/static_analysis_manifest.jl names
 # exactly one method (which), and every method LogicKernel defines is reached by an entry or
 # exempted — the static-analysis gate's coverage test, without JET, so a new or re-signed function
@@ -1073,6 +1078,7 @@ let sa = Module(:PreflightManifest)
         error("preflight: the manifest does not cover LogicKernel (test/static_analysis_manifest.jl)")
     println("preflight: manifest covers every method (", length(entries), " entries)")
 end
+println("check: substage manifest ", round(Int, time() - _t0), "s")
 JL
     _send "$snippet" > "$fmtlog" 2>&1
     rc=$?

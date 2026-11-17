@@ -444,6 +444,12 @@ end
             @test occursin(stage, tb) && occursin(Regex("(?m)^    $stage"), body)
         end
         @test count("_stage_timers_on", script) == 3     # the definition, its comment, the one call in `check`
+        # SUB-STAGE TIMERS (audit D-0876 item 1): the one Julia call of `_format_port_check` prints the seconds of its three
+        # parts, `check: substage blue|port_check|manifest Ns` (the pass lines the verdict greps read are untouched)
+        @test count("check: substage", script) == 3
+        for part in ("blue", "port_check", "manifest")
+            @test occursin("println(\"check: substage $part \"", script)
+        end
     end
 
     # audit D-0692 item 5: the manifest preflight (`warm.sh check`'s `_check`, the same Julia block the preflight runs) fails
