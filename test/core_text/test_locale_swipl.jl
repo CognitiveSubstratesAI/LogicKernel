@@ -191,6 +191,17 @@ end
     @test occursin(_codes("default"), expected[findfirst(startswith("t8 "), expected)])      # the initial current locale's alias
     @test !occursin(_codes("bad"), expected[findfirst(startswith("t11 "), expected)])         # setlocale/3 refreshes the default locale (or the host has no en_US.UTF-8)
 
+    # t13: the destroyed locale leaves the table (one more locale while it lives, the same again after), t14: the enumeration answers the alias atom
+    let t13 = expected[findfirst(startswith("t13 "), expected)],
+        t14 = expected[findfirst(startswith("t14 "), expected)]
+
+        @test endswith(
+            t13,
+            "c[91,124,93]/2(i1,c[91,124,93]/2(i0,c[91,124,93]/2(c[91,124,93]/2(a[108,99,49,51],nil),c[91,124,93]/2(i1,c[91,124,93]/2(i0,nil))))))"
+        )
+        @test count("a[97,108,105,97,115]", t14) == 3 && !occursin("a[98,108,111,98]", t14)
+    end
+
     @test all(r -> r in names, _LCS_NUL_ROWS)                                 # the known-difference rows are rows
     @test occursin(_codes("true"), expected[findfirst(startswith("t12 "), expected)])  # swipl answers: the decimal point was made
 

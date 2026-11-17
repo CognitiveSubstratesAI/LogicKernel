@@ -138,3 +138,22 @@ t11(R) :- setlocale(numeric, _, 'C'), lc_base(B), lc_us(U), lc_def(P0),
 t12(R) :- atom_codes(Dp, [97, 0, 98]),
     lc_res(( locale_create(_, "C", [alias(lc10), decimal_point(Dp)]), locale_property(lc10, decimal_point(Dn)) ), R6), lc_destroy(lc10),
     R = R6-Dn.
+% locale_destroy/1 takes the locale out of the table (pl-locale.c deleteHTableWP): the enumeration of locale_property/2 with the locale unbound,
+% over a property every locale has, finds the same locales before create, after create (one more) and after destroy (the same again). Only the
+% differences and the aliases of this row are answered (the other locales alive are the host's and the earlier rows').
+t13(R) :- lc_cnt(N0), lc_mk(lc13, [decimal_point('!')]), lc_cnt(N1),
+    findall(A, ( locale_property(L, decimal_point('!')), locale_property(L, alias(A)) ), As),
+    lc_destroy(lc13), lc_cnt(N2), D1 is N1-N0, D2 is N2-N0,
+    lc_mk(lc13, [decimal_point('?')]), lc_cnt(N3), lc_destroy(lc13), lc_cnt(N4),
+    D3 is N3-N0, D4 is N4-N0,
+    R = [D1, D2, As, D3, D4].
+lc_cnt(N) :- findall(L, locale_property(L, decimal_point(_)), Ls), length(Ls, N).
+% the enumeration with the locale unbound hands every locale back as its ALIAS atom when it has one (pl-locale.c unifyLocale(..., TRUE)), not as a blob
+t14(R) :- lc_mk(lc14, [decimal_point('!'), thousands_sep('_'), grouping([2])]),
+    findall(A-K, ( locale_property(L, decimal_point('!')), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc14),
+                   ( L == A -> K = alias ; K = blob ) ), R1),
+    findall(A-K, ( locale_property(L, thousands_sep('_')), locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc14),
+                   ( L == A -> K = alias ; K = blob ) ), R2),
+    findall(A-K, ( locale_property(L, alias(A)), sub_atom(A, 0, _, _, lc14), ( L == A -> K = alias ; K = blob ) ), R3),
+    lc_destroy(lc14),
+    R = [R1, R2, R3].
