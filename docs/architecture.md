@@ -1578,6 +1578,7 @@ graph LR
     os_pl_prologflag --> os_pl_option
     os_pl_prologflag --> os_pl_text
     os_pl_prologflag --> os_pl_file
+    os_pl_prologflag --> pl_setup
     os_pl_prologflag --> pl_proc
     os_pl_prologflag --> pl_trace
     os_pl_prologflag --> pl_pro
@@ -2324,10 +2325,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 353 | 0 | 69 | 3 | 1 |
-| refusal sites | 0 | 92 | 0 | 0 | 12 |
-| Prolog flags | 65 | 15 | 20 | 0 | 35 |
+| refusal sites | 0 | 91 | 0 | 0 | 12 |
+| Prolog flags | 66 | 14 | 20 | 0 | 34 |
 | VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 615 | 107 | 125 | 3 | 48 |
+| **total** | 616 | 105 | 125 | 3 | 47 |
 
 #### The boot and library files
 
@@ -2393,13 +2394,12 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
-| R2 F1b | 1 | 0 | 1 | `refusal set_stack_limit (a changed stack limit)` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 48 | 21 | 27 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +40 |
+| NO OWNER | 47 | 21 | 26 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +39 |
 
 #### Missing and refused per category
 
@@ -2409,7 +2409,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [69, 0, 20, 36]
-    line [0, 92, 15, 0]
+    line [0, 91, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -6953,11 +6953,17 @@ evidence/LB4B1/bench_note.md and NOT RUN.
   (`last_call_optimisation`, `portable_vmi`, `optimise`, `optimise_unify`, `character_escapes_unicode`) and the field of
   `determinism_error` are deleted, so the compiler, the VM and `write` read the flags as upstream does, and
   `determinism_error_flag` reads the table. The side effects of a flag whose subsystem has no kernel counterpart yet
-  (debugger, threads, terminal, signals, tabling, `set_stack_limit`, the arithmetic flags, the clause-indexing flags,
+  (debugger, threads, terminal, signals, tabling, the arithmetic flags, the clause-indexing flags,
   `autoload`, `var_tag`, `incomparable`, `encoding`) are refused by name with `NotPortedError` at the write, after the
   type and `oneof` checks (design D4). A new engine starts from the database's mask while `set_flag_value` writes the
   calling engine's mask: the audit decides whether the database mask follows (design H5). Rows:
   `test/core_lang/test_set_flag_swipl.jl` (sf01-sf89 against swipl 10.1.19); mutants: `tools/mutants/F1B.py`.
+* **Known-difference checklist item (R2 F1b `set_stack_limit`, pending a byte-exact limit): `stack_limit` not a multiple of 8.** The flag and
+  `'$set_prolog_stack'(S, limit, Old, New)` now take a changed limit (`set_stack_limit!`, src/pl-setup.jl; pl-setup.c:1946: a limit below the
+  stacks in use is tried after `trimStacks`, else `permission_error(limit, stacks, Limit)`). swipl keeps the exact byte count; the kernel's
+  field `stacks_limit` counts whole words, so the value is rounded DOWN (`set_prolog_flag(stack_limit, 2000001)` reads back 2000001 in
+  swipl 10.1.20, 2000000 here). Pinned with swipl's answer in a comment as `_QX_KERNEL_DIFF["t_sl19"]` in test/core_lang/test_q10_swipl.jl;
+  rows th04 and sl01-sl20 of that file pin the rest (Q10-33's `trim_stacks` proof is th04).
 
 ## LB3 — `src/pl-qlf.jl`, the C boot loop (R2 loader_boot, audit D-0272/D-0273)
 

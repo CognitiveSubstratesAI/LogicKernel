@@ -751,13 +751,36 @@ function pl_trim_stacks0_va(
     return FTRUE
 end
 
+# PORT: pl-setup.c set_stack_limit as set_stack_limit!
+# DIVERGES: the limit is `ld.stacks_limit`, in positions (words); `limit` is in bytes, as the `stack_limit` flag and
+# `'$set_prolog_stack'/4` give it, and is rounded DOWN to whole words (swipl keeps the exact byte count: 2000001 is reported back
+# as 2000001, here as 2000000). `sizeStack(local) + sizeStack(global) + sizeStack(trail)` is `_stacks_in_use(ld, 0)`, the sum
+# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). There is no stack garbage
+# collector (`garbageCollect(GC_USER)`, src/pl-gc.jl `pl_garbage_collect`): only `trimStacks(true)` is tried.
+"Set the combined limit of the stacks to `limit` bytes; a limit below what the stacks hold after trimming them is `permission_error(limit, stacks, Limit)` (pl-setup.c)."
+function set_stack_limit!(ld::PL_local_data{T}, limit::Int)::Bool where {T}
+    if limit < 8 * ld.stacks_limit && limit < 8 * _stacks_in_use(ld, 0)
+        trimStacks!(ld, true)                           # garbageCollect(GC_USER); trimStacks(true)
+
+        if limit < 8 * _stacks_in_use(ld, 0)
+            ex = PL_new_term_ref(ld)
+            return PL_put_int64(ld, ex, limit) &&
+                   PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :limit), mk_sym(T, :stacks), ex
+            )
+        end
+    end
+
+    ld.stacks_limit = limit ÷ 8                         # LD->stacks.limit = limit
+    return true
+end
+
 # PORT: pl-setup.c set_prolog_stack as pl_set_prolog_stack4_va
 # (PRED_IMPL("$set_prolog_stack", 4, set_prolog_stack, 0), pl-setup.c:1892-1960 at the pin)
 # DIVERGES (TH1): the four stacks' `small`, `factor` and `min_free` are the records of `GD.stacks_params` (local, global, trail, argument;
 # src/pl-global.jl), in words as the predicate reports them; the local, global and trail stack's `spare` is the local data's
 # `*_def_spare`, the argument stack's its record's (the kernel has no argument stack to trim, so setting its `spare` or `min_free` only
-# records). `limit` (deprecated) reports the one limit of the three stacks in bytes and accepts an equal value only: a changed limit is
-# refused by name, as `set_prolog_flag(stack_limit, …)` is (`set_stack_limit`: no collector to shrink the stacks under it).
+# records). `limit` (deprecated) reports and sets the one limit of the three stacks, in bytes (`set_stack_limit!`).
 "`'\$set_prolog_stack'(+Stack, +Property, -Old, +New)`: read and set a stack parameter (pl-setup.c)."
 function pl_set_prolog_stack4_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -820,12 +843,7 @@ function pl_set_prolog_stack4_va(
         PL_unify_int64(ld, old, limit) || return FFALSE
         newlimit = PL_get_size_ex(ld, value)
         newlimit === nothing && return FFALSE
-        newlimit == limit && return FTRUE
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :limit), "set_stack_limit (a changed stack limit)", "R2 F1b"
-            )
-        )
+        return set_stack_limit!(ld, newlimit) ? FTRUE : FFALSE
     end
     if key == sym_key(mk_sym(T, :spare))
         spare = if which == 1

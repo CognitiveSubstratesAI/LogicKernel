@@ -96,6 +96,17 @@ q_sig(S, N, R) :-
     ( O = '$foreign_function'(P), integer(P) -> R = foreign ; R = O ).
 q_sigs(S, Max, []) :- S > Max, !.
 q_sigs(S, Max, [S-R|T]) :- q_sig(S, _, R), S1 is S+1, q_sigs(S1, Max, T).
+q_lim0(1073741824).
+q_restore :- q_lim0(L), set_prolog_flag(stack_limit, L).
+q_with(G) :- setup_call_cleanup(true, G, q_restore).
+q_cur(X) :- current_prolog_flag(stack_limit, X).
+q_dive(N) :- N1 is N+1, nb_setval(q_d, N1), q_dive(N1), true.
+q_depth(D) :- nb_setval(q_d, 0), catch(q_dive(0), error(resource_error(_), _), true), nb_getval(q_d, D).
+q_rel(A, B, R) :- ( A < B -> R = less ; A =:= B -> R = equal ; R = more ).
+q_deep(0) :- !.
+q_deep(N) :- N1 is N-1, q_deep(N1), true.
+q_deepset(0) :- !, set_prolog_flag(stack_limit, 100000).
+q_deepset(N) :- N1 is N-1, q_deepset(N1), true.
 """
 
 const _QX_CASES = [
@@ -389,7 +400,49 @@ const _QX_CASES = [
     ),   # a wide atom is enumerated by its type
     ("cb20", "( current_blob(_, []) -> R = yes ; R = no )"),    # the empty list as the type
     ("cb21", "( current_blob(\"s\", 1) -> R = yes ; R = no )"),   # a string that is no blob, with a type that is no atom: fails, no type_error
-    ("cb22", "( current_blob(f(x), 1) -> R = yes ; R = no )")   # a compound that is no blob, the same
+    ("cb22", "( current_blob(f(x), 1) -> R = yes ; R = no )"),   # a compound that is no blob, the same
+    (
+        "th04",
+        "q_deep(60000), statistics(local, A), trim_stacks, statistics(local, B), q_rel(A, B, R)"
+    ),   # trim_stacks gives the local stack back after a deep recursion: statistics(local) falls (Q10-33; the kernel's local stack size is swipl's byte for byte, 8376184 and 20344, 118648 and 20344 for 1000)
+    ("sl01", "q_with((set_prolog_flag(stack_limit, 4194304), q_cur(X))), R = X"),   # set_prolog_flag(stack_limit, N) sets the limit (set_stack_limit); the flag reads it back
+    ("sl02", "q_with((set_prolog_flag(stack_limit, 2147483648), q_cur(X))), R = X"),   # a limit above the default
+    ("sl03", "q_with(set_prolog_flag(stack_limit, 1000))"),   # a limit below what the stacks hold: permission_error(limit, stacks, Limit) after the trim
+    ("sl04", "catch(set_prolog_flag(stack_limit, 1000), _, true), q_cur(X), R = X"),   # and the flag is unchanged after it
+    ("sl05", "q_with(set_prolog_flag(stack_limit, 0))"),   # a limit of 0
+    ("sl06", "q_with(set_prolog_flag(stack_limit, -1))"),   # a negative limit: representation_error(size_t)
+    ("sl07", "q_with(set_prolog_flag(stack_limit, a))"),   # a limit that is no integer
+    ("sl08", "q_with(set_prolog_flag(stack_limit, 1.5))"),   # a float limit
+    ("sl09", "q_with(set_prolog_flag(stack_limit, _))"),   # an unbound limit
+    ("sl10", "q_with(set_prolog_flag(stack_limit, 100000000000000000000))"),   # a limit beyond int64: representation_error(int64_t)
+    (
+        "sl11",
+        "q_with(('\$set_prolog_stack'(global, limit, O, 8388608), q_cur(X))), R = O-X"
+    ),   # '$set_prolog_stack'(Stack, limit, Old, New) sets the one combined limit whichever stack is named; Old is the limit before
+    ("sl12", "q_with('\$set_prolog_stack'(local, limit, _, 100))"),   # the same below what the stacks hold: permission_error
+    (
+        "sl13",
+        "( '\$set_prolog_stack'(trail, limit, 5, 8388608) -> R0 = yes ; R0 = no ), q_cur(X), R = R0-X"
+    ),   # an Old that does not unify fails and leaves the limit as it was
+    ("sl14", "q_cur(X), set_prolog_flag(stack_limit, X), q_cur(Y), R = X-Y"),   # the current limit set again
+    (
+        "sl15",
+        "q_with((push_prolog_flag(stack_limit, 4194304), q_cur(X), pop_prolog_flag(stack_limit), q_cur(Y))), R = X-Y"
+    ),   # push_prolog_flag and pop_prolog_flag set and restore it
+    (
+        "sl16",
+        "q_with((set_prolog_flag(stack_limit, 1048576), catch(q_dive(0), error(resource_error(K), _), true))), R = K"
+    ),   # under the 1 MiB limit a runaway recursion ends in resource_error(stack)
+    (
+        "sl17",
+        "q_with((q_deep(60000), set_prolog_flag(stack_limit, 1048576), q_cur(X))), R = X"
+    ),   # a deep recursion that returned, then a limit below the size the stacks grew to: set_stack_limit trims them first, so it is accepted
+    ("sl18", "q_with(q_deepset(20000))"),   # a limit below what the stacks hold while they are deep: refused, the trim cannot help
+    (
+        "sl20",
+        "q_with((set_prolog_flag(stack_limit, 1048576), q_depth(D1), set_prolog_flag(stack_limit, 2097152), q_depth(D2))), q_rel(D1, D2, R)"
+    ),   # the depth reached before the overflow follows the limit: 1 MiB less than 2 MiB
+    ("sl19", "q_with((set_prolog_flag(stack_limit, 2000001), q_cur(X))), R = X")   # KNOWN DIFFERENCE (below)
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl at the pin
@@ -568,11 +621,36 @@ const _QX_PINNED = [
     "t_cb19 c[116,95,99,98,49,57]/1(a[121,101,115])",
     "t_cb20 c[116,95,99,98,50,48]/1(a[110,111])",
     "t_cb21 c[116,95,99,98,50,49]/1(a[110,111])",
-    "t_cb22 c[116,95,99,98,50,50]/1(a[110,111])"
+    "t_cb22 c[116,95,99,98,50,50]/1(a[110,111])",
+    "t_th04 c[116,95,116,104,48,52]/1(a[109,111,114,101])",
+    "t_sl01 c[116,95,115,108,48,49]/1(i4194304)",
+    "t_sl02 c[116,95,115,108,48,50]/1(i2147483648)",
+    "t_sl03 c[116,95,115,108,48,51]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i1000)))",
+    "t_sl04 c[116,95,115,108,48,52]/1(i1073741824)",
+    "t_sl05 c[116,95,115,108,48,53]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i0)))",
+    "t_sl06 c[116,95,115,108,48,54]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[115,105,122,101,95,116])))",
+    "t_sl07 c[116,95,115,108,48,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[97])))",
+    "t_sl08 c[116,95,115,108,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],f1.5)))",
+    "t_sl09 c[116,95,115,108,48,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_sl10 c[116,95,115,108,49,48]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[105,110,116,54,52,95,116])))",
+    "t_sl11 c[116,95,115,108,49,49]/1(c[45]/2(i1073741824,i8388608))",
+    "t_sl12 c[116,95,115,108,49,50]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i100)))",
+    "t_sl13 c[116,95,115,108,49,51]/1(c[45]/2(a[110,111],i1073741824))",
+    "t_sl14 c[116,95,115,108,49,52]/1(c[45]/2(i1073741824,i1073741824))",
+    "t_sl15 c[116,95,115,108,49,53]/1(c[45]/2(i4194304,i1073741824))",
+    "t_sl16 c[116,95,115,108,49,54]/1(a[115,116,97,99,107])",
+    "t_sl17 c[116,95,115,108,49,55]/1(i1048576)",
+    "t_sl18 c[116,95,115,108,49,56]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i100000)))",
+    "t_sl20 c[116,95,115,108,50,48]/1(a[108,101,115,115])",
+    "t_sl19 c[116,95,115,108,49,57]/1(i2000001)"
 ]
 
 # the kernel's lines where they differ from swipl's (see the header)
-const _QX_KERNEL_DIFF = Dict{String, String}()
+# KNOWN DIFFERENCE (R2 F1b, checklist): the limit is counted in words here and in bytes in swipl, so a limit that is no multiple of 8 is
+# rounded down: `set_prolog_flag(stack_limit, 2000001)` reads back 2000001 in swipl 10.1.20 (the pin), 2000000 here (sl19).
+const _QX_KERNEL_DIFF = Dict{String, String}(
+    "t_sl19" => "t_sl19 c[116,95,115,108,49,57]/1(i2000000)"
+)
 _qx_expected(p::String) = get(_QX_KERNEL_DIFF, first(split(p, ' ')), p)
 
 function _qx_file()::Tuple{String, Vector{String}}
@@ -664,6 +742,14 @@ end
     ) >= 9          # the \\=@= rows that answer yes
     @test any(l -> startswith(l, "t_sh11 ") && occursin(_qx_codes("signal"), l), _QX_PINNED)   # a child killed by signal 9
     @test any(l -> startswith(l, "t_ss17 ") && occursin("i1073741824", l), _QX_PINNED)         # the stack limit, 1 GiB in bytes
+    @test any(
+        l -> startswith(l, "t_th04 ") && occursin("a" * _qx_codes("more"), l), _QX_PINNED
+    )   # trim_stacks gives stack back
+    @test count(
+        l -> startswith(l, "t_sl") && occursin("c" * _qx_codes("permission_error"), l),
+        _QX_PINNED
+    ) == 4     # sl03, sl05, sl12, sl18: the limit is below what the stacks hold
+    @test any(l -> startswith(l, "t_sl01 ") && occursin("i4194304", l), _QX_PINNED)
     @test any(
         l -> startswith(l, "t_pt02 ") && occursin("s" * _qx_codes("ab cd"), l), _QX_PINNED
     )     # the space between two alphanumeric tokens

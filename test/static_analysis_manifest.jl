@@ -315,6 +315,8 @@ _manifest_per_type(T) = (
     (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, false),
     # TRIMST: trim_stacks/0 (pl-setup.c): a call of trimStacks!(ld, true), so as that
     (LK.pl_trim_stacks0_va, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false),
+    # R2 F1b: set_stack_limit (pl-setup.c) behind the stack_limit flag and `$set_prolog_stack`(_, limit, _, _); raises permission_error
+    (LK.set_stack_limit!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),

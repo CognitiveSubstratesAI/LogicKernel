@@ -755,7 +755,7 @@ end
 # ORIGINAL (design D4): a flag whose upstream side effect the kernel has not is DEFINED at upstream's default
 # (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
 # no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
-# `stack_limit` (set_stack_limit), `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
+# `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
 # (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
@@ -1285,7 +1285,7 @@ end
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
 # effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
 # `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
-# `table_compile_threshold`, `table_drop_intermediate`, `stack_limit`, `string_stack_tripwire` and `heartbeat`.
+# `table_compile_threshold`, `table_drop_intermediate`, `string_stack_tripwire` and `heartbeat`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
 # `rval` is their answer, as upstream's (pl-prologflag.c:1317-1326); the value goes to the table as upstream does, the mask bit only if `rval`.
 # `threads` has no branch: it is read-only in the kernel's no-threads build (design D1; upstream's `O_PLMT` branch is not
@@ -1433,7 +1433,11 @@ function set_flag_value(
             end
             ld.table_flags_drop_intermediate = Int(i)
         elseif name == "stack_limit"
-            _flag_not_ported(k, "set_stack_limit")
+            if i < 0
+                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+                return false
+            end
+            set_stack_limit!(ld, Int(i)) || return false
         elseif name == "string_stack_tripwire"
             _flag_not_ported(k, "LD->fli.string_buffers.tripwire")
         elseif name == "heartbeat"
