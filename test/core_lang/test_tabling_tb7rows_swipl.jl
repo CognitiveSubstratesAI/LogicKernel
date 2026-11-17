@@ -16,7 +16,8 @@
 # with the pins too. A trie blob is never printed. `'$idg_mono_empty_queue'/2` is pinned only with a count that is not greater than the queue.
 # ROWS THE KERNEL CANNOT ANSWER YET would be `@test_broken <the same comparison>` with an owner in `_T7_BROKEN`: none is known by reading (every built-in the rows call
 # is registered in src/pl-tabling.jl / src/pl-trie.jl), so the dictionary is empty; an unproven refusal is not recorded, the run decides.
-# UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer, and every kill named in a label (read off the rows, not observed).
+# VERIFIED (S3c, 2026-11-17): every row, q06-q11 and l02-l07 included, answers on the kernel as swipl 10.1.20 does (file run on all three term types with swipl on PATH: 211/211 each,
+# the live pin check included; no pin needed a change). The kills NAMED in a label are still read off the rows, not observed: tools/mutants/TB7.py is the observation.
 using Test, LogicKernel
 const LK = LogicKernel
 
