@@ -64,7 +64,7 @@ MUTANTS = [
     dict(id="LB6A-A10 hasClausesDefinition keeps the clean fast path while reloading", file=P, targets=TW + TV,
          old="(def.flags & P_DYNAMIC) == 0 &&\n            gd.reload_generation == GEN_INVALID\n",
          new="(def.flags & P_DYNAMIC) == 0 &&\n            true\n"),
-    dict(id="LB6A-A10b num_visible_clauses walks only a dynamic predicate while reloading", file=P, targets=TW + TV,
+    dict(id="LB6A-A10b num_visible_clauses walks only a dynamic predicate while reloading (KILL Q6 of test_reload_blocks_swipl.jl: asserts on the ld method of num_visible_clauses, which this mutant changes; the old Q6 row called the 2-argument method, so it never reached the line. Caught fresh at 85e79b2f + the rows, 1215 s)", file=P, targets=TW + TV,
          old="gd.reload_generation != GEN_INVALID || (def.flags & P_DYNAMIC) != 0)\n        gen = current_generation(gd, ld, def)\n",
          new="(def.flags & P_DYNAMIC) != 0)\n        gen = current_generation(gd, ld, def)\n"),
     dict(id="LB6A-A10c getClauses reads no reload generation", file=V, targets=TW + TV,

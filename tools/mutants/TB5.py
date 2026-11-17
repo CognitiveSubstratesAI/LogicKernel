@@ -23,7 +23,8 @@
 #   DEFERRED KILL        the mutated code cannot be reached before the owner step: TB6 (IDG nodes, the dynamic pseudo table `WL_DYNAMIC` is only written by
 #                        TB6: `orphan_dynamic_table` is false before it), TH1 (shared tables), TB2 (worklists, an incomplete table), TB4 (delay info),
 #                        LB6b (`untable_from_clause`'s call sites pl-srcfile.c:1476 `unloadFile` and :1544 `endReconsult` do not exist in the kernel until LB6b),
-#                        TAB1-WRAP (a wrapped predicate: the `abu` rows run on a kernel with `$wrap_predicate/5`, at the stack). The owner adds the row named.
+#                        (TAB1-WRAP was listed here: stale. `$wrap_predicate/5` is callable inside TAB1; TB5-P1, -P3, -P7 are killed by test_tabling_tb5wrap_swipl.jl.)
+#                        The owner of each remaining DEFERRED KILL adds the row named.
 # ROWS TO ADD (white-box, in AB's testset "abolish, direct on the tries"; each is an assertion on the already built atries/variants of AB:455-457):
 #   R-A after `clear_variant_table(ld)` (AB:481): `variants.value_count == 0`, `all(a -> a.variant == 0, atries)`, `all(a -> a.magic == LK.TRIE_CMAGIC, atries)`,
 #       `variants.magic == LK.TRIE_CMAGIC`; and `ld.tabling.start_nodes = Int[1]` set before the call, `=== nothing` after (the existing AB:483 holds under the
@@ -58,6 +59,7 @@ T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"   # TB5-ROWS: the white-box
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 BI = "test/db/test_boot_image_swipl.jl"
 DYN = [
+    "test/core_lang/test_tabling_tb5wrap_swipl.jl",             # TAB1 S3f: the wrapped-predicate row of TB5-P1, TB5-P3, TB5-P7
     "test/compile/test_body_code_swipl.jl",
     "test/compile/test_call_operands.jl",
     "test/core_lang/test_attvar_wakeup.jl",
@@ -132,9 +134,10 @@ TARGETS = [AB, TV, TT, T5R, TM, BI, TW, TP] + DYN + [f for f in TWIDE if f not i
 TAB = "src/pl-tabling.jl"
 PROC = "src/pl-proc.jl"
 COMP = "src/pl-comp.jl"
-WRAP = ("DEFERRED KILL, owner TAB1-WRAP: the two methods differ ONLY for a wrapped (tabled) predicate, where the 2-argument freeCodesDefinition! raises "
-        "NotPortedError (src/pl-supervisor.jl:85-98) and the one with `gd` resets the wrapped supervisor (:62-82): the abu row to add on the stack "
-        "(`$wrap_predicate/5` defined): `dynamic ab_u1/1` on the wrapped predicate answers without an error; a boot or non-wrapped caller does not differ")
+WRAP = ("KILL tb5wrap (test_tabling_tb5wrap_swipl.jl, TAB1 S3f): a predicate wrapped with `$wrap_predicate/5`, then dynamic/1, a reset of the dynamic attribute and "
+        "abolish/1 over it. The two methods differ ONLY for a wrapped predicate: the 2-argument freeCodesDefinition! throws NotPortedError (src/pl-supervisor.jl:85-98), "
+        "the one with `gd` resets the wrapped supervisor (:62-82), so each of these three mutants turns the answer into a thrown error. Caught in a fresh process "
+        "at 85e79b2f + the rows (audit A-0650, A-0653); the earlier DEFERRED-KILL claim (owner TAB1-WRAP) was stale: `$wrap_predicate/5` is callable in TAB1")
 MUTANTS = [
     # ── the registration tuple (pl-tabling.c BeginPredDefs: $tbl_destroy_table/1, $tbl_abolish_local_tables/0) ──
     dict(id="TB5-T1 `$tbl_destroy_table`/1 is not registered (KILL abd01: the call is an existence error, the row answers raised(...); BI's kernel-foreign count 372 fails, too)",
