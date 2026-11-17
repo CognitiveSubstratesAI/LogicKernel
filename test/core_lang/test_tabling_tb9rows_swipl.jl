@@ -275,15 +275,25 @@ tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)).
         (
             "nd5",
             raw"assertz(da(1)), assertz(db(100)), tt_init(p(_)), assertz(da(10)), snapshot((retract(db(100)), tt_ex(p,B))), tt_fc(p(_),F2), snapshot((tt_ex(p,C), tt_fc(p(_),F3))), tt_fc(p(_),F4), tt_inv(p(_),V), tt_ex(p,E), R=r(B,F2,C,F3,F4,V,E)"
-        )   # TB9-site-prepare-reset with the retract shape of nd3
+        ),   # TB9-site-prepare-reset with the retract shape of nd3
+        (
+            "nd6",
+            raw"assertz(da(1)), tt_init(p(_)), assertz(da(10)), snapshot((assertz(db(100)), retract(db(100)), tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V1), tt_ex(p,C), tt_fc(p(_),F3), tt_ns(p(_),S), R=r(B,F1,F2,V1,C,F3,S)"
+        ),   # TB9-site-newdep, -done: db is modified in the transaction by an assertz AND its retract: the rollback restores nothing, so only tt_new_dep lists the table (F2 1)
+        (
+            "nd8",
+            raw"assertz(da(1)), tt_init(p(_)), assertz(da(10)), snapshot((assertz(db(100)), retract(db(100)), tt_ex(p,B))), tt_fc(p(_),F1), tt_ex(p,C), tt_fc(p(_),F2), assertz(da(2)), tt_fc(p(_),F3), snapshot((tt_ex(p,D), tt_fc(p(_),F4))), tt_fc(p(_),F5), tt_inv(p(_),V), tt_ex(p,E), tt_ns(p(_),S), R=r(B,F1,C,F2,F3,D,F4,F5,V,E,S)"
+        )   # TB9-site-prepare-reset: the flag a first transaction left true (nd6's shape) must be reset when a LATER lazy reevaluation (da(2) queued outside) starts: not listed, F5 0 and valid
     ],
-    kill=["nd1", "nd3", "nd4", "nd5"],
+    kill=["nd1", "nd3", "nd4", "nd5", "nd6", "nd8"],
     # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs
     pinned=[
         "r(invalid,1,[1,110],0,1,invalid,[1],0,1)",   # nd1
         "r([1],0,1,invalid,[1,110],0,2)",   # nd3
         "r([1,110],1,[1],0,0,valid,[1])",   # nd4
-        "r([1],1,[1,110],0,0,valid,[1,110])"   # nd5
+        "r([1],1,[1,110],0,0,valid,[1,110])",   # nd5
+        "r([1],0,1,invalid,[1],0,1)",   # nd6
+        "r([1],1,[1],0,1,[1,2],0,0,valid,[1,2],2)"   # nd8
     ]
 )
 
@@ -339,14 +349,52 @@ tt_clean :- abolish_all_tables, retractall(d(_)).
         (
             "j3",
             raw"assertz(d(1)), tt_ex(p,A), snapshot((assertz(d(9)), tt_fc(p(_),F0), tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V), tt_ex(p,C), R=r(A,F0,B,F1,F2,V,C)"
-        )   # the same with the falsecount read before and inside
+        ),   # the same with the falsecount read before and inside
+        (
+            "j4",
+            raw"assertz(d(1)), tt_ex(p,A), snapshot((assertz(d(9)), retract(d(9)), tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V), tt_ns(p(_),S), tt_ex(p,C), tt_fc(p(_),F3), R=r(A,B,F1,F2,V,S,C,F3)"
+        ),   # TB9-site-prepare-modified: the clause is asserted AND retracted in the transaction: the rollback restores nothing, only the listing in prepare_reeval makes the table invalid
+        (
+            "j6",
+            raw"assertz(d(1)), tt_ex(p,A), snapshot((assertz(d(9)), retract(d(9)), tt_fc(p(_),F0), tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V), tt_ns(p(_),S), tt_ex(p,C), tt_fc(p(_),F3), R=r(A,F0,B,F1,F2,V,S,C,F3)"
+        )   # j4 with the falsecount read before the reevaluation
     ],
-    kill=["j1", "j2", "j3"],
+    kill=["j1", "j2", "j3", "j4", "j6"],
     # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs
     pinned=[
         "r([1],[1],0,1,invalid,1,[1],0)",   # j1
         "r([1],[1,2],0,1,invalid,2,[1],0)",   # j2
-        "r([1],1,[1],0,1,invalid,[1])"   # j3
+        "r([1],1,[1],0,1,invalid,[1])",   # j3
+        "r([1],[1],0,1,invalid,1,[1],0)",   # j4
+        "r([1],1,[1],0,1,invalid,1,[1],0)"   # j6
+    ]
+)
+
+# The reevaluation DROPS the modified dependency: `prepare_reeval` lists the table at its START (the dependency d/1 was modified in the transaction),
+# the completion check of the reevaluation no longer sees d/1 (the table now calls only fl/1, which the transaction leaves alone). `r(A, F0, B, F1, F2, V, S, C, F3)`.
+const _T9_PI2 = (
+    unit="tb9rows_prepare_modified_dropped",
+    program=raw"""
+:- dynamic (fl/1, d/1) as incremental.
+:- table p/1 as incremental.
+p(X) :- fl(F), ( F == 1 -> d(X) ; X = 0 ).
+tt_clean :- abolish_all_tables, retractall(d(_)), retractall(fl(_)).
+""",
+    cases=[
+        (
+            "k1",
+            raw"assertz(fl(1)), assertz(d(1)), tt_ex(p,A), retract(fl(1)), assertz(fl(2)), tt_fc(p(_),F0), snapshot((assertz(d(9)), tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V), tt_ns(p(_),S), tt_ex(p,C), tt_fc(p(_),F3), R=r(A,F0,B,F1,F2,V,S,C,F3)"
+        ),   # TB9-site-prepare-modified: d/1, a dependency of the OLD evaluation, is modified in the transaction; the reevaluation drops it: only the listing at prepare_reeval makes the table invalid (F2 1)
+        (
+            "k2",
+            raw"assertz(fl(1)), assertz(d(1)), tt_ex(p,A), retract(fl(1)), assertz(fl(2)), snapshot((tt_ex(p,B), tt_fc(p(_),F1))), tt_fc(p(_),F2), tt_inv(p(_),V), tt_ex(p,C), R=r(A,B,F1,F2,V,C)"
+        )   # control: d/1 is not modified in the transaction: the table is valid after the snapshot
+    ],
+    kill=["k1", "k2"],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs
+    pinned=[
+        "r([1],1,[0],0,1,invalid,1,[0],0)",   # k1
+        "r([1],[0],0,0,valid,[0])"   # k2
     ]
 )
 
@@ -434,6 +482,7 @@ _t9_check_unit(_T9_NP)
 _t9_check_unit(_T9_ND)
 _t9_check_unit(_T9_FA)
 _t9_check_unit(_T9_PI)
+_t9_check_unit(_T9_PI2)
 _t9_check_unit(_T9_TRIE)
 
 # ── NOT VACUOUS: each kill row shows the very value the mutant changes ──────────────────────────────────────────────────────
