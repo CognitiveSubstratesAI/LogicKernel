@@ -2437,6 +2437,60 @@ echo "pkgtest-way: PASS stub"
             @test_throws ErrorException cp_(bad)
         end
     end
+    # THE REACH PASS (audit D-0849, D-0887): a mutant that survives (or is declared equivalent) is run a second time as the ORIGINAL
+    # code with a counter in front of `old`; the `MUTREACH <name> <n>` lines the targets print are summed into `reach`, and the table
+    # says `[reached N times]`, `[NOT REACHED by the targets]` or `[reach unknown]`. A caught mutant has no count, and the file is
+    # put back. Planted `sh:` targets print the lines only when the probe (`atexit`) is in the file.
+    @testset "tools/mutate_ci.py: the reach pass of a survivor" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="R1 declared equivalent, reached", file="f.txt", old="alpha", new="alpha ", equivalent="nothing reads the blank"),
+    dict(id="R2 survives, reached", file="f.txt", old="alpha", new="alpha  "),
+    dict(id="R3 caught", file="f.txt", old="alpha", new="ALPHA"),
+    dict(id="R4 declared, never reached", file="f.txt", old="beta", new="beta ", equivalent="nothing reads it"),
+]
+"""
+            )
+            target = "sh:grep -q ALPHA f.txt && exit 1; if grep -q atexit f.txt; then grep -q MR_R1 f.txt && { echo 'MUTREACH R1 3'; echo 'MUTREACH R1 4'; }; grep -q MR_R2 f.txt && echo 'MUTREACH R2 5'; fi; exit 0"
+            run_(args...) = run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec_(k) = read(joinpath(d, "mutation-out", "$k.json"), String)
+            for k in ("R1", "R2", "R3", "R4")
+                write(joinpath(d, "f.txt"), "alpha\nbeta\n")
+                @test run_("one", "m.py", k, "20", target) == 0
+            end
+            @test occursin("\"verdict\": \"EQUIVALENT (declared)\"", rec_("R1")) &&
+                occursin("\"reach\": 7", rec_("R1"))                 # two processes: 3 + 4
+            @test occursin("\"verdict\": \"SURVIVED\"", rec_("R2")) &&
+                occursin("\"reach\": 5", rec_("R2"))
+            @test occursin("\"verdict\": \"caught\"", rec_("R3")) &&
+                !occursin("\"reach\"", rec_("R3"))
+            @test occursin("\"reach\": 0", rec_("R4"))
+            @test read(joinpath(d, "f.txt"), String) == "alpha\nbeta\n"   # the file is put back after the pass
+            write(joinpath(d, "f.txt"), "alpha\nbeta\n")
+            @test run_("baseline", "20", target) == 0
+            table = read(ignorestatus(Cmd(`python3 $tool collect m.py 4`; dir=d)), String)
+            @test occursin("[reached 7 times]", table) &&
+                occursin("[reached 5 times]", table)
+            @test occursin("[NOT REACHED by the targets]", table)
+            # the probe is one Julia line that counts in the process environment and prints once at exit
+            probe = read(
+                `python3 -I -c "import importlib.util as u; s=u.spec_from_file_location('m', '$tool'); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.reach_probe('TB7-x y'))"`,
+                String
+            )
+            @test count(==('\n'), strip(probe)) == 0 &&
+                occursin("MUTREACH TB7_x_y ", probe) &&
+                occursin("atexit", probe) && !occursin('$', probe)
+        end
+    end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
     # driver's verdict from its targets' EXIT CODES. Planted targets (`sh:` commands) and a planted
     # list, in a directory of their own.

@@ -111,6 +111,34 @@ def run_targets(targets, limit):
     return _run_targets(targets, run1, os.getcwd())
 
 
+REACH_LINE = re.compile(r"^MUTREACH (\S+) (\d+)\s*$", re.M)
+
+
+def reach_probe(name):
+    """A Julia statement that COUNTS its executions in the process environment (a `const` defined during a running top-level
+    block is not visible to the calls inside it: Julia's world age) and prints the total at exit, once per process:
+    `MUTREACH <name> <n>`. One line, no dollar sign."""
+    x = re.sub(r"\W", "_", name)
+    return ('let _k = "MR_%s", _v = get(ENV, _k, nothing); _v === nothing && atexit(() -> println(stderr, "MUTREACH %s ", '
+            'get(ENV, _k, "0"))); ENV[_k] = string(_v === nothing ? 1 : parse(Int, _v) + 1) end' % (x, x))
+
+
+def reach_pass(m, src, name, targets, limit):
+    """How often the targets REACH the mutated line (audit D-0849, D-0868 (2)(c): a mutant that survives through a line no
+    target reaches proves nothing): the ORIGINAL code with a counter in front of `old`, each target in a fresh process, the
+    counts summed over their `MUTREACH` lines. None when the count cannot be read: the probe does not load (`old` is not at a
+    statement start) or a target fails or hangs under it (the counter, not the mutation, is then in doubt)."""
+    with open(m["file"], "w") as f:
+        f.write(src.replace(m["old"], reach_probe(name) + "\n" + m["old"]))
+    rc, log, _ = run_targets(targets, limit)
+    with open(m["file"], "w") as f:                      # the file as it was found
+        f.write(src)
+    if rc != 0:
+        return None
+    x = re.sub(r"\W", "_", name)
+    return sum(int(n) for who, n in REACH_LINE.findall(log) if who == x)
+
+
 MAX_CAUSE_LINES = 30
 RAN_LINE = re.compile(r"^=== (.+): exit (\S+)$")      # run_targets' header of each target's output
 SUMMARY_LINE = re.compile(r"\s*Test Summary:")
@@ -233,6 +261,9 @@ def one(argv):
         verdict = "INVALID"
     why = "; ".join(x for x in (why, noload_hint(m, verdict)) if x)
     record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why)
+    if verdict in ("EQUIVALENT (declared)", "SURVIVED") and not os.environ.get("MUTATE_CI_NO_REACH"):
+        t1 = time.time()          # a survivor: does any target execute the mutated line at all? (audit D-0849)
+        record.update(reach=reach_pass(m, src, name, targets, limit), reach_seconds=round(time.time() - t1))
     write(name, record, log)
     print(name, verdict, "—", why or "-")
     return 0                                            # the verdict is data: `collect` judges
@@ -278,6 +309,10 @@ def collect(argv):
         shown = r.get("first_failure") or ""
         if cause and v.startswith("NO VERDICT"):
             shown = "baseline red, " + cause[0]
+        if "reach" in r:                  # a survivor: does ANY target execute the mutated line? (audit D-0849)
+            n = r["reach"]
+            shown = (shown + " " if shown else "") + (
+                "[reach unknown]" if n is None else "[NOT REACHED by the targets]" if n == 0 else "[reached %d times]" % n)
         rows.append("| %s | %s | %s s | %s | %s |" % (name, v, r.get("seconds", 0), what.replace("|", "\\|"),
                                                    shown.replace("|", "\\|")))
     lines = ["## Mutation battery — %s" % path, "",
