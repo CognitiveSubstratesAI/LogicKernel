@@ -105,7 +105,7 @@ MUTANTS = [
          file=P, targets=TS,
          old="char_type(\"to_lower\", CTF.ftoupper, CTF.ftolower, 1, CTX_CHAR)",
          new="char_type(\"to_lower\", CTF.ftolower, CTF.ftoupper, 1, CTX_CHAR)"),
-    dict(id="CT1b-A22 the table: digit(W) is a character argument (KILL t3, t5)",
+    dict(id="CT1b-A22 the table: digit(W) is a character argument (KILL t46, t47: char_type/2 answers the weight as an integer, raw; t3 normalises it)",
          file=P, targets=TS,
          old="char_type(\"digit\", CTF.fdigit, CTF.rdigit, 1, CTX_CODE)",
          new="char_type(\"digit\", CTF.fdigit, CTF.rdigit, 1, CTX_CHAR)"),

@@ -81,3 +81,6 @@ t43(R) :- ct_cls1(Ns), C = 0, char_code(Ch, C),
 ct_map(C, L) :- findall(N-V, ( member(N, [to_lower, to_upper, upper, lower]), T =.. [N, V], code_type(C, T) ), L).
 t44(R) :- member(C, [0x101, 0x102, 0x103, 0x104]), ct_map(C, L), R = C-L.
 t45(R) :- member(C, [0x1e900, 0x1e921, 0x1e922, 0x1e943]), ct_map(C, L), R = C-L.
+% CT1b-A22: digit(W) and xdigit(W) hold integers (CTX_CODE) in char_type/2 as well: the answers raw, not through char_code/2
+t46(R) :- member(C, ['5', '0', '9', 'a']), findall(N-V, ( member(N, [digit, xdigit]), T =.. [N, V], char_type(C, T) ), L), R = C-L.
+t47(R) :- member(C, ['5', 'f']), findall(T, ( char_type(C, T), T =.. [N, _], memberchk(N, [digit, xdigit]) ), L), R = C-L.
