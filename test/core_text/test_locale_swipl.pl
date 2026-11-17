@@ -139,14 +139,16 @@ t12(R) :- atom_codes(Dp, [97, 0, 98]),
     lc_res(( locale_create(_, "C", [alias(lc10), decimal_point(Dp)]), locale_property(lc10, decimal_point(Dn)) ), R6), lc_destroy(lc10),
     R = R6-Dn.
 % locale_destroy/1 takes the locale out of the table (pl-locale.c deleteHTableWP): the enumeration of locale_property/2 with the locale unbound,
-% over a property every locale has, finds the same locales before create, after create (one more) and after destroy (the same again). Only the
-% differences and the aliases of this row are answered (the other locales alive are the host's and the earlier rows').
-t13(R) :- lc_cnt(N0), lc_mk(lc13, [decimal_point('!')]), lc_cnt(N1),
+% over a property every locale has, finds the same locales before create, after create (one more) and after destroy (the same again). A blob B
+% of the locale outlives the destroy (its reference keeps the locale's properties: a locale nobody refers to is freed and has none to find, so a
+% stale table entry would not show); B answers its decimal_point after the destroy. Only the differences and the aliases of this row are
+% answered (the other locales alive are the host's and the earlier rows').
+t13(R) :- lc_cnt(N0), lc_mk(lc13, [decimal_point('!')]), lc_cnt(N1), locale_property(B, alias(lc13)),
     findall(A, ( locale_property(L, decimal_point('!')), locale_property(L, alias(A)) ), As),
     lc_destroy(lc13), lc_cnt(N2), D1 is N1-N0, D2 is N2-N0,
-    lc_mk(lc13, [decimal_point('?')]), lc_cnt(N3), lc_destroy(lc13), lc_cnt(N4),
-    D3 is N3-N0, D4 is N4-N0,
-    R = [D1, D2, As, D3, D4].
+    findall(D, locale_property(B, decimal_point(D)), Ds), findall(A, locale_property(B, alias(A)), Bs),
+    lc_res(locale_property(lc13, _), R1), lc_destroy(B), lc_cnt(N3), D3 is N3-N0,
+    R = [D1, D2, As, Ds, Bs, R1, D3].
 lc_cnt(N) :- findall(L, locale_property(L, decimal_point(_)), Ls), length(Ls, N).
 % the enumeration with the locale unbound hands every locale back as its ALIAS atom when it has one (pl-locale.c unifyLocale(..., TRUE)), not as a blob
 t14(R) :- lc_mk(lc14, [decimal_point('!'), thousands_sep('_'), grouping([2])]),

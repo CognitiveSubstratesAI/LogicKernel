@@ -195,10 +195,13 @@ end
     let t13 = expected[findfirst(startswith("t13 "), expected)],
         t14 = expected[findfirst(startswith("t14 "), expected)]
 
+        @test occursin(
+            "/1(c[91,124,93]/2(i1,c[91,124,93]/2(i0,c[91,124,93]/2(c[91,124,93]/2(a[108,99,49,51],nil),",
+            t13
+        )    # +1 while it lives, +0 after
         @test endswith(
-            t13,
-            "c[91,124,93]/2(i1,c[91,124,93]/2(i0,c[91,124,93]/2(c[91,124,93]/2(a[108,99,49,51],nil),c[91,124,93]/2(i1,c[91,124,93]/2(i0,nil))))))"
-        )
+            t13, "c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(i0,nil))))))))"
+        )    # its alias is gone: false; the table the same again: 0
         @test count("a[97,108,105,97,115]", t14) == 3 && !occursin("a[98,108,111,98]", t14)
     end
 
