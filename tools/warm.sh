@@ -1042,13 +1042,13 @@ let sa = Module(:PreflightManifest)
         foreach(x -> println("  DUPLICATE manifest entry: ", x), dups)
         error("preflight: the manifest lists an entry twice (test/static_analysis_manifest.jl)")
     end
-    r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt))
-    println("check: substage manifest_uncovered ", round(Int, time() - _t0), "s")
     # An uncovered method at the file and line of ANOTHER live method of the same function is the
     # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
     # it, a restart does (_checks_fresh, in tools/warm.sh).
     owned = Base.invokelatest(() -> sa.owned_methods(LogicKernel))
     println("check: substage manifest_owned ", round(Int, time() - _t0), "s")
+    r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt; owned))
+    println("check: substage manifest_uncovered ", round(Int, time() - _t0), "s")
     # ...and so is a method whose function NO src/ file defines (the static gate's STALE rule,
     # _preflight_stale: port_check's own definitions): Revise kept it after its definition was
     # deleted (FIXED 2026-10-14 — it read NOT IN THE MANIFEST and nothing restarted the daemon).
