@@ -34,7 +34,7 @@ TARGETS = [
 ]
 MUTANTS = [
     # ---- pl-prims.c: the depth limit
-    dict(id="P3-1 `inf` is not written for DEPTH_NO_LIMIT (KILL dl01: the old limit of the first call)", file=P, targets=TD,
+    dict(id="P3-1 `inf` is not written for DEPTH_NO_LIMIT (KILL dl27: the boot-internal `$depth_limit` shows the old limit; dl01 never shows OldLimit)", file=P, targets=TD,
          old='''    depth == DEPTH_NO_LIMIT && return PL_unify_atom(ld, t, mk_sym(T, :inf))''',
          new='''    false && return PL_unify_atom(ld, t, mk_sym(T, :inf))'''),
     dict(id="P3-2 `inf` is not read back (KILL dl01: `$depth_limit_false`/`_true` get inf as the old limit)", file=P, targets=TD,

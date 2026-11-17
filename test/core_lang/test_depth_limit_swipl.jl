@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of P3's `call_with_depth_limit/3`, `call_with_inference_limit/3` (boot/syspred.pl over pl-prims.c
 # `$depth_limit*`, `$inference_limit*`, pl-vmi.c depart_alerted) and `'$urgent_exception'/3` (pl-prims.c) against swipl at the pin — P3's rows
-# test/core_lang/test_depth_limit_swipl.jl — dl01-dl26, il01-il29, ue01-ue12 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_depth_limit_swipl.jl — dl01-dl27, il01-il29, ue01-ue12 against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -166,6 +166,10 @@ const _DL_CASES = [
         raw"catch(call_with_depth_limit(dl_ex, 5, _), _, true), dl_nonlast(50), R = ok"
     ),   # no limit after an exception
     ("dl26", raw"call_with_depth_limit(true, 5, _), dl_nonlast(50), R = ok"),   # no limit after a successful goal
+    (
+        "dl27",
+        raw"'$depth_limit'(100, Old, Rch), ( '$depth_limit_false'(Old, Rch, _) -> true ; true ), R = Old"
+    ),   # the boot-internal call shows the old limit: `inf` (not the integer DEPTH_NO_LIMIT; P3-1), then the limit is restored
     ("il01", raw"call_with_inference_limit(true, 1000, R)"),   # the limit is not reached
     ("il02", raw"findall(X-R, call_with_inference_limit(dl_nd(X), 1000, R), R0), R = R0"),   # true, then ! on the last
     ("il03", raw"call_with_inference_limit(dl_loop, 1000, R)"),   # exceeded
@@ -259,6 +263,7 @@ const _DL_PINNED = [
     "t_dl24 c[116,95,100,108,50,52]/1(a[111,107])",
     "t_dl25 c[116,95,100,108,50,53]/1(a[111,107])",
     "t_dl26 c[116,95,100,108,50,54]/1(a[111,107])",
+    "t_dl27 c[116,95,100,108,50,55]/1(a[105,110,102])",
     "t_il01 c[116,95,105,108,48,49]/1(a[33])",
     "t_il02 c[116,95,105,108,48,50]/1(c[91,124,93]/2(c[45]/2(i1,a[116,114,117,101]),c[91,124,93]/2(c[45]/2(i2,a[116,114,117,101]),c[91,124,93]/2(c[45]/2(i3,a[33]),nil))))",
     "t_il03 c[116,95,105,108,48,51]/1(a[105,110,102,101,114,101,110,99,101,95,108,105,109,105,116,95,101,120,99,101,101,100,101,100])",
