@@ -280,7 +280,7 @@ MUTANTS = [
          file=TAB, targets=TARGETS,
          old='    atrie = wl_table(ld, wl)\n\n    if tt_has_modified_dependencies(ld, atrie)\n        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n    end\n',
          new='    atrie = wl_table(ld, wl)\n\n    if false\n        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n    end\n'),
-    dict(id='TB9-site-prepare-modified (KILL UP test_transact_incr_1 sn3 and test_transact_mono_lazy_1 sn3: the table reevaluated inside the transaction over a modified predicate is not listed, `valid` for `invalid` in the second answer)',
+    dict(id='TB9-site-prepare-modified (KILL TB9R unit tb9rows_prepare_modified j1, j2, j3: the incremental table reevaluated inside the transaction over a predicate modified in it is not listed, falsecount 0 and `valid` for 1 and `invalid` after the snapshot; NOT UP sn3, which leaves the dependencies untouched: it never listed the table)',
          file=TAB, targets=TARGETS,
          old='    atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again\n\n    if tt_has_modified_dependencies(ld, atrie)\n        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n    end\n',
          new='    atrie.flags &= ~TRIE_DISCARDABLE                # completion decides again\n\n    if false\n        tt_add_table(ld, atrie, TT_TBL_INVALIDATE)\n    end\n'),
