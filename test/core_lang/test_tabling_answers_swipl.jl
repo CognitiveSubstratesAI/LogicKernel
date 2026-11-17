@@ -686,6 +686,110 @@ end
     end
 end
 
+# TB3-F3 (kills the mutant that reports a variant answer already in the trie as new: `return 0  # already in trie` -> TBL_ANSWER_NEW in
+# `tbl_add_answer_found`, kernel src/pl-tabling.jl; pl-tabling.c:4846 at the pin). `tbl_reset_add_answer`, the caller of every row above, reads
+# only `rcadd == TBL_ANSWER_COMPLETE`, and delim/4 fails after both, so no answer row sees that 0. The caller that does is
+# `'$tbl_wkl_add_answer'/4` called AS A PREDICATE (pl-tabling.c:4885-4899): it returns `!!rc`, so a variant answer makes the call FAIL (rc 0)
+# and the mutant makes it succeed. The rows add the answers of a list to the worklist of a FRESH variant table (`'$tbl_variant_table'/6`,
+# from an outermost wrapper, as the TB3-S9 rows), record `ok(_)` or `no` per add, and the answers of the trie. tbf01 = a, a (the second is
+# a variant); tbf02 = a, b, a, b, b (three variants after two new answers); tbf03 = a (the control: nothing to repeat, `ok(_)` under the
+# mutant too). Each row has its OWN key (k1, k2, k3): the wrapper leaves the fresh table incomplete, so a key is used once.
+const _TBF_PROGRAM = raw"""
+:- dynamic ta_f3_res/2.
+:- table ta_wf(_, _).
+ta_wf(_, 1).
+ta_f3_steps(k1, [a, a]).
+ta_f3_steps(k2, [a, b, a, b, b]).
+ta_f3_steps(k3, [a]).
+ta_f3_add(K, Closure) :-
+    '$tbl_variant_table'(Closure, ta_wf(K, _), Trie, Status, Skel, _Mono),
+    (   Status = fresh(_SCC, WL)
+    ->  ta_f3_steps(K, Steps),
+        ta_f3_job(Steps, WL, Skel, Rs),
+        findall(S, '$tbl_answer'(Trie, S, _), L0),
+        msort(L0, L),
+        assertz(ta_f3_res(K, r(Rs, L)))
+    ;   assertz(ta_f3_res(K, notfresh))
+    ).
+ta_f3_job([], _, _, []).
+ta_f3_job([V|Vs], WL, Skel, [R|Rs]) :-
+    copy_term(Skel, A),
+    A = ret(V),
+    catch(( '$tbl_wkl_add_answer'(WL, A, [], C) -> R = ok(C) ; R = no ), E, R = ex(E)),
+    ta_f3_job(Vs, WL, Skel, Rs).
+:- '$c_wrap_predicate'(user:ta_wf(_, _), ta_f3_w, Closure, _W,
+       user:('$wrap$ta_wf'(K, _) :- ta_f3_add(K, Closure))).
+ta_f3_run(K, R) :- ( ta_wf(K, _) -> true ; true ), ta_f3_res(K, R).
+"""
+
+const _TBF_CASES = [
+    ("tbf01", raw"ta_f3_run(k1, R)"),
+    ("tbf02", raw"ta_f3_run(k2, R)"),
+    ("tbf03", raw"ta_f3_run(k3, R)")
+]
+
+# swipl 18168e62 (10.1.20), `LC_ALL=C swipl -q`, the file's driver, two byte-identical runs (evidence/TAB1/s3k/tbf/)
+const _TBF_PINNED = [
+    "ok",
+    "t_tbf01 c[116,95,116,98,102,48,49]/1(c[114]/2(c[91,124,93]/2(c[111,107]/1(V0),c[91,124,93]/2(a[110,111],nil)),c[91,124,93]/2(c[114,101,116]/1(a[97]),nil)))",
+    "t_tbf02 c[116,95,116,98,102,48,50]/1(c[114]/2(c[91,124,93]/2(c[111,107]/1(V0),c[91,124,93]/2(c[111,107]/1(V1),c[91,124,93]/2(a[110,111],c[91,124,93]/2(a[110,111],c[91,124,93]/2(a[110,111],nil))))),c[91,124,93]/2(c[114,101,116]/1(a[97]),c[91,124,93]/2(c[114,101,116]/1(a[98]),nil))))",
+    "t_tbf03 c[116,95,116,98,102,48,51]/1(c[114]/2(c[91,124,93]/2(c[111,107]/1(V0),nil),c[91,124,93]/2(c[114,101,116]/1(a[97]),nil)))"
+]
+
+const _TBF_CACHE = Ref{Any}(nothing)
+"The kernel's lines of the TB3-F3 program: `(program loaded line, one line per case)`, computed once."
+function _tbf_kernel()
+    if _TBF_CACHE[] === nothing
+        gd, ld, st = _ta_load(_TBF_PROGRAM, _TBF_CASES)
+        _TBF_CACHE[] = (st, String[_ta_ask(gd, ld, "t_$id") for (id, _) in _TBF_CASES])
+    end
+    return _TBF_CACHE[]
+end
+
+@testset "TB3-F3: '\$tbl_wkl_add_answer'/4 fails for a variant answer already in the trie (kills TB3-F3)" begin
+    @test _tbf_kernel()[1] == "ok"
+    @test length(_tbf_kernel()[2]) + 1 == length(_TBF_PINNED)
+    @test !isempty(_tbf_kernel()[2])
+    for (i, (id, _)) in enumerate(_TBF_CASES)
+        k, p = _tbf_kernel()[2][i], _TBF_PINNED[i + 1]
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    pin(id) = only(filter(l -> startswith(l, "t_$id "), _TBF_PINNED))
+    no = "a[110,111]"                # the atom `no`: an add that FAILED
+    ok1 = "c[111,107]/1("            # `ok(`: an add that succeeded
+    # not vacuous: the first add of every row succeeds, the repeats fail (tbf01: 1 ok 1 no; tbf02: 2 ok 3 no; tbf03: 1 ok 0 no), and each
+    # trie holds the distinct answers only
+    @test count(ok1, pin("tbf01")) == 1 && count(no, pin("tbf01")) == 1
+    @test count(ok1, pin("tbf02")) == 2 && count(no, pin("tbf02")) == 3
+    @test count(ok1, pin("tbf03")) == 1 && count(no, pin("tbf03")) == 0
+    @test endswith(pin("tbf01"), "c[114,101,116]/1(a[97]),nil)))")
+    @test occursin(
+        "c[114,101,116]/1(a[97]),c[91,124,93]/2(c[114,101,116]/1(a[98]),nil)", pin("tbf02")
+    )
+    # the MUST-FAIL corruption (what TB3-F3 returns: every failed add reads as a success with `C` unbound): it differs from the pin for
+    # tbf01 and tbf02, so a kernel line that kept the mutant's `ok` cannot pass `k == p`
+    f3(l) = replace(l, no => "c[111,107]/1(V9)")
+    @test f3(pin("tbf01")) != pin("tbf01")
+    @test f3(pin("tbf02")) != pin("tbf02")
+    @test f3(pin("tbf03")) == pin("tbf03")      # the control has no failed add to corrupt
+    @test !occursin(no, f3(pin("tbf01"))) && !occursin(no, f3(pin("tbf02")))
+end
+
+@testset "TB3-F3: the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl === nothing
+        @info "TB3-F3 LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+        @test _TBF_PINNED[1] == "ok"
+        @test [first(split(l, " ")) for l in _TBF_PINNED[2:end]] ==
+            ["t_$id" for (id, _) in _TBF_CASES]
+    else
+        f = joinpath(mktempdir(), "tbf_swipl.pl")
+        write(f, _ta_text(_TBF_PROGRAM, _TBF_CASES))
+        @test _ta_swipl_lines(f, ["t_$id" for (id, _) in _TBF_CASES]) == _TBF_PINNED
+    end
+end
+
 # TB3K-1 (WHITE-BOX; kills TB3-C7, TB3-V2, TB3-V3; audit D-0635). None of the taa/tas rows can see these three: the answer list of the
 # second call is the same under each mutant (the compiled clause reads its key from argument 1, `S_TABLED` uses the local `st_clref`,
 # and the frame's predicate and the first choice point's position are read by no answer). So the row reads the frame itself, the way
