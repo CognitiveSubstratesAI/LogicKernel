@@ -249,10 +249,12 @@ MUTANTS = [
     dict(id="ZIP1-T-rc_handle '$rc_handle' is registered with another arity (KILL k0)", file=P, targets=T,
          old="PL_extension(\"\\$rc_handle\", 1,",
          new="PL_extension(\"\\$rc_handle\", 2,"),
-    dict(id="ZIP1-T-ext the zip table is no dispatch table (KILL every row)", file=X, targets=T,
-         old="PL_predicates_from_profile...,\n    PL_predicates_from_zip...\n)",
-         new="PL_predicates_from_profile...\n)"),
-    dict(id="ZIP1-T-ext2 the zip table is no registration table (KILL every row)", file=X, targets=T,
-         old="PL_predicates_from_profile,\n    PL_predicates_from_zip\n)",
-         new="PL_predicates_from_profile\n)"),
+    # T-ext, T-ext2 (CATALOGUE FIX): the two old mutants dropped the zip table from ONE of `_FOREIGN_VA` / `_PRED_TABLES` (src/pl-ext.jl) and so
+    # broke `@assert first == length(_FOREIGN_VA)` of initBuildIns!: a load-time kill (NO VERDICT "does not load"), not a test kill; the harness has
+    # no `expect` form for a load-time kill (`expect` is "hang" only). One mutant that keeps both tables consistent replaces them: the zip table
+    # itself is emptied, so both lists still agree, the code loads, and the rows (t0-t70, k0-k1, kr0-kr6) and the testset of the table (names,
+    # arities, flags of `PL_predicates_from_zip`) kill it. The two single-table forms are the assertion's mutants, not the rows'.
+    dict(id="ZIP1-T-ext the zip table is empty: no zip predicate is registered or dispatched (KILL every row, the testset of the table)", file=P, targets=T,
+         old="const PL_predicates_from_zip = (\n    PL_extension(\"zip_open_stream\", 3, pl_zip_open_stream3_va, PL_FA_VARARGS),\n    PL_extension(\"zip_clone\", 2, pl_zip_clone2_va, PL_FA_VARARGS),\n    PL_extension(\"zip_close_\", 2, pl_zip_close2_va, PL_FA_VARARGS),\n    PL_extension(\"zip_lock\", 1, pl_zip_lock1_va, PL_FA_VARARGS),\n    PL_extension(\"zip_unlock\", 1, pl_zip_unlock1_va, PL_FA_VARARGS),\n    PL_extension(\n        \"zipper_open_new_file_in_zip\", 4, pl_zipper_open_new_file_in_zip4_va, PL_FA_VARARGS\n    ),\n    PL_extension(\"zipper_goto\", 2, pl_zipper_goto2_va, PL_FA_VARARGS),\n    PL_extension(\"zipper_open_current\", 3, pl_zipper_open_current3_va, PL_FA_VARARGS),\n    PL_extension(\"zip_file_info_\", 3, pl_zip_file_info3_va, PL_FA_VARARGS),\n    PL_extension(\"\\$rc_handle\", 1, pl_rc_handle1_va, PL_FA_VARARGS)\n)\n",
+         new="const PL_predicates_from_zip = ()\n"),
 ]

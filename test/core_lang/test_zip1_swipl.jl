@@ -222,6 +222,11 @@ end
 _zp_is(r, culprit, prefix) =
     r !== nothing && r[1] == culprit && startswith(r[2], prefix) && r[3] == "ZIP1"
 
+# the same with the WHOLE text: `text` is the refusal's complete wording (the kernel's own: swipl has no such text, it raises
+# type_error(zipper, foo) for kr3-kr6 and goes on to write an entry for a real zipper)
+_zp_is_full(r, culprit, text) =
+    r !== nothing && r[1] == culprit && r[2] == text && r[3] == "ZIP1"
+
 # no zipper can be made: what reaches minizip is a named refusal, at the place upstream's first
 # minizip call stands
 @testset "ZIP1: zip_open_stream/3 and zipper_open_new_file_in_zip/4 are refused" begin
@@ -236,9 +241,9 @@ _zp_is(r, culprit, prefix) =
     end
     @test _zp_is(refusal_of(_TL, "kr1"), "zip_open_stream", "unzOpen2_64")
     # zipper_open_new_file_in_zip/4 refuses at entry: before the zipper, whatever the arguments
-    entry = "a zip entry writer"
+    entry = "a zip entry writer: options extra, comment, time; deflate (pl-zip.c:889)"
     for row in ("kr3", "kr4", "kr5", "kr6")
-        @test _zp_is(refusal_of(_TL, row), "zipper_open_new_file_in_zip", entry)
+        @test _zp_is_full(refusal_of(_TL, row), "zipper_open_new_file_in_zip", entry)
     end
 end
 
