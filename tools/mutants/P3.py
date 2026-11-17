@@ -170,7 +170,7 @@ MUTANTS = [
     dict(id="P3-28 `$inference_limit_except` re-throws the exceeded ball (KILL il03)", file=P, targets=TD,
          old='''    if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :inference_limit_exceeded))''',
          new='''    if false && a !== nothing && sym_key(a) == sym_key(mk_sym(T, :inference_limit_exceeded))'''),
-    dict(id="P3-29 `$inference_limit_except` leaves the limit set (KILL il11: the recursion after an exceeded call)", file=P, targets=TD,
+    dict(id="P3-29 `$inference_limit_except` leaves the limit set (KILL il26: the recursion after an exceeded inner call, under a FINITE outer limit; il11's outer limit is `infinite`)", file=P, targets=TD,
          old='''    ld.inference_limit_limit = olimit
     updateAlerted(ld)
 
@@ -181,7 +181,7 @@ MUTANTS = [
     dict(id="P3-30 the wrapper's own predicates are not exempt (KILL il18: limit 0 trips in `$inference_limit/2`)", file=P, targets=TD,
          old='''        if lookupProcedure(mk_sym(T, Symbol(name)), arity, sysm).definition === def''',
          new='''        if false && lookupProcedure(mk_sym(T, Symbol(name)), arity, sysm).definition === def'''),
-    dict(id="P3-31 catch/3 is not exempt (KILL il18: limit 0 trips at the catch frame, outside the guard)", file=P, targets=TD,
+    dict(id="P3-31 catch/3 is not exempt (KILL il27: limit 0 trips at a catch/3 INSIDE the goal, before its own catch exists; il18 never reaches the line)", file=P, targets=TD,
          old='''    if gd.procedures_catch3.definition === def''',
          new='''    if false && gd.procedures_catch3.definition === def'''),
     # ---- pl-prims.c: $urgent_exception/3
