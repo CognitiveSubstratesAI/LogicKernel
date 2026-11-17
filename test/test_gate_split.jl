@@ -2491,6 +2491,58 @@ MUTANTS = [
                 occursin("atexit", probe) && !occursin('$', probe)
         end
     end
+    # THE REACH PASS HAS A TIME BUDGET (TB5-E9, 2026-11-17: a normal run of ~48 min plus the second run passed the job's 120-minute
+    # timeout; a cancelled job uploads nothing, so the verdict was lost too): the pass runs only when twice the normal run fits in
+    # MUTATE_CI_REACH_BUDGET (default 5400 s), else the record says `skipped` and the table says `[reach skipped: slow target]`.
+    @testset "tools/mutate_ci.py: a slow survivor skips the reach pass" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="S1 survives, slow", file="f.txt", old="alpha", new="alpha "),
+]
+"""
+            )
+            slow = "sh:sleep 1; exit 0"
+            run_budget(budget, args...) = run(
+                pipeline(
+                    ignorestatus(
+                        addenv(
+                            Cmd(`python3 $tool $args`; dir=d),
+                            "MUTATE_CI_REACH_BUDGET" => budget
+                        )
+                    );
+                    stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec() = read(joinpath(d, "mutation-out", "S1.json"), String)
+            # a budget of 1 s: the normal run (~1 s) doubled does not fit: skipped, the verdict is kept
+            @test run_budget("1", "one", "m.py", "S1", "30", slow) == 0
+            @test occursin("\"verdict\": \"SURVIVED\"", rec()) &&
+                occursin("\"reach\": null", rec()) &&
+                occursin("skipped: the normal run took", rec())
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_budget("1", "baseline", "30", slow) == 0
+            table = read(
+                ignorestatus(
+                    addenv(
+                        Cmd(`python3 $tool collect m.py 1`; dir=d),
+                        "MUTATE_CI_REACH_BUDGET" => "1"
+                    )
+                ),
+                String
+            )
+            @test occursin("[reach skipped: slow target]", table)
+            # a generous budget: the pass runs (the planted target prints no MUTREACH line: reach 0)
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_budget("5400", "one", "m.py", "S1", "30", slow) == 0
+            @test occursin("\"reach\": 0", rec())
+        end
+    end
     # THE LIMIT COUNTS THE TESTS (audit D-0852 (4), D-0888 (3)): the mutated tree is precompiled once, before the targets, under a
     # limit of its own, so a loaded host no longer reads package load and precompile as TIMEOUT (TB5-P7 and PR1-R7, 2026-11-17).
     # Only in a Julia project (a Project.toml in the working directory) with a Julia target: the record then holds

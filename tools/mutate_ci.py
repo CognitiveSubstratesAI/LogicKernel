@@ -141,6 +141,7 @@ def run_targets(targets, limit):
 
 
 REACH_LINE = re.compile(r"^MUTREACH (\S+) (\d+)\s*$", re.M)
+REACH_BUDGET = int(os.environ.get("MUTATE_CI_REACH_BUDGET", "5400"))
 
 
 def reach_probe(name):
@@ -292,8 +293,17 @@ def one(argv):
     record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why,
                   precompile_seconds=LAST_PRECOMPILE["seconds"])     # `seconds` includes it: the limit does not
     if verdict in ("EQUIVALENT (declared)", "SURVIVED") and not os.environ.get("MUTATE_CI_NO_REACH"):
-        t1 = time.time()          # a survivor: does any target execute the mutated line at all? (audit D-0849)
-        record.update(reach=reach_pass(m, src, name, targets, limit), reach_seconds=round(time.time() - t1))
+        # a survivor: does any target execute the mutated line at all? (audit D-0849). The pass is a SECOND run of the targets: a slow
+        # survivor must not push the job past its timeout (a cancelled job uploads nothing, so the verdict would be lost too: TB5-E9 on
+        # 2026-11-17, normal run ~48 min, cancelled at the 120-minute timeout): the pass runs only when twice the normal run fits in
+        # MUTATE_CI_REACH_BUDGET (default 5400 s), else it is recorded as skipped.
+        normal = round(time.time() - t0)
+        if normal * 2 > REACH_BUDGET:
+            record.update(reach=None, reach_seconds=0,
+                          reach_note="skipped: the normal run took %d s, a second run would pass the job budget of %d s" % (normal, REACH_BUDGET))
+        else:
+            t1 = time.time()
+            record.update(reach=reach_pass(m, src, name, targets, limit), reach_seconds=round(time.time() - t1))
     write(name, record, log)
     print(name, verdict, "—", why or "-")
     return 0                                            # the verdict is data: `collect` judges
@@ -342,6 +352,7 @@ def collect(argv):
         if "reach" in r:                  # a survivor: does ANY target execute the mutated line? (audit D-0849)
             n = r["reach"]
             shown = (shown + " " if shown else "") + (
+                "[reach skipped: slow target]" if n is None and str(r.get("reach_note", "")).startswith("skipped") else
                 "[reach unknown]" if n is None else "[NOT REACHED by the targets]" if n == 0 else "[reached %d times]" % n)
         rows.append("| %s | %s | %s s | %s | %s |" % (name, v, r.get("seconds", 0), what.replace("|", "\\|"),
                                                    shown.replace("|", "\\|")))
