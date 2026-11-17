@@ -842,6 +842,36 @@ const _T7_PINS_FIND = [
     "t_fn05 c[116,95,102,110,48,53]/1(c[114]/4(i36,i36,i216,i36))"
 ]
 
+const _T7_PROG_LREF = raw"""tp(G, T) :- '$tbl_existing_variant_table'(0, user:G, T, _, _).
+st1(G, S) :- ( tp(G, T) -> '$tbl_table_status'(T, S0), ( '$idg_forced'(T) -> F = f ; F = n ), ( '$idg_falsecount'(T, C) -> true ; C = nofc ),
+      findall(Q, ('$idg_mono_affects_lazy'(T, _, _, _, A), length(A, Q)), Qs), S = S0/F/C/Qs ; S = none ).
+dump(R) :- findall(N-S, (member(G, [lr_p(_), lr_q(_)]), functor(G, N, _), st1(G, S)), R).
+ex(G, L) :- findall(G, G, L0), msort(L0, L).
+lg(L) :- findall(X, lr_log(X), L), retractall(lr_log(_)).
+:- dynamic lr_d/1 as monotonic.
+:- dynamic (lr_log/1, lr_f1/0, lr_f2/0).
+:- table (lr_p/1, lr_q/1) as (monotonic, lazy).
+lr_q(X) :- lr_p(X), assertz(lr_log(q(X))).
+lr_p(X) :- lr_d(X), assertz(lr_log(p(X))), ( X == 2 -> ( \+ lr_f1 -> assertz(lr_f1) ; \+ lr_f2 -> assertz(lr_f2), assertz(lr_d(100)) ; true ) ; true ).
+"""
+
+const _T7_CASES_LREF = [
+    (
+        "lr01",
+        raw"abolish_all_tables, retractall(lr_d(_)), retractall(lr_f1), retractall(lr_f2), retractall(lr_log(_)), assertz(lr_d(1)), ex(lr_q(_), A0), lg(_), dump(D0), assertz(lr_d(2)), dump(D1), ex(lr_q(_), A1), dump(D2), ex(lr_q(_), A2), dump(D3), ex(lr_p(_), A3), dump(D4), R = r(A0, D0, D1, A1, D2, A2, D3, A3, D4)"
+    ),
+    (
+        "lr02",
+        raw"abolish_all_tables, retractall(lr_d(_)), retractall(lr_f1), retractall(lr_f2), retractall(lr_log(_)), assertz(lr_d(1)), ex(lr_q(_), _), lg(_), assertz(lr_d(2)), ex(lr_q(_), _), lg(L), R = L"
+    )
+]
+
+const _T7_PINS_LREF = [
+    "ok",
+    "t_lr01 c[116,95,108,114,48,49]/1(c[114]/9(c[91,124,93]/2(c[108,114,95,113]/1(i1),nil),c[91,124,93]/2(c[45]/2(a[108,114,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,114,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil)),c[91,124,93]/2(c[45]/2(a[108,114,95,112],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i1),c[91,124,93]/2(i1,nil))),c[91,124,93]/2(c[45]/2(a[108,114,95,113],c[47]/2(c[47]/2(c[47]/2(a[105,110,118,97,108,105,100],a[110]),i2),c[91,124,93]/2(i1,nil))),nil)),c[91,124,93]/2(c[108,114,95,113]/1(i1),c[91,124,93]/2(c[108,114,95,113]/1(i2),c[91,124,93]/2(c[108,114,95,113]/1(i100),nil))),c[91,124,93]/2(c[45]/2(a[108,114,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,114,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil)),c[91,124,93]/2(c[108,114,95,113]/1(i1),c[91,124,93]/2(c[108,114,95,113]/1(i2),c[91,124,93]/2(c[108,114,95,113]/1(i100),nil))),c[91,124,93]/2(c[45]/2(a[108,114,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,114,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil)),c[91,124,93]/2(c[108,114,95,112]/1(i1),c[91,124,93]/2(c[108,114,95,112]/1(i2),c[91,124,93]/2(c[108,114,95,112]/1(i100),nil))),c[91,124,93]/2(c[45]/2(a[108,114,95,112],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),c[91,124,93]/2(c[45]/2(a[108,114,95,113],c[47]/2(c[47]/2(c[47]/2(a[99,111,109,112,108,101,116,101],a[110]),i0),nil)),nil))))",
+    "t_lr02 c[116,95,108,114,48,50]/1(c[91,124,93]/2(c[112]/1(i2),c[91,124,93]/2(c[113]/1(i2),c[91,124,93]/2(c[112]/1(i2),c[91,124,93]/2(c[112]/1(i100),c[91,124,93]/2(c[113]/1(i100),c[91,124,93]/2(c[112]/1(i100),c[91,124,93]/2(c[113]/1(i2),c[91,124,93]/2(c[113]/1(i100),nil)))))))))"
+]
+
 # S3C-END
 const _T7_GROUPS = [
     (
@@ -942,6 +972,13 @@ const _T7_GROUPS = [
         program=_T7_PROG_FIND,
         cases=_T7_CASES_FIND,
         pins=_T7_PINS_FIND
+    ),
+    (
+        key="LREF",
+        label=raw"LREF: a lazy monotonic table `lr_q` over a lazy monotonic table `lr_p` over a monotonic dynamic predicate; the body of `lr_p` asserts a NEW clause of the dynamic predicate only in its REEVALUATION run (flags `lr_f1`, `lr_f2`), so that clause's reference is queued on the dependency while `lr_p` is being reevaluated and still invalid: `mono_scc_is_complete` -> `invalid_dependencies` -> `has_queued_answers` -> `mdep_is_empty` reads a queue of LIVE clause references: answers, status, forced, `'$idg_falsecount'/2` and queue lengths before and after (kills TB7-answer-live-erased)",
+        program=_T7_PROG_LREF,
+        cases=_T7_CASES_LREF,
+        pins=_T7_PINS_LREF
     )
     # S3C-GROUPS-END
 ]
@@ -1181,6 +1218,14 @@ end
         count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn03"))) == 3
     @test count(==("invalid"), _T7_atoms(_T7_ans("FIND", "fn04"))) == 1 &&
         count(==("complete"), _T7_atoms(_T7_ans("FIND", "fn04"))) == 7
+    # LREF (kills TB7-answer-live-erased): `lr_p`'s body asserts the clause 100 in its reevaluation run, so a LIVE clause reference is queued while `lr_p`
+    # is reevaluated: the answer set of the second round holds 100, both tables end complete with an empty queue, and the log of lr02 shows the extra
+    # round of `lr_p(100)` and `lr_q(100)`
+    @test count(==("invalid"), _T7_atoms(_T7_ans("LREF", "lr01"))) == 2 &&
+        count(==("complete"), _T7_atoms(_T7_ans("LREF", "lr01"))) == 8
+    @test _T7_ints(_T7_ans("LREF", "lr01")) ==
+        [1, 0, 0, 1, 1, 2, 1, 1, 2, 100, 0, 0, 1, 2, 100, 0, 0, 1, 2, 100, 0, 0]
+    @test _T7_ints(_T7_ans("LREF", "lr02")) == [2, 2, 2, 100, 100, 100, 2, 100]
     # S3C-ASSERT-END
 end
 
