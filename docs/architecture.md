@@ -6964,6 +6964,15 @@ evidence/LB4B1/bench_note.md and NOT RUN.
   field `stacks_limit` counts whole words, so the value is rounded DOWN (`set_prolog_flag(stack_limit, 2000001)` reads back 2000001 in
   swipl 10.1.20, 2000000 here). Pinned with swipl's answer in a comment as `_QX_KERNEL_DIFF["t_sl19"]` in test/core_lang/test_q10_swipl.jl;
   rows th04 and sl01-sl20 of that file pin the rest (Q10-33's `trim_stacks` proof is th04).
+* **Known-difference checklist item (R2 Q10-42, `$put_token/2` release of an unbuffered stream): no flush at release, `close` throws a Julia error.** In swipl
+  `PL_release_stream` is `streamStatus`: for an unbuffered output stream `Sunlock` -> `S__removebuf` writes the stream's buffer, so on a full device
+  (`open('/dev/full', write, S, [buffer(false)])`) `'$put_token'(S, a)` writes the token, the release fails and the goal FAILS with `stream_property(S, error(true))`;
+  the next token raises `io_error(write, S)` (pt27, pt28 of test/core_lang/test_q10_swipl.jl, swipl 10.1.20). The kernel has no locks, writes through a
+  buffered Julia `IOStream` (`Swrite_julia_io`) and meets the device error only at close: pt27 answers `yes-false`, pt28 leaves its result unbound, both pinned in
+  `_QX_KERNEL_DIFF`. Related, not pinned: closing a stream whose last flush fails (`close/1` on the same device) throws the Julia `SystemError` (ENOSPC) out of
+  `Sclose_julia_io` (src/os/pl-stream.jl), where swipl raises `io_error(write, S)`. Until one of the two is closed, the first `streamStatus` of
+  `put_token` (src/pl-write.jl, Q10-42 in tools/mutants/Q10C.py) is unreachable with a failing status in the kernel; pt26's encoding error reaches the second one.
+  The rows leave their /dev/full streams open, so each run prints `error in running finalizer: Base.SystemError(prefix="close", errnum=28)` lines at exit (stderr only, exit 0).
 
 ## LB3 — `src/pl-qlf.jl`, the C boot loop (R2 loader_boot, audit D-0272/D-0273)
 

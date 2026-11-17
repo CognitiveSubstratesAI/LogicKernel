@@ -159,12 +159,11 @@ end
 ''',
          new='''            sign = -1
 '''),
-    dict(id="Q10-33 trim_stacks does not trim", file=SU, targets=TQ,
+    dict(id="Q10-33 trim_stacks does not trim (KILL th04: statistics(local) before and after trim_stacks after a deep recursion; D-0895 (2))", file=SU, targets=TQ,
          old='''    trimStacks!(ld, true)                               # trimStacks(true)
 ''',
          new='''    nothing
-''',
-         equivalent="no row can see a trim: the stacks of the rows are never near their limits, and `trimStacks!` changes no Prolog-visible state"),
+'''),
     dict(id="Q10-34 thread_idle is not transparent (KILL ti14; the goal is defined only in the context module q10_m)", file=AL, targets=TQ,
          old='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)''',
          new='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_VARARGS)'''),
@@ -200,7 +199,7 @@ end
          old='''    PL_canonicalise_text_ex(ld, txt) || return false
     txt.encoding === ENC_WCHAR''',
          new='''    txt.encoding === ENC_WCHAR'''),
-    dict(id="Q10-42 the stream status of a written token is not read (KILL pt26; an ascii stream is written a character it cannot encode)", file=W, targets=TQ,
+    dict(id="Q10-42 the stream status of a written token is not read where the write itself succeeded (swipl: pt27, pt28, an unbuffered stream on a full device whose release fails; the kernel differs, see the checklist item of R2 Q10-42 in docs/architecture.md, so no row kills it yet)", file=W, targets=TQ,
          old='''        return streamStatus(ld, out)                                # PL_release_stream(out)
     end''',
          new='''        return true
