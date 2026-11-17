@@ -1018,6 +1018,7 @@ let sa = Module(:PreflightManifest)
     Base.include(sa, raw"$ROOT/test/static_analysis_manifest.jl")
     entries = Base.invokelatest(() -> sa.DISPATCH_MANIFEST)
     exempt = Base.invokelatest(() -> sa.DISPATCH_EXEMPT)
+    println("check: substage manifest_loaded ", round(Int, time() - _t0), "s")
     stale = String[]
     for (f, tt, _) in entries
         try
@@ -1028,6 +1029,7 @@ let sa = Module(:PreflightManifest)
     end
     foreach(x -> println("  NO SUCH METHOD (stale manifest entry): ", x), stale)
     isempty(stale) || error("preflight: the manifest names methods that do not exist")
+    println("check: substage manifest_which ", round(Int, time() - _t0), "s")
     # an entry listed twice is one method analysed twice (audit D-0692 item 5): uniqueness, the duplicates NAMED
     # key = (function, argument tuple); the third element (allocation-free flag) is not part
     keys = [(e[1], e[2]) for e in entries]
@@ -1041,10 +1043,12 @@ let sa = Module(:PreflightManifest)
         error("preflight: the manifest lists an entry twice (test/static_analysis_manifest.jl)")
     end
     r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt))
+    println("check: substage manifest_uncovered ", round(Int, time() - _t0), "s")
     # An uncovered method at the file and line of ANOTHER live method of the same function is the
     # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
     # it, a restart does (_checks_fresh, in tools/warm.sh).
     owned = Base.invokelatest(() -> sa.owned_methods(LogicKernel))
+    println("check: substage manifest_owned ", round(Int, time() - _t0), "s")
     # ...and so is a method whose function NO src/ file defines (the static gate's STALE rule,
     # _preflight_stale: port_check's own definitions): Revise kept it after its definition was
     # deleted (FIXED 2026-10-14 — it read NOT IN THE MANIFEST and nothing restarted the daemon).
@@ -1058,6 +1062,7 @@ let sa = Module(:PreflightManifest)
         foreach(d -> push!(defined, d[2]), Base.invokelatest(() -> pcd.definitions(read(p, String), p)))
     end
     isempty(defined) && error("preflight: no definitions found under src/ — cannot classify")
+    println("check: substage manifest_defined ", round(Int, time() - _t0), "s")
     resigned = Set(
         "\$(m.name) \$(m.sig)  (\$(m.file):\$(m.line))" for m in owned if
         count(n -> n.name === m.name && n.file === m.file && n.line == m.line, owned) > 1
