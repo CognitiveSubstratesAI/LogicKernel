@@ -784,6 +784,20 @@ _checks_fresh() {
     return "$ic"
 }
 
+# _stage_timers_on — STAGE TIMERS for `check` (audit D-0873 item 1a, 2026-11-16): `check` took 1162 s, 847 s and 1319 s on three
+# runs and printed no per-stage seconds, so the stage that dominates was unknown and a split over workers would have been a
+# guess. This wraps each stage function of `_checks_fresh` so that it prints `check: stage NAME Ns` when it returns; the
+# argument list, the return status and the order are untouched (the call lines of `_checks_fresh` are pinned by
+# test/test_gate_split.jl, so the wrap is made at run time, not in its body). Only `check` turns it on.
+_stage_timers_on() {
+    local f def
+    for f in _source_greps _term_scopes_check _meta_check _inert_check _format_port_check; do
+        def=$(declare -f "$f") || continue
+        eval "_untimed${f}() ${def#*\(\) }"
+        eval "${f}() { local _t0=\$(date +%s) _rc; _untimed${f} \"\$@\"; _rc=\$?; echo \"check: stage ${f#_} \$(( \$(date +%s) - _t0 ))s\"; return \$_rc; }"
+    done
+}
+
 # THE CI-ONLY CHECKS THAT ARE CHEAP (audit D-0214 finding 1, 2026-10-29): two classes of CI red in two days were
 # checks a warm run never made. The list of every check CI runs and `check`/`branch-gate` did not, with what moved
 # here and why each other stays in CI: evidence/TOOL-TS/handoff.md (the A-entry). Moved: the term-scope
@@ -1547,6 +1561,7 @@ case "$cmd" in
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
         _check_julia_ci "$ROOT" check                   # a WARN only (tools/lib_evidence.sh, audit D-0026)
+        _stage_timers_on                                # `check: stage NAME Ns` per stage (audit D-0873 item 1a)
         _checks_fresh
         _ck_rc=$?
         echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest, term scopes, meta files, inert guard, source greps) in $(( $(date +%s) - _ck_t0 ))s"

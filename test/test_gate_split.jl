@@ -426,6 +426,24 @@ end
         @test occursin(r"(?m)^        _checks_fresh\n        _ck_rc=\$\?", script)                 # `check`
         @test occursin(r"_checks_fresh \|\| \{ echo \"branch-gate: FAIL", script)                 # branch-gate
         @test occursin(r"(?m)^    _checks_fresh\n    rc=\$\?\n", script)                          # preflight
+        # STAGE TIMERS (audit D-0873 item 1a): `check` (and only `check`) wraps the five stage functions of `_checks_fresh`
+        # at run time so that each prints `check: stage NAME Ns`; the wrap names exactly the stages `_checks_fresh` calls
+        @test occursin(
+            r"(?m)^        _stage_timers_on +#[^\n]*\n        _checks_fresh\n        _ck_rc=\$\?",
+            script
+        )
+        tb = match(r"(?s)\n_stage_timers_on\(\) \{\n(.*?)\n\}\n", script)[1]
+        for stage in
+            (
+            "_source_greps",
+            "_term_scopes_check",
+            "_meta_check",
+            "_inert_check",
+            "_format_port_check"
+        )
+            @test occursin(stage, tb) && occursin(Regex("(?m)^    $stage"), body)
+        end
+        @test count("_stage_timers_on", script) == 3     # the definition, its comment, the one call in `check`
     end
 
     # audit D-0692 item 5: the manifest preflight (`warm.sh check`'s `_check`, the same Julia block the preflight runs) fails
