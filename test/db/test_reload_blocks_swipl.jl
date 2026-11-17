@@ -390,6 +390,7 @@ end
     # outside a reload: the clean fast path / the flag count (A10, A10b, A10c: the other side)
     @test LK.hasClausesDefinition(gd, def) === def.impl_clauses.first_clause
     @test LK.num_visible_clauses(gd, def, false) == 3
+    @test LK.num_visible_clauses(gd, ld, def, false) == 3                           # the method with the local data (the one the attribute calls)
     @test LK.getClauses(gd, def, refs, 10) == 3 && length(refs) == 3
     @test LK.isDefinedProcedure(gd, q)
     LK.startReconsultFile(gd, ld, sfA)
@@ -398,6 +399,10 @@ end
     @test LK.hasClausesDefinition(gd, def) === nothing                              # A10
     @test LK.num_visible_clauses(gd, def, false) == 0                                # A10b
     @test LK.num_visible_clauses(gd, def, true) == 0
+    @test LK.num_visible_clauses(gd, ld, def, false) == 0                            # A10b: the method with `ld` walks a STATIC predicate while a reload runs (the stored count is 3)
+    @test LK.num_visible_clauses(gd, ld, def, true) == 0
+    @test def.impl_clauses.number_of_clauses == 3                                    # non-vacuity: the stored count it would return without the walk
+    @test (def.flags & LK.P_DYNAMIC) == 0
     @test LK.getClauses(gd, def, refs, 10) == 0 && isempty(refs)                    # A10c
     @test !LK.isDefinedProcedure(gd, q)
     # a clause created at the reload generation IS visible: hand-made, in a predicate of the file
@@ -408,6 +413,7 @@ end
     @test cref !== nothing
     @test LK.hasClausesDefinition(gd, def) === cref
     @test LK.num_visible_clauses(gd, def, false) == 1
+    @test LK.num_visible_clauses(gd, ld, def, false) == 1
     @test LK.getClauses(gd, def, refs, 10) == 1 && refs[1] === cref
     _rb_end!(db)
     # after the end: the marks are gone with the generation, the other clauses are live again (the flag count is 4: the hand-made clause counts)
