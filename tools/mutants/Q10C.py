@@ -77,10 +77,9 @@ end
     dict(id="Q10-12 the signalled error carries no command (KILL sh11: shell(signal(9), '') )", file=E, targets=TQ,
          old='''ld, formal, _err_functor(ld, :shell, 2), s, _err_atom(ld, mk_sym(T, Symbol(cmd)))''',
          new='''ld, formal, _err_functor(ld, :shell, 2), s, _err_atom(ld, mk_sym(T, Symbol("")))'''),
-    dict(id="Q10-13 the shell flag is ignored (KILL none of the rows: equivalent while the flag holds /bin/sh)", file=O, targets=TQ,
+    dict(id="Q10-13 the shell flag is ignored (KILL sh21; the flag is set to /bin/true, whose answer 0 differs from /bin/sh's 3)", file=O, targets=TQ,
          old='''    return a === nothing ? "/bin/sh" : sym_text(a)''',
-         new='''    return "/bin/sh"''',
-         equivalent="`posix_shell` is /bin/sh at its default and no row sets it (setting it would run an arbitrary program for every shell/2 row)"),
+         new='''    return "/bin/sh"'''),
     dict(id="Q10-14 the shell is not found (KILL sh01-sh20 that run: the spawn error is raised as a system_error)", file=O, targets=TQ,
          old='''    return a === nothing ? "/bin/sh" : sym_text(a)''',
          new='''    return a === nothing ? "/bin/nosuchsh" : "/bin/nosuchsh"'''),
@@ -166,10 +165,9 @@ end
          new='''    nothing
 ''',
          equivalent="no row can see a trim: the stacks of the rows are never near their limits, and `trimStacks!` changes no Prolog-visible state"),
-    dict(id="Q10-34 thread_idle is not transparent", file=AL, targets=TQ,
+    dict(id="Q10-34 thread_idle is not transparent (KILL ti14; the goal is defined only in the context module q10_m)", file=AL, targets=TQ,
          old='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)''',
-         new='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_VARARGS)''',
-         equivalent="every ti row names its goal's module or runs in user, where the context module is user either way"),
+         new='''PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_VARARGS)'''),
     dict(id="Q10-35 PutStringN writes the first byte only (KILL pt01)", file=W, targets=TQ,
          old='''function PutStringN(bytes::Vector{UInt8}, s::IOSTREAM)::Bool
     for b in bytes''',
@@ -192,7 +190,7 @@ end
          new='''    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_EXCEPTION)
     txt === nothing && return false
     PL_canonicalise_text_ex(ld, txt) || return false'''),
-    dict(id="Q10-39 the stream is not looked up by alias (KILL pt24, pt25: the domain of a non-atom, non-stream is stream_or_alias; pt13 and pt23 give an atom and never reach `not_a_stream`)", file=W, targets=TQ,
+    dict(id="Q10-39 the stream is not looked up by alias (KILL pt24, pt25; a non-atom, non-stream gives stream_or_alias, pt13 and pt23 give an atom and never reach `not_a_stream`)", file=W, targets=TQ,
          old='''term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)          # PL_get_stream_handle(A1, &out)''',
          new='''term_stream_handle(ld, A1, SH_ERRORS)                     # PL_get_stream_handle(A1, &out)'''),
     dict(id="Q10-40 the predicate is registered under another name (KILL pt01 and every pt row)", file=W, targets=TQ,
@@ -202,12 +200,11 @@ end
          old='''    PL_canonicalise_text_ex(ld, txt) || return false
     txt.encoding === ENC_WCHAR''',
          new='''    txt.encoding === ENC_WCHAR'''),
-    dict(id="Q10-42 the stream status of a written token is not read", file=W, targets=TQ,
+    dict(id="Q10-42 the stream status of a written token is not read (KILL pt26; an ascii stream is written a character it cannot encode)", file=W, targets=TQ,
          old='''        return streamStatus(ld, out)                                # PL_release_stream(out)
     end''',
          new='''        return true
-    end''',
-         equivalent="no row puts a token on a stream that carries an error: a memory stream written by with_output_to/2 has none, so `streamStatus` is true"),
+    end'''),
     dict(id="Q10-43 the type of an atom is not unified (KILL cb07, cb08)", file=F, targets=TQ,
          old='''            return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
         end
@@ -215,7 +212,7 @@ end
          new='''            return FTRUE
         end
         PL_is_variable(ld, a) || return FFALSE'''),
-    dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb21, cb22: a bound non-blob with a type that is no atom fails, the mutant raises type_error(atom, 1); cb03-cb05 have an unbound type and give false either way)", file=F, targets=TQ,
+    dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb21, cb22; a bound non-blob with a type that is no atom fails, the mutant raises type_error(atom, 1), cb03-cb05 have an unbound type and give false either way)", file=F, targets=TQ,
          old='''        PL_is_variable(ld, a) || return FFALSE
         index = 1''',
          new='''        index = 1'''),

@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of Q10's built-ins (`\=@=/2`, `shell/2`, `current_blob/2`, `$put_token/2`, `$on_signal/4`,
 # `$set_prolog_stack/4`, `trim_heap/0`, `trim_stacks/0`, `thread_idle/2`) against swipl at the pin — Q10's rows
-# test/core_lang/test_q10_swipl.jl — vr01-cb22 against swipl 10.1.20 (the pin 18168e62):
+# test/core_lang/test_q10_swipl.jl — vr01-cb22 (and sh21, ti14, ti15, pt26) against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
@@ -139,6 +139,10 @@ const _QX_CASES = [
     ("sh18", "shell('exit 7 # \\u00e9', R)"),   # a non-ASCII character in a comment
     ("sh19", "shell(42, R)"),   # a number as the command: the shell cannot find 42
     ("sh20", "shell('exit 5', R), integer(R)"),   # an integer status
+    (
+        "sh21",
+        "current_prolog_flag(posix_shell, O), setup_call_cleanup(set_prolog_flag(posix_shell, '/bin/true'), shell('exit 3', R), set_prolog_flag(posix_shell, O))"
+    ),   # the shell is the flag posix_shell: /bin/true ignores the command and answers 0, /bin/sh would answer 3
     ("ti01", "thread_idle(true, short), R = ok"),   # short
     ("ti02", "thread_idle(true, long), R = ok"),   # long
     ("ti03", "thread_idle(true, other), R = ok"),   # an atom that is neither
@@ -152,6 +156,11 @@ const _QX_CASES = [
     ("ti11", "thread_idle(_, short)"),   # an unbound goal
     ("ti12", "thread_idle(true, short(a))"),   # a compound How
     ("ti13", "thread_idle(q_a(2), short) -> R = yes ; R = no"),   # a goal that fails after a successful How
+    (
+        "ti14",
+        "assertz(q10_m:q10_only(7)), q10_m:thread_idle(q10_only(X), short), R = X"
+    ),   # transparent: the goal runs in the context module q10_m, where q10_only/1 is defined
+    ("ti15", "thread_idle(q10_only(X), short), R = X"),   # and in user it is not: existence_error
     ("th01", "trim_heap, R = ok"),   # trim_heap succeeds
     ("th02", "trim_stacks, R = ok"),   # trim_stacks succeeds
     ("th03", "trim_stacks, trim_heap, trim_stacks, R = ok"),   # repeated
@@ -340,6 +349,10 @@ const _QX_CASES = [
     ),   # the stream alias user_error with an empty text
     ("pt24", "'\$put_token'(1, ab)"),   # an integer is no stream and no alias: domain_error(stream_or_alias, 1), not stream
     ("pt25", "'\$put_token'(f(x), ab)"),   # a compound is no stream either (the same domain: stream_or_alias)
+    (
+        "pt26",
+        "open('/dev/null', write, S, [encoding(ascii)]), catch('\$put_token'(S, '\\u00e9'), error(io_error(W, S2), _), ( S2 == S -> R = io_error(W) ; R = other )), close(S)"
+    ),   # the token writes into the buffer, the stream carries an encoding error: the status after the write is raised (streamStatus)
     ("cb01", "current_blob(foo, T), R = T"),   # a text atom: its type
     ("cb02", "current_blob([], T), R = T"),   # the empty list: reserved_symbol
     ("cb03", "( current_blob(\"s\", T) -> R = T ; R = no )"),   # a string is no blob
@@ -422,6 +435,7 @@ const _QX_PINNED = [
     "t_sh18 c[116,95,115,104,49,56]/1(i7)",
     "t_sh19 c[116,95,115,104,49,57]/1(i127)",
     "t_sh20 c[116,95,115,104,50,48]/1(i5)",
+    "t_sh21 c[116,95,115,104,50,49]/1(i0)",
     "t_ti01 c[116,95,116,105,48,49]/1(a[111,107])",
     "t_ti02 c[116,95,116,105,48,50]/1(a[111,107])",
     "t_ti03 c[116,95,116,105,48,51]/1(a[111,107])",
@@ -435,6 +449,8 @@ const _QX_PINNED = [
     "t_ti11 c[116,95,116,105,49,49]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
     "t_ti12 c[116,95,116,105,49,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[97,116,111,109],c[115,104,111,114,116]/1(a[97]))))",
     "t_ti13 c[116,95,116,105,49,51]/1(a[110,111])",
+    "t_ti14 c[116,95,116,105,49,52]/1(i7)",
+    "t_ti15 c[116,95,116,105,49,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[113,49,48,95,111,110,108,121],i1))))",
     "t_th01 c[116,95,116,104,48,49]/1(a[111,107])",
     "t_th02 c[116,95,116,104,48,50]/1(a[111,107])",
     "t_th03 c[116,95,116,104,48,51]/1(a[111,107])",
@@ -530,6 +546,7 @@ const _QX_PINNED = [
     "t_pt23 c[116,95,112,116,50,51]/1(s[97,98,99])",
     "t_pt24 c[116,95,112,116,50,52]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,111,114,95,97,108,105,97,115],i1)))",
     "t_pt25 c[116,95,112,116,50,53]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[115,116,114,101,97,109,95,111,114,95,97,108,105,97,115],c[102]/1(a[120]))))",
+    "t_pt26 c[116,95,112,116,50,54]/1(c[105,111,95,101,114,114,111,114]/1(a[119,114,105,116,101]))",
     "t_cb01 c[116,95,99,98,48,49]/1(a[116,101,120,116])",
     "t_cb02 c[116,95,99,98,48,50]/1(a[114,101,115,101,114,118,101,100,95,115,121,109,98,111,108])",
     "t_cb03 c[116,95,99,98,48,51]/1(a[110,111])",
