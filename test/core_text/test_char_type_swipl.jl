@@ -109,7 +109,7 @@ end
 # KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
 # character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"). t42 and t43
 # are t1 and t3 for the character 0 (char_code/2 makes that atom); swipl's answer is in the .out, the kernel's line is
-# `<row> notported`. They are the last rows of the program, and a refused row ends one run (its ld is thrown away): the
+# `<row> notported`. They come after t0-t41, and a refused row ends one run (its ld is thrown away): the
 # rows after it are run again on a fresh engine, so no other row is lost.
 const _CT_NUL_ROWS = ("t42", "t43")
 
