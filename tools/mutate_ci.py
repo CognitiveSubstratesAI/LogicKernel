@@ -103,8 +103,37 @@ def run_target(target, limit):
         return "hang", out
 
 
+PRECOMPILE_LIMIT = int(os.environ.get("MUTATE_CI_PRECOMPILE_LIMIT", "3600"))
+LAST_PRECOMPILE = {"seconds": None}
+
+
+def precompile_tree():
+    """THE MUTATED TREE IS PRECOMPILED ONCE, BEFORE THE TARGETS, under a limit of its own (audit D-0852 (4), D-0888 (3)): the
+    target limit then counts the tests, not the package load and precompile, which on a loaded host read as TIMEOUT (TB5-P7 and
+    PR1-R7 on 2026-11-17: 1500 s, caught in 1075 s and 935 s at 4000 s). Past its limit the precompile is killed and the targets
+    compile for themselves, as before. Only in a Julia project (a Project.toml in the working directory). Seconds, or None."""
+    LAST_PRECOMPILE["seconds"] = None
+    if not os.path.isfile("Project.toml"):
+        return None
+    t0 = time.time()
+    p = subprocess.Popen(["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.precompile()"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        p.communicate(timeout=PRECOMPILE_LIMIT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.communicate()
+    LAST_PRECOMPILE["seconds"] = round(time.time() - t0)
+    return LAST_PRECOMPILE["seconds"]
+
+
 def run_targets(targets, limit):
     """mutate_drive.py's `run_targets`, each target in a fresh process: (result, log, line)."""
+    if any(not t.startswith("sh:") for t in targets):      # a Julia target: precompile first (the limit counts the tests)
+        precompile_tree()
     def run1(t):
         rc, out = run_target(t, limit)
         return judge(t, rc, out, os.getcwd())[0], out
@@ -260,7 +289,8 @@ def one(argv):
     else:
         verdict = "INVALID"
     why = "; ".join(x for x in (why, noload_hint(m, verdict)) if x)
-    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why)
+    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why,
+                  precompile_seconds=LAST_PRECOMPILE["seconds"])     # `seconds` includes it: the limit does not
     if verdict in ("EQUIVALENT (declared)", "SURVIVED") and not os.environ.get("MUTATE_CI_NO_REACH"):
         t1 = time.time()          # a survivor: does any target execute the mutated line at all? (audit D-0849)
         record.update(reach=reach_pass(m, src, name, targets, limit), reach_seconds=round(time.time() - t1))

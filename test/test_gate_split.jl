@@ -2491,6 +2491,54 @@ MUTANTS = [
                 occursin("atexit", probe) && !occursin('$', probe)
         end
     end
+    # THE LIMIT COUNTS THE TESTS (audit D-0852 (4), D-0888 (3)): the mutated tree is precompiled once, before the targets, under a
+    # limit of its own, so a loaded host no longer reads package load and precompile as TIMEOUT (TB5-P7 and PR1-R7, 2026-11-17).
+    # Only in a Julia project (a Project.toml in the working directory) with a Julia target: the record then holds
+    # `precompile_seconds`; a planted `sh:` target, or no project, leaves it null.
+    @testset "tools/mutate_ci.py: the mutated tree is precompiled before the targets" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "t.jl"),
+                "using Test\n@testset \"t\" begin\n    @test !occursin(\"ALPHA\", read(\"f.txt\", String))\nend\n"
+            )
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="P1 caught by a julia target", file="f.txt", old="alpha", new="ALPHA"),
+]
+"""
+            )
+            run_(args...) = run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec() = read(joinpath(d, "mutation-out", "P1.json"), String)
+            # no Project.toml: nothing to precompile
+            @test run_("one", "m.py", "P1", "60", "t.jl") == 0
+            @test occursin("\"verdict\": \"caught\"", rec()) &&
+                occursin("\"precompile_seconds\": null", rec())
+            # a project (empty: the precompile is a second) and a julia target: the seconds are recorded
+            write(
+                joinpath(d, "Project.toml"),
+                "name = \"PreC\"\nuuid = \"3b8f2a1c-5d4e-4f6a-9c7b-0a1b2c3d4e5f\"\n"
+            )
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_("one", "m.py", "P1", "60", "t.jl") == 0
+            @test occursin("\"verdict\": \"caught\"", rec()) &&
+                occursin(r"\"precompile_seconds\": \d+", rec())
+            # a planted `sh:` target never precompiles, project or not
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_(
+                "one", "m.py", "P1", "60", "sh:grep -q ALPHA f.txt && exit 1; exit 0"
+            ) == 0
+            @test occursin("\"precompile_seconds\": null", rec())
+        end
+    end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local
     # driver's verdict from its targets' EXIT CODES. Planted targets (`sh:` commands) and a planted
     # list, in a directory of their own.
