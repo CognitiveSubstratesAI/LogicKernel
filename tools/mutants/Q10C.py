@@ -192,7 +192,7 @@ end
          new='''    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_EXCEPTION)
     txt === nothing && return false
     PL_canonicalise_text_ex(ld, txt) || return false'''),
-    dict(id="Q10-39 the stream is not looked up by alias (KILL pt23, pt13)", file=W, targets=TQ,
+    dict(id="Q10-39 the stream is not looked up by alias (KILL pt24, pt25: the domain of a non-atom, non-stream is stream_or_alias; pt13 and pt23 give an atom and never reach `not_a_stream`)", file=W, targets=TQ,
          old='''term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)          # PL_get_stream_handle(A1, &out)''',
          new='''term_stream_handle(ld, A1, SH_ERRORS)                     # PL_get_stream_handle(A1, &out)'''),
     dict(id="Q10-40 the predicate is registered under another name (KILL pt01 and every pt row)", file=W, targets=TQ,
@@ -215,7 +215,7 @@ end
          new='''            return FTRUE
         end
         PL_is_variable(ld, a) || return FFALSE'''),
-    dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb03, cb04, cb05)", file=F, targets=TQ,
+    dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb21, cb22: a bound non-blob with a type that is no atom fails, the mutant raises type_error(atom, 1); cb03-cb05 have an unbound type and give false either way)", file=F, targets=TQ,
          old='''        PL_is_variable(ld, a) || return FFALSE
         index = 1''',
          new='''        index = 1'''),
