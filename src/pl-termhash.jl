@@ -27,7 +27,9 @@
 #      collide — by chance, for `sym_hash` and for `gnd_key`, which follows the term type's
 #      `gnd_equal` (SWI's identity in the reference type, so `1` and `1.0` hash apart as in SWI; a
 #      type matching by `==` would make them share a digest). Assumes, as every key function does,
-#      that identical grounded values have the same `gnd_key`.
+#      that identical grounded values have the same `gnd_key`. The variant hash of a trie blob is identity-based in the
+#      kernel; lazy monotonic body re-run counts can differ from swipl 10.1.20 (kernel 22, swipl 30 in FIND/fn04 of
+#      test/core_lang/test_tabling_tb7rows_swipl.jl: a named consequence of this divergence, audit D-0894).
 #   2. HEADS. A compound whose first child is not a symbol has the functor `$expr/n` (Q2,
 #      src/pl-ressymbol.jl), every child an argument: term_hash hashes its name as 0, and
 #      variant_sha1 writes `C` and the child count where upstream writes `T`, name and arity (see
