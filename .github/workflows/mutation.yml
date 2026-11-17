@@ -247,7 +247,18 @@ jobs:
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+      # ONE retry of the artifact download (audit D-0886 (2)): the Verdict job went red on `digest-mismatch: error` at this step with
+      # the verdicts themselves green (D-0880 (4)). The first download may fail without failing the job; the second runs only then,
+      # with the same SHA-pinned action and the same inputs (`digest-mismatch` stays at its default, error), and its failure fails the job.
+      - id: download
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: verdict-*
+          path: mutation-out
+          merge-multiple: true
+      - if: steps.download.outcome == 'failure'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           pattern: verdict-*
           path: mutation-out
