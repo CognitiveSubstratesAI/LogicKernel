@@ -84,3 +84,9 @@ t45(R) :- member(C, [0x1e900, 0x1e921, 0x1e922, 0x1e943]), ct_map(C, L), R = C-L
 % CT1b-A22: digit(W) and xdigit(W) hold integers (CTX_CODE) in char_type/2 as well: the answers raw, not through char_code/2
 t46(R) :- member(C, ['5', '0', '9', 'a']), findall(N-V, ( member(N, [digit, xdigit]), T =.. [N, V], char_type(C, T) ), L), R = C-L.
 t47(R) :- member(C, ['5', 'f']), findall(T, ( char_type(C, T), T =.. [N, _], memberchk(N, [digit, xdigit]) ), L), R = C-L.
+% CT1b-A25: the character end (-1, or end_of_file for char_type/2) is answered with the atom end_of_file BEFORE the class is looked up, so a
+% class that names nothing FAILS (no type error); a class looked up first would raise type_error(char_type, foo) for these
+t48(R) :- ct_res(code_type(-1, foo), R).
+t49(R) :- ct_res(char_type(end_of_file, foo), R).
+t50(R) :- ct_res(code_type(-1, 1), R).
+t51(R) :- ct_res(code_type(-1, foo(1)), R).
