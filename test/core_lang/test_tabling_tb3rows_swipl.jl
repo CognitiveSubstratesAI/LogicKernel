@@ -14,8 +14,8 @@
 #       u06      uh(1) :- between(1, 3, _), assertz(...): ONE solution of the clause is run, count 1 (the other two are pruned);
 #       u07      uhn(X) :- X = 1, between(1, 3, _), assertz(...): the non-ground control, all three solutions run, count 3.
 #     Kills: TB3-U2 (`return UDL_TRUE`: u01 count 1, u04 1-1, u06 count 3) and TB3-F7 (`complete = false`: the same three rows; the leader reads
-#     TBL_ANSWER_COMPLETE in tbl_reset_add_answer, src/pl-tabling.jl:1791). TB3-W1 is NOT killed here: the `!` of `'$tbl_wkl_add_answer'/4` is read by the
-#     debug-mode delim/4 only (boot/tabling.pl :680-696 under `prolog_debug`), the route of these rows is '$tbl_reset'/6.
+#     TBL_ANSWER_COMPLETE in tbl_reset_add_answer, src/pl-tabling.jl:1791). The U2 rows do not read the `!` of `'$tbl_wkl_add_answer'/4` (boot/tabling.pl :680-696 reads it
+#     in the `prolog_debug` branch of delim/4 only; their route is '$tbl_reset'/6): group W1 below calls that predicate directly (rows w01-w03, kills TB3-W1).
 #   * Cases `t_<id>(R)` run in order in ONE database, each wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`; a case that fails is the bare
 #     `t_<id>` line. Every answer line is swipl's, PINNED (swipl 10.1.20, two byte-identical runs; evidence/TAB1/f7_handoff.md); with `swipl` on PATH
 #     the live answers are compared with the pins too.
@@ -165,34 +165,89 @@ uhn(X) :- X = 1, between(1, 3, _), assertz(ux_seen(hn)).
 ux_n(Tag, N) :- aggregate_all(count, ux_seen(Tag), N).
 """
 
+# Group W1: `'$tbl_wkl_add_answer'/4` called AS A PREDICATE on the worklist of a FRESH variant table (the shape of the TB3-F3 rows of
+# test_tabling_answers_swipl.jl: an outermost wrapper from `'$c_wrap_predicate'/5`, `'$tbl_variant_table'/6`, a key per row because the wrapper leaves
+# the table incomplete). The fourth argument is `!` when the answer completes the table (pl-tabling.c tbl_wkl_add_answer, :4885-4899: `rc == TBL_ANSWER_COMPLETE`
+# unifies ATOM_cut), which update_delay_list answers for a GROUND call (`wl->ground`, :1786-1791); for a call with a variable it stays unbound.
+#   w01  ground call, the answer twice: `ok(!)`, then `no` (the variant is refused);   w02  ground call, one answer: `ok(!)`;
+#   w03  the control, a call with a variable, one answer: `ok(_)` (nothing completes it).
+# Kills TB3-W1 (`?` for `!`): w01 and w02 read `ok(?)`. The route of the U2 rows (`'$tbl_reset'/6`) does not read this argument.
+const _T3R_PROG_W1 = raw"""
+:- dynamic ta_w1_res/2.
+:- table ta_wg(_), ta_wn(_, _).
+ta_wg(_).
+ta_wn(_, 1).
+ta_w1_steps(k1, [x, x]).
+ta_w1_steps(k2, [x]).
+ta_w1_steps(k3, [a]).
+ta_w1_add(G, K, Closure) :-
+    '$tbl_variant_table'(Closure, G, Trie, Status, Skel, _Mono),
+    (   Status = fresh(_SCC, WL)
+    ->  ta_w1_steps(K, Steps),
+        ta_w1_job(Steps, WL, Skel, Rs),
+        findall(S, '$tbl_answer'(Trie, S, _), L0),
+        msort(L0, L),
+        assertz(ta_w1_res(K, r(Skel, Rs, L)))
+    ;   assertz(ta_w1_res(K, notfresh))
+    ).
+ta_w1_job([], _, _, []).
+ta_w1_job([V|Vs], WL, Skel, [R|Rs]) :-
+    copy_term(Skel, A),
+    (   A = ret(V0) -> V0 = V ; true ),
+    catch(( '$tbl_wkl_add_answer'(WL, A, [], C) -> R = ok(C) ; R = no ), E, R = ex(E)),
+    ta_w1_job(Vs, WL, Skel, Rs).
+:- '$c_wrap_predicate'(user:ta_wg(_), ta_w1_wg, Closure, _W,
+       user:('$wrap$ta_wg'(K) :- ta_w1_add(ta_wg(K), K, Closure))).
+:- '$c_wrap_predicate'(user:ta_wn(_, _), ta_w1_wn, Closure, _W,
+       user:('$wrap$ta_wn'(K, _) :- ta_w1_add(ta_wn(K, _), K, Closure))).
+ta_w1_rung(K, R) :- ( ta_wg(K) -> true ; true ), ta_w1_res(K, R).
+ta_w1_runn(K, R) :- ( ta_wn(K, _) -> true ; true ), ta_w1_res(K, R).
+"""
+
 const _T3R_GROUPS = [
     (
-    key="U2",
-    label="U2: ground tabled calls complete early after the first answer, a side effect of a later clause is not run (TB3-U2, TB3-F7)",
-    program=_T3R_PROG_U2,
-    cases=[
-        ("u01", raw"ug1(1), ux_n(g1, N), R = N"),
-        ("u02", raw"ug1(1), ux_n(g1, N), R = N"),
-        ("u03", raw"ug2(1), ux_n(g2, N), R = N"),
-        ("u04", raw"ug3(1), ux_n(g3a, A), ux_n(g3b, B), R = A-B"),
-        ("u05", raw"findall(X, ut(X), L), ux_n(t, N), R = L-N"),
-        ("u06", raw"uh(1), ux_n(h, N), R = N"),
-        ("u07", raw"findall(X, uhn(X), L), ux_n(hn, N), R = L-N")
-    ],
-    pins=[
-        "ok",
-        "t_u01 c[116,95,117,48,49]/1(i0)",
-        "t_u02 c[116,95,117,48,50]/1(i0)",
-        "t_u03 c[116,95,117,48,51]/1(i1)",
-        "t_u04 c[116,95,117,48,52]/1(c[45]/2(i1,i0))",
-        "t_u05 c[116,95,117,48,53]/1(c[45]/2(c[91,124,93]/2(i1,nil),i1))",
-        "t_u06 c[116,95,117,48,54]/1(i1)",
-        "t_u07 c[116,95,117,48,55]/1(c[45]/2(c[91,124,93]/2(i1,nil),i3))"
-    ]
-)
+        key="U2",
+        label="U2: ground tabled calls complete early after the first answer, a side effect of a later clause is not run (TB3-U2, TB3-F7)",
+        program=_T3R_PROG_U2,
+        cases=[
+            ("u01", raw"ug1(1), ux_n(g1, N), R = N"),
+            ("u02", raw"ug1(1), ux_n(g1, N), R = N"),
+            ("u03", raw"ug2(1), ux_n(g2, N), R = N"),
+            ("u04", raw"ug3(1), ux_n(g3a, A), ux_n(g3b, B), R = A-B"),
+            ("u05", raw"findall(X, ut(X), L), ux_n(t, N), R = L-N"),
+            ("u06", raw"uh(1), ux_n(h, N), R = N"),
+            ("u07", raw"findall(X, uhn(X), L), ux_n(hn, N), R = L-N")
+        ],
+        pins=[
+            "ok",
+            "t_u01 c[116,95,117,48,49]/1(i0)",
+            "t_u02 c[116,95,117,48,50]/1(i0)",
+            "t_u03 c[116,95,117,48,51]/1(i1)",
+            "t_u04 c[116,95,117,48,52]/1(c[45]/2(i1,i0))",
+            "t_u05 c[116,95,117,48,53]/1(c[45]/2(c[91,124,93]/2(i1,nil),i1))",
+            "t_u06 c[116,95,117,48,54]/1(i1)",
+            "t_u07 c[116,95,117,48,55]/1(c[45]/2(c[91,124,93]/2(i1,nil),i3))"
+        ]
+    ),
+    (
+        key="W1",
+        label="W1: '\$tbl_wkl_add_answer'/4 answers `!` for the answer that completes a ground call's table (TB3-W1)",
+        program=_T3R_PROG_W1,
+        cases=[
+            ("w01", raw"ta_w1_rung(k1, R)"),
+            ("w02", raw"ta_w1_rung(k2, R)"),
+            ("w03", raw"ta_w1_runn(k3, R)")
+        ],
+        pins=[
+            "ok",
+            "t_w01 c[116,95,119,48,49]/1(c[114]/3(a[114,101,116],c[91,124,93]/2(c[111,107]/1(a[33]),c[91,124,93]/2(a[110,111],nil)),c[91,124,93]/2(a[114,101,116],nil)))",
+            "t_w02 c[116,95,119,48,50]/1(c[114]/3(a[114,101,116],c[91,124,93]/2(c[111,107]/1(a[33]),nil),c[91,124,93]/2(a[114,101,116],nil)))",
+            "t_w03 c[116,95,119,48,51]/1(c[114]/3(c[114,101,116]/1(V0),c[91,124,93]/2(c[111,107]/1(V1),nil),c[91,124,93]/2(c[114,101,116]/1(a[97]),nil)))"
+        ]
+    )
 ]
 
-# kills TB3-U2 and TB3-F7 (u01, u04, u06); u02, u03, u05, u07 pin the controls
+# U2: kills TB3-U2 and TB3-F7 (u01, u04, u06); u02, u03, u05, u07 pin the controls. W1: kills TB3-W1 (w01, w02); w03 pins the control
 @testset "TB3-ROWS as swipl's: $(g.label)" for g in _T3R_GROUPS
     gd, ld, st = _T3R_load(g.program, g.cases)
     @test st == "ok"
@@ -208,19 +263,20 @@ const _T3R_GROUPS = [
     end
 end
 
-"The answer part of the pinned line of case `id` in group U2."
-function _T3R_ans(id)
-    g = only(_T3R_GROUPS)
+"The answer part of the pinned line of case `id` in group `key`."
+function _T3R_ans(id, key="U2")
+    g = only(filter(x -> x.key == key, _T3R_GROUPS))
     return split(only(filter(l -> startswith(l, "t_$id "), g.pins)), " "; limit=2)[2]
 end
 
 @testset "the TB3-ROWS pins are not vacuous" begin
-    g = only(_T3R_GROUPS)
-    @test g.pins[1] == "ok"
-    @test all(!isempty, g.pins)
-    for (id, goal) in g.cases
-        @test !isempty(goal)
-        @test count(l -> startswith(l, "t_$id "), g.pins) == 1
+    for g in _T3R_GROUPS
+        @test g.pins[1] == "ok"
+        @test all(!isempty, g.pins)
+        for (id, goal) in g.cases
+            @test !isempty(goal)
+            @test count(l -> startswith(l, "t_$id "), g.pins) == 1
+        end
     end
     # a ground call is cut after its first answer: the later clause's side effect is not run (0), a solution-producing clause runs once (1);
     # the mutants TB3-U2 / TB3-F7 run the pruned clauses (1, and 3 for the three solutions of `between/3`)
@@ -233,19 +289,28 @@ end
     @test endswith(_T3R_ans("u07"), "(c[45]/2(c[91,124,93]/2(i1,nil),i3))")
     @test _T3R_ans("u01") != _T3R_ans("u03")                  # the ground call and the side-effect-first control differ
     @test _T3R_ans("u06") != _T3R_ans("u07")                  # the same body, ground vs non-ground: 1 vs 3 side effects
+    # W1: the add that completes a ground call's table answers `ok(!)` (atom `!` = a[33]); the mutant TB3-W1 answers `?` (a[63]); the variable call leaves it unbound
+    @test occursin("c[111,107]/1(a[33])", _T3R_ans("w01", "W1")) &&
+        occursin("c[111,107]/1(a[33])", _T3R_ans("w02", "W1"))
+    @test !occursin("a[63]", _T3R_ans("w01", "W1")) &&
+        !occursin("a[63]", _T3R_ans("w02", "W1"))
+    @test occursin("c[111,107]/1(V1)", _T3R_ans("w03", "W1")) &&
+        !occursin("a[33]", _T3R_ans("w03", "W1"))
+    @test occursin("a[110,111]", _T3R_ans("w01", "W1"))        # the second, variant answer is refused (`no`)
 end
 
 @testset "the TB3-ROWS pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    g = only(_T3R_GROUPS)
-    if swipl === nothing
-        @info "TB3-ROWS LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
-        @test g.pins[1] == "ok"
-        @test [first(split(l, " ")) for l in g.pins[2:end]] ==
-            ["t_$id" for (id, _) in g.cases]
-    else
-        f = joinpath(mktempdir(), "tb3rows_swipl.pl")
-        write(f, _T3R_text(g.program, g.cases))
-        @test _T3R_swipl_lines(f, ["t_$id" for (id, _) in g.cases]) == g.pins
+    for g in _T3R_GROUPS
+        if swipl === nothing
+            @info "TB3-ROWS LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+            @test g.pins[1] == "ok"
+            @test [first(split(l, " ")) for l in g.pins[2:end]] ==
+                ["t_$id" for (id, _) in g.cases]
+        else
+            f = joinpath(mktempdir(), "tb3rows_swipl.pl")
+            write(f, _T3R_text(g.program, g.cases))
+            @test _T3R_swipl_lines(f, ["t_$id" for (id, _) in g.cases]) == g.pins
+        end
     end
 end
