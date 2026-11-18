@@ -398,6 +398,93 @@ tt_clean :- abolish_all_tables, retractall(d(_)), retractall(fl(_)).
     ]
 )
 
+# ── PREPARE-OLD / PREPARE-NEW (`'$mono_reeval_prepare'` sets `tt_notrail` for a table with old clauses and clears it for a table with new ones) ──
+# An answer of an ordinary assert reaches the store (value != 0) before the reevaluation, so the existing UP rows never read `tt_notrail`. Here the
+# continuation of the lazy table has a SIDE EFFECT (`side/1` asserts `db(A*1000+N)` with a counter N): the reevaluation derives a FRESH answer, which
+# `'$tbl_monotonic_add_answer'` trails only while `tt_notrail` is false. `r(S0, ..)` are `s(answers in the store, falsecount)` of p(_), `cnt` the counter.
+# e1: OLD (da(2) outside, reevaluation inside): the fresh answer 2002 is NOT trailed and stays after the rollback (S2 s(3,0)).
+# e2: NEW (da(2) inside): the fresh answer is trailed and the rollback leaves 0 answers.
+const _T9_PO = (
+    unit="tb9rows_prepare_old_new",
+    program=raw"""
+:- dynamic (da/1,db/1) as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :- da(X0), side(X0), X = X0.
+p(X) :- db(X).
+side(A) :- nb_getval(cnt,N), N1 is N+1, nb_setval(cnt,N1), B is A*1000+N1, assertz(db(B)).
+tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)), nb_setval(cnt,0).
+:- nb_setval(cnt,0).
+tt_st(S) :- tt_ns(p(_),N), tt_fc(p(_),F), S=s(N,F).
+""",
+    cases=[
+        (
+            "e1",
+            raw"tt_init(p(_)), assertz(da(2)), tt_st(S0), snapshot((tt_inv(p(_),V0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), nb_getval(cnt,N), R=r(S0,V0,B,S1,S2,V1,C,S3,N)"
+        ),   # TB9-site-prepare-old: M_OLD_CLAUSES sets tt_notrail; the fresh answer of the reevaluation stays (S2 s(3,0), C [2,2001,2002]); the mutant trails it: s(2,..)
+        (
+            "e2",
+            raw"tt_init(p(_)), snapshot((assertz(da(2)), tt_st(S0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), nb_getval(cnt,N), R=r(S0,B,S1,S2,V1,C,S3,N)"
+        ),   # TB9-site-prepare-new: M_NEW_CLAUSES clears tt_notrail; the fresh answer is trailed and rolled back (S2 s(0,0), C []); the mutant leaves it: s(1,0)
+        (
+            "e3",
+            raw"tt_init(p(_)), assertz(da(2)), tt_st(S0), snapshot(tt_st(S1)), tt_st(S2), tt_ex(p,C), tt_st(S3), nb_getval(cnt,N), R=r(S0,S1,S2,C,S3,N)"
+        ),   # control: da(2) outside, no reevaluation inside the transaction: nothing changes at the rollback
+        (
+            "e4",
+            raw"tt_init(p(_)), assertz(da(2)), tt_st(S0), snapshot((assertz(da(3)), tt_st(S1), tt_ex(p,B), tt_st(S2))), tt_st(S3), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S4), nb_getval(cnt,N), R=r(S0,S1,B,S2,S3,V1,C,S4,N)"
+        )   # mixed: da(2) outside and da(3) inside (M_MIXED_CLAUSES): the table is invalid after the rollback
+    ],
+    kill=["e1", "e2"],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs
+    pinned=[
+        "r(s(2,1),invalid,[2,2001,2002],s(3,0),s(3,0),valid,[2,2001,2002],s(3,0),2)",   # e1
+        "r(s(2,1),[2,2001,2002],s(3,0),s(0,0),valid,[],s(0,0),2)",   # e2
+        "r(s(2,1),s(2,1),s(2,1),[2,2001,2002],s(3,0),2)",   # e3
+        "r(s(2,1),s(4,1),[2,3,2001,2003,3002,3004],s(6,0),s(4,1),invalid,[2,2001,2005],s(3,0),5)"   # e4
+    ]
+)
+
+# ── NEW DEPENDENCY, BY THE FLAG ALONE (`tt_new_dep` is set by every `idg_add_child_dep` of a lazy monotonic dependency on a dynamic table modified in the transaction) ──
+# nd1/nd4 list the table at PREPARE already (db(100) queued on the dependency). Here db is modified in the transaction BEFORE the dependency on it exists:
+# nothing is queued, the status at prepare is NEW, and only the reevaluation's continuation (`db(B)` once da(10) is derived) sets the flag that lists the table.
+# `r(S0, B, S1, S2, V1, C, S3)` with `s(answers, falsecount)`: S2 s(1,1) and V1 `invalid` after the snapshot, the flag's doing.
+const _T9_NB = (
+    unit="tb9rows_newdep_flag",
+    program=raw"""
+:- dynamic (da/1,db/1) as monotonic.
+:- table p/1 as (monotonic,lazy).
+p(X) :- da(A), ( A >= 10 -> db(B), X is A+B ; X = A ).
+tt_clean :- abolish_all_tables, retractall(da(_)), retractall(db(_)).
+tt_st(S) :- tt_ns(p(_),N), tt_fc(p(_),F), S=s(N,F).
+""",
+    cases=[
+        (
+            "f1",
+            raw"assertz(da(1)), tt_init(p(_)), snapshot((assertz(db(100)), assertz(da(10)), tt_st(S0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), R=r(S0,B,S1,S2,V1,C,S3)"
+        ),   # TB9-site-newdep, -done: db is modified before the dependency exists; the flag alone lists the table (S2 s(1,1), V1 invalid)
+        (
+            "f2",
+            raw"assertz(da(1)), tt_init(p(_)), assertz(da(10)), snapshot((assertz(db(100)), tt_st(S0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), R=r(S0,B,S1,S2,V1,C,S3)"
+        ),   # control: da(10) outside, db(100) inside: queued on the existing dependency, listed at prepare (MIXED)
+        (
+            "f3",
+            raw"assertz(da(1)), assertz(db(100)), tt_init(p(_)), snapshot((assertz(da(10)), tt_st(S0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), R=r(S0,B,S1,S2,V1,C,S3)"
+        ),   # control, the contrast: db(100) outside, not modified in the transaction: the table is NOT listed (S2 s(1,0), valid)
+        (
+            "f4",
+            raw"assertz(da(1)), tt_init(p(_)), snapshot((assertz(db(100)), retract(db(100)), assertz(da(10)), tt_st(S0), tt_ex(p,B), tt_st(S1))), tt_st(S2), tt_inv(p(_),V1), tt_ex(p,C), tt_st(S3), R=r(S0,B,S1,S2,V1,C,S3)"
+        )   # TB9-site-newdep, -done: f1 with db(100) retracted again inside (the rollback restores nothing): the flag alone lists the table
+    ],
+    kill=["f1", "f4"],
+    # swipl 10.1.20, `tt_q(t_<case>, A)` in order, two identical runs
+    pinned=[
+        "r(s(2,1),[1,110],s(2,0),s(1,1),invalid,[1],s(1,0))",   # f1
+        "r(s(2,1),[1,110],s(2,0),s(1,1),invalid,[1],s(1,0))",   # f2
+        "r(s(2,1),[1,110],s(2,0),s(1,0),valid,[1],s(1,0))",   # f3
+        "r(s(1,1),[1],s(1,0),s(1,1),invalid,[1],s(1,0))"   # f4
+    ]
+)
+
 # ── TRIE-UPDATES ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # tc3 / tc2: `r(ClausesBefore, UpdatesListed)`; tc_ctl: the kinds of the updates; tc_both: `r(Clauses3, Clauses2, Kinds)`.
 const _T9_TRIE_CASES = [
@@ -483,6 +570,8 @@ _t9_check_unit(_T9_ND)
 _t9_check_unit(_T9_FA)
 _t9_check_unit(_T9_PI)
 _t9_check_unit(_T9_PI2)
+_t9_check_unit(_T9_PO)
+_t9_check_unit(_T9_NB)
 _t9_check_unit(_T9_TRIE)
 
 # ── NOT VACUOUS: each kill row shows the very value the mutant changes ──────────────────────────────────────────────────────
@@ -516,4 +605,11 @@ _t9_check_unit(_T9_TRIE)
     # nd4/nd5: the second reevaluation lists no table (falsecount 0 after it); a stale `tt_new_dep` would make it 1
     @test endswith(_T9_ND.pinned[3], ",0,0,valid,[1])") &&
         endswith(_T9_ND.pinned[4], ",0,0,valid,[1,110])")
+    # e1/e2: the fresh answer of the reevaluation is untrailed for OLD clauses (S2 s(3,0)) and trailed for NEW ones (S2 s(0,0)); a swapped flag gives the other
+    @test occursin(",s(3,0),s(3,0),valid,", _T9_PO.pinned[1]) &&
+        occursin(",s(0,0),valid,[],s(0,0),", _T9_PO.pinned[2])
+    # f1/f4 list the table by the flag alone (S2 s(.,1), invalid); f3, whose dependency is not modified in the transaction, does not (s(1,0), valid)
+    @test occursin(",s(1,1),invalid,", _T9_NB.pinned[1]) &&
+        occursin(",s(1,1),invalid,", _T9_NB.pinned[4])
+    @test occursin(",s(1,0),valid,", _T9_NB.pinned[3])
 end
