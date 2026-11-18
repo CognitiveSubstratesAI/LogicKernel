@@ -73,7 +73,7 @@ MUTANTS = [
          new="        if pos >= 0\n            b.entry_dead[pos + 1] = true\n"),
     dict(id="TB6-S19 hash_slot hashes every pointer to slot 0 (EQUIVALENT: find_pos and index_insert probe linearly from the slot, so a constant hash changes the probe length, never the answer)",
          file=SET, targets=[TI],
-         equivalent="pl-idgset.jl find_pos (:120-139) and index_insert (:105-115): both start at hash_slot and step `(s + 1) & mask` until an empty slot, so the set of reachable positions is the same for any hash; only the number of probes changes (the table holds at most capacity entries in 2*capacity slots, a free slot always ends the probe)",
+         equivalent="pl-idgset.jl find_pos (:120-139) and index_insert (:105-115): both start at hash_slot and step `(s + 1) & mask` until an empty slot, so the set of reachable positions is the same for any hash; only the number of probes changes (the table holds at most capacity entries in 2*capacity slots, a free slot always ends the probe); and no consumer sees slot order: idg_set_next walks the dense `entries` array in insertion order (`while e.pos < count`, pl-idgset.jl) and the loops at :132/:178/:346 are `for i in 0:(count-1)`, the slots only map a pointer to its position (accepted by the audit, D-0911 (4))",
          old="    h = (objectid(p) % UInt64) * 0x9e3779b97f4a7c15\n",
          new="    h = (objectid(p) % UInt64) * 0x0\n"),
     dict(id="TB6-S20 a retired block goes to the lingering list of a private node (KILL idg32: white-box, a node as the `lingering` owner: two grows chain b8 -> b4 through `older`, pl-idgset.c:159-162; production reaches it only for a shared or concurrent node, TH1)",

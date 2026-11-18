@@ -231,6 +231,10 @@ jobs:
         env:
           MUTANT: ${{ matrix.name }}
           TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
+          # the reach pass of a survivor runs the targets a SECOND time: skip it when 2 x the normal run would pass the job's
+          # timeout-minutes above (45 min = 2700 s, 100 min = 6000 s, less the ~3 min setup): ENG1-D4 (2026-11-18: normal run ~25 min,
+          # cancelled at the 45-minute timeout inside the reach pass: NO VERDICT) is the measured case
+          MUTATE_CI_REACH_BUDGET: ${{ (matrix.name == 'TB5-E8' || matrix.name == 'TB5-E9') && '5400' || '2400' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: ${{ !cancelled() }}
         with:
