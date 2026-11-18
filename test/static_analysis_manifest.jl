@@ -1376,6 +1376,7 @@ function _manifest_index(T)
         (LK.pl_close, Tuple{LD, Int64, Bool}, false),
         (LK.reportStreamError, Tuple{LD, LK.IOSTREAM}, false),
         (LK.streamStatus, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.releaseStream, Tuple{LK.IOSTREAM}, false),
         # R1e — write_canonical/1,2 (pl-prims.c numberVars) and read_term_from_atom/3
         (LK.nv_options{T}, Tuple{T, Int64, LK.av_action, Int64, Bool}, false),
         (LK.numberVars, Tuple{LD, Int64, LK.nv_options{T}, Int64}, false),
@@ -4552,6 +4553,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfeof, Tuple{LK.IOSTREAM}, false),
     (LK.Sferror, Tuple{LK.IOSTREAM}, true),
     (LK.Sflush, Tuple{LK.IOSTREAM}, false),
+    (LK.Sflush_julia_io, Tuple{LK.Sjulia_io}, false),
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
@@ -4606,6 +4608,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sseterr, Tuple{LK.IOSTREAM, UInt32, Nothing}, false),
     (LK.Sseterr, Tuple{LK.IOSTREAM, UInt32, String}, false),
     (LK.Sungetc, Tuple{Int64, LK.IOSTREAM}, false),
+    (LK.Sunlock, Tuple{LK.IOSTREAM}, false),
     (LK.Supdateesc, Tuple{LK.IOPOS, Int64}, true),
     (LK.Supdatepos, Tuple{LK.IOPOS, Int64}, true),
     (LK.Swrite_julia_io, Tuple{LK.Sjulia_io, Vector{UInt8}, Int64, Int64}, false),

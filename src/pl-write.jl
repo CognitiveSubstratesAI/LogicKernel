@@ -2611,7 +2611,7 @@ end
 # DIVERGES: `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)` (no `SH_NOPAIR`: `get_stream_handle`
 # refuses a stream pair by name); `PL_get_nchars(A2, …, CVT_ATOM|CVT_STRING|CVT_EXCEPTION)` is `PL_get_text` and
 # `PL_canonicalise_text_ex`, then the refusal of a wide text, `representation_error(encoding)` for ISO Latin-1 as
-# upstream's `PL_mb_text`; no lock to release, `PL_release_stream` is `streamStatus` (an error on the stream is raised).
+# upstream's `PL_mb_text`; `PL_release_stream` is `streamStatus` (an error on the stream is raised, an unbuffered stream is written out).
 "`\$put_token(+Stream, +Token)`: write the atom or string `Token` as a token: a space first where it would join the last one (pl-write.c)."
 function put_token(ld::PL_local_data{T}, A1::term_t, A2::term_t)::Bool where {T}
     out = term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)          # PL_get_stream_handle(A1, &out)

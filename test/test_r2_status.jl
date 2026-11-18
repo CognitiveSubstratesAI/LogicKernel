@@ -496,9 +496,11 @@ end
     # code_type/2 (CT1); format_time/3 (TAI1); and the refusal row get_procedure: other than GP_DEFINE, PR1) plus 15 refusal rows
     # that gained an owner (13 ZIP1 minizip refusals in pl-zip.jl, pl_on_signal4_va TH1, pl_set_prolog_stack4_va R2 F1b; the
     # set_module code-accounting row only changed its owner to REFUSED). No owner row was lost.
+    # 183 after F1b (fbad7cbc), measured with the generator's own r2_collect on the tree: the owner line of the refusal row `set_stack_limit (a changed stack limit)`
+    # in pl_set_prolog_stack4_va (src/pl-setup.jl, owner R2 F1b) went (184 -> 183); the Q10-42 port closed no owner row.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 184
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 183
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

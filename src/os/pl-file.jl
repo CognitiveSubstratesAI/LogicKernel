@@ -560,12 +560,22 @@ function reportStreamError(ld::PL_local_data{T}, s::IOSTREAM)::Bool where {T}
     return true
 end
 
-# PORT: pl-file.c streamStatus
-# DIVERGES: no locks (`releaseStream`).
-"Whether `s` is free of errors; an error recorded on it is raised (pl-file.c)."
-function streamStatus(ld::PL_local_data, s::IOSTREAM)::Bool
-    (s.flags & (SIO_FERR | SIO_WARN)) != 0 && return reportStreamError(ld, s)
+# PORT: pl-file.c releaseStream
+# DIVERGES: no locks: `Sunlock` is the release-time step only (the write-out of an unbuffered output stream).
+"Release `s`: false if that failed, as `Sunlock` (pl-file.c)."
+function releaseStream(s::IOSTREAM)::Bool
+    s.magic == SIO_MAGIC && return Sunlock(s) == 0
     return true
+end
+
+# PORT: pl-file.c streamStatus
+"Whether `s` is free of errors and its release succeeds; an error recorded on it is raised (pl-file.c)."
+function streamStatus(ld::PL_local_data, s::IOSTREAM)::Bool
+    if (s.flags & (SIO_FERR | SIO_WARN)) != 0
+        ret = reportStreamError(ld, s)
+        return releaseStream(s) && ret
+    end
+    return releaseStream(s)
 end
 
 # ── stream blobs (pl-file.c), since R2's S1 ─────────────────────────────────────────────────────

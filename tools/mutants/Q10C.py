@@ -199,7 +199,7 @@ end
          old='''    PL_canonicalise_text_ex(ld, txt) || return false
     txt.encoding === ENC_WCHAR''',
          new='''    txt.encoding === ENC_WCHAR'''),
-    dict(id="Q10-42 the stream status of a written token is not read where the write itself succeeded (swipl: pt27, pt28, an unbuffered stream on a full device whose release fails; the kernel differs, see the checklist item of R2 Q10-42 in docs/architecture.md, so no row kills it yet)", file=W, targets=TQ,
+    dict(id="Q10-42 the stream status of a written token is not read where the write itself succeeded (KILL pt27, pt28: an unbuffered stream on a full device, whose release flush fails)", file=W, targets=TQ,
          old='''        return streamStatus(ld, out)                                # PL_release_stream(out)
     end''',
          new='''        return true

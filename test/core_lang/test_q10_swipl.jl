@@ -366,12 +366,24 @@ const _QX_CASES = [
     ),   # the write itself fails on the encoding error (`PutTokenN` false): the second release of the stream raises it
     (
         "pt27",
-        "open('/dev/full', write, S, [buffer(false)]), ( '\$put_token'(S, a) -> R0 = yes ; R0 = no ), ( stream_property(S, error(E)) -> true ; E = none ), R = R0-E"
-    ),   # KNOWN DIFFERENCE (below): an unbuffered stream on a full device: swipl writes the token, the release of the stream flushes and fails, `$put_token` fails with it
+        "open('/dev/full', write, S, [buffer(false)]), ( '\$put_token'(S, a) -> R0 = yes ; R0 = no ), ( stream_property(S, error(E)) -> true ; E = none ), catch(close(S), _, true), R = R0-E"
+    ),   # an unbuffered stream on a full device: the token is written, the release of the stream flushes and fails, `$put_token` fails with the error left on the stream
     (
         "pt28",
-        "open('/dev/full', write, S, [buffer(false)]), ( '\$put_token'(S, a) -> true ; true ), catch('\$put_token'(S, b), error(io_error(W, S2), _), ( S2 == S -> R = io_error(W) ; R = other ))"
-    ),   # KNOWN DIFFERENCE (below): the error of the failed release stays on the stream, the next token raises it
+        "open('/dev/full', write, S, [buffer(false)]), ( '\$put_token'(S, a) -> true ; true ), catch('\$put_token'(S, b), error(io_error(W, S2), _), ( S2 == S -> R = io_error(W) ; R = other )), catch(close(S), _, true)"
+    ),   # the error of the failed release stays on the stream, the next token raises it
+    (
+        "pt29",
+        "open('/dev/full', write, S, [buffer(false)]), ( '\$put_token'(S, a) -> true ; true ), ( catch(close(S), _, fail) -> R = closed ; R = failed )"
+    ),   # closing an unbuffered stream whose release failed: its buffer is gone, the close answers
+    (
+        "pt30",
+        "open('/dev/full', write, S, []), '\$put_token'(S, a), catch(close(S), error(io_error(W, S2), _), ( S2 == S -> R = io_error(W) ; R = other ))"
+    ),   # a buffered stream on a full device: the token is written, close flushes and raises io_error(write, S)
+    (
+        "pt31",
+        "open('/dev/full', write, S, []), ( '\$put_token'(S, a) -> R0 = yes ; R0 = no ), ( stream_property(S, error(E)) -> true ; E = none ), catch(close(S), _, true), R = R0-E"
+    ),   # the buffered control: the release of the stream does not flush, no error before the close
     ("cb01", "current_blob(foo, T), R = T"),   # a text atom: its type
     ("cb02", "current_blob([], T), R = T"),   # the empty list: reserved_symbol
     ("cb03", "( current_blob(\"s\", T) -> R = T ; R = no )"),   # a string is no blob
@@ -610,6 +622,9 @@ const _QX_PINNED = [
     "t_pt26 c[116,95,112,116,50,54]/1(c[105,111,95,101,114,114,111,114]/1(a[119,114,105,116,101]))",
     "t_pt27 c[116,95,112,116,50,55]/1(c[45]/2(a[110,111],a[116,114,117,101]))",
     "t_pt28 c[116,95,112,116,50,56]/1(c[105,111,95,101,114,114,111,114]/1(a[119,114,105,116,101]))",
+    "t_pt29 c[116,95,112,116,50,57]/1(a[99,108,111,115,101,100])",
+    "t_pt30 c[116,95,112,116,51,48]/1(c[105,111,95,101,114,114,111,114]/1(a[119,114,105,116,101]))",
+    "t_pt31 c[116,95,112,116,51,49]/1(c[45]/2(a[121,101,115],a[102,97,108,115,101]))",
     "t_cb01 c[116,95,99,98,48,49]/1(a[116,101,120,116])",
     "t_cb02 c[116,95,99,98,48,50]/1(a[114,101,115,101,114,118,101,100,95,115,121,109,98,111,108])",
     "t_cb03 c[116,95,99,98,48,51]/1(a[110,111])",
@@ -658,14 +673,8 @@ const _QX_PINNED = [
 # the kernel's lines where they differ from swipl's (see the header)
 # KNOWN DIFFERENCE (R2 F1b, checklist): the limit is counted in words here and in bytes in swipl, so a limit that is no multiple of 8 is
 # rounded down: `set_prolog_flag(stack_limit, 2000001)` reads back 2000001 in swipl 10.1.20 (the pin), 2000000 here (sl19).
-# KNOWN DIFFERENCE (R2 Q10-42, checklist): an unbuffered output stream is flushed by swipl when the stream is RELEASED (`Sunlock` -> `S__removebuf`),
-# so on /dev/full `'$put_token'(S, a)` fails with the error left on the stream (pt27: `no-true`) and the next token raises io_error(write) (pt28); the kernel
-# has no locks, writes through a buffered Julia IOStream and meets the error only at close, so it answers `yes-false` (pt27) and leaves R unbound (pt28).
-# The rows keep the stream open: the kernel's `close` of that stream throws the Julia SystemError (ENOSPC) instead of raising io_error(write, S).
 const _QX_KERNEL_DIFF = Dict{String, String}(
-    "t_sl19" => "t_sl19 c[116,95,115,108,49,57]/1(i2000000)",
-    "t_pt27" => "t_pt27 c[116,95,112,116,50,55]/1(c[45]/2(a[121,101,115],a[102,97,108,115,101]))",
-    "t_pt28" => "t_pt28 c[116,95,112,116,50,56]/1(V0)"
+    "t_sl19" => "t_sl19 c[116,95,115,108,49,57]/1(i2000000)"
 )
 _qx_expected(p::String) = get(_QX_KERNEL_DIFF, first(split(p, ' ')), p)
 
