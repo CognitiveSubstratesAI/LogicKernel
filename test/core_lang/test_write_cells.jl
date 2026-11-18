@@ -380,6 +380,10 @@ end
 # `freeze` attribute is written as `freeze(Var, Goal)` (rows.tsv wr05). The text of an exception thrown by the hook
 # follows the `{` the writer already wrote (at21). at19 sets the write_attributes flag to `portray` and puts it back;
 # at19d, the next goal, shows the flag is `ignore` again. print/1 under the default flags (at24) writes the name only.
+# at26's write goes to the current output, which is the write's stream too: its text does not tell the hook's stream from the
+# current one. at28 writes to user_output while the current output is a with_output_to/2 string: the hook's `x` is on user_output
+# (the write's stream), and the `write(after)` after the write lands in the string, so writeq(S) shows "after" (swipl 10.1.20,
+# two identical runs): the current output is put back after the hook.
 const _WC_ATTP_PROGRAM = raw"""
 m:attr_portray_hook(V, _) :- write(hooked(V)).
 m2:attr_portray_hook(_, _) :- throw(oops).
@@ -403,10 +407,12 @@ at25 :- put_attr(X,m4,1), write_term(X, [attributes(portray)]), nl.
 at26 :- put_attr(X,m5,1), write_term(X, [attributes(portray)]), nl, put_attr(Y,m5,1),
     with_output_to(string(S), write_term(f(Y,Y), [attributes(portray)])), write(S), nl.
 at27 :- put_attr(X,m5,1), open_null_stream(N), write_term(N, X, [attributes(portray)]), close(N), write(done), nl.
+at28 :- put_attr(X,m5,1),
+    with_output_to(string(S), (write_term(user_output, X, [attributes(portray)]), write(after))), writeq(S), nl.
 """
 const _WC_ATTP_GOALS = [
     "at15", "at16", "at17", "at18", "at19", "at19d", "at20", "at21", "at22", "at23", "at24",
-    "at25", "at26", "at27"
+    "at25", "at26", "at27", "at28"
 ]
 
 @testset "an attributed variable written with attributes(portray): '\$attvar':portray_attvar/1, as swipl writes it" begin
@@ -417,6 +423,7 @@ const _WC_ATTP_GOALS = [
     # lands, at27 is `@test_broken` with the same comparisons (an unexpected pass is an error: the entry is deleted then).
     @test !any(o -> occursin("existence_error(procedure", o), ours[1:13])
     @test_broken !occursin("existence_error(procedure", ours[14])              # at27: owner STREAMS-A (open_null_stream/1)
+    @test !occursin("existence_error(procedure", ours[15])
     # the kernel's side alone (the text of swipl 10.1.20, pinned)
     @test ours[1] == "_V1{a = ...}\n\n---\n"                                          # at15
     @test ours[2] == "f(_V1{a = ..., b = ...},_V2)\nf(_V1{a = ..., b = ...},_V2)\n\n---\n"   # at16
@@ -433,6 +440,7 @@ const _WC_ATTP_GOALS = [
     @test ours[12] == "_V1{"^100 * "_V1EX resource_error(portray_nesting)\n---\n"       # at25
     @test ours[13] == "_V1{x}\nf(_V2{x},_V2{x})\n\n---\n"                             # at26
     @test_broken ours[14] == "done\n\n---\n"                                         # at27: to a null stream; Scurout put back (owner STREAMS-A)
+    @test ours[15] == "_V1{x}\"after\"\n\n---\n"                                       # at28: the hook's `x` on the write's stream, `after` on the current output
     if _R_SWIPL
         theirs = [_wc_norm(t) for t in _wc_swipl(_WC_ATTP_PROGRAM, _WC_ATTP_GOALS)]
         @test length(theirs) == length(_WC_ATTP_GOALS)

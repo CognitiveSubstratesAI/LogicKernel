@@ -5,7 +5,7 @@
 # EXACTLY once), `new`, `targets`, optional `equivalent`. Verdicts: written by the battery, not yet run. Every `old` was counted EXACTLY
 # once in src/pl-write.jl at the commit that adds this list (a text count by a python3 -I checker, no Julia); RE-FIT any `old` that
 # `tools/warm.sh fmt` rewraps. NOTHING here has run on the kernel: each KILL names the row EXPECTED to kill it, the battery decides.
-# KILL: test/core_lang/test_write_cells.jl, the testset "an attributed variable written with attributes(portray)" (rows at15-at27,
+# KILL: test/core_lang/test_write_cells.jl, the testset "an attributed variable written with attributes(portray)" (rows at15-at28,
 # pinned from swipl 10.1.20; the older at01-at14 rows hold the other attributes(...) modes and the default flag).
 # TARGETS (audit D-0238): the mutated arm runs only where a write has the `portray` attribute mode: a search of test/*/*.jl and tools/
 # for `attributes(portray)`, `portray_attvar` and the write_attributes flag finds test_write_cells.jl (the rows above) and
@@ -28,10 +28,10 @@ MUTANTS = [
     dict(id="W3B-M2 the call does not pass its exception (PL_Q_PASS_EXCEPTION dropped; at21)", file=W, targets=TW,
          old="        rc = PL_call_predicate(\n            gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, pred, av\n        )\n",
          new="        rc = PL_call_predicate(\n            gd, ld, nothing, PL_Q_NODEBUG, pred, av\n        )\n"),
-    dict(id="W3B-M3 the hook's output stays on the current output, not the write's stream (at26, at27)", file=W, targets=TW,
+    dict(id="W3B-M3 the hook's output stays on the current output, not the write's stream (KILL at28: `_V1\"{x}after\"`; at26 writes to the current output, so options.out is the current output there)", file=W, targets=TW,
          old="        old = Scurout(ld)\n        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out\n",
          new="        old = Scurout(ld)\n"),
-    dict(id="W3B-M4 the current output is not put back after the call (at27: write(done) goes to the closed null stream)", file=W, targets=TW,
+    dict(id="W3B-M4 the current output is not put back after the call (KILL at28: the write(after) after the write lands on user_output, `_V1{x}after\"\"`; at27 is @test_broken, open_null_stream/1 owner STREAMS-A)", file=W, targets=TW,
          old="        end\n        ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = old",
          new="        end\n        old"),
     dict(id="W3B-M5 the portray nesting is not left (the counter keeps every earlier row's call: at25 reaches the limit before 100 nested braces)", file=W, targets=TW,
