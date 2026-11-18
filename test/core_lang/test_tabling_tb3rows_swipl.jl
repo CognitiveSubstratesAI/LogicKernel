@@ -19,7 +19,7 @@
 #   * Cases `t_<id>(R)` run in order in ONE database, each wrapped in `catch(Goal, error(SsuE, _), R = raised(SsuE))`; a case that fails is the bare
 #     `t_<id>` line. Every answer line is swipl's, PINNED (swipl 10.1.20, two byte-identical runs; evidence/TAB1/f7_handoff.md); with `swipl` on PATH
 #     the live answers are compared with the pins too.
-#   * UNRUN on the kernel (edit-only step, nothing compiled): every kernel answer; the lane run decides.
+#   * Run on the kernel (TAB1 S3t): the unmutated kernel gives every pin (37/37); hand-run, TB3-U2 and TB3-F7 each fail u01, u02, u04, u06 (u02 reads the same count a second time).
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -167,29 +167,29 @@ ux_n(Tag, N) :- aggregate_all(count, ux_seen(Tag), N).
 
 const _T3R_GROUPS = [
     (
-        key="U2",
-        label="U2: ground tabled calls complete early after the first answer, a side effect of a later clause is not run (TB3-U2, TB3-F7)",
-        program=_T3R_PROG_U2,
-        cases=[
-            ("u01", raw"ug1(1), ux_n(g1, N), R = N"),
-            ("u02", raw"ug1(1), ux_n(g1, N), R = N"),
-            ("u03", raw"ug2(1), ux_n(g2, N), R = N"),
-            ("u04", raw"ug3(1), ux_n(g3a, A), ux_n(g3b, B), R = A-B"),
-            ("u05", raw"findall(X, ut(X), L), ux_n(t, N), R = L-N"),
-            ("u06", raw"uh(1), ux_n(h, N), R = N"),
-            ("u07", raw"findall(X, uhn(X), L), ux_n(hn, N), R = L-N")
-        ],
-        pins=[
-            "ok",
-            "t_u01 c[116,95,117,48,49]/1(i0)",
-            "t_u02 c[116,95,117,48,50]/1(i0)",
-            "t_u03 c[116,95,117,48,51]/1(i1)",
-            "t_u04 c[116,95,117,48,52]/1(c[45]/2(i1,i0))",
-            "t_u05 c[116,95,117,48,53]/1(c[45]/2(c[91,124,93]/2(i1,nil),i1))",
-            "t_u06 c[116,95,117,48,54]/1(i1)",
-            "t_u07 c[116,95,117,48,55]/1(c[45]/2(c[91,124,93]/2(i1,nil),i3))"
-        ]
-    )
+    key="U2",
+    label="U2: ground tabled calls complete early after the first answer, a side effect of a later clause is not run (TB3-U2, TB3-F7)",
+    program=_T3R_PROG_U2,
+    cases=[
+        ("u01", raw"ug1(1), ux_n(g1, N), R = N"),
+        ("u02", raw"ug1(1), ux_n(g1, N), R = N"),
+        ("u03", raw"ug2(1), ux_n(g2, N), R = N"),
+        ("u04", raw"ug3(1), ux_n(g3a, A), ux_n(g3b, B), R = A-B"),
+        ("u05", raw"findall(X, ut(X), L), ux_n(t, N), R = L-N"),
+        ("u06", raw"uh(1), ux_n(h, N), R = N"),
+        ("u07", raw"findall(X, uhn(X), L), ux_n(hn, N), R = L-N")
+    ],
+    pins=[
+        "ok",
+        "t_u01 c[116,95,117,48,49]/1(i0)",
+        "t_u02 c[116,95,117,48,50]/1(i0)",
+        "t_u03 c[116,95,117,48,51]/1(i1)",
+        "t_u04 c[116,95,117,48,52]/1(c[45]/2(i1,i0))",
+        "t_u05 c[116,95,117,48,53]/1(c[45]/2(c[91,124,93]/2(i1,nil),i1))",
+        "t_u06 c[116,95,117,48,54]/1(i1)",
+        "t_u07 c[116,95,117,48,55]/1(c[45]/2(c[91,124,93]/2(i1,nil),i3))"
+    ]
+)
 ]
 
 # kills TB3-U2 and TB3-F7 (u01, u04, u06); u02, u03, u05, u07 pin the controls
