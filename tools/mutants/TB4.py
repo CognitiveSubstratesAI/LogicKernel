@@ -38,7 +38,7 @@ TR = "test/core_lang/test_tabling_tb4rows_swipl.jl"     # TB4K-b: the kill rows 
 TR2 = "test/core_lang/test_tabling_tb4rows2_swipl.jl"      # the kill rows R13-R18 (TB4K-c): answer completion, R14, R15 white-box, R16-R18
 A1G = "test/core_lang/test_tabling_a1_guard.jl"         # TB4K-d: the white-box row of TB4-A1 (its recursion guard has no Prolog route)
 S5G = "test/core_lang/test_tabling_s5_guard.jl"         # TB4-S5: the white-box row (run FIRST: a failing target ends the run before TW)
-T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"    # TB5-ROWS: groups A3N/A3P/A3Q (kill TB4-A3), S4A/S4B (regression pins of the S4 model, NOT a kill)
+T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"    # TB5-ROWS: groups A3N/A3P/A3Q (kill TB4-A3), S4A/S4B (regression pins of the S4 model, NOT a kill), S4C (kills TB4-S4)
 TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # TAB1 INT3 (wip/tab-int): the rows R9, R10, g13a, g13b that need TB5's `$tbl_destroy_table`: they kill TB4-S1, S3, S4, A2, A3
 TS4X = ["test/core_lang/test_tabling_%s_swipl.jl" % n for n in (    # TB4-S4 (audit D-0733 item 2): the 12 other files that mention tnot (grep -rl tnot test/)
     "abolish_bulk_upstream", "abolish_delay_deps_upstream", "abolish_depending_table_upstream",
@@ -236,16 +236,11 @@ MUTANTS = [
          file=TAB, targets=[TW, TX],
          old='                        if res                                  # remove member from conjunction',
          new='                        if !res                                 # remove member from conjunction'),
-    # TB4-S4 is a CANDIDATE EQUIVALENT (STEP TB5-ROWS2, read of pl-tabling.c at 18168e62; NOT decided: `equivalent=` needs the audit's two-sided
-    # acceptance, the dispatcher asks). No killing row could be designed: remove_conditional_answer pushes its own propagation at once
-    # (pl-tabling.c:1846-1866) and :1930 `res = !result` resolves every tnot(X) delay of a table left without answers (`!has_answers && undefined == 0`);
-    # make_answer_unconditional pushes propagate(true) (:1820-1840). So an emptied table or an answer that turned unconditional is resolved inside
-    # the agenda of pass 0, whichever worklist is scanned first. Pass 1 repeats the scan (propagate_to_answer finds nothing, as the stale-delay test
-    # header says: "propagated in every pass without changing anything") and recomputes `undefined`, which answer completion re-derives anyway from
-    # each worklist's own `undefined` (is_ac_candidate_wl, :2316): a stale count with every wl.undefined == 0 finds no candidate. No debug swipl is
-    # available (no O_DEBUG, no gdb), so the pass count cannot be observed; a mutated swipl build was NOT done. The rows S4A/S4B of
-    # test_tabling_tb5rows_swipl.jl pin the model of a component with two decided worklists as a regression guard (swipl 10.1.20); they do NOT kill it.
-    dict(id='TB4-S4 simplify_component stops after one pass (CANDIDATE EQUIVALENT, see the comment above: pass 1 repeats pass 0, pl-tabling.c:1846-1866, :1930; TX group SIMP row r09a and TB5-ROWS rows S4A/S4B pin the model, none is known to kill it; the dispatcher decides)',
+    # TB4-S4 (STEP S3z-2): pass 1 of simplify_component is observable. The earlier reading (pass 1 repeats pass 0, every removal pushes its own
+    # propagation, pl-tabling.c:1846-1866) holds for ground answers; the second scan block (:2149-2168, `wl->pos_undefined`, filled by
+    # add_to_wl_pos_undefined :1425-1479 for positive delay elements on NON-GROUND answers) can find, in pass 1 only, entries whose answers a worklist
+    # scanned later in pass 0 turned unconditional or removed. TB5-ROWS group S4C is that program (swipl 10.1.20 pinned): s406-s408 differ under the break.
+    dict(id='TB4-S4 simplify_component stops after one pass (KILL T5R group S4C rows s406, s407, s408: the component of the non-ground answer sa(a) with a positive loop through sb(_) and a negative chain sc/se; pass 1 empties the three pos_undefined entries left by pass 0, count 3; swipl and the kernel read the delay sa(a), the mutant none)',
          file=TAB, targets=[TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X,
          old='        (count == 0 || undefined == 0) && break\n',
          new='        break\n'),

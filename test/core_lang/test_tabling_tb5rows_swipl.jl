@@ -9,11 +9,17 @@
 #     it. Controls, both pinned from swipl: A3P adds `lq :- lp.` (a positive element: ONE call, so the counter works in this program), A3Q is A3P
 #     without `le` (no simplification: ZERO calls, so the 0 of A3N is not "answer completion never runs").
 #   * Groups S4A, S4B (TB4-S4: simplify_component stops after one pass): the model of a component with two worklists decided by propagation and
-#     an answer that turns true (se). The reading of pl-tabling.c:2099-2195 gives no program in which pass 1 changes a result: every removal of a
-#     conditional answer pushes its own propagation (:1846-1866, `res = !result` for a table left without answers), so an emptied table is
-#     resolved at once; pass 1 repeats pass 0's scans and recomputes `undefined`, which answer completion re-derives from the worklists' current
-#     `undefined` (is_ac_candidate_wl :2316). These rows PIN the model (a regression guard of the simplification chain); they do NOT claim to
-#     kill TB4-S4, which this step records as a candidate for EQUIVALENT (the reason: tools/mutants/TB4.py, the TB4-S4 text).
+#     an answer that turns true (se). Ground answers give pass 1 nothing to do (every removal of a conditional answer pushes its own propagation,
+#     pl-tabling.c:1846-1866), so these rows PIN the model (a regression guard of the simplification chain) and do NOT kill TB4-S4.
+#   * Group S4C (KILLS TB4-S4, STEP S3z-2): the second scan block of simplify_component (pl-tabling.c:2149-2168) walks `wl->pos_undefined`, the
+#     positive delay elements on NON-GROUND answers (add_to_wl_pos_undefined, :1425-1479). `sa(_)` is called with its variable open, `sa(a)` is the
+#     answer; `sb(_) :- tnot(sb(a)), sa(_)` and `sa(a) :- sb(X), X = a` close a positive loop through the table of `sb(_)`, and `sc :- tnot(sa(a)), sd`
+#     / `se :- tnot(sc)` hang a negative chain onto it. In pass 0 the scan of the worklist holding the loop finds three `pos_undefined` entries
+#     still conditional (kept), and a worklist scanned LATER removes or resolves their answers; pass 1's scan is the first to find them no longer
+#     conditional and to push their propagation (`push_propagate(wl, r, value != 0)`: count 3, pos_undefined emptied, answer and delay-set state
+#     changed). With the break after pass 0 (TB4-S4) that propagation never runs and the table of `sa(_)` ends without its answer: s406 reads the
+#     one delay `sa(a)` on swipl (pinned, swipl 10.1.20), the mutant none; s407 reads `[a]` against `[]`, s408 `undefined` for `sa(_)` and `sa(a)`
+#     against `false`.
 #   * Group L2 (TB5-L2: delayed_destroy_table sets TRIE_ABOLISH_ON_COMPLETE; pl-tabling.c:4495 delayed_destroy_table, :6477 the completion that
 #     deletes the table): a tabled goal calls `abolish_all_tables` inside its own evaluation (boot/tabling.pl abolish_all_tables:
 #     '$tbl_abolish_local_tables' fails while an evaluation runs, so each table goes through '$tbl_destroy_table', pl-tabling.c abolish_table,
@@ -212,6 +218,16 @@ sb :- sp, fail.
 se :- tnot(sp).
 """
 
+const _T5_PROG_S4C = ":- use_module(library(wfs)).\n" * _T5_TRUTH * raw"""
+:- table sa/1, sb/1, sc/0, sd/0, se/0.
+sa(_) :- tnot(se).
+sa(a) :- sb(X), X = a.
+sb(_) :- tnot(sb(a)), sa(_).
+sc :- tnot(sa(a)), sd.
+sd :- fail.
+se :- tnot(sc).
+"""
+
 const _T5_PROG_L2 = raw"""
 :- nb_setval(cntl2, 0).
 :- table l2p/1, l2q/1.
@@ -277,7 +293,7 @@ const _T5_GROUPS = [
     ),
     (
         key="S4A",
-        label="S4: the model of the component with two decided worklists, clause order a (TB4-S4 candidate)",
+        label="S4: the model of the component with two decided worklists, clause order a (TB4-S4 regression pin)",
         program=_T5_PROG_S4A,
         cases=[
             ("s401", raw"sp, R = yes"),
@@ -309,6 +325,25 @@ const _T5_GROUPS = [
             "ok",
             "t_s404 c[116,95,115,52,48,52]/1(c[91,124,93]/2(c[61]/2(a[115,112],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,97],a[116,114,117,101]),c[91,124,93]/2(c[61]/2(a[115,98],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,101],a[116,114,117,101]),nil)))))",
             "t_s405 c[116,95,115,52,48,53]/1(a[116,114,117,101])"
+        ]
+    ),
+    (
+        key="S4C",
+        label="S4: pass 1 propagates the pos_undefined entries of non-ground answers (kills TB4-S4)",
+        program=_T5_PROG_S4C,
+        cases=[
+            ("s406", raw"findall(D, call_delays(sa(_), D), L), R = L"),
+            ("s407", raw"findall(X, sa(X), L), R = L"),
+            (
+                "s408",
+                raw"findall(G=T, (member(G, [sa(_), sa(a), sb(_), sb(a), sc, sd, se]), tr_truth(G, T)), M), R = M"
+            )
+        ],
+        pins=[
+            "ok",
+            "t_s406 c[116,95,115,52,48,54]/1(c[91,124,93]/2(c[115,97]/1(a[97]),nil))",
+            "t_s407 c[116,95,115,52,48,55]/1(c[91,124,93]/2(a[97],nil))",
+            "t_s408 c[116,95,115,52,48,56]/1(c[91,124,93]/2(c[61]/2(c[115,97]/1(a[97]),a[117,110,100,101,102,105,110,101,100]),c[91,124,93]/2(c[61]/2(c[115,97]/1(a[97]),a[117,110,100,101,102,105,110,101,100]),c[91,124,93]/2(c[61]/2(c[115,98]/1(V0),a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(c[115,98]/1(a[97]),a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,99],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,100],a[102,97,108,115,101]),c[91,124,93]/2(c[61]/2(a[115,101],a[116,114,117,101]),nil))))))))"
         ]
     ),
     (
@@ -376,7 +411,8 @@ const _T5_GROUPS_ENG1 = [
 const _T5_GROUPS_RUN = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
 const _T5_GROUPS_LIVE = vcat(_T5_GROUPS, _T5_GROUPS_ENG1)
 
-# kills TB4-A3 (A3N: the answer completion counter is 0, the mutant calls it); A3P and A3Q pin the controls; S4A/S4B are the S4 regression pins;
+# kills TB4-A3 (A3N: the answer completion counter is 0, the mutant calls it); A3P and A3Q pin the controls; S4A/S4B are the S4 regression pins,
+# S4C kills TB4-S4 (s406: swipl reads the delay `sa(a)`, the break after pass 0 leaves none);
 # L2 kills TB5-L2 (l202: no table is left, l203: evaluated twice)
 @testset "TB5-ROWS simplification, answer completion and abolish as swipl's: $(g.label)" for g in
                                                                                              _T5_GROUPS_RUN
@@ -433,6 +469,26 @@ end
         _T5_ans("S4B", "s404")[(findfirst('(', _T5_ans("S4B", "s404"))):end]
     @test _T5_atoms(_T5_ans("S4A", "s403")) == ["true"]
     @test !occursin("a[", split(_T5_group("S4A").pins[2], " ")[end])          # `sp` fails: the bare line
+    # S4C: sa(_) keeps ONE conditional answer sa(a) (undefined), sb false, se true; the delay of s406 is `sa(a)` itself
+    @test _T5_atoms(_T5_ans("S4C", "s406")) == ["a"]
+    @test _T5_atoms(_T5_ans("S4C", "s407")) == ["a"]
+    @test _T5_atoms(_T5_ans("S4C", "s408")) ==
+        [
+        "a",
+        "undefined",
+        "a",
+        "undefined",
+        "false",
+        "a",
+        "false",
+        "sc",
+        "false",
+        "sd",
+        "false",
+        "se",
+        "true"
+    ]
+    @test !endswith(_T5_ans("S4C", "s406"), "(nil)")           # not the empty delay list of the mutant
     # L2: the abolished incomplete table is gone and evaluated twice; the control keeps its table and is evaluated once
     @test _T5_atoms(_T5_ans("L2", "l202")) == ["absent"]
     @test _T5_atoms(_T5_ans("L2", "l204")) == ["present"]
