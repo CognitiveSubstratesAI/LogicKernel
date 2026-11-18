@@ -57,6 +57,12 @@ t_ev09(R) :- ev_reset, prolog_listen(ev_b/1, ev_tab), ev_tbl(ev_b(_), T), ev_add
 t_ev10(R) :- ev_reset, prolog_listen(ev_b/1, ev_tab), findall(X, ev_in(X), L), ev_log_list(L1), R = r(L, L1).
 :- table ev_in/1.
 ev_in(R) :- ev_tbl(ev_b(_), T), ev_add(T, ret(c), R).
+% ev14, ev15: the tabled call of a listener runs on a FRESH tabling status and the enclosing evaluation's status is put back after it
+% (`'$tbl_scc'/1` sees the enclosing component again once the event is over: with a listener, ev14, and without one, ev15)
+:- table ev_in2/1.
+ev_in2(R) :- ev_tbl(ev_b(_), T), ev_add(T, ret(c), A), ( '$tbl_scc'(_) -> S = scc ; S = noscc ), R = A-S.
+t_ev14(R) :- ev_reset, prolog_listen(ev_b/1, ev_tab), findall(X, ev_in2(X), L), ev_log_list(L1), R = r(L, L1).
+t_ev15(R) :- ev_reset, findall(X, ev_in2(X), L), ev_log_list(L1), R = r(L, L1).
 t_ev13(R) :- ev_reset, prolog_listen(ev_b/1, ev_on), ev_tbl(ev_b(c), T), ev_add(T, ret, A1), ev_log_list(L1), R = r(A1, L1).
 ev_q(G, A) :- ( catch(call(G, R), E, R = exc(E)) -> true ; R = failed ), format(atom(A), "~q", [R]).
 t_wb0(R) :- ev_reset, ev_tbl(ev_b(_), T), ev_add(T, ret(c), R).
@@ -82,7 +88,7 @@ t_ev01(R) :- current_prolog_flag(max_table_subgoal_size_action, Old), set_prolog
 
 const _TI_CASES = [
     "t_ev02", "t_ev03", "t_ev04", "t_ev05", "t_ev06", "t_ev07", "t_ev08", "t_ev09",
-    "t_ev10", "t_ev13"
+    "t_ev10", "t_ev13", "t_ev14", "t_ev15"
 ]
 
 # swipl 10.1.20 (`ev_q(t_ev..., A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-14
@@ -96,7 +102,9 @@ const _TI_PINNED = String[
     "r(raised(ev_boom),[throw],[c])",
     "r(yes,[tab(user:ev_b(c),[1,2])])",
     "r([yes],[tab(user:ev_b(c),[1,2])])",
-    "r(yes,[on(new_answer,user:ev_b(c))])"
+    "r(yes,[on(new_answer,user:ev_b(c))])",
+    "r([yes-scc],[tab(user:ev_b(c),[1,2])])",
+    "r([yes-scc],[])"
 ]
 
 # the pin of ev01 (the upstream test new_answer: `Events == [c]`)
@@ -163,6 +171,8 @@ end
     i02 = findfirst(==("t_ev02"), _TI_CASES)
     @test _ti_ask(gd, ld, "t_ev02") != replace(_TI_PINNED[i02], "new_answer" => "answer")
     @test _ti_ask(gd, ld, "t_ev02") != replace(_TI_PINNED[i02], "ev_b(c)" => "ev_b(_)")
+    i14 = findfirst(==("t_ev14"), _TI_CASES)
+    @test _ti_ask(gd, ld, "t_ev14") != replace(_TI_PINNED[i14], "yes-scc" => "yes-noscc")
     i07 = findfirst(==("t_ev07"), _TI_CASES)
     @test _ti_ask(gd, ld, "t_ev07") != replace(_TI_PINNED[i07], "r(yes" => "r(no")
 

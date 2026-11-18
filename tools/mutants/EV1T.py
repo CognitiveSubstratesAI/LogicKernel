@@ -7,7 +7,7 @@
 # the kernel answers of the rows are themselves unverified until the gate: a row that fails on the unmutated tree has no kill value. A mutant that survives the first
 # hand-run is either killed by a new row or recorded equivalent with its code reason before the commit lands.
 # KILL ROWS: EV = test/core_lang/test_tabling_events_swipl.jl: `ev02`-`ev13` = the cases of the testset "the new-answer event of a tabled predicate as swipl's (ev02-ev13)"
-#   (the listener log of each case is compared with swipl 10.1.20's pin); `ev01` = "ev01: the upstream test mono_abstract/new_answer"; `wb` = the testset
+#   (the listener log of each case is compared with swipl 10.1.20's pin); `ev14`, `ev15` = the cases of the same testset that read `'$tbl_scc'/1` after the event inside an evaluation; `ev01` = "ev01: the upstream test mono_abstract/new_answer"; `wb` = the testset
 #   "atrie_answer_event sends nothing and answers true when it cannot (wb)" (rows `r_novariant`, `r_nopred`, the no-listener call); `wbstatus` = the testset "the tabling status
 #   is back after the hook, also after a raising listener (wb)".
 # TARGETS (audit D-0238): EV (the step's own file); TM (test_tabling_monotonic_swipl.jl: every monotonic table that adds an answer runs `$tbl_monotonic_add_answer/2`, hence
@@ -53,7 +53,7 @@ MUTANTS = [
          file=TAB, targets=TARGETS,
          old='        end\n    end\n\n    return true\nend\n\n\n# ── the predicates of the monotonic tabling',
          new='        end\n    end\n\n    return false\nend\n\n\n# ── the predicates of the monotonic tabling'),
-    dict(id='EV1T-T9-save (KILL EV ev10 and wbstatus: the status is not saved, the findall of a listener that calls a tabled predicate joins the outer evaluation and `restore` sets `saved_status` from a stale value)',
+    dict(id='EV1T-T9-save (KILL EV ev14, ev15: the status is not saved, so `restore` puts the empty status back: after the event the enclosing evaluation has no component and `\'$tbl_scc\'/1` fails, `noscc` for the pinned `scc`; ev10 and wbstatus read only the end state and stay green)',
          file=EVT, targets=TARGETS,
          old='        save_tabling_status(ld, tblstat)\n',
          new=''),
