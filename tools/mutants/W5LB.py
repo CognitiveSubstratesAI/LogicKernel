@@ -3,7 +3,7 @@
 # Format: tools/mutate_drive.py's (as LBB.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
 # Verdicts: written by the battery, not yet run (UNTESTED, nothing compiled). Every `old` was counted EXACTLY once in its file when this list was written
 # (a formatter run may move a line break: re-count after `tools/warm.sh fmt`; an `old` with a `\n` is the one to look at).
-# KILL: test/core_lang/test_format_predicate_swipl.jl (rows t1-t56 of test_format_predicate_swipl.pl, pinned from swipl 10.1.20, and the table rows).
+# KILL: test/core_lang/test_format_predicate_swipl.jl (rows t1-t61 of test_format_predicate_swipl.pl, pinned from swipl 10.1.20, and the table rows).
 # TARGETS (audit D-0238): the user directive is looked up by EVERY directive of every format/2,3 call (the loop of do_format), so a mutant of that
 # loop meets the whole format suite: test_format_swipl.jl (every `~` directive family) is listed with the rows of the new file. No other test file
 # registers a user directive; the registration and enumeration code is reached by the new file only.
@@ -111,7 +111,7 @@ MUTANTS = [
          file=PF, targets=TARGETS,
          old="                    argc -= 1                                   # SHIFT\n                    argv += 1\n                end\n\n                sstate",
          new="                    argc -= 1                                   # SHIFT\n                    argv += 0\n                end\n\n                sstate"),
-    dict(id="W5LB-25 do_format: the call-back's result is not checked after the sub format (KILL: t41 a failing predicate) MULTI-LINE",
+    dict(id="W5LB-25 do_format: the call-back's result is not checked after the sub format (KILL: t57 `~u` [v,w] no, t58 `~u~w` [v] no, t59 the text a left in the current output; NOT t41: do_format ends in `return rc`, so rc stays false and a failing call-back still fails) MULTI-LINE",
          file=PF, targets=TARGETS,
          old="                rc = end_sub_format(ld, sstate, rc)\n\n                rc || return false\n\n                here += 1\n            elseif c == Int('a')",
          new="                rc = end_sub_format(ld, sstate, rc)\n\n                false && return false\n\n                here += 1\n            elseif c == Int('a')"),
@@ -131,7 +131,7 @@ MUTANTS = [
          file=PF, targets=TARGETS,
          old="            if uproc !== nothing\n                arity",
          new="            if uproc !== nothing && c != Int('a') && c != Int('c')\n                arity"),
-    dict(id="W5LB-30 do_format: the arity comes from the call-back's own list (KILL: t13, t14: a 3-ary directive)",
+    dict(id="W5LB-30 do_format: the arity comes from the call-back's own list (KILL: t61: arity 100, the frame arguments of PL_open_query overwrite the unallocated argument slots; NOT t13/t14: arity 3 fits below the frame)",
          file=PF, targets=TARGETS,
          old="                av = PL_new_term_refs(ld, arity)",
          new="                av = PL_new_term_refs(ld, 2)"),

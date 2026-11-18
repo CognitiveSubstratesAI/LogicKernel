@@ -10,6 +10,9 @@
 # is global state), and the errors of format_predicate/2 (type and instantiation errors, arity 0, a non-callable). The first argument
 # of current_format_predicate/2 is answered as the pinned swipl answers (pl-fmt.c:300-304 at 18168e62): rows t19-t21 pin the answers
 # to a bound character and t22 the answer to an unbound one.
+# Rows t57-t59 (W5LB-25): a call-back that fails ends the call at once, so the arguments left over (t57), the one missing for the next
+# directive (t58) and the text after the directive (t59, written to the current output) never matter. Rows t60/t61 (W5LB-30): a call-back
+# of arity 100 takes all 99 list arguments, each its own variable: the call-back counts the distinct ones.
 # UNVERIFIED on the kernel: gate decides
 using Test, LogicKernel
 const LK = LogicKernel
@@ -19,7 +22,7 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _FPT = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 
 const _FP_PL = joinpath(@__DIR__, "test_format_predicate_swipl.pl")
-const _FP_ROWS = 56
+const _FP_ROWS = 61
 
 # the answer printed as `write_term(T, [quoted(false), ignore_ops(true)])` prints it
 function _fp_pr(t)::String
@@ -118,7 +121,12 @@ const _FP_EXPECTED = String[
     "t53 yes([default|v])",
     "t54 yes",
     "t55 yes(<default|65><3|66>)",
-    "t56 yes(m2:fp_w/2,user:fp_col/2,user:fp_fail/2,user:fp_seen/2,user:fp_x/2,user:fp_x/2,user:fp_x2/2,user:fp_x2/2,user:fp_y/1,user:fp_z/3)"
+    "t56 yes(m2:fp_w/2,user:fp_col/2,user:fp_fail/2,user:fp_seen/2,user:fp_x/2,user:fp_x/2,user:fp_x2/2,user:fp_x2/2,user:fp_y/1,user:fp_z/3)",
+    "t57 no",
+    "t58 no",
+    "t59 yes(a)",
+    "t60 yes",
+    "t61 yes(default,100)"
 ]
 
 @testset "format_predicate/2, current_format_predicate/2 and the user directive of format/2,3 (pl-fmt.c)" begin
@@ -167,8 +175,8 @@ end
         _fp_row(gd, ld, "t$i")
     end
     tbl = gd.format_predicates
-    @test [c for (c, _) in tbl] == Int.(collect("xyzmjulvac"))
-    @test [p.definition.arity for (_, p) in tbl] == [2, 1, 3, 2, 2, 2, 2, 2, 2, 2]
+    @test [c for (c, _) in tbl] == Int.(collect("xyzmjulvacb"))
+    @test [p.definition.arity for (_, p) in tbl] == [2, 1, 3, 2, 2, 2, 2, 2, 2, 2, 100]
     @test [sym_text(p.definition.name) for (_, p) in tbl] ==
         [
         "fp_x2",
@@ -180,6 +188,7 @@ end
         "fp_col",
         "fp_seen",
         "fp_x2",
-        "fp_x"
+        "fp_x",
+        "fp_big"
     ]
 end

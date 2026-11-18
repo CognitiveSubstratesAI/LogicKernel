@@ -14,6 +14,8 @@ fp_fail(_, _) :- fail.
 fp_throw(_, _) :- throw(oops).
 fp_seen(Arg, V) :- assertz(seen(Arg-V)), write(s).
 fp_col(_, V) :- write(V), nl, write(V).
+fp_big_chk(H) :- H =.. [_, Arg|L], write(Arg), write(','), sort([Arg|L], S), length(S, N), write(N).
+:- functor(H, fp_big, 100), assertz((H :- fp_big_chk(H))).
 m2:fp_w(Arg, V) :- write('{'), write(Arg), write('|'), write(V), write('}').
 res(G, R) :- catch(( G -> R = yes ; R = no ), E, ( E = error(F, _) -> R = ex(F) ; R = ball(E) )).
 ans(G, V, R) :- catch(( G -> R = yes(V) ; R = no ), E, ( E = error(F, _) -> R = ex(F) ; R = ball(E) )).
@@ -75,3 +77,8 @@ t53(R) :- fa("~a", [v], R).
 t54(R) :- res(format_predicate(c, fp_x(_, _)), R).
 t55(R) :- fa("~c~3c", [65, 66], R).
 t56(R) :- ans(cfp(L), L, R).
+t57(R) :- fa("~u", [v, w], R).
+t58(R) :- fa("~u~w", [v], R).
+t59(R) :- ans(with_output_to(string(S), ( format("a~ub", [v]) -> true ; true )), S, R).
+t60(R) :- functor(H, fp_big, 100), res(format_predicate(b, H), R).
+t61(R) :- length(L, 99), fa("~b", L, R).
