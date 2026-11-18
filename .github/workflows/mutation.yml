@@ -94,7 +94,9 @@ jobs:
     name: Baseline (unmutated)
     needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 90
+    # 100 min: the TB5 baseline runs the 54-file TWIDE list in one job (measured 87 and 65 min on 17 Nov 2026); a stall past it is a
+    # TIMEOUT of this job by name (audit D-0899 (2), D-0903 (4)).
+    timeout-minutes: 100
     env:
       TARGETS: ${{ inputs.targets || needs.plan.outputs.targets }}
     steps:
@@ -165,7 +167,11 @@ jobs:
     name: ${{ matrix.name }}
     needs: plan
     runs-on: ubuntu-24.04   # pinned: CI.yml's note above `jobs:`
-    timeout-minutes: 120
+    # 45 min for a mutant (measured in CI on 17 Nov 2026: the slowest TB9 mutant took 16 min, the TB5 siblings of E9 3-8 min); 100 min
+    # for TB5-E8 and TB5-E9, which run the whole 54-file TWIDE list (E9: 77 min). A stall past the limit reads as a TIMEOUT of that
+    # job by name (audit D-0899 (2), D-0903 (4)); a cancelled job uploads no verdict, so the table lists it as NO VERDICT with its name.
+    # A battery whose honest mutant needs longer than 45 min is added to this expression with its measured time.
+    timeout-minutes: ${{ (matrix.name == 'TB5-E8' || matrix.name == 'TB5-E9') && 100 || 45 }}
     strategy:
       fail-fast: false                # every mutant gets its verdict
       max-parallel: 40
