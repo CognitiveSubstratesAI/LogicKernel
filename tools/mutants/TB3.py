@@ -41,9 +41,10 @@ TM = "test/core_lang/test_tabling_min_swipl.jl"
 TR = "test/core_lang/test_trie_swipl.jl"
 TP = "test/core_lang/test_trie_preds_swipl.jl"
 TR6 = "test/core_lang/test_tabling_tb6rows_swipl.jl"   # the TB6 rows: F4, T2 and C2 (once equivalent) are killed there
-TTAB = [TA, TM]                           # the answers, the supervisor
+TB3R = "test/core_lang/test_tabling_tb3rows_swipl.jl"   # TAB1 F7: the ground call whose later clause has a side effect (kills TB3-U2, TB3-F7)
+TTAB = [TA, TM, TB3R]                     # the answers, the supervisor, the early-completion rows (TB3R runs update_delay_list / tbl_add_answer_found too)
 TREG = [TA, TM, TR, TP]                   # the registration table and trie_gen's data kind
-TARGETS = [TA, TM, TR, TP, TR6]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TARGETS = [TA, TM, TB3R, TR, TP, TR6]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 TAB = "src/pl-tabling.jl"
 WAM = "src/pl-wam.jl"
 MUTANTS = [
@@ -82,11 +83,10 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="        return wl.ground ? UDL_COMPLETE : UDL_TRUE\n",
          new="        return UDL_COMPLETE\n"),
-    dict(id="TB3-U2 update_delay_list: no early completion of a ground call, `return UDL_TRUE` (EQUIVALENT in every answer: an early completion only prunes the worker's choice points (pl-tabling.jl:419-426); a ground variant has at most one answer; the side-effect witness is TB3-F7's row, DEFERRED TB5)",
+    dict(id="TB3-U2 update_delay_list: no early completion of a ground call, `return UDL_TRUE` (KILL u01, u04, u06 of test_tabling_tb3rows_swipl.jl (TAB1 F7, audit D-0906): the early completion prunes the worker's remaining clauses and solutions, no ANSWER differs but a SIDE EFFECT of a pruned clause is observable; swipl 10.1.20 pins `ug1(1). ug1(1) :- assertz(ux_seen(g1)).` -> count 0 (the mutant: 1), `ug3(1)` with two side-effect clauses -> 1-0 (1-1), `uh(1) :- between(1, 3, _), assertz(..)` -> 1 (3); controls u03 (side effect first: 1), u05/u07 (the non-ground call runs every clause: 1, 3); UNRUN on the kernel until the lane run)",
          file=TAB, targets=TTAB,
          old="        return wl.ground ? UDL_COMPLETE : UDL_TRUE\n",
-         new="        return UDL_TRUE\n",
-         equivalent="a ground call has one answer (pl-tabling.jl:419-426): the early completion only prunes the worker's remaining clauses, no answer differs; a row with a side-effecting second clause is TB5's"),
+         new="        return UDL_TRUE\n"),
     # ── '$tbl_wkl_add_answer'/4 (pl-tabling.c:4885-4899) ──
     dict(id="TB3-W3 `$tbl_wkl_add_answer` is registered under another name (KILL taq05, taq11 (`defined`), taq13 (`foreign`); the white-box @test `haskey(ext, (\"\\$tbl_wkl_add_answer\", 4))` of the taq testset)",
          file=TAB, targets=TREG,
@@ -266,7 +266,7 @@ DEFERRED = [
          file=TAB, targets=TTAB,
          old="            wkl_add_answer(ld, wl, nid) || return 0\n",
          new="            nothing\n"),
-    dict(id="TB3-F7 tbl_add_answer_found: an early completion of a NON-ground call is not reported, `complete = true` -> false (DEFERRED KILL TB5: a ground table call whose second clause has a side effect, `tb_g(1). tb_g(1) :- assertz(tb_seen).`: early completion cuts the worker after the first answer and `tb_seen` stays unasserted; swipl's answer pinned)",
+    dict(id="TB3-F7 tbl_add_answer_found: an early completion of a NON-ground call is not reported, `complete = true` -> false (KILL u01, u04, u06 of test_tabling_tb3rows_swipl.jl (TAB1 F7): the ground call `ug1(1)` is cut after its first answer, the side effect of the second clause is not run (count 0, swipl 10.1.20); without `TBL_ANSWER_COMPLETE` the clause runs (1); UNRUN on the kernel until the lane run)",
          file=TAB, targets=TTAB,
          old="            elseif udl == UDL_COMPLETE\n                complete = true\n",
          new="            elseif udl == UDL_COMPLETE\n                complete = false\n"),
@@ -278,7 +278,7 @@ DEFERRED = [
          file=TAB, targets=TTAB,
          old="node_delayinfo(gd, atrie, answer) === nothing &&\n        atrie.IDG === nothing\n",
          new="node_delayinfo(gd, atrie, answer) === nothing\n"),
-    dict(id="TB3-W1 `$tbl_wkl_add_answer`/4 answers `?` for the completing answer instead of `!` (DEFERRED KILL TB5: the leader tests `Complete == !` in boot/tabling.pl; without early completion every answer still arrives: the row is TB3-F7's side-effect row, which reads the flag through the worker's cut)",
+    dict(id="TB3-W1 `$tbl_wkl_add_answer`/4 answers `?` for the completing answer instead of `!` (DEFERRED KILL TB5: the leader tests `Complete == !` in the `prolog_debug` branch of delim/4 in boot/tabling.pl only; the route of test_tabling_tb3rows_swipl.jl (the F7/U2 rows) is `'$tbl_reset'/6`, which reads `TBL_ANSWER_COMPLETE` and not this argument: those rows do not reach this mutant, a direct call of `'$tbl_wkl_add_answer'/4` on a live worklist or a debug-mode run is its witness)",
          file=TAB, targets=TTAB,
          old='PL_unify_atom(ld, A4, mk_sym(T, Symbol("!")))',
          new='PL_unify_atom(ld, A4, mk_sym(T, Symbol("?")))'),
