@@ -10082,7 +10082,8 @@ function untable_from_clause(
         f = functor_operand_word(cl.codes[2])
         m = gd.modules[cl.predicate.module_]
         proc = isCurrentProcedure(
-            nameFunctor(ld.functors, f), arityFunctor(ld.functors, f), m
+            sym_key(_atom_value(ld, nameFunctor(ld.functors, f))),
+            arityFunctor(ld.functors, f), m
         )
         if proc !== nothing && !callEventHook(gd, ld, PLEV_UNTABLE, proc)
             error("Failed to register untable event")
@@ -10100,7 +10101,7 @@ end
 function untable_definition_clauses(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}
 )::Nothing where {T}
-    if def.arity == 2 && def.functor_name == builtin_atom("\$tabled")
+    if def.arity == 2 && def.functor_name == sym_key(mk_sym(T, Symbol("\$tabled")))
         c = def.impl_clauses.first_clause
         while c !== nothing
             cl = c.clause::Clause{T}
