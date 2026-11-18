@@ -22,9 +22,10 @@
 #                        the white-box testset: the id says which (R-A ... R-E below). Until then it survives; it is not equivalent.
 #   DEFERRED KILL        the mutated code cannot be reached before the owner step: TB6 (IDG nodes, the dynamic pseudo table `WL_DYNAMIC` is only written by
 #                        TB6: `orphan_dynamic_table` is false before it), TH1 (shared tables), TB2 (worklists, an incomplete table), TB4 (delay info),
-#                        LB6b (`untable_from_clause`'s call sites pl-srcfile.c:1476 `unloadFile` and :1544 `endReconsult` do not exist in the kernel until LB6b),
+#                        (LB6b was listed here for TB5-U1/U5: STEP S3p killed both with AB rows that call `untable_from_clause` / `untable_definition_clauses`
+#                        directly; the call sites pl-srcfile.c:1476 `unloadFile` and :1544 `endReconsult` are still LB6b's.)
 #                        (TAB1-WRAP was listed here: stale. `$wrap_predicate/5` is callable inside TAB1; TB5-P1, -P3, -P7 are killed by test_tabling_tb5wrap_swipl.jl.)
-#                        The owner of each remaining DEFERRED KILL adds the row named.
+#                        The owner of each remaining DEFERRED KILL adds the row named. TB5-A9 is a candidate EQUIVALENT (S3p), its entry has the counters.
 # ROWS TO ADD (white-box, in AB's testset "abolish, direct on the tries"; each is an assertion on the already built atries/variants of AB:455-457):
 #   R-A after `clear_variant_table(ld)` (AB:481): `variants.value_count == 0`, `all(a -> a.variant == 0, atries)`, `all(a -> a.magic == LK.TRIE_CMAGIC, atries)`,
 #       `variants.magic == LK.TRIE_CMAGIC`; and `ld.tabling.start_nodes = Int[1]` set before the call, `=== nothing` after (the existing AB:483 holds under the
@@ -187,10 +188,11 @@ MUTANTS = [
          file=TAB, targets=TABL,
          old="    return w isa Int && w == s\n",
          new="    return w isa Int\n"),
-    dict(id="TB5-A9 abolish_table refuses nothing for a shared table (DEFERRED KILL, owner TH1: a shared table (`TRIE_ISSHARED`) is only made by TH1; TH1 adds the row: abolish_shared_tables on a shared table does not raise the TH1 refusal)",
+    dict(id="TB5-A9 abolish_table refuses nothing for a shared table (EQUIVALENT, declared, audit D-0906, owner TH1: S3p counters over the white-box rows of the AB file: the branch is reached 6 times with the flag set 0 times; get_trie_from_node, called first at pl-tabling.jl abolish_table, tests the same flag of the same trie, reached 12 times, flag set once and raising; re-judge when TH1 removes the earlier refusal, and the TH1 step list owns the row that kills A9 live; the AB testset `abolish_table of a shared table is refused by name` pins the refusal that raises and that nothing is touched)",
          file=TAB, targets=TABL,
          old='            (atrie.flags & TRIE_ISSHARED) != 0 &&\n                tbl_refuse(\n                    T,\n                    :abolish_table,\n                    "abolish_table: a shared table (take_trie, drop_trie)",\n                    "TH1"\n                )\n',
-         new='            \n'),
+         new='            \n',
+         equivalent="dominated branch: abolish_table calls get_trie_from_node first, which refuses a TRIE_ISSHARED trie (the kernel's stand-in for TH1), and this branch reads the same flag of the same trie, so it cannot differ while that earlier refusal stands (counters: branch reached 6 times with the flag set 0 times; the earlier guard reached 12 times with the flag set once, the A9 row). Re-judge when TH1 removes the earlier refusal; the TH1 step list owns the row that kills A9 live"),
     # ── delayed_destroy_table (pl-tabling.c delayed_destroy_table) ──
     dict(id="TB5-L1 delayed_destroy_table schedules a COMPLETE table, `!table_is_incomplete` (KILL AB:462 `delayed_destroy_table(a) == false` and :463, the flag stays 0)",
          file=TAB, targets=[AB],
@@ -375,14 +377,14 @@ MUTANTS = [
          old="        return FTRUE\n    end\n\n    return FFALSE\nend\n\n# PORT: pl-tabling.c untable_from_clause\n",
          new="        return FTRUE\n    end\n\n    return FTRUE\nend\n\n# PORT: pl-tabling.c untable_from_clause\n"),
     # ── untable_from_clause, untable_definition_clauses (pl-tabling.c; call sites LB6b) ──
-    dict(id="TB5-U1 untable_from_clause raises no error when the event hook fails (DEFERRED KILL, owner LB6b: the call sites pl-srcfile.c:1476 and :1544 do not exist before LB6b; LB6b's row: a reconsult of a file that had `:- table p/1` whose PLEV_UNTABLE hook fails raises the error)",
+    dict(id="TB5-U1 untable_from_clause raises no error when the event hook fails (KILL: AB testset `untable_definition_clauses and untable_from_clause, direct`, the row whose PLEV_UNTABLE listener raises (mode throw): `untable_from_clause` must raise \"Failed to register untable event\"; the call sites pl-srcfile.c:1476 and :1544 are LB6b's, the rows call the functions directly)",
          file=TAB, targets=[AB],
          old='            error("Failed to register untable event")\n',
          new="            nothing\n"),
-    dict(id="TB5-U5 untable_definition_clauses walks every definition, `def.arity == 2` is `def.arity == 1` (DEFERRED KILL, owner LB6b: LB6b's `unloadFile` row, a reconsult of a file with `:- table p/1`, fires the event once per `'\\$tabled'/2` clause)",
+    dict(id="TB5-U5 untable_definition_clauses walks every definition, `def.arity == 2` is `def.arity == 1` (KILL: AB testset `untable_definition_clauses and untable_from_clause, direct`: the events rows (one event per live `'\\$tabled'/2` clause, pinned from swipl's reload) and the arity-1 control row (no event))",
          file=TAB, targets=[AB],
-         old="    if def.arity == 2 && def.functor_name == builtin_atom(\"\\$tabled\")\n",
-         new="    if def.arity == 1 && def.functor_name == builtin_atom(\"\\$tabled\")\n"),
+         old="    if def.arity == 2 && def.functor_name == sym_key(mk_sym(T, Symbol(\"\\$tabled\")))\n",
+         new="    if def.arity == 1 && def.functor_name == sym_key(mk_sym(T, Symbol(\"\\$tabled\")))\n"),
     # ── the database threaded through pl-proc.jl / pl-comp.jl (TB5 part 1b): `freeCodesDefinition!(gd, ...)` ──
     dict(id="TB5-P1 `_setDynamicDefinition!` takes the 2-argument freeCodesDefinition! with a database (" + WRAP + ")",
          file=PROC, targets=DYN,

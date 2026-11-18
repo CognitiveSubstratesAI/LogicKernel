@@ -706,6 +706,208 @@ end
     @test variants.value_count == 0
 end
 
+# TB5-A9 (LK-only row; a KNOWN DIFFERENCE, docs/architecture.md section TAB1 TB5, item "A shared table"): swipl 10.1.20 abolishes a shared
+# table. Probed (`:- table sp/1 as shared.`, `forall(sp(_), true)`): the table is in `'$tbl_global_variant_table'/1` (status `complete`);
+# `'$tbl_destroy_table'(T)` answers true and the table stays in the global variant table with status `fresh`; `abolish_shared_tables`,
+# `abolish_all_tables` and `abolish_private_tables` leave it so. The kernel has no shared tables (owner TH1): a table whose trie carries
+# `TRIE_ISSHARED` is refused BY NAME, and the refusal that raises is `get_trie_from_node`'s (src/pl-tabling.jl), which `abolish_table` calls
+# first: it reads the same flag of the same trie, so the `abolish_table` refusal that stands behind it ("abolish_table: a shared table
+# (take_trie, drop_trie)", TB5-A9) is never reached. The row pins the exact refusal that raises today and that nothing was touched.
+@testset "abolish_table of a shared table is refused by name, nothing is touched (TB5-A9 known difference, white-box)" begin
+    gd, ld, st = _ab_load(_AB_COMMON * _AB_KERNEL, _AB_CASES[1:1], true)
+    @test st == "ok"
+    atries = _ab_tables!(gd, ld)
+    variants = gd.tries[ld.tabling.variant_table]
+    a = atries[1]
+    a.flags |= LK.TRIE_ISSHARED
+    e = try
+        LK.abolish_table(ld, a)
+        nothing
+    catch ex
+        ex
+    end
+    a.flags &= ~LK.TRIE_ISSHARED
+    @test e isa LK.NotPortedError
+    @test e.what == "get_trie_from_node: the node of a shared variant table"
+    @test e.step == "TH1"
+    @test variants.value_count == 3 && a.variant != 0           # the refusal came before any deletion
+    @test all(t -> (t.flags & LK.TRIE_ISSHARED) == 0, atries)    # the row restored the flag
+    @test LK.abolish_table(ld, a)                                # the same table, flag clear: abolished as before
+    @test variants.value_count == 2
+end
+
+# TB5-U1, TB5-U5 (the call sites pl-srcfile.c:1476 `unloadFile` and :1544 `endReconsult` do not exist before LB6b: REACH, measured and by
+# grep: no src function calls `untable_from_clause` or `untable_definition_clauses`; the only test-tree mentions before this testset are the
+# static-analysis manifest's two signatures, so THIS testset is the one place that reaches them). The rows call the kernel functions directly.
+# The event rows (ab_t*, "all" / "arity1" / "erased") are swipl's: the same text `v1` is consulted by swipl 10.1.20 and reloaded without its
+# `'$tabled'/2` clauses (a reload deletes them, pl-srcfile.c delete_pending_clauses, which calls `untable_from_clause`), a listener
+# `prolog_listen(untable, Hook)` records `M:Name/Arity` per event: `all` = user:ab_t1/1,user:ab_t2/1,user:ab_t3/1 (once per `'$tabled'/2`
+# clause, in clause order; the clause naming `ab_gone/1`, which has no procedure, sends nothing: `proc &&` of pl-tabling.c:12918), `arity1` =
+# none (deleting the `'$tabled'/1` clause sends nothing), `erased` = user:ab_t1/1,user:ab_t3/1 (a clause retracted before the reload is skipped:
+# pl-srcfile.c `isoff(cl, CL_ERASED)`). The failing-hook row U1 is LK-ONLY: pl-tabling.c:12919 answers a failed event with `fatalError`
+# (the process ends), which Prolog cannot observe; on swipl the reload delays the events and a raising hook surfaces as ITS exception out of
+# `consult/1` (probed: `caught boom`), and `unload_file/1` of the same file sends no event at all. The kernel's `error("Failed to register
+# untable event")` is the divergence named in the DIVERGES line of `untable_from_clause`; a hook that merely FAILS sends no error (probed:
+# swipl's reload answers normally), which the control row pins.
+const _AB_UNT_V1 = raw"""
+:- dynamic '$tabled'/2.
+:- dynamic '$tabled'/1.
+ab_t1(1).
+ab_t2(1).
+ab_t3(1).
+'$tabled'(ab_t1(_), variant).
+'$tabled'(ab_t2(_), variant).
+'$tabled'(ab_t3(_), variant).
+'$tabled'(ab_gone(_), variant).
+'$tabled'(ab_t1(_)).
+"""
+const _AB_UNT_V2 = raw"""
+:- dynamic '$tabled'/2.
+:- dynamic '$tabled'/1.
+ab_t1(1).
+ab_t2(1).
+ab_t3(1).
+'$tabled'(ab_t1(_), variant).
+'$tabled'(ab_t2(_), variant).
+'$tabled'(ab_t3(_), variant).
+'$tabled'(ab_gone(_), variant).
+"""
+const _AB_UNT_V3 = raw"""
+:- dynamic '$tabled'/2.
+:- dynamic '$tabled'/1.
+ab_t1(1).
+ab_t2(1).
+ab_t3(1).
+"""
+const _AB_UNT_PINS = Dict(
+    "all" => "user:ab_t1/1,user:ab_t2/1,user:ab_t3/1",
+    "arity1" => "none",
+    "erased" => "user:ab_t1/1,user:ab_t3/1"
+)
+const _AB_UNT_HOOKS = raw"""
+:- dynamic ab_seen/1.
+ab_ev(PI) :- assertz(ab_seen(PI)).
+ab_evthrow(_) :- throw(ab_boom).
+ab_evfail(_) :- fail.
+ab_clear(done) :- retractall(ab_seen(_)).
+ab_seenl(A) :- findall(S, (ab_seen(PI), format(atom(S), "~q", [PI])), L),
+    ( L == [] -> A = none ; atomic_list_concat(L, ',', A) ).
+ab_use_ev(done) :- prolog_listen(untable, ab_ev).
+ab_use_throw(done) :- prolog_unlisten(untable, ab_ev), prolog_listen(untable, ab_evthrow).
+ab_use_fail(done) :- prolog_unlisten(untable, ab_evthrow), prolog_listen(untable, ab_evfail).
+ab_use_none(done) :- prolog_unlisten(untable, ab_evfail).
+ab_drop2(done) :- retract('$tabled'(ab_t2(_), variant)), !.
+ab_drop1(done) :- retract('$tabled'(ab_t1(_))), !.
+"""
+
+"The driver for swipl: reload `ab_u.pl` as v1, v2, v3 (see `_AB_UNT_PINS`); one line `<tag> <events>` per case."
+_ab_unt_swipl(dir::String) =
+    raw"""
+:- dynamic ab_seen/1.
+ab_ev(PI) :- assertz(ab_seen(PI)).
+ab_rep(Tag) :- findall(S, (ab_seen(PI), format(atom(S), "~q", [PI])), L), retractall(ab_seen(_)),
+    ( L == [] -> A = none ; atomic_list_concat(L, ',', A) ), format("~w ~w~n", [Tag, A]).
+ab_ld(V) :- atom_concat(V, '.pl', F0), atom_concat('""" * dir * raw"""/', F0, F),
+    atom_concat('""" * dir * raw"""/', 'cur.pl', Cur), copy_file(F, Cur), consult(Cur).
+ab_main :- ab_ld(v1), prolog_listen(untable, ab_ev), ab_ld(v2), ab_rep(arity1),
+    retract('$tabled'(ab_t2(_), variant)), ab_ld(v3), ab_rep(erased),
+    ab_ld(v1), retractall(ab_seen(_)), ab_ld(v3), ab_rep(all).
+:- initialization((ab_main, halt)).
+"""
+
+function _ab_unt_live()::Vector{String}
+    d = mktempdir()
+    write(joinpath(d, "v1.pl"), _AB_UNT_V1)
+    write(joinpath(d, "v2.pl"), _AB_UNT_V2)
+    write(joinpath(d, "v3.pl"), _AB_UNT_V3)
+    drv = joinpath(d, "drv.pl")
+    write(drv, _ab_unt_swipl(d))
+    out = read(
+        pipeline(addenv(`swipl -q $drv`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull),
+        String
+    )
+    return String.(split(chomp(out), '\n'; keepempty=false))
+end
+
+@testset "untable_definition_clauses and untable_from_clause, direct (TB5-U1, TB5-U5)" begin
+    f = joinpath(mktempdir(), "ab_untable.pl")
+    write(f, _AB_UNT_V1 * _AB_UNT_HOOKS * ":- ab_use_ev(done).\n")
+    gd = LK.PL_global_data{_AB}()
+    ld = LK.PL_local_data{_AB}(gd)
+    st, ball = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    seen() = _ab_ask(gd, ld, "ab_seenl")
+    expect(s) = "ab_seenl " * _ab_enc(mk_expr(_AB, _AB[_abs("ab_seenl"), _abs(s)]))
+    clear() = _ab_ask(gd, ld, "ab_clear")
+    function clauses(def)
+        cs = LK.Clause{_AB}[]
+        c = def.impl_clauses.first_clause
+        while c !== nothing
+            push!(cs, c.clause::LK.Clause{_AB})
+            c = c.next
+        end
+        return cs
+    end
+    tabled2 = _ab_def(gd, "\$tabled", 2)
+    tabled1 = _ab_def(gd, "\$tabled", 1)
+    @test length(clauses(tabled2)) == 4 && length(clauses(tabled1)) == 1
+
+    # the fixture is not vacuous: the listener is registered and nothing was sent before the call
+    @test seen() == expect("none")
+
+    # U5: the `'$tabled'/2` definition fires the event once per clause, in clause order; the clause naming no procedure sends nothing
+    @test LK.untable_definition_clauses(gd, ld, tabled2) === nothing
+    @test seen() == expect(_AB_UNT_PINS["all"])
+    # U5 control: the `'$tabled'/1` definition sends nothing (the mutant `def.arity == 1` fires for it and not for the row above)
+    clear()
+    @test LK.untable_definition_clauses(gd, ld, tabled1) === nothing
+    @test seen() == expect(_AB_UNT_PINS["arity1"])
+    # a definition of another name and arity 2 sends nothing either
+    clear()
+    @test LK.untable_definition_clauses(gd, ld, _ab_def(gd, "ab_t1", 1)) === nothing
+    @test seen() == expect("none")
+
+    # an erased clause is skipped (swipl: `erased`)
+    clear()
+    _ab_ask(gd, ld, "ab_drop2")
+    @test length(clauses(tabled2)) == 4                         # the retracted clause stays linked, flagged CL_ERASED
+    @test count(cl -> (cl.flags & LK.CL_ERASED) == 0, clauses(tabled2)) == 3
+    @test LK.untable_definition_clauses(gd, ld, tabled2) === nothing
+    @test seen() == expect(_AB_UNT_PINS["erased"])
+
+    # U1 (LK-only): a listener that RAISES makes untable_from_clause raise the kernel's error; no listener, a listener that fails: no error
+    cl = first(clauses(tabled2))
+    for (mode, raises) in (("throw", true), ("fail", false), ("none", false))
+        clear()
+        @test startswith(_ab_ask(gd, ld, "ab_use_" * mode), "ab_use_" * mode)
+        err = try
+            LK.untable_from_clause(gd, ld, cl)
+            nothing
+        catch ex
+            ex
+        end
+        LK.PL_clear_exception(ld)
+        if raises
+            @test err isa ErrorException
+            @test err.msg == "Failed to register untable event"
+        else
+            @test err === nothing
+        end
+        @test seen() == expect("none")
+    end
+end
+
+@testset "the untable event rows are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    @test length(_AB_UNT_PINS) == 3 && all(p -> !isempty(p), values(_AB_UNT_PINS))
+    if swipl === nothing
+        @info "TB5 UNTABLE EVENT LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        live = _ab_unt_live()
+        @test live == [k * " " * _AB_UNT_PINS[k] for k in ("arity1", "erased", "all")]
+    end
+end
+
 @testset "the abolish rows are not vacuous" begin
     @test _AB_PINNED[1] == "ok" && _AB_PINNED_U[1] == "ok"
     @test length(_AB_PINNED) == length(_AB_CASES) + 1

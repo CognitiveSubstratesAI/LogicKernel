@@ -130,7 +130,7 @@ MUTANTS = [
          file=TAB, targets=TARGETS,
          old='        elseif atrie.nodes[a].value != 0\n',
          new='        elseif atrie.nodes[a].value == 0\n'),
-    dict(id='TB7-empty-queue-bound (EQUIVALENT: `deleteat!(q, 1:length(q))` empties the queue as `empty!` does: `>=` and `>` give the same queue; row q02 pins the count equal to the queue length: both versions give the empty queue (TR7), unverified)',
+    dict(id='TB7-empty-queue-bound (EQUIVALENT: `deleteat!(q, 1:length(q))` empties the queue as `empty!` does: `>=` and `>` give the same queue; row q02 pins the count equal to the queue length: both versions give the empty queue (TR7); accepted as EQUIVALENT by the audit, D-0906)',
          file=TAB, targets=TARGETS,
          old='        if del < 0 || del >= length(mdep.queue)\n',
          new='        if del < 0 || del > length(mdep.queue)\n',
