@@ -10,7 +10,8 @@
 #   * FALSECOUNT `'$idg_set_falsecount'/2`: 4294967296 raises representation_error(falsecount) (P14), 4294967295 is taken, the error terms.
 #   * ABOLISH   what abolishing tables does to the graph (node count, edge count, bytes, statuses).
 #   * EXPAND    six incremental tables over one dynamic: the edge set grows its block with a dead entry in it (S6).
-#   * DYNERR / DYNOK  table_space tuned so that the dynamic-call edge raises resource_error(private_table_space) (V5) / just fits.
+#   * DYNERR / DYNOK  table_space tuned so that the answer add raises resource_error(private_table_space) / just fits; DYNSIDE / DYNSIDEOK: the limit that raises
+#               inside the supervisor of the incremental dynamic predicate, a clause body that must not run (V5) / the control with room.
 #   * INCRPROP  predicate_property(_, incremental) of dynamic/2-declared and assertz-created predicates (the control of V6).
 #   * TRIEKEYS  the IDG keys of `'$trie_property'/2` (invalidated, reevaluated, idg_affected_count, idg_dependent_count, idg_size).
 # `'$trie_property'/2` is read directly, not `trie_property/2`: the Prolog predicate (boot/syspred.pl:1306) needs current_blob/2 (owner Q10; D-0713 item 2).
@@ -516,6 +517,57 @@ const _T6_PINS_DYNOK = [
     "t_v03 c[116,95,118,48,51]/1(c[114]/5(c[91,124,93]/2(i1,nil),i2,i1,a[99,111,109,112,108,101,116,101],a[100,121,110,97,109,105,99]))"
 ]
 
+# DYNSIDE / DYNSIDEOK (kill TB6-V5): the DYNERR limit (1508) is hit when the answer is added (`'$tbl_reset'/6`, I_EXITRESET), AFTER the supervisor of
+# `vd/1` returned, so it never reaches the exception test of S_INCR_DYNAMIC (swipl 10.1.20 on this program, the error's context by limit: 152..1055
+# `'$tbl_variant_table'/6`, 1056..1431 `vd/1` = the supervisor, 1432..1511 `'$tbl_reset'/6`, 1512 and up no error). 1400 is inside the supervisor's band, in its upper
+# part (the table of `vd(_)` exists, its IDG node does not: `idg_new` is refused). The clause of `vd/1` has a body that sets a global variable: the body
+# runs only if the supervisor did NOT throw (swipl: vhit stays 0; the control with room for the node: vhit 1, one edge).
+const _T6_PROG_DYNSIDE = raw"""
+tm_yn(G, R) :- ( call(G) -> R = yes ; R = no ).
+tp(G, T) :- '$tbl_existing_variant_table'(0, user:G, T, _, _).
+ts(G, S) :- ( tp(G, T) -> '$tbl_table_status'(T, S) ; S = none ).
+
+:- nb_setval(vhit, 0).
+:- table vp/1 as incremental.
+:- dynamic([vd/1], [incremental(true)]).
+vd(1) :- nb_setval(vhit, 1).
+vp(X) :- vd(X).
+"""
+
+const _T6_CASES_DYNSIDE = [
+    ("s01", raw"set_prolog_flag(table_space, 1400), findall(X, vp(X), L), R = L"),
+    ("s02", raw"nb_getval(vhit, H), R = H"),
+    (
+        "s03",
+        raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"
+    )
+]
+
+const _T6_PINS_DYNSIDE = [
+    "ok",
+    "t_s01 c[116,95,115,48,49]/1(c[114,97,105,115,101,100]/1(c[114,101,115,111,117,114,99,101,95,101,114,114,111,114]/1(a[112,114,105,118,97,116,101,95,116,97,98,108,101,95,115,112,97,99,101])))",
+    "t_s02 c[116,95,115,48,50]/1(i0)",
+    "t_s03 c[116,95,115,48,51]/1(c[114]/4(i0,i0,a[110,111,110,101],a[100,121,110,97,109,105,99]))"
+]
+
+const _T6_PROG_DYNSIDEOK = _T6_PROG_DYNSIDE
+
+const _T6_CASES_DYNSIDEOK = [
+    ("s01", raw"set_prolog_flag(table_space, 1000000000), findall(X, vp(X), L), R = L"),
+    ("s02", raw"nb_getval(vhit, H), R = H"),
+    (
+        "s03",
+        raw"'$idg_thread_summary'(main, N, E), ts(vp(_), S1), ts(vd(_), S2), R = r(N, E, S1, S2)"
+    )
+]
+
+const _T6_PINS_DYNSIDEOK = [
+    "ok",
+    "t_s01 c[116,95,115,48,49]/1(c[91,124,93]/2(i1,nil))",
+    "t_s02 c[116,95,115,48,50]/1(i1)",
+    "t_s03 c[116,95,115,48,51]/1(c[114]/4(i2,i1,a[99,111,109,112,108,101,116,101],a[100,121,110,97,109,105,99]))"
+]
+
 const _T6_PROG_INCRPROP = raw"""
 tm_yn(G, R) :- ( call(G) -> R = yes ; R = no ).
 tp(G, T) :- '$tbl_existing_variant_table'(0, user:G, T, _, _).
@@ -769,17 +821,31 @@ const _T6_GROUPS = [
     ),
     (
         key="DYNERR",
-        label=raw"DYNERR: resource_error(private_table_space) at the dynamic-call edge (kills TB6-V5 v01 v02)",
+        label=raw"DYNERR: resource_error(private_table_space) when the answer of an incremental table over a dynamic predicate is added (the TB6-V5 band is DYNSIDE)",
         program=_T6_PROG_DYNERR,
         cases=_T6_CASES_DYNERR,
         pins=_T6_PINS_DYNERR
     ),
     (
         key="DYNOK",
-        label=raw"DYNOK: the same program with a limit that just fits (control of DYNERR, kills TB6-V5 with it)",
+        label=raw"DYNOK: the same program with a limit that just fits (control of DYNERR)",
         program=_T6_PROG_DYNOK,
         cases=_T6_CASES_DYNOK,
         pins=_T6_PINS_DYNOK
+    ),
+    (
+        key="DYNSIDE",
+        label=raw"DYNSIDE: resource_error(private_table_space) inside the supervisor of an incremental dynamic predicate: its clause body must not run (kills TB6-V5 s02 s03)",
+        program=_T6_PROG_DYNSIDE,
+        cases=_T6_CASES_DYNSIDE,
+        pins=_T6_PINS_DYNSIDE
+    ),
+    (
+        key="DYNSIDEOK",
+        label=raw"DYNSIDEOK: the same program with room for the IDG node: the body runs, one edge (control of DYNSIDE)",
+        program=_T6_PROG_DYNSIDEOK,
+        cases=_T6_CASES_DYNSIDEOK,
+        pins=_T6_PINS_DYNSIDEOK
     ),
     (
         key="INCRPROP",
@@ -1042,6 +1108,15 @@ end
     @test _T6_ans("DYNERR", "v01") != _T6_ans("DYNOK", "v01")
     @test _T6_ans("DYNERR", "v02") != _T6_ans("DYNOK", "v02")
     @test _T6_ans("DYNERR", "v03") == _T6_ans("DYNOK", "v03")
+    # DYNSIDE / DYNSIDEOK: the supervisor's error leaves the clause body unrun (vhit 0), the control runs it (vhit 1) and adds the edge
+    @test _T6_atoms(_T6_ans("DYNSIDE", "s01")) == ["private_table_space"]
+    @test _T6_ints(_T6_ans("DYNSIDE", "s02")) == [0]
+    @test _T6_ints(_T6_ans("DYNSIDE", "s03")) == [0, 0]
+    @test _T6_atoms(_T6_ans("DYNSIDE", "s03")) == ["none", "dynamic"]
+    @test _T6_ints(_T6_ans("DYNSIDEOK", "s02")) == [1]
+    @test _T6_ints(_T6_ans("DYNSIDEOK", "s03")) == [2, 1]
+    @test _T6_ans("DYNSIDE", "s02") != _T6_ans("DYNSIDEOK", "s02")
+    @test _T6_ans("DYNSIDE", "s03") != _T6_ans("DYNSIDEOK", "s03")
     # INCRPROP
     @test _T6_atoms(_T6_ans("INCRPROP", "i01")) == ["no", "yes"]
     @test _T6_atoms(_T6_ans("INCRPROP", "i02")) == ["yes", "yes", "no", "yes", "yes"]

@@ -17,6 +17,7 @@
 # owner TH1 = threads and shared tables. A DEFERRED mutant is expected to SURVIVE the first battery: it is a gap of the rows, not a claim of equivalence.
 # EQUIVALENT mutants carry the code reason as file:line at wip/tb6 f7e68681 (+ this commit's docs, which touch no .jl).
 # Every `old` was counted EXACTLY once in its file at wip/tb6 by a python3 -I script (`git show wip/tb6:<file>`); no Julia ran. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
+TR6 = "test/core_lang/test_tabling_tb6rows_swipl.jl"   # TB6-ROWS: the DYNSIDE rows kill TB6-V5 (D-0238: the kill row sits in TR6, not only in the stack)
 TI = "test/core_lang/test_tabling_idg_swipl.jl"
 TC = "test/core_lang/test_cont_boot_swipl.jl"
 TB = "test/db/test_boot_image_swipl.jl"
@@ -28,7 +29,7 @@ TA = "test/core_lang/test_tabling_answers_swipl.jl"   # TB3 (wip/tb3): the answe
 TF = "test/core_lang/test_tabling_wfs_swipl.jl"       # TB4 (wip/tb4): delay lists, simplification
 WR = "test/core_lang/test_wrap_swipl.jl"              # WRAP1: S_WRAP and the supervisors after the renumber
 STACK = [TI, TV, TW, TA, TF]                          # every file that reaches the IDG through start_tabling
-TARGETS = [TI, TC, TB, TM, TT, TV, TW, TA, TF, WR]    # every file a mutant lists
+TARGETS = [TI, TC, TB, TM, TT, TV, TW, TA, TF, WR, TR6]    # every file a mutant lists
 SET = "src/pl-idgset.jl"
 TAB = "src/pl-tabling.jl"
 INC = "src/pl-incl.jl"
@@ -264,8 +265,8 @@ MUTANTS = [
          file=SUP, targets=STACK,
          old="        code[S_INCR_DYNAMIC, I_EXIT],       # MAKE_SV1(incr_dynamic, S_INCR_DYNAMIC) (TAB1 TB6)\n",
          new="        code[S_DYNAMIC, I_EXIT],            # MAKE_SV1(incr_dynamic, S_INCR_DYNAMIC) (TAB1 TB6)\n"),
-    dict(id="TB6-V5 the S_INCR_DYNAMIC branch continues after an exception (KILL idg12/t_idg12 at the stack: table_space set to used+1 inside an incremental table, the ti_d call raises resource_error(private_table_space), pinned from swipl 18168e62)",
-         file=WAM, targets=STACK,
+    dict(id="TB6-V5 the S_INCR_DYNAMIC branch continues after an exception (KILL TR6 DYNSIDE s01-s03: table_space 1400 raises resource_error(private_table_space) INSIDE the supervisor, vd/1 body `nb_setval(vhit, 1)` must not run: s02 vhit 0 (the mutant reads 1), s03 r(0,0,none,dynamic); DYNSIDEOK is the control at 1e9; pinned from swipl 18168e62. DYNERR v01/v02 (limit 1508) raise at the answer add and do not reach this edge)",
+         file=WAM, targets=[TR6] + STACK,
          old="        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION\n    end\n    @goto S_STATIC                                  # VMI_GOTO(S_STATIC)\n\n    # PORT: pl-vmi.c S_MULTIFILE\n",
          new="    end\n    @goto S_STATIC                                  # VMI_GOTO(S_STATIC)\n\n    # PORT: pl-vmi.c S_MULTIFILE\n"),
     dict(id="TB6-V6 assert_term! does not make a new procedure incremental (KILL idg31: assert_term! with PL_CREATE_INCREMENTAL on a new predicate, TP_INCREMENTAL read from the table props; PL_assert is C API only, no Prolog-level row)",
