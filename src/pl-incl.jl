@@ -27,6 +27,10 @@
 # UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-idgset.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-coverage.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -107,6 +111,9 @@ const GP_FINDHERE = Int(1)
 # PORT: pl-incl.h GP_EXISTENCE_ERROR
 "`get_procedure`: raise `existence_error(procedure, Descr)` when it is not found (pl-incl.h)."
 const GP_EXISTENCE_ERROR = Int(0x800)
+# PORT: pl-incl.h GP_CREATE
+"`get_procedure`: create the procedure in this module (pl-incl.h)."
+const GP_CREATE = Int(2)
 # PORT: pl-incl.h GP_DEFINE
 "`get_procedure`: define a procedure (pl-incl.h)."
 const GP_DEFINE = Int(4)
@@ -1921,13 +1928,32 @@ const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
 # PORT: pl-incl.h ALERT_WAKEUP
 # NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output, …) — nothing here
-# sets them; `LD->alerted` carries the wakeup bit and, since TX1e, the undo bit.
+# sets them; `LD->alerted` carries the wakeup bit, since TX1e the undo bit and, since P3, the two limit bits.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
 
 # PORT: pl-incl.h ALERT_UNDO
 "Alert bit: undo goals are scheduled (pl-incl.h `ALERT_UNDO`)."
 const ALERT_UNDO = Int32(0x200)
+
+# PORT: pl-incl.h ALERT_DEPTHLIMIT
+"Alert bit: a depth limit is set (pl-incl.h `ALERT_DEPTHLIMIT`; P3, `call_with_depth_limit/3`)."
+const ALERT_DEPTHLIMIT = Int32(0x010)
+
+# PORT: pl-incl.h ALERT_INFERENCELIMIT
+"Alert bit: an inference limit is set (pl-incl.h `ALERT_INFERENCELIMIT`; P3, `call_with_inference_limit/3`)."
+const ALERT_INFERENCELIMIT = Int32(0x020)
+
+# PORT: pl-incl.h DEPTH_NO_LIMIT
+# DIVERGES: upstream's is `(size_t)-1`; the kernel's depth fields are `Int` (a frame's level is far below `typemax(Int)`), so
+# the highest value is `typemax(Int)`. `$depth_limit/3` reads its limit through `PL_get_size_ex`, which refuses a size beyond
+# `Int` with `representation_error(size_t)` where upstream accepts up to `2^64-1` and refuses with `depth_limit`.
+"The depth limit that never fires (pl-incl.h `DEPTH_NO_LIMIT`)."
+const DEPTH_NO_LIMIT = typemax(Int)
+
+# PORT: pl-incl.h INFERENCE_NO_LIMIT
+"The inference limit that never fires (pl-incl.h `INFERENCE_NO_LIMIT`: INT64_MAX)."
+const INFERENCE_NO_LIMIT = typemax(Int)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
@@ -2095,6 +2121,8 @@ mutable struct queryFrame{T}
     saved_environment::Int          # Parent local-frame (an index)
     top_frame::Int                  # The (dummy) top local frame (an index)
     frame::Int                      # The initial frame (an index)
+    saved_depth_limit::Int          # LD->depth_info.limit a PL_Q_NODEBUG query replaced (P3)
+    saved_depth_reached::Int        # LD->depth_info.reached (P3)
     fndet_context::foreign_context{T}   # (the run loop's FNDET_CONTEXT; see foreign_context)
 end
 
@@ -2739,6 +2767,221 @@ mutable struct gvar_enum
     next::Int                                       # the next name to look at
 end
 gvar_enum() = gvar_enum(UInt64[], 1)
+
+# ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
+
+# PORT: pl-table.h symbol
+"One entry of a key-value map: `name` and `value` (pl-table.h `struct symbol`)."
+struct symbol
+    name::UInt64
+    value::UInt64
+end
+
+# PORT: pl-table.h kvs as KVS
+# DIVERGES: `entries` is a vector (index `i` of upstream is `entries[i + 1]`), `resizing` a `Bool`, the `next`
+# and `prev` pointers `nothing` for NULL.
+"A map of key-value pairs of one size (pl-table.h `struct kvs`): the tables of a resize form a chain."
+mutable struct KVS
+    len::Int                        # size of key-value map
+    resizing::Bool                  # true while resizing
+    accesses::Int                   # number of accesses
+    next::Union{Nothing, KVS}       # next map
+    prev::Union{Nothing, KVS}       # last map
+    entries::Vector{symbol}         # array of hash symbols
+end
+
+# PORT: pl-table.h table as Table
+# DIVERGES: `copy_symbol` and `free_symbol` are Julia callables (or `nothing`), the types `CS` and `FS` of the table: a
+# hook is fixed when the table is made (`newHTable(len, copy_symbol, free_symbol)`, `PL_new_hash_table`), not assigned
+# after as upstream's `t->free_symbol = ...` does, so each field is concrete and a hook call is a static call (the
+# precedent: `PL_extension{F}`, src/SWI-Prolog.jl). A table without hooks is a `Table{Nothing, Nothing}`.
+# `copy_symbol(n, v)` RETURNS the value to store (upstream's `void (*)(table_key_t n, table_value_t *v)` rewrites `*v`);
+# `free_symbol(n, v)` is `void (*)(table_key_t n, table_value_t v)`. Upstream's one runtime reset of a hook
+# (pl-prologflag.c:3030-3032, `t->free_symbol = NULL`) is not ported: the table made there is made again.
+"A (numeric) hash table, word -> word (pl-table.h `struct table`)."
+mutable struct Table{CS, FS}
+    size::Int                                       # # symbols in the table
+    cleanup::Bool                                   # true when KVS cleanup in progress
+    copy_symbol::CS                                 # `nothing` or the callable that copies a value
+    free_symbol::FS                                 # `nothing` or the callable that releases an entry
+    kvs::KVS                                        # map of key-value pairs
+end
+
+# `free_cov_symbol` (pl-coverage.c), the free hook of a coverage table, declared here for the type of `coverage.table`;
+# its method is in src/pl-coverage.jl.
+function free_cov_symbol end
+
+"The table of a coverage record: `free_cov_symbol` is its only hook (pl-coverage.c)."
+const CovTable = Table{Nothing, typeof(free_cov_symbol)}
+
+# PORT: pl-table.h table_enum as TableEnum
+"An enumerator of a table (pl-table.h `struct table_enum`): its map and the index of the next entry."
+mutable struct TableEnum{CS, FS}
+    table::Table{CS, FS}            # Table we are working on
+    kvs::KVS                        # kvs we are iterating over
+    idx::Int                        # Index of current symbol-chain
+end
+
+# ── pl-coverage.h / pl-coverage.c: the coverage data (lane F) ────────────────────────────────────────────────────────────
+# DIVERGES (representation, for the whole block): upstream's table (`TablePP`) maps a `Code` pointer (a call site) or a
+# `Clause` pointer (a clause) to a malloc'ed `cov_obj`. Here the key is the clause SERIAL (`gd.clause_serials[clause]`,
+# the number `lookup_clref` gives a clause on its first reference, src/pl-dbref.jl) in the high 32 bits and the pc OFFSET
+# into the clause's code in the low 32 bits (`COV_KEY_CLAUSE` (0xFFFFFFFF) for a clause site), and the value is the 1-based
+# index of the `cov_obj` in `coverage.objs`, which owns the objects. A table's enumeration order is its bucket order as
+# upstream's, over keys of another kind (upstream's are addresses: the order is not a kernel-independent fact either way).
+
+# PORT: pl-coverage.c cov_obj_type as COV_ANY
+"`cov_obj_type` COV_ANY: any site (a `\$cov_data` pattern that does not say)."
+const COV_ANY = 0
+# PORT: pl-coverage.c cov_obj_type as COV_CLAUSE
+"`cov_obj_type` COV_CLAUSE: a clause's enter and exit."
+const COV_CLAUSE = 1
+# PORT: pl-coverage.c cov_obj_type as COV_PC
+"`cov_obj_type` COV_PC: a call site (a pc in a clause)."
+const COV_PC = 2
+# PORT: pl-coverage.h COV_TRACK_THREADS
+"Coverage flag: activate in child threads (pl-coverage.h)."
+const COV_TRACK_THREADS = 1
+# ORIGINAL: the low 32 bits of a clause site's table key (a pc offset never has them all set).
+"The low 32 bits of the table key of a clause site (see the block's DIVERGES)."
+const COV_KEY_CLAUSE = 4294967295
+
+# PORT: pl-coverage.c cov_obj
+# DIVERGES: see the block; `cref` is the clause blob's term (`lookup_clref`'s result), `serial` the clause's number (the
+# key's high half), `pc` the OFFSET into the clause's code (upstream's `Code` pointer; -1 for a clause site).
+"One site's counters (pl-coverage.c `cov_obj`)."
+mutable struct cov_obj{T}
+    type::Int                       # COV_CLAUSE or COV_PC
+    cref::T                         # the clause blob
+    serial::Int                     # the clause's number
+    pc::Int                         # offset into the clause's code; -1 for a clause site
+    enter::Int                      # the site was entered
+    exits::Int                      # the site was exited
+end
+
+# PORT: pl-coverage.h coverage
+# DIVERGES: see the block (`table` holds indexes into `objs`); `references` and `flags` as upstream.
+"The coverage data of a thread (pl-coverage.h `struct coverage`): sites to counters."
+mutable struct coverage{T}
+    table::CovTable                 # call-sites --> data
+    objs::Vector{cov_obj{T}}        # the objects the table's values index
+    references::Int                 # # threads using this
+    flags::Int                      # COV_*
+end
+
+# PORT: pl-coverage.c cov_data_state
+# DIVERGES: a record of `ld.coverage.states`, its index the `REDO_PTR` context. `cref` (a blob atom upstream) is the
+# clause's serial (0: none); `e` is the table's enumerator (`nothing`: freed); `objs` is the coverage's object vector
+# the table's values index (held here: a `$cov_reset` between two answers does not take it away, as upstream's enumerator
+# holds its map); `saved` has no field (the pool).
+"The state of `'\$cov_data'/3` between answers (pl-coverage.c `struct cov_data_state`)."
+mutable struct cov_data_state{T}
+    type::Int                       # COV_ANY, COV_CLAUSE or COV_PC
+    e::Union{Nothing, TableEnum{Nothing, typeof(free_cov_symbol)}}   # the enumerator over the table
+    serial::Int                     # the clause the answers are restricted to (0: any)
+    objs::Vector{cov_obj{T}}        # the objects the enumerated values index
+end
+cov_data_state{T}() where {T} = cov_data_state{T}(COV_ANY, nothing, 0, cov_obj{T}[])
+
+# PORT: pl-global.h coverage as ld_coverage
+"The coverage fields of a thread's local data (pl-global.h `LD->coverage`), and the pool of `'\$cov_data'/3`'s states."
+mutable struct ld_coverage{T}
+    data::Union{Nothing, coverage{T}}               # Data for the coverage collection
+    active::Int                                     # This thread is recording
+    states::foreign_state_pool{cov_data_state{T}}   # ('$cov_data'/3's REDO_PTR states)
+end
+ld_coverage{T}() where {T} =
+    ld_coverage{T}(nothing, 0, foreign_state_pool{cov_data_state{T}}())
+
+# ── pl-prof.h and pl-prof.c's structs (lane F, PROF1) ──────────────────────────────────────────────────
+# DIVERGES (representation, for the whole block): a `call_node *` is an `Int` index into `ld.profile.node_table` (0: NULL), the
+# `PL_POINTER` a node is handed to Prolog as (`'$prof_node'(Ptr)`); a freed node leaves `nothing` in its slot, so a stale pointer
+# is a `type_error(profile_node, _)` where upstream reads freed memory. The counters (`uint64_t`) are `Int`: a nanosecond count
+# of a profiled run does not reach 2^63. The one profile type is the default one (`prof_default_type`: a `Definition` handle), so
+# a node's `type` is its index in the type table (`PROF_TYPE_DEFAULT`); `PL_register_profile_type` (foreign types hold C function
+# pointers) is a named refusal in src/pl-prof.jl.
+const PROF_INACTIVE = 0         # prof_status: Profiler is inactive
+const PROF_CPU = 1              # Profile CPU time
+const PROF_WALL = 2             # Profile wall time
+const PROF_WALL_EXACT = 3       # Measure wall time at the ports
+const PROF_CPU_EXACT = 4        # Idem, scaled to thread CPU time
+const PROFC_FALSE = 0           # prof_control
+const PROFC_TRUE = 1
+const PROFC_CLASSIC = 2
+const PROFNODE_MAGIC = Int(0x7ae38f24)
+const PROFTYPE_MAGIC = Int(0x639a2fb1)
+const MAX_PROF_TYPES = 10
+const PROF_TYPE_DEFAULT = 1                     # the index of `prof_default_type` in `types`
+const DEFAULT_SAMPLE_PERIOD = 5000              # usecs: 200 samples/sec
+
+PROF_IS_CPU(m::Int)::Bool = m == PROF_CPU || m == PROF_CPU_EXACT
+PROF_IS_EXACT(m::Int)::Bool = m == PROF_WALL_EXACT || m == PROF_CPU_EXACT
+
+# PORT: pl-prof.c call_node
+"A node of the dynamic call tree (pl-prof.c `struct call_node`); the links are indexes into `ld.profile.node_table`."
+mutable struct call_node{T}
+    magic::Int                                  # PROFNODE_MAGIC
+    parent::Int
+    handle::Union{Nothing, Definition{T}}       # handle to procedure-id
+    type::Int
+    calls::Int                                  # Calls from the parent
+    fails::Int                                  # fails back to choicepoint
+    exits::Int                                  # exits to the parent
+    recur::Int                                  # recursive calls
+    ticks::Int                                  # time-statistics (nsec)
+    sibling_ticks::Int                          # ticks in a siblings
+    raw::Int                                    # PROF_*_EXACT: prof_clock() units
+    win_next::Int                               # PROF_CPU_EXACT: window chain
+    in_window::Bool                             # in LD->profile.clock.win_nodes
+    next::Int                                   # next in siblings chain
+    siblings::Int                               # my offspring
+end
+call_node{T}(handle::Union{Nothing, Definition{T}}, type::Int) where {T} =
+    call_node{T}(PROFNODE_MAGIC, 0, handle, type, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0)
+
+# PORT: pl-global.h clock as ld_profile_clock
+"The `PROF_*_EXACT` clock of a thread's profile (pl-global.h `LD->profile.clock`)."
+mutable struct ld_profile_clock
+    last::Int                                   # prof_clock() at last switch
+    start::Int                                  # prof_clock() at start
+    start_ns::Int                               # monotonic nsec at start
+    raw::Int                                    # unconverted ticks total
+    accounting::Int                             # unconverted accounting ticks
+    win_start::Int                              # prof_clock() at window start
+    win_length::Int                             # window length in prof_clock() units
+    long_interval::Int                          # close window after this interval
+    win_cpu::Int                                # thread CPU nsec at window start
+    win_accounting::Int                         # accounting in this window
+    win_nodes::Int                              # nodes charged in this window
+end
+ld_profile_clock() = ld_profile_clock(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+# PORT: pl-global.h profile as ld_profile
+"The profiler fields of a thread's local data (pl-global.h `LD->profile`; the field order is upstream's)."
+mutable struct ld_profile{T}
+    accounting::Bool                            # we are accounting
+    sum_ok::Bool                                # siblings are counted
+    active::Int                                 # profiler is on (prof_status)
+    mode::Int                                   # mode that collected the data (prof_status)
+    ports_control::Int                          # which port counts are generated? (prof_control)
+    sample_period::Int                          # profile sample period (usecs.)
+    current::Int                                # `current' node
+    roots::Int                                  # list of root-nodes
+    samples::Int                                # profile samples
+    ticks::Int                                  # profile ticks total (nsec)
+    accounting_ticks::Int                       # Ticks in profCall() and friends
+    nodes::Int                                  # #Recorded nodes
+    time_at_last_tick::Int                      # nsec since time_at_start
+    time_at_start::Float64                      # Time at last start
+    time::Float64                               # recorded CPU time
+    clock::ld_profile_clock                     # PROF_*_EXACT clock
+    node_table::Vector{Union{Nothing, call_node{T}}}   # the nodes a pointer indexes (ORIGINAL: `malloc`'d memory upstream)
+end
+ld_profile{T}() where {T} = ld_profile{T}(
+    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, 0, 0,
+    0.0, 0.0,
+    ld_profile_clock(), Union{Nothing, call_node{T}}[]
+)
 
 # ── pl-allocpool.h and the table state of pl-tabling.h (TAB1 TB0) ───────────────────────────────────
 # DIVERGES (representation, for the whole block; docs/architecture.md TB0): a `trie_node *` is an `Int` node id and a

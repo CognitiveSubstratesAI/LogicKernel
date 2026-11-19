@@ -1,4 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-setup.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -123,27 +125,6 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
     return nothing
 end
 
-# PORT: pl-setup.c trim_stacks as pl_trim_stacks0_va
-# (PRED_IMPL("trim_stacks", 0, trim_stacks, 0), pl-setup.c:1751 at the pin; registered in `PL_predicates_from_setup`.)
-# The body is upstream's: `trimStacks(true)`, then `succeed`; the call carries the `PRED_LD` and the `PL_FA_VARARGS`
-# convention of every `PRED_IMPL` (see `PL_predicates_from_bag`).
-"`trim_stacks/0`: shrink the stacks to their use, the spares reserved again (pl-setup.c)."
-function pl_trim_stacks0_va(
-    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
-)::foreign_t where {T}
-    trimStacks!(ld, true)
-
-    return FTRUE
-end
-
-# PORT: pl-setup.c BeginPredDefs as PL_predicates_from_setup
-# DIVERGES: the ported entry only (upstream's table also has `'$set_prolog_stack'/4`, `'$on_signal'/4` and, under SIG_ALERT,
-# prolog_alert_signal/2); the table is registered after pl-ctype.c's and before pl-proc.c's, as `initBuildIns` does (pl-ext.c:526-529).
-"pl-setup.c's registration table (`BeginPredDefs(setup)`): the ported entries."
-const PL_predicates_from_setup = (
-    PL_extension("trim_stacks", 0, pl_trim_stacks0_va, PL_FA_VARARGS),
-)
-
 # PORT: pl-setup.c emptyStacks as emptyStacks!
 # DIVERGES: the argument stack is emptied.
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
@@ -215,8 +196,8 @@ end
 # PORT: pl-setup.c signames as SIGNAMES
 # DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
 # `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);
-# the flags (`PLSIG_THROW`, `PLSIG_IGNORE`) and the Prolog interrupts from 32 up (`prolog:gc`, …) are left to the
-# signal step. A comment, not a docstring, as for every module-level constant the global-state lint reads.
+# the flags column is `SIGNAMES_FLAGS` and the Prolog signals from 32 up (`prolog:gc`, …) are `SIGNAMES_VIRTUAL` (Q10).
+# A comment, not a docstring, as for every module-level constant the global-state lint reads.
 const SIGNAMES = (
     ("hup", 1), ("int", 2), ("quit", 3), ("ill", 4), ("abrt", 6), ("fpe", 8), ("kill", 9),
     ("segv", 11), ("pipe", 13), ("alrm", 14), ("term", 15), ("usr1", 10), ("usr2", 12),
@@ -224,6 +205,109 @@ const SIGNAMES = (
     ("trap", 5), ("bus", 7), ("stkflt", 16), ("urg", 23), ("io", 29), ("poll", 29),
     ("xcpu", 24), ("xfsz", 25), ("vtalrm", 26), ("prof", 27), ("pwr", 30), ("sys", 31),
     ("winch", 28)
+)
+
+# PORT: pl-incl.h SIG_PROLOG_OFFSET
+"The number of the first Prolog (virtual) signal (pl-incl.h)."
+const SIG_PROLOG_OFFSET = 32
+# PORT: pl-incl.h MINSIGNAL
+"The number of the first signal, with OS signals (pl-incl.h `HAVE_OS_SIGNALS`)."
+const MINSIGNAL = 1
+# PORT: pl-incl.h MAXSIGNAL
+"The highest supported signal number (pl-incl.h)."
+const MAXSIGNAL = 64
+# PORT: pl-incl.h NUM_SIGNALS
+"The number of signals (pl-incl.h)."
+const NUM_SIGNALS = MAXSIGNAL - MINSIGNAL + 1
+# PORT: pl-incl.h virtual_signum as SIG_ATOM_GC
+# DIVERGES: the `SIG_*` numbers (`SIG_PROLOG_OFFSET + VSIG_*`) as `Int` constants; `O_ATOMGC` and `O_ENGINES` are on.
+"Prolog signal: atom garbage collection (pl-incl.h `SIG_ATOM_GC`)."
+const SIG_ATOM_GC = SIG_PROLOG_OFFSET + 0
+"Prolog signal: stack garbage collection (pl-incl.h `SIG_GC`)."
+const SIG_GC = SIG_PROLOG_OFFSET + 1
+"Prolog signal: run the thread's signal queue (pl-incl.h `SIG_THREAD_SIGNAL`)."
+const SIG_THREAD_SIGNAL = SIG_PROLOG_OFFSET + 2
+"Prolog signal: clause garbage collection (pl-incl.h `SIG_CLAUSE_GC`)."
+const SIG_CLAUSE_GC = SIG_PROLOG_OFFSET + 3
+"Prolog signal that unwinds to the top level (pl-incl.h `SIG_PLABORT`)."
+const SIG_PLABORT = SIG_PROLOG_OFFSET + 4
+"Prolog signal: halt (pl-incl.h `SIG_PLHALT`)."
+const SIG_PLHALT = SIG_PROLOG_OFFSET + 5
+"Prolog signal: tune the GC (pl-incl.h `SIG_TUNE_GC`)."
+const SIG_TUNE_GC = SIG_PROLOG_OFFSET + 6
+
+# PORT: pl-setup.c PLSIG_USERFLAGS
+"The range of the API-visible signal flags (pl-setup.c)."
+const PLSIG_USERFLAGS = Int(0x0000ffff)
+# PORT: pl-setup.c PLSIG_STATEFLAGS
+"The range of the internal signal flags (pl-setup.c)."
+const PLSIG_STATEFLAGS = Int(0xffff0000)
+# PORT: pl-setup.c PLSIG_PREPARED
+"Signal flag: the signal is prepared (pl-setup.c)."
+const PLSIG_PREPARED = Int(0x00010000)
+# PORT: pl-setup.c PLSIG_IGNORED
+"Signal flag: the signal is ignored (pl-setup.c)."
+const PLSIG_IGNORED = Int(0x00020000)
+# PORT: SWI-Prolog.h PLSIG_THROW
+"Signal flag: throw `signal(num, name)` (SWI-Prolog.h)."
+const PLSIG_THROW = Int(0x0002)
+# PORT: SWI-Prolog.h PLSIG_SYNC
+"Signal flag: call the handler synchronously (SWI-Prolog.h)."
+const PLSIG_SYNC = Int(0x0004)
+# PORT: SWI-Prolog.h PLSIG_NOFRAME
+"Signal flag: do not create a Prolog frame (SWI-Prolog.h)."
+const PLSIG_NOFRAME = Int(0x0008)
+# PORT: SWI-Prolog.h PLSIG_IGNORE
+"Signal flag: ignore the signal entirely (SWI-Prolog.h)."
+const PLSIG_IGNORE = Int(0x0010)
+
+# ORIGINAL: the handler tokens `sig_handler.handler` holds (see `sig_handler`, src/pl-global.jl): upstream's C functions, named
+# in the order the start-up installs them. `$on_signal/4` reports a token as `'$foreign_function'(Token)`.
+"No handler function (a NULL `handler_t`)."
+const SIGH_NONE = 0
+"The handler function `PL_interrupt` (the `debug` handler, pl-trace.c)."
+const SIGH_INTERRUPT = 1
+"The handler function `terminate_handler` (pl-setup.c: `SIGTERM`, `SIGABRT`, `SIGQUIT`)."
+const SIGH_TERMINATE = 2
+"The handler function `hupHandler` (pl-setup.c: `SIGHUP`)."
+const SIGH_HUP = 3
+"The handler function `sigCrashHandler` (os/pl-cstack.c: `SIGILL`, `SIGBUS`, `SIGFPE`, `SIGSYS`)."
+const SIGH_CRASH = 4
+"The handler function `alert_handler` (pl-setup.c: the alert signal)."
+const SIGH_ALERT = 5
+"The handler function `agc_handler` (pl-setup.c: `SIG_ATOM_GC`)."
+const SIGH_AGC = 6
+"The handler function `gc_handler` (pl-setup.c: `SIG_GC`)."
+const SIGH_GC = 7
+"The handler function `gc_tune_handler` (pl-setup.c: `SIG_TUNE_GC`)."
+const SIGH_TUNE_GC = 8
+"The handler function `cgc_handler` (pl-setup.c: `SIG_CLAUSE_GC`)."
+const SIGH_CGC = 9
+"The handler function `abort_handler` (pl-setup.c: `SIG_PLABORT`)."
+const SIGH_ABORT = 10
+"The handler function `halt_handler` (pl-setup.c: `SIG_PLHALT`)."
+const SIGH_HALT = 11
+"The handler function `executeThreadSignals` (pl-thread.c: `SIG_THREAD_SIGNAL`)."
+const SIGH_THREAD_SIGNAL = 12
+"The highest handler token."
+const SIGH_MAX = 12
+
+# PORT: pl-setup.c signames as SIGNAMES_VIRTUAL
+# DIVERGES: the entries of the `signames` table that follow the OS signals (`prolog:atom_gc` …), here a table of their own; the
+# kernel's numbers are `SIG_PROLOG_OFFSET + VSIG_*`. `SIG_TUNE_GC` has no entry upstream either.
+const SIGNAMES_VIRTUAL = (
+    ("prolog:atom_gc", SIG_ATOM_GC), ("prolog:gc", SIG_GC),
+    ("prolog:thread_signal", SIG_THREAD_SIGNAL),
+    ("prolog:clause_gc", SIG_CLAUSE_GC), ("prolog:abort", SIG_PLABORT),
+    ("prolog:halt", SIG_PLHALT)
+)
+
+# PORT: pl-setup.c signames as SIGNAMES_FLAGS
+# DIVERGES: the OS signals that start with a flag, `(number, flags)`: `fpe`, `alrm`, `xcpu`, `xfsz`, `vtalrm` throw, `pipe` is
+# ignored (the other columns are 0).
+const SIGNAMES_FLAGS = (
+    (8, PLSIG_THROW), (13, PLSIG_IGNORE), (14, PLSIG_THROW), (24, PLSIG_THROW),
+    (25, PLSIG_THROW), (26, PLSIG_THROW)
 )
 
 # PORT: pl-setup.c signal_index
@@ -237,8 +321,24 @@ function signal_index(name::AbstractString)::Int
     for (n, sig) in SIGNAMES
         n == name && return sig
     end
+    for (n, sig) in SIGNAMES_VIRTUAL                    # the Prolog signals, listed after the OS signals
+        n == name && return sig
+    end
 
     return -1
+end
+
+# PORT: pl-setup.c signal_name
+"The name of signal `sig`, or `\"unknown\"` (pl-setup.c)."
+function signal_name(sig::Int)::String
+    for (n, s) in SIGNAMES
+        s == sig && return n
+    end
+    for (n, s) in SIGNAMES_VIRTUAL
+        s == sig && return n
+    end
+
+    return "unknown"
 end
 
 # PORT: pl-setup.c PL_get_signum_ex
@@ -266,6 +366,125 @@ function PL_get_signum_ex(ld::PL_local_data{T}, sig::term_t)::Union{Nothing, Int
 
     PL_error(ld, ERR_DOMAIN, mk_sym(T, :signal), sig)
     return nothing
+end
+
+# PORT: pl-incl.h SIGNAL_INDEX
+# DIVERGES: one-based (a Julia vector): `sig - MINSIGNAL + 1`.
+"The position of signal `sig` in the handler table (pl-incl.h)."
+SIGNAL_INDEX(sig::Int)::Int = sig - MINSIGNAL + 1
+
+# PORT: pl-incl.h IS_VALID_SIGNAL
+"Whether `sig` is a signal number (pl-incl.h)."
+IS_VALID_SIGNAL(sig::Int)::Bool = sig >= MINSIGNAL && sig <= MAXSIGNAL
+
+# PORT: pl-incl.h IS_VSIG
+"Whether `sig` is a Prolog (virtual) signal (pl-incl.h)."
+IS_VSIG(sig::Int)::Bool = sig >= SIG_PROLOG_OFFSET
+
+# PORT: pl-setup.c prepareSignal
+# DIVERGES (the actual OS installation is unwritten by design): upstream's `set_sighandler(sig, …)` installs `pl_signal_handler`
+# (or `SIG_IGN`) with `sigaction()` for an OS signal and remembers the previous OS handler in `saved_handler`. The kernel
+# installs no OS handler and no signal is ever delivered to a Prolog handler: the record is the Prolog-visible state
+# (what `$on_signal/4` reports and sets), `saved_handler` stays 0.
+"Prepare signal `sig` with the `PLSIG_*` flags `plsig_flags`: record its state (pl-setup.c); the handler record."
+function prepareSignal!(
+    handlers::Vector{sig_handler{T}}, sig::Int, plsig_flags::Int
+)::sig_handler{T} where {T}
+    sh = handlers[SIGNAL_INDEX(sig)]
+    current_state = sh.flags & PLSIG_STATEFLAGS
+    desired_state = (plsig_flags & PLSIG_IGNORE) != 0 ? PLSIG_IGNORED : PLSIG_PREPARED
+
+    plsig_flags &= ~(PLSIG_STATEFLAGS | PLSIG_IGNORE)
+
+    if current_state != desired_state
+        sh.flags = 0                                    # clearFlags(sh)
+        sh.flags |= desired_state | plsig_flags         # set(sh, desired_state|plsig_flags)
+    else
+        sh.flags = (sh.flags & ~PLSIG_USERFLAGS) | plsig_flags
+    end
+
+    return sh
+end
+
+# PORT: pl-setup.c unprepareSignal
+# DIVERGES: as `prepareSignal!`: no OS handler to restore.
+"Return signal `sig` to its default state (pl-setup.c)."
+function unprepareSignal!(handlers::Vector{sig_handler{T}}, sig::Int)::Nothing where {T}
+    sh = handlers[SIGNAL_INDEX(sig)]
+
+    if (sh.flags & PLSIG_STATEFLAGS) != 0
+        sh.flags = 0
+        sh.handler = SIGH_NONE
+        sh.predicate = nothing
+        sh.saved_handler = SIGH_NONE
+    end
+
+    return nothing
+end
+
+# PORT: pl-setup.c PL_signal as _signal_install!
+# DIVERGES: `PL_signal(sig|flags, func)` is `PL_sigaction` with a handler function and no predicate: for a signal not yet prepared
+# (or one whose handler is another) it records `func` and prepares the signal with the flags; the kernel has no API entry point
+# for it, so this is the call `initSignals!` makes, on a handler token.
+"Record handler token `func` for signal `sig` with the flags `flags` (pl-setup.c `PL_signal`'s effect on a fresh record)."
+function _signal_install!(
+    handlers::Vector{sig_handler{T}}, sig::Int, func::Int, flags::Int
+)::Nothing where {T}
+    sh = handlers[SIGNAL_INDEX(sig)]
+    if (sh.flags & PLSIG_PREPARED) == 0 || func != sh.saved_handler
+        sh.handler = func
+        sh.predicate = nothing
+        sh.flags = (sh.flags & ~PLSIG_USERFLAGS) | flags
+        prepareSignal!(handlers, sig, flags)
+    end
+
+    return nothing
+end
+
+# PORT: pl-setup.c initSignals as initSignals!
+# DIVERGES: builds the handler table of a new database (upstream fills `GD->signals.handlers`), for the default `signals` flag
+# (true): `initTerminationSignals`, `initBackTrace` (os/pl-cstack.c), the signals with a flag in `signames`, `hupHandler`, the
+# alert signal (`SIG_ALERT` is SIGUSR2 with threads; the kernel has one thread, `sig_alert` is kept as upstream's default), and
+# the Prolog signals. `initAltSignalStack` (an alternate signal stack installed through `sigaction`, outside the table) has no twin. The handlers
+# are tokens (`sig_handler`); no OS handler is installed (`prepareSignal!`).
+"The handler records of a new database: `GD->signals.handlers` after `initSignals` (pl-setup.c)."
+function initSignals!(::Type{T})::Vector{sig_handler{T}} where {T}
+    handlers = [sig_handler{T}() for _ in 1:NUM_SIGNALS]
+
+    _signal_install!(handlers, 15, SIGH_TERMINATE, 0)       # initTerminationSignals: SIGTERM
+    _signal_install!(handlers, 6, SIGH_TERMINATE, 0)        # SIGABRT
+    _signal_install!(handlers, 3, SIGH_TERMINATE, 0)        # SIGQUIT
+    for sig in (4, 7, 8, 31)                                # initBackTrace: SIGILL, SIGBUS, SIGFPE, SIGSYS (signal 11 is on the alternate stack)
+        _signal_install!(handlers, sig, SIGH_CRASH, 0)
+    end
+    for (sig, flags) in SIGNAMES_FLAGS                      # for( ; sn->name; sn++) if ( sn->flags ) prepareSignal(sn->sig, sn->flags)
+        prepareSignal!(handlers, sig, flags)
+    end
+    _signal_install!(handlers, 1, SIGH_HUP, PLSIG_SYNC)     # PL_signal(SIGHUP|PL_SIGSYNC, hupHandler)
+    _signal_install!(handlers, 12, SIGH_ALERT, PLSIG_NOFRAME)   # PL_signal(sig_alert|PL_SIGNOFRAME, alert_handler)
+
+    _signal_install!(handlers, SIG_GC, SIGH_GC, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_TUNE_GC, SIGH_TUNE_GC, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_CLAUSE_GC, SIGH_CGC, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_PLABORT, SIGH_ABORT, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_PLHALT, SIGH_HALT, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_THREAD_SIGNAL, SIGH_THREAD_SIGNAL, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_ATOM_GC, SIGH_AGC, PLSIG_SYNC)
+
+    return handlers
+end
+
+# ORIGINAL: the start-up values of the four stacks' `small`, `factor` and `min_free` (pl-setup.c `init_stack` and `gcPolicy`):
+# `min_free` is `256*sizeof(word)` bytes, the local stack's `LOCAL_MARGIN` (`allocStacks`); the global stack and the trail are the
+# collected ones (`small = SMALLSTACK` = 32 K, `factor = 3`), the local and the argument stack have 0 and 0.
+"The `stack_params_t` records of a new database, in the order local, global, trail, argument (pl-setup.c)."
+function initStackParams()::Vector{stack_params_t}
+    return [
+        stack_params_t(0, 0, LOCAL_MARGIN, 0),
+        stack_params_t(32 * 1024, 3, 256, 0),
+        stack_params_t(32 * 1024, 3, 256, 0),
+        stack_params_t(0, 0, 256, 0)
+    ]
 end
 
 # PORT: pl-setup.c setupProlog
@@ -370,11 +589,374 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         0,                                      # tabling_start_node_ids: no start node id handed out (pl-tabling.c:12348; TAB1 TB1)
         record{T}[],                            # undo_refs: no undo goal has a blob yet (TX1e)
         dc_proc,                                # procedures_drun_undo1: set by run_undo_hooks at its first call (TX1e)
-        Tuple{Int, Procedure{T}}[]              # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
+        Tuple{Int, Procedure{T}}[],             # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
+        initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
+        initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
+        locale_state{T}()                       # locale: empty until initLocale! (below)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
+    initLocale!(gd)                             # setup:176 (src/os/pl-locale.jl): after initIO, the locale blob type and the default locale
     return gd
 end
+
+# PORT: pl-setup.c get_meta_arg
+# DIVERGES: the call `get_meta_arg(arg, m, t)` the predicate makes with `t` the same reference as `arg` reads the argument first,
+# then overwrites `t`, as `_PL_get_arg` does here (`valPtr(w)` is taken before the slot is written).
+"Split the `Module:Term` term reference `arg` into `m` and `t`, or raise `type_error(meta_argument, Arg)` (pl-setup.c)."
+function get_meta_arg(
+    ld::PL_local_data{T}, arg::term_t, m::term_t, t::term_t
+)::Bool where {T}
+    if PL_is_functor(ld, arg, mk_sym(T, :(:)), 2)
+        _PL_get_arg(ld, 1, arg, m)
+        _PL_get_arg(ld, 2, arg, t)
+        return true
+    end
+
+    return PL_error(ld, ERR_TYPE, mk_sym(T, :meta_argument), arg)
+end
+
+# PORT: pl-setup.c on_signal as pl_on_signal4_va
+# (PRED_IMPL("$on_signal", 4, on_signal, 0), pl-setup.c:1366-1477 at the pin)
+# DIVERGES (TH1): no OS handler is installed and no signal is delivered (`prepareSignal!`: the handler table records the Prolog-visible
+# state). A handler FUNCTION is a token: `'$foreign_function'(Token)` reports one of the kernel's handler tokens (`SIGH_*`, src/pl-setup.jl)
+# and re-installs it; a pointer upstream would get from C (another integer) is refused by name. `PL_compare` returns only -1/0/1
+# here: upstream's `CMP_ERROR` (a comparison that raised) has no twin, so that test is left out.
+"`'\$on_signal'(?SigNum, ?SigName, :Old, :New)`: report and set how a signal is handled (pl-setup.c)."
+function pl_on_signal4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    gd = _query_gd(ld)
+    handlers = gd.signals_handlers
+    mold = new_term_ref(ld)
+    mnew = new_term_ref(ld)
+
+    sig = A1
+    name = A2
+    old = A3
+    new = A4
+
+    if !get_meta_arg(ld, old, mold, old) || !get_meta_arg(ld, new, mnew, new)
+        return FFALSE
+    end
+
+    sign = PL_get_integer(ld, sig)
+    if sign !== nothing && IS_VALID_SIGNAL(sign)
+        PL_unify_atom(ld, name, mk_sym(T, Symbol(signal_name(sign)))) || return FFALSE
+    else
+        na = PL_get_atom(ld, name)
+        if na !== nothing && !is_reserved_symbol(na) && !is_blob(na)    # PL_get_atom_chars(name, &sn)
+            sign = signal_index(sym_text(na))
+            if sign != -1
+                PL_unify_integer(ld, sig, sign) || return FFALSE
+            else
+                return PL_error(ld, ERR_DOMAIN, mk_sym(T, :signal), name) ? FTRUE : FFALSE
+            end
+        else
+            return PL_error(ld, ERR_TYPE, mk_sym(T, :signal), sig) ? FTRUE : FFALSE
+        end
+    end
+
+    sh = handlers[SIGNAL_INDEX(sign)]
+
+    if (sh.flags & PLSIG_STATEFLAGS) == 0               # not handled
+        PL_unify_atom(ld, old, mk_sym(T, :default)) || return FFALSE
+    elseif (sh.flags & PLSIG_IGNORED) != 0              # signal ignored
+        PL_unify_atom(ld, old, mk_sym(T, :ignore)) || return FFALSE
+    elseif (sh.flags & PLSIG_THROW) != 0                # throw exception
+        PL_unify_atom(ld, old, mk_sym(T, :throw)) || return FFALSE
+    elseif sh.predicate !== nothing                     # call predicate
+        def = sh.predicate.definition
+        modname = gd.modules[def.module_].atom
+
+        if PL_unify_atom(ld, mold, modname)
+            PL_unify_atom(ld, old, def.name) || return FFALSE
+        else
+            PL_unify(
+                ld,
+                old,
+                _message_term(ld, :(:), _err_atom(ld, modname), _err_atom(ld, def.name))
+            ) ||
+                return FFALSE
+        end
+    elseif sh.handler != SIGH_NONE
+        if sh.handler == SIGH_INTERRUPT                 # PL_interrupt
+            PL_unify_atom(ld, old, mk_sym(T, :debug)) || return FFALSE
+        else
+            PL_unify(
+                ld, old,
+                _message_term(ld, Symbol("\$foreign_function"), _err_int(ld, sh.handler))
+            ) || return FFALSE
+        end
+    end
+
+    rc = PL_compare(ld, old, new)
+    rc == 0 && (rc = PL_compare(ld, mold, mnew))
+    rc == 0 && return FTRUE                             # no change
+
+    a = PL_get_atom(ld, new)
+    if a !== nothing
+        key = sym_key(a)
+        if key == sym_key(mk_sym(T, :default))
+            unprepareSignal!(handlers, sign)
+        elseif key == sym_key(mk_sym(T, :ignore))
+            prepareSignal!(handlers, sign, PLSIG_IGNORE)        # request to ignore this signal
+        elseif key == sym_key(mk_sym(T, :throw))
+            sh = prepareSignal!(handlers, sign, PLSIG_THROW | PLSIG_SYNC)
+            sh.handler = SIGH_NONE
+            sh.predicate = nothing
+        elseif key == sym_key(mk_sym(T, :debug))
+            sh = prepareSignal!(handlers, sign, 0)
+            sh.handler = SIGH_INTERRUPT
+            sh.predicate = nothing
+        else
+            ma = PL_get_atom_ex(ld, mnew)                       # get_module(mnew, &m)
+            ma === nothing && return FFALSE
+            m = lookupModule(gd, ma)
+            pred = lookupProcedure(a, 1, m)
+
+            sh = prepareSignal!(handlers, sign, PLSIG_SYNC)
+            sh.handler = SIGH_NONE
+            sh.predicate = pred
+        end
+    elseif PL_is_functor(ld, new, mk_sym(T, Symbol("\$foreign_function")), 1)
+        p = new_term_ref(ld)
+        _PL_get_arg(ld, 1, new, p)
+
+        if PL_is_integer(ld, p)                                 # PL_get_pointer(a, &f)
+            tok = PL_get_integer(ld, p)
+            if tok !== nothing && tok >= SIGH_NONE && tok <= SIGH_MAX
+                sh = prepareSignal!(handlers, sign, 0)
+                sh.handler = tok
+                sh.predicate = nothing
+                return FTRUE
+            end
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, Symbol("\$foreign_function")),
+                    "a foreign handler function of the signal",
+                    "TH1"
+                )
+            )
+        end
+
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :signal_handler), new) ? FTRUE : FFALSE
+    else
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :signal_handler), new) ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
+
+# PORT: pl-setup.c trim_stacks as pl_trim_stacks0_va
+# (PRED_IMPL("trim_stacks", 0, trim_stacks, 0), pl-setup.c:1751-1757 at the pin)
+"`trim_stacks`: release the free parts of the stacks (pl-setup.c)."
+function pl_trim_stacks0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    trimStacks!(ld, true)                               # trimStacks(true)
+    return FTRUE
+end
+
+# PORT: pl-setup.c set_stack_limit as set_stack_limit!
+# DIVERGES: the limit is `ld.stacks_limit`, in positions (words); `limit` is in bytes, as the `stack_limit` flag and
+# `'$set_prolog_stack'/4` give it, and is rounded DOWN to whole words (swipl keeps the exact byte count: 2000001 is reported back
+# as 2000001, here as 2000000). `sizeStack(local) + sizeStack(global) + sizeStack(trail)` is `_stacks_in_use(ld, 0)`, the sum
+# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). There is no stack garbage
+# collector (`garbageCollect(GC_USER)`, src/pl-gc.jl `pl_garbage_collect`): only `trimStacks(true)` is tried.
+"Set the combined limit of the stacks to `limit` bytes; a limit below what the stacks hold after trimming them is `permission_error(limit, stacks, Limit)` (pl-setup.c)."
+function set_stack_limit!(ld::PL_local_data{T}, limit::Int)::Bool where {T}
+    if limit < 8 * ld.stacks_limit && limit < 8 * _stacks_in_use(ld, 0)
+        trimStacks!(ld, true)                           # garbageCollect(GC_USER); trimStacks(true)
+
+        if limit < 8 * _stacks_in_use(ld, 0)
+            ex = PL_new_term_ref(ld)
+            return PL_put_int64(ld, ex, limit) &&
+                   PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :limit), mk_sym(T, :stacks), ex
+            )
+        end
+    end
+
+    ld.stacks_limit = limit ÷ 8                         # LD->stacks.limit = limit
+    return true
+end
+
+# PORT: pl-setup.c set_prolog_stack as pl_set_prolog_stack4_va
+# (PRED_IMPL("$set_prolog_stack", 4, set_prolog_stack, 0), pl-setup.c:1892-1960 at the pin)
+# DIVERGES (TH1): the four stacks' `small`, `factor` and `min_free` are the records of `GD.stacks_params` (local, global, trail, argument;
+# src/pl-global.jl), in words as the predicate reports them; the local, global and trail stack's `spare` is the local data's
+# `*_def_spare`, the argument stack's its record's (the kernel has no argument stack to trim, so setting its `spare` or `min_free` only
+# records). `limit` (deprecated) reports and sets the one limit of the three stacks, in bytes (`set_stack_limit!`).
+"`'\$set_prolog_stack'(+Stack, +Property, -Old, +New)`: read and set a stack parameter (pl-setup.c)."
+function pl_set_prolog_stack4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    gd = _query_gd(ld)
+
+    name = A1
+    prop = A2
+    old = A3
+    value = A4
+
+    which = 0                                           # 1 local, 2 global, 3 trail, 4 argument
+    a = PL_get_atom(ld, name)
+    if a !== nothing
+        key = sym_key(a)
+        if key == sym_key(mk_sym(T, :local))
+            which = 1
+        elseif key == sym_key(mk_sym(T, :global))
+            which = 2
+        elseif key == sym_key(mk_sym(T, :trail))
+            which = 3
+        elseif key == sym_key(mk_sym(T, :argument))
+            which = 4
+        end
+    end
+    if which == 0
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :stack), name) ? FTRUE : FFALSE
+    end
+    stack = gd.stacks_params[which]
+
+    k = PL_get_atom_ex(ld, prop)
+    k === nothing && return FFALSE
+    key = sym_key(k)
+
+    if key == sym_key(mk_sym(T, :low))
+        PL_unify_int64(ld, old, stack.small) || return FFALSE
+        v = PL_get_size_ex(ld, value)
+        v === nothing && return FFALSE
+        stack.small = v
+        return FTRUE
+    end
+    if key == sym_key(mk_sym(T, :factor))
+        PL_unify_integer(ld, old, stack.factor) || return FFALSE
+        v = PL_get_integer_ex(ld, value)
+        v === nothing && return FFALSE
+        stack.factor = v
+        return FTRUE
+    end
+    if key == sym_key(mk_sym(T, :limit))
+        printMessage(
+            ld, :warning,
+            _message_term(
+                ld, :deprecated,
+                _message_term(ld, :set_prolog_stack, A1, _err_atom(ld, mk_sym(T, :limit)))
+            )
+        ) || return FFALSE
+
+        limit = ld.stacks_limit * 8                     # in bytes, as the stack_limit flag reports it
+        PL_unify_int64(ld, old, limit) || return FFALSE
+        newlimit = PL_get_size_ex(ld, value)
+        newlimit === nothing && return FFALSE
+        return set_stack_limit!(ld, newlimit) ? FTRUE : FFALSE
+    end
+    if key == sym_key(mk_sym(T, :spare))
+        spare = if which == 1
+            ld.local_def_spare
+        elseif which == 2
+            ld.global_def_spare
+        elseif which == 3
+            ld.trail_def_spare
+        else
+            stack.def_spare
+        end
+        PL_unify_int64(ld, old, spare) || return FFALSE
+        v = PL_get_size_ex(ld, value)
+        v === nothing && return FFALSE
+        if which == 1
+            ld.local_def_spare = v
+            trim_stack!(ld)
+        elseif which == 2
+            ld.global_def_spare = v
+            trim_stack_global!(ld)
+        elseif which == 3
+            ld.trail_def_spare = v
+            trim_stack_trail!(ld)
+        else
+            stack.def_spare = v
+        end
+        return FTRUE
+    end
+    if key == sym_key(mk_sym(T, :min_free))
+        PL_unify_int64(ld, old, stack.min_free) || return FFALSE
+        v = PL_get_size_ex(ld, value)
+        v === nothing && return FFALSE
+        stack.min_free = v
+        which == 1 && trim_stack!(ld)
+        which == 2 && trim_stack_global!(ld)
+        which == 3 && trim_stack_trail!(ld)
+        return FTRUE
+    end
+
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :stack_parameter), prop) ? FTRUE : FFALSE
+end
+
+# ORIGINAL: pl-setup.c `GD->signals.sig_alert`, as _sig_alert
+# DIVERGES: the database has no field for it: the alert signal is the one whose handler record holds `SIGH_ALERT` (what
+# `initSignals!` and `prolog_alert_signal/2` install), 0 when none does (`unprepareSignal!` clears the record). A signal given
+# `'$foreign_function'(Token)` with the alert handler's token by `$on_signal/4` would be read as the alert signal too.
+"The alert signal of the database: the signal whose record carries `SIGH_ALERT`, or 0 (pl-setup.c `GD->signals.sig_alert`)."
+function _sig_alert(handlers::Vector{sig_handler{T}})::Int where {T}
+    for sig in MINSIGNAL:MAXSIGNAL
+        sh = handlers[SIGNAL_INDEX(sig)]
+        if (sh.flags & PLSIG_PREPARED) != 0 && sh.handler == SIGH_ALERT
+            return sig
+        end
+    end
+
+    return 0
+end
+
+# PORT: pl-setup.c prolog_alert_signal as pl_prolog_alert_signal2_va
+# (PRED_IMPL("prolog_alert_signal", 2, prolog_alert_signal, 0), pl-setup.c:1274-1310 at the pin, under `SIG_ALERT`)
+# DIVERGES: the old signal is read with `_sig_alert` (above); `PL_signal(sig|PL_SIGNOFRAME, alert_handler)` is `_signal_install!`
+# on the alert token (no OS handler: `prepareSignal!`). `PL_compare` answers only -1/0/1 here: upstream's `CMP_ERROR` arm has
+# no twin; the arm for a build without `SIG_ALERT` (the predicate is then undefined) is left out.
+"`prolog_alert_signal(-Old, +New)`: unify `Old` with the signal that wakes a thread (name, or number when unnamed) and set it to `New` (pl-setup.c)."
+function pl_prolog_alert_signal2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    handlers = _query_gd(ld).signals_handlers
+    sig_alert = _sig_alert(handlers)
+    sname = signal_name(sig_alert)
+
+    if sname == "unknown"
+        PL_unify_integer(ld, A1, sig_alert) || return FFALSE
+    else
+        PL_unify_atom(ld, A1, mk_sym(T, Symbol(sname))) || return FFALSE
+    end
+
+    PL_compare(ld, A1, A2) == 0 && return FTRUE
+
+    new = PL_get_integer(ld, A2)
+    if !(new !== nothing && new == 0)                   # PL_get_integer(A2, &new) && new == 0
+        new = PL_get_signum_ex(ld, A2)                  # || PL_get_signum_ex(A2, &new)
+        new === nothing && return FFALSE
+    end
+
+    if sig_alert != 0
+        unprepareSignal!(handlers, sig_alert)           # GD->signals.sig_alert = 0
+    end
+
+    if new != 0
+        _signal_install!(handlers, new, SIGH_ALERT, PLSIG_NOFRAME)
+    end
+
+    return FTRUE
+end
+
+# PORT: pl-setup.c BeginPredDefs as PL_predicates_from_setup
+# DIVERGES: none: upstream's four entries, `prolog_alert_signal/2` last (under `SIG_ALERT`, as the table's tail).
+"pl-setup.c's registration table (`BeginPredDefs(setup)`): `\$set_prolog_stack/4`, `trim_stacks/0`, `\$on_signal/4`, `prolog_alert_signal/2`."
+const PL_predicates_from_setup = (
+    PL_extension("\$set_prolog_stack", 4, pl_set_prolog_stack4_va, PL_FA_VARARGS),
+    PL_extension("trim_stacks", 0, pl_trim_stacks0_va, PL_FA_VARARGS),
+    PL_extension("\$on_signal", 4, pl_on_signal4_va, PL_FA_VARARGS),
+    PL_extension("prolog_alert_signal", 2, pl_prolog_alert_signal2_va, PL_FA_VARARGS)
+)

@@ -16,7 +16,7 @@
 #     written `<undo>(0x…)`, like every blob (upstream: `<undo>(%p)` of the record), and a saved state cannot hold one (no QLF
 #     state of a goal).
 #   * `acquire_undo_blob` (empty upstream).
-#   * a raising undo goal: `'$run_undo'/1` (boot/syspred.pl) calls `'$urgent_exception'/3` for it, owner P3 (the success path runs).
+#   * a raising undo goal: `'$run_undo'/1` (boot/syspred.pl) calls `'$urgent_exception'/3` for it, ported in R2 (src/pl-prims.jl `pl_urgent_exception3_va`).
 
 # allow-new-artifact: a port of src/pl-undo.c, read with git show at the pin 18168e629eab (the reference corpus is the pin)
 

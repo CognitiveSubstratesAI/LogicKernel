@@ -393,7 +393,7 @@ end
 # stack is as it was: the flag has no pushed value, a pop raises existence_error (the kernel's answer, upstream's code: the new frame is only linked after
 # `set_flag_value` succeeds).
 const _PF_REFUSED = [
-    ("encoding", "utf8"), ("stack_limit", "1000000000"),
+    ("encoding", "utf8"),
     ("agc_margin", "100"), ("var_tag", "dict"), ("heartbeat", "0")
 ]
 
@@ -422,5 +422,5 @@ const _PF_REFUSED = [
             line
         )
     end
-    @test length(_PF_REFUSED) >= 5
+    @test length(_PF_REFUSED) >= 4
 end

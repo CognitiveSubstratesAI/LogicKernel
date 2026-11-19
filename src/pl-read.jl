@@ -152,6 +152,51 @@ function f_paren_close(chr::Int)::Int
     return -1
 end
 
+# PORT: pl-read.c f_paren_open
+"The bracket that the closing bracket `chr` closes, else -1 (pl-read.c)."
+function f_paren_open(chr::Int)::Int
+    if PlCatW(chr) == U_CAT_BRACKET
+        open, is_open = pl_pair_lookup(chr)
+        open != 0 && !is_open && return open
+    end
+    return -1
+end
+
+# PORT: pl-read.c f_quote_close
+"The quote that closes the opening quote `chr` (an ASCII quote closes itself), else -1 (pl-read.c)."
+function f_quote_close(chr::Int)::Int
+    (chr == Int('\'') || chr == Int('"') || chr == Int('`')) && return chr
+    if PlCatW(chr) == U_CAT_QUOTE
+        close, is_open = pl_pair_lookup(chr)
+        close != 0 && is_open && return close
+    end
+    return -1
+end
+
+# PORT: pl-read.c f_quote_open
+"The quote that the closing quote `chr` closes (an ASCII quote opens itself), else -1 (pl-read.c)."
+function f_quote_open(chr::Int)::Int
+    (chr == Int('\'') || chr == Int('"') || chr == Int('`')) && return chr
+    if PlCatW(chr) == U_CAT_QUOTE
+        open, is_open = pl_pair_lookup(chr)
+        open != 0 && !is_open && return open
+    end
+    return -1
+end
+
+# PORT: pl-read.c f_is_decimal
+"Is `c` a decimal digit, in any script (pl-read.c)?"
+f_is_decimal(c::Int)::Bool = PlDecimalW(c)
+
+# PORT: pl-read.c unicode_separator
+"Is `c` layout (pl-read.c)?"
+unicode_separator(c::Int)::Bool = PlBlankW(c)
+
+# PORT: pl-read.c f_is_quote
+"Is `c` one of the three ASCII quotes or a Unicode quotation mark (pl-read.c)?"
+f_is_quote(c::Int)::Bool =
+    c == Int('\'') || c == Int('"') || c == Int('`') || PlCatW(c) == U_CAT_QUOTE
+
 # PORT: pl-read.c is_bidi_override
 "Is `c` a bidi override or isolate, which the reader always refuses (pl-read.c)?"
 is_bidi_override(c::Int)::Bool =

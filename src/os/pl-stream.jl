@@ -1074,6 +1074,25 @@ function Sflush(s::IOSTREAM)::Int
     return 0
 end
 
+# PORT: pl-stream.c Sunlock
+# DIVERGES: no locks and no temporary buffer (`S__lock` gives an unbuffered output stream one for the time of
+# the lock): this is the step of the last release only, which writes out an unbuffered output stream's bytes.
+# The kernel writes them one by one to the handle (`S__flushbufc`), and a Julia IO holds them in its own buffer
+# until `Sflush_julia_io` writes them out here; a failure is the stream's error (`S__seterror`) and -1.
+"Release `s`: an unbuffered output stream is written out; 0, or -1 if that failed (pl-stream.c)."
+function Sunlock(s::IOSTREAM)::Int
+    rval = 0
+    if (s.flags & (SIO_NBUF | SIO_OUTPUT)) == (SIO_NBUF | SIO_OUTPUT)
+        rval = S__removebuf(s)
+        h = s.handle
+        if s.functions == Siofunctions && h isa Sjulia_io && Sflush_julia_io(h) < 0
+            S__seterror(s)
+            rval = -1
+        end
+    end
+    return rval
+end
+
 # ── creating and closing ────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c Snew
@@ -1433,11 +1452,34 @@ function Swrite_julia_io(h::Sjulia_io, buf::Vector{UInt8}, from::Int, size::Int)
     end
 end
 
+# ORIGINAL: what upstream's unbuffered `write()` does at once, for a Julia IO that buffers: the write-out `Sunlock`
+# asks for. A failed `flush` of a Julia IO drops the bytes it could not write, as upstream's `S__removebuf` does at
+# the failure, so a later `close` answers 0 (row pt29).
+"Write out what the IO holds: 0, or -1 on error."
+function Sflush_julia_io(h::Sjulia_io)::Int
+    io = h.io
+    try
+        flush(io)
+        return 0
+    catch e
+        e isa Union{Base.IOError, SystemError, ArgumentError, EOFError} || rethrow()
+        return -1
+    end
+end
+
 # PORT: pl-stream.c Sclose_file as Sclose_julia_io
-# DIVERGES: closes the Julia IO only if the stream owns it.
-"Close the IO if the stream owns it."
+# DIVERGES: closes the Julia IO only if the stream owns it; a failure of that close (the IO's last write) is -1,
+# as upstream's `close()` failing: `S__close` makes it the stream's error and the closer raises it.
+"Close the IO if the stream owns it: 0, or -1 on error."
 function Sclose_julia_io(h::Sjulia_io)::Int
-    h.close_io && close(h.io)
+    if h.close_io
+        try
+            close(h.io)
+        catch e
+            e isa Union{Base.IOError, SystemError, ArgumentError, EOFError} || rethrow()
+            return -1
+        end
+    end
     return 0
 end
 

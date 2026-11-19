@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-init.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-locale.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
@@ -102,6 +103,71 @@ Base.@kwdef mutable struct pl_cmdline_t
     optimise::Bool = false                       # optimise: -O
 end
 
+# PORT: pl-incl.h sig_handler
+# DIVERGES: `handler` is a TOKEN naming a handler function (the `SIGH_*` constants of src/pl-setup.jl; 0: none), where
+# upstream holds a C function pointer: the kernel installs no OS handler and calls no C function, the token is what
+# `$on_signal/4` reports as `'$foreign_function'(Token)`. `predicate` is the Prolog handler or `nothing` (NULL).
+# `flags` and `saved_handler` are upstream's (`PLSIG_*`, src/pl-setup.jl; the saved OS handler is always 0 here).
+"A signal's handler record (pl-incl.h `sig_handler`): `GD->signals.handlers[]`."
+mutable struct sig_handler{T}
+    saved_handler::Int                  # handler_t saved_handler: the OS handler before ours (0: none)
+    handler::Int                        # handler_t handler: a handler token (0: none)
+    predicate::Union{Nothing, Procedure{T}}   # predicate_t predicate: the Prolog handler
+    flags::Int                          # unsigned int flags: PLSIG_*
+end
+sig_handler{T}() where {T} = sig_handler{T}(0, 0, nothing, 0)
+
+# PORT: pl-incl.h Stack as stack_params_t
+# DIVERGES (representation, owner TH1): upstream keeps these per stack in `LD->stacks.<stack>`; the kernel has one engine, so ONE
+# record per stack lives in the database (`GD.stacks_params`: local, global, trail, argument), as `reload_generation` does.
+# `small`, `factor` and `min_free` (here in WORDS, upstream's bytes divided by `sizeof(word)`, what `$set_prolog_stack/4` reports)
+# are recorded and reported; the kernel's stacks grow by doubling (src/pl-gc.jl) and do not read them. `def_spare` is the
+# argument stack's only: the other three stacks' is in the local data (`local_def_spare`, `global_def_spare`, `trail_def_spare`).
+"One stack's tuning parameters (pl-incl.h `struct stack`: `small`, `factor`, `min_free`, and the argument stack's `def_spare`)."
+mutable struct stack_params_t
+    small::Int                          # size_t small: stack size below which GC is not started
+    factor::Int                         # int factor: GC growth factor
+    min_free::Int                       # size_t min_free, in words
+    def_spare::Int                      # the argument stack's def_spare, in words (the others': see above)
+end
+
+# PORT: pl-locale.h LOCALE_MAGIC
+"`PL_locale.magic` of a live locale (pl-locale.h)."
+const LOCALE_MAGIC = 37838743
+
+# PORT: pl-locale.h PL_locale as PL_locale_rec
+# DIVERGES: named `PL_locale_rec` (src/os/pl-fmt.jl's `PL_locale` is the three-string view format/2 reads). `decimal_point`
+# and `thousands_sep` are `String`s (upstream's `wchar_t *`); `grouping` is upstream's `char *` as the group sizes then a
+# 0 (a `CHAR_MAX` entry: no more groups); `alias` and `symbol` are `nothing` for upstream's 0. `serial` has no upstream
+# field: the number of the locale in `gd.locale.refs`, the payload of its blob (0 until the first blob is made), as the
+# clause and record blobs of src/pl-dbref.jl.
+"A locale object: its alias, blob handle, reference count and the numeric conventions (pl-locale.h `PL_locale`)."
+mutable struct PL_locale_rec{T}
+    alias::Union{Nothing, T}                    # alias: named alias (if any)
+    symbol::Union{Nothing, T}                   # symbol: blob handle
+    magic::Int                                  # magic: LOCALE_MAGIC
+    references::Int                             # references: reference count
+    decimal_point::String                       # decimal_point: radix character
+    thousands_sep::String                       # thousands_sep: separator for digit groups left of the radix
+    grouping::Vector{Int}                       # grouping: the group sizes, ended by 0
+    serial::Int                                 # (the number in gd.locale.refs, the blob's payload)
+end
+
+# PORT: pl-global.h locale as locale_state
+# DIVERGES: `GD->locale.localeTable` is a vector of the aliased locales in creation order (upstream's hash table has no
+# order the rows can rely on); `refs` has no upstream twin (the locales a locale blob names, by number); `current` is
+# `LD->locale.current` (pl-global.h:906) kept in the database, as `reload_generation` is (the kernel runs one thread, owner
+# TH1 moves it into the local data).
+"The locale state of the database: the locale table, the system default and the current locale (pl-global.h)."
+mutable struct locale_state{T}
+    const refs::Vector{PL_locale_rec{T}}        # (the locales a locale blob names)
+    const table::Vector{PL_locale_rec{T}}       # locale.localeTable: name --> locale
+    default_locale::Union{Nothing, PL_locale_rec{T}}    # locale.default_locale: system wide default
+    current::Union{Nothing, PL_locale_rec{T}}   # (LD->locale.current)
+end
+locale_state{T}() where {T} =
+    locale_state{T}(PL_locale_rec{T}[], PL_locale_rec{T}[], nothing, nothing)
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -183,6 +249,9 @@ mutable struct PL_global_data{T}
     const undo_refs::Vector{record{T}}                          # (pl-undo.c: the record an undo blob names, by its number in the payload; TX1e)
     procedures_drun_undo1::Procedure{T}                         # procedures.drun_undo1: '$syspreds':'$run_undo'/1, run_undo_hooks's (TX1e; set at its first call, as _PL_predicate does)
     const format_predicates::Vector{Tuple{Int, Procedure{T}}}   # format.predicates (GD->format.predicates): directive character -> procedure, in insertion order (pl-fmt.c format_predicate/2; DIVERGES: upstream's hash table has no order)
+    signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
+    stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
+    const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -225,6 +294,8 @@ end
 # in the blob's payload, src/pl-wrap.jl).
 # Since TAB1 TR1: `tries` (the tries a `trie` blob names, as `closure_refs`; pl-trie.c `trie_symbol` makes the blob with the
 # `struct trie` as its data, here the trie's number in `tries` is the 8-byte payload, src/pl-trie.jl).
+# Since CT1 LOCALE: `locale`, `GD->locale` (pl-global.h:482-484: the locale table and the default locale; `current` is `LD->locale.current`,
+# pl-global.h:906, kept here, see `locale_state`), appended LAST; filled by `initLocale!` (src/os/pl-locale.jl).
 # Since R2's LB2b: `paths_CWDdir`, `GD->paths.CWDdir` (pl-global.h), the working directory `PL_cwd` caches and `ChDir` sets (src/os/pl-os.jl).
 # Since R2 LB6a: `reload_generation`, DIVERGES (representation, owner TH1): upstream's `LD->reload.generation` is per thread; the kernel has one thread,
 # so ONE copy lives here and nothing keeps a second in the local data (audit D-0416 item 3). `startReconsultFile` writes it and `endReconsult` (LB6b)
@@ -233,6 +304,8 @@ end
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 # Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
+# Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
+# `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -540,6 +613,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
 # `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl).
+# Since lane F (pl-prof.c): `profile` (`LD->profile`: the profiler state; src/pl-incl.jl `ld_profile`), placed after `statistics` as pl-global.h does.
+# Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).
 # Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
@@ -655,7 +730,10 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     attvar_tail::Int                                            # attvar.tail: its tail
     attvar_attvars::Int                                         # attvar.attvars: the newest link cell (0: NULL)
     attvar_call_residue_vars_count::Int                         # attvar.call_residue_vars_count (AV9)
-    alerted::Int32                                              # alerted: ALERT_* (only ALERT_WAKEUP is ported, AV3)
+    alerted::Int32                                              # alerted: ALERT_* (ALERT_WAKEUP, AV3; the two limit bits, P3)
+    depth_info_limit::Int                                       # depth_info.limit (P3): DEPTH_NO_LIMIT when none
+    depth_info_reached::Int                                     # depth_info.reached
+    inference_limit_limit::Int                                  # inference_limit.limit (LD, P3): INFERENCE_NO_LIMIT when none
     tmp_h::Int                                                  # tmp.h: the first of TMP_PTR_SIZE consecutive references
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
@@ -687,6 +765,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     prolog_flag_mask::UInt64                                    # prolog_flag.mask: the bits truePrologFlag reads (R2 F1a)
     prolog_flag_enums::foreign_state_pool{prolog_flag_enum}     # (current_prolog_flag/2's REDO_PTR states, R2 F1a)
     statistics::ld_statistics                                   # statistics: inferences, clocks (Y1)
+    profile::ld_profile{T}                                      # profile: the profiler's state and call tree (lane F, PROF1; pl-global.h puts it after statistics and gmp)
     prolog_flag_access_level::Int                               # prolog_flag.access_level: ACCESS_LEVEL_USER or _SYSTEM (R2 LB2)
     module_enums::foreign_state_pool{module_enum}               # ('\$current_module'/2's REDO_PTR states, MOD6)
     gvar_nb_vars::Dict{UInt64, UInt64}                          # gvar.nb_vars: atom word -> value word (R2 G1)
@@ -725,6 +804,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     undo_list::Int                                              # undo.undo_list: the position of the undo list's cell, the first global cell (TX1e)
     undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
     undo_running::Int                                           # undo.running: undo goals are running (TX1e)
+    coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -787,6 +867,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0, 0, 0,                                # attvar: head, tail (set by emptyStacks!), attvars: none
         0,                                      # attvar.call_residue_vars_count (AV9)
         Int32(0),                               # alerted: nothing
+        DEPTH_NO_LIMIT, 0,                      # depth_info: limit (pl-setup.c: DEPTH_NO_LIMIT), reached
+        INFERENCE_NO_LIMIT,                     # inference_limit.limit (pl-setup.c: INFERENCE_NO_LIMIT)
         0, 0, 0,                                # tmp: set by emptyStacks!
         false, false, false, 0,
         ClauseChoice{T}(nothing, word(0)), e,
@@ -812,6 +894,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         gd.prolog_flag.mask,                    # prolog_flag.mask: the database's (pl-thread.c copies the creating thread's)
         foreign_state_pool{prolog_flag_enum}(),  # current_prolog_flag/2's states: none
         ld_statistics(),                        # statistics: no inference yet, started now (Y1)
+        ld_profile{T}(),                        # profile: inactive, no node (pl-global.c: zero)
         ACCESS_LEVEL_USER,                      # access_level: `user` (pl-init.c:1666 sets it after the boot; swipl starts `system`, LB3's path)
         foreign_state_pool{module_enum}(),      # '$current_module'/2's states: none
         Dict{UInt64, UInt64}(),                 # gvar.nb_vars: no global variable (pl-gvar.c: NULL)
@@ -848,7 +931,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         foreign_state_pool{tr_enum{T}}(),       # current_transaction/1's states: none (TX1d)
         0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
         UInt64[],                               # undo.scheduled: none (TX1e)
-        0                                       # undo.running: no undo goal runs (TX1e)
+        0,                                      # undo.running: no undo goal runs (TX1e)
+        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

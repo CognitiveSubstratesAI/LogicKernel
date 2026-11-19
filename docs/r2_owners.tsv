@@ -8,35 +8,16 @@ pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
-pred:$depth_limit/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_except/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_false/3	P3	seed: missing_c_preds.tsv
-pred:$depth_limit_true/5	P3	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
-pred:$inference_limit/2	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_except/3	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_false/1	P3	seed: missing_c_preds.tsv
-pred:$inference_limit_true/3	P3	seed: missing_c_preds.tsv
 pred:$leash/2	DBG1	seed: missing_c_preds.tsv
-pred:$on_signal/4	Q10	seed: missing_c_preds.tsv
-pred:$put_token/2	Q10	seed: missing_c_preds.tsv
-pred:$rc_handle/1	ZIP1	seed: missing_c_preds.tsv
-pred:$seek_list/4	P2	seed: missing_c_preds.tsv
-pred:$set_prolog_stack/4	Q10	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
-pred:$suspend_findall_bag/0	Q10	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
-pred:$urgent_exception/3	P3	seed: missing_c_preds.tsv; '$run_undo'/1 (boot/syspred.pl) calls it when an undo goal RAISES: a raising undo goal is a named refusal, owner P3, and those undo rows wait for it (TX1)
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:char_type/2	CT1	seed: missing_c_preds.tsv
-pred:code_type/2	CT1	seed: missing_c_preds.tsv
-pred:current_blob/2	Q10	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
-pred:garbage_collect_atoms/0	Q10	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
@@ -50,25 +31,16 @@ pred:put/1	S2a	seed: missing_c_preds.tsv
 pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
-pred:shell/2	Q10	seed: missing_c_preds.tsv
-pred:sub_atom_icasechk/3	P2	seed: missing_c_preds.tsv
 pred:succ/2	AR1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
-pred:thread_idle/2	Q10	seed: missing_c_preds.tsv
 pred:thread_join/2	TH1	seed: missing_c_preds.tsv
 pred:thread_property/2	TH1	seed: missing_c_preds.tsv
 pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
-pred:trim_heap/0	Q10	seed: missing_c_preds.tsv
-pred:zip_clone/2	ZIP1	seed: missing_c_preds.tsv
-pred:zip_close_/2	ZIP1	seed: missing_c_preds.tsv
-pred:zip_file_info_/3	ZIP1	seed: missing_c_preds.tsv
-pred:zipper_goto/2	ZIP1	seed: missing_c_preds.tsv
-pred:zipper_open_current/3	ZIP1	seed: missing_c_preds.tsv
 vmi:A_ADD	AR1	seed: VM-instruction family
 vmi:A_DOUBLE	AR1	seed: VM-instruction family
 vmi:A_ENTER	AR1	seed: VM-instruction family
@@ -146,8 +118,7 @@ refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb
 refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL	TH1	assert_term PL_CREATE_THREAD_LOCAL (pl-comp.c assert_term, thread-local predicates are TH1's); PL_CREATE_INCREMENTAL is ported by TAB1 TB6 (tbl_set_incremental_predicate)
-refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	P3	set_module(program_space(N)) code accounting (pl-modul.c); resource-limit family, unreached by the boot
-refusal:src/pl-proc.jl::get_procedure::get_procedure: other than GP_DEFINE	PR1	generic get_procedure modes beyond GP_DEFINE (pl-proc.c); callers use the split get_procedure_* functions, PR1 residual
+refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	REFUSED	refused by design (no step ports it): the kernel keeps no per-module code size (m->code_size, D-0149 MQ3), so a limit could be neither checked nor enforced; the pin's tests need no program_space (git grep 18168e62: only boot/syspred.pl:1231 module_property(program_space(_)), which fails without a limit, as the kernel's pl-modul.jl:1447); src/pl-modul.jl:405
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
 refusal:src/pl-read.jl::raw_read2::raw_read2: reading past the end of a stream (its error names	RD2	raw_read2 past the end of a stream, eof_action(error) (pl-read.c); the stream term is available since LB5 (PL_unify_stream_or_alias)
 refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option	RD2	raw_read2 comments(C) read option (pl-read.c); the comments collector of library(prolog_source)
@@ -164,3 +135,23 @@ refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding 
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
+refusal:src/pl-setup.jl::pl_on_signal4_va::a foreign handler function of the signal	TH1	a handler function pointer of C: the kernel's handler tokens are re-installed, any other pointer is refused by name
+# ZIP1 (src/pl-zip.jl): the named refusals at the first minizip call; the 6 pred: rows of ZIP1 are registered now
+refusal:src/pl-zip.jl::pl_zip_open_stream3_va::zipOpen2_64: a zip writer needs minizip and deflate (pl-zip.	ZIP1	the named refusal of pl_zip_open_stream3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_open_stream3_va::unzOpen2_64: a zip reader needs minizip and inflate (pl-zip.	ZIP1	the named refusal of pl_zip_open_stream3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_clone2_va::unzClone of a zipper's reader (pl-zip.c:667)	ZIP1	the named refusal of pl_zip_clone2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_close2_va::zipClose and unzClose of a zipper (pl-zip.c:479)	ZIP1	the named refusal of pl_zip_close2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_lock1_va::zlock: the lock of a zipper (pl-zip.c:127)	ZIP1	the named refusal of pl_zip_lock1_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_unlock1_va::zunlock: the lock of a zipper (pl-zip.c:142)	ZIP1	the named refusal of pl_zip_unlock1_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_open_new_file_in_zip4_va::a zip entry writer: options extra, comment, time; deflate (p	ZIP1	the named refusal of pl_zipper_open_new_file_in_zip4_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_goto2_va::unzGoToFirstFile, unzGoToNextFile, unzLocateFile (pl-zip.c:9	ZIP1	the named refusal of pl_zipper_goto2_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zipper_open_current3_va::unzOpenCurrentFile: an entry reader needs inflate (pl-zip.c:	ZIP1	the named refusal of pl_zipper_open_current3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::pl_zip_file_info3_va::unzGetCurrentFileInfo64 of a zipper (pl-zip.c:1158)	ZIP1	the named refusal of pl_zip_file_info3_va (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::zip_open_archive::zip_open_archive: unzOpen2_64 and zipOpen2_64 of a file (pl-	ZIP1	the named refusal of zip_open_archive (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::zip_open_archive_mem::zip_open_archive_mem: unzOpen2_64 of a memory region (pl-zip	ZIP1	the named refusal of zip_open_archive_mem (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/pl-zip.jl::SopenZIP::SopenZIP: a stream on a zip entry (pl-zip.c:1429)	ZIP1	the named refusal of SopenZIP (pl-zip.c, minizip); no zip reader or writer in the kernel (docs/architecture.md ZIP1)
+refusal:src/os/pl-cstack.jl::sigCrashHandler::the fatal-signal handler of os/pl-cstack.c (C signals, `kill	REFUSED	refused by design (no step ports it): lane F (R2 stack 1), os/pl-cstack.c fallback block; the kernel installs no C signal handler and re-raises no signal (`signal(sig, SIG_DFL)`, `kill(getpid(), sig)`: no Julia equivalent). The code's step label CSTACK1 is not a plan step; no step ports it
+refusal:src/os/pl-cstack.jl::CStackSize::the size and base of the C stack (`getrlimit(RLIMIT_STACK)`,	REFUSED	refused by design (no step ports it): lane F (R2 stack 1), os/pl-cstack.c; the kernel runs on no C stack it can measure (`getrlimit(RLIMIT_STACK)`, `pthread_getattr_np`: no Julia equivalent). The code's step label CSTACK1 is not a plan step
+refusal:src/pl-coverage.jl::pc_call_site::a coverage call site at pc offset $offset (outside 0..2^32-2	REFUSED	refused by design (no step ports it): lane F (R2 stack 1), pl-coverage.c; the table key packs the clause serial and the pc offset into 64 bits (src/pl-incl.jl block pl-coverage), so an offset outside 0..2^32-2 has no key; a real clause's code is far smaller (src/pl-coverage.jl file-wide DIVERGES 1)
+refusal:src/pl-coverage.jl::pl_cov_start1_va::coverage collection (`record_coverage`: the VM has no `Cover	COV1	lane F (R2 stack 1), pl-coverage.c: `'$cov_start'/1` is the named refusal of the collection itself (the VM has no `Coverage()` hooks and `updateAlerted` no ALERT_COVERAGE); COV1 is the step label the code names (a deferred owner like PROF1; no plan entry yet), it ports the VM hooks and then this predicate
+refusal:src/pl-prof.jl::_prof_refuse::what	PROF1	lane F (R2 stack 1), pl-prof.c: the collection entry points (clocks, call tree builders called from the VM, foreign profile nodes) are named refusals; PROF1 is the deferred owner (docs/architecture.md, section on the profiler: the data layer is ported, the collection itself is not)
