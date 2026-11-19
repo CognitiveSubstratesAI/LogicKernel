@@ -848,6 +848,8 @@ fixed it or a public issue exists.
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-dwim.jl` | since DWIM1 (R2), pl-dwim.c's two foreign predicates: `dwim_match/3` (`pl_dwim_match`, pl-ext.c:155) and `'$dwim_predicate'/2` (`pl_dwim_predicate`, NDET, pl-ext.c:156) over `dwimMatch` and its rules (`oneTypo`, `twoTransposed`, `oneInserted`, `differentSeparated`, `subWord`, `subwordsTransposed`) on NUL-terminated byte vectors (the C strings); the text of an argument is `PL_get_chars(CVT_ALL)` as ISO Latin-1 (`_dwim_chars`: a character above 0xFF fails silently), the name of an atom `stringAtom` (`_dwim_stringAtom`: a wide atom is read as UTF-32LE bytes up to the first NUL, as swipl's rows show); `dwim_match/2` is Prolog (boot/syspred.pl) | `src/pl-dwim.c` |
+| `src/os/pl-libtai.jl` | since TAI1 (R2) (ORIGINAL): the libtai pieces pl-tai.c needs (`caldate_mjd`, `caldate_frommjd`, `caltime_tai`, `caltime_utc`, the leap-second table), in one file; each function keeps its `# PORT: <libtai file>` marker | — |
+| `src/os/pl-tai.jl` | since TAI1 (R2): `stamp_date_time/3`, `date_time_stamp/2`, `format_time/3,4`, on the libtai pieces of src/os/pl-libtai.jl; the host parts through libc | `src/os/pl-tai.c`, `src/os/pl-os.c` |
 | `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
@@ -1030,6 +1032,8 @@ graph LR
     pl_string["pl-string.jl"]
     os_pl_fmt["os/pl-fmt.jl"]
     pl_dwim["pl-dwim.jl"]
+    os_pl_libtai["os/pl-libtai.jl"]
+    os_pl_tai["os/pl-tai.jl"]
     pl_ext["pl-ext.jl"]
     gd_template["gd_template.jl"]
     boot_image["boot_image.jl"]
@@ -1701,6 +1705,7 @@ graph LR
     pl_srcfile --> pl_supervisor
     pl_srcfile --> pl_tabling
     pl_srcfile --> pl_qlf
+    pl_srcfile --> os_pl_tai
     pl_supervisor --> default_term
     pl_supervisor --> pl_incl
     pl_supervisor --> pl_vmi
@@ -2057,6 +2062,7 @@ graph LR
     pl_read --> pl_trie
     pl_read --> pl_op
     pl_read --> pl_write
+    pl_read --> os_pl_tai
     pl_qlf --> term_interface
     pl_qlf --> default_term
     pl_qlf --> os_pl_stream
@@ -2133,6 +2139,26 @@ graph LR
     pl_dwim --> os_pl_text
     pl_dwim --> pl_proc
     pl_dwim --> pl_tabling
+    os_pl_libtai --> default_term
+    os_pl_tai --> term_interface
+    os_pl_tai --> default_term
+    os_pl_tai --> os_pl_stream
+    os_pl_tai --> pl_incl
+    os_pl_tai --> SWI_Prolog
+    os_pl_tai --> pl_global
+    os_pl_tai --> pl_fli
+    os_pl_tai --> pl_error
+    os_pl_tai --> pl_arith
+    os_pl_tai --> os_pl_text
+    os_pl_tai --> os_pl_os
+    os_pl_tai --> os_pl_file
+    os_pl_tai --> pl_srcfile
+    os_pl_tai --> pl_tabling
+    os_pl_tai --> pl_trie
+    os_pl_tai --> pl_write
+    os_pl_tai --> pl_read
+    os_pl_tai --> os_pl_fmt
+    os_pl_tai --> os_pl_libtai
     pl_ext --> term_interface
     pl_ext --> default_term
     pl_ext --> pl_incl
@@ -2182,6 +2208,7 @@ graph LR
     pl_ext --> pl_string
     pl_ext --> os_pl_fmt
     pl_ext --> pl_dwim
+    pl_ext --> os_pl_tai
     gd_template --> default_term
     gd_template --> pl_incl
     gd_template --> pl_global
@@ -2229,11 +2256,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 355 | 0 | 67 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 356 | 0 | 66 | 3 | 1 |
 | refusal sites | 0 | 66 | 0 | 0 | 4 |
 | Prolog flags | 65 | 14 | 20 | 0 | 34 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 619 | 80 | 121 | 3 | 39 |
+| **total** | 620 | 80 | 120 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2248,7 +2275,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
 | `boot/syspred.pl` | loaded | 89 | 24 | 0 |
-| `boot/messages.pl` | loaded | 78 | 7 | 1 |
+| `boot/messages.pl` | loaded | 79 | 6 | 1 |
 | `boot/toplevel.pl` | loaded | 87 | 12 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 21 | 1 | 0 |
@@ -2300,7 +2327,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
 | TAB1 | 1 | 0 | 1 | `refusal the VM instruction $(codeTable(thiscode)…` |
-| TAI1 | 1 | 1 | 0 | `format_time/3` |
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
@@ -2313,7 +2339,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [67, 0, 20, 34]
+    bar [66, 0, 20, 34]
     line [0, 66, 14, 0]
 ```
 
@@ -8606,3 +8632,22 @@ written, every claim below is UNVERIFIED until the gate). TX1 is `transaction/1,
 - **Convention.** The row asserts SWIPL's answer and FAILS today (`@test`, no skip): the kernel's current behaviour is a Julia exception, not an answer line, so there is no current answer to pin. The row
   is a copy on wip/tab-int only: its commit is dropped before a gate push, and it becomes a gated row when the engine-core slot's owner row exists.
 - **Not on origin/main:** main vendors the same Prolog text but has no C side that calls it (`call_answer_completion`, `$tbl_wkl_work` are tabling-branch code), so the finding cannot arise there.
+
+## TAI1 — DIVERGES (stamp_date_time/3, date_time_stamp/2, format_time/3,4: pl-tai.c, R2, swipl-devel 18168e62; found by the TAI1-FUZZ differential, 50300 case-runs)
+
+Three KNOWN DIFFERENCES where swipl's answer is the state or the overflow of the C platform and the kernel's answer is correct modulo it. Each is a row pair in
+test/core_text/test_tai_format_swipl.jl (third and fourth testset): the kernel's exact answer pinned (`test_tai_known_*_kernel.out`) and swipl's (`*_swipl.out`),
+a comment in the `.pl` program naming both. CHECKLIST: close a DIVERGES = make the kernel match and delete its pins.
+
+- **TAI1-INT32-WRAP (platform C behaviour: signed `int` overflow, gcc wraps).** swipl computes some date fields in 32-bit `int` (an hour of 2^30 or more, a year whose `year-1900`
+  leaves `int`, `minute*60`); the kernel computes without a wrap. `date_time_stamp(date(2000,1,1,1073741824,0,0,0,-,-), O)`: swipl 946684800.0, kernel 3866417251200.0;
+  `day_of_the_week(date(-2147483648,-1,12), O)`: swipl 1, kernel 2. Fields up to 596523 hours agree. Rows test_tai_known_diff.pl t0-t2.
+- **TAI1-NAN-CAST (platform C behaviour: the cast of a NaN to an integer type).** `stamp_date_time(1.5NaN, O, 'UTC')`: both answer year 292277026596; swipl's seconds fraction
+  is the garbage bits of a C cast, undefined, so it is not pinned (only the year and the zone name are). Row t3 of test_tai_known_diff.pl.
+- **TAI1-TZNAME-CACHE (glibc state: `tzname[]` and a process-wide cache).** swipl's `tz_name_as_atom` keeps `static atom_t a[2]`: the zone name is what glibc's `tzname[dst]` held at the
+  FIRST call of the process, and each `localtime_r` rewrites `tzname[]`. TZ=Europe/Amsterdam: `stamp_date_time(-5000000000,D1,local), stamp_date_time(2147483647,D2,local)` gives LMT
+  for both on swipl, the reverse order CET for both; the kernel keeps no cache (the process state tools/lint_globals.jl refuses) and answers each stamp's own name, which is the
+  answer of a fresh swipl process for each call alone (577 of 577 fuzz rows). Rows test_tai_known_tzcache1.pl and test_tai_known_tzcache2.pl.
+
+Not a TAI1 difference: `parse_time/2,3` (library(date)) needs `code_type/2`, which belongs to the ENGINE unit (CT1b/CT1c); without it the call is an existence_error. With a
+shim for `code_type/2` the fuzz found 0 `parse_time` differences in about 830 cases per seed.
