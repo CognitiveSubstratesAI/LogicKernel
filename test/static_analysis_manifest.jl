@@ -2056,6 +2056,42 @@ function _manifest_index(T)
         # CT1a — setlocale/3 (src/pl-sys.jl; pl-ctype.c): the predicate and its text reader, over term type T
         (LK.pl_setlocale3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._ctype_chars, Tuple{LD, Int}, false),
+        # TAI1 — stamp_date_time/3, date_time_stamp/2 (src/os/pl-tai.jl; pl-tai.c)
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_stamp_date_time3_va, LK.pl_date_time_stamp2_va
+            )
+        ]...,
+        (LK.get_taia, Tuple{LD, Int, Vector{UInt64}}, false),
+        (LK.get_tz_arg, Tuple{LD, Int, Int, Int, LK.ftm}, false),
+        [
+            (f, Tuple{LD, Int, Int, Int}, false) for
+            f in (LK.get_int_arg, LK.get_voff_arg, LK.get_dst_arg)
+        ]...,
+        (LK.get_v_float_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Float64}, false),
+        (LK.get_v_int_arg, Tuple{LD, Int, Int, Int, Base.RefValue{Bool}, Int}, false),
+        (LK._get_date9, Tuple{LD, Int, Int, LK.ftm}, false),
+        (LK._ftm_fixup, Tuple{LD, Int, Int, LK.ftm, Bool}, false),
+        (LK.get_ftm, Tuple{LD, Int}, false),
+        (
+            LK._unify_date9,
+            Tuple{LD, Int, Int, Int, Int, Int, Int, Float64, Int, String, String},
+            false
+        ),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_format_time3_va, LK.pl_format_time4_va
+            )
+        ]...,
+        (LK.pl_format_time, Tuple{LD, Int, Int, Int, Bool}, false),
+        (LK.fmt_domain_error, Tuple{LD, String, Int}, false),
+        (LK.fmt_not_implemented, Tuple{LD, Int}, false),
+        (
+            LK.format_time,
+            Tuple{LD, LK.IOSTREAM, Vector{Int}, LK.ftm, Bool, Vector{UInt64}},
+            false
+        ),
+        (LK._atom_is, Tuple{T, String}, false),
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -4813,6 +4849,41 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # CT1a — setlocale/3: the table, and libc's setlocale through ccall (no term type: outside the per-type block)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype)}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
+    # TAI1 — the libtai pieces (src/os/pl-libtai.jl): calendar dates and times, the leap-second table (no term type)
+    (LK.caldate_mjd, Tuple{LK.caldate}, false),
+    (LK.caldate_frommjd, Tuple{LK.caldate, Int64}, false),
+    (LK.caltime_tai, Tuple{LK.caltime, Vector{UInt64}}, false),
+    (LK.caltime_utc, Tuple{LK.caltime, UInt64, Vector{UInt64}}, false),
+    (LK.leapsecs_read, Tuple{String}, false),
+    (LK.leapsecs_init, Tuple{}, false),
+    (LK.leapsecs_add, Tuple{Vector{UInt64}, UInt64, Bool}, false),
+    (LK.leapsecs_sub, Tuple{Vector{UInt64}, UInt64}, false),
+    # TAI1 — pl-tai.jl: the broken-down time, the confined libc calls, the zone (no term type)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tai)}, false),
+    (LK.cal_ftm, Tuple{LK.ftm, Int, Vector{UInt64}}, false),
+    (LK.PL_localtime_r, Tuple{Int, LK.CTm}, false),
+    (LK._c_mktime, Tuple{LK.CTm}, false),
+    (LK._c_strftime, Tuple{String, LK.CTm}, false),
+    (LK._c_asctime_r, Tuple{LK.CTm}, false),
+    (LK._c_mbstowcs, Tuple{Vector{UInt8}, Int}, false),
+    (LK.do_tzset, Tuple{}, false),
+    (LK.tz_offset, Tuple{}, false),
+    (LK.tz_name, Tuple{Int}, false),
+    (LK.tz_name_as_atom, Tuple{Int}, false),
+    (LK._c_int64, Tuple{Float64}, false),
+    (LK._c_int32, Tuple{Float64}, false),
+    # TAI1 — format_time/3,4: the ISO week arithmetic, the output macros, the libc strftime path (no term type)
+    (LK.iso_week_days, Tuple{Int, Int}, false),
+    (LK.__isleap, Tuple{Int}, false),
+    (LK._out1digit, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out2digits, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out3digits, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out2digits_spc, Tuple{LK.IOSTREAM, Int}, false),
+    (LK._out_string, Tuple{LK.IOSTREAM, String}, false),
+    (LK.foutstra, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
+    (LK._strftime_out, Tuple{LK.IOSTREAM, Int, LK.ftm, Vector{UInt64}}, false),
+    (LK._fmt_cps, Tuple{String}, false),
+    (LK._wrap32, Tuple{Int}, false),
     # DWIM1 — the C-string comparison of pl-dwim.c (NUL-terminated byte vectors; no term type: outside the per-type block)
     (LK._dwim_streq, Tuple{Vector{UInt8}, Int, Vector{UInt8}, Int}, false),
     (LK._dwim_strlen, Tuple{Vector{UInt8}, Int}, false),

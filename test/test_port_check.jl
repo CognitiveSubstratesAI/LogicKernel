@@ -5,6 +5,7 @@
 # instance of every violation `tools/port_check.jl` exists to catch next to correct ports, and
 # asserts the reported set is EXACTLY the planted set — every check fires on its case, none on a
 # correct file. A clean fixture must pass, and must FAIL again after one deliberate mutation.
+# allow-docstring-interp: fixture text, not a docstring (audit D-0831)
 using Test, LogicKernel
 
 include(joinpath(@__DIR__, "..", "tools", "port_check.jl"))
@@ -412,6 +413,202 @@ _pc_codes(vs) = sort!([
             # the rename also drops the code graph's edge (orig.jl uses `compareFoo`)
             @test _pc_codes(port_check(root; upstream_dirs=dirs).violations) ==
                 [("CODE-GRAPH-DRIFT", "architecture.md"), ("DEF-MISMATCH", "pl-fake.jl")]
+        end
+
+        # AUDIT D-0609: an ORIGINAL file that mixes several upstream files names them (`# UPSTREAM-PARTS:`),
+        # one line each, and keeps its PORT markers. Every case below is the clean mirror plus ONE file,
+        # and its verdict goes through the ONE extractor (`_pc_codes`) on both sides: the pass cases
+        # must be clean WITH markers and parts read (so a clean verdict is not an empty scan), each fail
+        # case is the pass case with ONE edit and names exactly that violation.
+        @testset "an ORIGINAL mix names its upstream files (UPSTREAM-PARTS)" begin
+            fake_part = "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ $sha"
+            tbl_part = "# UPSTREAM-PARTS: swipl-devel boot/tabling.pl @ $sha"
+            orig = "# ORIGINAL: fixture — a mix of two upstream files."
+            # pl-fake.c carries a copyright notice, so a file with it as a part carries these (F2)
+            cr1 = "# COPYRIGHT: Copyright (c)  2001-2026, Fixture University"
+            cr2 = "# COPYRIGHT: Fixture Lab b.v."
+            fake_marker = "# PORT: pl-fake.c fooBar as partsFooBar\npartsFooBar() = 1\n"
+            tbl_marker = "# PORT: tabling.pl \$tbl_add as partsTblAdd\npartsTblAdd() = 2\n"
+            # markers for the bad parts below, so that PARTS-UNUSED does not join their verdict
+            gone_marker = "# PORT: pl-gone.c goneFn as partsGone\npartsGone() = 3\n"
+            nope_marker = "# PORT: x.c xFn as partsX\npartsX() = 4\n"
+            function mixcase(
+                name; head=[orig, cr1, cr2, fake_part, tbl_part],
+                body=[fake_marker, tbl_marker],
+                rel="src/parts.jl", upcol="—", pin=nothing
+            )
+                root = joinpath(base, "parts_" * name)
+                _pc_good_files(root, sha)
+                _pc_inventory(root, "")
+                arch = joinpath(root, "docs/architecture.md")
+                write(
+                    arch,
+                    replace(
+                        read(arch, String),
+                        "| `src/orig.jl` | a helper | — |" => "| `src/orig.jl` | a helper | — |\n| `$rel` | a mix | $upcol |"
+                    )
+                )
+                _pc_write(root, rel, join(head, "\n") * "\n\n" * join(body, "\n") * "\n")
+                write_inventory(root; upstream_dirs=dirs)
+                if pin !== nothing
+                    mkpath(joinpath(root, "tools"))
+                    write(
+                        joinpath(root, "tools", "SWIPL_VERSION"),
+                        "version: 1.0.0\ncommit: $pin\n"
+                    )
+                end
+                r = port_check(root; upstream_dirs=dirs)
+                f = only(filter(f -> f.rel == rel, r.files))
+                return _pc_codes(r.violations), f
+            end
+            # PASS: the clean mirror plus a valid mix, markers and parts read
+            got, f = mixcase("pass")
+            @test length(f.markers) == 2 && length(f.parts) == 2 && f.original
+            @test got == []
+            # the path check and CLASS-MISSING are skipped for a parts file (condition d): a junk CLASS: is clean
+            got, f = mixcase(
+                "pass_class"; head=[orig, "# CLASS: code", cr1, cr2, fake_part, tbl_part]
+            )
+            @test length(f.markers) == 2 && f.class == "code" && length(f.copyright) == 2
+            @test got == []
+            # F2 of the PORTCHK review: the copyright check is PER PART. A COPYRIGHT line that is in no
+            # part is COPYRIGHT-MISMATCH (this case was clean while the check was skipped)
+            got, f = mixcase(
+                "copyright_wrong";
+                head=[orig, cr1, cr2, "# COPYRIGHT: Copyright (c) 1999, Nobody", fake_part,
+                    tbl_part]
+            )
+            @test length(f.markers) == 2 && length(f.copyright) == 3
+            @test got == [("COPYRIGHT-MISMATCH", "parts.jl")]
+            # ... a part with a notice and NO COPYRIGHT line is COPYRIGHT-ABSENT: the relabel of a one-file
+            # port (`# ORIGINAL:` + one UPSTREAM-PARTS line) no longer skips the copyright check
+            got, f = mixcase("relabel"; head=[orig, fake_part, tbl_part])
+            @test length(f.markers) == 2 && length(f.parts) == 2 && isempty(f.copyright)
+            @test got == [("COPYRIGHT-ABSENT", "parts.jl")]
+            got, f = mixcase("relabel1"; head=[orig, fake_part], body=[fake_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 1 && isempty(f.copyright)
+            @test got == [("COPYRIGHT-ABSENT", "parts.jl")]
+            # PASS: parts that carry no notice at all (libtai: public domain) need no COPYRIGHT line
+            got, f = mixcase("nocopy_parts"; head=[orig, tbl_part], body=[tbl_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 1 && isempty(f.copyright)
+            @test got == []
+            # F3: an UPSTREAM-PARTS line no PORT marker cites (a stale header after a rename)
+            got, f = mixcase("partsunused"; body=[fake_marker])
+            @test length(f.markers) == 1 && length(f.parts) == 2
+            @test got == [("PARTS-UNUSED", "parts.jl")]
+            # FAIL (a): a marker naming a file the header does not list
+            got, f = mixcase("unlisted"; head=[orig, cr1, cr2, fake_part])
+            @test length(f.markers) == 2 && length(f.parts) == 1
+            @test got == [("MARKER-FILE-UNKNOWN", "parts.jl")]
+            # FAIL (a): a marker name that is not in the listed file at the pin
+            got, f = mixcase(
+                "noname"; body=[replace(fake_marker, "fooBar" => "noSuchFn"), tbl_marker]
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == [("UPSTREAM-NAME-MISSING", "parts.jl")]
+            # FAIL (c): markers and no UPSTREAM-PARTS line: refused as before
+            got, f = mixcase("noparts"; head=[orig])
+            @test length(f.markers) == 2 && isempty(f.parts)
+            @test got == [("ORIGINAL-HAS-PORT", "parts.jl")]
+            # FAIL (c): UPSTREAM-PARTS together with UPSTREAM (no ORIGINAL: the file is checked as the port
+            # it claims to be, at the path of its first upstream file)
+            got, f = mixcase(
+                "both";
+                head=["# UPSTREAM: swipl-devel src/pl-fake.c @ $sha", "# CLASS: code",
+                    "# COPYRIGHT: Copyright (c)  2001-2026, Fixture University",
+                    "# COPYRIGHT: Fixture Lab b.v.", fake_part],
+                body=[fake_marker], upcol="`src/pl-fake.c`"
+            )
+            @test length(f.markers) == 1 && length(f.parts) == 1 && length(f.upstreams) == 1
+            @test got == [("HEADER-BOTH", "parts.jl"), ("PATH-MISMATCH", "parts.jl")]
+            # FAIL (b): the name checks stay in force for a parts file
+            got, f = mixcase("portname"; rel="src/pl-partsname.jl")
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == [("ORIGINAL-PORT-NAME", "pl-partsname.jl")]
+            got, f = mixcase("shadow"; rel="test/core_lang/test_shadow.jl")
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == [("ORIGINAL-SHADOWS-UPSTREAM", "test_shadow.jl")]
+            # FAIL (e): the other checks apply unchanged: a wrong definition after a marker, a malformed
+            # line, a part that is not at the commit, a marker with no definition
+            got, f = mixcase(
+                "defmismatch";
+                body=[
+                    replace(fake_marker, "partsFooBar() = 1" => "partsOther() = 1"),
+                    tbl_marker
+                ]
+            )
+            @test length(f.markers) == 2 && got == [("DEF-MISMATCH", "parts.jl")]
+            got, f = mixcase(
+                "malformed";
+                head=[
+                    orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c"
+                ]
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == [("MARKER-MALFORMED", "parts.jl")]
+            got, f = mixcase(
+                "gone";
+                head=[
+                    orig,
+                    cr1,
+                    cr2,
+                    fake_part,
+                    tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-gone.c @ $sha"
+                ],
+                body=[fake_marker, tbl_marker, gone_marker]
+            )
+            @test length(f.markers) == 3 && length(f.parts) == 3
+            @test got == [("UPSTREAM-FILE-MISSING", "parts.jl")]
+            got, f = mixcase(
+                "orphan";
+                body=[fake_marker, "# PORT: tabling.pl \$tbl_add as partsTblAdd\n"]
+            )
+            @test length(f.markers) == 2 && got == [("MARKER-ORPHAN", "parts.jl")]
+            # FAIL (e), F1 of the diff read: the pin, repo and commit checks iterate the PARTS lines.
+            # A parts line citing a real commit that is not the pin (a dangling commit object on the
+            # fixture's tree: it exists, HEAD does not move), an unknown repo, a missing commit.
+            full = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $sha`)
+            tree = readchomp(`git -C $(dirs["swipl-devel"]) rev-parse $(sha * "^{tree}")`)
+            # commit-tree needs an identity and the CI runner carries none: give this one its own.
+            other = withenv(
+                "GIT_AUTHOR_NAME" => "lk-fixture",
+                "GIT_AUTHOR_EMAIL" => "lk-fixture@example.invalid",
+                "GIT_COMMITTER_NAME" => "lk-fixture",
+                "GIT_COMMITTER_EMAIL" => "lk-fixture@example.invalid"
+            ) do
+                readchomp(
+                    `git -C $(dirs["swipl-devel"]) commit-tree $tree -p $full -m other`
+                )
+            end
+            @test other != full
+            got, f = mixcase("pin_ok"; pin=full)
+            @test length(f.markers) == 2 && length(f.parts) == 2
+            @test got == []
+            got, f = mixcase(
+                "pin_wrong";
+                head=[orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ $other"],
+                pin=full
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test got == [("PIN-MISMATCH", "parts.jl")]
+            got, f = mixcase(
+                "unknown_repo";
+                head=[orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: nope x.c @ $sha"],
+                body=[fake_marker, tbl_marker, nope_marker]
+            )
+            @test length(f.markers) == 3 && length(f.parts) == 3
+            @test got == [("UNKNOWN-REPO", "parts.jl")]
+            got, f = mixcase(
+                "commit_missing";
+                head=[orig, cr1, cr2, fake_part, tbl_part,
+                    "# UPSTREAM-PARTS: swipl-devel src/pl-fake.c @ 0123456"]
+            )
+            @test length(f.markers) == 2 && length(f.parts) == 3
+            @test got == [("COMMIT-MISSING", "parts.jl")]
         end
 
         @testset "M1: the generated code map is held to its generators" begin
