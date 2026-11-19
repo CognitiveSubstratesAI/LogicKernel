@@ -315,6 +315,8 @@ _manifest_per_type(T) = (
     (LK.trimStacks!, Tuple{LK.PL_local_data{T}, Bool}, false),
     # TRIMST: trim_stacks/0 (pl-setup.c): a call of trimStacks!(ld, true), so as that
     (LK.pl_trim_stacks0_va, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false),
+    # R2 F1b: set_stack_limit (pl-setup.c) behind the stack_limit flag and `$set_prolog_stack`(_, limit, _, _); raises permission_error
+    (LK.set_stack_limit!, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.init_stack!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.allocStacks!, Tuple{LK.PL_local_data{T}}, false),
     (LK._resize_local!, Tuple{LK.PL_local_data{T}, Int}, false),
@@ -1394,6 +1396,7 @@ function _manifest_index(T)
         (LK.pl_close, Tuple{LD, Int64, Bool}, false),
         (LK.reportStreamError, Tuple{LD, LK.IOSTREAM}, false),
         (LK.streamStatus, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.releaseStream, Tuple{LK.IOSTREAM}, false),
         # R1e — write_canonical/1,2 (pl-prims.c numberVars) and read_term_from_atom/3
         (LK.nv_options{T}, Tuple{T, Int64, LK.av_action, Int64, Bool}, false),
         (LK.numberVars, Tuple{LD, Int64, LK.nv_options{T}, Int64}, false),
@@ -1688,6 +1691,21 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        # Q10 (lane C): pl-alloc.c trim_heap/thread_idle, pl-setup.c $on_signal/4, $set_prolog_stack/4, trim_stacks/0 and the signal tables
+        (LK.pl_trim_heap0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_thread_idle2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_on_signal4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.pl_set_prolog_stack4_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.get_meta_arg, Tuple{LD, Int, Int, Int}, false),
+        (LK.signal_name, Tuple{Int}, false),
+        (LK.SIGNAL_INDEX, Tuple{Int}, false),
+        (LK.IS_VALID_SIGNAL, Tuple{Int}, false),
+        (LK.IS_VSIG, Tuple{Int}, false),
+        (LK.prepareSignal!, Tuple{Vector{LK.sig_handler{T}}, Int, Int}, false),
+        (LK.unprepareSignal!, Tuple{Vector{LK.sig_handler{T}}, Int}, false),
+        (LK._signal_install!, Tuple{Vector{LK.sig_handler{T}}, Int, Int, Int}, false),
+        (LK.initSignals!, Tuple{Type{T}}, false),
+        (LK.initStackParams, Tuple{}, false),
         # V9g-b — the bags: recorded terms (src/pl-rec.jl), findall/3's bag (src/pl-bag.jl), the
         # sorts and '$length'/2 (src/pl-list.jl), what bagof/3 and setof/3 call of pl-prims.c, the
         # list and functor unifiers (src/pl-fli.jl), the boot clauses (src/pl-ext.jl)
@@ -2049,13 +2067,30 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_getenv2_va, LK.pl_setenv2_va, LK.pl_unsetenv1_va, LK.pl_get_time1_va,
-                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va
+                LK.pl_sleep1_va, LK.pl_statistics2_va, LK.pl_delete_file1_va,
+                LK.pl_shell2_va    # (Q10)
             )
         ]...,
         (LK._sys_chars, Tuple{LD, Int}, false),
         # CT1a — setlocale/3 (src/pl-sys.jl; pl-ctype.c): the predicate and its text reader, over term type T
         (LK.pl_setlocale3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._ctype_chars, Tuple{LD, Int}, false),
+        # CT1b — char_type/2, code_type/2 (src/os/pl-ctype-pred.jl; pl-ctype.c), over term type T
+        (LK.char_type_by_name, Tuple{T, Int}, false),
+        (LK.unify_char_type, Tuple{LD, Int, LK.char_type, Int, Symbol}, false),
+        (LK._ct_get_char_ex, Tuple{LD, Int}, false),
+        (LK.do_char_type, Tuple{LD, Int, Int, LK.foreign_context{T}, Symbol}, false),
+        (LK.pl_char_type2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_code_type2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # CT1c — downcase_atom/2, upcase_atom/2, string_lower/2, string_upper/2, normalize_space/2
+        (LK.modify_case_atom, Tuple{LD, Int, Int, Bool, Int}, false),
+        (LK.write_normalize_space, Tuple{LD, LK.IOSTREAM, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_downcase_atom2_va, LK.pl_upcase_atom2_va, LK.pl_string_lower2_va,
+                LK.pl_string_upper2_va, LK.pl_normalize_space2_va
+            )
+        ]...,
         # TAI1 — stamp_date_time/3, date_time_stamp/2 (src/os/pl-tai.jl; pl-tai.c)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
@@ -2092,6 +2127,71 @@ function _manifest_index(T)
             false
         ),
         (LK._atom_is, Tuple{T, String}, false),
+        # CT1 LOCALE — locale_create/3, locale_property/2, locale_destroy/1, set_locale/1, current_locale/1 (src/os/pl-locale.jl; pl-locale.c)
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_locale_property2_va, LK.pl_locale_create3_va,
+                LK.pl_locale_destroy1_va,
+                LK.pl_set_locale1_va, LK.pl_current_locale1_va
+            )
+        ]...,
+        (LK.init_locale_strings!, Tuple{LK.PL_locale_rec{T}, Nothing}, false),
+        (
+            LK.init_locale_strings!,
+            Tuple{LK.PL_locale_rec{T}, NTuple{3, Vector{UInt8}}},
+            false
+        ),
+        (LK.fill_locale_from_name!, Tuple{LK.PL_locale_rec{T}, String}, false),
+        (LK.new_locale, Tuple{Type{T}, Nothing}, false),
+        (LK.new_locale, Tuple{Type{T}, LK.PL_locale_rec{T}}, false),
+        [
+            (f, Tuple{LK.PL_locale_rec{T}}, false) for f in (
+                LK.free_locale_strings!, LK.free_locale, LK.acquireLocale, LK.releaseLocale,
+                LK.acquire_locale_ref, LK.free_locale_symbol
+            )
+        ]...,
+        (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, Nothing}, false),
+        (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, String}, false),
+        (LK._loc_atoms_equal, Tuple{T, T}, false),
+        (LK._locale_table_index, Tuple{LK.PL_global_data{T}, T}, false),
+        (LK._locale_lookup, Tuple{LK.PL_global_data{T}, T}, false),
+        (
+            LK._alias_locale_table!,
+            Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}, T},
+            false
+        ),
+        (LK.alias_locale, Tuple{LK.PL_global_data{T}, LD, LK.PL_locale_rec{T}, T}, false),
+        (LK._locale_blob_ref, Tuple{LK.PL_global_data{T}, T}, false),
+        (LK._locale_serial!, Tuple{LK.PL_global_data{T}, LK.PL_locale_rec{T}}, false),
+        (
+            LK.unifyLocale,
+            Tuple{LK.PL_global_data{T}, LD, Int, LK.PL_locale_rec{T}, Bool},
+            false
+        ),
+        [
+            (f, Tuple{LK.PL_global_data{T}, LD, Int}, false) for
+            f in (LK.getLocale, LK.getLocaleEx)
+        ]...,
+        [
+            (f, Tuple{LD, LK.PL_locale_rec{T}, Int}, false) for f in (
+                LK.locale_alias_property, LK.locale_decimal_point_property,
+                LK.locale_thousands_sep_property, LK.locale_grouping_property
+            )
+        ]...,
+        (LK._lprop_call, Tuple{LD, Int, LK.PL_locale_rec{T}, Int}, false),
+        (LK._locale_get_prop_def, Tuple{LD, Int}, false),
+        (LK.advance_lstate, Tuple{LK.PL_global_data{T}, Int, Int, Int, Int}, false),
+        (LK.free_lstate, Tuple{LK.PL_global_data{T}, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int}, false) for f in (
+                LK.get_atom_arg, LK.set_chars, LK.get_group_size_ex, LK.set_grouping
+            )
+        ]...,
+        (LK._locale_text_string, Tuple{LK.PL_chars_t}, false),
+        (LK.initLocale!, Tuple{LK.PL_global_data{T}}, false),
+        (LK.updateLocale, Tuple{LK.PL_global_data{T}, Cint, Nothing}, false),
+        (LK.updateLocale, Tuple{LK.PL_global_data{T}, Cint, String}, false),
+        (LK.cleanupLocale, Tuple{LK.PL_global_data{T}}, false),
         # DWIM1 — dwim_match/3 and '$dwim_predicate'/2 (pl-dwim.c)
         (LK.pl_dwim_match, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_dwim_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -2099,6 +2199,8 @@ function _manifest_index(T)
         (LK._dwim_get_functor, Tuple{LD, Int}, false),
         (LK._dwim_stringAtom, Tuple{T}, false),
         (LK.Setenv, Tuple{LD, String, String}, false),
+        (LK.System, Tuple{LD, String}, false), (LK.prog_shell, Tuple{LD}, false),      # (Q10) shell/2
+        (LK.PL_shell_signalled_error, Tuple{LD, String, Int}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
         (LK.PL_get_file_name, Tuple{LD, Int, Int}, false),
@@ -2306,6 +2408,7 @@ function _manifest_index(T)
         (LK.get_bool_or_int_ex, Tuple{LD, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int}, false),
         (LK.get_procedure, Tuple{GD, LD, Int, Int, Int}, false),           # MOD4: `h`
+        (LK.get_module_how, Tuple{GD, LD, UInt64, Int}, false),            # W1-SRC2: get_procedure's module rule
         (LK.get_procedure_create, Tuple{GD, LD, Int, Int}, false),
         (LK.pl_retractall1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (
@@ -2528,6 +2631,30 @@ function _manifest_index(T)
         ]...,
         # Q10 — '$style_check'/2 (src/pl-prims.jl)
         (LK.pl_style_check2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # P3 — call_with_depth_limit/3, call_with_inference_limit/3 (`$depth_limit*`, `$inference_limit*`) and `$urgent_exception/3`
+        (LK.pl_depth_limit3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_true5_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_false3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_depth_limit_except3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_inference_limit_true3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (
+            LK.pl_inference_limit_false1_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (
+            LK.pl_inference_limit_except3_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
+        (LK.pl_urgent_exception3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.unify_det, Tuple{LD, Int}, false),
+        (LK.unify_depth, Tuple{LD, Int, Int}, false),
+        (LK.get_depth, Tuple{LD, Int}, false),
+        (LK.get_inference_limit, Tuple{LD, Int}, false),
+        (LK.unify_inference_limit, Tuple{LD, Int, Int}, false),
+        (LK.raiseInferenceLimitException, Tuple{GD, LD}, false),
         # RD1: pl-read.c's stream readers (read_term/2,3, $is_named_var/1, read/1,2, $raw_read/1,2)
         (LK.pl_read_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_read_term2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
@@ -2705,6 +2832,25 @@ function _manifest_index(T)
         (LK.PL_eval_expression_to_int64_ex, Tuple{LD, Int64}, false),
         (LK.write_size, Tuple{LD, Int64, Int64, Int64, Int64}, false),
         (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # Q10 — '$put_token'/2 (src/pl-write.jl)
+        (LK.put_token, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_put_token2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # Q10 — current_blob/2 (src/pl-fli.jl)
+        (LK.current_blob, Tuple{LD, Int64, Int64, Int64, Int64}, false),
+        (LK.pl_current_blob2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # Q10B — garbage_collect_atoms/0 (src/pl-fli.jl), '$suspend_findall_bag'/0 (src/pl-bag.jl), prolog_alert_signal/2 (src/pl-setup.jl)
+        (LK.pl_garbage_collect_atoms0, Tuple{LD}, false),
+        (
+            LK.pl_suspend_findall_bag0_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
+        (LK._sig_alert, Tuple{Vector{LK.sig_handler{T}}}, false),
+        (
+            LK.pl_prolog_alert_signal2_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
@@ -3430,7 +3576,9 @@ _index_entry_points(T) = (
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
         f in (
             LK.pl_atomic_list_concat3_va, LK.pl_atomic_list_concat2_va,
-            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va, LK.pl_sub_atom5_va
+            LK.pl_atomics_to_string3_va, LK.pl_atomics_to_string2_va,
+            LK.pl_sub_atom5_va,
+            LK.pl_seek_list4_va, LK.pl_sub_atom_icasechk3_va                  # P2b
         )
     ]...,
     (
@@ -4119,6 +4267,306 @@ const _MANIFEST_TX1_FREE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_undo)}, false)
 )
 
+# LANE F — os/pl-cstack.c (src/os/pl-cstack.jl): the C-stack fallbacks. The functions that print or raise take the local data or the
+# term type; the ones with an empty body take a string (or nothing) and are listed once, plain.
+_manifest_cstack(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.print_backtrace, Tuple{LD, Int}, false),
+        (LK.print_backtrace_named, Tuple{LD, String}, false),
+        (LK.sigCrashHandler, Tuple{Type{T}, Int}, false),
+        (LK.CStackSize, Tuple{LD}, false)
+    )
+end
+_manifest_cstack_plain() = (
+    (LK.save_backtrace, Tuple{String}, false),
+    (LK.btrace_destroy, Tuple{Nothing}, false),
+    (LK.print_c_backtrace, Tuple{String}, false),
+    (LK.initBackTrace, Tuple{}, false)
+)
+
+# LANE F — os/pl-table.c (src/os/pl-table.jl): the hash tables, word -> word. Every function takes the table, its maps,
+# `UInt64` keys and values and `Int` indexes (no term type): listed once, below; the two that take the local data
+# (`addNewHTable`'s duplicate warning) are checked for every payload type.
+_manifest_table(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.addNewHTable, Tuple{LD, LK.Table{Nothing, Nothing}, UInt64, UInt64}, false),
+        (
+            LK.PL_add_hash_table,
+            Tuple{LD, LK.Table{Nothing, Nothing}, UInt64, UInt64, Int},
+            false
+        )
+    )
+end
+_manifest_table_plain() = (
+    (LK.symbol, Tuple{UInt64, UInt64}, false),
+    (LK.KVS, Tuple{Int, Bool, Int, Nothing, Nothing, Vector{LK.symbol}}, false),
+    (LK.Table, Tuple{Int, Bool, Nothing, Nothing, LK.KVS}, false),
+    (LK.TableEnum, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, Int}, false),
+    (LK._htable_kvs_in_use, Tuple{LK.KVS}, true),
+    (LK.htable_name, Tuple{LK.KVS, Int}, true),
+    (LK.htable_value, Tuple{LK.KVS, Int}, true),
+    (LK.htable_cas_name, Tuple{LK.KVS, Int, UInt64, UInt64}, false),
+    (LK.htable_cas_value, Tuple{LK.KVS, Int, UInt64, UInt64}, false),
+    (LK.htable_cas_new_kvs, Tuple{LK.KVS, LK.KVS}, false),
+    (LK.htable_cas_cleanup, Tuple{LK.Table{Nothing, Nothing}, Bool, Bool}, false),
+    (LK.htable_alloc_kvs, Tuple{Int}, false),
+    (LK.htable_free_kvs, Tuple{LK.KVS}, false),
+    (LK.htable_free_all_kvs, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.htable_maybe_free_kvs, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.htable_copy_kvs, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, LK.KVS}, false),
+    (LK.htable_resize, Tuple{LK.Table{Nothing, Nothing}, LK.KVS}, false),
+    (LK.htable_get, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, UInt64}, false),
+    (LK.htable_put, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, UInt64, UInt64, Int}, false),
+    (LK.htable_iter, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, Int}, false),
+    (LK.newHTable, Tuple{Int}, false),
+    (LK.newHTable, Tuple{Int, Nothing}, false),   # the one-hook form (copy_symbol only)
+    (LK.newHTable, Tuple{Int, Nothing, typeof(LK.free_cov_symbol)}, false),   # a coverage table's hooks
+    (LK.destroyHTable, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.lookupHTable, Tuple{LK.Table{Nothing, Nothing}, UInt64}, false),
+    (LK.addHTable, Tuple{LK.Table{Nothing, Nothing}, UInt64, UInt64}, false),
+    (LK.updateHTable, Tuple{LK.Table{Nothing, Nothing}, UInt64, UInt64}, false),
+    (LK.deleteHTable, Tuple{LK.Table{Nothing, Nothing}, UInt64}, false),
+    (LK.clearHTable, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.copyHTable, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.newTableEnum, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.freeTableEnum, Tuple{LK.TableEnum{Nothing, Nothing}}, false),
+    (LK.advanceTableEnum, Tuple{LK.TableEnum{Nothing, Nothing}}, false),
+    (LK.sizeofTable, Tuple{LK.Table{Nothing, Nothing}}, true),
+    (LK.PL_new_hash_table, Tuple{Int, Nothing}, false),
+    (LK.PL_free_hash_table, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.PL_lookup_hash_table, Tuple{LK.Table{Nothing, Nothing}, UInt64}, false),
+    (LK.PL_del_hash_table, Tuple{LK.Table{Nothing, Nothing}, UInt64}, false),
+    (LK.PL_clear_hash_table, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.PL_new_hash_table_enum, Tuple{LK.Table{Nothing, Nothing}}, false),
+    (LK.PL_free_hash_table_enum, Tuple{LK.TableEnum{Nothing, Nothing}}, false),
+    (LK.PL_advance_hash_table_enum, Tuple{LK.TableEnum{Nothing, Nothing}}, false)
+)
+
+# LANE F — pl-bisim.c (src/pl-bisim.jl): the bisimulation quotient (term_factorized/3,4, term_minimal/2, term_automaton/2,
+# automaton_minimal/2,3, '$term_canonical_form'/2). Locations, node ids and counts are `Int`, words `UInt64`, `term_t` `Int`.
+# The functions that take the local data are checked for every payload type; the ones on the graph alone, once, below.
+_manifest_bisim(T) = begin
+    LD = LK.PL_local_data{T}
+    G = LK.bs_graph
+    B = Vector{LK.bs_node}
+    AU = LK.bs_automaton
+    (
+        (LK.build_graph, Tuple{LD, Int, B, UInt64}, false),
+        (LK.restore_graph, Tuple{LD, B}, false),
+        (LK.cmp_leaf, Tuple{LD, LK.leaf_order, Int, Int}, false),
+        (LK.leaf_number, Tuple{LD, G, LK.leaf_order, Int}, false),
+        (LK.number_leaves, Tuple{LD, G, Vector{Int}, Int}, false),
+        (LK.split_colours, Tuple{LD, G}, false),
+        (LK.fill_edges, Tuple{LD, G, Vector{Int}}, false),
+        (LK.alloc_graph, Tuple{LD, G, B, Int}, false),
+        (LK.setup_graph, Tuple{LD, G, B}, false),
+        (LK.term_quotient, Tuple{LD, Int, G, B, UInt64, Bool}, false),
+        (LK._bs_int_word, Tuple{LD, Int}, false),
+        (LK._bs_leaf_word, Tuple{LD, Int}, false),
+        (LK.fill_edges_automaton, Tuple{LD, Int, G, AU}, false),
+        (LK.build_automaton, Tuple{LD, Int, G, B, AU}, false),
+        (LK.resolve_states, Tuple{LD, G, AU, Vector{Int}}, false),
+        (LK.automaton_quotient, Tuple{LD, Int, G, B, AU, Bool}, false),
+        (LK.automaton_error, Tuple{LD, Int, AU}, false),
+        (LK.get_automaton, Tuple{LD, Int}, false),
+        (LK.canonicalise, Tuple{LD, G}, false),
+        (LK.canonical_size, Tuple{LD, G}, false),
+        (LK.build_canonical, Tuple{LD, G, Int}, false),
+        (LK.minimal_size, Tuple{LD, G}, false),
+        (LK.build_minimal, Tuple{LD, G, Int}, false),
+        (LK.automaton_size, Tuple{LD, G}, false),
+        (LK.build_automaton_result, Tuple{LD, G, Int}, false),
+        (LK.build_map, Tuple{LD, G, AU, Int}, false),
+        (LK.name_classes, Tuple{LD, G}, false),
+        (LK.factorized_size, Tuple{LD, G}, false),
+        (LK.build_factorized, Tuple{LD, G, Int}, false),
+        (LK._bs_alloc, Tuple{LD, Int}, false),
+        (LK._bs_functor, Tuple{LD, Symbol, Int}, false),
+        (LK.term_canonical_form, Tuple{LD, Int, Int}, false),
+        (LK.do_term_factorized, Tuple{LD, Int, Int, Int, UInt64, Bool}, false),
+        (LK.term_to_automaton, Tuple{LD, Int, Int}, false),
+        (LK.automaton_to_term, Tuple{LD, Int, Int}, false),
+        (LK.minimal_automaton_size, Tuple{LD, G, AU, Bool, Bool}, false),
+        (LK.build_minimal_automaton, Tuple{LD, G, AU, Bool, Int, Bool}, false),
+        (LK.do_automaton_minimal, Tuple{LD, Int, Int, Nothing}, false),
+        (LK.do_automaton_minimal, Tuple{LD, Int, Int, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
+                LK.pl_term_minimal2_va, LK.pl_term_canonical_form2_va,
+                LK.pl_term_factorized3_va,
+                LK.pl_term_factorized4_va, LK.pl_term_automaton2_va,
+                LK.pl_automaton_minimal2_va,
+                LK.pl_automaton_minimal3_va
+            )
+        ]...
+    )
+end
+_manifest_bisim_plain() = (
+    (LK.bs_node, Tuple{Int, UInt64}, false),
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.bs_graph}}, false),
+    (Core.kwcall, Tuple{NamedTuple{(), Tuple{}}, Type{LK.bs_automaton}}, false),
+    (LK.leaf_order, Tuple{Bool}, false),
+    (LK.bs_colour, Tuple{UInt64, Int}, false),
+    (LK.bs_colour_lt, Tuple{LK.bs_colour, LK.bs_colour}, true),
+    (LK._bs_scalar_cmp, Tuple{Int, Int}, true),
+    (LK._bs_compound, Tuple{Int}, true),
+    (LK.child_class, Tuple{LK.bs_graph, Int}, false),
+    (LK.colour_nodes, Tuple{LK.bs_graph}, false),
+    (LK.group_signature, Tuple{LK.bs_graph, Int, Int, Int}, false),
+    (LK.new_class, Tuple{LK.bs_graph, Int, Int}, false),
+    (LK.enqueue, Tuple{LK.bs_graph, Int}, false),
+    (LK.mark_member, Tuple{LK.bs_graph, Int, Vector{Int}, Int}, false),
+    (LK.refine, Tuple{LK.bs_graph}, false),
+    (LK.identity_partition, Tuple{LK.bs_graph}, false),
+    (LK.fill_pred, Tuple{LK.bs_graph}, false)
+)
+
+# LANE F — pl-coverage.c (src/pl-coverage.jl): the '$cov_*' predicates and the coverage records (the structs are in src/pl-incl.jl).
+# `'$cov_start'/1` is a named refusal: its entry only checks that it infers. The functions that take the local data or a
+# record of a payload type are checked for every payload type; the ones on plain integers, once, below.
+_manifest_coverage(T) = begin
+    LD = LK.PL_local_data{T}
+    GD = LK.PL_global_data{T}
+    COV = LK.coverage{T}
+    OBJ = LK.cov_obj{T}
+    ST = LK.cov_data_state{T}
+    (
+        (LK.newCoverageData, Tuple{Type{T}}, false),
+        (LK.share_coverage_data, Tuple{Union{Nothing, COV}}, false),
+        (LK.unshare_coverage_data, Tuple{COV}, false),
+        (LK.pc_call_site, Tuple{GD, COV, LK.Clause{T}, Int}, false),
+        (LK.clause_site, Tuple{GD, Union{Nothing, COV}, LK.Clause{T}}, false),
+        (LK.unify_cov, Tuple{GD, LD, Int, OBJ}, false),
+        (LK.free_state, Tuple{ST}, false),
+        (LK.is_candidate, Tuple{ST, OBJ}, false),
+        (LK.free_coverage_data, Tuple{LD}, false),
+        (LK.cov_obj{T}, Tuple{Int, T, Int, Int, Int, Int}, false),
+        (LK.coverage{T}, Tuple{LK.CovTable, Vector{OBJ}, Int, Int}, false),
+        (LK.cov_data_state{T}, Tuple{}, false),
+        (LK.ld_coverage{T}, Tuple{}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_cov_data3_va, LK.pl_cov_add3_va, LK.pl_cov_reset0_va,
+                LK.pl_cov_start1_va,
+                LK.pl_cov_stop1_va, LK.pl_cov_active1_va
+            )
+        ]...
+    )
+end
+_manifest_coverage_plain() = (
+    (LK.free_cov_symbol, Tuple{UInt64, UInt64}, false),
+    (LK._cov_key, Tuple{Int, Int}, false)
+)
+
+# LANE F — pl-prof.c (src/pl-prof.jl): the profiler's call tree, its readers and the '$prof_*' predicates (the structs are in
+# src/pl-incl.jl). `startProfiler`, `activateProfiler`, `stopProfiler` (active), `'$prof_exact_ok'/1` and `'$prof_clock_cost'/1`
+# are named refusals (PROF1): their entries only check that they infer. Checked for every payload type; `ld_profile_clock`, once.
+_manifest_prof(T) = begin
+    LD = LK.PL_local_data{T}
+    GD = LK.PL_global_data{T}
+    DEF = LK.Definition{T}
+    NODE = LK.call_node{T}
+    SUM = LK.node_sum{T}
+    REF = LK.prof_ref{T}
+    (
+        (LK._prof_refuse, Tuple{LD, Symbol, String}, false),
+        (LK.new_call_node!, Tuple{LD, Union{Nothing, DEF}, Int}, false),
+        (LK.prof_node_at, Tuple{LD, Int}, false),
+        (LK.get_prof_status, Tuple{LD, Int}, false),
+        (LK.prof_status_atom, Tuple{Type{T}, Int}, false),
+        (LK.get_node, Tuple{LD, Int}, false),
+        (LK.unify_node, Tuple{LD, Int, Int}, false),
+        (LK.identify_def, Tuple{GD, LD, Int, DEF}, false),
+        (LK.unify_node_id, Tuple{GD, LD, Int, NODE}, false),
+        (LK.node_redos, Tuple{NODE}, false),
+        (LK.add_parent_ref!, Tuple{SUM, NODE, Int, Union{Nothing, DEF}, Int, Int}, false),
+        (LK.add_recursive_ref!, Tuple{SUM, Int, Int}, false),
+        (LK.add_sibling_ref!, Tuple{SUM, NODE, Int}, false),
+        (LK.sumProfile, Tuple{LD, NODE, DEF, SUM, Int}, false),
+        (LK.unify_relatives, Tuple{GD, LD, Int, Vector{REF}}, false),
+        (LK.get_def, Tuple{GD, LD, Int}, false),
+        (LK.get_handle, Tuple{GD, LD, Int}, false),
+        (LK.collectSiblingsNode, Tuple{LD, NODE}, false),
+        (LK.collectSiblingsTime, Tuple{LD}, false),
+        (LK.freeProfileNode, Tuple{LD, Int}, false),
+        (LK.freeProfileData, Tuple{LD}, false),
+        (LK.stopProfiler, Tuple{LD}, false),
+        (LK.activateProfiler, Tuple{LD, Int}, false),
+        (LK.startProfiler, Tuple{LD, Int}, false),
+        (LK.resetProfiler, Tuple{LD}, false),
+        (LK.profile!, Tuple{LD, Int}, false),
+        (LK.call_node{T}, Tuple{Union{Nothing, DEF}, Int}, false),
+        (LK.node_sum{T}, Tuple{}, false),
+        (
+            LK.prof_ref{T},
+            Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int},
+            false
+        ),
+        (LK.ld_profile{T}, Tuple{}, false),
+        # the second half of pl-prof.c: the clocks (named refusals), the charge functions and the tree builders
+        (LK.prof_clock, Tuple{LD}, false),
+        (LK.prof_mono_ns, Tuple{LD}, false),
+        (LK.prof_thread_cpu_ns, Tuple{LD}, false),
+        (LK.prof_clock_per_ns, Tuple{LD}, false),
+        (LK.thread_prof_ticks, Tuple{LD}, false),
+        (LK.prof_clock_cost_ns, Tuple{LD}, false),
+        (LK.precise_thread_cpu_clock, Tuple{LD}, false),
+        (LK.prof_close_window, Tuple{LD, Int, Union{Nothing, NODE}, Int}, false),
+        (LK.prof_charge, Tuple{LD, Int, Bool}, false),
+        (LK.prof_accounting_begin, Tuple{LD}, false),
+        (LK.prof_accounting_end, Tuple{LD}, false),
+        (LK.prof_convert_clock, Tuple{LD}, false),
+        (LK.prof_call, Tuple{LD, Union{Nothing, DEF}, Int}, false),
+        (LK.profCall, Tuple{LD, DEF}, false),
+        (LK.profResumeParent, Tuple{LD, Int}, false),
+        (LK.profExit, Tuple{LD, Int}, false),
+        (LK.profFail, Tuple{LD, Int}, false),
+        (LK.lookback, Tuple{LD, Int, Int}, false),
+        (LK.profFailToCP, Tuple{LD, Int, Int}, false),
+        (LK.profSetHandle, Tuple{NODE, Union{Nothing, DEF}}, false),
+        (LK.PL_register_profile_type, Tuple{LD, String}, false),
+        (LK.PL_prof_call, Tuple{LD, Int, Int}, false),
+        (LK.PL_prof_exit, Tuple{LD, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va,
+                LK.pl_prof_procedure_data8_va,
+                LK.pl_prof_statistics8_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va,
+                LK.pl_profile4_va,
+                LK.pl_prof_exact_ok1_va, LK.pl_prof_clock_cost1_va
+            )
+        ]...
+    )
+end
+_manifest_prof_plain() = (
+    (LK.ld_profile_clock, Tuple{}, false),
+    (LK._llround, Tuple{Float64}, false)
+)
+
+# LANE F — pl-zip.c (src/pl-zip.jl): the argument checks of the zip predicates, every minizip call a named refusal (ZIP1): the
+# refusals' entries only check that they infer. Checked for every payload type; `rc_strerror`, once.
+_manifest_zip(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.get_zipper, Tuple{LD, Int}, false),
+        (LK.zip_open_archive, Tuple{LD, String, Int}, false),
+        (LK.zip_open_archive_mem, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK.SopenZIP, Tuple{LD, LK.zipper, String, Int}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_zip_open_stream3_va, LK.pl_zip_clone2_va, LK.pl_zip_close2_va,
+                LK.pl_zip_lock1_va, LK.pl_zip_unlock1_va,
+                LK.pl_zipper_open_new_file_in_zip4_va, LK.pl_zipper_goto2_va,
+                LK.pl_zipper_open_current3_va, LK.pl_zip_file_info3_va,
+                LK.pl_rc_handle1_va
+            )
+        ]...
+    )
+end
+_manifest_zip_plain() = ((LK.rc_strerror, Tuple{Int}, false),)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -4361,6 +4809,14 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TABINT-STATIC1: the NULL methods of the TB6/TB7 chain walks (the Aqua unbound-parameter split; type-free, so listed once)
     (LK.idg_set_lingering_sizeof, Tuple{Nothing}, false),
     (LK.mdep_empty_queues, Tuple{Nothing}, false),
+    # P2b: the entries of its block (_index_entry_points) that name no term type (listed once, not once per type)
+    (LK._c_char, Tuple{Int}, false),
+    (LK._pl_tolower, Tuple{Int}, false),
+    (
+        LK._icasechk_search,
+        Tuple{LK.PL_chars_t, LK.PL_chars_t, Int, Bool, Bool},
+        false
+    ),
     # S2a: the stream-layer entries that name no term type (listed once, not once per type)
     (LK.Sgetcode_intr, Tuple{LK.IOSTREAM}, false),
     (LK.Ssetbuffer, Tuple{LK.IOSTREAM, Union{Nothing, Vector{UInt8}}, Int}, false),
@@ -4387,6 +4843,30 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_tb9(_M2)...,
     _manifest_tb9(_M3)...,
     _MANIFEST_TB9_FREE...,
+    _manifest_cstack(_M1)...,
+    _manifest_cstack(_M2)...,
+    _manifest_cstack(_M3)...,
+    _manifest_cstack_plain()...,
+    _manifest_table(_M1)...,
+    _manifest_table(_M2)...,
+    _manifest_table(_M3)...,
+    _manifest_table_plain()...,
+    _manifest_bisim(_M1)...,
+    _manifest_bisim(_M2)...,
+    _manifest_bisim(_M3)...,
+    _manifest_bisim_plain()...,
+    _manifest_coverage(_M1)...,
+    _manifest_coverage(_M2)...,
+    _manifest_coverage(_M3)...,
+    _manifest_coverage_plain()...,
+    _manifest_prof(_M1)...,
+    _manifest_prof(_M2)...,
+    _manifest_prof(_M3)...,
+    _manifest_prof_plain()...,
+    _manifest_zip(_M1)...,
+    _manifest_zip(_M2)...,
+    _manifest_zip(_M3)...,
+    _manifest_zip_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,
@@ -4546,6 +5026,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfeof, Tuple{LK.IOSTREAM}, false),
     (LK.Sferror, Tuple{LK.IOSTREAM}, true),
     (LK.Sflush, Tuple{LK.IOSTREAM}, false),
+    (LK.Sflush_julia_io, Tuple{LK.Sjulia_io}, false),
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
@@ -4600,6 +5081,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sseterr, Tuple{LK.IOSTREAM, UInt32, Nothing}, false),
     (LK.Sseterr, Tuple{LK.IOSTREAM, UInt32, String}, false),
     (LK.Sungetc, Tuple{Int64, LK.IOSTREAM}, false),
+    (LK.Sunlock, Tuple{LK.IOSTREAM}, false),
     (LK.Supdateesc, Tuple{LK.IOPOS, Int64}, true),
     (LK.Supdatepos, Tuple{LK.IOPOS, Int64}, true),
     (LK.Swrite_julia_io, Tuple{LK.Sjulia_io, Vector{UInt8}, Int64, Int64}, false),
@@ -4704,6 +5186,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.pl_cat_is_id_start, Tuple{LK.u_category}, true),
     (LK.pl_cat_is_solo, Tuple{LK.u_category}, true),
     (LK.pl_pair_lookup, Tuple{Int64}, true),
+    # CT1b — the Unicode simple case mapping (src/pl-umap.jl)
+    (LK.pl_case_run_of, Tuple{Int64}, true),
+    (LK.pl_toupper, Tuple{Int64}, true),
+    (LK.pl_tolower, Tuple{Int64}, true),
+    (LK.pl_totitle, Tuple{Int64}, true),
     (LK.points_at_decimal, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.prev_code, Tuple{Vector{UInt8}, Int64, Int64}, true),
     (LK.put_byte, Tuple{Int64, LK.IOSTREAM}, false),
@@ -4758,6 +5245,13 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.f_is_prolog_solo, Tuple{Int64}, true),
     (LK.f_is_pattern_syntax, Tuple{Int64}, true),
     (LK.f_paren_close, Tuple{Int64}, true),
+    # CT1b — the reader's bracket/quote/decimal classes the class tests use (src/pl-read.jl)
+    (LK.f_paren_open, Tuple{Int64}, true),
+    (LK.f_quote_close, Tuple{Int64}, true),
+    (LK.f_quote_open, Tuple{Int64}, true),
+    (LK.f_is_decimal, Tuple{Int64}, true),
+    (LK.unicode_separator, Tuple{Int64}, true),
+    (LK.f_is_quote, Tuple{Int64}, true),
     (LK.stop_matches_codepoint, Tuple{String, Int64}, true),
     (LK.isAnonVarName, Tuple{Vector{UInt8}}, true),
     (LK.wr_is_symbol, Tuple{Int64, Int64}, true),
@@ -4790,6 +5284,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.needSpace, Tuple{Int64, LK.IOSTREAM, Int64}, false),
     (LK.PutOpenToken, Tuple{Int64, LK.IOSTREAM, Int64}, false),
     (LK.PutToken, Tuple{String, LK.IOSTREAM, Int64}, false),
+    (LK.PutStringN, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
+    (LK.PutTokenN, Tuple{Vector{UInt8}, LK.IOSTREAM, Int64}, false),
     (LK.PutCloseBrace, Tuple{LK.IOSTREAM}, false),
     (LK.unicode_quoted_escape, Tuple{Int64}, false),
     (LK.putQuoted, Tuple{Int64, Int64, Int64, LK.IOSTREAM}, false),
@@ -4848,6 +5344,51 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_system)}, false),  # Y1
     # CT1a — setlocale/3: the table, and libc's setlocale through ccall (no term type: outside the per-type block)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype)}, false),
+    # CT1b — char_type/2 and code_type/2 (src/os/pl-ctype-pred.jl; pl-ctype.c): the table, the class tests, the generator (no term type)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_ctype_pred)}, false),
+    (LK.f_is_alnum, Tuple{Int64}, true),
+    (LK.f_is_alpha, Tuple{Int64}, true),
+    (LK.f_is_blank, Tuple{Int64}, true),
+    (LK.f_is_cntrl, Tuple{Int64}, true),
+    (LK.f_is_digit, Tuple{Int64}, true),
+    (LK.f_is_eol, Tuple{Int64}, true),
+    (LK.f_is_graph, Tuple{Int64}, true),
+    (LK.f_is_lower, Tuple{Int64}, true),
+    (LK.f_is_print, Tuple{Int64}, true),
+    (LK.f_is_punct, Tuple{Int64}, true),
+    (LK.f_is_space, Tuple{Int64}, true),
+    (LK.f_is_sterm, Tuple{Int64}, true),
+    (LK.f_is_upper, Tuple{Int64}, true),
+    (LK.f_is_ascii, Tuple{Int64}, true),
+    (LK.fiscsym, Tuple{Int64}, true),
+    (LK.fiscsymf, Tuple{Int64}, true),
+    (LK.iseof, Tuple{Int64}, true),
+    (LK.isnl, Tuple{Int64}, true),
+    (LK.ftoupper, Tuple{Int64}, true),
+    (LK.ftolower, Tuple{Int64}, true),
+    (LK.fupper, Tuple{Int64}, true),
+    (LK.flower, Tuple{Int64}, true),
+    (LK.fparen, Tuple{Int64}, true),
+    (LK.rparen, Tuple{Int64}, true),
+    (LK.fwidth, Tuple{Int64}, true),
+    (LK.fdigit, Tuple{Int64}, true),
+    (LK.rdigit, Tuple{Int64}, true),
+    (LK.ff_decimal, Tuple{Int64}, true),
+    (LK.fxdigit, Tuple{Int64}, true),
+    (LK.rxdigit, Tuple{Int64}, true),
+    (LK._ct_test, Tuple{Int64, Int64}, true),
+    (LK._ct_reverse, Tuple{Int64, Int64}, true),
+    (LK.advanceGen, Tuple{LK.generator}, false),
+    # CT1c — the text half: the case predicates' code-point walk, normalize_space/2's skippers, the locale's encoding
+    (LK.ctype_get_chr_from_text, Tuple{Vector{Int64}, Int64}, false),
+    (LK.PROF_IS_CPU, Tuple{Int64}, false),
+    (LK.PROF_IS_EXACT, Tuple{Int64}, false),
+    (LK.skip_separators, Tuple{Vector{Int64}, Int64}, false),
+    (LK.copy_non_separators, Tuple{LK.IOSTREAM, Vector{Int64}, Int64}, false),
+    (LK.enc_from_locale, Tuple{String}, false),
+    (LK.init_locale, Tuple{}, false),
+    (LK._ct_encode, Tuple{LK.generator}, false),
+    (LK._ct_decode, Tuple{Int64}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
     # TAI1 — the libtai pieces (src/os/pl-libtai.jl): calendar dates and times, the leap-second table (no term type)
     (LK.caldate_mjd, Tuple{LK.caldate}, false),
@@ -4860,6 +5401,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.leapsecs_sub, Tuple{Vector{UInt64}, UInt64}, false),
     # TAI1 — pl-tai.jl: the broken-down time, the confined libc calls, the zone (no term type)
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tai)}, false),
+    # CT1 LOCALE — pl-locale.jl: the strings of a locale, libc's localeconv, the retry state (no term type)
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_locale)}, false),
+    (LK.ls_to_wcs, Tuple{Vector{UInt8}, String}, false),
+    (LK._read_lconv, Tuple{}, false),
+    (LK._c_string_bytes, Tuple{Ptr{UInt8}}, false),
+    (LK._locale_ref_bytes, Tuple{Int}, false),
+    (LK._grouping_at, Tuple{Vector{Int}, Int}, false),
+    (LK._lenc, Tuple{Int, Int, Int, Int}, false),
+    (LK._ldec, Tuple{Int}, false),
+    (LK._cstr, Tuple{String}, false),
     (LK.cal_ftm, Tuple{LK.ftm, Int, Vector{UInt64}}, false),
     (LK.PL_localtime_r, Tuple{Int, LK.CTm}, false),
     (LK._c_mktime, Tuple{LK.CTm}, false),
@@ -5027,11 +5578,15 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_error)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_event)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_termhash)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_bisim)}, false),
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
-    # TRIMST: the registration table of src/pl-setup.jl
-    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_profile)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zip)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type

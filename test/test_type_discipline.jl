@@ -161,6 +161,25 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         1,
         "tz_name (pl-tai.c): copies the NUL-terminated zone name `tzname[dst]` points to, at once and " *
         "only when the pointer is not NULL; libc's static string is read before any other call can change it"
+    ),
+    "os/pl-locale.jl ccall" => (
+        5,
+        "CT1 LOCALE: the C library's locale calls of pl-locale.c, as upstream makes them, to read the " *
+        "LC_NUMERIC conventions of a named locale without changing the process's locale (fill_locale_from_name): " *
+        "newlocale (a mask and a Cstring, Julia's conversion refuses a NUL), uselocale twice (set the " *
+        "thread's locale, put the old one back) and freelocale, each handed that handle, and localeconv " *
+        "(_read_lconv), which takes nothing and returns the pointer to libc's `struct lconv`, read at once"
+    ),
+    "os/pl-locale.jl unsafe_load" => (
+        3,
+        "_read_lconv: the first three fields of libc's `struct lconv` (decimal_point, thousands_sep, grouping: " *
+        "three `char *`, the first fields of the struct by the C standard), read through the pointer " *
+        "localeconv answers while the thread's locale is still the one asked for; never past index 3"
+    ),
+    "os/pl-locale.jl unsafe_string" => (
+        1,
+        "_c_string_bytes: copies one NUL-terminated string of that `struct lconv` into a Julia vector, at " *
+        "once and only when the pointer is not NULL (a NULL gives no bytes), as pl-locale.c's strdup does"
     )
 )
 

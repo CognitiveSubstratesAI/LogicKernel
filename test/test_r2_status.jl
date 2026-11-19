@@ -501,11 +501,27 @@ end
     # ~user branch (W5c); the CONT1 row only changed its key (pl-vmi.c:7037-7038 cited) and stays owned.
     # 163 -> 162 on merging gate/small1 (main c1c104f4) into the TAB1 landing line: TRIMSTACKS ported `trim_stacks/0` (pl-setup.c:1751) and its owner row
     # `pred:trim_stacks/0 Q10` went (main: 200 -> 199); the row is owned on this line until the merge (D-0083 disclosure: derived, the floor test below measures it).
-    # 162 -> 161 on the R2 LIB unit (TAI1 on main 1ade7193): the owner row `pred:format_time/3 TAI1` went (format_time/3 is ported). MEASURED with the
-    # generator's own r2_collect on the tree (the warm daemon): 823 rows, 161 owned, 39 NO OWNER.
+    # RT (the R2 line 057b79fe resolved against main e1185b08, audit D-0926): both sides start at main a7d89b0b's floor 199 (200 -> 199 TRIMSTACKS).
+    # The TAB1 landing closed 37 owned rows (199 -> 162, above); the R2 line closed 16 (199 -> 183, below). If no row is closed by both, the sum
+    # is 199 - 37 - 16 = 146. MEASURED on RT with the generator's own r2_collect (the warm daemon, tools/r2_status.jl: 841 rows, 146 owned, 43 NO OWNER):
+    # exactly 146, so no row was closed by both sides, and the floor stays 146 (audit D-0736 (1)).
+    # 199 after TRIMSTACKS: it ported `trim_stacks/0` (pl-setup.c:1751) and its owner row `pred:trim_stacks/0 Q10` went (200 -> 199).
+    # 184 at the R2 landing line (measured with the generator's own r2_collect on the tree, D-0813): 199 on main 87a88328 minus the
+    # 30 owner lines of the rows the line closed (29 pred: rows done now: $depth_limit/3, $depth_limit_except/3, $depth_limit_false/3,
+    # $depth_limit_true/5, $inference_limit/2, $inference_limit_except/3, $inference_limit_false/1, $inference_limit_true/3,
+    # $urgent_exception/3 (P3); $on_signal/4, $put_token/2, $set_prolog_stack/4, $suspend_findall_bag/0, current_blob/2,
+    # garbage_collect_atoms/0, shell/2, thread_idle/2, trim_heap/0 (Q10); $rc_handle/1, zip_clone/2, zip_close_/2,
+    # zip_file_info_/3, zipper_goto/2, zipper_open_current/3 (ZIP1); $seek_list/4, sub_atom_icasechk/3 (P2); char_type/2,
+    # code_type/2 (CT1); format_time/3 (TAI1); and the refusal row get_procedure: other than GP_DEFINE, PR1) plus 15 refusal rows
+    # that gained an owner (13 ZIP1 minizip refusals in pl-zip.jl, pl_on_signal4_va TH1, pl_set_prolog_stack4_va R2 F1b; the
+    # set_module code-accounting row only changed its owner to REFUSED). No owner row was lost.
+    # 183 after F1b (fbad7cbc), measured with the generator's own r2_collect on the tree: the owner line of the refusal row `set_stack_limit (a changed stack limit)`
+    # in pl_set_prolog_stack4_va (src/pl-setup.jl, owner R2 F1b) went (184 -> 183); the Q10-42 port closed no owner row.
+    # 146 -> 151 (R2-OWNERS2, audit D-0928 (3)): five refusal rows lane F (R2 stack 1) introduced had no owner: os/pl-cstack.jl sigCrashHandler and CStackSize,
+    # pl-coverage.jl pc_call_site (REFUSED), pl_cov_start1_va (COV1), pl-prof.jl _prof_refuse (PROF1). MEASURED with the generator's own r2_collect on the tree: 841 rows, 151 owned, 38 NO OWNER.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 161
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 151
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
