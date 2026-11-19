@@ -408,17 +408,18 @@ end
 
 # PORT: pl-variant.c not_variant as pl_not_variant2_va
 # (PRED_IMPL("\\=@=", 2, not_variant, 0), pl-variant.c:528-537 at the pin 18168e62.)
-# NOTE: added with TAB1 batch 3, whose test_tabling_answers_swipl.jl reaches it through `'$tabling':'\\=@='/2` (boot/tabling.pl:755, answer
-# subsumption `Agg \=@= Next`); upstream's one line. `is_variant_ptr_cells` raises nothing here (its ERR_NOMEM is the upstream's own
-# `rval < 0`, the cells variant check has no allocation failure), so upstream's `!PL_exception(0)` guard is `true`.
-"`\\=@=/2` (pl-variant.c): the arguments are not variants, under the bindings."
+# NOTE: also reached by TAB1 (test_tabling_answers_swipl.jl through `'$tabling':'\\=@='/2`, boot/tabling.pl:755, answer subsumption
+# `Agg \=@= Next`). `is_variant_ptr_cells` raises nothing here (the cells variant check has no allocation failure), so upstream's
+# `!PL_exception(0)` guard, kept literally below, is `true`.
+"`\\=@=/2` (pl-variant.c): the arguments are not variants; fails, not true, when the check raised."
 function pl_not_variant2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    is_variant_ptr_cells(ld, -(A1 + 1), -(A2 + 1)) && return FFALSE
-
-    return FTRUE
+    if is_variant_ptr_cells(ld, -(A1 + 1), -(A2 + 1))       # valTermRef (L1d 8a)
+        return FFALSE
+    end
+    return PL_exception(ld, 0) == 0 ? FTRUE : FFALSE        # false: is_variant_ptr() raised
 end
 
 # PORT: pl-variant.c BeginPredDefs as PL_predicates_from_variant

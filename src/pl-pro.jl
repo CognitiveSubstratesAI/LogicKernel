@@ -313,7 +313,7 @@ end
 # counts). `gc_status.blocked`, `LD->shift_status.blocked` and `LD->in_print_message` are the garbage collector's and
 # `print_message/2`'s (the kernel's stacks grow by doubling, src/pl-gc.jl, and its messages go through `printMessage`): their
 # resets belong to the steps that port those counters. `LD->depth_info.limit = DEPTH_NO_LIMIT` is the depth limit's (P3, the
-# `$depth_limit*` family). The nesting is a vector (A2), emptied; `autoload.loop` is `nothing`.
+# `$depth_limit*` family, ported). The nesting is a vector (A2), emptied; `autoload.loop` is `nothing`.
 """
     resetProlog(ld, clear_stacks) -> true
 
@@ -341,6 +341,8 @@ function resetProlog(ld::PL_local_data, clear_stacks::Bool)::Bool
         end
         # gc_status.blocked = 0; LD->shift_status.blocked = 0; LD->in_print_message = 0
     end
+
+    ld.depth_info_limit = DEPTH_NO_LIMIT                        # LD->depth_info.limit = DEPTH_NO_LIMIT (P3)
 
     empty!(ld.autoload_nesting)                                 # LD->autoload.nesting = NULL
     ld.autoload_loop = nothing                                  # LD->autoload.loop = NULL

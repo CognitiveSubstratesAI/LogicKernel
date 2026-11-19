@@ -289,7 +289,7 @@ end
                 "function PL_next_solution_guarded("
             )
             path = ("I_ENTER", "I_CALL", "normal_call", "depart_or_retry_continue",
-                "I_DEPART",
+                "I_DEPART", "depart_alerted",       # (ENGINE: the alerted path I_CALL/I_DEPART take: undo goals, limits)
                 "I_EXIT", "exit_continue", "L_NOLCO", "L_VAR", "L_ATOM", "L_NIL",
                 "L_SMALLINT",
                 "I_LCALL", "I_TCALL", "I_CUT", "B_VAR0", "B_VAR1", "B_VAR2", "B_VAR",
@@ -313,9 +313,16 @@ end
             # (the call-site pass sees it at I_LCALL; its own entry of `SPAN_CALLEE_EXEMPT`) instead of
             # inlining it: the sites of the callee carry no `getProcDefinedDefinition` frame, they carry
             # the `trapUndefined` one. Both frames stay: the cold path is whatever lies under either.
+            # ENGINE: `raiseInferenceLimitException` joins the cold frames since `depart_alerted` is on the path. The run
+            # loop inlines it at the O_INFERENCE_LIMIT block (pl-wam.jl, the `raiseInferenceLimitException(gd, ld)` line
+            # of `depart_alerted`): its two sites (`mk_sym`, the limit wrapper's predicate names) lie under that frame
+            # and run only once the limit is reached (the branch of `ALERT_INFERENCELIMIT` with the count at the limit),
+            # a raise; every other site of `depart_alerted` still counts. Its own entry of `SPAN_CALLEE_EXEMPT` (`:error`).
             cold(a) = any(
                 fr ->
-                    fr.func === :getProcDefinedDefinition || fr.func === :trapUndefined,
+                    fr.func === :getProcDefinedDefinition ||
+                    fr.func === :trapUndefined ||
+                    fr.func === :raiseInferenceLimitException,
                 a.backtrace
             )
             @test any(cold, allocs)                     # the exemption matches real sites
