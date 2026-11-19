@@ -1,0 +1,4 @@
+# GitHub logins whose commit status `land/approved` (description `LAND <full sha>`) releases a landing: read by
+# tools/land_check.sh (marker step) from main's tree. One login per line. EMPTY = no release is accepted (fail closed).
+# A line is added by a landing of its own, with Shivaji's yes (it names who may release main).
+sivaji1012

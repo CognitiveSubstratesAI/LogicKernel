@@ -1,0 +1,130 @@
+# THE AUTO-LAND WORKFLOW (audit D-0912, Shivaji's yes of 18 Nov 2026; design: tools/land_check.sh and the design note
+# evidence/R2/land_yml_design.md in the audit channel). By hand only (workflow_dispatch), DRY RUN BY DEFAULT.
+#
+# It fast-forwards main to ONE SHA, and only if EVERY condition holds (each one fails closed; the table in the job
+# summary shows all of them, a missing row counts as a failure):
+#   input     the SHA is 40 lower-case hex digits
+#   gate-tip  the SHA is the tip of an origin gate/* branch (that is where its CI, Evidence and batteries ran)
+#   ancestry  main is an ancestor of the SHA: a bare fast-forward, never a merge, never a force; something to land
+#   linear    `git log --merges main..SHA` is EMPTY (main takes only linear history, A-0206: the ruleset refuses a merge commit, this
+#             refuses it first); an unreadable range fails; `push` reads it again on fresh state
+#   author    ONE identity (author and committer) on every commit of main..SHA, the repo's configured one
+#   d0164     the D-0164 term grep (tools/githooks/dterm.sh) of the added lines and the commit messages is clean
+#   gateset   the candidate's evidence/gate_set.txt, equivalents.tsv and survivors.tsv are readable; the set does not shrink; every row
+#             the SHA adds to or removes from equivalents.tsv/survivors.tsv versus MAIN's copies is printed under the table, and a row
+#             added with no D-entry id fails
+#   verdicts  tools/verdict_read.py reads CI, Evidence (three term types) and EVERY battery of the set at that exact SHA
+#             (landable: blocking none, every declared equivalent in evidence/equivalents.tsv)
+#   marker    the audit's release of THAT SHA: a commit status `land/approved` on the SHA, description `LAND <sha>` (+ ` [ids: D-NNNN:MUTANT,...]`
+#             naming exactly the rows the SHA adds to the evidence files), set by a login listed in evidence/land_approvers.txt
+#             (the one step that knows how a release is read)
+# dry_run (default true): the table is printed and the run ends green WITHOUT a push. A real run adds ONE step after the
+# table: `git push origin <sha>:refs/heads/main` (non-force, no other ref), with the conditions read again first.
+# After the push the workflow does nothing else: the main-push run (CI + Evidence on main) is read by name by the audit.
+#
+# 🔴 OFF SWITCH: disable this workflow (Actions tab), or empty evidence/land_approvers.txt (no release is then accepted).
+# 🔴 It adds NO required check and renames none: main's ruleset requires checks BY JOB NAME (CI.yml, evidence.yml) and these job
+#    names are not among them. The trusted code is MAIN's tree (tools/ is checked out from main, never from the SHA): a SHA
+#    cannot change the checks that judge it. The data it brings (gate set, equivalents, survivors) is read from the SHA, compared
+#    with main's copies and printed row by row; a shrinking gate set is refused, an added equivalent counts only if the release names it.
+# OPEN (Shivaji): whether the ruleset of main lets the GITHUB_TOKEN of this run push to main (a bypass actor, or no
+# restriction on this path); and that a push made with the default token does not start the main-push CI/Evidence runs (GitHub
+# does not trigger workflows from GITHUB_TOKEN events): see the design note.
+name: Land (fast-forward main)
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'The full 40-hex SHA to fast-forward main to (the tip of a gate/* branch)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run: print the decision table, push nothing'
+        required: true
+        type: boolean
+        default: true
+      set_may_shrink:
+        description: 'Allow the candidate gate set to name fewer batteries than main''s'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: land
+  cancel-in-progress: false
+
+permissions: {}   # every job lists its own scopes (a job-level block REPLACES this one)
+
+jobs:
+  decide:
+    name: Decide
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # READ ONLY: the reads of tools/verdict_read.py (runs, jobs, annotations, logs) and of the commit status. No write scope here.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      statuses: read
+    outputs:
+      landable: ${{ steps.decide.outputs.landable }}
+    env:
+      SHA: ${{ inputs.sha }}                       # through env, never interpolated into a script
+      LAND_DRY_RUN: ${{ inputs.dry_run }}
+      LAND_SET_MAY_SHRINK: ${{ inputs.set_may_shrink }}
+      # the scratch dir is $RUNNER_TEMP/land_work (tools/land_check.sh): the `runner` context has no place in a job-level env
+    steps:
+      - name: Only the workflow file of main judges
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+              echo "::error title=Land::run this workflow from main (this run is on $GITHUB_REF)"; exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Input
+        run: bash tools/land_check.sh input "$SHA"
+      - name: Git conditions (gate tip, ancestry, linear history, author, D-0164 scan)
+        run: bash tools/land_check.sh git "$SHA"
+      - name: Gate set, equivalents and survivors of the SHA
+        run: bash tools/land_check.sh gateset "$SHA"
+      - name: Verdicts (CI, Evidence, every battery of the set)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/land_check.sh verdicts "$SHA"
+      - name: The audit's release (the only step that reads the marker)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/land_check.sh marker "$SHA"
+      - name: Decision table
+        id: decide
+        if: always()
+        run: bash tools/land_check.sh decide "$SHA"
+
+  land:
+    name: Fast-forward main
+    needs: decide
+    if: ${{ !inputs.dry_run && needs.decide.outputs.landable == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # the ONLY write scope of the workflow; statuses: read is for the second look at the release right before the push
+    permissions:
+      contents: write
+      statuses: read
+    # an environment named `land` (settings: deployment branches = main only) bounds which ref may use this job; it is created
+    # empty on first use and holds no secret
+    environment: land
+    env:
+      SHA: ${{ inputs.sha }}
+      LAND_SET_MAY_SHRINK: ${{ inputs.set_may_shrink }}   # `push` reads the gate-set condition again
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: The conditions again on fresh state, then the fast-forward
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/land_check.sh push "$SHA"

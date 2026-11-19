@@ -149,6 +149,21 @@ _ci_terms_check() {
     return 1
 }
 
+# _linear_check SHA — 0 when `git log --merges refs/remotes/<remote>/main..SHA` is EMPTY (A-0206: main takes only LINEAR history; the
+# ruleset of the repository refuses a merge commit with "This branch must not contain merge commits", this refuses it first). A range
+# that cannot be read is a refusal. The history of main itself is not read.
+_linear_check() {
+    local sha="$1" out
+    out="$(git -C "$top" log --merges --format='%H %s' "refs/remotes/$remote_name/main..$sha" 2>&1)" || {
+        echo "pre-push: REFUSED — cannot list refs/remotes/$remote_name/main..${sha:0:7} to check it for merge commits: $out" >&2
+        return 1
+    }
+    [ -z "$out" ] && return 0
+    echo "pre-push: REFUSED — main ← ${sha:0:7}: the range holds $(printf '%s\n' "$out" | wc -l) merge commit(s), first: $(printf '%s\n' "$out" | head -1 | cut -c1-200)" >&2
+    echo "  A-0206: main takes only LINEAR history. Squash: git commit-tree <tree> -p <main> -m <message>, and push that commit." >&2
+    return 1
+}
+
 remote_name="${1:-origin}"
 # A push by URL (`git push https://…`) hands the URL as $1, and `--remotes=<URL>` matches no ref: every
 # commit would count as new (measured 2026-10-23, the v0.1.0-pre.2 tag push: 140 old commits listed).
@@ -232,6 +247,7 @@ while read -r _local_ref local_sha remote_ref _remote_sha; do
             continue
             ;;
     esac
+    _linear_check "$local_sha" || { rc=1; continue; }      # 8. A-0206: no merge commit in main..SHA, before any CI question
     out="$("$top/tools/ci_status.sh" --require "$EVIDENCE_WORKFLOW" "$local_sha" 2>&1)"
     st=$?
     if [ "$st" -eq 0 ]; then

@@ -677,7 +677,7 @@ jobs:
         if: steps.changed.outputs.run == 'true' && matrix.shard == 'light'
         run: |
           rc=0
-          for t in test_prepush_ci test_check_bool_atoms test_check_where_return test_ci_compile_summary test_tool_modes test_dterm test_pre_ci test_ci_marker; do
+          for t in test_prepush_ci test_check_bool_atoms test_check_where_return test_ci_compile_summary test_tool_modes test_dterm test_pre_ci test_ci_marker test_verdict_read; do
             echo "== tools/$t.sh"
             tools/$t.sh || { echo "::error::tools/$t.sh failed"; rc=1; }
           done
