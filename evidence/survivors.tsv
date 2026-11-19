@@ -1,0 +1,72 @@
+# every survivor ever seen, written by tools/verdict_read.py --ledger (status: open / row committed / candidate equivalent / deferred kill / fresh proof / accepted equivalent); seed rows carry first_seen seed
+battery	mutant	owner	status	d_entry	first_seen	last_seen
+BISIM	BISIM-13	PROBE-2	fresh proof		seed	seed
+BISIM	BISIM-24	probe2	accepted equivalent	D-0919	seed	seed
+CT1B	CT1b-A11	TAB1	accepted equivalent	D-0906	seed	seed
+CT1B	CT1b-A12	TAB1	accepted equivalent	D-0906	seed	seed
+CT1C	CT1c-A7	R2	accepted equivalent	D-0919	seed	seed
+CT1C	CT1c-A8	MEMCAP	open		seed	seed
+CT1C	CT1c-B1	MEMCAP	open		seed	seed
+CT1C	CT1c-B2	MEMCAP	open		seed	seed
+ENG1D4	ENG1-D4	TAB1	accepted equivalent	D-0919	seed	seed
+EV1T	EV1T-T9-save	S3x	fresh proof		seed	seed
+LOCALE	LC-B1	PROBE-4	open		seed	seed
+LOCALE	LC-B3	PROBE-4	open		seed	seed
+LOCALE	LC-C2	R2	deferred kill	D-0875	seed	seed
+LOCALE	LC-I2	LOCALE	deferred kill	D-0919	seed	seed
+LOCALE	LC-O4	probe3	accepted equivalent	D-0919	seed	seed
+LOCALE	LC-O9	probe3	accepted equivalent	D-0919	seed	seed
+LOCALE	LC-U2	probe3b	fresh proof		seed	seed
+P2B	P2B-I16	probe2	accepted equivalent	D-0919	seed	seed
+P2B	P2B-I17	probe2	accepted equivalent	D-0919	seed	seed
+P2B	P2B-I2	R2	accepted equivalent	D-0903	seed	seed
+P3	P3-17	P3-ROWS	open		seed	seed
+P3	P3-24	P3-ROWS	open		seed	seed
+P3	P3-25	P3-ROWS	open		seed	seed
+P3	P3-35	P3-ROWS	open		seed	seed
+P3	P3-36	P3-ROWS	open		seed	seed
+P3	P3-41	P3-ROWS	open		seed	seed
+P3	P3-5	R2	accepted equivalent	D-0919	seed	seed
+Q10B	Q10B-B4	probe3	candidate equivalent		seed	seed
+Q10C	Q10-33	R2	fresh proof		seed	seed
+Q10C	Q10-34	R2	candidate equivalent		seed	seed
+Q10C	Q10-42	R2-PORT	fresh proof	D-0903	seed	seed
+TAI1	TAI1-L1	TAB1	accepted equivalent	D-0906	seed	seed
+TAI1	TAI1-L4	TAB1	accepted equivalent	D-0906	seed	seed
+TB3	TB3-C8	TAB1	accepted equivalent	D-0906	seed	seed
+TB3	TB3-D3	TAB1	accepted equivalent	D-0906	seed	seed
+TB3	TB3-U2	S3t	row committed		seed	seed
+TB3	TB3-W1	S3y	fresh proof	D-0910	seed	seed
+TB4	TB4-S4	S3z-2	fresh proof		seed	seed
+TB5	TB5-A9	TH1	accepted equivalent	D-0906	seed	seed
+TB5	TB5-C7	TAB1	accepted equivalent	D-0906	seed	seed
+TB5	TB5-D2	TAB1	accepted equivalent	D-0906	seed	seed
+TB5	TB5-E4	TAB1	accepted equivalent	D-0906	seed	seed
+TB5	TB5-E6	TAB1	accepted equivalent	D-0906	seed	seed
+TB5	TB5-E9	TAB1	accepted equivalent	D-0911	seed	seed
+TB5	TB5-P1	TAB1-WRAP	deferred kill		seed	seed
+TB5	TB5-P3	TAB1-WRAP	deferred kill		seed	seed
+TB5	TB5-P7	TAB1-WRAP	deferred kill		seed	seed
+TB5	TB5-U1	LB6b	fresh proof	D-0906	seed	seed
+TB5	TB5-U5	LB6b	fresh proof	D-0906	seed	seed
+TB6	TB6-R6	TAB1	accepted equivalent	D-0910	seed	seed
+TB6	TB6-R7	TAB1	accepted equivalent	D-0910	seed	seed
+TB6	TB6-S19	TAB1	accepted equivalent	D-0911	seed	seed
+TB6	TB6-V5	S3r-2	fresh proof		seed	seed
+TB7	TB7-answer-live-erased	S3m-S3n	fresh proof	D-0906	seed	seed
+TB7	TB7-empty-queue-bound	TAB1	accepted equivalent	D-0906	seed	seed
+TB7	TB7-hash-constant	TAB1	accepted equivalent	D-0906	seed	seed
+TB7	TB7-index-release-guard	TAB1	accepted equivalent	D-0906	seed	seed
+TB7	TB7-invalid-deps-count	S3m-S3n	fresh proof	D-0906	seed	seed
+TB7	TB7-invalid-deps-queued	S3m-S3n	fresh proof	D-0906	seed	seed
+TB9	TB9-abolish-serial	TAB1	accepted equivalent	D-0906	seed	seed
+TB9	TB9-hasmod-break	TAB1	accepted equivalent	D-0906	seed	seed
+TB9	TB9-site-done	S3q-3	fresh proof		seed	seed
+TB9	TB9-site-newdep	S3q-3	fresh proof		seed	seed
+TB9	TB9-site-prepare-new	S3q-3	fresh proof		seed	seed
+TB9	TB9-site-prepare-old	S3q-3	fresh proof		seed	seed
+W3BAV10	W3B-M3	S3v	fresh proof		seed	seed
+W3BAV10	W3B-M4	S3v	fresh proof		seed	seed
+W5LB	W5LB-25	S3w	fresh proof		seed	seed
+W5LB	W5LB-30	S3w	fresh proof		seed	seed
+ZIP1	ZIP1-C6	probe3	accepted equivalent	D-0919	seed	seed

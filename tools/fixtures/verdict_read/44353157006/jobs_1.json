@@ -1,0 +1,517 @@
+{
+  "total_count": 4,
+  "jobs": [
+    {
+      "id": 134974021196,
+      "run_id": 44353157006,
+      "workflow_name": "Mutation battery",
+      "head_branch": "mutants/ENG1D4",
+      "run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU5NqC88AAAAfbRQeTA",
+      "head_sha": "24ee66ab14cfc1e243b5a55ccc964dde96035222",
+      "url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/jobs/134974021196",
+      "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006/job/134974021196",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-18T16:57:21Z",
+      "started_at": "2026-11-18T16:57:24Z",
+      "completed_at": "2026-11-18T16:57:36Z",
+      "name": "Plan",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-18T16:57:24Z",
+          "completed_at": "2026-11-18T16:57:27Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-18T16:57:27Z",
+          "completed_at": "2026-11-18T16:57:33Z"
+        },
+        {
+          "name": "Run python3 tools/mutate_ci.py plan \"$MUTANTS\" $IDS >> \"$GITHUB_OUTPUT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-18T16:57:33Z",
+          "completed_at": "2026-11-18T16:57:33Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-18T16:57:33Z",
+          "completed_at": "2026-11-18T16:57:33Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-18T16:57:33Z",
+          "completed_at": "2026-11-18T16:57:33Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/check-runs/134974021196",
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_id": 1000043426,
+      "runner_name": "GitHub Actions 1000043426",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 134974186770,
+      "run_id": 44353157006,
+      "workflow_name": "Mutation battery",
+      "head_branch": "mutants/ENG1D4",
+      "run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU5NqC88AAAAfbRalEg",
+      "head_sha": "24ee66ab14cfc1e243b5a55ccc964dde96035222",
+      "url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/jobs/134974186770",
+      "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006/job/134974186770",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-18T16:57:36Z",
+      "started_at": "2026-11-18T16:57:38Z",
+      "completed_at": "2026-11-18T17:37:51Z",
+      "name": "ENG1-D4",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-18T16:57:39Z",
+          "completed_at": "2026-11-18T16:57:40Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-18T16:57:40Z",
+          "completed_at": "2026-11-18T16:57:42Z"
+        },
+        {
+          "name": "Run ./.github/actions/oracle",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-18T16:57:42Z",
+          "completed_at": "2026-11-18T16:57:43Z"
+        },
+        {
+          "name": "Run julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-18T16:57:43Z",
+          "completed_at": "2026-11-18T16:57:50Z"
+        },
+        {
+          "name": "Run julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-18T16:57:50Z",
+          "completed_at": "2026-11-18T16:57:53Z"
+        },
+        {
+          "name": "No restored compiled LogicKernel (the shared cache is dependencies only)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-18T16:57:53Z",
+          "completed_at": "2026-11-18T16:57:53Z"
+        },
+        {
+          "name": "The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-11-18T16:57:53Z",
+          "completed_at": "2026-11-18T16:57:53Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-18T16:57:53Z",
+          "completed_at": "2026-11-18T16:57:53Z"
+        },
+        {
+          "name": "Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-18T16:57:53Z",
+          "completed_at": "2026-11-18T16:57:53Z"
+        },
+        {
+          "name": "The home tree (tools/build_home.jl)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-18T16:57:53Z",
+          "completed_at": "2026-11-18T16:57:54Z"
+        },
+        {
+          "name": "Run julia --project=. -e 'using Pkg; Pkg.instantiate()'",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-18T16:57:54Z",
+          "completed_at": "2026-11-18T16:59:16Z"
+        },
+        {
+          "name": "Apply the mutant and run the targets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-18T16:59:16Z",
+          "completed_at": "2026-11-18T17:37:45Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-18T17:37:45Z",
+          "completed_at": "2026-11-18T17:37:46Z"
+        },
+        {
+          "name": "No compiled LogicKernel in the shared cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-18T17:37:46Z",
+          "completed_at": "2026-11-18T17:37:46Z"
+        },
+        {
+          "name": "Post Run julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-11-18T17:37:46Z",
+          "completed_at": "2026-11-18T17:37:49Z"
+        },
+        {
+          "name": "Post Run ./.github/actions/oracle",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-11-18T17:37:49Z",
+          "completed_at": "2026-11-18T17:37:49Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-11-18T17:37:49Z",
+          "completed_at": "2026-11-18T17:37:49Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29,
+          "started_at": "2026-11-18T17:37:49Z",
+          "completed_at": "2026-11-18T17:37:49Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/check-runs/134974186770",
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_id": 1000043427,
+      "runner_name": "GitHub Actions 1000043427",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 134974186777,
+      "run_id": 44353157006,
+      "workflow_name": "Mutation battery",
+      "head_branch": "mutants/ENG1D4",
+      "run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU5NqC88AAAAfbRalGQ",
+      "head_sha": "24ee66ab14cfc1e243b5a55ccc964dde96035222",
+      "url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/jobs/134974186777",
+      "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006/job/134974186777",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-18T16:57:36Z",
+      "started_at": "2026-11-18T16:57:39Z",
+      "completed_at": "2026-11-18T17:18:55Z",
+      "name": "Baseline (unmutated)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-18T16:57:40Z",
+          "completed_at": "2026-11-18T16:57:43Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-18T16:57:43Z",
+          "completed_at": "2026-11-18T16:57:50Z"
+        },
+        {
+          "name": "Run ./.github/actions/oracle",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-18T16:57:50Z",
+          "completed_at": "2026-11-18T16:57:54Z"
+        },
+        {
+          "name": "Run julia-actions/setup-julia@da908477b5db94c10ffce8cfea9f2b3b9d5db687",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-18T16:57:54Z",
+          "completed_at": "2026-11-18T16:58:02Z"
+        },
+        {
+          "name": "Run julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-18T16:58:02Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "No restored compiled LogicKernel (the shared cache is dependencies only)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "The pinned swipl-devel commit (a whole-suite target, test/test_vendored_*.jl, or test_cont_boot_swipl.jl)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "The home tree (tools/build_home.jl)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:58:07Z"
+        },
+        {
+          "name": "Run julia --project=. -e 'using Pkg; Pkg.instantiate()'",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-18T16:58:07Z",
+          "completed_at": "2026-11-18T16:59:41Z"
+        },
+        {
+          "name": "Run the targets",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-18T16:59:41Z",
+          "completed_at": "2026-11-18T17:18:43Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-18T17:18:43Z",
+          "completed_at": "2026-11-18T17:18:45Z"
+        },
+        {
+          "name": "No compiled LogicKernel in the shared cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-18T17:18:45Z",
+          "completed_at": "2026-11-18T17:18:45Z"
+        },
+        {
+          "name": "Post Run julia-actions/cache@9353db09a0f2bbbdec6f41791918c75d37391b36",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-11-18T17:18:45Z",
+          "completed_at": "2026-11-18T17:18:52Z"
+        },
+        {
+          "name": "Post Run ./.github/actions/oracle",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-11-18T17:18:52Z",
+          "completed_at": "2026-11-18T17:18:52Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-11-18T17:18:52Z",
+          "completed_at": "2026-11-18T17:18:52Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29,
+          "started_at": "2026-11-18T17:18:52Z",
+          "completed_at": "2026-11-18T17:18:52Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/check-runs/134974186777",
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_id": 1000043428,
+      "runner_name": "GitHub Actions 1000043428",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 135001279479,
+      "run_id": 44353157006,
+      "workflow_name": "Mutation battery",
+      "head_branch": "mutants/ENG1D4",
+      "run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU5NqC88AAAAfbrQL9w",
+      "head_sha": "24ee66ab14cfc1e243b5a55ccc964dde96035222",
+      "url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/actions/jobs/135001279479",
+      "html_url": "https://github.com/CognitiveSubstratesAI/LogicKernel/actions/runs/44353157006/job/135001279479",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-18T17:37:52Z",
+      "started_at": "2026-11-18T17:41:03Z",
+      "completed_at": "2026-11-18T17:41:14Z",
+      "name": "Verdict table",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-18T17:41:04Z",
+          "completed_at": "2026-11-18T17:41:06Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-18T17:41:06Z",
+          "completed_at": "2026-11-18T17:41:09Z"
+        },
+        {
+          "name": "Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-18T17:41:09Z",
+          "completed_at": "2026-11-18T17:41:10Z"
+        },
+        {
+          "name": "Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-11-18T17:41:10Z",
+          "completed_at": "2026-11-18T17:41:10Z"
+        },
+        {
+          "name": "Collect",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-18T17:41:10Z",
+          "completed_at": "2026-11-18T17:41:10Z"
+        },
+        {
+          "name": "The table as annotations",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-18T17:41:10Z",
+          "completed_at": "2026-11-18T17:41:10Z"
+        },
+        {
+          "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-18T17:41:10Z",
+          "completed_at": "2026-11-18T17:41:11Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-18T17:41:11Z",
+          "completed_at": "2026-11-18T17:41:12Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-18T17:41:12Z",
+          "completed_at": "2026-11-18T17:41:12Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/CognitiveSubstratesAI/LogicKernel/check-runs/135001279479",
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_id": 1000043774,
+      "runner_name": "GitHub Actions 1000043774",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

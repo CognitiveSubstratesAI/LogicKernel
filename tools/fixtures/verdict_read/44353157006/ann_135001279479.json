@@ -1,0 +1,14 @@
+[
+  {
+    "path": ".github",
+    "blob_href": "https://github.com/CognitiveSubstratesAI/LogicKernel/blob/24ee66ab14cfc1e243b5a55ccc964dde96035222/.github",
+    "start_line": 13,
+    "start_column": null,
+    "end_line": 13,
+    "end_column": null,
+    "annotation_level": "notice",
+    "title": "verdicts 1/1",
+    "message": "## Mutation battery — tools/mutants/ENG1D4.py\nBaseline (unmutated targets): **green**, 1143 s\n| mutant | verdict | time | what it breaks | first failing test line |\n|---|---|---|---|---|\n| ENG1-D4 | EQUIVALENT (declared) | 1113 s | the flags are 0 for the cleanup variant table too (EQUIVALENT) — declared equivalent, pending audit: src/pl-tabling.jl `reset_answer_table_idg` reads only `flags & RAT_BULK` (its body, `if (flags & RAT_BULK) != 0`); RAT_CLEANUP is read by `reset_answer_table_worklist` and `reset_answer_table` (the worklist branch, `destroy_depending_worklists`), neither of which runs in delete_dynamic_table: the table's worklist is the sentinel `WL_DYNAMIC`, an `Int`. Upstream's `release_variant_table_node` passes the same flag (pl-tabling.c:2688-2689), so the line keeps it for fidelity | [reached 1118 times] |\n**1 of 1 decided; blocking: none**",
+    "raw_details": ""
+  }
+]

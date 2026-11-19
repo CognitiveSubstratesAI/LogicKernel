@@ -5,6 +5,9 @@
 #   ci_slug                   the OWNER/NAME of `origin`
 #   ci_jobs_page RUN PAGE     one page (100 jobs) of  GET /repos/<slug>/actions/runs/RUN/jobs  as JSON
 #   ci_runs_for_sha SHA       the workflow runs of one commit: GET /repos/<slug>/actions/runs?head_sha=SHA (tools/ci_marker.sh)
+#   ci_annotations JOB [RUN]  the check-run annotations of one job (GET /repos/<slug>/check-runs/JOB/annotations, a JSON list):
+#                             a public repository serves them anonymously; the `Verdict table` job of a mutation battery
+#                             carries its table there (tools/verdict_read.py)
 #   ci_job_log JOB [RUN]      the log of one job (GET /repos/<slug>/actions/jobs/JOB/logs), ANSI colour
 #                             codes and the byte-order mark removed; nothing and status 1 if unreadable
 #
@@ -17,7 +20,8 @@
 # `gh run view` is not used: it fails on a large run (HTTP 403 on the numeric paths through the proxy).
 # Seam for tools/test_ci_tools.sh: LOGICKERNEL_CI_FIXTURE_DIR=<dir> reads <dir>/<run>/jobs_<page>.json and
 # <dir>/<run>/<job>.log (saved real answers, tools/fixtures/ci/) instead of the network.
-# <dir>/runs_<sha>.json answers ci_runs_for_sha (an empty list when the file is not there).
+# <dir>/runs_<sha>.json answers ci_runs_for_sha (an empty list when the file is not there); <dir>/<run>/ann_<job>.json
+# answers ci_annotations (an empty list when the file is not there).
 
 ci_slug() {
     git -C "${ROOT:-.}" remote get-url origin 2> /dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##'
@@ -79,6 +83,21 @@ ci_runs_for_sha() {   # ci_runs_for_sha SHA (the full 40 hex)
     url="https://api.github.com/repos/$(ci_slug)/actions/runs?head_sha=$sha&per_page=100"
     out="$(curl -q --noproxy '*' -s -m 25 "$url")"
     if ! printf '%s' "$out" | grep -q '"workflow_runs"'; then
+        alt="$(_ci_get_authed "$url" -m 25)" && out="$alt"
+    fi
+    printf '%s\n' "$out"
+}
+
+ci_annotations() {   # ci_annotations JOB [RUN]
+    local job="$1" run="${2:-}" out alt url f
+    if [ -n "${LOGICKERNEL_CI_FIXTURE_DIR:-}" ]; then
+        f="$LOGICKERNEL_CI_FIXTURE_DIR/$run/ann_$job.json"
+        if [ -f "$f" ]; then cat "$f"; else printf '[]\n'; fi
+        return 0
+    fi
+    url="https://api.github.com/repos/$(ci_slug)/check-runs/$job/annotations?per_page=100"
+    out="$(curl -q --noproxy '*' -s -m 25 "$url")"
+    if ! printf '%s' "$out" | grep -q '^\['; then
         alt="$(_ci_get_authed "$url" -m 25)" && out="$alt"
     fi
     printf '%s\n' "$out"

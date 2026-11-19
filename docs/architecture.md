@@ -240,7 +240,11 @@ file) — so evidence is a process that started clean. The daemon follows Revise
     stored token is read at call time, handed to curl on stdin, never printed, stored or put in
     argv). `tools/test_ci_tools.sh` (CI Tooling job, light shard) runs them on saved real answers in
     `tools/fixtures/ci/`, with no network; every guard in it was hand-proved to fail with its check
-    removed.
+    removed. `python3 -I tools/verdict_read.py <SHA> [--set evidence/gate_set.txt] [--json]` reads ALL
+    the runs of one commit into one table (every battery's counts, blockers first: survivors with no
+    owner in `evidence/survivors.tsv`, declared equivalents with no D-entry in `evidence/equivalents.tsv`,
+    jobs that ended without a verdict) plus the landing checks; `--ledger` merges the survivors into the
+    ledger, and `--json` carries `landable`; `tools/test_verdict_read.sh` tests it on saved answers.
     **A secret scan runs before every gate push and in CI** (SECRETS1, audit D-0340): `tools/prepush.sh`
     step 7 and the CI job `Secret scan` run `tools/secret_scan.sh <range>`, the pinned gitleaks
     (`tools/gitleaks.pin`: version, archive and binary SHA-256, from the release's published checksums

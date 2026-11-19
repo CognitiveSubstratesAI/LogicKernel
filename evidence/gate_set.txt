@@ -1,0 +1,28 @@
+# set: TAB1
+# NAME [last clean read SHA]: read by tools/verdict_read.py --set
+TAB1MIN 3eaae177
+TB1
+TB3 2bfa0f29
+TB4
+TB4TB5G 3eaae177
+TB5 aa3b70f0
+TB6 aa3b70f0
+TB6R 1104ff8d
+TB7 1104ff8d
+TB8
+TB9 1104ff8d
+TBP 3eaae177
+TBW2 1104ff8d
+W5LB aa3b70f0
+TRIECH 1104ff8d
+TRIE1 3eaae177
+TRIE2
+TRIE4
+CONT1
+ENG1 1104ff8d # D4 by ENG1D4@24ee66ab
+EV1T 11ad78b5
+EV1d
+F1a 3eaae177
+LB2c
+LB6A
+W3BAV10 aa3b70f0

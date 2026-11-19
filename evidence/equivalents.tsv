@@ -1,0 +1,34 @@
+# declared equivalents accepted by a D-entry; read by tools/verdict_read.py (mutant, D-entry, case-analysis source path)
+mutant	d_entry	case_analysis
+P2B-I2	D-0903	src/pl-prims.jl:4098
+TB3-C8	D-0906	src/pl-tabling.jl:1090-1094
+TB3-D3	D-0906	src/pl-trie.jl:2894
+TB5-D2	D-0906	src/pl-tabling.jl:9483-9508
+TB5-E4	D-0906	src/pl-tabling.jl:9566-9586
+TB5-E6	D-0906	src/pl-tabling.jl:9566-9569
+TB5-C7	D-0906	src/pl-tabling.jl:9696-9699
+TB5-A9	D-0906	src/pl-tabling.jl (abolish_table, dominated by get_trie_from_node)
+TB7-index-release-guard	D-0906	src/pl-tabling.jl:8420
+TB7-empty-queue-bound	D-0906	src/pl-tabling.jl:8501-8505
+TB7-hash-constant	D-0906	src/pl-tabling.jl (find_dep :1894, mono_index_find :1970)
+TB9-hasmod-break	D-0906	src/pl-tabling.jl:7623-7625
+TB9-abolish-serial	D-0906	src/pl-tabling.jl:7803
+TAI1-L1	D-0906	src/os/pl-libtai.jl:66-73
+TAI1-L4	D-0906	src/os/pl-libtai.jl:81-89
+CT1b-A11	D-0906	src/os/pl-ctype-pred.jl:91
+CT1b-A12	D-0906	src/os/pl-ctype-pred.jl:95
+TB6-R6	D-0910	src/pl-idgset.jl (idg_registry_add)
+TB6-R7	D-0910	src/pl-idgset.jl:485-487
+TB5-E9	D-0911	src/pl-trie.jl:293
+TB6-S19	D-0911	src/pl-idgset.jl:105-139
+ENG1-D4	D-0919	src/pl-tabling.jl:3724-3746
+BISIM-24	D-0919	src/pl-bisim.jl:880-883
+P2B-I16	D-0919	src/pl-prims.jl:4109
+P2B-I17	D-0919	src/pl-prims.jl:4109
+ZIP1-C6	D-0919	src/pl-zip.jl:238
+LC-O9	D-0919	src/os/pl-locale.jl
+LC-O4	D-0919	src/os/pl-locale.jl
+CT1c-A7	D-0919	src/os/pl-ctype-pred.jl:568
+P3-5	D-0919	src/pl-prims.jl:4841
+CONT1-R3	D-0920	src/pl-wam.jl:3345-3351
+TB4-D6	D-0705	src/pl-tabling.jl
