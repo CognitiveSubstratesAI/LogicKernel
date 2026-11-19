@@ -43,6 +43,10 @@ TS_LIVE = [
 TARGETS = TS_C + ["test/core_lang/test_module_swipl.jl"]          # the baseline's (mutate_ci.py plan reads TARGETS)
 MUTANTS = [
     # ── import_module/2 (pl-modul.c:876-918) ──
+    # MOD6-I1 declares expect="hang" with NO `site` (MEMCAP-2): under tools/mutate_ci.py that reads `TIMEOUT (hang declared, site not shown)`, blocking.
+    # No site is declared on purpose. The loop is a retry loop through the engine (pl_import_module2_va returns PL_retry(i + 1) on every REDO and the
+    # caller backtracks into it), so a SIGQUIT sample lands in the engine, in the caller's findall or in the collector's growth, not in one frame
+    # of this file; no SIGQUIT stack of this mutant is recorded. A site needs one measured stack (a lane run of this mutant under the cut).
     dict(id="MOD6-I1 import_module answers with every super at once: `n == i` always true (HANG: every REDO restarts at the first super and retries forever)",
          file=M, targets=TS,
          old="        if n == i\n",

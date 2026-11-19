@@ -2610,14 +2610,14 @@ MUTANTS = [
     dict(id="K5 declared equivalent, but caught", file="f.txt", old="alpha",
          new="ALPHA", equivalent="a wrong claim"),
     dict(id="K6 hangs", file="f.txt", old="alpha", new="HANG"),
-    dict(id="K7 hangs, as expected", file="f.txt", old="alpha", new="HANG",
-         expect="hang"),
+    dict(id="K7 hangs, as expected, site shown", file="f.txt", old="alpha", new="HANG",
+         expect="hang", site="hang_site_here"),
     dict(id="K8 its target breaks otherwise", file="f.txt", old="alpha", new="ODD"),
 ]
 """
             )
             # exit 1 when the file holds ALPHA; hang on HANG; exit 7 on ODD; else exit 0
-            target = "sh:grep -q ALPHA f.txt && exit 1; grep -q HANG f.txt && sleep 30; grep -q ODD f.txt && exit 7; exit 0"
+            target = "sh:grep -q ALPHA f.txt && exit 1; grep -q HANG f.txt && { echo hang_site_here; sleep 30; }; grep -q ODD f.txt && exit 7; exit 0"
             sh(args...) = run(
                 pipeline(
                     ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
@@ -2668,7 +2668,7 @@ MUTANTS = [
             want = Dict(
                 "K1" => "caught", "K2" => "SURVIVED", "K3" => "BADMATCH",
                 "K4" => "EQUIVALENT (declared)", "K5" => "EQUIVALENT REFUTED",
-                "K6" => "TIMEOUT",
+                "K6" => "TIMEOUT (time)",
                 "K7" => "caught (hang)", "K8" => "INVALID"
             )
             for k in sort!(collect(keys(want)))
@@ -2750,6 +2750,125 @@ MUTANTS = [
             ann = out("annotate")
             @test occursin("::notice title=verdicts 1/2::a 100%25\n", ann)
             @test occursin("::notice title=verdicts 2/2::" * "x"^4000 * "\n", ann)
+        end
+    end
+    # THE MEMORY CAP AND THE CUT (audit D-0852 (4), D-0916 (1)): a target that grows without bound
+    # is killed by the harness at MUTATE_CI_MEM_MB, a target past the limit by the clock; both are a
+    # blocking `TIMEOUT (memory)` / `TIMEOUT (time)` WITH a written record; a hang is a kill only when
+    # the mutant declares expect="hang" AND a `site` that the evidence tail shows. Planted targets
+    # (python scripts) and a planted list; the cap is 300 MB here.
+    @testset "tools/mutate_ci.py: a memory or time cut is a TIMEOUT, a hang is a kill only with its site shown" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "mem.py"),
+                """
+import time
+x = []
+while True:
+    x.append(bytearray(b"1") * (20 << 20))
+    time.sleep(0.05)
+"""
+            )
+            write(
+                joinpath(d, "spin_site.py"),
+                """
+print("running scan_loop_deep_site_fn at line 7", flush=True)
+while True:
+    pass
+"""
+            )
+            write(
+                joinpath(d, "spin_quit.py"),
+                """
+import signal, sys
+def dump(sig, frame):
+    sys.stderr.write("stack dump: sigquit_only_fn at x.jl:3")
+    sys.stderr.flush()
+signal.signal(signal.SIGQUIT, dump)
+print("starting", flush=True)
+while True:
+    pass
+"""
+            )
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="M1 memory growth", file="f.txt", old="alpha", new="ALPHA"),
+    dict(id="M2 sleeps past the limit", file="f.txt", old="alpha", new="ALPHA"),
+    dict(id="M3 hang, site in the output", file="f.txt", old="alpha", new="ALPHA",
+         expect="hang", site="scan_loop_deep_site_fn"),
+    dict(id="M4 hang declared, no site", file="f.txt", old="alpha", new="ALPHA", expect="hang"),
+    dict(id="M5 hang declared, site not in the evidence", file="f.txt", old="alpha", new="ALPHA",
+         expect="hang", site="other_fn"),
+    dict(id="M6 hang, site only in the SIGQUIT dump", file="f.txt", old="alpha", new="ALPHA",
+         expect="hang", site="sigquit_only_fn"),
+    dict(id="M7 memory growth, hang declared, no site", file="f.txt", old="alpha", new="ALPHA",
+         expect="hang"),
+    dict(id="M8 memory growth, hang declared, site named but never shown", file="f.txt", old="alpha",
+         new="ALPHA", expect="hang", site="scan_loop_deep_site_fn"),
+]
+"""
+            )
+            py(f) = "sh:python3 " * joinpath(d, f)
+            record(k) = read(joinpath(d, "mutation-out", "$k.json"), String)
+            # run mutant K on TARGET with a limit of LIM seconds; the exit code of the harness (0: the
+            # verdict is data, the harness survived to write it)
+            function run_one(k, lim, target)
+                write(joinpath(d, "f.txt"), "alpha\n")            # each job: a fresh checkout
+                c = addenv(
+                    Cmd(`python3 $tool one m.py $k $lim $target`; dir=d),
+                    "MUTATE_CI_MEM_MB" => "300", "MUTATE_CI_POLL_S" => "0.2",
+                    "MUTATE_CI_SAMPLE_COMM" => "python"
+                )
+                return run(pipeline(ignorestatus(c); stdout=devnull, stderr=devnull)).exitcode
+            end
+            want = [
+                ("M1", 20, py("mem.py"), "TIMEOUT (memory)"),
+                ("M2", 2, "sh:sleep 30", "TIMEOUT (time)"),
+                ("M3", 2, py("spin_site.py"), "caught (hang)"),
+                ("M4", 2, py("spin_site.py"), "TIMEOUT (hang declared, site not shown)"),
+                ("M5", 2, py("spin_site.py"), "TIMEOUT (hang declared, site not shown)"),
+                ("M6", 2, py("spin_quit.py"), "caught (hang)"),
+                ("M7", 20, py("mem.py"), "TIMEOUT (hang declared, site not shown)"),
+                ("M8", 20, py("mem.py"), "TIMEOUT (hang declared, site not shown)")
+            ]
+            for (k, lim, target, verdict) in want
+                @test run_one(k, lim, target) == 0                  # the harness survives and writes
+                @test isfile(joinpath(d, "mutation-out", "$k.json"))
+                @test isfile(joinpath(d, "mutation-out", "$k.log"))
+                @test occursin("\"verdict\": \"$verdict\"", record(k))
+            end
+            # the kind and the reason are in the record: the memory cut is not a time cut, and back
+            @test occursin("\"kind\": \"memory\"", record("M1")) &&
+                occursin("cut (memory): rss ", record("M1"))
+            @test occursin(
+                "=== CUT (memory)", read(joinpath(d, "mutation-out", "M1.log"), String)
+            )
+            @test occursin("\"kind\": \"time\"", record("M2")) &&
+                occursin("cut (time): limit 2 s", record("M2"))
+            # the evidence: the output tail at the cut, the stack of the SIGQUIT sample included
+            @test occursin("scan_loop_deep_site_fn", record("M3"))
+            @test occursin("sigquit_only_fn", record("M6"))
+            @test occursin("no `site` declared", record("M4"))
+            @test occursin("not in the last", record("M5"))
+            # all of them but the two kills block (the baseline is green: without a baseline record `collect`
+            # says NOT GREEN and EVERY mutant blocks, the two kills included)
+            @test run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool baseline 20 sh:true`; dir=d));
+                    stdout=devnull, stderr=devnull
+                )
+            ).exitcode == 0
+            table = read(ignorestatus(Cmd(`python3 $tool collect m.py 8`; dir=d)), String)
+            @test occursin("blocking: M1, M2, M4, M5, M7, M8", table)
+            @test occursin("| M1 | TIMEOUT (memory) |", table) &&
+                occursin("| M2 | TIMEOUT (time) |", table)
+            # no planted process is left running (the group was killed, children included)
+            memscript = joinpath(d, "mem.py")
+            @test !success(pipeline(`pgrep -f $memscript`; stdout=devnull))
         end
     end
     # the local driver's verdict table and its judge on REAL julia output, both ways
