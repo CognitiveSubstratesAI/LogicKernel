@@ -355,6 +355,7 @@ end
 # `NotPortedError`: the kernel does not keep `m->code_size` up to date (bench H1; D-0149 MQ3), so the
 # limit could be neither checked nor enforced — it is never stored silently. `program_space(0)` (no
 # limit) is stored, as upstream (`code_limit` 0).
+# Refused by design, no step ports it (docs/r2_owners.tsv); the pin's tests need no `program_space`.
 """
     set_module(gd, ld, m, prop) -> Bool
 

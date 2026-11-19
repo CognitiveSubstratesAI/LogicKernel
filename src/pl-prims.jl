@@ -3988,6 +3988,142 @@ function pl_skip_list3_va(
     end
 end
 
+# ── '$seek_list'/4 and sub_atom_icasechk/3 (pl-prims.c), since P2b (R2): the last two predicates of
+# the P2 owner rows. `'$seek_list'` is what boot/init.pl's length/2 and the list library call to skip
+# a counted prefix; `sub_atom_icasechk` is the case-insensitive containment test of the library.
+
+# PORT: pl-prims.c seek_list as pl_seek_list4_va
+# (PRED_IMPL("$seek_list", 4, seek_list, 0))
+# DIVERGES: on a LOCATION (`valTermRef(A2)` is `-(A2 + 1)`, a list cell's tail is `valPtr(w) + 2`, as
+# `skip_list_cells`); no signals: upstream's `PL_handle_signals()` at every 1024th cell (it can only
+# fail on a cancelled run) has no twin (the kernel has no signal queue).
+"""
+`'\$seek_list'(+Count, +List, -RestCount, -Rest)` (pl-prims.c): `Rest` is the tail of `List` after
+`Count` cells, or after the cells it has when it has fewer; `RestCount` is the count left over.
+"""
+function pl_seek_list4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+
+    sz = PL_get_int64_ex(ld, A1)                            # PL_get_int64_ex(A1, &size)
+    sz === nothing && return FFALSE
+    tail = -(A2 + 1)                                        # tail = valTermRef(A2)
+    while sz > 0
+        k, w, p = _deref_loc(ld, tail)                      # deRef(tail)
+        if _is_list_word(ld, k, w)                          # isList(*tail)
+            tail = valPtr(w) + 2                            # tail = TailList(tail)
+            sz -= 1
+        else
+            tail = p > 0 ? p : tail                         # the dereferenced location
+            break
+        end
+    end
+
+    return if (unify_ptrs_cells(ld, -(A4 + 1), tail) && PL_unify_int64(ld, A3, sz))
+        FTRUE
+    else
+        FFALSE
+    end
+end
+
+# ORIGINAL (P2b): upstream's `char` of the narrow path is signed on the platforms swipl is built for: a
+# byte above 127 reads as its value less 256, as `*q != toLower(*s)` of pl-prims.c compares them.
+"The byte `b` as a signed C `char` (the narrow path of pl-prims.c `sub_atom_icasechk`)."
+_c_char(b::Int)::Int = b > 127 ? b - 256 : b
+
+# ORIGINAL (P2b): `PL_tolower` (src/pl-read.c, the Unicode simple case mapping of src/pl-umap.c).
+# DIVERGES: Julia's `lowercase(::Char)` (its simple Unicode case mapping) stands in for the table, as
+# src/os/pl-os.jl's `utf8_path_lwr` does.
+"The lowercase of the code point `c` (src/pl-read.c `PL_tolower`)."
+_pl_tolower(c::Int)::Int = c <= 0x10FFFF ? Int(lowercase(Char(c))) : c
+
+# PORT: pl-prims.c sub_atom_icasechk as _icasechk_search
+# DIVERGES: `nt` and `ht` carry no `::PL_chars_t` annotation: src/os/pl-text.jl, which defines the type, is
+# included after this file; the body asserts it. The two loops of the predicate, over `char *` and over `pl_wchar_t *`, are one function over the
+# canonical texts `nt` (needle) and `ht` (haystack) and the 0-based unit index; `narrow` selects the
+# loop of the `char *` text, where a needle character matches a haystack character equal to it or whose
+# `toLower` (`c + 'a' - 'A'`, pl-ctype.h, for EVERY character: swipl's own, as `sub_atom_icasechk(' ',
+# S, '@')` shows) equals it. Returns the offset of the match, -1 when none.
+"The offset where `nt` occurs in `ht` from `offset` on (only at `offset` with `has_offset`), or -1 (pl-prims.c)."
+function _icasechk_search(nt, ht, offset::Int, has_offset::Bool, narrow::Bool)::Int
+    nt = nt::PL_chars_t
+    ht = ht::PL_chars_t
+    l1 = nt.length
+    l2 = ht.length
+    s2 = offset                                             # s2 = haystack + offset
+    while s2 <= l2 - l1                                     # s2 <= es - l1
+        q = 0
+        s = s2
+        while q < l1 && s < l2                              # q < eq && s < es
+            qc = text_get_char(nt, q)
+            sc = text_get_char(ht, s)
+            if narrow
+                qs = _c_char(qc)
+                ss = _c_char(sc)
+                (qs != ss && qs != toLower(ss)) && break
+            else
+                (qc != sc && qc != _pl_tolower(sc)) && break
+            end
+            q += 1
+            s += 1
+        end
+        q == l1 && return s2                                # q == eq: found
+        has_offset && break
+        s2 += 1
+    end
+    return -1
+end
+
+# PORT: pl-prims.c sub_atom_icasechk as pl_sub_atom_icasechk3_va
+# (PRED_IMPL("sub_atom_icasechk", 3, sub_atom_icasechk, 0))
+# DIVERGES: the `PL_get_nchars(CVT_ALL|BUF_STACK)` pair (no exception, ISO Latin-1 only) is
+# `PL_get_text` and `PL_canonicalise_text`: the narrow loop runs when both texts are ISO Latin-1,
+# else the `PL_get_wchars(CVT_ALL|CVT_EXCEPTION)` pair raises as upstream's (the needle first).
+"""
+`sub_atom_icasechk(+Haystack, ?Start, +Needle)` (pl-prims.c): `Needle` occurs in `Haystack` at `Start`,
+ignoring the case of the haystack's letters; a variable `Start` is unified with the first such offset.
+"""
+function pl_sub_atom_icasechk3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    haystack, start, needle = PL__t0, PL__t0 + 1, PL__t0 + 2
+
+    if PL_is_variable(ld, start)
+        has_offset = false
+        offset = 0
+    else
+        o = PL_get_size_ex(ld, start)
+        o === nothing && return FFALSE
+        has_offset = true
+        offset = o
+    end
+
+    nt = PL_get_text(ld, needle, CVT_ALL)                   # PL_get_nchars(needle, …)
+    ht = nt === nothing ? nothing : PL_get_text(ld, haystack, CVT_ALL)   # PL_get_nchars(haystack, …)
+    if nt !== nothing && ht !== nothing
+        if PL_canonicalise_text(nt) == 1 && PL_canonicalise_text(ht) == 1
+            if nt.encoding === ENC_ISO_LATIN_1 && ht.encoding === ENC_ISO_LATIN_1
+                found = _icasechk_search(nt, ht, offset, has_offset, true)
+                found < 0 && return FFALSE
+                has_offset && return FTRUE
+                return PL_unify_integer(ld, start, found) ? FTRUE : FFALSE
+            end
+        end
+    end
+
+    nw = PL_get_text(ld, needle, CVT_ALL | CVT_EXCEPTION)   # PL_get_wchars(needle, …)
+    nw === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, nw) || return FFALSE
+    hw = PL_get_text(ld, haystack, CVT_ALL | CVT_EXCEPTION)
+    hw === nothing && return FFALSE
+    PL_canonicalise_text_ex(ld, hw) || return FFALSE
+    found = _icasechk_search(nw, hw, offset, has_offset, false)
+    found < 0 && return FFALSE
+    has_offset && return FTRUE                              # found:
+    return PL_unify_integer(ld, start, found) ? FTRUE : FFALSE
+end
+
 # ── statistics/2 (pl-prims.c), since Y1 ─────────────────────────────────────────────────────────
 # `statistics(+Key, -Value)`: the keys of C-Prolog and SWI-Prolog (`swi_statistics`, one number), then
 # the Quintus/SICStus ones (`qp_statistics`, a list). The counters are `LD->statistics` (the local
@@ -4623,6 +4759,374 @@ function pl_style_check2_va(
     return FFALSE
 end
 
+# ── call_with_depth_limit/3 and call_with_inference_limit/3 (pl-prims.c, P3): `$depth_limit*`, `$inference_limit*` ─────────
+# The wrappers are boot/init.pl's; the limits are `LD->depth_info` and `LD->inference_limit`, read by `depart_alerted`
+# (src/pl-wam.jl). `LD->alerted` carries `ALERT_DEPTHLIMIT` and `ALERT_INFERENCELIMIT` while a limit is set (`updateAlerted`).
+
+# PORT: pl-prims.c unify_det
+# DIVERGES: the choice chain is walked on records (`ld.choices`, `ld.frames` indexes), `environment_frame->parent` being
+# the frame of the clause that called this built-in. Returns the foreign code: `PL_retry(1)` is upstream's `ForeignRedoInt(1)`.
+"Unify `t` with `!` when the caller left no choice point (but a catch or a debug one), else with `true` and leave a retry (pl-prims.c)."
+function unify_det(ld::PL_local_data{T}, t::term_t)::foreign_t where {T}
+    chi = ld.BFR                                            # for(ch=LD->choicepoints; ch; ch = ch->parent)
+    while chi != 0
+        ch = ld.choices[chi]
+        if ch.frame == ld.environment_frame                 #   if ( ch->frame == environment_frame ) continue (I_FOPENNDET)
+            chi = ch.parent
+            continue
+        end
+        if ch.type == CHP_CATCH || ch.type == CHP_DEBUG     #   switch(ch->type) { case CHP_CATCH: case CHP_DEBUG: continue;
+            chi = ch.parent
+            continue
+        end
+        break                                               #   default: break; } break;
+    end
+
+    if chi != 0 && ld.choices[chi].frame == ld.frames[ld.environment_frame].parent
+        return PL_unify_atom(ld, t, mk_sym(T, Symbol("!"))) ? FTRUE : FFALSE    # ATOM_cut
+    else
+        if PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
+            return PL_retry(1)                              # ForeignRedoInt(1)
+        end
+        return FFALSE
+    end
+end
+
+# PORT: pl-prims.c unify_depth_LD as unify_depth
+"Unify `t` with a depth: `inf` for `DEPTH_NO_LIMIT`, else the integer (pl-prims.c)."
+function unify_depth(ld::PL_local_data{T}, t::term_t, depth::Int)::Bool where {T}
+    depth == DEPTH_NO_LIMIT && return PL_unify_atom(ld, t, mk_sym(T, :inf))
+    return PL_unify_int64(ld, t, depth)                     # PL_unify_uint64(t, depth)
+end
+
+# PORT: pl-prims.c get_depth_LD as get_depth
+# DIVERGES: returns the depth, or `nothing` with the error raised; `PL_get_size_ex` is the kernel's (an `Int`).
+"The depth `t` holds: `inf` is `DEPTH_NO_LIMIT`, else a non-negative integer; `nothing` after an error (pl-prims.c)."
+function get_depth(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :inf))
+        return DEPTH_NO_LIMIT
+    end
+    return PL_get_size_ex(ld, t)
+end
+
+# PORT: pl-prims.c pl_depth_limit as pl_depth_limit3_va
+# (PRED_IMPL("$depth_limit", 3, pl_depth_limit, 0), pl-prims.c:5676-5700 at the pin)
+# DIVERGES: the sums wrap as upstream's `size_t` ones do, on `Int`; `clevel` is `levelFrame(environment_frame) - 1`.
+"""
+    '\$depth_limit'(+Limit, -OldLimit, -DepthReached)
+
+Install a depth limit `Limit` levels below the caller and unify the old limit and the depth reached with `OldLimit` and
+`DepthReached` (pl-prims.c). `representation_error(depth_limit)` where the sum overflows.
+"""
+function pl_depth_limit3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    clevel = Int(levelFrame(ld.frames[ld.environment_frame])) - 1  # levelFrame(environment_frame) - 1
+
+    levels = PL_get_size_ex(ld, A1)
+    levels === nothing && return FFALSE
+    if unify_depth(ld, A2, ld.depth_info_limit) &&
+        unify_depth(ld, A3, ld.depth_info_reached)
+        newlimit = clevel + levels + 1                      # 1 for the catch/3
+        if newlimit < clevel
+            return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :depth_limit))
+                FTRUE
+            else
+                FFALSE
+            end
+        end
+        ld.depth_info_limit = newlimit
+        ld.depth_info_reached = clevel
+        updateAlerted(ld)
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-prims.c pl_depth_limit_true as pl_depth_limit_true5_va
+# (PRED_IMPL("$depth_limit_true", 5, pl_depth_limit_true, PL_FA_NONDETERMINISTIC), pl-prims.c:5702-5754 at the pin)
+# DIVERGES: `unify_det` is the function above (the foreign code is returned as is). `FRG_RESUME` is `assert(0)` upstream and
+# a failure here (the kernel's foreign control has no resume).
+"""
+    '\$depth_limit_true'(+Limit, +OldLimit, +OldReached, -Result, -Cut)
+
+The goal succeeded: restore the old limits, unify `Result` with the depth used and `Cut` with `!` (deterministic) or `true`;
+on redo install the limit again and fail into the goal (pl-prims.c).
+"""
+function pl_depth_limit_true5_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    limit, olimit, oreached, res, cut = PL__t0,
+    PL__t0 + 1, PL__t0 + 2, PL__t0 + 3,
+    PL__t0 + 4
+    ctl = PL_foreign_control(PL__ctx)
+
+    if ctl == FRG_FIRST_CALL
+        l = get_depth(ld, limit)
+        l === nothing && return FFALSE
+        ol = get_depth(ld, olimit)
+        ol === nothing && return FFALSE
+        or = get_depth(ld, oreached)
+        or === nothing && return FFALSE
+
+        clevel = Int(levelFrame(ld.frames[ld.environment_frame])) - 1
+        used = ld.depth_info_reached - clevel - 1           # intptr_t used = LD->depth_info.reached - clevel - 1
+
+        ld.depth_info_limit = ol
+        ld.depth_info_reached = or
+        updateAlerted(ld)
+
+        used < 1 && (used = 1)
+        PL_unify_integer(ld, res, used) || return FFALSE
+        return unify_det(ld, cut)
+    elseif ctl == FRG_REDO
+        levels = get_depth(ld, limit)
+        levels === nothing && return FFALSE
+        clevel = Int(levelFrame(ld.frames[ld.environment_frame])) - 1
+        ld.depth_info_limit = clevel + levels + 1           # 1 for catch/3
+        ld.depth_info_reached = clevel
+        updateAlerted(ld)
+        return FFALSE                                       # backtrack to goal
+    elseif ctl == FRG_CUTTED
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-prims.c depth_limit_false as pl_depth_limit_false3_va
+# (PRED_IMPL("$depth_limit_false", 3, depth_limit_false, 0), pl-prims.c:5757-5775 at the pin)
+"""
+    '\$depth_limit_false'(+OldLimit, +OldReached, -Result)
+
+The goal failed: restore the old limits; `Result` is `depth_limit_exceeded` when the limit was passed, else the call fails (pl-prims.c).
+"""
+function pl_depth_limit_false3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ol = get_depth(ld, A1)
+    ol === nothing && return FFALSE
+    or = get_depth(ld, A2)
+    or === nothing && return FFALSE
+
+    exceeded = ld.depth_info_reached > ld.depth_info_limit
+    ld.depth_info_limit = ol
+    ld.depth_info_reached = or
+    updateAlerted(ld)
+
+    exceeded &&
+        return PL_unify_atom(ld, A3, mk_sym(T, :depth_limit_exceeded)) ? FTRUE : FFALSE
+    return FFALSE
+end
+
+# PORT: pl-prims.c depth_limit_except as pl_depth_limit_except3_va
+# (PRED_IMPL("$depth_limit_except", 3, depth_limit_except, 0), pl-prims.c:5778-5794 at the pin)
+"""
+    '\$depth_limit_except'(+OldLimit, +OldReached, +Exception)
+
+The goal raised: restore the old limits and raise the exception again (pl-prims.c).
+"""
+function pl_depth_limit_except3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ol = get_depth(ld, A1)
+    ol === nothing && return FFALSE
+    or = get_depth(ld, A2)
+    or === nothing && return FFALSE
+
+    ld.depth_info_limit = ol
+    ld.depth_info_reached = or
+    updateAlerted(ld)
+    return PL_raise_exception(ld, A3) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c INFERENCE_LIMIT_OVERHEAD
+"The inferences the limit wrapper itself uses (pl-prims.c `INFERENCE_LIMIT_OVERHEAD`)."
+const INFERENCE_LIMIT_OVERHEAD = 2
+
+# PORT: pl-prims.c get_inference_limit
+# DIVERGES: returns the limit, or `nothing` with the error raised.
+"The inference limit `t` holds: `infinite` is `INFERENCE_NO_LIMIT`, any other atom a `domain_error(inference_limit, T)` (pl-prims.c)."
+function get_inference_limit(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        sym_key(a) == sym_key(mk_sym(T, :infinite)) && return INFERENCE_NO_LIMIT
+        PL_domain_error(ld, "inference_limit", t)
+        return nothing
+    end
+    return PL_get_int64_ex(ld, t)
+end
+
+# PORT: pl-prims.c unify_inference_limit
+"Unify `t` with an inference limit: `infinite` for `INFERENCE_NO_LIMIT`, else the integer (pl-prims.c)."
+function unify_inference_limit(ld::PL_local_data{T}, t::term_t, limit::Int)::Bool where {T}
+    limit == INFERENCE_NO_LIMIT && return PL_unify_atom(ld, t, mk_sym(T, :infinite))
+    return PL_unify_int64(ld, t, limit)
+end
+
+# PORT: pl-prims.c pl_inference_limit as pl_inference_limit2_va
+# (PRED_IMPL("$inference_limit", 2, pl_inference_limit, 0), pl-prims.c:5825-5849 at the pin)
+# The sum wraps as upstream's does: `LD->statistics.inferences` is `uint64_t`, so `inferences + limit + INFERENCE_LIMIT_OVERHEAD` is an
+# unsigned sum stored in an `int64_t` (`limit = infinite` = INT64_MAX gives a negative `nlimit`, which `nlimit < limit` installs). It
+# is never reached because the check in `depart_alerted` (pl-wam.jl) compares unsigned, as C does.
+"""
+    '\$inference_limit'(+Limit, -OldLimit)
+
+Install a limit of `Limit` more inferences (the new limit only if it is lower than the old one) and unify the old limit with `OldLimit`
+(pl-prims.c). `domain_error(not_less_than_zero, Limit)` for a negative limit.
+"""
+function pl_inference_limit2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    limit = get_inference_limit(ld, A1)
+    limit === nothing && return FFALSE
+    unify_inference_limit(ld, A2, ld.inference_limit_limit) || return FFALSE
+
+    nlimit = ld.statistics.inferences + limit + INFERENCE_LIMIT_OVERHEAD
+    if limit < 0
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A1)
+        return FFALSE
+    end
+    if nlimit < ld.inference_limit_limit
+        ld.inference_limit_limit = nlimit
+    end
+    updateAlerted(ld)
+    return FTRUE
+end
+
+# PORT: pl-prims.c pl_inference_limit_true as pl_inference_limit_true3_va
+# (PRED_IMPL("$inference_limit_true", 3, pl_inference_limit_true, PL_FA_NONDETERMINISTIC), pl-prims.c:5866-5909 at the pin)
+"""
+    '\$inference_limit_true'(+Limit, +OldLimit, ?Result)
+
+First call: a bound `Result` means the limit was exceeded and is already reset, else restore the limit and make `Result` `!` or
+`true`; on redo install the limit again and fail into the goal (pl-prims.c).
+"""
+function pl_inference_limit_true3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+
+    if ctl == FRG_FIRST_CALL
+        PL_is_variable(ld, A3) || return FTRUE
+        olimit = get_inference_limit(ld, A2)
+        olimit === nothing && return FFALSE
+        ld.inference_limit_limit = olimit
+        updateAlerted(ld)
+        return unify_det(ld, A3)
+    elseif ctl == FRG_REDO
+        limit = get_inference_limit(ld, A1)
+        if limit !== nothing
+            ld.inference_limit_limit =
+                ld.statistics.inferences + limit + INFERENCE_LIMIT_OVERHEAD
+            updateAlerted(ld)
+        end
+        return FFALSE
+    elseif ctl == FRG_CUTTED
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-prims.c inference_limit_false as pl_inference_limit_false1_va
+# (PRED_IMPL("$inference_limit_false", 1, inference_limit_false, 0), pl-prims.c:5912-5923 at the pin)
+"`'\$inference_limit_false'(+OldLimit)`: the goal failed; restore the old limit and fail (pl-prims.c)."
+function pl_inference_limit_false1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    olimit = get_inference_limit(ld, PL__t0)
+    if olimit !== nothing
+        ld.inference_limit_limit = olimit
+        updateAlerted(ld)
+    end
+    return FFALSE
+end
+
+# PORT: pl-prims.c inference_limit_except as pl_inference_limit_except3_va
+# (PRED_IMPL("$inference_limit_except", 3, inference_limit_except, 0), pl-prims.c:5933-5959 at the pin)
+"""
+    '\$inference_limit_except'(+OldLimit, +Exception, -Result)
+
+Restore the limit; `Result` is `inference_limit_exceeded` when that was the exception, else the exception is raised again (pl-prims.c).
+"""
+function pl_inference_limit_except3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    olimit = get_inference_limit(ld, A1)
+    olimit === nothing && return FFALSE
+
+    ld.inference_limit_limit = olimit
+    updateAlerted(ld)
+
+    a = PL_get_atom(ld, A2)
+    if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :inference_limit_exceeded))
+        return PL_unify_atom(ld, A3, a) ? FTRUE : FFALSE
+    end
+    return PL_raise_exception(ld, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c raiseInferenceLimitException
+# DIVERGES: the database and the local data are arguments. Upstream looks the six predicates up on every call (its
+# `GD->inference_limit.initialized` is never set), as this does; the definitions are compared, not the procedures.
+"""
+    raiseInferenceLimitException(gd, ld) -> nothing
+
+The inference limit was reached in the frame `environment_frame`: lift the limit and raise `inference_limit_exceeded`, unless the
+frame is one of the limit wrapper's own predicates (the limit is then kept) or an exception is being processed (pl-prims.c).
+"""
+function raiseInferenceLimitException(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Nothing where {T}
+    def = ld.frames[ld.environment_frame].predicate
+    ld.exception_processing && return nothing
+    olimit = ld.inference_limit_limit                       # Do not throw here
+    ld.inference_limit_limit = INFERENCE_NO_LIMIT
+
+    sysm = MODULE_system(gd)
+    for (name, arity) in (
+        ("\$inference_limit_true", 3), ("\$inference_limit_false", 1),
+        ("\$inference_limit_except", 3), ("\$inference_limit", 2),
+        ("call_with_inference_limit", 3)
+    )
+        if lookupProcedure(mk_sym(T, Symbol(name)), arity, sysm).definition === def
+            ld.inference_limit_limit = olimit               # --> Ignored
+            return nothing
+        end
+    end
+    if gd.procedures_catch3.definition === def
+        ld.inference_limit_limit = olimit
+        return nothing
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    if fid != 0
+        ld.exception_processing = true
+        t = PL_new_term_ref(ld)
+        PL_put_atom(ld, t, mk_sym(T, :inference_limit_exceeded))
+        PL_raise_exception(ld, t)
+        PL_close_foreign_frame(ld, fid)
+    end
+    return nothing
+end
+
+# PORT: pl-prims.c urgent_exception as pl_urgent_exception3_va
+# (PRED_IMPL("$urgent_exception", 3, urgent_exception, 0), pl-prims.c:6574-6581 at the pin)
+"`'\$urgent_exception'(+Ball1, +Ball2, -Ball)`: `Ball` is the more urgent of the two exceptions, `Ball1` where they are equally so (pl-prims.c)."
+function pl_urgent_exception3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    c1 = classify_exception(ld, A1)
+    c2 = classify_exception(ld, A2)
+    return PL_unify(ld, A3, Int(c2) > Int(c1) ? A2 : A1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c halt as pl_halt1_va
 # (PRED_IMPL("halt", 1, halt, 0), pl-prims.c:5554-5574 at the pin)
 # DIVERGES: `PL_abort_process` returns here (with the seam `gd.halt_exit` off, src/pl-global.jl), so the call is followed by
@@ -4737,7 +5241,26 @@ const PL_predicates_from_prims = (
     PL_extension("nb_setarg", 3, pl_nb_setarg3_va, PL_FA_VARARGS),
     PL_extension("nb_linkarg", 3, pl_nb_linkarg3_va, PL_FA_VARARGS),
     PL_extension("\$style_check", 2, pl_style_check2_va, PL_FA_VARARGS),     # (Q10)
+    PL_extension("\$depth_limit", 3, pl_depth_limit3_va, PL_FA_VARARGS),     # (P3)
+    PL_extension(
+        "\$depth_limit_true", 5, pl_depth_limit_true5_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("\$depth_limit_false", 3, pl_depth_limit_false3_va, PL_FA_VARARGS),
+    PL_extension("\$depth_limit_except", 3, pl_depth_limit_except3_va, PL_FA_VARARGS),
+    PL_extension("\$inference_limit", 2, pl_inference_limit2_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$inference_limit_true", 3, pl_inference_limit_true3_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
+    PL_extension("\$inference_limit_false", 1, pl_inference_limit_false1_va, PL_FA_VARARGS),
+    PL_extension(
+        "\$inference_limit_except", 3, pl_inference_limit_except3_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$urgent_exception", 3, pl_urgent_exception3_va, PL_FA_VARARGS),     # (P3)
     PL_extension("\$skip_list", 3, pl_skip_list3_va, PL_FA_VARARGS),
+    PL_extension("\$seek_list", 4, pl_seek_list4_va, PL_FA_VARARGS),            # (P2b)
+    PL_extension("sub_atom_icasechk", 3, pl_sub_atom_icasechk3_va, PL_FA_VARARGS),
     PL_extension("throw", 1, pl_throw1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("halt", 1, pl_halt1_va, PL_FA_VARARGS)       # (HALT1: the last entry, as upstream's table)
 )

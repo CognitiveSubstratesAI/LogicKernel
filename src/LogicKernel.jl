@@ -44,6 +44,9 @@ include("pl-variant.jl")       # swipl-devel src/pl-variant.c — =@=, variant c
 include("pl-copyterm.jl")      # swipl-devel src/pl-copyterm.c — copy_term/2, copy_term_nat/2, duplicate_term/2
 include("pl-rec.jl")           # swipl-devel src/pl-rec.c — recorded terms: compileTermToHeap, copyRecordToGlobal
 include("pl-termhash.jl")      # swipl-devel src/pl-termhash.c — term_hash, variant_sha1/hash
+include("pl-bisim.jl")         # swipl-devel src/pl-bisim.c — term_factorized, term_minimal, term_automaton (lane F)
+include("pl-coverage.jl")      # swipl-devel src/pl-coverage.c — the '$cov_*' predicates (lane F)
+include("pl-prof.jl")          # swipl-devel src/pl-prof.c — the profiler's call tree and '$prof_*' predicates (lane F; collection refuses by name, PROF1)
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
 include("pl-cont.jl")          # swipl-devel src/pl-cont.c — shift/1: collecting the continuation of a reset/3
@@ -64,7 +67,10 @@ include("os/pl-text.jl")       # swipl-devel src/os/pl-text.c — the text a ter
 include("os/pl-os.jl")         # swipl-devel src/os/pl-os.c — the clocks, the environment, Pause (Y1)
 include("os/pl-files.jl")      # swipl-devel src/os/pl-files.c — the file name a term holds, delete_file/1 (Y1)
 include("os/pl-glob.jl")       # swipl-devel src/os/pl-glob.c — wildcard_match, expand_file_name, directory_files (LB2b)
+include("os/pl-cstack.jl")     # swipl-devel src/os/pl-cstack.c — the C-stack fallbacks, named refusals (lane F)
+include("os/pl-table.jl")      # swipl-devel src/os/pl-table.c — the lock-free hash tables, word -> word (lane F; bucket order)
 include("os/pl-file.jl")       # swipl-devel src/os/pl-file.c — the file an open stream reads (the loader); the output redirect, with_output_to/2 (O1B)
+include("pl-zip.jl")          # swipl-devel src/pl-zip.c — zip archives: the argument checks, minizip refused by name (lane F, ZIP1)
 include("pl-setup.jl")         # swipl-devel src/pl-setup.c — emptying the stacks of a new LD
 include("pl-proc.jl")          # swipl-devel src/pl-proc.c — predicates, assert, retract, clause GC
 include("pl-srcfile.jl")       # swipl-devel src/pl-srcfile.c — source files: consulting a file (first load)
@@ -91,8 +97,10 @@ include("pl-qlf.jl")           # swipl-devel src/pl-qlf.c — the boot compilati
 include("pl-string.jl")        # swipl-devel src/pl-string.c — the string predicates: atom_string/2, split_string/4, sub_string/5 (T2)
 include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
 include("pl-dwim.jl")          # swipl-devel src/pl-dwim.c — dwim_match/3, '$dwim_predicate'/2 (DWIM1)
+include("os/pl-ctype-pred.jl") # swipl-devel src/os/pl-ctype.c — char_type/2, code_type/2 (CT1b; needs the FLI, so loaded after the kernel)
 include("os/pl-libtai.jl")    # swipl-devel src/libtai/ — the calendar-time and leap-second pieces pl-tai.c uses (TAI1)
 include("os/pl-tai.jl")       # swipl-devel src/os/pl-tai.c — stamp_date_time/3, date_time_stamp/2 (TAI1; needs the FLI, so loaded after the kernel)
+include("os/pl-locale.jl")    # swipl-devel src/os/pl-locale.c — locale_create/3, locale_property/2, set_locale/1 (CT1 LOCALE; needs the FLI, so loaded after the kernel)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)

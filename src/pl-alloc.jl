@@ -205,3 +205,53 @@ end
     resize!(ld.gstack, n)
     return nothing
 end
+
+# PORT: pl-alloc.c trim_heap as pl_trim_heap0_va
+# (PRED_IMPL("trim_heap", 0, trim_heap, 0), pl-alloc.c:1852-1859 at the pin)
+# DIVERGES: the heap is Julia's: upstream asks tcmalloc (`MallocExtension_ReleaseFreeMemory`) or glibc (`malloc_trim(0)`)
+# to hand free memory back to the system, and neither has a Julia counterpart. The call succeeds without releasing
+# anything, as upstream's does when the allocator offers neither (both calls are weak symbols tried with
+# `WEAK_TRY_CALL`; `return true` follows them unconditionally).
+"`trim_heap`: release as much memory as possible to the system (pl-alloc.c); the kernel has no allocator to ask, so it succeeds."
+function pl_trim_heap0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-alloc.c thread_idle as pl_thread_idle2_va
+# (PRED_IMPL("thread_idle", 2, thread_idle, PL_FA_TRANSPARENT), pl-alloc.c:1867-1890 at the pin)
+# DIVERGES (TH1): the thread parts are unwritten by design: upstream's `MallocExtension_MarkThreadTemporarilyIdle`,
+# `_MarkThreadIdle` and `_MarkThreadBusy` tell tcmalloc what this thread does (weak symbols, no Prolog-visible effect), and
+# `garbageCollect(GC_USER)` with `trim_stack_requested` set may notify the background GC thread; the kernel has one engine
+# and no collector (`pl_garbage_collect`, src/pl-gc.jl: nothing to collect), so `long` trims the stacks as the collector's
+# trim request would (`trimStacks!`) and `short` trims them as upstream's `trimStacks(true)`. As upstream, a `How` that is
+# neither atom `short` nor atom `long` does the housekeeping of neither and still runs `Goal`; a `How` that is no atom raises
+# `type_error(atom, How)` before `Goal` runs. `Goal` runs in the context module as `sig_atomic/1`'s does (`callProlog(NULL, …)`),
+# its exception passed on (`PL_Q_PASS_EXCEPTION`); the kernel's query keeps the goal's bindings, as upstream's.
+"`thread_idle(:Goal, +How)`: do the idle-time housekeeping `How` (`short` or `long`) asks for, then call `Goal` once (pl-alloc.c)."
+function pl_thread_idle2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    how = PL_get_atom_ex(ld, A2)
+    how === nothing && return FFALSE
+
+    if sym_key(how) == sym_key(mk_sym(T, :short))
+        trimStacks!(ld, true)                           # trimStacks(true)
+    elseif sym_key(how) == sym_key(mk_sym(T, :long))
+        trimStacks!(ld, true)                           # LD->trim_stack_requested = true; garbageCollect(GC_USER)
+    end
+
+    rc = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_PASS_EXCEPTION)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-alloc.c BeginPredDefs as PL_predicates_from_alloc
+# DIVERGES: upstream's table also lists `garbage_collect_heap/0` under `HAVE_BOEHM_GC` (the Boehm collector, a build option
+# the kernel has no twin of): left out.
+"pl-alloc.c's registration table (`BeginPredDefs(alloc)`): `thread_idle/2` and `trim_heap/0`."
+const PL_predicates_from_alloc = (
+    PL_extension("thread_idle", 2, pl_thread_idle2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
+    PL_extension("trim_heap", 0, pl_trim_heap0_va, PL_FA_VARARGS)
+)
