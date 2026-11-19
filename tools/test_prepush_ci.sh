@@ -183,5 +183,31 @@ printf '{"workflow_runs":[%s]}' "$(runj "$S" "$ev" completed '"failure"')" > "$f
 push r1 refs/heads/gate/x "$S" refs/heads/main LOGICKERNEL_CI_FIXTURE="$fx"; check "main <- a commit with a red Evidence run refused" 1 "RED"
 push r1 refs/heads/ci/x "$S" refs/heads/main LOGICKERNEL_CI_FIXTURE="$fx"; check "main <- from a ci/ local ref, the same red run refused" 1 "RED"
 
+# 8. A-0206: main takes only LINEAR history. A push to main whose range origin/main..sha holds a merge commit is refused BEFORE the
+# CI question, even with a green Evidence run; a linear range passes; an unreadable range is refused; the same merge commit still
+# passes to ci/ (the rule is the main arm's). The merge is built in fake repo r1 on top of the fake origin/main (base).
+printf '{"workflow_runs":[%s,%s]}' "$(runj "$S" CI completed '"success"')" "$(runj "$S" "$ev" completed '"success"')" > "$fx"
+(cd "$W/r1" && git checkout -q -b gate/lin refs/remotes/origin/main && printf '1\n' > l1.jl && git add -A && git commit -q -m "lin 1" &&
+    printf '2\n' > l2.jl && git add -A && git commit -q -m "lin 2")
+LIN="$(sha r1 gate/lin)"
+printf '{"workflow_runs":[%s,%s]}' "$(runj "$LIN" CI completed '"success"')" "$(runj "$LIN" "$ev" completed '"success"')" > "$fx"
+push r1 refs/heads/gate/lin "$LIN" refs/heads/main LOGICKERNEL_CI_FIXTURE="$fx"; check "main <- a linear range of two commits with a green run passes" 0
+(cd "$W/r1" && git checkout -q -b gate/mtip refs/remotes/origin/main && printf 'l\n' > ml.jl && git add -A && git commit -q -m "left" &&
+    git checkout -q -b side refs/remotes/origin/main && printf 'r\n' > mr.jl && git add -A && git commit -q -m "right" &&
+    git checkout -q gate/mtip && git merge -q --no-ff -m "merge side" side)
+MTIP="$(sha r1 gate/mtip)"
+(cd "$W/r1" && git checkout -q -b gate/mmid gate/mtip && printf 't\n' > mt.jl && git add -A && git commit -q -m "on top")
+MMID="$(sha r1 gate/mmid)"
+for m in "$MTIP" "$MMID"; do
+    printf '{"workflow_runs":[%s,%s]}' "$(runj "$m" CI completed '"success"')" "$(runj "$m" "$ev" completed '"success"')" > "$fx"
+    push r1 refs/heads/gate/m "$m" refs/heads/main LOGICKERNEL_CI_FIXTURE="$fx"
+    check "main <- a range holding a merge commit (${m:0:7}), green run: refused, names rule and merge" 1 "A-0206: main takes only LINEAR history"
+    printf '%s' "$out" | grep -qF "merge commit(s), first: $(git -C "$W/r1" log --merges -1 --format=%H "$m") merge side" && { pass=$((pass + 1)); echo "  ok   (and it names the merge commit by SHA and subject)"; } || { fail=$((fail + 1)); echo "  FAIL the refusal does not name the merge commit: $out"; }
+done
+push r1 refs/heads/gate/m "$MMID" refs/heads/ci/m;  check "a merge commit still passes to ci/ (the rule is main's)" 0
+mk rnomain; S2="$(sha rnomain)"; git -C "$W/rnomain" update-ref -d refs/remotes/origin/main
+printf '{"workflow_runs":[%s,%s]}' "$(runj "$S2" CI completed '"success"')" "$(runj "$S2" "$ev" completed '"success"')" > "$fx"
+push rnomain refs/heads/gate/x "$S2" refs/heads/main LOGICKERNEL_CI_FIXTURE="$fx"; check "main <- no refs/remotes/origin/main: the range cannot be read, refused" 1 "to check it for merge commits"
+
 echo "test_prepush_ci: $pass passed, $fail failed"
 [ "$fail" = 0 ]
