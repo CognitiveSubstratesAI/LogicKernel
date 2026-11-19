@@ -41,12 +41,14 @@ TT = [TG, TW, TP, TA]
 TR = [TG, TB]
 
 
-def m(id, old, new, targets=TT, file=F, eq=None, hang=False):
+def m(id, old, new, targets=TT, file=F, eq=None, hang=False, site=None):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
     if eq:
         d["equivalent"] = eq
     if hang:
         d["expect"] = "hang"            # a loop inside ONE call that no row can bound: "caught (hang)" past LIMIT_S
+        if site:                        # tools/mutate_ci.py (MEMCAP): a cut is "caught (hang)" ONLY when `site` is a substring of the
+            d["site"] = site            # cut's evidence (the last 60 output lines, the SIGQUIT stack included); else a blocking TIMEOUT
     return d
 
 
@@ -76,8 +78,10 @@ MUTANTS = [
     # (trie_gen_raw :2810, trie_gen :2871, pl_trie_gen3_va :2880, _fcall_va pl-ext.jl:262, PL_next_solution_guarded pl-wam.jl:5231, _tp_row TG:78):
     # evidence/TAB1/timeout_d5_handoff.md section 2, timeout_d5_s1_stack.txt. (d) the engine stop (a `next_choice! == 0 && break` at the three exits)
     # is NOT adopted: fidelity, the pin's loop is the plain `while`.
+    # SITE (MEMCAP-2): `site` is the function name of the SIGQUIT frame, `trie_gen_raw at` (the line moved: the spin is now src/pl-trie.jl:3101, the `while st.nch != 0`).
     m("TR2-S1 pop_choice! does not lower the path (KILL D t0; HANG at src/pl-trie.jl:2810, declared: see the comment above)",
-      "    st.nch = chi - 1\n    return nothing\n", "    st.nch = chi\n    return nothing\n", hang=True),
+      "    st.nch = chi - 1\n    return nothing\n", "    st.nch = chi\n    return nothing\n", hang=True,
+      site='trie_gen_raw at'),
     m("TR2-S2 add_branch! keeps the prune flag of a reused branch (KILL D t13, t29 expected: a branch reused after a non-pruning one restores a stale cursor)",
       "    br = st.branches[nb]\n    br.cursor.prune = false\n    return br\n", "    br = st.branches[nb]\n    return br\n"),
     m("TR2-S3 advance_node! (CH_ENUM) does not store the key (KILL D t0: the next child is taken with the key of the last)",

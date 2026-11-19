@@ -4,7 +4,7 @@
 # driver is tools/mutate_drive.py (a warm daemon, one mutant after another); here every mutant is a
 # CI job of its own, so the three steps are separate commands. THE MUTANT LIST AND THE VERDICT RULES
 # ARE THE SAME (see mutate_drive.py's header): `id`, `file`, `old` (must occur EXACTLY once), `new`,
-# optional `expect: "hang"`, `equivalent: <reason>`, `targets`.
+# optional `expect: "hang"`, `site: "<substring>"`, `equivalent: <reason>`, `targets`.
 #
 #   mutate_ci.py plan MUTANTS.py [ID…]            print `matrix=…`, `count=…` and `targets=…` (the
 #                                                 list's own `TARGETS`, space-separated; empty when
@@ -24,14 +24,34 @@
 # A TARGET is a test file, run in a FRESH process on the reference term type
 # (`julia --project=. <file>`, LOGICKERNEL_TERM=reference) — or `sh:<command>`.
 # THE VERDICT, from exit codes first: a target exits 1 = caught; every target exits 0 = SURVIVED; a
-# target past LIMIT_S = TIMEOUT (never "caught", unless the mutant expects a hang); another code =
-# INVALID. An exit 1 is caught only when a test failed — mutate_drive.py's `judge`, the one
+# target cut (time limit or memory cap, below) = TIMEOUT, in the table `TIMEOUT (time)` / `TIMEOUT (memory)`
+# (never "caught", unless the mutant expects a hang, below); another code = INVALID. An exit 1 is caught only when a test failed — mutate_drive.py's `judge`, the one
 # classifier of both drivers (D-0050): code that did not parse or load = NO VERDICT (does not load);
 # a test file with no failing test line = NO VERDICT (no failing test). A mutant declared
 # `equivalent` must SURVIVE ("EQUIVALENT (declared)"); caught, its claim was wrong ("EQUIVALENT
 # REFUTED"). BLOCKING: SURVIVED, TIMEOUT, INVALID, BADMATCH, EQUIVALENT REFUTED, NO VERDICT (either
 # kind, or a missing verdict file), a baseline that is not green. Every record keeps the deciding
 # line (`first_failure`: a caught one's first failing test line); the table shows it.
+#
+# THE MEMORY CAP AND THE CUT (audit D-0852 (4), D-0916 (1)): a mutant that makes a loop grow without bound
+# must end as a verdict before the runner dies (a lost runner leaves NO VERDICT and no record). Each target
+# runs in its own session; every MUTATE_CI_POLL_S seconds (default 1) the harness sums the resident set of the
+# whole process group (and session) from /proc — no psutil — and kills the group with SIGKILL once the sum
+# passes MUTATE_CI_MEM_MB (default 5500; the GitHub standard runner has 16 GB, a local capped scope 6 GB).
+# The target's output goes to a file, not a pipe: the harness holds no output in memory while it waits, and
+# a logged output over 16 MB is kept as its first 4 MB and its last 4 MB. The target's oom_score_adj is
+# raised to 1000: if the kernel does pick a victim, it is the target, not the harness. On a host without
+# /proc the cap is inactive (a note goes to stderr). The time limit LIMIT_S is unchanged (per target, from
+# its start; the clock that counts the tests only, D-0852 (4a), needs a marker the test files do not
+# write yet). A cut gives rc "hang" and, in the record, `cut`: kind (`memory` | `time`), the reason (`rss N
+# MB at second S` | `limit L s`), the output size at the cut and the last EVIDENCE_LINES lines of the
+# output. Before the kill the harness sends SIGQUIT to the group's processes named like julia (comm
+# matches MUTATE_CI_SAMPLE_COMM, default `^julia`): Julia dumps its stacks and keeps running; three seconds
+# later the tail is taken, so it holds the stack at the cut.
+# A CUT IS A KILL only for a mutant that declares `expect="hang"` AND `site="<substring>"` (the function or
+# file:line where the hang is) AND whose evidence tail contains that substring: "caught (hang)". Declared
+# but no site, or the site not in the evidence: `TIMEOUT (hang declared, site not shown)`, blocking. A time
+# cut alone proves nothing (a slow run reaches the limit as well).
 import json
 import os
 import re
@@ -39,6 +59,7 @@ import runpy
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.dont_write_bytecode = True     # no tools/__pycache__: an untracked file voids the evidence marker
@@ -47,6 +68,11 @@ from mutate_drive import judge, noload_hint, run_targets as _run_targets  # noqa
 from ci_compile_summary import ANCHOR_TEST, ANSI  # noqa: E402 — the compile summary's Julia failure shapes
 
 OUT = "mutation-out"
+EVIDENCE_LINES = 60                       # the output tail kept as the evidence of a cut
+SAMPLE_WAIT_S = 3.0                       # SIGQUIT to the stack dump
+LOG_CAP = 16 << 20                        # a longer log is kept as its first and its last LOG_KEEP bytes
+LOG_KEEP = 4 << 20
+CUTS = []                                 # the cuts of the targets run since the last reset, in order
 BLOCKING = ("SURVIVED", "TIMEOUT", "INVALID", "BADMATCH", "EQUIVALENT REFUTED", "NO VERDICT")
 
 
@@ -81,26 +107,123 @@ def load(path, only):
     return [m for m in mutants if not only or m["id"].split()[0] in only]
 
 
+def proc_group(pgid):
+    """[(pid, comm, rss_bytes)] of every process in process group PGID or session PGID, from /proc
+    (fields 5 and 6 of /proc/<pid>/stat, parsed after the LAST `)`: a comm may hold blanks and parentheses)."""
+    page = os.sysconf("SC_PAGE_SIZE")
+    members = []
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % d) as f:
+                st = f.read()
+            rest = st[st.rindex(")") + 2:].split()
+            if int(rest[2]) == pgid or int(rest[3]) == pgid:
+                members.append((int(d), st[st.index("(") + 1:st.rindex(")")], int(rest[21]) * page))
+        except (OSError, ValueError, IndexError):
+            continue                                   # gone while we looked
+    return members
+
+
+def tail_lines(f, n):
+    """The last N lines of an open binary file, read from its end (never the whole file)."""
+    pos = f.seek(0, 2)
+    buf = b""
+    while pos > 0 and buf.count(b"\n") <= n:
+        step = min(65536, pos)
+        pos -= step
+        f.seek(pos)
+        buf = f.read(step) + buf
+    return buf.decode(errors="replace").splitlines()[-n:]
+
+
+def read_log(f):
+    """The output file as text; over LOG_CAP bytes its first and last LOG_KEEP bytes with a note between."""
+    size = f.seek(0, 2)
+    f.seek(0)
+    if size <= LOG_CAP:
+        return f.read().decode(errors="replace")
+    head = f.read(LOG_KEEP)
+    f.seek(size - LOG_KEEP)
+    return (head.decode(errors="replace") + "\n[... %d bytes of output cut by mutate_ci ...]\n" % (size - 2 * LOG_KEEP)
+            + f.read().decode(errors="replace"))
+
+
+def _own_oom_victim():
+    """In the target, before exec: the kernel's first victim (a raise of oom_score_adj needs no privilege)."""
+    try:
+        with open("/proc/self/oom_score_adj", "w") as f:
+            f.write("1000")
+    except OSError:
+        pass
+
+
+def kill_group(pgid):
+    """SIGKILL to the whole group and to the other members of its session."""
+    for pid, _, _ in proc_group(pgid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def run_target(target, limit):
-    """(exit code or "hang", output) of one target in a fresh process GROUP: past the limit the whole
-    group is killed — a test's own children (swipl) hold the output pipe open otherwise, and the
-    read would wait for them."""
+    """(exit code or "hang", output) of one target in a fresh process GROUP: past the limit, or past
+    MUTATE_CI_MEM_MB of resident memory in the group, the whole group is killed — a test's own children
+    (swipl) hold the output open otherwise, and the read would wait for them. A cut appends a dict to CUTS
+    (see the header) and a `=== CUT` line to the output. The output goes to a file: the harness stays small."""
     env = dict(os.environ, LOGICKERNEL_TERM="reference")
+    cap = float(os.environ.get("MUTATE_CI_MEM_MB", "5500")) * (1 << 20)
+    poll = float(os.environ.get("MUTATE_CI_POLL_S", "1"))
+    comm = re.compile(os.environ.get("MUTATE_CI_SAMPLE_COMM", r"^julia"))
     cmd = ["julia", "--project=.", "--startup-file=no", target]
     if target.startswith("sh:"):
         cmd = ["bash", "-c", target[3:]]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                         env=env, start_new_session=True)
-    try:
-        out, _ = p.communicate(timeout=limit)
-        return p.returncode, out
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        out, _ = p.communicate()
-        return "hang", out
+    if not os.path.isdir("/proc/self"):
+        sys.stderr.write("mutate_ci: no /proc: the memory cap is inactive\n")
+    with tempfile.TemporaryFile() as out:
+        p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, env=env, start_new_session=True,
+                             preexec_fn=_own_oom_victim)
+        t0, cut = time.monotonic(), None
+        while True:
+            try:
+                p.wait(timeout=max(0.01, min(poll, limit - (time.monotonic() - t0))))
+                return p.returncode, read_log(out)
+            except subprocess.TimeoutExpired:
+                pass
+            secs = time.monotonic() - t0
+            rss = sum(r for _, _, r in proc_group(p.pid))
+            if rss > cap:
+                cut = dict(kind="memory", reason="rss %d MB at second %d" % (rss >> 20, secs), rss_mb=rss >> 20)
+                break
+            if secs >= limit:
+                cut = dict(kind="time", reason="limit %s s" % limit)
+                break
+        # the stack at the cut: SIGQUIT makes Julia dump its stacks and keep running
+        julias = [pid for pid, c, _ in proc_group(p.pid) if comm.search(c)]
+        for pid in julias:
+            try:
+                os.kill(pid, signal.SIGQUIT)
+            except (ProcessLookupError, PermissionError):
+                pass
+        t1 = time.monotonic()
+        while julias and time.monotonic() - t1 < SAMPLE_WAIT_S:
+            time.sleep(0.25)
+            if sum(r for _, _, r in proc_group(p.pid)) > cap * 1.25:   # still growing: no more waiting
+                break
+        cut["seconds"] = round(time.monotonic() - t0)
+        cut["output_bytes"] = out.seek(0, 2)
+        cut["evidence"] = tail_lines(out, EVIDENCE_LINES)
+        kill_group(p.pid)
+        p.wait()
+        CUTS.append(cut)
+        log = read_log(out) + "\n=== CUT (%s): %s; output %d bytes ===\n" % (cut["kind"], cut["reason"], cut["output_bytes"])
+        return "hang", log
 
 
 PRECOMPILE_LIMIT = int(os.environ.get("MUTATE_CI_PRECOMPILE_LIMIT", "3600"))
@@ -110,23 +233,31 @@ LAST_PRECOMPILE = {"seconds": None}
 def precompile_tree():
     """THE MUTATED TREE IS PRECOMPILED ONCE, BEFORE THE TARGETS, under a limit of its own (audit D-0852 (4), D-0888 (3)): the
     target limit then counts the tests, not the package load and precompile, which on a loaded host read as TIMEOUT (TB5-P7 and
-    PR1-R7 on 2026-11-17: 1500 s, caught in 1075 s and 935 s at 4000 s). Past its limit the precompile is killed and the targets
-    compile for themselves, as before. Only in a Julia project (a Project.toml in the working directory). Seconds, or None."""
+    PR1-R7 on 2026-11-17: 1500 s, caught in 1075 s and 935 s at 4000 s). Past its limit, or past the memory cap of a target (MUTATE_CI_MEM_MB:
+    the group's RSS polled as run_target does, oom_score_adj 1000), the precompile is killed and the targets compile for
+    themselves, as before: they are capped too. Only in a Julia project (a Project.toml in the working directory).
+    Seconds, or None."""
     LAST_PRECOMPILE["seconds"] = None
     if not os.path.isfile("Project.toml"):
         return None
-    t0 = time.time()
+    t0 = time.monotonic()
+    cap = float(os.environ.get("MUTATE_CI_MEM_MB", "5500")) * (1 << 20)      # the SAME memory cap as a target (MEMCAP-2)
+    poll = float(os.environ.get("MUTATE_CI_POLL_S", "1"))
     p = subprocess.Popen(["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.precompile()"],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    try:
-        p.communicate(timeout=PRECOMPILE_LIMIT)
-    except subprocess.TimeoutExpired:
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                         preexec_fn=_own_oom_victim)
+    while True:
         try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except ProcessLookupError:
+            p.wait(timeout=max(0.01, min(poll, PRECOMPILE_LIMIT - (time.monotonic() - t0))))
+            break
+        except subprocess.TimeoutExpired:
             pass
-        p.communicate()
-    LAST_PRECOMPILE["seconds"] = round(time.time() - t0)
+        if (time.monotonic() - t0 >= PRECOMPILE_LIMIT
+                or sum(r for _, _, r in proc_group(p.pid)) > cap):    # past its limit or the cap: killed, the targets compile for themselves
+            kill_group(p.pid)
+            p.wait()
+            break
+    LAST_PRECOMPILE["seconds"] = round(time.monotonic() - t0)
     return LAST_PRECOMPILE["seconds"]
 
 
@@ -221,6 +352,21 @@ def baseline_cause(log):
     return [x[:300] for x in out][:MAX_CAUSE_LINES]
 
 
+def hang_verdict(m, cut):
+    """(verdict, why) of a mutant whose target was cut (`cut`: the dict run_target appended to CUTS, or None).
+    `expect="hang"` + `site` + the site in the evidence = "caught (hang)"; anything else is a blocking TIMEOUT."""
+    kind = cut["kind"] if cut else "time"
+    why = ("cut (%s): %s" % (kind, cut["reason"])) if cut else "cut"
+    site = m.get("site") or ""
+    if m.get("expect") != "hang":
+        return "TIMEOUT (%s)" % kind, why
+    shown = bool(site and cut and any(site in ln for ln in cut.get("evidence", [])))
+    if shown:
+        return "caught (hang)", "%s; site %r shown in the evidence" % (why, site)
+    return "TIMEOUT (hang declared, site not shown)", "%s; %s" % (
+        why, "site %r not in the last %d lines" % (site, EVIDENCE_LINES) if site else "no `site` declared")
+
+
 def write(name, record, log):
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, name + ".json"), "w") as f:
@@ -275,8 +421,10 @@ def one(argv):
     with open(m["file"], "w") as f:
         f.write(src.replace(m["old"], m["new"]))
     t0 = time.time()
+    del CUTS[:]
     rc, log, why = run_targets(targets, limit)
     declared = bool(m.get("equivalent"))
+    cut = CUTS[0] if CUTS else None
     if rc == "noload":
         verdict = "NO VERDICT (does not load)"
     elif rc == "notest":
@@ -284,7 +432,7 @@ def one(argv):
     elif rc == 1:
         verdict = "EQUIVALENT REFUTED" if declared else "caught"
     elif rc == "hang":
-        verdict = "caught (hang)" if m.get("expect") == "hang" else "TIMEOUT"
+        verdict, why = hang_verdict(m, cut)
     elif rc == 0:
         verdict = "EQUIVALENT (declared)" if declared else "SURVIVED"
     else:
@@ -292,6 +440,8 @@ def one(argv):
     why = "; ".join(x for x in (why, noload_hint(m, verdict)) if x)
     record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why,
                   precompile_seconds=LAST_PRECOMPILE["seconds"])     # `seconds` includes it: the limit does not
+    if cut:
+        record["cut"] = cut
     if verdict in ("EQUIVALENT (declared)", "SURVIVED") and not os.environ.get("MUTATE_CI_NO_REACH"):
         # a survivor: does any target execute the mutated line at all? (audit D-0849). The pass is a SECOND run of the targets: a slow
         # survivor must not push the job past its timeout (a cancelled job uploads nothing, so the verdict would be lost too: TB5-E9 on

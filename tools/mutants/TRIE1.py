@@ -47,12 +47,14 @@ SETUP = "src/pl-setup.jl"
 TT = [TW, TP, TG, TA]
 
 
-def m(id, old, new, targets=TT, file=F, eq=None, hang=False):
+def m(id, old, new, targets=TT, file=F, eq=None, hang=False, site=None):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
     if eq:
         d["equivalent"] = eq
     if hang:
         d["expect"] = "hang"            # a loop inside ONE call that no row can bound: "caught (hang)" past LIMIT_S
+        if site:                        # tools/mutate_ci.py (MEMCAP): a cut is "caught (hang)" ONLY when `site` is a substring of the
+            d["site"] = site            # cut's evidence (the last 60 output lines, the SIGQUIT stack included); else a blocking TIMEOUT
     return d
 
 
@@ -165,8 +167,10 @@ MUTANTS = [
     # 35 s after load; the mutant produces no such line by 3 x 35 s, and the SIGQUIT stack at 200 s is ONE frame, constant (trie_single_value_node
     # at :367 under _tr_prune_rows at TW:709, no Prolog engine): evidence/TAB1/timeout_d5_handoff.md, timeout_d5_d5_stack.txt, timeout_d5_ref_tw_timing.txt.
     # (d) the engine stop (a bounded walk that throws) is NOT adopted: fidelity, the pin's loop is the plain `while`.
+    # SITE (MEMCAP-2): `site` is the function name of the SIGQUIT frame, `trie_single_value_node at` (the line moved: the spin is now src/pl-trie.jl:533, the `while tr.nodes[n].value == 0`).
     m("TR1-D5 trie_single_value_node: a block child is followed (KILL TW:651; HANG at src/pl-trie.jl:367, declared: see the comment above)",
-      "        is_single_child(c) || return 0\n", "        nothing\n", hang=True),
+      "        is_single_child(c) || return 0\n", "        nothing\n", hang=True,
+      site='trie_single_value_node at'),
     m("TR1-W1 map_trie_node: the stop value is ignored (KILL TW:714)",
       "        rc === nothing || return rc\n        children == 0 && return nothing\n", "        children == 0 && return nothing\n"),
     m("TR1-W2 is_ground_trie_node: an attvar key is ground (KILL TW:726, !is_ground(t1))",
