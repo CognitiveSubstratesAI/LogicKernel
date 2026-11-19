@@ -1,0 +1,9 @@
+2026-11-16T08:53:00Z	test_tabling_answer_insert_upstream_swipl.jl	1718	3G	0	1
+2026-11-16T08:58:10Z	test_tabling_reeval_upstream_swipl.jl	1867	3G	0	1
+2026-11-16T09:02:56Z	test_tabling_answer_subsumption_upstream_swipl.jl	1988	3G	0	1
+2026-11-16T09:07:27Z	test_trie_property_idg_swipl.jl	1852	3G	0	0
+2026-11-16T09:12:12Z	test_tabling_events_swipl.jl	1857	3G	0	0
+2026-11-16T09:15:54Z	test_tabling_w2_swipl.jl	1972	3G	0	0
+2026-11-16T09:16:18Z	test_tabling_tb4_tb5_guard_swipl.jl	419	3G	0	0
+2026-11-16T09:20:15Z	test_tabling_transaction_wb_swipl.jl	1917	3G	0	0
+2026-11-16T09:25:13Z	test_tabling_idg_swipl.jl	1911	3G	0	0

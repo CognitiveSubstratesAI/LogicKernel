@@ -390,6 +390,7 @@ end
     # outside a reload: the clean fast path / the flag count (A10, A10b, A10c: the other side)
     @test LK.hasClausesDefinition(gd, def) === def.impl_clauses.first_clause
     @test LK.num_visible_clauses(gd, def, false) == 3
+    @test LK.num_visible_clauses(gd, ld, def, false) == 3                           # the method with the local data (the one the attribute calls)
     @test LK.getClauses(gd, def, refs, 10) == 3 && length(refs) == 3
     @test LK.isDefinedProcedure(gd, q)
     LK.startReconsultFile(gd, ld, sfA)
@@ -398,6 +399,10 @@ end
     @test LK.hasClausesDefinition(gd, def) === nothing                              # A10
     @test LK.num_visible_clauses(gd, def, false) == 0                                # A10b
     @test LK.num_visible_clauses(gd, def, true) == 0
+    @test LK.num_visible_clauses(gd, ld, def, false) == 0                            # A10b: the method with `ld` walks a STATIC predicate while a reload runs (the stored count is 3)
+    @test LK.num_visible_clauses(gd, ld, def, true) == 0
+    @test def.impl_clauses.number_of_clauses == 3                                    # non-vacuity: the stored count it would return without the walk
+    @test (def.flags & LK.P_DYNAMIC) == 0
     @test LK.getClauses(gd, def, refs, 10) == 0 && isempty(refs)                    # A10c
     @test !LK.isDefinedProcedure(gd, q)
     # a clause created at the reload generation IS visible: hand-made, in a predicate of the file
@@ -408,6 +413,7 @@ end
     @test cref !== nothing
     @test LK.hasClausesDefinition(gd, def) === cref
     @test LK.num_visible_clauses(gd, def, false) == 1
+    @test LK.num_visible_clauses(gd, ld, def, false) == 1
     @test LK.getClauses(gd, def, refs, 10) == 1 && refs[1] === cref
     _rb_end!(db)
     # after the end: the marks are gone with the generation, the other clauses are live again (the flag count is 4: the hand-made clause counts)
@@ -706,6 +712,43 @@ end
         LK.fix_ssu(r, ssu)
         @test (pd.flags & LK.P_SSU_DET) == 0 && (r.flags & LK.P_CHECK_SSU) == 0
     end
+end
+
+@testset "r19b det/1 across a reload: setAttrProcedureSource records and applies P_DET, fix_det drops it with its supervisor (pl-srcfile.c fix_det, pl-proc.c setDetDefinition)" begin
+    # SWIPL PIN (10.1.20 pin 18168e62, two runs byte-identical under LC_ALL=C; driver and output: lk-channel evidence/TAB1/ssu1b_handoff.md, W2b section): a file with
+    # `:- det(p/1). p(1). p(2).` loaded, rewritten WITHOUT the directive and loaded again: `predicate_property(p(_), det)` true --> false and `findall(X, p(X), L)` raises
+    # determinism_error(p/1,det,nondet,property) --> L = [1,2]; rewritten WITH it: true again and the error again. The kernel cannot run the second load before LB6b, so the rows
+    # below call setAttrProcedureSource and fix_det on a reload set up by hand (the same two outcomes at the flag and supervisor level).
+    # a reload whose file declares det again: P_DET is recorded in the reload AND applied (it is not a P_ATEND bit), the supervisor chains S_DET
+    s = _rb_scene(_RB, :dk, 2)
+    db, sf, proc, def, gd, ld = s.db, s.sf, s.proc, s.def, s.db.gd, s.db.ld
+    @test (def.flags & LK.P_DET) == 0
+    @test LK.setAttrProcedureSource(gd, ld, sf, proc, LK.P_DET, true)
+    reload = sf.reload.procedures[proc]
+    @test (reload.flags & LK.P_DET) != 0 && (def.flags & LK.P_DET) != 0
+    @test def.codes === def.code_data.virgin                  # setDetDefinition!: the supervisor was reset
+    @test LK.setDefaultSupervisor(gd, def)
+    @test def.codes[1] == LK.S_DET
+    installed = def.codes
+    LK.fix_det(gd, reload)                                    # declared again: P_DET and the supervisor stay
+    @test (def.flags & LK.P_DET) != 0 && def.codes === installed
+    _rb_end!(db)
+    # a reload whose file no longer declares it: the record has no P_DET, the first clause's fix_det drops the flag and the supervisor
+    s2 = _rb_scene(_RB, :dl, 2)
+    db2, sf2, proc2, def2, gd2, ld2 = s2.db, s2.sf, s2.proc, s2.def, s2.db.gd, s2.db.ld
+    @test LK.setDetDefinition!(gd2, def2, true)               # the det of the previous load
+    @test LK.setDefaultSupervisor(gd2, def2)
+    @test def2.codes[1] == LK.S_DET && def2.codes !== def2.code_data.virgin
+    reload2 = LK.reloadContext(gd2, ld2, sf2, proc2)
+    @test (reload2.flags & LK.P_DET) == 0
+    LK.fix_det(gd2, reload2)
+    @test (def2.flags & LK.P_DET) == 0
+    @test def2.codes === def2.code_data.virgin                # freeCodesDefinition!: the S_DET supervisor is gone
+    @test LK.setDefaultSupervisor(gd2, def2)
+    @test def2.codes[1] != LK.S_DET
+    # the discriminating pair: the two reloads end with opposite answers
+    @test (def.flags & LK.P_DET) != (def2.flags & LK.P_DET)
+    _rb_end!(db2)
 end
 
 @testset "r20 check_ssu leaves its text on the local data's messages when the live clauses mix => and :-; fix_attributes copies P_ATEND" begin

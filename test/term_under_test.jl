@@ -82,6 +82,12 @@ which is the reference type's own convenience — `AltTerm`'s throws.
 """
 lk_eq(a, b)::Bool = compareStandard(a, b, true) == 0
 
+# A global cell that is not a variable's binding: a value table's box (`_is_box`) and, since TX1e, the undo list's cell
+# (`ld.undo_list`, the first global cell: `[]` on a fresh engine, as swipl's `init_undo_list`, pl-undo.c:42-52). Disclosed
+# change of this helper: swipl keeps that cell non-zero too, so the count of a fresh engine would be 1 without it.
+_lk_not_a_binding(ld, p)::Bool =
+    LogicKernel._is_box(ld, p) || (ld.undo_list != 0 && p == ld.undo_list)
+
 # The variables bound in an engine: every global cell up to `gTop` that is not 0 (since L1b stage C2 a
 # cell is a word, 0 when unbound) — a variable's binding, and the cells of every compound laid out — but
 # a value table's box, which is not a variable (`_is_box`). Until f3-3 also the keyed variables' entries
@@ -105,7 +111,7 @@ end
 function lk_bound_count(ld)::Int
     base = lk_base_cells(ld)
     return count(
-        p -> ld.gstack[p] != 0 && !(p in base) && !LogicKernel._is_box(ld, p), 1:(ld.gTop)
+        p -> ld.gstack[p] != 0 && !(p in base) && !_lk_not_a_binding(ld, p), 1:(ld.gTop)
     )
 end
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
@@ -115,7 +121,7 @@ lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 function lk_bound_count_unfrozen(ld)::Int
     base = lk_base_cells(ld)
     return count(
-        p -> ld.gstack[p] != 0 && !(p in base) && !LogicKernel._is_box(ld, p),
+        p -> ld.gstack[p] != 0 && !(p in base) && !_lk_not_a_binding(ld, p),
         (ld.frozen_bar + 1):(ld.gTop)
     )
 end

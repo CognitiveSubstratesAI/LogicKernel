@@ -486,10 +486,24 @@ end
     # 229 before it (> 200): the owner lines of the rows TB2-TB4 ported went (the tbl and idg predicates and refusals,
     # owners TB2, TB3, TB4). Both sides stay non-empty and a dead owner lookup (0 owned rows) fails. D-0083: the real-tree
     # count is internal identity; lower it only with the rows a step closed, named in that commit.
-    # 199 after TRIMSTACKS: it ported `trim_stacks/0` (pl-setup.c:1751) and its owner row `pred:trim_stacks/0 Q10` went (200 -> 199).
+    # 2026-11-14 (D-0083 disclosure): 200 -> 165. Measured 168 owned rows on the tree of the TAB1 integration branch merged with
+    # origin/main a8cb295c (main itself: 229): the branch's TB5-TB9 and TX1 work closed 62 owned rows, one row was re-keyed (+1:
+    # the PL_CREATE_THREAD_LOCAL refusal of TH1 replaces the PL_CREATE_INCREMENTAL/THREAD_LOCAL one), net -61. The 62 rows:
+    # 51 pl-tabling.c predicates of owner TAB1 (`$idg_*`, `$mono_*`, `$tbl_*`, e.g. `$idg_add_edge/1`, `$idg_mono_index/2`,
+    # `$tbl_answer_dl/3`, `$tbl_propagate_start/1`, `$tbl_wkl_negative/1`), 4 of owner TX1 (`$transaction/2,3`, `$undo/1`,
+    # `$snapshot/1`), the 4 pl-wam.jl refusals (S_TABLED, T_DELAY, the two dtbl_reset6 branches), `vmi:S_INCR_DYNAMIC` (TB6),
+    # `pred:\=@=/2` (Q10, pl-variant.c) and the PL_CREATE_INCREMENTAL half of the assert_term refusal (TB6). The owner line
+    # `cfile:pl-tabling.c` is gone (TABINT-PC). 165 -> 168 (the ratchet sits AT the measured count, audit D-0736 (1)):
+    # re-measured with this expression on wip/tabm-diag 397efdd3 (main b29b887d merged): 168 owned rows.
+    # 168 -> 163 on the TAB1 landing line (wip/tab1land 551af2b6), measured with this expression by the generator run
+    # of 2026-11-15: five owner rows closed by the merged steps: `vmi:S_DET` and the setAttrDefinition attribute
+    # refusal (SSU1b), writeAttVar's attributes(portray) refusal (AV10), format_predicate/2 (W5b) and expandVars'
+    # ~user branch (W5c); the CONT1 row only changed its key (pl-vmi.c:7037-7038 cited) and stays owned.
+    # 163 -> 162 on merging gate/small1 (main c1c104f4) into the TAB1 landing line: TRIMSTACKS ported `trim_stacks/0` (pl-setup.c:1751) and its owner row
+    # `pred:trim_stacks/0 Q10` went (main: 200 -> 199); the row is owned on this line until the merge (D-0083 disclosure: derived, the floor test below measures it).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 199
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 162
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

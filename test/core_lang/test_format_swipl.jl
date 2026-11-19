@@ -593,23 +593,7 @@ const _FM_UB = [
     end
 end
 
-# D9: format_predicate/2 is refused by name (pl-fmt.c :249-325 would add the directive to GD->format.predicates; swipl succeeds).
-@testset "d09 format_predicate/2 on the kernel: refused by name, swipl succeeds (known difference)" begin
-    goal = raw"""format_predicate(x, fp_x(_, _)), R = done"""
-    f, names = _fm_file([("d09", goal)])
-    err = try
-        _fm_kernel(f, names)
-        nothing
-    catch e
-        e
-    end
-    @test err isa LK.NotPortedError
-    @test occursin("format_predicate", err.what)
-    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
-    if swipl !== nothing
-        @test _fm_swipl_lines(f, names)[2:end] == [_fm_atomline("d09", "done")]
-    end
-end
+# format_predicate/2 and current_format_predicate/2: the rows of test_format_predicate_swipl.jl (the d09 refusal row is gone).
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")

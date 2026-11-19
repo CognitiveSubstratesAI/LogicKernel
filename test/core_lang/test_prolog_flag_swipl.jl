@@ -304,6 +304,15 @@ end
             @test !(k in ours) && !(k in theirs)
             @test LK.current_prolog_flag(gd, k) !== nothing        # …but they are defined
         end
+        # PIN1-I5 (DEFKILL3): the generic reader never reads `f.i` of a restraint flag (pl-prologflag.jl:471 answers from the restraint
+        # record first, as pl-prologflag.c:2127), so the start value is read off the flag: setPrologFlag(.., -1), pl-tabling.c:12705-12712
+        # (kernel src/os/pl-prologflag.jl:1938-1945).
+        for k in (
+            "max_table_subgoal_size", "max_table_answer_size", "max_answers_for_subgoal",
+            "max_incomplete_subgoals", "max_scc_subgoals"
+        )
+            @test LK.current_prolog_flag(gd, k).i == -1
+        end
     end
 end
 
@@ -894,4 +903,39 @@ end
         gd, ld, proc, _TL[mk_gnd(_TL, 1), mk_var(_TL, LK.fresh_var_keys!(1))]
     )
     @test !ok && isempty(sols) && LK.live_states(ld) == 0
+end
+
+# PIN1-I1, PIN1-I2 (DEFKILL4): the START value of the five `*_action` restraint flags, read off the flag of a fresh global data. The
+# generic reader answers a restraint flag from the thread's restraint record (`tbl_get_restraint_flag`, pl-prologflag.c:2127; kernel
+# src/os/pl-prologflag.jl:471), which `initTabling!` (src/pl-tabling.jl:153-164) starts at `error`; so t_defaults and t_enum_error (rows of the
+# program above, which read through that reader) never see the value `setPrologFlag(gd, "…_action", FT_ATOM, …)` stores in `f.a`
+# (pl-tabling.c:12696-12711). The expected values are swipl's: one row per flag asks it, the kernel's `f.a` goes through `rowline`, the
+# extractor of the rows above (`enc`), so both sides are one encoding and both are non-empty.
+@testset "the start value of the *_action restraint flags, off the flag, == swipl (PIN1-I1, PIN1-I2)" begin
+    ks = [
+        "max_table_subgoal_size_action", "max_table_answer_size_action",
+        "max_answers_for_subgoal_action", "max_incomplete_subgoals_action",
+        "max_scc_subgoals_action"
+    ]
+    names = ["t_act$i" for i in eachindex(ks)]
+    gd = LK.PL_global_data{_TL}()          # fresh: nothing has set a flag
+    kl = String[]
+    for (i, k) in enumerate(ks)
+        f = LK.current_prolog_flag(gd, k)
+        @test f !== nothing && (f.flags & LK.FT_MASK) == LK.FT_ATOM
+        push!(kl, f === nothing ? "undefined" : rowline(names[i], f.a))
+    end
+    if _SWIPL === nothing
+        @test true
+    else
+        prog = joinpath(mktempdir(), "act.pl")
+        rows = ["$n(V) :- current_prolog_flag($k, V).\n" for (n, k) in zip(names, ks)]
+        write(prog, join(rows))
+        sw = swipl_lines(prog, names)
+        @test length(sw) == length(ks) + 1 && sw[1] == "ok"
+        # not vacuous: swipl answers every row (`name name(a[…])`), and the answer is the atom `error`
+        @test all(l -> occursin(r"^t_act\d+ c\[[0-9,]+\]/1\(a\[[0-9,]+\]\)$", l), sw[2:end])
+        @test all(l -> endswith(l, "(a[101,114,114,111,114])"), sw[2:end])
+        @test kl == sw[2:end]
+    end
 end

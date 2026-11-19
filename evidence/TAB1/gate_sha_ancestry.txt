@@ -1,0 +1,8 @@
+HEAD(before this commit)=dd78febb
+merge-base --is-ancestor 87a88328 HEAD: exit 0
+ls-remote main: 87a88328829468041e02c910eab03f7ccb2a41c3
+commits origin/main..HEAD: 394
+authors uniq: 1
+committers uniq: 1
+D-0164 diff filter count: 0
+D-0164 message filter count (pre-push also checks messages): 2 in 792cdac6 (subject) and be13ba88 (body)

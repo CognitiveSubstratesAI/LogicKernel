@@ -222,7 +222,7 @@ _current_method(m::Method)::Bool =
 naming no method of `mod`, or with an empty reason — a stale entry would pre-approve whatever later
 lands there.
 """
-function manifest_uncovered(mod::Module, manifest, exempt)
+function manifest_uncovered(mod::Module, manifest, exempt; owned=owned_methods(mod))
     covered = Set{Method}()
     for (f, tt, _) in manifest
         push!(covered, which(f, tt))
@@ -245,7 +245,7 @@ function manifest_uncovered(mod::Module, manifest, exempt)
     end
     uncovered = [
         "$(m.name) $(m.sig)  ($(m.file):$(m.line))" for
-        m in owned_methods(mod) if !(m in covered)
+        m in owned if !(m in covered)
     ]
     return (; uncovered, stale_exempt=stale)
 end

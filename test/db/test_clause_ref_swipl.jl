@@ -527,17 +527,22 @@ end
 # 10.1.19, D-0230 item 2). TAB1 TR1 added the trie registration between clause and closure, as pl-setup.c does (pin 18168e62): the
 # pre-TAB1 expectation "closure directly below clause" was an internal-identity expectation that changed by design (D-0083). swipl cannot
 # be asked for a blob type's registration order (the standard order of blobs is observable only per live blob), so this pins the
-# order the pin's pl-setup.c gives.
-@testset "initDBRef! registers the clause blob type in a fresh database, before any clause reference: record, clause, trie, closure ranks (pl-setup.c:146-152)" begin
+# order the pin's pl-setup.c gives. TAB1 TX1 added the undo blob (initUndo!, src/pl-undo.jl) between trie and closure, as pl-setup.c:146-155
+# does (D-0083, the same kind of change: an internal-identity expectation, the rank chain, by design). The pin's order is record, clause,
+# trie, zipper (initZip, pl-zip.c:1480), undo, closure: the zipper's registration goes between trie and undo when the zip line lands
+# (WAITS-FOR-LINE: the zip line, owner ZIP/zipper).
+@testset "initDBRef! registers the clause blob type in a fresh database, before any clause reference: record, clause, trie, undo, closure ranks (pl-setup.c:146-155)" begin
     gd = LK.setupProlog(_TL)       # the unbooted database: no boot clause has made a reference
     @test isempty(gd.clause_refs) && isempty(gd.clause_serials)
     rreg = LK._blob_registration(gd.atoms, LK.record_blob)
     creg = LK._blob_registration(gd.atoms, LK.clause_blob)
     treg = LK._blob_registration(gd.atoms, LK.trie_blob)
+    ureg = LK._blob_registration(gd.atoms, LK.undo_blob)
     wreg = LK._blob_registration(gd.atoms, LK.closure_blob)
-    @test rreg !== nothing && creg !== nothing && treg !== nothing && wreg !== nothing
+    @test rreg !== nothing && creg !== nothing && treg !== nothing && ureg !== nothing &&
+        wreg !== nothing
     @test creg.rank == rreg.rank - 1 && treg.rank == creg.rank - 1 &&
-        wreg.rank == treg.rank - 1
+        ureg.rank == treg.rank - 1 && wreg.rank == ureg.rank - 1
     @test creg.atom_name == LK.builtin_atom("clause")
 end
 

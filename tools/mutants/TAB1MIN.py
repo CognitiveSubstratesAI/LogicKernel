@@ -156,8 +156,8 @@ MUTANTS = [
          old="if isCallWrapper(codes[skipWrapperPrefix(codes)])\n            throw(",
          new="if false\n            throw("),
     dict(id="TAB1MIN-D10 _assertDefinition! calls the 2-argument freeCodesDefinition!: a clause added to a wrapped predicate raises (KILL tmc01-tmc07: the program does not load)", file=PR, targets=TM,
-         old="freeCodesDefinition!(gd, def, true)",
-         new="freeCodesDefinition!(def, true)"),
+         old="== 0     # see (*) above\n        freeCodesDefinition!(gd, def, true)",
+         new="== 0     # see (*) above\n        freeCodesDefinition!(def, true)"),
     # ── T3: pl-vmi.c S_WRAP / S_CALLWRAPPER / S_TABLED, pl-supervisor.c MAKE_SV1(wrapper, S_WRAP), the run loop's named refusals ──
     # (every KILL names the white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)", test/core_lang/test_tabling_min_swipl.jl:451-496)
     dict(id="TAB1MIN-E1 initSupervisors builds the wrapper block from S_TABLED (KILL test_tabling_min_swipl.jl:471 `cd.wrapper == code[S_WRAP, I_EXIT]`; :492 the entered block raises S_TABLED, not S_WRAP)", file=SV, targets=TM,
@@ -175,9 +175,21 @@ MUTANTS = [
     dict(id="TAB1MIN-E5 S_WRAP is declared with an operand (KILL test_tabling_min_swipl.jl:459 `iw.arguments == 0`)", file=VM, targets=TM,
          old="code_info(:S_WRAP, 0x00, 0,",
          new="code_info(:S_WRAP, 0x00, 1,"),
+    # E6: its `old`/`new` quote opcode NUMBERS (code(163), code(170)): left to tools/renumber_vmi.py (it rewrites mutant texts that quote an opcode number from the
+    # `_CODE_TABLE` order); do not hand-fix. Ran once over the merged table (S_TABLED = code(165), the gap mutant code(172));
+    # every later merge in the engine-core slot (AR1, TB5-TB7) re-runs it.
     dict(id="TAB1MIN-E6 S_TABLED leaves a gap after S_CALLWRAPPER (KILL test_tabling_min_swipl.jl:455 `S_TABLED == S_CALLWRAPPER + 1`; the table lookup may fail at load first)", file=VM, targets=TM,
-         old="const S_TABLED = code(163)",
-         new="const S_TABLED = code(170)"),
+         old="const S_TABLED = code(165)",
+         new="const S_TABLED = code(172)"),
+    # E7-E12 REMOVED (TAB1 TB7M4, D-0238: a retired mutant, never a loosened kill row). They were written for the run loop's named refusals of
+    # S_WRAP, S_CALLWRAPPER and S_TABLED (`throw(NotPortedError ...)` right after `@label S_WRAP` etc.). Batch 3 (WRAP1: S_WRAP, S_CALLWRAPPER; TB3: S_TABLED)
+    # replaced those refusal bodies by the real blocks (src/pl-wam.jl), so no `old` text can occur, and test_tabling_min_swipl.jl flipped the rows that pinned the
+    # refusals (tmc rows of the T3 testset: the three opcodes now RUN, comments there). The intent of each, on the new code, is carried by:
+    #   * E7 / E8 / E9 (the refusal's owner name, `e.step`): no counterpart, no refusal is left to name an owner; the flipped rows are the kill rows of
+    #     E10-E12's replacements below.
+    #   * E10 (S_WRAP does nothing / skipped): WRAP1-M4 (never creates the wrapped supervisor), WRAP1-M5, WRAP1-M20, WRAP1-M21, WRAP1-M22 (tools/mutants/WRAP1.py).
+    #   * E11 (S_CALLWRAPPER does nothing / skipped): WRAP1-M7 (the frame's predicate), WRAP1-M8 (equivalent, stated), WRAP1-M8b (the operand words) (WRAP1.py).
+    #   * E12 (S_TABLED does nothing / skipped): TB3-V1 (the complete-table jump), TB3-V2 (ARGP), TB3-V3 (setFramePredicate), TB3-V5, TB3-V7 (tools/mutants/TB3.py).
     # ── RETIRED (audit D-0710 item 5): TAB1MIN-E7 and TAB1MIN-E8 stood here. No row can kill them: the code they mutated has no error path.
     #   * E7 mutated the step name of S_WRAP's refusal ("WRAP1" -> "TAB1", src/pl-wam.jl, killed by test_tabling_min_swipl.jl:492 while the
     #     opcode still refused). E8 did the same for S_CALLWRAPPER's refusal (killed by :482).

@@ -146,6 +146,27 @@ cr_s(b, R) => R = ok.
 cr_ssu_ite(X) => ( shift(c), cr_mem(Y), Y == b -> X = Y ; X = none ).
 cr_ssu(R) :- reset(cr_ssu_ite(X), _, C), call(C), cr_s(X, R0), R = R0.
 cr_ssu_l(R) :- reset(cr_ssu_ite(X), _, C), call(C), cr_s(X, R).
+crt_kind(C, K) :- ( C == 0 -> K = plain ; K = shifted ).
+:- table crt_tp/1.
+crt_tp(X) :- crt_tp(Y), Y < 3, X is Y+1.
+crt_tp(0).
+:- table crt_tq/1.
+crt_tq(X) :- shift(eff(1)), X = 2.
+:- table crt_tu/1.
+crt_tu(X) :- shift_for_copy(eff(2)), X = 3.
+:- table crt_tr/1.
+crt_tr(X) :- reset(shift(foo), bar, _), X = 1.
+:- table crt_ts/1.
+crt_ts(X) :- reset(shift(foo), B, C), crt_kind(C, K), X = B-K.
+:- table crt_tm/1.
+crt_tm(X) :- crt_tn(X).
+crt_tm(1).
+:- table crt_tn/1.
+crt_tn(X) :- crt_tm(X).
+crt_tn(2).
+:- table crt_tv/1.
+crt_tv(X) :- reset(crt_two, B, C), call(C), X = B.
+crt_two :- shift(a), shift(b).
 """
 
 # (id, goal), run IN ORDER in one database
@@ -246,7 +267,30 @@ const _CR_CASES = [
     (
         "r_catch_shape",
         raw"reset(catch(shift(c), _, true), _, C), C = call_continuation(L), R = L"
-    )
+    ),
+    # CONT1-S4 (audit D-0920 item 5): the tabled `'$tbl_reset'/6` frame findReset must find (pl-cont.c:92: `fr->predicate != reset3 &&
+    # fr->predicate != reset6`). delim/4 and completion_step/1 of boot/tabling.pl run a tabled goal, and every resumed continuation, under
+    # that frame; its Ball is the SourceCall that the shift of a variant call to an incomplete table hands over (`shift_for_copy(call_info(..))`).
+    # Without the frame the kernel raises (r_tbl_left, r_tbl_scc, r_tbl_cc: no reset/3 to shift to), or the shift lands in the user's OUTER
+    # reset/3 (r_tbl_outer, r_tbl_ball: the call returns shifted, answers missing), or, past a reset/3 whose ball does not unify, finds no frame
+    # (r_tbl_inner_no). r_tbl_shift, r_tbl_shift_fc: a user ball shifted from inside a tabled predicate goes to the tabling frame, not to the
+    # outer reset/3 (swipl: the call fails, no answer line). Pinned from swipl 10.1.20 (the pinned binary, this program and driver, LC_ALL=C,
+    # two runs byte-identical; evidence/TAB1/cont1_s4_probe/pin1.txt, pin2.txt); the file's other pins are 10.1.19's.
+    ("r_tbl_left", raw"findall(X, crt_tp(X), L0), msort(L0, R)"),
+    (
+        "r_tbl_ball",
+        raw"findall(X-K, (reset(crt_tp(X), foo, C), crt_kind(C, K)), L0), msort(L0, R)"
+    ),
+    (
+        "r_tbl_outer",
+        raw"findall(X-B-K, (reset(crt_tp(X), B, C), crt_kind(C, K)), L0), msort(L0, R)"
+    ),
+    ("r_tbl_shift", raw"reset(crt_tq(X), B, C), crt_kind(C, K), R = X-B-K"),
+    ("r_tbl_shift_fc", raw"reset(crt_tu(X), B, C), crt_kind(C, K), R = X-B-K"),
+    ("r_tbl_inner_no", raw"findall(X, crt_tr(X), R)"),
+    ("r_tbl_inner_yes", raw"findall(X, crt_ts(X), R)"),
+    ("r_tbl_scc", raw"findall(X, crt_tm(X), L0), msort(L0, R)"),
+    ("r_tbl_cc", raw"findall(X, crt_tv(X), R)")
 ]
 
 # swipl 10.1.19's answers (the driver's whole output: `ok`, then one line per case of _CR_CASES)
@@ -305,7 +349,16 @@ const _CR_PINNED = [
     raw"t_r_yield_out t_r_yield_out(raised(permission_error(execute,vmi,I_YIELD)))",
     raw"t_r_meta_pred t_r_meta_pred(:(system,/($meta_call,3)))",
     raw"t_r_catch_throw t_r_catch_throw(caught)",
-    raw"t_r_catch_shape t_r_catch_shape([|](call(catch(call_continuation([]),V0,:(user,true))),[]))"
+    raw"t_r_catch_shape t_r_catch_shape([|](call(catch(call_continuation([]),V0,:(user,true))),[]))",
+    raw"t_r_tbl_left t_r_tbl_left([|](0,[|](1,[|](2,[|](3,[])))))",
+    raw"t_r_tbl_ball t_r_tbl_ball([|](-(0,plain),[|](-(1,plain),[|](-(2,plain),[|](-(3,plain),[])))))",
+    raw"t_r_tbl_outer t_r_tbl_outer([|](-(-(0,V0),plain),[|](-(-(1,V1),plain),[|](-(-(2,V2),plain),[|](-(-(3,V3),plain),[])))))",
+    raw"t_r_tbl_shift",
+    raw"t_r_tbl_shift_fc",
+    raw"t_r_tbl_inner_no t_r_tbl_inner_no([])",
+    raw"t_r_tbl_inner_yes t_r_tbl_inner_yes([|](-(foo,shifted),[]))",
+    raw"t_r_tbl_scc t_r_tbl_scc([|](1,[|](2,[])))",
+    raw"t_r_tbl_cc t_r_tbl_cc([])"
 ]
 
 "The program and cases as one file; the case predicates' names."

@@ -790,7 +790,7 @@ fixed it or a public issue exists.
 | `bench/programs/{derive,nreverse,qsort,poly_10}.jl` | the STANDALONE CONSUMER: four of SWI's benchmark programs written on `DefaultTerm` with exported names only, beside the verbatim `.pl` files | swipl-bench `programs/*.pl` |
 | `test/test_standalone_consumer.jl` | runs them: only exported names (checked by parsing), independent oracles, and identical `write_canonical` output to swipl running the upstream programs | — |
 | `src/pl-index.jl` | just-in-time clause indexing, function by function: lookup, index creation, assessment, candidate indexes, the primary index, deep (list) indexes, the `indexed` property | `src/pl-index.c` |
-| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here); since L1b stage C1 the WORDS of the stacks (pl-data.h): every tag and storage bit, `tag`, `storage`, `valInt`/`valUInt`, `isIndirect`, the type tests on a word (other methods of the term-level tests' functions), `consInt`/`consUInt`, the indirect headers (`mkIndHdr`, `wsizeofInd`, `padHdr`, `mkBlobHdr`) and pl-gmp.h's size words (`mpz_size_stack`, `mpq_size_stack`, `mpz_stack_size`); since NF1 a frame's redo context (`fctx`), the redo tags (pl-builtin.h) and the state pool, with between/3's state (`between_state`, pl-arith.c's); since NF2 retract/1's context (`retract_context`, pl-proc.c's); since NF3 the state of current_op/3 and `$local_op/3` (`op_enum`, pl-op.c's); since R2 F1a the Prolog-flag table's types and the mask's bits (`prolog_flag`, `oneof_t`, `FT_*`, `FF_*`, `PLFLAG_*`, `prolog_flag_enum`, `prolog_flag_table`); since TAB1 TB0 the allocation pool (`alloc_pool`) and the table state of pl-tabling.h/.c (`cluster`, `worklist`, `worklist_set`, `component_set`, `tbl_component`, `tbl_status`, `suspension`, the `sindex_*` structs, `delay`, `delay_set`, `delay_info`, `delay_usage`, the `CLUSTER_*`, `SCC_*`, `*_MAGIC` and `TF_MONOTONIC_LAZY` constants as `Int`s) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c`, `src/pl-gmp.h`, `src/pl-arith.c`, `src/pl-proc.c`, `src/pl-op.c`, `src/os/pl-prologflag.h`, `src/os/pl-prologflag.c`, `src/pl-rec.h`, `src/pl-rec.c`, `src/pl-event.h`, `src/pl-event.c`, `src/pl-copyterm.h`, `src/pl-gvar.c`, `src/pl-tabling.h`, `src/pl-tabling.c`, `src/pl-allocpool.h`, `src/pl-wrap.h`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.h` |
+| `src/pl-incl.jl` | the structs the clause store and its indexes are built from (`clause`, `clause_ref`, `clause_index`, `clause_list`, `definition`, …), the predicate table's (`procedure`, `module` as `module_t`) and the word layout of keys; THE LOCAL STACK's layout (V3): positions and upstream's struct widths, `VAROFFSET`, the frame, choice-point and foreign-frame records, the frame flags and their macros; V4a's query frame (`queryFrame`, upstream's 47 words), the argument-pointer value `argp_t`, the argument-stack entry and the builder frame, a definition's supervisor and the database's shared supervisor blocks (`PL_code_data`); V5b's exception classes (`except_class`); V6b1's type tests on a term (pl-data.h: `canBind`, `isTextAtom`, `isInteger`, …), and V6b2's `isAtom` and `isTaggedInt`; R1b's operator types and kinds (`OP_FX` … `OP_YFX`, `OP_PREFIX`, `OP_INFIX`, `OP_POSTFIX`, `OP_MAXPRIORITY`) and a module's operator table; R1c's module syntax flags (`M_CHARESCAPE`, `DBLQ_*`, `BQ_*`, `RAT_*`, `M_RDSTRING_TERM`) and `strnumstat`; R1d's text conversion results (`CVT_status`, `CVT_result`); R1f's source-file record (`sourceFile`), a clause's `line_no`/`source_no`/`owner_no`, a procedure's `source_no`, the style-check and predicate-attribute flags; since V9g-b a recorded term (`record`: the term itself, its cyclic references beside it) and the bag of a findall/3 in progress (`findall_bag`, pl-bag.c's — the local data holds the bags, so the struct is declared here); since L1b stage C1 the WORDS of the stacks (pl-data.h): every tag and storage bit, `tag`, `storage`, `valInt`/`valUInt`, `isIndirect`, the type tests on a word (other methods of the term-level tests' functions), `consInt`/`consUInt`, the indirect headers (`mkIndHdr`, `wsizeofInd`, `padHdr`, `mkBlobHdr`) and pl-gmp.h's size words (`mpz_size_stack`, `mpq_size_stack`, `mpz_stack_size`); since NF1 a frame's redo context (`fctx`), the redo tags (pl-builtin.h) and the state pool, with between/3's state (`between_state`, pl-arith.c's); since NF2 retract/1's context (`retract_context`, pl-proc.c's); since NF3 the state of current_op/3 and `$local_op/3` (`op_enum`, pl-op.c's); since R2 F1a the Prolog-flag table's types and the mask's bits (`prolog_flag`, `oneof_t`, `FT_*`, `FF_*`, `PLFLAG_*`, `prolog_flag_enum`, `prolog_flag_table`); since TAB1 TB0 the allocation pool (`alloc_pool`) and the table state of pl-tabling.h/.c (`cluster`, `worklist`, `worklist_set`, `component_set`, `tbl_component`, `tbl_status`, `suspension`, the `sindex_*` structs, `delay`, `delay_set`, `delay_info`, `delay_usage`, the `CLUSTER_*`, `SCC_*`, `*_MAGIC` and `TF_MONOTONIC_LAZY` constants as `Int`s) | `src/pl-incl.h`, `src/pl-data.h`, `src/pl-global.h`, `src/pl-builtin.h`, `src/SWI-Prolog.h`, `src/pl-bag.c`, `src/pl-gmp.h`, `src/pl-arith.c`, `src/pl-proc.c`, `src/pl-op.c`, `src/os/pl-prologflag.h`, `src/os/pl-prologflag.c`, `src/pl-rec.h`, `src/pl-rec.c`, `src/pl-event.h`, `src/pl-event.c`, `src/pl-copyterm.h`, `src/pl-gvar.c`, `src/pl-tabling.h`, `src/pl-tabling.c`, `src/pl-allocpool.h`, `src/pl-wrap.h`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.h`, `src/pl-transaction.h`, `src/pl-transaction.c`, `src/pl-thread.h`, `src/pl-idgset.h` |
 | `src/pl-comp.jl` | the head side of the clause compiler — the variable analysis of head AND body (control constructs, the branches of `;`, the goal of `\+`; V1), `compileArgument`, the `H_VOID_N` merging, the clause's literal table (V1 L2) — the head decompiler (`decompileHead`, `decompile_head`), and the code readers the index uses (`skipArgs`, `argKey`); the body compiler (V2: `compileBody`, `compileSubClause`, the LCO block), since V6b1 the type tests compiled as upstream decides (`compileTypeTest`, `compileBodyVar1`/`NonVar1`, `always`) under the compiling thread's flags (`ld`); since V6c2 `is/2` and the comparisons (the ARITH_F branch, `compileSimpleAddition`, which emits `A_ADD_FC` since V8); since V6b2 the other goals compiled inline (`compileBodyUnify`, `compileBodyEQ`/`NEQ`, `compileBodyArg3`, `compileBodyCallContinuation`, `compileBodyShift`, `is_portable_constant`): since V9a the unification family emits (`skippedVar`, and `always` under `optimise`), the rest refused until V9; since V9b the unifications moved into the head (`optimise_unify`: `annotate_unification`, `argMoveUnify`, `isUnifiedArg`, `CL_HEAD_TERMS`); since V9c its errors raised with `PL_error`, and assert/1, assertz/1, asserta/1 (`assert_term!`, `get_head_and_body_clause`, `is_neck`, `PL_predicates_from_comp`); since V5c `unify_definition` (a definition's reference, module-qualified); since R1f the consult path of `assert_term!` (a clause's file, line and owner; `overruleImportedProcedure`, `redefineProcedure`) and `record_clause`, `'$record_clause'/3`; since V9d (`;`) `compileBody!`'s frames for a disjunction with the variable tables it balances (`setVars`, `balanceVars`, `c_var`, `orVars`, `copyVarTable`), and the BODY DECOMPILER (`decompile!`, `decompileBody!`, `decompileBodyNoShift!`, `build_term!`) with clause/2 over rule bodies (`pl_clause!` with a body); since V9d (`->`) the conditionals' frames, `allocChoiceVar!` and `try_fast_condition!`, (`\+`) the negation's frame, and the decompiler's moved unifications (`mark_bvar_access`, `moved_unifications!`); since D1 clause/3, `'$clause'/4` and `'$rule'/3` (`clause_ndet`'s `ref`/`bindings`, its by-reference branch, `decompile_bindings!`, `unify_definition`'s bound-head branch) and assert/2, assertz/2, asserta/2 with the Ref of `'$record_clause'/4` | `src/pl-comp.c`, `src/pl-comp.h`, `src/pl-incl.h` |
 | `src/pl-atom.jl` | since L1b stage A, the ATOM TABLE (pl-atom.c), one per database (`atoms_t`, `GD->atoms`): `struct atom`, the blocks (`allocateAtomBlock`, `fetchAtomArray`), `reserveAtom`, `same_name`, `lookupBlob`, `lookupAtom`, `rehashAtoms`, `registerBuiltinAtoms`, `lockAtoms`, `do_init_atoms!`, blob registration per database (`PL_register_blob_type`, `blob_registration`); the built-in atoms GENERATED from src/ATOMS at the pin by tools/gen_atoms.jl (1048, the empty atom first); with `ucs_atom`/`lookupUCSAtom` (pl-fli.jl), `PL_canonicalise_text`/`textToAtom` (os/pl-text.jl) and `initReservedSymbols!` (pl-ressymbol.jl). Nothing reads it yet but its tests: stage C's words do. AGC NOT PORTED (with pl-gc.c) | `src/pl-atom.c`, `src/ATOMS`, `src/pl-incl.h` |
 | `src/pl-funct.jl` | the control functors (`registerControlFunctors`, upstream's `CONTROL_F` set) and the names compileSubClause treats specially (`SubClauseNames`: `true`, `call`, the goals compiled inline, each O_COMPILE_IS functor by name since V6b2), registered once per database into the global data, which the clause compiler reads them from; since L1b stage B, the FUNCTOR TABLE (pl-funct.c), one per database (`functors_t`, `GD->functors`): `functorDef`, the blocks (`allocateFunctorBlock`, `fetchFunctorArray`), `registerFunctor`, `lookupFunctorDef`, `isCurrentFunctor`, `rehashFunctors` (with os/pl-table.h's `pointerHashValue`), `registerBuiltinFunctors` over the 333 built-ins GENERATED from src/ATOMS at the pin by tools/gen_atoms.jl (index 1 first), `initFunctors!`, which sets `CONTROL_F`/`ARITH_F` on the table's definitions; pl-data.h's `indexFunctor`, `valueFunctor`, `arityFunctor` (arity 31 and up from the table), `isAtomFunctor`, `nameFunctor` (pl-incl.jl). Nothing reads the table yet but its tests: the compiler keeps `ControlFunctors`/`_arith_functors` until stage C's words | `src/pl-funct.c`, `src/ATOMS`, `src/pl-incl.h`, `src/os/pl-table.h` |
@@ -826,7 +826,7 @@ fixed it or a public issue exists.
 | `src/pl-arith.jl` | evaluation (`valueExpression`, `evalExpression`), the functions ported (`+`, `-`, `*`, unary `-`/`+`), `check_float`, `compareNumbers`, and the built-ins `is/2`, `</2`, `>/2`, `=</2`, `>=/2`, `=\=/2`, `=:=/2` (V6c1); since V8 `>>` and `<<` (`ar_shift`), `A_ADD_FC`'s `ar_add_si`, and the integer size checks (`int_bits_ok`, `check_int_bits`); since R1a `[Atom]` (`arithChar` through `charCode`); since R1c `ar_rdiv_mpz` (a rational read) and `PL_nan`; since arith-a and arith-b the functions of arith_funcs_design.md §2 (`ar_pow`, the libm functions, `pi`/`e`/`cputime`/`random`) | `src/pl-arith.c`, `src/pl-arith.h`, `src/pl-incl.h`, `src/pl-inline.h`, `src/os/pl-os.c` |
 | `src/pl-modul.jl` | the module table (`module_table`, a vector with a name index) and any module of it, created on its first name — `system`, `user`, `$`-modules, classes, flags, the super modules (`_lookupModule!`, `lookupModule`, `isCurrentModule`, `setSuperModule` and its helpers; since V5c, MOD1) — stripping `Module:` (`stripModuleName`, `stripModule`), and what a call of an undefined predicate reads: the `unknown` flag, inherited through the supers (`getUnknownModule`, `inheritUnknown`); since R1c the syntax flags a module is created with (SWI-7's); since MOD1 `set_module/1`, `'$module_property'/2`, `'$current_source_module'/1`, `'$current_typein_module'/1` and their setters, `add_import_module/3`, `delete_import_module/2`, `ReadingSource`, `MODULE_parse` | `src/pl-modul.c`, `src/pl-incl.h` |
 | `src/pl-op.jl` | the operator tables (since R1b): each module's table, `system`'s holding SWI's defaults (`initOperators!`), defining an operator (`defOperator!`, `op/3`) and looking one up through the supers (`currentOperator`, `priorityOperator`); what `current_op/3` enumerates (`scanVisibleOperators!`); since NF3 `current_op/3` and `'$local_op'/3` themselves, upstream's non-deterministic foreign predicates (`current_op_ndet`, `get_op_module`, their states a pool of the local data) | `src/pl-op.c` |
-| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused; since group F, D-0123, written `@(Template, Substitutions)`) and `PL_write_term`; since group F `callPortray` calls user:portray/1 and write_term's `portray_goal`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h` |
+| `src/pl-write.jl` | the writer: since R1c the NaN helpers the reader needs (`NaN_value`, `make_nan`: `1.5NaN`); since R1d the quoting rules the parser asks of a quoted name (`unquoted_atom`); since R1e's core the WRITER — the quoting rules with write options (`atomType`, `unquoted_text`, `bracketPairAtom`, …), the token layer (`needSpace`, `PutOpenToken`, `PutToken`, `putQuoted`), atoms, strings, integers, rationals and `'$VAR'`, `writeTerm2`'s state machine over an explicit stack (operators, block operators, lists and the dotted notation, `{}`, bracket pairs), `writeTopTerm` (a cyclic term refused; since group F, D-0123, written `@(Template, Substitutions)`) and `PL_write_term`; since group F `callPortray` calls user:portray/1 and write_term's `portray_goal`; since AV10 `writeAttVar`'s `attributes(portray)` calls `'$attvar':portray_attvar/1`; since R1e's floats `format_float` (Ryu's digits in pl-write.c's layout), `format_special_float`, `writeNaN`, `writeINF`; since R1e's write/1 family nl/0,1, write_term/2,3 (`pl_write_term3`, `bind_varnames`), write/writeq/writeln/print /1,2 (`do_write2`), since R1e's canonical write_canonical/1,2 | `src/pl-write.c`, `src/pl-incl.h` |
 | `src/pl-read.jl` | the reader (R1); since R1c its SCANNER: the Unicode classifiers over the map (`PlBlankW`, `PlIdContW`, …), the read buffer, `raw_read` (one term's text from a stream: comments dropped, positions kept, quoted items as written, the full stop), syntax errors with their location (`string(Text, CharNo)`, `file(…)`), numbers (`str_number`: every base syntax, digit groups, `1r3`, floats with `Inf`/`NaN`, other scripts' digits), escapes and quoted text (`escape_char`, `get_string`), the variable table (`lookupVariable`), the tokeniser (`get_token`); since R1d the PARSER — the term stack and `readValHandle` (the variables' order is swipl's), the operator queues and their resolution (`isOp`, `modify_op`, `can_reduce`, `must_reduce`, `reduce_op`, `build_op_term` with block operators), `complex_term`'s state machine, the list, bracket and compound readers, `read_term` — and `atom_to_term/3`, `term_to_atom/2`, `term_string/2` (both directions since R1e: the write through `PL_write_term`); since R1f `read_clause` (the consult's read: singletons reported, a syntax error reported and the next clause read), `check_singletons` and its kin, `reportReadError`, `LD->read_source`; since R1e's canonical `read_term_from_stream` with `read_term_options` (read_term_from_atom/3), `bind_variables`, `check_singletons`' list | `src/pl-read.c` |
 | `src/pl-umap.jl` | the Unicode map (since R1c): the syntax category and display width of every code point (`uflags_map`), its POSIX class (`uctype_map`, `ctype_to_flags`), the decimal digit runs, the paired brackets and quotes — data GENERATED from pl-umap.c by `tools/gen_umap.jl`, byte for byte — and their lookups (`uflagsRaw`, `uctypeRaw`, `pl_pair_lookup`) | `src/pl-umap.c`, `src/Unicode/prolog_syntax_map.pl` |
 | `src/os/pl-utf8.jl` | UTF-8 over a byte buffer (since R1c): decoding (`utf8_get_char`, `_PL__utf8_code_point`), encoding (`utf8_put_char`), skipping | `src/os/pl-utf8.c`, `src/os/pl-utf8.h` |
@@ -844,7 +844,7 @@ fixed it or a public issue exists.
 | `src/os/pl-glob.jl` | wildcards and file-name expansion (LB2b): `compilePattern`, `matchPattern`, wildcard_match/2,3, `expand`, expand_file_name/2, directory_files/2 (`PL_predicates_from_glob`) | `src/os/pl-glob.c` |
 | `src/pl-sys.jl` | the system built-ins (Y1): getenv/2, setenv/2, unsetenv/1, get_time/1, sleep/1 (`PL_predicates_from_system`); shell/2 is left out (deferred); setlocale/3 (CT1a, `PL_predicates_from_ctype`) | `src/pl-sys.c`, `src/os/pl-ctype.c` |
 | `src/pl-dwim.jl` | since DWIM1 (R2), pl-dwim.c's two foreign predicates: `dwim_match/3` (`pl_dwim_match`, pl-ext.c:155) and `'$dwim_predicate'/2` (`pl_dwim_predicate`, NDET, pl-ext.c:156) over `dwimMatch` and its rules (`oneTypo`, `twoTransposed`, `oneInserted`, `differentSeparated`, `subWord`, `subwordsTransposed`) on NUL-terminated byte vectors (the C strings); the text of an argument is `PL_get_chars(CVT_ALL)` as ISO Latin-1 (`_dwim_chars`: a character above 0xFF fails silently), the name of an atom `stringAtom` (`_dwim_stringAtom`: a wide atom is read as UTF-32LE bytes up to the first NUL, as swipl's rows show); `dwim_match/2` is Prolog (boot/syspred.pl) | `src/pl-dwim.c` |
-| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception); since TRIMST `trim_stacks/0` (`pl_trim_stacks0_va`, a call of `trimStacks!(ld, true)`; `PL_predicates_from_setup`, registered between ctype and proc as pl-ext.c:526-529) | `src/pl-setup.c` |
+| `src/pl-setup.jl` | `emptyStacks`: a new local data's stacks, with one foreign frame at the base; since V5d `allocStacks`/`init_stack` (the local stack's spare reserved above `max`) and `trim_stack`/`trimStacks` (the spare given back after an exception) | `src/pl-setup.c` |
 | `test/core_lang/test_rules_swipl.jl` | V4b's gate: nreverse and an execution differential over random rule clauses identical to swipl (answers and determinism), the body family covered; a call failing before its frame is filled; positions after deterministic exits (MQ6) pinned and live, with the record pools held to the live records; flatness of the last-call optimisation (and its absence growing the stack); open/next/close cycles at their baseline; warm, calls and exits allocate nothing | — |
 | `test/foreign/test_builtins_swipl.jl` | V5a2's gate: the built-ins' registration; the first users as queries against a live swipl (600 random goals × 3 `occurs_check` modes), from clause bodies, and the position built-ins pinned to libswipl | — |
 | `test/core_lang/test_arith_swipl.jl` | V6c1's gate: SWI's test_arith.pl units for what is ported; the error order and terms; a bound `is/2`; the rounding to double; a live differential of 600 `is/2` goals and 300 comparisons; the interims (Q-AR1, Q-AR7) and, since V5d, Q-AR8's real cyclic culprit; the kernel-only terms | — |
@@ -933,9 +933,12 @@ fixed it or a public issue exists.
 | `docs/release-notes/v0.1.0-pre.1.md` | the release notes of v0.1.0-pre.1, byte for byte the annotated tag's message (SHA-256 b50689ee…0f4bd) | — |
 | `src/pl-event.jl` | EV1 (R2): the event lists of pl-event.c over the 12-row `PL_events` table (`event_type`, `event_location`; a list is a vector, the `fastheap_term` of a closure is its record): registration (`prolog_listen/2,3`: `as(first|last)`, `name(Name)`, an event name or a predicate indicator, module-qualified callable closures), `prolog_unlisten/2`, `destroy_event_list!`, and the calling side (`callEventHook`, `PL_call_event_hook(_va)`, `call_event_list`, `predicate_update_event`, `retractall_event`, `table_answer_event`, `delayEvent(s)`, `sendDelayedEvents`); table `PL_predicates_from_event` (src/pl-ext.jl). Wired raise sites: assert, retract, retractall `start`/`end`, the erase of a record, the clause GC's erase, the destroy of a pristine abolish; the rest is deferred (section EV1) | `src/pl-event.c`, `src/pl-event.h` |
 | `src/pl-allocpool.jl` | TAB1 TB0 (R2): pl-allocpool.c whole, the counted allocation pool behind the flag `table_space`: `new_alloc_pool`, `free_alloc_pool`, `alloc_from_pool` (charges `bytes`, `resource_error(Name)` past the limit), `free_to_pool`; the struct `alloc_pool` is in src/pl-incl.jl; counts only, Julia's collector frees (section TAB1 TB0) | `src/pl-allocpool.c` |
-| `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0). Since TAB1 TB1 the start-node cache, the pointers to tries, `variant_table`, the answer table (`get_answer_table`, `reset_answer_table`), the status family and the 13 `$tbl_*` predicates over them (section TAB1 TB1) | `src/pl-tabling.c`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-vmi.c` |
+| `src/pl-tabling.jl` | TAB1-min (R2): the load-time slice of pl-tabling.c that boot/tabling.pl's `:- table` expansion asks for: `'$tbl_trienode'/1`, `'$tbl_is_trienode'/1` (the reserved symbol `trienode`), the tabling properties of a predicate (`table_props`, `definition.tabling`: `tbl_get_predicate_attribute`, `tbl_set_predicate_attribute`, `tbl_set_incremental_predicate`, `tbl_reset_tabling_attributes!`) behind the `tabled`, `tabled_variant`, `incremental`, `monotonic`, `tshared`, `opaque`, `lazy`, `abstract`, `subgoal_abstract`, `answer_abstract` and `max_answers` keys of `'$set_predicate_attribute'/3` and `'$get_predicate_attribute'/3`; table `PL_predicates_from_tabling` (src/pl-ext.jl). The tries, worklists and `start_tabling/3` are TAB1 (section TAB1-min) Since TAB1 TB0 the constants and sentinels of pl-tabling.c (`WL_*`, `WLFS_*`, `DV_DELETED`, `DL_UNDEFINED`, `CAND_*`, `TBL_FREE_*`), the freed-object lists (`tbl_alloc`, `tbl_free`, `free_tbl_free_objects`), `initTabling!` (the restraints) and `setMonotonicMode` (section TAB1 TB0); since TAB1 TB5 the abolish and reclaim of the tables (`abolish_table`, `clear_variant_table`, `clearThreadTablingData`, `untable_from_clause`, `$tbl_destroy_table/1`, `$tbl_abolish_local_tables/0`; section TAB1 TB5); since TAB1 TB8 the restraint flags (`tbl_get_restraint_flag`, `tbl_set_restraint_flag`, `set_restraint`, `set_restraint_action`, `unify_restraint`), the tripwires (`tbl_pred_tripwire`, `tbl_wl_tripwire`, `tripwire_incomplete_subgoals`, `tripwire_scc_subgoals`), the answer restraints (`generalise_answer_substitution`, `add_answer_count_restraint`, `add_radial_restraint`), `droppable_table`, `children_of_component`, `drop_intermediate_tables`, `$tbl_sdg/3` and `$tbl_incomplete/3` (section TAB1 TB8). Since TAB1 TB1 the start-node cache, the pointers to tries, `variant_table`, the answer table (`get_answer_table`, `reset_answer_table`), the status family and the 13 `$tbl_*` predicates over them (section TAB1 TB1) | `src/pl-tabling.c`, `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-vmi.c` |
+| `src/pl-idgset.jl` | TAB1 TB6 (R2): pl-idgset.c whole, the edge sets of the nodes of the incremental dependency graph and the registry of a thread's IDG nodes: the set's blocks and their index (`new_block`, `grow_block`, `retire_block`, `index_insert`, `find_pos`), `idg_set_add`, `idg_set_delete`, `idg_set_contains`, `idg_set_size`, `idg_set_sizeof`, `idg_set_clear`, the enumeration (`idg_set_next`), the deferred free (`idg_free_or_defer`) and the registry (`idg_registry_new`, `idg_registry_add`, `idg_registry_delete`, `idg_registry_get`, `idg_registry_release_n`, `idg_registry_sizeof`); the structs (`idg_set`, `idg_set_block`, `idg_set_enum`, `idg_registry`) are in src/pl-incl.jl; single-thread build, blocks charged to the allocation pool (section TAB1 TB6) | `src/pl-idgset.c`, `src/pl-idgset.h` |
 | `src/pl-wrap.jl` | TAB1-min (R2): pl-wrap.c's closure blob (`closure_blob`, a record in `gd.closure_refs`), `'$c_wrap_predicate'/5` installing a wrapper supervisor (`S_CALLWRAPPER` or `S_TABLED` over the predicate's own supervisor), `find_wrapper`, `assert_wrapper`, `unify_wrapped`, `wrapper_vmi`, `skipWrapperPrefix`, `isCallWrapper`, `resetWrappedSupervisor` (called by `freeCodesDefinition!`, src/pl-supervisor.jl); table `PL_predicates_from_wrap`. `wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3` and `$closure_predicate/2` are left to WRAP1 (section TAB1-min) | `src/pl-wrap.c`, `src/pl-wrap.h` |
-| `src/pl-trie.jl` | TAB1 TR1 (part A): pl-trie.c's trie as arenas of records (`trie{T}`, `trie_node`, `trie_children_block`, `trie_node_chunk` in src/pl-incl.jl): `trie_create`, `trie_destroy`, `trie_empty`, `trie_empty_take`, `trie_clean`, the children and blocks (`get_child`, `next_child!`, `add_child`, `delete_child`, `compact_children`), node allocation in both modes (individual nodes under TRIE_CONCURRENT, chunks otherwise), `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, the indirect table (pl-indirect.c: `intern_indirect`, `trie_intern_indirect`), the lookups `trie_lookup_abstract`, `trie_lookup_flat`, `trie_insert_flat`, `is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`, and the trie blob (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B; the DIVERGES are in section TAB1 TR1 | `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c`, `src/pl-tabling.c` |
+| `src/pl-trie.jl` | TAB1 TR1 (part A): pl-trie.c's trie as arenas of records (`trie{T}`, `trie_node`, `trie_children_block`, `trie_node_chunk` in src/pl-incl.jl): `trie_create`, `trie_destroy`, `trie_empty`, `trie_empty_take`, `trie_clean`, the children and blocks (`get_child`, `next_child!`, `add_child`, `delete_child`, `compact_children`), node allocation in both modes (individual nodes under TRIE_CONCURRENT, chunks otherwise), `clear_node`, `prune_node`, `prune_trie`, `insert_child`, `follow_node`, the indirect table (pl-indirect.c: `intern_indirect`, `trie_intern_indirect`), the lookups `trie_lookup_abstract`, `trie_lookup_flat`, `trie_insert_flat`, `is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`, and the trie blob (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B; the DIVERGES are in section TAB1 TR1 | `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c`, `src/pl-tabling.c`, `src/os/pl-table.h` |
+| `src/pl-transaction.jl` | TX1 (R2): the transaction state's operations of pl-transaction.c: retract and assert inside a transaction, visibility, the last-modified table, commit, discard, the merge of a nested transaction's tables, the list of updates (TX1a), and the Prolog connection `$transaction/2,3`, `$snapshot/1`, `transaction_updates/1` (TX1b); the data structures (`tr_stack`, `ld_transaction`, the `TR_*` flags, the `GEN_*` marks) are in src/pl-incl.jl; the tables' share of a transaction is left to TAB1 TB9 (section TX1) | `src/pl-transaction.c` |
+| `src/pl-undo.jl` | TX1e (R2): pl-undo.c's `undo/1`: `'$undo'(Goal)` records the goal in a blob of type `undo` and conses it on the list in the first global cell, a trailed assignment; when backtracking resets that cell the goals on the list are scheduled and run at the next predicate call and after the next backtrack (section TX1) | `src/pl-undo.c`, `src/pl-undo.h` |
 | `src/gd_template.jl` | LB4 b1 (R2): the template database (ORIGINAL): `copy_global_data`, generated field by field from `PL_global_data` (the stream tables an empty copy of the same shape, every other field one deep copy that keeps the identities inside the database), the per-process, per-term-type registry (`gd_template`, `PL_global_data_from_template`, `reset_gd_templates!`, `gd_template_built`); no constructor calls it until b2 | — |
 | `src/boot_image.jl` | LB4 b1-3 (R2): the readers of a booted database for the boot check, read from the definition tables and `files_array` (no syspred.pl): `boot_image_predicates` (T1: module, name, arity, defined, dynamic, foreign, number_of_clauses, locked, iso, transparent, meta, public, exported) and `boot_image_source_files` (T3: the `$time_source_file/3` order and the `$source_file_property/3` columns) | — |
 | `src/pl-cont.jl` | since CONT1 (R2), delimited continuations at run time: `findReset`, `put_environment`, `put_continuation` and `shift` (what `shift/1` and `shift_for_copy/1` collect from the frames between the shifting frame and its `reset/3`), `push_continuation` (the frame `call_continuation/1` makes again); the VMI bodies `I_RESET`, `I_EXITRESET`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP`, `I_YIELD` are in src/pl-wam.jl, the liveness walk `walk_and_mark` in src/pl-gc.jl; the tabled branches are TAB1's | `src/pl-cont.c` |
@@ -985,6 +988,7 @@ graph LR
     pl_attvar["pl-attvar.jl"]
     pl_error["pl-error.jl"]
     pl_allocpool["pl-allocpool.jl"]
+    pl_idgset["pl-idgset.jl"]
     pl_dbref["pl-dbref.jl"]
     pl_gmp["pl-gmp.jl"]
     pl_arith["pl-arith.jl"]
@@ -1004,6 +1008,8 @@ graph LR
     pl_pro["pl-pro.jl"]
     pl_init["pl-init.jl"]
     pl_event["pl-event.jl"]
+    pl_transaction["pl-transaction.jl"]
+    pl_undo["pl-undo.jl"]
     pl_mutex["pl-mutex.jl"]
     pl_bag["pl-bag.jl"]
     pl_gvar["pl-gvar.jl"]
@@ -1048,6 +1054,7 @@ graph LR
     os_pl_stream --> os_pl_utf8
     os_pl_stream --> pl_incl
     os_pl_stream --> pl_comp
+    os_pl_stream --> pl_idgset
     os_pl_stream --> os_pl_file
     os_pl_stream --> pl_read
     pl_incl --> term_interface
@@ -1093,6 +1100,7 @@ graph LR
     pl_index --> pl_arith
     pl_index --> os_pl_text
     pl_index --> pl_proc
+    pl_index --> pl_transaction
     pl_index --> pl_tabling
     pl_index --> pl_trie
     pl_index --> pl_read
@@ -1118,6 +1126,7 @@ graph LR
     pl_global --> os_pl_os
     pl_global --> os_pl_file
     pl_global --> pl_setup
+    pl_global --> pl_transaction
     pl_global --> pl_tabling
     pl_global --> gd_template
     pl_modul --> term_interface
@@ -1153,6 +1162,8 @@ graph LR
     pl_inline --> pl_gmp
     pl_inline --> pl_arith
     pl_inline --> os_pl_text
+    pl_inline --> pl_transaction
+    pl_inline --> pl_undo
     pl_prims --> term_interface
     pl_prims --> default_term
     pl_prims --> os_pl_utf8
@@ -1356,6 +1367,7 @@ graph LR
     pl_wam --> pl_supervisor
     pl_wam --> pl_trace
     pl_wam --> pl_event
+    pl_wam --> pl_undo
     pl_wam --> pl_tabling
     pl_wam --> pl_wrap
     pl_wam --> pl_trie
@@ -1430,6 +1442,12 @@ graph LR
     pl_allocpool --> pl_incl
     pl_allocpool --> pl_global
     pl_allocpool --> pl_error
+    pl_idgset --> default_term
+    pl_idgset --> pl_incl
+    pl_idgset --> pl_global
+    pl_idgset --> pl_allocpool
+    pl_idgset --> pl_arith
+    pl_idgset --> pl_trie
     pl_dbref --> term_interface
     pl_dbref --> default_term
     pl_dbref --> pl_incl
@@ -1555,6 +1573,7 @@ graph LR
     os_pl_files --> pl_comp
     os_pl_files --> pl_fli
     os_pl_files --> pl_error
+    os_pl_files --> pl_idgset
     os_pl_files --> os_pl_prologflag
     os_pl_files --> os_pl_text
     os_pl_files --> os_pl_os
@@ -1588,6 +1607,7 @@ graph LR
     os_pl_file --> pl_wam
     os_pl_file --> pl_fli
     os_pl_file --> pl_error
+    os_pl_file --> pl_idgset
     os_pl_file --> pl_arith
     os_pl_file --> os_pl_option
     os_pl_file --> os_pl_prologflag
@@ -1623,6 +1643,7 @@ graph LR
     pl_setup --> os_pl_text
     pl_setup --> pl_supervisor
     pl_setup --> pl_init
+    pl_setup --> pl_undo
     pl_setup --> pl_tabling
     pl_setup --> pl_wrap
     pl_setup --> pl_trie
@@ -1653,6 +1674,7 @@ graph LR
     pl_proc --> pl_srcfile
     pl_proc --> pl_supervisor
     pl_proc --> pl_event
+    pl_proc --> pl_transaction
     pl_proc --> pl_tabling
     pl_proc --> pl_trie
     pl_proc --> pl_read
@@ -1724,6 +1746,7 @@ graph LR
     pl_pro --> pl_proc
     pl_pro --> pl_trace
     pl_pro --> pl_event
+    pl_pro --> pl_tabling
     pl_pro --> pl_write
     pl_pro --> pl_string
     pl_init --> term_interface
@@ -1764,6 +1787,38 @@ graph LR
     pl_event --> os_pl_option
     pl_event --> pl_proc
     pl_event --> pl_trace
+    pl_event --> pl_tabling
+    pl_transaction --> term_interface
+    pl_transaction --> default_term
+    pl_transaction --> pl_incl
+    pl_transaction --> SWI_Prolog
+    pl_transaction --> pl_global
+    pl_transaction --> pl_inline
+    pl_transaction --> pl_comp
+    pl_transaction --> pl_wam
+    pl_transaction --> pl_fli
+    pl_transaction --> pl_error
+    pl_transaction --> pl_dbref
+    pl_transaction --> os_pl_option
+    pl_transaction --> pl_proc
+    pl_transaction --> pl_pro
+    pl_transaction --> pl_event
+    pl_transaction --> pl_tabling
+    pl_undo --> term_interface
+    pl_undo --> default_term
+    pl_undo --> pl_incl
+    pl_undo --> SWI_Prolog
+    pl_undo --> pl_atom
+    pl_undo --> pl_global
+    pl_undo --> pl_modul
+    pl_undo --> pl_inline
+    pl_undo --> pl_comp
+    pl_undo --> pl_alloc
+    pl_undo --> pl_wam
+    pl_undo --> pl_fli
+    pl_undo --> pl_attvar
+    pl_undo --> pl_error
+    pl_undo --> pl_proc
     pl_mutex --> SWI_Prolog
     pl_mutex --> pl_global
     pl_mutex --> pl_comp
@@ -1777,6 +1832,7 @@ graph LR
     pl_bag --> pl_alloc
     pl_bag --> pl_fli
     pl_bag --> pl_error
+    pl_bag --> pl_idgset
     pl_gvar --> term_interface
     pl_gvar --> default_term
     pl_gvar --> pl_incl
@@ -1831,6 +1887,7 @@ graph LR
     pl_tabling --> pl_incl
     pl_tabling --> SWI_Prolog
     pl_tabling --> pl_atom
+    pl_tabling --> pl_vmi
     pl_tabling --> pl_index
     pl_tabling --> pl_funct
     pl_tabling --> pl_global
@@ -1839,19 +1896,26 @@ graph LR
     pl_tabling --> pl_prims
     pl_tabling --> pl_comp
     pl_tabling --> pl_variant
+    pl_tabling --> pl_copyterm
+    pl_tabling --> pl_termhash
     pl_tabling --> pl_alloc
     pl_tabling --> pl_wam
     pl_tabling --> pl_fli
     pl_tabling --> pl_error
     pl_tabling --> pl_allocpool
+    pl_tabling --> pl_idgset
+    pl_tabling --> pl_dbref
     pl_tabling --> pl_arith
     pl_tabling --> os_pl_text
     pl_tabling --> os_pl_file
     pl_tabling --> pl_proc
     pl_tabling --> pl_supervisor
+    pl_tabling --> pl_event
+    pl_tabling --> pl_transaction
     pl_tabling --> pl_wrap
     pl_tabling --> pl_trie
     pl_tabling --> pl_read
+    pl_tabling --> pl_qlf
     pl_wrap --> term_interface
     pl_wrap --> default_term
     pl_wrap --> pl_incl
@@ -1889,6 +1953,8 @@ graph LR
     pl_trie --> pl_fli
     pl_trie --> pl_attvar
     pl_trie --> pl_error
+    pl_trie --> pl_allocpool
+    pl_trie --> pl_idgset
     pl_trie --> pl_dbref
     pl_trie --> pl_arith
     pl_trie --> os_pl_text
@@ -2045,11 +2111,13 @@ graph LR
     os_pl_fmt --> pl_arith
     os_pl_fmt --> os_pl_text
     os_pl_fmt --> os_pl_file
+    os_pl_fmt --> pl_proc
     os_pl_fmt --> pl_pro
     os_pl_fmt --> pl_tabling
     os_pl_fmt --> pl_trie
     os_pl_fmt --> pl_write
     os_pl_fmt --> pl_read
+    os_pl_fmt --> pl_string
     pl_dwim --> term_interface
     pl_dwim --> default_term
     pl_dwim --> os_pl_ctype
@@ -2092,6 +2160,8 @@ graph LR
     pl_ext --> pl_pro
     pl_ext --> pl_init
     pl_ext --> pl_event
+    pl_ext --> pl_transaction
+    pl_ext --> pl_undo
     pl_ext --> pl_mutex
     pl_ext --> pl_bag
     pl_ext --> pl_gvar
@@ -2155,11 +2225,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 324 | 0 | 98 | 3 | 1 |
-| refusal sites | 0 | 73 | 0 | 0 | 7 |
-| Prolog flags | 65 | 15 | 20 | 0 | 35 |
-| VM instructions | 197 | 0 | 36 | 0 | 0 |
-| **total** | 586 | 88 | 154 | 3 | 43 |
+| predicates (C-defined, reached by the boot) | 355 | 0 | 67 | 3 | 1 |
+| refusal sites | 0 | 66 | 0 | 0 | 4 |
+| Prolog flags | 65 | 14 | 20 | 0 | 34 |
+| VM instructions | 199 | 0 | 34 | 0 | 0 |
+| **total** | 619 | 80 | 121 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2173,7 +2243,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 85 | 28 | 0 |
+| `boot/syspred.pl` | loaded | 89 | 24 | 0 |
 | `boot/messages.pl` | loaded | 78 | 7 | 1 |
 | `boot/toplevel.pl` | loaded | 87 | 12 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
@@ -2189,7 +2259,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
 | `boot/engines.pl` | loaded | 6 | 4 | 0 |
-| `boot/tabling.pl` | loaded | 111 | 28 | 0 |
+| `boot/tabling.pl` | loaded | 138 | 1 | 0 |
 | `boot/topvars.pl` | loaded | 37 | 0 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
 | `library/debug.pl` | loaded | 23 | 2 | 0 |
@@ -2202,39 +2272,35 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
-| TAB1 | 29 | 27 | 2 | `$idg_add_mono_dyn_dep/3`, `$idg_add_monotonic_dep/3`, `$idg_changed/1`, `$idg_false_edge/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_mono_affects/3`, `$idg_mono_affects_eager/3`, … +21 |
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
-| TH1 | 20 | 18 | 2 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +12 |
+| TH1 | 21 | 18 | 3 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +13 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
 | DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
 | P3 | 10 | 9 | 1 | `$depth_limit/3`, `$depth_limit_except/3`, `$depth_limit_false/3`, `$depth_limit_true/5`, `$inference_limit/2`, `$inference_limit_except/3`, `$inference_limit_false/1`, `$inference_limit_true/3`, … +2 |
 | Q10 | 9 | 9 | 0 | `$on_signal/4`, `$put_token/2`, `$set_prolog_stack/4`, `$suspend_findall_bag/0`, `current_blob/2`, `garbage_collect_atoms/0`, `shell/2`, `thread_idle/2`, … +1 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
-| LB5-LB7 | 6 | 2 | 4 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what`, `refusal format_predicate/2 (GD->format.predicate…`, `refusal expandVars: ~user (getpwnam)` |
 | REFUSED | 6 | 6 | 0 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW` |
 | ZIP1 | 6 | 6 | 0 | `$rc_handle/1`, `zip_clone/2`, `zip_close_/2`, `zip_file_info_/3`, `zipper_goto/2`, `zipper_open_current/3` |
 | CT1 | 4 | 2 | 2 | `char_type/2`, `code_type/2`, `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
+| LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
-| TX1 | 4 | 4 | 0 | `$snapshot/1`, `$transaction/2`, `$transaction/3`, `$undo/1` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | P2 | 2 | 2 | 0 | `$seek_list/4`, `sub_atom_icasechk/3` |
 | PR1 | 2 | 1 | 1 | `$foreign_predicate_source/2`, `refusal get_procedure: other than GP_DEFINE` |
-| SSU1b | 2 | 1 | 1 | `S_DET`, `refusal setAttrDefinition: attribute $attr` |
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
-| AV10 | 1 | 0 | 1 | `refusal write_term/2 attributes(portray): '\$att…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | SRC2 | 1 | 1 | 0 | `$unload_file/1` |
+| TAB1 | 1 | 0 | 1 | `refusal the VM instruction $(codeTable(thiscode)…` |
 | TAI1 | 1 | 1 | 0 | `format_time/3` |
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
-| TB6 | 1 | 1 | 0 | `S_INCR_DYNAMIC` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 43 | 21 | 22 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag tbl_set_restraint_flag (tabling restraints)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, … +35 |
+| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +31 |
 
 #### Missing and refused per category
 
@@ -2243,8 +2309,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [98, 0, 20, 36]
-    line [0, 73, 15, 0]
+    bar [67, 0, 20, 34]
+    line [0, 66, 14, 0]
 ```
 
 <!-- END GENERATED R2 status -->
@@ -3805,15 +3871,15 @@ pin `8609e216`, upstream names.
 * **DIVERGES, representation:** the slot of a block holds the choice point's POSITION (as every
   conditional's); the block's choice point that `C_DETTRUE` takes out of the chain while its stack
   region stays in use is marked `unlinked`, as `C_SOFTCUT`'s (the pools hold live records only).
-* **NOT PORTED:** the `det/1` declaration (`P_DET`'s setter, `FR_DET`: R2 — the `property` branch
-  is ported and unreachable); the debugger's
-  `CHP_DEBUG`; `frameFinished` on a failed `FR_WATCHED` frame (V9g). (The SSU branch of `ssu_or_det_failed`,
-  not ported here and asserted, runs since SSU2.)
+* **NOT PORTED:** the debugger's `CHP_DEBUG` branches (the `if ( debugstatus.debugging )` ones of pl-vmi.c; the
+  run loop reads the flag only in `S_TABLED`; the choice points that det and SSU frames take are kept). (`frameFinished` on a failed `FR_WATCHED` frame runs since V9g, in
+  `frameFailed`; the SSU branch of `ssu_or_det_failed` runs since SSU2; `det/1`'s setter and `FR_DET` are SSU1b's:
+  the `property` branch is reachable since.)
 * **R2 checklist:** `$/1` and `$/0` as PREDICATES (boot/init.pl: `$(Goal) :- $(Goal).`, `$ :- $.`
-  — what `call($)` reaches); `det/1` and `'$set_predicate_attribute'(…, det, …)`;
-  `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
-  tests/core_lang/test_det_decl.pl under plunit (its `det_decl` unit needs `det/1`, its
-  `with_debug/1` cases the debugger, `garbage_collect/0`).
+  — what `call($)` reaches); (`det/1`'s setter, `'$set_predicate_attribute'(…, det, …)`, is SSU1b's: see
+  its section); `set_prolog_flag(determinism_error, …)`; the mirror of upstream's
+  tests/core_lang/test_det_decl.pl under plunit (its `det_decl` unit runs since SSU1b as
+  rows of test/core_lang/test_det_ssu_swipl.jl; the plunit mirror needs `with_debug/1`'s debugger and `garbage_collect/0`).
 * **Gates — against the oracle, all three term types:** test/core_lang/test_det_swipl.jl — 37
   cases, 49 goals: every answer, ball and determinism equal swipl's under `error`, `silent` and
   `warning` (there the reported terms too, in order — including the frame no clause matches, which
@@ -5888,6 +5954,32 @@ Tests: test/core_lang/test_ssu_swipl.jl (the s-, d- and a01/a04/a09 rows of evid
 call flipped from the refusal to `ok`; test/compile/test_ssu_compile_swipl.jl's refusal testset removed. Mutants:
 tools/mutants/SSU2.py.
 
+## SSU1b — the `det/1` supervisor prefix `S_DET` and its setter (R2, evidence/TAB1/ssu1b_handoff.md)
+
+`S_DET` is NOT the SSU opcode: at the pin it is the `det/1` supervisor prefix (pl-vmi.c:3749 `VMI(S_DET,0,0,()) { setLocal(FR, FR_DET); }`;
+the SSU one is `S_SSU_DET`, :3743, SSU1/SSU2). What SSU1b ports:
+
+- **The opcode** `S_DET` in the table (src/pl-vmi.jl, right after `S_SSU_DET`; every later number is derived by tools/renumber_vmi.py) and its
+  label in the run loop (src/pl-wam.jl: one store, `FR_DET` into the frame's flags). With the label, `exit_det_error`'s `property` branch is
+  reachable (the frame a `det/1` predicate leaves with a choice point or fails).
+- **The emission** (`chainPredicateSupervisor`, pl-supervisor.c:379-418): when `P_DET` is set the supervisor starts `S_DET`, after `S_SSU_DET`
+  when both flags are set, before the `S_MQUAL` run of a transparent meta-predicate, as upstream orders them. A tabled predicate gets the prefix
+  through the same chain (`$c_wrap_predicate` calls it). `skipWrapperPrefix` (pl-wrap.c:181) steps over the one-word `S_DET` as over `S_SSU_DET`.
+- **The setter** `setDetDefinition!` (pl-proc.c:3744-3758) reached from `setAttrDefinition` (`'$set_predicate_attribute'(P, det, Bool)`): set or
+  clear `P_DET`, then reset the supervisor to `S_VIRGIN` (`freeCodesDefinition!`), so the next call chains `S_DET` in or out. The refusal
+  `setAttrDefinition: attribute $attr` is deleted.
+- **The reload half:** `fix_det` (pl-srcfile.c:1302-1310, src/pl-srcfile.jl) was ported with LB6a and matches the C line by line; it drops `P_DET`
+  and, through `freeCodesDefinition!`, the `S_DET` supervisor of a predicate whose reload no longer declares det (`setAttrProcedureSource` records
+  `P_DET` in the reload and also applies it, as `P_DET` is outside `P_ATEND`). White-box rows: test/db/test_reload_blocks_swipl.jl `r19b`; the second
+  consult itself is LB6b's.
+- **Not here:** the `det/1` directive and `$/1` as predicates (boot/init.pl: R2's consult); `PRED_DET` of the saved state (pl-qlf.c:1162 in
+  `loadPredicateFlags`, :3136 in `predicateFlags`): both functions are unwritten in the kernel, on main and on the QLF line (`wip/qlfrd2`: the
+  predicate writer and reader of the state file are unwritten, `state` is `nothing`); owner LB3 (docs/r2_owners.tsv `kfile:pl-qlf.jl`).
+
+Tests: test/core_lang/test_det_ssu_swipl.jl (upstream's `det_decl` unit of tests/core_lang/test_det_decl.pl and the tabled SSU case
+`ssu_complete_fails` of tests/tabling/test_tabled_supervisor.pl as kernel rows, answers pinned on the pinned swipl; white-box rows on the supervisor
+and the frame flag; the wrapper-skip rows). Mutants: tools/mutants/SSU1B.py.
+
 ## S1 — stream blobs, user aliases, open/3,4 and close/1,2 (R2, D-0149, flags_rest.md §4 D10)
 
 What S1 adds (pl-file.c, pl-files.c `PL_get_file_name`, pl-stream.c `Sopen_file`/BOM/references, pl-error.c `ERR_FILE_OPERATION`):
@@ -6246,8 +6338,7 @@ What MOD4 ports (pl-proc.c, pl-supervisor.c, pl-vmi.c, pl-wam.c at the pin):
   attvar.pl:109-110/250-251 and when.pl:40-41 declare them; findall/4, call_residue_vars/2, when/2 and freeze/2 take
   their goal as upstream's clauses do (qualified on entry). `setBuiltinPredicateProperties!` makes pl-ext.c:391-421's
   `PL_meta_predicate` calls for the predicates the kernel defines.
-- **Not here:** `setMetapredicateSource` and the `:- meta_predicate` directive in a consulted file (LB2); `S_DET`
-  (`P_DET` is refused by `setAttrDefinition`); the masks' reader `'$get_predicate_attribute'(P, meta_predicate, Spec)`
+- **Not here:** `setMetapredicateSource` and the `:- meta_predicate` directive in a consulted file (LB2); the masks' reader `'$get_predicate_attribute'(P, meta_predicate, Spec)`
   (pl-proc.c; not in the kernel's PRED_DEF table, checked 2026-10-29); goal expansion of meta-arguments (no expansion).
 
 Tests and mutants: see evidence/MOD4/handoff.md (rows vs swipl 10.1.19; tools/mutants/MOD4.py).
@@ -6539,8 +6630,7 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
   `toldString(ld)::Bool` (:2642), `redir_context` with its `.stream`, `setupOutputRedirect(ld, to, ctx, redir)::Bool` (:1708, `to == 0` is the current output),
   `closeOutputRedirect(ld, ctx)::Bool` (:1774), `discardOutputRedirect(ld, ctx)::Nothing` (:1826), and the six-argument `callProlog` (wip/o1b 3cb3a13) that `~@` calls.
   The merge needs O1B's commits first.
-- **Refused by name:** `format_predicate/2` raises `NotPortedError` (step LB5); the table `format_predicates` stays empty, so `current_format_predicate/2` fails and `do_format`
-  never looks up a user directive. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
+- **User directives (W5b):** `format_predicate/2` fills `gd.format_predicates` (a vector of (character, procedure) pairs in insertion order; upstream's `GD->format.predicates` is a hash table), `current_format_predicate/2` answers its entries (redo context = the next index) and `do_format` looks a directive up there before the built-in ones. The first argument of `current_format_predicate/2` is answered as the pinned swipl answers (pl-fmt.c:300-304 at 18168e62; rows t19-t22). Rows: test/core_lang/test_format_predicate_swipl.{pl,jl}. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
 - **DIVERGES, kept (the audit decides the behaviour-changing ones; O1A decided none):**
   `~:d`, `~:D`, `~:f` use the C locale: the stream has no locale field (D9), swipl groups the digits (`~:f` of 10**10 is `10,000,000,000.000000` there); the K rows pin the kernel's answer
   with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` is refused in the kernel (handoff flag b). a bignum `formatInteger` with
@@ -6696,8 +6786,8 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
   `GD->paths.CWDdir` is the new field `paths_CWDdir` of `PL_global_data` (the logical working directory with its closing slash; a symlinked directory stays logical).
 - **pl-glob.c** (`src/os/pl-glob.jl`, NEW, registered as `PL_predicates_from_glob` after `_files`): `compilePattern` (`?`, `*`, `[...]` with ranges, `{a,b}`, backslash escapes),
   `matchPattern`, `wildcard_match/2,3` (option `case_sensitive`), `expand`, `sort_expand`, `expand_file_name/2`, `directory_files/2`.
-- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` is refused by name (`getpwnam`) and HOME is read each time (upstream
-  caches it in `GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
+- **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
+  caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
 - **Refused by name:** `tmp_file/2` and `$tmp_file_stream/4` (NotPortedError, step "LB2b audit": `GD->os.tmp_files` has no field and the stream layer has no `Sfdopen`);
   an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.
@@ -7089,6 +7179,14 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
 Tests: test/core_lang/test_event_swipl.jl (80 rows ev1p, ev1o, ev1u, ev1v, ev1e, ev1r, ev1g; pins from swipl 10.1.19, two byte-identical runs; generator evidence/EV1/gen_rows.py; ev1g01 is white-box:
 `garbage_collect_clauses/0` is not registered yet, the row calls `pl_garbage_collect_clauses!`). Mutants: tools/mutants/EV1c.py (51; three declared EQUIVALENT with file:line) and the event ones of tools/mutants/BOOTPREDSUB.py.
 
+**EV1 answer hook (TAB1, wip/ev1e; written edit-only, UNVERIFIED until a lane runs it):** `atrie_answer_event(ld, atrie, nid)` (src/pl-tabling.jl, pl-tabling.c:11443-11463) replaced the named refusal
+(owner EV1). Its one caller is `'$tbl_monotonic_add_answer'/2` (a new answer of a normal, not answer-subsumption, table); the answer-subsumption branch and an answer that already has a value send no event, as upstream.
+The listeners are called as `Closure(new_answer, M:Variant)` with the answer unified into the variant; a listener that fails is ignored, one that raises makes the predicate raise; the tabling status is saved and cleared
+around the call (`table_answer_event`, W2's `save_tabling_status`), so a listener may call a tabled predicate even while a tabling evaluation is active. The upstream test is tests/tabling/test_mono_subsumptive.pl,
+unit mono_abstract, test `new_answer` (the only test of the event in the pin; its row ev01 needs the monotonic dependency on a dynamic predicate, which is red until `$idg_add_mono_dyn_dep/3`'s `get_procedure(.., GP_FIND)`
+is replaced by `get_procedure_find`, the one-line fix named in evidence/TAB1/ev1_handoff.md). Rows ev02-ev13 reach the hook through `'$tbl_monotonic_add_answer'/2` directly. Tests:
+test/core_lang/test_tabling_events_swipl.jl (pins swipl 10.1.20, evidence/TAB1/ev1_verify.md); mutants tools/mutants/EV1T.py.
+
 ## BOOTPRED-dict — the remaining pl-dict.c predicates the boot and library files reference (R2b, audit D-0290, D-0291 item 5)
 
 What BOOTPRED-dict adds to src/pl-dict.jl (written edit-only; nothing compiled or run when this was written; swipl-devel pin `cbf4e1896275`, oracle swipl 10.1.19):
@@ -7261,7 +7359,7 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   6. T3's opcode numbers (161..163) follow the tail of the table (from `B_ARG_CF`) in pl-vmi.c's relative order, where upstream's numbers follow the whole VMI list; no behaviour reads an absolute number. Owner: none.
   7. The code behind `S_TABLED` is a named refusal (owner TAB1); `S_WRAP` and `S_CALLWRAPPER` are ported by WRAP1 (see the WRAP1 section).
 - **Left out (each needs its subsystem):** (`wrapped_predicate/2`, `unwrap_predicate/2`, `$wrapped_implementation/3`, `$closure_predicate/2`: ported by WRAP1); the other `$tbl_*` predicates, the
-  tries, worklists, answer tables and `start_tabling/3` (TAB1); `S_DET` in `skipWrapperPrefix` (the opcode is not declared); `tbl_set_incremental_predicate`'s effect on a trie
+  tries, worklists, answer tables and `start_tabling/3` (TAB1); `tbl_set_incremental_predicate`'s effect on a trie
   (the incremental dependency graph is TAB1's).
 - **ORIGINAL (no upstream counterpart):** the payload of a closure blob (`_closure_bytes`, `closure_of_word`), the zero-argument `table_props()`, the layout of a wrapper
   supervisor (`code[op, 1, closure atom word, wrapper name atom word]` with the clause reference in `codes_crefs`), tools/mutants/TAB1MIN.py and the LK-only white-box rows.
@@ -7420,6 +7518,61 @@ block was written, every claim below is UNVERIFIED until the gate).
   `$tbl_wkl_work/6`, `$tbl_table_complete_all/3`, `$tbl_leader_complete/4`, `$tbl_wkl_table/2`, the two `dtbl_reset6` refusals); the generated R2
   status and code graph are regenerated by `tools/port_check.jl --write-inventory` at the gate.
 
+## TAB1 TB5 — abolish and reclaim of the tables: `abolish_table`, `clear_variant_table`, `untable_from_clause`, the two `$tbl_*` predicates over them (R2, swipl-devel 18168e62)
+
+Written edit-only by two agents on branch wip/tb5 (TB5, TB5b): NOTHING was compiled or run, every claim below is UNVERIFIED until the gate.
+- **UPSTREAM files:** `src/pl-tabling.c` (abolish_table, destroy_answer_trie, delayed_destroy_table, orphan_dynamic_table, delete_dynamic_table, collect_dynamic_children,
+  delete_orphan_dynamic_tables, sweep_orphan_dynamic_tables, destroy_delay_info_table, reset_table_bulk, sort_table_values, empty_variant_table, clear_variant_table,
+  clearThreadTablingData, untable_from_clause, `$tbl_destroy_table/1`, `$tbl_abolish_local_tables/0`: src/pl-tabling.jl, the block before `PL_predicates_from_tabling`'s tuple),
+  `src/pl-trie.c` (`get_trie_from_node`, `release_trie_value`), `src/pl-proc.c` (the callers of `freeCodesDefinition!` that hold the database: src/pl-proc.jl `setDynamicDefinition!`,
+  `resetProcedure!`), `boot/tabling.pl` (`abolish_all_tables`, `abolish_private_tables`, `abolish_shared_tables`, `abolish_table_subgoals`, `abolish_module_tables`, `untable`: loaded
+  as is, they call the two predicates).
+- **DIVERGES (representation only; each with its place):**
+  1. The tables of a thread are `gd.tries[ld.tabling.variant_table]`: `get_trie_from_node` returns that trie for a node of the private variant table where upstream walks up to the
+     root chunk of the node; a shared variant table (`TRIE_ISSHARED`) raises through `tbl_refuse` with the owner TH1, so do the `O_PLMT` branches of `abolish_table`
+     (`take_trie`, `drop_trie`), `destroy_answer_trie` and `clear_variant_table` (`ld == NULL`, the shared table).
+  2. `release_trie_value`: upstream unregisters the trie's symbol when it has one (the atom GC then frees it) and destroys it otherwise; the kernel has no atom reference counts, so
+     a trie that has a symbol is left to Julia's collector and one without is destroyed at once. TR1's `release_value` must call it (TB1's tr1_edits item 4 said "nothing to do").
+  3. The IDG parts are TB6's: `orphan_dynamic_table` answers false for every table (`WL_DYNAMIC` is written only by TB6), `collect_dynamic_children`, `reset_table_bulk` and
+     `empty_variant_table` raise through `tbl_refuse` for a table with an IDG node or private IDG nodes with shared children; no `idg_release_registry`, `idg_registry_release_n`,
+     `idg_unlink_concurrent_table` call exists yet.
+  4. `empty_variant_table` has one path for the private table: the values come from `trie_empty_take`, are sorted by `sort!` (a table value is `(serial << 3) | 7`, so the order is the
+     creation order; upstream sorts the addresses with an LSD radix sort for the cache), reset in that order, then released; upstream's malloc-failure fallback is the second branch.
+  5. `clear_variant_table(ld)` works on the thread's variant table and its start-node cache (upstream takes the two pointers; `ld == NULL` is the shared table); the reference count is
+     the trie's `references` without atomics; `PL_unregister_atom(vtrie->symbol)` is not done; `free_node_array` is dropping the vector. `clearThreadTablingData` keeps its `exit`
+     argument for the callers.
+  6. `sweep_orphan_dynamic_tables`: upstream's callback `collect_orphan_dynamic_table(node, ctx)` is a closure over the buffer `b`; `destroy_delay_info_table(gd)` returns the
+     `map_trie_node` callback `map(tr, nid)`.
+  7. `untable_from_clause(gd, ld, cl)` takes the database and the local data and reads the first instruction of the clause through `decode`; `fatalError` is an `error`. **The call
+     sites do not exist before LB6b:** upstream calls it from `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544, `delete_old_predicates`); the kernel has neither function
+     yet, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until LB6b, which calls `untable_definition_clauses` (ORIGINAL: the loop of
+     pl-srcfile.c:1460-1478) where upstream calls `untable_from_clause`. The row is in docs/r2_owners.tsv (the LB6 reconsult row).
+  8. `setDynamicDefinition!(gd, def, isdyn)` and `resetProcedure!(gd, proc, isnew)` carry the database (upstream's `freeCodesDefinition(def)` reaches `LD`/`GD` from globals): one shared
+     body each (`_setDynamicDefinition!`, `_resetProcedure!`, `gd::Union{Nothing,PL_global_data}`); the 2-argument methods stay for callers without a database (src/pl-ext.jl boot,
+     src/precompile_workload.jl, tests) and pass `nothing`, which selects the 2-argument `freeCodesDefinition!` (it still refuses a wrapped predicate by name, owner TAB1).
+- **MERGE HAZARDS (the stack of wip/tb1, wip/tb5, TB2-TB4):** (a) the tuple of `PL_predicates_from_tabling` gains lines in TB1 and TB5: keep both sets; (b) the manifest block of TB5
+  sits before `# AUTOLOAD1 A4` and TB1's after `setMonotonicMode`: no overlap, but both edit the same tuple; (c) the foreign-row count pin of test/db/test_boot_image_swipl.jl is
+  lowered by TB1 and by TB5 (the stack's value is the base minus both counts); (d) this section and TB1's are inserted at nearly the same place of docs/architecture.md; (e) the interfaces
+  TB5 assumes (`value_trie`, `valueTriePtr`, `reset_answer_table(atrie, flags::Int)`, `table_is_incomplete`, `tbl_refuse`, `reset_global_worklist`, `reset_newly_created_worklists`,
+  `destroy_delay_info_worklist`, `map_trie_node(tr, nid, map)`, `trie_empty_take`, `trie.registry`) are the names of the parallel steps; the first compile names any that differ.
+- **ORIGINAL (no upstream counterpart):** `_wl_is` (the sentinel test of a worklist slot that holds an `Int`), `untable_definition_clauses`.
+- **KNOWN DIFFERENCE, a shared table (TB5-A9; owner TH1; checklist item).** swipl 10.1.20 (`:- table sp/1 as shared.`, probed): the table is in `'$tbl_global_variant_table'/1`;
+  `'$tbl_destroy_table'(T)` answers true and the table stays in the global variant table with status `fresh`; `abolish_shared_tables`, `abolish_all_tables` and
+  `abolish_private_tables` leave it so. The kernel has no shared tables: a trie with `TRIE_ISSHARED` is refused by name (`NotPortedError`, step TH1). The refusal that raises
+  is `get_trie_from_node`'s, which `abolish_table` calls first and which reads the same flag of the same trie, so the refusal written in `abolish_table` itself is behind it. Measured over the white-box rows of the file (S3p counters, reverted): the `TRIE_ISSHARED` test in `abolish_table` is reached 6 times with the flag set 0 times; the guard of `get_trie_from_node` is reached 12 times with the flag set once (the row, raising). Case analysis: nothing between the two tests writes the flag, so the branch in `abolish_table` is true only where `get_trie_from_node` has already raised, and is a no-op otherwise. TB5-A9 is a candidate EQUIVALENT, left to the audit to rule; src untouched for it. The row
+  "abolish_table of a shared table is refused by name" in test/core_lang/test_tabling_abolish_swipl.jl pins the exact text that raises and that nothing is touched; TH1 replaces
+  both refusals with `take_trie`/`drop_trie` and the row with swipl's answer above.
+- **The call sites of `untable_from_clause` (TB5-U1, TB5-U5; item 7 above).** No kernel function calls `untable_from_clause` or `untable_definition_clauses` before LB6b; test/core_lang/test_tabling_abolish_swipl.jl
+  calls them directly (events pinned from swipl's reload of a file that loses its `'$tabled'/2` clauses; the failing-listener row is kernel-only, swipl's answer there is `fatalError`).
+  The rows led to two lookups of these two functions being corrected (the functions have no src caller): the `'$tabled'` test now compares the definition's `sym_key` with the `sym_key` of the name (before: a built-in atom word under an id the table spells `dtabled`), and the procedure is looked up by the name's `sym_key`, which is what `isCurrentProcedure` takes (before: an atom word). Both now use the idiom of the rest of the file (`sym_key(mk_sym(T, :name))`, `sym_key(_atom_value(ld, nameFunctor(...)))`). LB6b's call sites reach the corrected lookups.
+- **Deferred, each with its owner:** the abolish of a table under evaluation (`delayed_destroy_table` sets `TRIE_ABOLISH_ON_COMPLETE`; the completion code that reads it is TB2), the
+  depending worklists and the delay info back-references (TB4), the IDG registry (TB6), the shared tables (TH1), the answer discard (test_answer_discard.pl: compiled tries, TB3).
+- **To verify at the gate:** the second `'$tbl_destroy_table'(T)` on a trie the first call destroyed (swipl answers true: the pin row abd02; the kernel's `trie_delete` of a node id the
+  first call pruned must be harmless); `untable/1` needs the `table` wrapper of TAB1's pl-wrap.jl (the abu rows are gated on `$wrap_predicate/5`).
+
+Tests: test/core_lang/test_tabling_abolish_swipl.jl (pins from the 10.1.20 oracle, generated by evidence/TB5/gen/ab_gen.py; a live comparison when swipl is on PATH; direct white-box
+rows); manifest rows in test/static_analysis_manifest.jl; mutants tools/mutants/TB5.py.
+
 ## TRIE1 — the 19 trie predicates of pl-trie.c and the TAB1 step that ports each (audit D-0453 items 1 and 3, owner rows in docs/r2_owners.tsv; edit-only, nothing was compiled)
 
 TAB1 ports pl-trie.c whole (audit D-0453), in three steps; the owner of every pl-trie.c row is TRIE1 (`cfile:pl-trie.c`). `BeginPredDefs(trie)` of the pin 18168e62
@@ -7475,7 +7628,7 @@ Tests: test/core_lang/test_wrap_swipl.jl (+ .pl/.out), pins from the oracle swip
 ## TAB1 TR1 — tries: pl-trie.c's trie, its children blocks, node allocation, the indirect table, the lookups and the trie blob (part A; swipl-devel 18168e62, edit-only: NOTHING was parsed, loaded or run when this block was written, the gate decides)
 
 UPSTREAM: swipl-devel 18168e629eab — `src/pl-trie.c`, `src/pl-trie.h`, `src/pl-indirect.c` (the indirect table), `src/pl-indirect.h` (`indirect_table`), `src/pl-tabling.c` (`tbl_release_node`, a refusal) and `src/pl-termwalk.c`
-(the `AC_TERM_WALK_POP` agenda). Ledger line (PIN1): pl-trie.c is a FIRST port at the pin, no earlier pin; the `# UPSTREAM:` lines of src/pl-trie.jl (pl-trie.c, pl-trie.h, pl-indirect.c, pl-tabling.c) and of src/pl-incl.jl
+(the `AC_TERM_WALK_POP` agenda). Ledger line (PIN1): pl-trie.c is a FIRST port at the pin, no earlier pin; the `# UPSTREAM:` lines of src/pl-trie.jl (pl-trie.c, pl-trie.h, pl-indirect.c, pl-tabling.c, os/pl-table.h) and of src/pl-incl.jl
 (pl-trie.h, pl-indirect.h) cite 18168e62. Design and line ranges: lk-channel evidence/TAB1/tr1_state.md and tr1_partA_status.md (audit D-0453 Q3, Q5).
 
 Part A is the algorithm file and its records; part B (the PRED_IMPLs `trie_new/1`, `trie_destroy/1`, `is_trie/1`, `trie_insert/2,3,4`, `trie_update/3`, `trie_delete/3`, `'$trie_insert_abstract'/3`, `trie_lookup/3`,
@@ -7545,8 +7698,9 @@ and src/pl-incl.jl cite 18168e62. Design: lk-channel evidence/TRIE2/handoff.md; 
   4. **A `TrieRefusal` leaves the foreign frame open** (src/pl-trie.jl, `trie_gen_raw`): the state is released, the frame opened by `PL_open_foreign_frame` is not closed when the exception propagates; the gate checks that the kernel's
      exception path does not need it closed.
   6. **`$trie_property/2`**: the property atoms are compared by `sym_key` (also the builtin ones); `size` is `stat_trie(tr).bytes` without the `Sdprintf` cross-checks of upstream; `discarded` reads `TRIE_DISCARDED`;
-     `compiled_size` fails (no clause before TR4); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0 (single-threaded, owner TH1); `invalidated`, `reevaluated` and the `idg_*` names fail
-     because `trie.IDG` is `Nothing` until TB6.
+     `compiled_size` is `8 * sizeofClause(length(codes))` bytes of the kept clause (the kernel's number; it fails without a clause, as upstream) and `idg_size` is `SIZEOF_IDG_NODE` + the two edge-set sizes
+     + `SIZEOF_IDG_MONO` + `sizeofTablePP` with a modelled capacity (TBP; an integer > 0, not swipl's number); `wait` and `deadlock` (`trie->stats.wait`, `.deadlock`, O_PLMT) are the constant 0 (single-threaded, owner TH1);
+     `invalidated`, `reevaluated`, `idg_affected_count` and `idg_dependent_count` read the IDG node of the trie (TBP, pl-trie.c:4326-4340) and fail for a trie without one, as upstream.
   7. `acquire_trie` (first call) and `release_trie` (`clear_trie_state!`) are pl-trie.h's, unconditional (E4: a reference held for the whole enumeration, so `trie_delete` does not prune and `trie_destroy` does not empty under it); no `DEBUG` prints.
 - **Not defined at the pin (O_NESTED_TRIES):** `trie_insert_insert/3`, `trie_lookup_gen/3` and `trie_lookup_delete/3` sit in pl-trie.c :5213-5216 inside `#if O_NESTED_TRIES`, and that macro is defined nowhere at the pin, so swipl
   10.1.20 has no such predicates (`predicate_property(system:H, defined)` fails for all three). Nothing is registered for them and docs/r2_owners.tsv carries no row; if a later pin defines the macro, they are a new step.
@@ -7674,6 +7828,46 @@ What TB4 adds (branch wip/tb4 off wip/stack1; written by three agents TB4a, TB4b
   wf20-wf33 the program `wp :- tnot(wq). wq :- tnot(wp). wr :- tnot(wr). ws(X). wv :- wp.` (call_delays, answer_residual, call_residual_program, `$tbl_answer_update_dl`); wf20+ need
   TB1-TB5 stacked. wf10: swipl answers `type_error(address, foo)` for `$tbl_force_truth_value`; the kernel's read of the `answer_ref` integer must raise the same.
   Manifest: `_manifest_index(T)` (per type) and the type-free table in test/static_analysis_manifest.jl.
+
+## TAB1 TB8 — table statistics and diagnostics, the restraint flags and tripwires, dropping intermediate tables (swipl-devel 18168e62, edit-only: NOTHING was parsed, loaded or run when this block was written, the gate decides)
+
+UPSTREAM: swipl-devel 18168e629eab — `src/pl-tabling.c` (the restraints and tripwires :11704-11960, `droppable_table` :6350, `children_of_component` :6360, `drop_intermediate_tables` :6374, `$tbl_sdg/3` :9526-9785,
+`$tbl_incomplete/3` :9787-9820) and `src/os/pl-prologflag.c` (:1628 the setter dispatch, :2127 the getter dispatch). A FIRST port at the pin; the `# PORT:` markers of src/pl-tabling.jl cite the C names.
+Design and state: lk-channel evidence/TB8/handoff.md, handoff2.md, handoff3.md. Branch wip/tb8 (parts 1-4 by TB8a/b, the manifest, docs and mutants by TB8c).
+- **Ported:** src/pl-tabling.jl — `unify_restraint`, `tbl_get_restraint_flag`, `set_restraint_action`, `set_restraint`, `tbl_set_restraint_flag`, `generalise_answer_substitution`, `add_answer_count_restraint`, `add_radial_restraint`,
+  `tbl_wl_tripwire`, `tbl_pred_tripwire`, `tripwire_incomplete_subgoals`, `tripwire_scc_subgoals`, `droppable_table`, `children_of_component`, `drop_intermediate_tables`, `sdg_push_root`, `sdg_collect`, `sdg_count_edges`,
+  `sdg_unify_table`, `pl_tbl_sdg3_va`, `pl_tbl_incomplete3_va`, registered in `PL_predicates_from_tabling`; src/os/pl-prologflag.jl — the four restraint flags are set by `tbl_set_restraint_flag` and read by
+  `tbl_get_restraint_flag` (the stand-in `_tbl_restraint_unlimited` is deleted).
+- **ORIGINAL helpers:** `_tbl_is` (an atom against a name), `_trie_atom` (the atom of a trie), `_tbl_put_pointer` (`PL_put_pointer` of a worklist or component: TB2's `tbl_pointer!` handle), `_tbl_get_thread_id_ex`
+  (`PL_get_thread_id_ex`: the one thread, `main` or 1).
+- **DIVERGES (representation only), owner TB8:**
+  1. **Setters and getters return a `Bool` and the value** (`set_restraint_action` the action atom or `nothing`, `set_restraint` the limit or `nothing`) where upstream stores through a pointer; `(size_t)-1` is `-1` and `infinite` is `-1`;
+     a key that is no restraint flag (upstream's -1) is `true` in the setter and `false` in the getter, and neither is reachable (the callers test `tbl_is_restraint_flag` first).
+  2. **The key is compared as an atom** (`_tbl_is`, `sym_key`), not by the `ATOM_*` constant.
+  3. **The tripwire predicates are looked up** (`lookupProcedure` of `'$tabling':tripwire/3`, `system:answer_count_restraint/0`, `system:radial_restraint/0`), no `GD->procedures` cache; they are Prolog (boot/tabling.pl), so a call needs
+     the tabling boot file loaded.
+  4. **`droppable_table` takes `ld`** (upstream reads `LD`), and its result is a state of the component (`drop_symbol`, `drop_recompute`); `drop_intermediate_tables` collects the order in a `Vector`.
+  5. **No `PL_register_atom` / `PL_unregister_atom`** around the stored action atoms (no atom collector).
+  6. **`PL_unify_uint64` of a restraint value is `unify_int64_ex(..., true)`**: the integer unification that raises the type error of upstream (`current_prolog_flag(max_answers_for_subgoal, a)` raises `type_error(integer, a)` in swipl 10.1.20).
+  7. **`$tbl_sdg/3`: the graph order is insertion order.** Upstream iterates two `pair_map`s by hash; its tests `msort`. Components, tables and edges are vectors with an `IdDict` index; the handles are `tbl_pointer!`
+     integers, not addresses; the flags of a table are consed in upstream's order, so the printed list reads `[negative, pending, executing, delays]`; the variant is read from the variant table of the thread.
+  8. **`PL_get_thread_id_ex` is `_tbl_get_thread_id_ex`**: `main` and 1 name the thread; another atom or integer raises `existence_error(thread, X)`, a variable `instantiation_error`, any other term `type_error(thread, X)`
+     (swipl 10.1.20, probed). `$tbl_incomplete/3` of the thread answers its two counters, `ld.tabling.incomplete_tables` and `ld.tabling.active_components`.
+  9. **No segstack** (`sdg_push_root` pushes on a `Vector`), no `outOfCore`, no `sdg_init` (the atoms are interned where they are built).
+- **Refusal sites of TB1, TB2 and TB3 that TB8's functions replace** (replaced on wip/tb8m, the branch that merges wip/tb8 over the TB5-TB7 tree: commits `get_answer_table`, `tbl_add_answer_found` answer size, answer count, `table_complete_all`; the refusal key of these sites is the generic `refusal:src/pl-tabling.jl::tbl_refuse::what`, which stays for the other owners' sites):
+  - wip/tb1 `get_answer_table` (pl-tabling.c:3138-3146): the subgoal-size tripwire refusal becomes `tbl_pred_tripwire(ld, def, action, max_table_subgoal_size)`: true resets `sa` to unlimited and retries the lookup, false returns `nothing`.
+  - wip/tb1 `unify_table_status`, the table with a worklist: after `merge_component`, `tripwire_scc_subgoals(ld, wl, size0) || return false` with `size0 = wls_size(created_worklists)` read BEFORE the merge.
+  - wip/tb2 `_unify_fresh_create`: already calls `tripwire_incomplete_subgoals(ld, def)` (same signature).
+  - wip/tb2 `table_complete_all`: `droppable_table(c, leader)` becomes `droppable_table(ld, c, leader)`; `drop_intermediate_tables(ld, c)` as is.
+  - wip/tb3 `tbl_add_answer_found`, the answer-size restraint (pl-tabling.c:4800-4806): `add_radial_restraint(ld)` for `bounded_rationality`, else `tbl_wl_tripwire(ld, wl, action, max_table_answer_size)`.
+  - wip/tb3 `tbl_add_answer_found`, the answer-count restraint (pl-tabling.c:4824-4850): `generalise_answer_substitution` and `add_answer_count_restraint` for `bounded_rationality`, else `tbl_wl_tripwire(ld, wl, action, max_answers_for_subgoal)`.
+  - wip/tb3 `tbl_add_answer_found`, `add_anyway` (pl-tabling.c:4851-4857): the IDG add flag (`TN_IDG_ADDED`, `new_answer`) while the IDG node reevaluates, added with the count restraint.
+- **Left out (each to its owner):** the IDG (TB6) and threads other than `main` (TH1): `$tbl_sdg/3` and `$tbl_incomplete/3` read the one thread's state.
+- **Owner table:** `$tbl_sdg/3` and `$tbl_incomplete/3` are rows of `cfile:pl-tabling.c` (group T5 of the PIN1 note); the note of that row records that TB8 ports them. The generated R2 block of this file is regenerated at the gate, not edited by hand.
+- **Known hazards (not tested):** `tbl_pred_tripwire` with a `nothing` definition (upstream would fail the same way; the stack guards the call); the compile risks listed in handoff2.md item 7 are UNVERIFIED.
+
+Tests: test/core_lang/test_tabling_sdg_swipl.jl (132 rows, pinned from swipl 10.1.20 run twice: defaults, limits, actions, `$tbl_incomplete`, `$tbl_sdg` outside an evaluation) and the four restraint rows of
+test/core_lang/test_set_flag_swipl.jl (no longer refused). Manifest: `_manifest_index` in test/static_analysis_manifest.jl. Mutants: tools/mutants/TB8.py.
 
 ## AUTOLOAD1 (A1, A4, Q3) — `ld` in trapUndefined, the `autoload` flag setter, the loud boot-session error (R2, audit D-0387 item 3, edit-only: nothing was compiled when this was written; the gate decides)
 
@@ -8224,6 +8418,42 @@ UPSTREAM: os/pl-file.c `closeStream` :1503-1521 (`s == Sinput`; `s == Soutput ||
   Mutants CS-14..CS-19 make each constructor static and remove the flag test. A new stream constructor must not set `SIO_STATIC`.
 - Rows: test/files/test_open_close_swipl.jl cs01-cs10 (swipl 10.1.19's pinned answers) and the white-box testsets; mutants tools/mutants/CLOSESTREAM.py (19).
 
+## TAB1 TB7 — monotonic tables: the MONOTONIC TABLING block of pl-tabling.c (pl-tabling.c:9883-11100, R2, swipl-devel 18168e62)
+
+What TB7 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only on branch wip/tb7r, stacked on wip/tb6: NOTHING was compiled or run, every claim below is
+UNVERIFIED until the gate). It is the part of the table machinery that keeps a `:- table _ as monotonic` table up to date when a monotonic dynamic predicate gets a clause:
+the dependency chains `idg_mdep`, the `mono_index` of a source node, the answer queues, the propagation, the reevaluation and the sixteen predicates around them.
+- **UPSTREAM files:** `src/pl-tabling.c` (src/pl-tabling.jl, the block `# ── MONOTONIC TABLING` before `PL_predicates_from_tabling`; the refusal sites of TB6 in `idg_destroy`,
+  `idg_destroy_private`, `idg_free_mdeps`, `idg_add_child`, `idg_edge_gen`, `idg_changed_loop` are replaced by calls into it); `src/pl-global.h` (`LD->tabling`: src/pl-global.jl
+  `ld_tabling{T}`). The structs `idg_mdep`, `idg_mono` and `idg_node` are TB6's and are not edited.
+- **Registered predicates** (src/pl-tabling.jl, `PL_predicates_from_tabling`, after `$tbl_reeval_wait/2`, upstream's order, pl-tabling.c:12823-12838): `$tbl_monotonic_add_answer/2`,
+  `$idg_add_monotonic_dep/3`, `$idg_add_mono_dyn_dep/3`, `$idg_mono_affects/3` (nondeterministic), `$idg_mono_affects_eager/3` (nondeterministic), `$idg_mono_affects_lazy/5`
+  (nondeterministic), `$idg_mono_index/2`, `$idg_mono_index_deps/4` (nondeterministic), `$tbl_propagate_start/1`, `$tbl_propagate_end/1`, `$tbl_collect_mono_dep/0`, `$mono_idg_changed/2`,
+  `$mono_reeval_prepare/2`, `$mono_reeval_done/3`, `$idg_mono_empty_queue/2`, `$idg_mono_invalidate/1`. The boot-image count of kernel foreign rows (test/db/test_boot_image_swipl.jl) falls 356 -> 340.
+- **Struct changes (restart of the warm daemon):** `ld_tabling{T}` gains three fields after `idg_edge_states` (src/pl-global.jl): `mdep_by_ref::Dict{Int, idg_mdep{T, idg_node{T}}}`,
+  `mdep_ref_of::IdDict{idg_mdep{T, idg_node{T}}, Int}`, `mdep_ref_serial::Int`; new `mono_scc_state{T}` (src/pl-tabling.jl, the SCC walk of `mono_scc_is_complete`).
+  `idg_free_mdeps` takes `ld` as its first argument (its manifest entry changed with it).
+- **DIVERGES (representation; each with its place):**
+  1. An `idg_mdep *` is an INTEGER reference (`mdep_ref!`, `mdep_of_ref`, `ld.tabling.mdep_by_ref`): the pointer upstream puts into a Prolog integer (`PL_unify_pointer`) is never an address;
+     a stale reference makes `$idg_mono_empty_queue/2` fail (upstream's failed `magic` test), `$idg_mono_index_deps/4` and `$idg_mono_affects*/3,5` read the table, not memory.
+  2. The chain of one edge (child -> parent) ends in the CHILD node (`next` is an `idg_node` there; upstream tells the two apart by `magic`); a freed dependency has `magic == 0`.
+  3. A queue entry (`mdep.queue::Vector{Int}`) is the id of a node of the child's answer trie (> 0) or, for the pseudo table of a dynamic predicate, a clause reference as `-serial` (< 0;
+     upstream: a node pointer or an atom word): `clref_serial`, `mono_answer_live`, `get_mono_answer`. Answers go to Prolog as node ids.
+  4. The `mono_index` trie of a node is a serial in `gd.tries` and stays there after `mono_index_release` (no atom GC). The variant hash is `variant_hash(...).murmur` of the cells exported
+     (src/pl-termhash.jl); the variant table is TB1's `variant_table`.
+  5. The transaction branches (`LD->transaction.generation`, `tt_add_table`, `tt_add_answer`, `tt_mono_status`, `tt_new_dep`, `tt_abolish_table`) are omitted: the kernel has no `ld.transaction`
+     (owner TX1/TB9; `prepare_reeval`'s `tt_add_table` stays the TB9 refusal). `Buffer`s are `Vector{Int}`, `TablePP`/`TablePW` are `Dict`/`IdDict`, `segstack` is a `Vector`.
+  6. `mono_reeval_done_node` counts the deleted leaves through a `Ref` and allocates a closure per call (not an allocation-free function; its manifest row says `false`).
+- **Named refusals, each with its owner:** `$idg_add_mono_dyn_dep/3` calls `get_procedure(gd, ld, A1, GP_FIND)`, which src/pl-proc.jl refuses for anything but `GP_DEFINE` (owner V9): the predicate
+  throws `NotPortedError` until V9, so a monotonic table over a monotonic DYNAMIC predicate cannot run on the kernel before then. `atrie_answer_event` (the new-answer event of a predicate with `events`,
+  EV1 answer hook, pl-tabling.c:11443-11463) is ported: it builds the wrapper (`unify_skeleton`) and the answer (`unify_trie_term`) and calls `table_answer_event`; see "EV1 answer hook" below.
+- **Stack-merge sites (other branches; evidence/TB7/handoff3.md):** wip/tb3 `prune_deleted_mdeps(ld, idg)` and `inner_is_monotonic(ld)`, wip/tb1 `tbl_variant_table`'s monotonic branch.
+- **To verify at the gate (unverified by construction):** the cross-branch names the block uses (TB1 `tbl_refuse`, `variant_table`, `unify_trie_term`; TB3 `wkl_mode_add_answer`, `WL_DYNAMIC`;
+  TB6 `table_is_incomplete`); the FLI forms (`PL_discard_foreign_frame`, `PL_new_term_refs`, `PL_put_variable`, `_err_functor(ld, :monotonic, 1)`); `variant_hash(t, HASH_MURMUR)` and `cell_export{T}()`;
+  `gd.clause_refs` indexing and the `CL_ERASED` flag; `trie_lookup(ld, tr, 0, k, add, nothing)`; `map_trie_node(atrie, 1, f)` visiting the root; the `@goto next` out of the `dep != 0`
+  block of `idg_edge_gen`; the rows of test/core_lang/test_tabling_monotonic_swipl.jl (all eight kernel answers) and the TB7 mutants (tools/mutants/TB7.py).
+- **Upstream defects:** see the private register.
+
 ## PIN1 step C — deferred owners of the V10.1.20 hunks the kernel does not take (swipl-devel 18168e62; audit D-0446 item 3, D-0447 items 1-3; edit-only: nothing was compiled or run when this was written, the gate decides)
 
 UPSTREAM: pl-tabling.c, pl-tabling.h, pl-idgset.c/h (new), pl-thread.c, os/pl-stream.c (`Sshare`), pl-prof.c, pl-init.c (`stopProfiler`), pl-fli.c, pl-fli.h and SWI-Prolog.h, cbf4e189 to 18168e62.
@@ -8259,3 +8489,116 @@ The table of every hunk: evidence/PIN1/step_c/decomposition.tsv and part2_notes.
   os/pl-file.c and os/pl-stream.c (`Sshare` and `shareStandardStream`, 87fc7589: TH1; the other hunks cd67bb35, dfc1c55d, 4f259069 are ported). Each file's hunks were compared as in commit 6: the changed lines minus d755bdc4 minus the named commits leave only the groups listed here.
   No `# UPSTREAM:` line cites cbf4e189 any more, so the `sync-from:` line of tools/SWIPL_VERSION, tools/fetch_sync_from.sh, its steps in CI.yml, evidence.yml and mutation.yml and its section of tools/test_ci_tools.sh are removed, and with them the
   empty test/sync_expected_mismatch.jl (test/test_gate_split.jl holds that file to exist exactly while `sync-from:` does). tools/port_check.jl still reads an optional `sync-from:` line (a later sync writes it again and restores the fetch step and the list from this commit's parent; test/test_port_check.jl feeds it a fixture pin).
+
+## TAB1 TB6 — the incremental dependency graph: pl-idgset.c, the IDG of pl-tabling.c, reevaluation, `S_INCR_DYNAMIC` (R2, swipl-devel 18168e62)
+
+What TB6 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only by five agents on branch wip/tb6, off wip/stack1 4c1ef9fe: NOTHING was compiled or run when this block
+was written, every claim below is UNVERIFIED until the gate; the rows were pinned from swipl 10.1.20, the white-box rows from the C source). Evidence: evidence/TB6/handoff*.md.
+- **UPSTREAM files:** `src/pl-idgset.c` and `src/pl-idgset.h` (NEW src/pl-idgset.jl, the whole file, single-thread build); `src/pl-tabling.c` (src/pl-tabling.jl, four blocks:
+  IDG CONSTRUCTION :7824-8560, IDG QUERYING :8562-8850, IDG CHANGE PROPAGATION :8994-9203 with `$idg_changed/1`, `$idg_falsecount/2`, `$idg_set_falsecount/2`, `$idg_forced/1`
+  (:9826-9963), IDG REEVALUATION :7416-7438 and :11053-11430); `src/pl-tabling.h` (the structs `idg_node`, `idg_mdep`, `idg_mono`: src/pl-incl.jl); `src/pl-vmi.c` `S_INCR_DYNAMIC`
+  (:3522-3553), `src/pl-supervisor.c` `dynamicSupervisor` (:330-339), `src/pl-comp.c` `assert_term` (:4915-4920), `src/pl-global.h` (`PL_code_data.incr_dynamic`).
+- **Ports (18 predicates registered in `PL_predicates_from_tabling`, upstream order):** `$idg_add_dyncall/1`, `$idg_add_edge/1`, `$idg_set_current/1,2`, `$idg_reset_current/0`,
+  `$idg_edge/3` (NDET), `$idg_changed/1`, `$idg_thread_summary/3`, `$idg_thread_space/2`, `$idg_predicate_edges/3`, `$idg_falsecount/2`, `$idg_forced/1`, `$idg_set_falsecount/2`,
+  `$idg_false_edge/3` (NDET), `$tbl_reeval_wait/2`, `$tbl_reeval_prepare_top/2`, `$tbl_reeval_prepare/2`, `$tbl_reeval_abandon/1`; the supervisor `S_INCR_DYNAMIC`; the flag of
+  `assert_term` that makes a new procedure incremental (`tbl_set_incremental_predicate`). The boot-image kernel-foreign count of test/db/test_boot_image_swipl.jl moves 374 -> 356
+  (the TB6 registrations as foreign rows of `system`). docs/r2_owners.tsv lost the 10 `pred:` rows these register and the `vmi:S_INCR_DYNAMIC` row.
+- **NAMED REFUSALS (each `tbl_refuse(T, fname, what, owner)`, one owner row `refusal:src/pl-tabling.jl::tbl_refuse::what`):** monotonic tabling is TB7: a monotonic dependency
+  (`idg_mdeps`, `find_dep`, `new_mdep`, `mono_index_*`, `free_mdep_chain`), `force_reeval`/`mdep_empty_queues` of a monotonic parent in `idg_changed_loop`, `$idg_mono_affects*` in
+  `idg_edge_gen`; the 13 monotonic predicates (`$idg_mono_*`, `$idg_add_mono*`, `$mono_idg_changed/2`, `$mono_reeval_*`, `$tbl_collect_mono_dep/0`) are not registered and their rows in
+  docs/r2_owners.tsv now name TB7. Shared tables and threads are TH1: `idg_new` of a shared table, `idg_add_child` with a shared parent or child (`idg_dependency_error`),
+  `trie_for_dynamic_predicate` of a shared or thread-local predicate, `PL_get_thread_id_ex` in `idg_reader_registry` (only the main thread or 1 is accepted), and
+  `assert_term`'s `PL_CREATE_THREAD_LOCAL` (the owner row is now `refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL`, TH1; it was a refusal of any flag).
+  `tt_add_table` (`prepare_reeval`) is TB9; `tt_has_modified_dependencies` answers false because no transaction can be open.
+- **Refusal sites of TB2/TB4/TB1/TB3 that TB6's code replaces AT THE STACK GATE (branch, function; none is edited on wip/tb6 itself):** wip/tb1 `reset_answer_table`
+  (`atrie.IDG === nothing || tbl_refuse(... TB6)` -> `idg_reset` / `idg_destroy`), `complete_or_invalid_status` (the IDG branches: falsecount, reevaluating), `tbl_variant_table`
+  (-> `idg_init_variant(ld, atrie, def, variant)` + `idg_add_edge(ld, atrie, nothing)`), `is_answer_trie` (`incremental`, `monotonic(How)`); wip/tb3 `set_idg_current` stub (DELETE:
+  TB6's `set_idg_current(ld, ::Union{Nothing,trie{T}})` replaces it) and `call_complete_table` (-> `idg_init_variant` + `idg_add_edge`); wip/tb2 `free_worklist_set`
+  (-> `reset_reevaluation`, pl-tabling.c:938-941), `wls_reeval_complete` (-> `reeval_complete` per reevaluating node, pl-tabling.c:6226-6255), `answer_nodes_discardable`,
+  `complete_worklist` (-> `tt_has_modified_dependencies`); wip/tb4 `update_delay_list_any` (-> the reevaluating branch, pl-tabling.c:1365-1368), the early-completion test, `add_answer`
+  (`TN_IDG_ADDED`), `table_has_no_answers`. The stack gate's conflicts are in `ld_tabling` (TB1 inserts `start_nodes`, TB2 appends `pointers`, `free_pointers`, `wkl_states`).
+- **DIVERGES (representation or placement; each with its place):**
+  1. **`S_INCR_DYNAMIC` renumbers the VM.** The opcode is `code(161)` in the pin's order (pl-vmi.c:3522, between `I_CUTCHP` and `S_WRAP`): src/pl-vmi.jl:621-623, the
+     `_CODE_TABLE` row before `S_WRAP`. `S_WRAP`, `S_CALLWRAPPER`, `S_TABLED`, `I_RESET`, `I_EXITRESET`, `I_CALLCONT`, `I_SHIFT`, `I_SHIFTCP` move from 161..168 to 162..169, and TR4's trie
+     opcodes (the T_* family) shift by one with them at the stack. The numbers are internal identity (no file, QLF or oracle row reads them: the only pin is the opcode-order row of
+     test/core_lang/test_cont_boot_swipl.jl, the tail length 12 -> 13: the D-0407 item 3 rule, the tail stays in pl-vmi.c's order; disclosed per D-0083). A `.qlf` or boot image
+     compiled before TB6 carries the old numbers (the images are rebuilt by the gate).
+  2. **The VM branch is a function.** The body of `S_INCR_DYNAMIC` between `SAVE_REGISTERS` and `LOAD_REGISTERS` is `incr_dynamic_call(ld, def, fr, ctrie)` (ORIGINAL, src/pl-tabling.jl;
+     as `S_TABLED` calls `tbl_complete_answer_clause`); the branch reads `LD->tabling.idg_current` through `idg_current(ld)` and `symbol_trie` (src/pl-wam.jl:4959-4973).
+     `put_supervisor_goal` is TB3's (the frame is an argument); the abstract-goal warning of `incr_dynamic_call` is a TB3 row (DEFERRED KILL in tools/mutants/TB6.py).
+  3. **Structs.** NEW `idg_set_block{P}`, `idg_set{P}`, `idg_set_enum{P}`, `idg_registry{P}`, `idg_mdep{T,N}`, `idg_mono{T,N}`, `idg_node{T}`, `idg_propagate_state{T}`, `idg_edge_state{T}`,
+     `pair_map{T}` (src/pl-incl.jl:2845-3065); the generic `P`/`N` close the cycle node -> set -> node as `worklist{T,C}` does. `trie{T}.IDG` was `Nothing`, now
+     `Union{Nothing, idg_node{T}}`. `ld_tabling{T}` gains `idg_registry` (after `node_pool`; `nothing`: NULL) and, as its LAST field, `idg_edge_states::foreign_state_pool{idg_edge_state{T}}`
+     (the records of `$idg_edge/3`'s REDO states, upstream's `allocForeignState` copies); `PL_code_data` gains `incr_dynamic::Vector{code}` after `dynamic` (pl-global.h:82; the constructor
+     call in src/pl-global.jl takes 8 arguments). A changed struct restarts the warm daemon at the gate.
+  4. **The sets are records, not tagged words.** `idg_set` is `single` / `block` / empty (both `nothing`) instead of pl-idgset.h's tagged pointer; an `idg_set_block` has `capacity`
+     slots and `entry_dead[i]` instead of the low-bit mark; the pointer hashed by `hash_slot` is `objectid(p)` (identity, as the address); the registry slot holds the node, `nothing`, or
+     (a free slot) the `Int` upstream keeps as a tagged word. `SIZEOF_IDG_SET_BLOCK` 24, `SIZEOF_IDG_NODE` 80, `SIZEOF_IDG_MONO` 24 (64-bit, `O_TRIE_STATS` on) are CHARGED to the table pool
+     (`alloc_from_pool`) and discharged (`free_to_pool`); memory is Julia's.
+  5. **Single-thread reader hooks.** `initIDGReaders`, `idg_reader_enter`, `idg_reader_exit` do nothing and `idg_free_or_defer` calls the function at once (`#ifndef O_PLMT`, the file header
+     of src/pl-idgset.jl); `COMPARE_AND_SWAP_PTR` and the barriers are plain stores; `lock_set`/`REG_LOCK` are empty. The deferred list `lingering` is the owning node's. The threads' readers are TH1's.
+  6. **Enumerations and summaries.** `idg_set_enum_init` and `idg_set_next` return their state (upstream fills `*offset` and the caller's struct); `idg_thread_summary` returns a named
+     tuple (nodes, edges, bytes); `$idg_predicate_edges/3` lists the `pair_map` in the order the pairs are first met (upstream: hash slot order, an order of addresses), parallel vectors keyed on `objectid`s.
+  7. **The current IDG node** `LD->tabling.idg_current` is a PERMANENT global cell made at setup (src/pl-setup.jl, as the wakeup list's head; pl-setup.c:1559); the old current symbol is
+     unified as `unify_trie` does. `idg_free_affected` and its siblings take `ctx` as a tuple `(ld, node)`; the `Sdprintf` of a backlink that is not found is `@warn`; the `DEBUG` prints are not kept.
+  8. **The variant trie** of `idg_init_variant` and `change_incomplete_error` is TB1's `variant_table(ld, shared)` (upstream finds it from the node); `WL_DYNAMIC` / `WL_GROUND` are TB1's sentinels in `trie.worklist`.
+- **UNPINNED OBSERVATION (not a TB6 row):** in swipl 10.1.20, after `$idg_add_dyncall(ti_d2(_))` on an incremental dynamic predicate, `assertz(ti_d2(1))` did NOT raise the falsecount of the
+  dependent table T. Nothing pins it and the port does not claim it either way; how assert reaches the dynamic table's IDG node is for a later check (the assert-side propagation, `$idg_changed/1`
+  called from the dynamic-predicate update path, is not a TB6 function).
+- **To verify at the gate (unverified by construction):** the 4 differential rows `idg01`-`idg04` and the 3 hand-built kernel rows `t_idg05`-`t_idg07` of test/core_lang/test_tabling_idg_swipl.jl
+  (the kernel rows need `start_tabling` of TB2/TB3: they gate on the stack); the white-box testsets `idg10`-`idg15` (edge sets, registry, edge halves, falsecount chain, reevaluation, `idg_destroy`;
+  values from the C source, NOT run: `_ti_node` calls `idg_new` on a fresh `PL_local_data` whose `node_pool` is `nothing`); `@goto`/`@label` across the loop of `idg_edge_gen`; the
+  `ld.tabling.idg_edge_states` `live_states` row (src/pl-fli.jl, not added); `tbl_refuse`, `get_answer_table`, `variant_table`, `table_status`, `put_supervisor_goal`, `destroy_delay_info`,
+  `simplify_answer` are other branches' and undefined on wip/tb6 alone.
+- **ORIGINAL (no upstream counterpart):** `incr_dynamic_call`, `idg_current`/`set_idg_current` (the global cell), the `idg_pool` helper, `reg_block`/`reg_block_size`, the `_manifest_tb6` rows.
+
+Tests: test/core_lang/test_tabling_idg_swipl.jl (pinned rows from swipl 10.1.20, two identical runs, and the white-box testsets); test/core_lang/test_cont_boot_swipl.jl (the opcode-order row);
+test/db/test_boot_image_swipl.jl (the kernel-foreign count); manifest rows `_manifest_tb6(T)` per term type in test/static_analysis_manifest.jl; mutants in tools/mutants/TB6.py.
+
+## TX1 — transactions and undo: pl-transaction.c, pl-undo.c (R2, swipl-devel 18168e62; edit-only; audit D-0479)
+
+What TX1 adds (pin `18168e629eab`, oracle swipl 10.1.20; written edit-only by several agents on branch wip/tx1: NOTHING was compiled or run when this block was
+written, every claim below is UNVERIFIED until the gate). TX1 is `transaction/1,2,3`, `snapshot/1`, `current_transaction/1`, `transaction_updates/1` and `undo/1`.
+- **UPSTREAM files and the Julia files:** `src/pl-transaction.c` and `pl-transaction.h` (src/pl-transaction.jl, the whole file; the flags and marks `TR_*`, `GEN_*` and the structs
+  `tr_stack`, `ld_transaction`, `tr_update`, `tr_enum` in src/pl-incl.jl, where `index_context` can name them), `src/pl-undo.c` (src/pl-undo.jl, the whole file). The engine hooks:
+  src/pl-inline.jl (`visibleClause` takes the transaction state; `Undo!` pushes the undo record when the first global cell is reset), src/pl-index.jl (`index_context.transaction`, read at the
+  entry of every search), src/pl-proc.jl (`_assertDefinition!` gives a clause its generation from the transaction's space, `retract_clause!` and `retractClauseDefinition!` take the transaction branch of pl-proc.c:1652-1664
+  and `transaction_set_last_modified`), src/pl-wam.jl (`updateAlerted` sets `ALERT_UNDO`; `depart_or_retry_continue` and `deep_backtrack` call `run_undo_hooks`), src/pl-ext.jl (the two registration tables).
+- **Registered predicates:** `'$transaction'/2`, `'$transaction'/3`, `'$snapshot'/1`, `current_transaction/1`, `transaction_updates/1` (`PL_predicates_from_transaction`), `'$undo'/1` (`PL_predicates_from_undo`).
+  The library side (`transaction/1,2,3`, `snapshot/1`, `undo/1`, `'$run_undo'/1`) is boot/syspred.pl as loaded at the pin. The four seed rows of docs/r2_owners.tsv for the predicates of the `TX1` owner are removed
+  (a `pred:` key for a ported predicate is `R2-OWNER-STALE`); the generated R2 block (`| TX1 | 4 | 4 | 0 |`) is regenerated at the gate by `tools/port_check.jl --write-inventory`, never by hand.
+- **STRUCT CHANGES (the warm daemon restarts at the gate):** `PL_local_data` gains `transaction`, `transaction_enums`, `undo_list`, `undo_scheduled`, `undo_running` (src/pl-global.jl:687-691);
+  `index_context` gains `transaction` (src/pl-index.jl:83); `PL_global_data` gains `undo_refs` (src/pl-global.jl:179). `LK.Undo!` is no longer allocation-free in the manifest (it pushes to a Vector).
+- **DIVERGES (representation only; each with its place, the full list is `grep -n "^# DIVERGES" src/pl-transaction.jl src/pl-undo.jl`):**
+  1. The tables of a transaction (`tr_stack.clauses`, `.predicates`) are Julia `Dict`s made on demand, not upstream's `Table` of `tr_gen_t`; there are no reference counts, so `acquire_clause`,
+     `release_clause` and `tr_erased_no` are unwritten and `transaction_visible_clause` always looks the clause up in the table (the same answer): src/pl-transaction.jl header.
+  2. The table trail (`table_trail`, `transaction_commit_tables`, `transaction_rollback_tables`, `merge_tabling_trail`) is left to TAB1 TB9: the tables' share of a transaction. `is_trie_clause` answers false for every clause until then.
+  3. The undo hooks: `Undo!` (src/pl-inline.jl:1144-1160) tests `_trail_pos(a) == ld.undo_list` and calls `push_undo` BEFORE the cell is restored (pl-wam.c:1612-1613); the undo cell is global position 1 (`init_undo_list`,
+     allocated first by `emptyStacks!`, src/pl-setup.jl:156); the schedule `ld.undo_scheduled` is a Vector of atom words that is emptied, not freed; `updateAlerted` (src/pl-wam.jl:206-214) sets `ALERT_UNDO` while it is not empty;
+     `run_undo_hooks` runs at the two run-loop sites of pl-vmi.c (:1989 the next predicate call, :6850 after a backtrack: src/pl-wam.jl:3613 and :5471) and looks `'$syspreds':'$run_undo'/1` up on each call.
+  4. The undo blob has no `write`, `save`, `load` or `release` slots (`PL_blob_t` has none), so it is written `<undo>(0x...)` like every blob and a saved state cannot hold one; its payload is the number of the goal's record
+     in `gd.undo_refs`, not a pointer.
+  5. `current_transaction/1`'s redo state is a record of the pool `ld.transaction_enums` (`tr_enum`), freed at the last answer, at a failure and at a cut (upstream frees nothing: its context is the stack pointer).
+  6. The debug predicate `pred_generations/1` (`O_DEBUG`) has no registration: the oracle is a release build, and asking it for `pred_generations/1` is an `existence_error` for the procedure.
+  7. The mutex argument of `'$transaction'/3` is not examined (no mutex table; one thread); `PL_representation_error` of the generation space is raised in `ld`.
+  8. The first-clause searches of src/pl-proc.jl, src/pl-supervisor.jl and src/pl-wrap.jl have no local data: inside a transaction they see the global generations only (the form of `visibleClause` without `tr`).
+- **A RAISING undo goal is a named refusal, owner P3.** `'$run_undo'/1` calls `'$urgent_exception'/3` when the goal raises; that predicate is the P3 row of docs/r2_owners.tsv (its note names this use). The rows of
+  `undo(1)`, `undo(_)` and `undo(throw(boom))` are left out of the evidence file; the success path (order and timing of the goals) is run by the rows.
+- **Behaviour pinned by the oracle (swipl 10.1.20, two identical runs):** on an OUTERMOST transaction `bulk(true)` raises the update events during the goal and again at the commit (txe03 to txe05); `bulk(false)` and `[]` only in the goal.
+  Where the pin shows a defect of swipl itself, the kernel follows the pin and the defect is recorded: see the private register.
+- **Tests:** `test/core_lang/test_transaction_swipl.jl` (101 swipl-differential rows, ids `txc`, `txn`, `txu`, `txr`, `txd`, `txe`, a non-vacuity testset and a live check), the manifest entries `_manifest_tx1` and `_MANIFEST_TX1_FREE` in
+  test/static_analysis_manifest.jl, the mutants `tools/mutants/TX1.py`.
+- **To verify at the gate (unverified by construction):** the default constructors of `tr_update{T}`, `tr_stack{T}` and `tr_enum{T}` against the manifest; the allocation flags of the free functions (`LGEN`, `update_gen`, `cmp_updates`,
+  `UNDO_SCHEDULED`); that boot's `transaction/1` finds `'$syspreds'` loaded in the test kernel; `nb_setval`, `limit/2` and `prolog_listen/2` as the rows use them; the Pkg.test-way run of the new test file.
+
+## TAB1 INT3 — ENGINE FINDING: an exception out of the cleanup goal of `answer_completion/2` (KNOWN DIFFERENCE, OPEN; owner row pending: engine-core slot after AR1; audit D-0659 item 3)
+
+- **The finding.** `'$tabling':answer_completion/2` (vendor/swipl-devel/boot/tabling.pl:2252-2260) is called from C (`call_answer_completion`, src/pl-tabling.jl) and ends in
+  `call_cleanup(answer_completion_guarded(...), abolish_table_subgoals(eval_subgoal_in_residual(_,_)))`. When that cleanup goal raises, the engine breaks (`AssertionError: newChoice:
+  BFR is not older`, src/pl-wam.jl, from C_OR; `tabling(unexpected_result(...))`); swipl 10.1.20 passes the exception to the caller. Found by the TB4FIX-B reduction
+  (evidence/TAB1/b4fix_handoff.md), where the raising goal was an existence_error for the then undefined `'$tbl_destroy_table'/1`; with that builtin present the path no longer runs by itself.
+- **The reproducer needs no undefined builtin:** test/core_lang/test_tabling_engine_finding_cleanup_throw_swipl.jl wraps `'$tabling':abolish_table_subgoals/1` with a goal that throws and runs the
+  6-predicate positive loop of the reduction. swipl: `raised(ef_cleanup_thrown)` for `re` and for `rf` (two identical runs, evidence/TAB1/int3_verify.md). The control group (no wrap) answers `no`, `yes`.
+- **Convention.** The row asserts SWIPL's answer and FAILS today (`@test`, no skip): the kernel's current behaviour is a Julia exception, not an answer line, so there is no current answer to pin. The row
+  is a copy on wip/tab-int only: its commit is dropped before a gate push, and it becomes a gated row when the engine-core slot's owner row exists.
+- **Not on origin/main:** main vendors the same Prolog text but has no C side that calls it (`call_answer_completion`, `$tbl_wkl_work` are tabling-branch code), so the finding cannot arise there.

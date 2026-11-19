@@ -1,0 +1,56 @@
+t1 yes 
+t2 yes(a<default|v>b) 
+t3 yes(<3|v>) 
+t4 yes(<122|v>) 
+t5 yes(<5|v>) 
+t6 yes(<-3|v>) 
+t7 yes(<default|v>) 
+t8 yes(<default|p><default|q>) 
+t9 ex(format(not enough arguments)) 
+t10 ex(format(too many arguments)) 
+t11 yes 
+t12 yes(ay(default)bc) 
+t13 yes 
+t14 yes((2,p,q)) 
+t15 ex(format(not enough arguments)) 
+t16 yes 
+t17 yes({default|k}) 
+t18 yes(m2:fp_w/2,user:fp_x/2,user:fp_y/1,user:fp_z/3) 
+t19 no 
+t20 no 
+t21 no 
+t22 yes(ok) 
+t23 yes(4) 
+t24 yes 
+t25 yes 
+t26 yes(m2) 
+t27 yes(ok) 
+t28 ex(type_error(character,1.5)) 
+t29 ex(instantiation_error) 
+t30 ex(type_error(character,xy)) 
+t31 yes 
+t32 yes(<default|v>) 
+t33 ex(domain_error(format_predicate,fp_noargs)) 
+t34 ex(type_error(callable,3)) 
+t35 ex(instantiation_error) 
+t36 yes 
+t37 yes([default|v]) 
+t38 yes(ok) 
+t39 yes(5) 
+t40 yes 
+t41 no 
+t42 yes 
+t43 ball(oops) 
+t44 yes 
+t45 yes(ss) 
+t46 [5-q,default-r] 
+t47 yes 
+t48 yes(abv/vcd) 
+t49 yes( [default|v]) 
+t50 yes([default|v] end) 
+t51 yes(p[default|q]r) 
+t52 yes 
+t53 yes([default|v]) 
+t54 yes 
+t55 yes(<default|65><3|66>) 
+t56 yes(m2:fp_w/2,user:fp_col/2,user:fp_fail/2,user:fp_seen/2,user:fp_x/2,user:fp_x/2,user:fp_x2/2,user:fp_x2/2,user:fp_y/1,user:fp_z/3) 

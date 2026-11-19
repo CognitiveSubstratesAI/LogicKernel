@@ -18,6 +18,7 @@
 # THE FOUR CLASSES (every mutant id says which; DEFERRED and SURVIVES-UNTIL-ROW live in the list `DEFERRED` at the end, not in MUTANTS):
 #   KILL <row>        the row's @test fails (the row's name is the rowid of TA's `_TA_CASES`, or the testset of a white-box @test);
 #   EQUIVALENT        `equivalent:` carries the reason with a file:line (the driver does not run it as a kill target);
+#       (TB3-F4, TB3-T2 and TB3-C2 WERE equivalent until TB6, which assigns the IDG and sets TN_IDG_DELETED; the TB6 rows of TR6 kill them now, read off the code, not run.)
 #   DEFERRED KILL <owner step>: the mutated code is NOT reached by any TA row; the OWNER must add the row named (the program has to be recursive
 #       or to carry delays, TB5/TB4; a ground table called twice and a trie property, TB5/TR2): the survivor of the first battery is
 #       EXPECTED and is not a defect of the port; listed in `DEFERRED` below with its owner;
@@ -39,9 +40,11 @@ TA = "test/core_lang/test_tabling_answers_swipl.jl"
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 TR = "test/core_lang/test_trie_swipl.jl"
 TP = "test/core_lang/test_trie_preds_swipl.jl"
-TTAB = [TA, TM]                           # the answers, the supervisor
+TR6 = "test/core_lang/test_tabling_tb6rows_swipl.jl"   # the TB6 rows: F4, T2 and C2 (once equivalent) are killed there
+TB3R = "test/core_lang/test_tabling_tb3rows_swipl.jl"   # TAB1 F7: the ground call whose later clause has a side effect (kills TB3-U2, TB3-F7)
+TTAB = [TA, TM, TB3R]                     # the answers, the supervisor, the early-completion rows (TB3R runs update_delay_list / tbl_add_answer_found too)
 TREG = [TA, TM, TR, TP]                   # the registration table and trie_gen's data kind
-TARGETS = [TA, TM, TR, TP]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TARGETS = [TA, TM, TB3R, TR, TP, TR6]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 TAB = "src/pl-tabling.jl"
 WAM = "src/pl-wam.jl"
 MUTANTS = [
@@ -54,39 +57,40 @@ MUTANTS = [
          file=TAB, targets=TTAB,
          old="wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_NEW : 0",
          new="wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_COMPLETE : 0"),
-    dict(id="TB3-A3 a moded answer that changed nothing is reported new, `: TBL_ANSWER_NEW` (EQUIVALENT: only the truthiness of the result is read, `$tbl_wkl_add_answer`/4 pl-tabling.jl:555-567, and delim/4, boot/tabling.pl:695-696, fails after both; the effects on the trie are the same)",
+    dict(id="TB3-A3 a moded answer that changed nothing is reported new, `: TBL_ANSWER_NEW` (KILL tbw01/tbw02, the TB3-S9 testset of test_tabling_answers_swipl.jl: caught at TA:653 by CI 3eaae177 (D-0852); the earlier declaration of equivalence was refuted)",
          file=TAB, targets=TTAB,
          old="wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_NEW : 0",
-         new="wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_NEW : TBL_ANSWER_NEW",
-         equivalent="the result is only a truth value to `$tbl_wkl_add_answer`/4 (pl-tabling.jl:555-567 `rc != 0`), and delim/4 (boot/tabling.pl:695-696) fails after a new answer as after none"),
+         new="wkl_mode_add_answer(ld, wl, atrie, answer, delays) != 0 ? TBL_ANSWER_NEW : TBL_ANSWER_NEW"),
     dict(id="TB3-F1 tbl_add_answer_found: the trie is not marked with ATOM_trienode when an answer is new, the `set_trie_value_word` dropped (KILL taa01: the answer node carries no value, `ta_p(_)` has no answers; taa06)",
          file=TAB, targets=TTAB,
-         old="            set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)\n",
-         new="            nothing\n"),
+         old="            @label add_anyway\n            set_trie_value_word(_query_gd(ld), atrie, nid, ATOM_trienode)\n",
+         new="            @label add_anyway\n            nothing\n"),
     dict(id="TB3-F2 tbl_add_answer_found: the count restraint branch is taken for every new answer, `=== nothing` (KILL taa01: the named refusal of TB8, `tbl_wl_tripwire`, is raised by the first answer of `ta_p(_)`)",
          file=TAB, targets=TTAB,
          old="        elseif (action = tripwire_answers_for_subgoal(ld, wl)) !== nothing\n",
          new="        elseif (action = tripwire_answers_for_subgoal(ld, wl)) === nothing\n"),
-    dict(id="TB3-F3 tbl_add_answer_found: a variant answer reports TBL_ANSWER_NEW, `return 0  # already in trie` -> NEW (EQUIVALENT: as TB3-A3, only truthiness, pl-tabling.jl:555-567 and boot/tabling.pl:695-696; the trie and the worklist are untouched by this return)",
+    dict(id="TB3-F3 tbl_add_answer_found: a variant answer reports TBL_ANSWER_NEW, `return 0  # already in trie` -> NEW (KILL tbf01, tbf02 of test_tabling_answers_swipl.jl, TAB1 S3k: `$tbl_wkl_add_answer/4` called as a predicate re-adds an existing answer: swipl answers `no`, the mutant `ok(_)`; the old equivalence claim (as TB3-A3, only truthiness) was never reached by any target: the reach pass said NOT REACHED, and the line is read only through that predicate, tbl_reset_add_answer reads rc == TBL_ANSWER_COMPLETE only; killed on the warm daemon, reference type, the battery decides)",
          file=TAB, targets=TTAB,
          old="                return 0                            # already in trie\n",
-         new="                return TBL_ANSWER_NEW                # already in trie\n",
-         equivalent="the result is a truth value (pl-tabling.jl:555-567) and delim/4 (boot/tabling.pl:695-696) fails after both"),
-    dict(id="TB3-F4 tbl_add_answer_found: the IDG_DELETED flag of a found node is not cleared (EQUIVALENT: nothing sets TN_IDG_DELETED at wip/tb3, grep src/: the constant pl-incl.jl:1261 and its mask :1285 only; TB6 sets it, owner TB6 re-judges)",
+         new="                return TBL_ANSWER_NEW                # already in trie\n"),
+    dict(id="TB3-W1 `$tbl_wkl_add_answer`/4 answers `?` for the completing answer instead of `!` (KILL w01, w02 of test_tabling_tb3rows_swipl.jl, TAB1 S3y: `'$tbl_wkl_add_answer'/4` called as a predicate on the worklist of a fresh GROUND call's table answers `ok(!)` for the first answer (update_delay_list: `wl.ground` -> UDL_COMPLETE), the mutant `ok(?)`; hand-run on the reference type; the leader of boot/tabling.pl tests `Complete == !` in the `prolog_debug` branch of delim/4 only, the rows reach it through `'$tbl_reset'/6`, so the U2 rows, the answers rows tbf/tbw and the min file pass with the mutant: MEASURED S3t)",
          file=TAB, targets=TTAB,
+         old='PL_unify_atom(ld, A4, mk_sym(T, Symbol("!")))',
+         new='PL_unify_atom(ld, A4, mk_sym(T, Symbol("?")))'),
+    dict(id="TB3-F4 tbl_add_answer_found: the IDG_DELETED flag of a found node is not cleared (KILL REEVAL f02 of test_tabling_tb6rows_swipl.jl (TR6): `assertz(rd(3))` invalidates the incremental table `rt`, its re-call re-evaluates it: `reeval_prep_node` (pl-tabling.jl:8069) sets TN_IDG_DELETED on the answers 1 and 2, the re-evaluation finds them again in `tbl_add_answer_found`, the mutant leaves the flag set and `reeval_complete_node` (:8206) deletes both: the row's [1,2,3] and value_count 3 become [3] and 1)",
+         file=TAB, targets=[TR6] + TTAB,
          old="                if (nd.flags & TN_IDG_DELETED) != 0\n                    nd.flags &= ~TN_IDG_DELETED\n                    @goto update_dl\n",
          new="                if (nd.flags & TN_IDG_DELETED) != 0\n                    @goto update_dl\n",
-         equivalent="TN_IDG_DELETED is set nowhere in src/ at wip/tb3 (pl-incl.jl:1261 defines it, :1285 masks it); the branch is not entered until TB6"),
+),
     # ── update_delay_list fast path (pl-tabling.c:1342) ──
     dict(id="TB3-U1 update_delay_list: every call completes early after its first answer, `return UDL_COMPLETE` (KILL taa01/taa11: `ta_p(_)` is a non-ground call with the answers 1,2,3: only 1 is found)",
          file=TAB, targets=TTAB,
          old="        return wl.ground ? UDL_COMPLETE : UDL_TRUE\n",
          new="        return UDL_COMPLETE\n"),
-    dict(id="TB3-U2 update_delay_list: no early completion of a ground call, `return UDL_TRUE` (EQUIVALENT in every answer: an early completion only prunes the worker's choice points (pl-tabling.jl:419-426); a ground variant has at most one answer; the side-effect witness is TB3-F7's row, DEFERRED TB5)",
+    dict(id="TB3-U2 update_delay_list: no early completion of a ground call, `return UDL_TRUE` (KILL u01, u02, u04, u06 of test_tabling_tb3rows_swipl.jl (TAB1 F7, audit D-0906; hand-run on the kernel, TAB1 S3t: u02 reads the same count again): the early completion prunes the worker's remaining clauses and solutions, no ANSWER differs but a SIDE EFFECT of a pruned clause is observable; swipl 10.1.20 pins `ug1(1). ug1(1) :- assertz(ux_seen(g1)).` -> count 0 (the mutant: 1), `ug3(1)` with two side-effect clauses -> 1-0 (1-1), `uh(1) :- between(1, 3, _), assertz(..)` -> 1 (3); controls u03 (side effect first: 1), u05/u07 (the non-ground call runs every clause: 1, 3))",
          file=TAB, targets=TTAB,
          old="        return wl.ground ? UDL_COMPLETE : UDL_TRUE\n",
-         new="        return UDL_TRUE\n",
-         equivalent="a ground call has one answer (pl-tabling.jl:419-426): the early completion only prunes the worker's remaining clauses, no answer differs; a row with a side-effecting second clause is TB5's"),
+         new="        return UDL_TRUE\n"),
     # ── '$tbl_wkl_add_answer'/4 (pl-tabling.c:4885-4899) ──
     dict(id="TB3-W3 `$tbl_wkl_add_answer` is registered under another name (KILL taq05, taq11 (`defined`), taq13 (`foreign`); the white-box @test `haskey(ext, (\"\\$tbl_wkl_add_answer\", 4))` of the taq testset)",
          file=TAB, targets=TREG,
@@ -187,11 +191,11 @@ MUTANTS = [
          old="        if (tr.nodes[nid].flags & TN_SECONDARY) != 0\n            return unify_trie_term(ld, tr, nid, t)[1]\n",
          new="        if (tr.nodes[nid].flags & TN_SECONDARY) == 0\n            return unify_trie_term(ld, tr, nid, t)[1]\n"),
     # ── tbl_single_answer (pl-tabling.c:6269-6279) ──
-    dict(id="TB3-T2 tbl_single_answer: the answer count is not 1, `!= 1` (EQUIVALENT until TB6: the conjunct `atrie.IDG !== nothing` after it is false for every table, pl-tabling.jl:874-880, so the result is 0 whatever the count is; TB6 re-judges with TB3-T1's row)",
-         file=TAB, targets=TTAB,
+    dict(id="TB3-T2 tbl_single_answer: the answer count is not 1, `!= 1` (KILL SINGLE s01 and s02 of test_tabling_tb6rows_swipl.jl (TR6): the incremental table `s1` has an IDG node (TB6) and ONE answer; its second call finds `tbl_single_answer` != 0 and takes the trie symbol, no clause is compiled, `compiled_size` fails (s01: no); the mutant answers 0 for a count of 1, `compile_trie` runs and s01 shows yes; s02 (two answers, yes) differs the other way)",
+         file=TAB, targets=[TR6] + TTAB,
          old="    if atrie.value_count == 1 &&\n",
          new="    if atrie.value_count != 1 &&\n",
-         equivalent="`atrie.IDG !== nothing` (pl-tabling.jl:880) is false until TB6: the whole conjunction is false, the function answers 0 (pl-tabling.jl:874-880)"),
+),
     # ── unify_delay_info / trie_gen data kind / '$tbl_answer'/3, '$tbl_answer_c'/4 (pl-tabling.c:7061-7157) ──
     dict(id="TB3-D1 unify_delay_info: an unconditional answer's condition is `false`, not `true` (KILL taa07 `'$tbl_answer'(T, ret(2), C)` = true, taa10; tas02: the third component of the `S-M-C` rows)",
          file=TAB, targets=TREG,
@@ -219,11 +223,11 @@ MUTANTS = [
          old="return trie_gen_raw(ld, tr, root, A3, 0, A4, TRIE_GEN_DELAY_INFO, PL__ctx)",
          new="return trie_gen_raw(ld, tr, root, A4, 0, A3, TRIE_GEN_DELAY_INFO, PL__ctx)"),
     # ── the complete-table fast path (pl-tabling.c:12229-12636) ──
-    dict(id="TB3-C2 complete_answer_clause: a single-answer table gets no symbol, `tbl_single_answer(atrie) != 0 && return trie_symbol(gd, atrie)` dropped (EQUIVALENT until TB6: `tbl_single_answer` answers 0 for every table, pl-tabling.jl:874-880, so the line never returns)",
-         file=TAB, targets=TTAB,
+    dict(id="TB3-C2 complete_answer_clause: a single-answer table gets no symbol, `tbl_single_answer(atrie) != 0 && return trie_symbol(gd, atrie)` dropped (KILL SINGLE s01 of test_tabling_tb6rows_swipl.jl (TR6): the second call of the one-answer incremental table `s1` takes the trie symbol and compiles no clause (`compiled_size`: no); without the line `compile_trie` runs, `compiled_size` answers and s01 shows yes)",
+         file=TAB, targets=[TR6] + TTAB,
          old="        tbl_single_answer(atrie) != 0 && return trie_symbol(gd, atrie)\n",
          new="        nothing\n",
-         equivalent="tbl_single_answer answers 0 for every table until TB6 (`atrie.IDG !== nothing` false, pl-tabling.jl:874-880): the `!= 0` test never holds"),
+),
     dict(id="TB3-C4 flat_skeleton: a call with variables gets a `ret/n+1` skeleton (KILL taa06 and taa07-taa11: the second call of `ta_p(_)` hands trie_gen_compiled a skeleton of the wrong arity, no answer unifies; taa11 compares the answers)",
          file=TAB, targets=TTAB,
          old="    p = _alloc_compound!(ld, ret_functor(ld, arity), arity)\n",
@@ -266,7 +270,7 @@ DEFERRED = [
          file=TAB, targets=TTAB,
          old="            wkl_add_answer(ld, wl, nid) || return 0\n",
          new="            nothing\n"),
-    dict(id="TB3-F7 tbl_add_answer_found: an early completion of a NON-ground call is not reported, `complete = true` -> false (DEFERRED KILL TB5: a ground table call whose second clause has a side effect, `tb_g(1). tb_g(1) :- assertz(tb_seen).`: early completion cuts the worker after the first answer and `tb_seen` stays unasserted; swipl's answer pinned)",
+    dict(id="TB3-F7 tbl_add_answer_found: an early completion of a NON-ground call is not reported, `complete = true` -> false (KILL u01, u02, u04, u06 of test_tabling_tb3rows_swipl.jl (TAB1 F7; hand-run on the kernel, TAB1 S3t): the ground call `ug1(1)` is cut after its first answer, the side effect of the second clause is not run (count 0, swipl 10.1.20); without `TBL_ANSWER_COMPLETE` the clause runs (1))",
          file=TAB, targets=TTAB,
          old="            elseif udl == UDL_COMPLETE\n                complete = true\n",
          new="            elseif udl == UDL_COMPLETE\n                complete = false\n"),
@@ -278,10 +282,6 @@ DEFERRED = [
          file=TAB, targets=TTAB,
          old="node_delayinfo(gd, atrie, answer) === nothing &&\n        atrie.IDG === nothing\n",
          new="node_delayinfo(gd, atrie, answer) === nothing\n"),
-    dict(id="TB3-W1 `$tbl_wkl_add_answer`/4 answers `?` for the completing answer instead of `!` (DEFERRED KILL TB5: the leader tests `Complete == !` in boot/tabling.pl; without early completion every answer still arrives: the row is TB3-F7's side-effect row, which reads the flag through the worker's cut)",
-         file=TAB, targets=TTAB,
-         old='PL_unify_atom(ld, A4, mk_sym(T, Symbol("!")))',
-         new='PL_unify_atom(ld, A4, mk_sym(T, Symbol("?")))'),
     dict(id="TB3-W2 `$tbl_wkl_add_answer`/4 succeeds for a zero result, `rc != 0 ? FTRUE : FFALSE` -> FTRUE (DEFERRED KILL TB5: an answer that RAISES, `tbl_add_answer` returns 0 with a pending exception: the row `'$tbl_wkl_add_answer'(WL, notmoded, [], _)` on a moded worklist inside a table's evaluation, pinned `domain_error(moded_answer, notmoded)`; no TA row reaches a worklist without TB2/TB5)",
          file=TAB, targets=TTAB,
          old="        return rc != 0 ? FTRUE : FFALSE\n",

@@ -1,0 +1,161 @@
+# TAB1 battery targets (34 refs, 99e5975c): union of TARGETS files NOT yet run on a lane, grouped by first mutant ref (order of D-0807); a file shared by several refs appears under the first one only.
+# Already run on a lane (excluded): test_tabling_min_swipl.jl, test_tabling_abolish_bulk_upstream_swipl.jl, test_tabling_monotonic_swipl.jl, test_record*.
+# Extracted by exec of the TARGETS list of tools/mutants/<ref>.py (python3 -I).
+# ENG1
+test/core_lang/test_tabling_abolish_swipl.jl
+test/core_lang/test_tabling_abolish_delay_deps_upstream_swipl.jl
+test/core_lang/test_tabling_abolish_depending_table_upstream_swipl.jl
+test/core_lang/test_tabling_engine_finding_cleanup_throw_swipl.jl
+test/core_lang/test_tabling_idg_sets_upstream_swipl.jl
+test/core_lang/test_tabling_idg_swipl.jl
+test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl
+test/core_lang/test_tabling_supervisor_upstream_swipl.jl
+test/core_lang/test_tabling_tb4_tb5_swipl.jl
+test/core_lang/test_tabling_tb5rows_swipl.jl
+test/core_lang/test_tabling_tb6rows_swipl.jl
+test/core_lang/test_tabling_tb9rows_swipl.jl
+test/core_lang/test_tabling_transaction_nested_swipl.jl
+test/core_lang/test_tabling_transaction_wb_swipl.jl
+test/core_lang/test_tabling_trie_children_upstream_swipl.jl
+test/core_lang/test_tabling_variant_swipl.jl
+test/core_lang/test_tabling_w2_swipl.jl
+# EV1T
+test/core_lang/test_tabling_events_swipl.jl
+# SSU1B
+test/core_lang/test_det_ssu_swipl.jl
+test/core_lang/test_det_swipl.jl
+test/core_lang/test_meta_predicate_swipl.jl
+test/core_lang/test_wrap_swipl.jl
+test/core_lang/test_ssu_swipl.jl
+test/compile/test_ssu_compile_swipl.jl
+test/db/test_assert_swipl.jl
+# TB4TB5G
+test/core_lang/test_tabling_tb4_tb5_guard_swipl.jl
+# TB5
+test/core_lang/test_tabling_state_swipl.jl
+test/db/test_boot_image_swipl.jl
+test/core_lang/test_trie_swipl.jl
+test/core_lang/test_trie_preds_swipl.jl
+test/compile/test_body_code_swipl.jl
+test/compile/test_call_operands.jl
+test/core_lang/test_attvar_wakeup.jl
+test/core_lang/test_autoload_trap.jl
+test/core_lang/test_module_path.jl
+test/core_lang/test_rules_swipl.jl
+test/core_lang/test_top1_pro.jl
+test/core_lang/test_top1b_swipl.jl
+test/db/test_procedures.jl
+test/db/test_reload_blocks_swipl.jl
+test/core_lang/test_tabling_abstract_completion_upstream_swipl.jl
+test/core_lang/test_tabling_answer_discard_upstream_swipl.jl
+test/core_lang/test_tabling_answer_insert_upstream_swipl.jl
+test/core_lang/test_tabling_answer_subsumption_upstream_swipl.jl
+test/core_lang/test_tabling_delay_after_simplify_upstream_swipl.jl
+test/core_lang/test_tabling_drop_intermediate_upstream_swipl.jl
+test/core_lang/test_tabling_incr_answer_subsumption_upstream_swipl.jl
+test/core_lang/test_tabling_incr_retractall_upstream_swipl.jl
+test/core_lang/test_tabling_incr_subsumptive_upstream_swipl.jl
+test/core_lang/test_tabling_mono_reuse_upstream_swipl.jl
+test/core_lang/test_tabling_mono_subsumptive_upstream_swipl.jl
+test/core_lang/test_tabling_monotonic_lazy_upstream_swipl.jl
+test/core_lang/test_tabling_monotonic_upstream_swipl.jl
+test/core_lang/test_tabling_reeval_exceptions_upstream_swipl.jl
+test/core_lang/test_tabling_reeval_upstream_swipl.jl
+test/core_lang/test_tabling_reeval_wfs_upstream_swipl.jl
+test/core_lang/test_tabling_restraint_wb_swipl.jl
+test/core_lang/test_tabling_simplify_completed_upstream_swipl.jl
+test/core_lang/test_tabling_tabled_shortest_path_upstream_swipl.jl
+test/core_lang/test_tabling_table_statistics_upstream_swipl.jl
+test/core_lang/test_tabling_tabling_upstream_a_swipl.jl
+test/core_lang/test_tabling_tabling_upstream_b_swipl.jl
+test/core_lang/test_tabling_tabling_upstream_c_swipl.jl
+test/core_lang/test_tabling_tb7rows_swipl.jl
+test/core_lang/test_tabling_tb8rows_swipl.jl
+test/core_lang/test_tabling_tbl_sdg_upstream_swipl.jl
+test/core_lang/test_tabling_transaction_swipl.jl
+test/core_lang/test_tabling_trie_attvars_upstream_swipl.jl
+test/core_lang/test_tabling_trie_index_upstream_swipl.jl
+test/core_lang/test_tabling_trie_upstream_swipl.jl
+test/core_lang/test_tabling_wfs_upstream_swipl.jl
+# TB6
+test/core_lang/test_cont_boot_swipl.jl
+test/core_lang/test_tabling_worklist_swipl.jl
+test/core_lang/test_tabling_answers_swipl.jl
+test/core_lang/test_tabling_wfs_swipl.jl
+# TB6R
+test/core_lang/test_trie_property_idg_swipl.jl
+test/core_lang/test_trie_gen_swipl.jl
+# TB8
+test/core_lang/test_tabling_sdg_swipl.jl
+test/core_lang/test_set_flag_swipl.jl
+# TB9
+test/core_lang/test_transaction_swipl.jl
+# TRIECH
+test/core_lang/test_lb7_swipl.jl
+test/core_lang/test_prolog_flag_swipl.jl
+test/core_lang/test_tabling_a1_guard.jl
+test/core_lang/test_tabling_s5_guard.jl
+test/core_lang/test_tabling_tb4rows2_swipl.jl
+test/core_lang/test_tabling_tb4rows_swipl.jl
+# TX1
+test/db/test_retract_swipl.jl
+test/db/test_retractall_swipl.jl
+test/db/test_clause_swipl.jl
+test/core_lang/test_event_swipl.jl
+test/db/test_update_view_gc.jl
+test/core_lang/test_trail_words.jl
+# W3BAV10
+test/core_lang/test_write_cells.jl
+# W5LB
+test/core_lang/test_format_predicate_swipl.jl
+test/core_lang/test_format_swipl.jl
+# CONT1
+test/core_lang/test_cont_run_swipl.jl
+test/core_lang/test_metacall_control.jl
+test/core_lang/test_softcut.jl
+test/core_lang/test_catch_swipl.jl
+test/core_lang/test_cleanup_swipl.jl
+test/core_lang/test_metacall.jl
+test/core_lang/test_at_body_swipl.jl
+test/core_lang/test_bagof_swipl.jl
+test/core_lang/test_between_swipl.jl
+test/core_lang/test_colon_body_swipl.jl
+test/core_lang/test_context_module_swipl.jl
+test/core_lang/test_copyterm_swipl.jl
+test/core_lang/test_current_op_swipl.jl
+test/core_lang/test_findall_swipl.jl
+test/core_lang/test_firstvar_swipl.jl
+test/core_lang/test_sortlist_swipl.jl
+test/core_lang/test_slot_words.jl
+test/foreign/test_builtins_swipl.jl
+test/foreign/test_query.jl
+test/compile/test_analyse_variables_swipl.jl
+# EV1d
+test/core_lang/test_bootpred3_swipl.jl
+# LB2c
+test/db/test_nth_clause_swipl.jl
+test/db/test_source_file_swipl.jl
+test/files/test_load_swipl.jl
+test/db/test_clause_ref_swipl.jl
+test/core_lang/test_module_swipl.jl
+test/compile/test_compiler_warnings_swipl.jl
+# LB6A
+test/db/test_index_context.jl
+test/db/test_index_swipl.jl
+# MOD5b2
+test/core_lang/test_declare_destroy_swipl.jl
+# PIN1
+test/core_lang/test_debug_flag_swipl.jl
+test/core_lang/test_firstboot_swipl.jl
+test/core_lang/test_atom_table.jl
+# PR1c
+test/core_lang/test_export_import_swipl.jl
+test/core_lang/test_pr1_swipl.jl
+test/db/test_jit.jl
+# TOP1B
+test/core_lang/test_top1_prompt_swipl.jl
+test/core_lang/test_lb5b_prompt.jl
+# TRIE1
+test/core_lang/test_trie_attvar_swipl.jl
+# TRIE4
+test/core_lang/test_trie_compiled_swipl.jl

@@ -426,6 +426,34 @@ end
         @test occursin(r"(?m)^        _checks_fresh\n        _ck_rc=\$\?", script)                 # `check`
         @test occursin(r"_checks_fresh \|\| \{ echo \"branch-gate: FAIL", script)                 # branch-gate
         @test occursin(r"(?m)^    _checks_fresh\n    rc=\$\?\n", script)                          # preflight
+        # STAGE TIMERS (audit D-0873 item 1a): `check` (and only `check`) wraps the five stage functions of `_checks_fresh`
+        # at run time so that each prints `check: stage NAME Ns`; the wrap names exactly the stages `_checks_fresh` calls
+        @test occursin(
+            r"(?m)^        _stage_timers_on +#[^\n]*\n        _checks_fresh\n        _ck_rc=\$\?",
+            script
+        )
+        tb = match(r"(?s)\n_stage_timers_on\(\) \{\n(.*?)\n\}\n", script)[1]
+        for stage in
+            (
+            "_source_greps",
+            "_term_scopes_check",
+            "_meta_check",
+            "_inert_check",
+            "_format_port_check"
+        )
+            @test occursin(stage, tb) && occursin(Regex("(?m)^    $stage"), body)
+        end
+        @test count("_stage_timers_on", script) == 3     # the definition, its comment, the one call in `check`
+        # SUB-STAGE TIMERS (audit D-0876 item 1): the one Julia call of `_format_port_check` prints the seconds of its three
+        # parts, `check: substage blue|port_check|manifest Ns` (the pass lines the verdict greps read are untouched)
+        # (and five CUMULATIVE points inside the manifest part, the seconds since its start: it is 87% of the call)
+        @test count("check: substage", script) == 8
+        for part in ("blue", "port_check", "manifest")
+            @test occursin("println(\"check: substage $part \"", script)
+        end
+        for point in ("loaded", "which", "uncovered", "owned", "defined")
+            @test occursin("println(\"check: substage manifest_$point \"", script)
+        end
     end
 
     # audit D-0692 item 5: the manifest preflight (`warm.sh check`'s `_check`, the same Julia block the preflight runs) fails
@@ -2407,6 +2435,160 @@ echo "pkgtest-way: PASS stub"
         @test cp_("pkgtest_costs.tsv") == tbl
         for bad in ("../unit_costs.tsv", "sub/x.tsv", "unit_costs", "nosuch.tsv", "x.tsv ")
             @test_throws ErrorException cp_(bad)
+        end
+    end
+    # THE REACH PASS (audit D-0849, D-0887): a mutant that survives (or is declared equivalent) is run a second time as the ORIGINAL
+    # code with a counter in front of `old`; the `MUTREACH <name> <n>` lines the targets print are summed into `reach`, and the table
+    # says `[reached N times]`, `[NOT REACHED by the targets]` or `[reach unknown]`. A caught mutant has no count, and the file is
+    # put back. Planted `sh:` targets print the lines only when the probe (`atexit`) is in the file.
+    @testset "tools/mutate_ci.py: the reach pass of a survivor" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="R1 declared equivalent, reached", file="f.txt", old="alpha", new="alpha ", equivalent="nothing reads the blank"),
+    dict(id="R2 survives, reached", file="f.txt", old="alpha", new="alpha  "),
+    dict(id="R3 caught", file="f.txt", old="alpha", new="ALPHA"),
+    dict(id="R4 declared, never reached", file="f.txt", old="beta", new="beta ", equivalent="nothing reads it"),
+]
+"""
+            )
+            target = "sh:grep -q ALPHA f.txt && exit 1; if grep -q atexit f.txt; then grep -q MR_R1 f.txt && { echo 'MUTREACH R1 3'; echo 'MUTREACH R1 4'; }; grep -q MR_R2 f.txt && echo 'MUTREACH R2 5'; fi; exit 0"
+            run_(args...) = run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec_(k) = read(joinpath(d, "mutation-out", "$k.json"), String)
+            for k in ("R1", "R2", "R3", "R4")
+                write(joinpath(d, "f.txt"), "alpha\nbeta\n")
+                @test run_("one", "m.py", k, "20", target) == 0
+            end
+            @test occursin("\"verdict\": \"EQUIVALENT (declared)\"", rec_("R1")) &&
+                occursin("\"reach\": 7", rec_("R1"))                 # two processes: 3 + 4
+            @test occursin("\"verdict\": \"SURVIVED\"", rec_("R2")) &&
+                occursin("\"reach\": 5", rec_("R2"))
+            @test occursin("\"verdict\": \"caught\"", rec_("R3")) &&
+                !occursin("\"reach\"", rec_("R3"))
+            @test occursin("\"reach\": 0", rec_("R4"))
+            @test read(joinpath(d, "f.txt"), String) == "alpha\nbeta\n"   # the file is put back after the pass
+            write(joinpath(d, "f.txt"), "alpha\nbeta\n")
+            @test run_("baseline", "20", target) == 0
+            table = read(ignorestatus(Cmd(`python3 $tool collect m.py 4`; dir=d)), String)
+            @test occursin("[reached 7 times]", table) &&
+                occursin("[reached 5 times]", table)
+            @test occursin("[NOT REACHED by the targets]", table)
+            # the probe is one Julia line that counts in the process environment and prints once at exit
+            probe = read(
+                `python3 -I -c "import importlib.util as u; s=u.spec_from_file_location('m', '$tool'); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.reach_probe('TB7-x y'))"`,
+                String
+            )
+            @test count(==('\n'), strip(probe)) == 0 &&
+                occursin("MUTREACH TB7_x_y ", probe) &&
+                occursin("atexit", probe) && !occursin('$', probe)
+        end
+    end
+    # THE REACH PASS HAS A TIME BUDGET (TB5-E9, 2026-11-17: a normal run of ~48 min plus the second run passed the job's 120-minute
+    # timeout; a cancelled job uploads nothing, so the verdict was lost too): the pass runs only when twice the normal run fits in
+    # MUTATE_CI_REACH_BUDGET (default 5400 s), else the record says `skipped` and the table says `[reach skipped: slow target]`.
+    @testset "tools/mutate_ci.py: a slow survivor skips the reach pass" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="S1 survives, slow", file="f.txt", old="alpha", new="alpha "),
+]
+"""
+            )
+            slow = "sh:sleep 1; exit 0"
+            run_budget(budget, args...) = run(
+                pipeline(
+                    ignorestatus(
+                        addenv(
+                            Cmd(`python3 $tool $args`; dir=d),
+                            "MUTATE_CI_REACH_BUDGET" => budget
+                        )
+                    );
+                    stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec() = read(joinpath(d, "mutation-out", "S1.json"), String)
+            # a budget of 1 s: the normal run (~1 s) doubled does not fit: skipped, the verdict is kept
+            @test run_budget("1", "one", "m.py", "S1", "30", slow) == 0
+            @test occursin("\"verdict\": \"SURVIVED\"", rec()) &&
+                occursin("\"reach\": null", rec()) &&
+                occursin("skipped: the normal run took", rec())
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_budget("1", "baseline", "30", slow) == 0
+            table = read(
+                ignorestatus(
+                    addenv(
+                        Cmd(`python3 $tool collect m.py 1`; dir=d),
+                        "MUTATE_CI_REACH_BUDGET" => "1"
+                    )
+                ),
+                String
+            )
+            @test occursin("[reach skipped: slow target]", table)
+            # a generous budget: the pass runs (the planted target prints no MUTREACH line: reach 0)
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_budget("5400", "one", "m.py", "S1", "30", slow) == 0
+            @test occursin("\"reach\": 0", rec())
+        end
+    end
+    # THE LIMIT COUNTS THE TESTS (audit D-0852 (4), D-0888 (3)): the mutated tree is precompiled once, before the targets, under a
+    # limit of its own, so a loaded host no longer reads package load and precompile as TIMEOUT (TB5-P7 and PR1-R7, 2026-11-17).
+    # Only in a Julia project (a Project.toml in the working directory) with a Julia target: the record then holds
+    # `precompile_seconds`; a planted `sh:` target, or no project, leaves it null.
+    @testset "tools/mutate_ci.py: the mutated tree is precompiled before the targets" begin
+        tool = joinpath(_GS_ROOT, "tools", "mutate_ci.py")
+        mktempdir() do d
+            write(joinpath(d, "f.txt"), "alpha\n")
+            write(
+                joinpath(d, "t.jl"),
+                "using Test\n@testset \"t\" begin\n    @test !occursin(\"ALPHA\", read(\"f.txt\", String))\nend\n"
+            )
+            write(
+                joinpath(d, "m.py"),
+                """
+MUTANTS = [
+    dict(id="P1 caught by a julia target", file="f.txt", old="alpha", new="ALPHA"),
+]
+"""
+            )
+            run_(args...) = run(
+                pipeline(
+                    ignorestatus(Cmd(`python3 $tool $args`; dir=d)); stdout=devnull,
+                    stderr=devnull
+                )
+            ).exitcode
+            rec() = read(joinpath(d, "mutation-out", "P1.json"), String)
+            # no Project.toml: nothing to precompile
+            @test run_("one", "m.py", "P1", "60", "t.jl") == 0
+            @test occursin("\"verdict\": \"caught\"", rec()) &&
+                occursin("\"precompile_seconds\": null", rec())
+            # a project (empty: the precompile is a second) and a julia target: the seconds are recorded
+            write(
+                joinpath(d, "Project.toml"),
+                "name = \"PreC\"\nuuid = \"3b8f2a1c-5d4e-4f6a-9c7b-0a1b2c3d4e5f\"\n"
+            )
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_("one", "m.py", "P1", "60", "t.jl") == 0
+            @test occursin("\"verdict\": \"caught\"", rec()) &&
+                occursin(r"\"precompile_seconds\": \d+", rec())
+            # a planted `sh:` target never precompiles, project or not
+            write(joinpath(d, "f.txt"), "alpha\n")
+            @test run_(
+                "one", "m.py", "P1", "60", "sh:grep -q ALPHA f.txt && exit 1; exit 0"
+            ) == 0
+            @test occursin("\"precompile_seconds\": null", rec())
         end
     end
     # CI's MUTATION BATTERY (user, 2026-10-13): tools/mutate_ci.py gives each mutant the local

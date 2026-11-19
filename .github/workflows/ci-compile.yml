@@ -160,7 +160,8 @@ jobs:
             PackageSpec(url="https://github.com/JuliaDebug/LoweredCodeUtils.jl", rev="6f5c109b054a9f5c04aa042e6fe958fd4cd4f6b7"),
             PackageSpec(url="https://github.com/aviatesk/JET.jl", rev="6f20b0f01761ef66a9d4846f7f0ed2346fd5ff1e"),
             PackageSpec(url="https://github.com/JuliaTesting/Aqua.jl", rev="84f9eb4f4f947ec96c40e8b1274d5b7865a7ecfd"),
-            PackageSpec(name="AllocCheck")])'
+            PackageSpec(name="AllocCheck"),
+            PackageSpec(name="LLVM", version="10.4.3")])'
       - name: The home tree (tools/build_home.jl)
         run: julia tools/build_home.jl
       - run: julia --project=. -e 'using Pkg; Pkg.instantiate()'

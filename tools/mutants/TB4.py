@@ -38,8 +38,14 @@ TR = "test/core_lang/test_tabling_tb4rows_swipl.jl"     # TB4K-b: the kill rows 
 TR2 = "test/core_lang/test_tabling_tb4rows2_swipl.jl"      # the kill rows R13-R18 (TB4K-c): answer completion, R14, R15 white-box, R16-R18
 A1G = "test/core_lang/test_tabling_a1_guard.jl"         # TB4K-d: the white-box row of TB4-A1 (its recursion guard has no Prolog route)
 S5G = "test/core_lang/test_tabling_s5_guard.jl"         # TB4-S5: the white-box row (run FIRST: a failing target ends the run before TW)
-TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G]            # every file a mutant lists
-TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # DEFERRED KILL TB5: the rows R9, R10, g13a, g13b that need `$tbl_destroy_table` (wip/tab-int only; NOT in TARGETS)
+T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"    # TB5-ROWS: groups A3N/A3P/A3Q (kill TB4-A3), S4A/S4B (regression pins of the S4 model, NOT a kill), S4C (kills TB4-S4)
+TX = "test/core_lang/test_tabling_tb4_tb5_swipl.jl"   # TAB1 INT3 (wip/tab-int): the rows R9, R10, g13a, g13b that need TB5's `$tbl_destroy_table`: they kill TB4-S1, S3, S4, A2, A3
+TS4X = ["test/core_lang/test_tabling_%s_swipl.jl" % n for n in (    # TB4-S4 (audit D-0733 item 2): the 12 other files that mention tnot (grep -rl tnot test/)
+    "abolish_bulk_upstream", "abolish_delay_deps_upstream", "abolish_depending_table_upstream",
+    "answer_discard_upstream", "delay_after_simplify_upstream", "engine_finding_cleanup_throw",
+    "reeval_upstream", "reeval_wfs_upstream", "simplify_completed_upstream", "supervisor_upstream",
+    "tbl_sdg_upstream", "wfs_upstream")]
+TARGETS = [TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X        # every file a mutant lists
 TAB = "src/pl-tabling.jl"
 SET = "src/pl-setup.jl"
 MUTANTS = [
@@ -108,11 +114,10 @@ MUTANTS = [
          file=SET, targets=[TW],
          old='    ld.tabling.delay_list = init_delay_list(ld)',
          new='    ld.tabling.delay_list = 0'),
-    dict(id="TB4-I3 init_delay_list's wrapper functor is +/1, not -/1 (EQUIVALENT)",
-         file=TAB, targets=[TW],
+    dict(id="TB4-I3 init_delay_list's wrapper functor is +/1, not -/1 (KILL tbw01/tbw02 in TA: the wrapper is Prolog-visible through the type_error culprit; D-0705 (2), D-0920 (3): the old EQUIVALENT text was ruled WRONG, I3 survived only because its targets did not include TA)",
+         file=TAB, targets=[TW, TA],
          old='mk_sym(T, :-)), 1), a\n',
-         new='mk_sym(T, :+)), 1), a\n',
-         equivalent="pl-tabling.jl:811-819 with :822-830, :832-840, :845-856, :864-880, :947-960: the wrapper is only ever read and written through `_PL_get_arg(ld, 1, dl, ...)` and `valPtr(w) + 1`; no reader tests its name or prints it, and no row prints the term (swipl's `-/1` is likewise only read through argTermP)."),
+         new='mk_sym(T, :+)), 1), a\n'),
     dict(id="TB4-T1 t_delay! pushes a delay for an answer without a delay info (KILL wf40-wf43, testset `the compiled clause's T_DELAY` in TW: xa is compiled while undefined, then forced true WITHOUT touching its clause (wf41); swipl's call_delays through that clause is `true` and the delay list stays [] (wf42, wf43), the mutant pushes the dropped delay; wf23 never runs a T_DELAY: an unconditional answer gets none, pl-trie.c:5008-5010)",
          file=TAB, targets=[TW, TA],
          old='        (at.nodes[nid].flags & TN_DELAYINFO) == 0 && return nothing',
@@ -219,27 +224,51 @@ MUTANTS = [
          file=TAB, targets=[TW, TA],
          old='                    PL_cons_functor_v(ld, cond, FUNCTOR_semicolon2, av) || return false\n',
          new='                    PL_cons_functor_v(ld, cond, FUNCTOR_comma2, av) || return false\n'),
-    # OPEN SURVIVORS AT BATCH 3 (D-0659/D-0660): TB4-S1, S3, S4, A2, A3: their rows run answer completion to its end, whose cleanup calls TB5's
-    # `'$tbl_destroy_table'/1` (absent from the child; present on wip/tb7m and wip/tab-int): the rows are in test/core_lang/test_tabling_tb4_tb5_swipl.jl on
-    # wip/tab-int. They stay in MUTANTS so the battery at the landing SHA reports them SURVIVED BY NAME: these five are EXPECTED survivors; any OTHER survivor is not accepted.
-    dict(id='TB4-S1 add_to_delay_set does not count an active delay (OPEN SURVIVOR AT BATCH 3, declared (audit D-0659), closes in tab-int with the TB5 builtin, owner TAB1/TB5: the rows need the builtin $tbl_destroy_table/1 (answer completion ends with abolish_table_subgoals), a TB5 builtin absent from batch 3, so the rows are in test_tabling_tb4_tb5_swipl.jl on the integration branch wip/tab-int, not in TR/TR2; the row: TR rows r09a-r09d, r10a-r10c: `ds.active` reaches 0 at the first removed member, the answer turns unconditional too early; the model of the stale-delay program and `sb :- tnot(sa). sb.` with sa false)',
-         file=TAB, targets=[TW],
+    # TB4-S1, S3, S4, A2, A3 were OPEN SURVIVORS at batch 3 (D-0659/D-0660): their rows run answer completion to its end, whose cleanup calls TB5's
+    # `'$tbl_destroy_table'/1`, absent from batch 3's tree. On wip/tab-int (TB5 present) the rows are in TX = test_tabling_tb4_tb5_swipl.jl and the
+    # mutants carry targets=[TW, TX]: real kills, judged by the integration battery (TAB1 INT3). Not judged yet.
+    dict(id='TB4-S1 add_to_delay_set does not count an active delay (KILL TX group SIMP rows r09a-r09d, r10a-r10c, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: rows r09a-r09d, r10a-r10c: `ds.active` reaches 0 at the first removed member, the answer turns unconditional too early; the model of the stale-delay program and `sb :- tnot(sa). sb.` with sa false)',
+         file=TAB, targets=[TW, TX],
          old='    variant != 0 && (ds.active += UInt32(1))\n',
          new='    variant != 0 && (ds.active += UInt32(0))\n'),
-    dict(id='TB4-S3 propagate_to_answer: a true result removes the conjunction (OPEN SURVIVOR AT BATCH 3, declared (audit D-0659), closes in tab-int with the TB5 builtin, owner TAB1/TB5: the rows need the builtin $tbl_destroy_table/1 (answer completion ends with abolish_table_subgoals), a TB5 builtin absent from batch 3, so the rows are in test_tabling_tb4_tb5_swipl.jl on the integration branch wip/tab-int, not in TR/TR2; the row: TR rows r10a, r10b: `k10 :- tnot(n10).` with n10 ending without an answer, call_delays(k10, true) pinned yes)',
-         file=TAB, targets=[TW],
+    dict(id='TB4-S3 propagate_to_answer: a true result removes the conjunction (KILL TX group SIMP rows r10a, r10b, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: rows r10a, r10b: `k10 :- tnot(n10).` with n10 ending without an answer, call_delays(k10, true) pinned yes)',
+         file=TAB, targets=[TW, TX],
          old='                        if res                                  # remove member from conjunction',
          new='                        if !res                                 # remove member from conjunction'),
-    dict(id='TB4-S4 simplify_component stops after one pass (OPEN SURVIVOR AT BATCH 3, declared (audit D-0659), closes in tab-int with the TB5 builtin, owner TAB1/TB5: the rows need the builtin $tbl_destroy_table/1 (answer completion ends with abolish_table_subgoals), a TB5 builtin absent from batch 3, so the rows are in test_tabling_tb4_tb5_swipl.jl on the integration branch wip/tab-int, not in TR/TR2; the row: TR row r09a: the stale-delay program a..f called from f needs several passes of simplify_component, pinned model a,f true and b..e false)',
-         file=TAB, targets=[TW],
+    # TB4-S4 (STEP S3z-2): pass 1 of simplify_component is observable. The earlier reading (pass 1 repeats pass 0, every removal pushes its own
+    # propagation, pl-tabling.c:1846-1866) holds for ground answers; the second scan block (:2149-2168, `wl->pos_undefined`, filled by
+    # add_to_wl_pos_undefined :1425-1479 for positive delay elements on NON-GROUND answers) can find, in pass 1 only, entries whose answers a worklist
+    # scanned later in pass 0 turned unconditional or removed. TB5-ROWS group S4C is that program (swipl 10.1.20 pinned): s406-s408 differ under the break.
+    dict(id='TB4-S4 simplify_component stops after one pass (KILL T5R group S4C rows s406, s407, s408: the component of the non-ground answer sa(a) with a positive loop through sb(_) and a negative chain sc/se; pass 1 empties the three pos_undefined entries left by pass 0, count 3; swipl and the kernel read the delay sa(a), the mutant none)',
+         file=TAB, targets=[TW, TV, TA, TB, TM, TT, TR, TR2, A1G, S5G, TX, T5R] + TS4X,
          old='        (count == 0 || undefined == 0) && break\n',
          new='        break\n'),
-    dict(id='TB4-A2 is_ac_candidate_wl asks only `wl.undefined != 0` (OPEN SURVIVOR AT BATCH 3, declared (audit D-0659), closes in tab-int with the TB5 builtin, owner TAB1/TB5: the rows need the builtin $tbl_destroy_table/1 (answer completion ends with abolish_table_subgoals), a TB5 builtin absent from batch 3, so the rows are in test_tabling_tb4_tb5_swipl.jl on the integration branch wip/tab-int, not in TR/TR2; the row: TR2 group g13a, rows r1301 + r1302: a prolog_wrap counter on the answer completion pins ONE call for the program, the mutant also calls it on the worklists already marked answer completed)',
-         file=TAB, targets=[TW],
+    dict(id='TB4-A2 is_ac_candidate_wl asks only `wl.undefined != 0` (KILL TX group G13A rows r1301 + r1302, wip/tab-int with the TB5 builtin `$tbl_destroy_table/1`: group g13a, rows r1301 + r1302: a prolog_wrap counter on the answer completion pins ONE call for the program, the mutant also calls it on the worklists already marked answer completed)',
+         file=TAB, targets=[TW, TX],
          old='    if wl.undefined != 0 && !wl.answer_completed && !isempty(wl.delays)\n',
          new='    if wl.undefined != 0\n'),
-    dict(id='TB4-A3 has_positive_dl counts a negative delay (OPEN SURVIVOR AT BATCH 3, declared (audit D-0659), closes in tab-int with the TB5 builtin, owner TAB1/TB5: the rows need the builtin $tbl_destroy_table/1 (answer completion ends with abolish_table_subgoals), a TB5 builtin absent from batch 3, so the rows are in test_tabling_tb4_tb5_swipl.jl on the integration branch wip/tab-int, not in TR/TR2; the row: TR2 group g13b, rows r1303 + r1304: the same counter pins ZERO calls for a program whose delays are all negative, the mutant calls the answer completion)',
-         file=TAB, targets=[TW],
+    dict(id='TB4-A3 has_positive_dl counts a negative delay (KILL TB5-ROWS groups A3N rows a301 + a302 of test_tabling_tb5rows_swipl.jl: ONE component with a simplification (`le :- lp, fail.` loses its `tnot(le)` member of `lp`) and an undefined loop lp <-> lq whose delays are all negative; the prolog_wrap counter on answer completion pins ZERO calls, the mutant calls it (answer completion runs only for `undefined && scc->simplifications`, pl-tabling.c:2195). Controls A3P a303 + a304 (a positive element: ONE call) and A3Q a305 (no simplification: ZERO calls) pass with and without the mutant, they prove the counter works. The older TX group G13B rows r1303 + r1304 cannot kill it: its program makes no simplification)',
+         file=TAB, targets=[TW, TX, T5R],
          old='                    d.answer != 0 && return true\n',
          new='                    return true\n'),
 ]
+
+# TAB1 GATE: the files of evidence/TAB1/tab1_late.md are not in the gate tree (they stay on wip/tab1-late, each with the line it waits for): a target that is not in the tree makes the
+# Baseline job fail (`exit notest`), so they are dropped from TARGETS and from every mutant's `targets`. A mutant whose kill row
+# lived only in such a file keeps the remaining targets and shows in the verdict table as it is (survivor or caught).
+# Remove this block when the late files return to the gate.
+_TAB1_LATE = [
+    "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl",
+    "test/core_lang/test_tabling_supervisor_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_children_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_index_upstream_swipl.jl",
+    "test/core_lang/test_tabling_trie_upstream_swipl.jl",
+    "test/core_lang/test_tabling_table_statistics_upstream_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_b_swipl.jl",
+    "test/core_lang/test_tabling_trie_attvars_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl",
+    "test/core_lang/test_transaction_swipl.jl",
+]
+TARGETS = [_t for _t in TARGETS if _t not in _TAB1_LATE]
+for _m in MUTANTS:
+    _m["targets"] = [_t for _t in _m.get("targets", TARGETS) if _t not in _TAB1_LATE] or list(TARGETS)

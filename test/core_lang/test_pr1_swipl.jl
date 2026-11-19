@@ -650,6 +650,55 @@ end
     @test any(l -> startswith(l, "t_rd4 ") && endswith(l, "(i1)"), _PR_RD_PINNED)  # the first file's clauses are gone
 end
 
+# PR1c (S3f): the `ignored_weak_import` warning of `overruleImportedProcedure` (PR1-R7). A message hook records the term, the kind and the
+# text of the warning for a definition that overrides a weak import: with the flag `warn_override_implicit_import` ON (the default) the hook is
+# called (r7a, r7c), with the flag OFF it is not (r7b: the definition still wins, [9]). Pinned from swipl 10.1.20 through this file's driver
+# (two identical runs); the text is `Local definition of user:p/1 overrides weak import from m` (boot/messages.pl `ignored_weak_import`).
+const _PR_R7 = raw"""
+:- dynamic r7_log/1.
+:- multifile user:message_hook/3.
+user:message_hook(ignored_weak_import(Into, From:PI), Kind, Lines) :-
+    with_output_to(string(S), print_message_lines(current_output, '', Lines)),
+    assertz(r7_log(r(Kind, Into, From, PI, S))).
+:- assertz(r7a:p7a(1)), '$import'(r7a:p7a/1, weak).
+p7a(9).
+:- set_prolog_flag(warn_override_implicit_import, false).
+:- assertz(r7b:p7b(1)), '$import'(r7b:p7b/1, weak).
+p7b(9).
+:- set_prolog_flag(warn_override_implicit_import, true).
+:- assertz(r7c:p7c(1)), '$import'(r7c:p7c/1, weak).
+p7c(9).
+t_r7a(R) :- findall(X, r7_log(X), R).
+t_r7b(R) :- findall(X, p7b(X), R).
+t_r7c(R) :- current_prolog_flag(warn_override_implicit_import, R).
+"""
+const _PR_R7_NAMES = ["t_r7a", "t_r7b", "t_r7c"]
+const _PR_R7_PINNED = [
+    "ok",
+    "t_r7a c[116,95,114,55,97]/1(c[91,124,93]/2(c[114]/5(a[119,97,114,110,105,110,103],a[117,115,101,114],a[114,55,97],c[47]/2(a[112,55,97],i1),s[76,111,99,97,108,32,100,101,102,105,110,105,116,105,111,110,32,111,102,32,117,115,101,114,58,112,55,97,47,49,32,111,118,101,114,114,105,100,101,115,32,119,101,97,107,32,105,109,112,111,114,116,32,102,114,111,109,32,114,55,97,10]),c[91,124,93]/2(c[114]/5(a[119,97,114,110,105,110,103],a[117,115,101,114],a[114,55,99],c[47]/2(a[112,55,99],i1),s[76,111,99,97,108,32,100,101,102,105,110,105,116,105,111,110,32,111,102,32,117,115,101,114,58,112,55,99,47,49,32,111,118,101,114,114,105,100,101,115,32,119,101,97,107,32,105,109,112,111,114,116,32,102,114,111,109,32,114,55,99,10]),nil)))",
+    "t_r7b c[116,95,114,55,98]/1(c[91,124,93]/2(i9,nil))",
+    "t_r7c c[116,95,114,55,99]/1(a[116,114,117,101])"
+]
+
+@testset "the ignored_weak_import warning follows the flag warn_override_implicit_import (PR1-R7)" begin
+    f = joinpath(mktempdir(), "pr1_r7.pl")
+    write(f, _PR_R7)
+    kl, _, _ = _pr_kernel(f, _PR_R7_NAMES)
+    @test length(kl) == length(_PR_R7_PINNED)
+    for (k, p) in zip(kl, _PR_R7_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+    # non-vacuity: two warnings were logged (flag on), none for the definition made while the flag was off; the flag is on again
+    @test count("c[114]/5(a[119,97,114,110,105,110,103]", _PR_R7_PINNED[2]) == 2
+    @test !occursin("a[114,55,98]", _PR_R7_PINNED[2])
+    @test endswith(_PR_R7_PINNED[3], "(i9,nil))") &&
+        endswith(_PR_R7_PINNED[4], "a[116,114,117,101])")
+    if Sys.which("swipl") !== nothing && get(ENV, "LOGICKERNEL_NO_SWIPL", "") != "1"
+        @test _pr_swipl_lines(f, _PR_R7_NAMES) == _PR_R7_PINNED
+    end
+end
+
 @testset "the PR1 rows are not vacuous (pr01-pr127)" begin
     # the program loaded (`ok`); both sides of each guard are non-empty: raised rows, rows with no answer, enumerations
     raised = "c[114,97,105,115,101,100]/1("
@@ -782,6 +831,50 @@ end
     cip = cli.clause_indexes
     @test cip !== nothing                          # A1: kept as an array of dead slots, not dropped
     @test !isempty(cip) && all(ci -> ci === nothing, cip)
+end
+
+# White-box (PR1-F6): the count the database-only `num_visible_clauses(gd, def, rules)` gives (the reader of the boot-image listing, T1) must not
+# count a clause that is erased but still in the clause list. `retract_clause!` marks the clause erased and leaves it in the list (the clause
+# collector runs later), the state a held generation keeps; the stored count already excludes it, and the walk, which a dynamic predicate always
+# makes, must as well. Expected values: the retracted clause is not visible (pl-proc.c `num_visible_clauses`, `visibleClause`: pr79 answers 1 on the
+# same state through `$get_predicate_attribute`).
+@testset "an erased clause still in the list is not counted (PR1-F6)" begin
+    f = joinpath(mktempdir(), "wbf6.pl")
+    write(f, ":- dynamic wf_d/1.\nwf_d(1).\nwf_d(2).\nwf_r(1, a).\nwf_r(2, b).\n")
+    gd = LK.PL_global_data{_PR}()
+    ld = LK.PL_local_data{_PR}(gd)
+    st, _ = LK.load_file!(gd, ld, f)
+    @test st === :ok
+    proc = LK.isCurrentProcedure(sym_key(_prs("wf_d")), 1, LK.MODULE_user(gd))
+    @test proc !== nothing
+    def = proc.definition
+    @test LK._predicate_number_of_clauses(gd, def) == 2
+    @test LK.num_visible_clauses(gd, ld, def, false) == 2
+    c1 = def.impl_clauses.first_clause.clause
+    @test LK.retract_clause!(gd, nothing, c1, LK.gen_t(0))
+    # non-vacuity: the erased clause is still in the list, flagged, and the stored count dropped to 1
+    n_listed, n_erased = 0, 0
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        n_listed += 1
+        n_erased += (c.clause.flags & LK.CL_ERASED) != 0 ? 1 : 0
+        c = c.next
+    end
+    @test n_listed == 2 && n_erased == 1
+    @test def.impl_clauses.number_of_clauses == 1
+    @test LK._predicate_number_of_clauses(gd, def) == 1             # the mutant `&& true` answers 2
+    @test LK.num_visible_clauses(gd, def, false) == 1
+    @test LK.num_visible_clauses(gd, def, true) == 0                  # both are facts: no rule
+    @test LK.num_visible_clauses(gd, ld, def, false) == 1
+    rows = [
+        r for
+        r in LK.boot_image_predicates(gd) if r.module_name == "user" && r.name == "wf_d"
+    ]
+    @test length(rows) == 1 && rows[1].number_of_clauses == 1         # the T1 reader's own extractor
+    # a static predicate outside a reload is not walked: its stored count is the answer (the control that the dynamic walk is what is read above)
+    rs = LK.isCurrentProcedure(sym_key(_prs("wf_r")), 2, LK.MODULE_user(gd))
+    @test rs !== nothing
+    @test LK._predicate_number_of_clauses(gd, rs.definition) == 2
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

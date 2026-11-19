@@ -784,6 +784,20 @@ _checks_fresh() {
     return "$ic"
 }
 
+# _stage_timers_on — STAGE TIMERS for `check` (audit D-0873 item 1a, 2026-11-16): `check` took 1162 s, 847 s and 1319 s on three
+# runs and printed no per-stage seconds, so the stage that dominates was unknown and a split over workers would have been a
+# guess. This wraps each stage function of `_checks_fresh` so that it prints `check: stage NAME Ns` when it returns; the
+# argument list, the return status and the order are untouched (the call lines of `_checks_fresh` are pinned by
+# test/test_gate_split.jl, so the wrap is made at run time, not in its body). Only `check` turns it on.
+_stage_timers_on() {
+    local f def
+    for f in _source_greps _term_scopes_check _meta_check _inert_check _format_port_check; do
+        def=$(declare -f "$f") || continue
+        eval "_untimed${f}() ${def#*\(\) }"
+        eval "${f}() { local _t0=\$(date +%s) _rc; _untimed${f} \"\$@\"; _rc=\$?; echo \"check: stage ${f#_} \$(( \$(date +%s) - _t0 ))s\"; return \$_rc; }"
+    done
+}
+
 # THE CI-ONLY CHECKS THAT ARE CHEAP (audit D-0214 finding 1, 2026-10-29): two classes of CI red in two days were
 # checks a warm run never made. The list of every check CI runs and `check`/`branch-gate` did not, with what moved
 # here and why each other stays in CI: evidence/TOOL-TS/handoff.md (the A-entry). Moved: the term-scope
@@ -964,6 +978,7 @@ let pin = raw"$fmt_pin", have = string(pkgversion(JuliaFormatter))
     isempty(pin) && error("preflight: no single JuliaFormatter version is pinned in .github/workflows/CI.yml")
     have == pin || error("preflight: JuliaFormatter ", have, " in the daemon, CI pins ", pin)
 end
+_t0 = time()                                           # sub-stage timers (audit D-0876 item 1): the seconds of each part
 if !format("."; overwrite=false)
     bad = String[]
     for (dir, dirs, files) in walkdir(".")
@@ -976,6 +991,8 @@ if !format("."; overwrite=false)
     error("preflight: NOT Blue-formatted: ", join(bad, ", "), " — tools/run_tests.sh shows each diff")
 end
 println("preflight: Blue-clean (JuliaFormatter ", pkgversion(JuliaFormatter), ")")
+println("check: substage blue ", round(Int, time() - _t0), "s")
+_t0 = time()
 # the CURRENT tools/port_check.jl, in a fresh module every time: a daemon that kept the first one
 # it loaded would check an edited tree with an old checker (measured 2026-10-04: M1's own docs were
 # held to the pre-M1 inventory format)
@@ -988,6 +1005,8 @@ let pc = Module(:PreflightPortCheck)
     println("preflight: port_check clean (", length(r.files), " files; markers: ", mk.diverges,
         " DIVERGES, ", mk.not_ported, " NOT PORTED, ", mk.both, " DIVERGES lines still saying NOT PORTED)")
 end
+println("check: substage port_check ", round(Int, time() - _t0), "s")
+_t0 = time()
 # THE MANIFEST, in seconds (user, 2026-10-14): every entry of test/static_analysis_manifest.jl names
 # exactly one method (which), and every method LogicKernel defines is reached by an entry or
 # exempted — the static-analysis gate's coverage test, without JET, so a new or re-signed function
@@ -999,6 +1018,7 @@ let sa = Module(:PreflightManifest)
     Base.include(sa, raw"$ROOT/test/static_analysis_manifest.jl")
     entries = Base.invokelatest(() -> sa.DISPATCH_MANIFEST)
     exempt = Base.invokelatest(() -> sa.DISPATCH_EXEMPT)
+    println("check: substage manifest_loaded ", round(Int, time() - _t0), "s")
     stale = String[]
     for (f, tt, _) in entries
         try
@@ -1009,6 +1029,7 @@ let sa = Module(:PreflightManifest)
     end
     foreach(x -> println("  NO SUCH METHOD (stale manifest entry): ", x), stale)
     isempty(stale) || error("preflight: the manifest names methods that do not exist")
+    println("check: substage manifest_which ", round(Int, time() - _t0), "s")
     # an entry listed twice is one method analysed twice (audit D-0692 item 5): uniqueness, the duplicates NAMED
     # key = (function, argument tuple); the third element (allocation-free flag) is not part
     keys = [(e[1], e[2]) for e in entries]
@@ -1021,11 +1042,13 @@ let sa = Module(:PreflightManifest)
         foreach(x -> println("  DUPLICATE manifest entry: ", x), dups)
         error("preflight: the manifest lists an entry twice (test/static_analysis_manifest.jl)")
     end
-    r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt))
     # An uncovered method at the file and line of ANOTHER live method of the same function is the
     # old signature of a re-signed function that Revise failed to delete: no manifest entry fixes
     # it, a restart does (_checks_fresh, in tools/warm.sh).
     owned = Base.invokelatest(() -> sa.owned_methods(LogicKernel))
+    println("check: substage manifest_owned ", round(Int, time() - _t0), "s")
+    r = Base.invokelatest(() -> sa.manifest_uncovered(LogicKernel, entries, exempt; owned))
+    println("check: substage manifest_uncovered ", round(Int, time() - _t0), "s")
     # ...and so is a method whose function NO src/ file defines (the static gate's STALE rule,
     # _preflight_stale: port_check's own definitions): Revise kept it after its definition was
     # deleted (FIXED 2026-10-14 — it read NOT IN THE MANIFEST and nothing restarted the daemon).
@@ -1039,6 +1062,7 @@ let sa = Module(:PreflightManifest)
         foreach(d -> push!(defined, d[2]), Base.invokelatest(() -> pcd.definitions(read(p, String), p)))
     end
     isempty(defined) && error("preflight: no definitions found under src/ — cannot classify")
+    println("check: substage manifest_defined ", round(Int, time() - _t0), "s")
     resigned = Set(
         "\$(m.name) \$(m.sig)  (\$(m.file):\$(m.line))" for m in owned if
         count(n -> n.name === m.name && n.file === m.file && n.line == m.line, owned) > 1
@@ -1059,6 +1083,7 @@ let sa = Module(:PreflightManifest)
         error("preflight: the manifest does not cover LogicKernel (test/static_analysis_manifest.jl)")
     println("preflight: manifest covers every method (", length(entries), " entries)")
 end
+println("check: substage manifest ", round(Int, time() - _t0), "s")
 JL
     _send "$snippet" > "$fmtlog" 2>&1
     rc=$?
@@ -1547,6 +1572,7 @@ case "$cmd" in
         _running || _start > /dev/null || exit 1
         _ck_t0=$(date +%s)
         _check_julia_ci "$ROOT" check                   # a WARN only (tools/lib_evidence.sh, audit D-0026)
+        _stage_timers_on                                # `check: stage NAME Ns` per stage (audit D-0873 item 1a)
         _checks_fresh
         _ck_rc=$?
         echo "check: $([ "$_ck_rc" -eq 0 ] && echo PASS || echo FAIL) (format, port_check, manifest, term scopes, meta files, inert guard, source greps) in $(( $(date +%s) - _ck_t0 ))s"

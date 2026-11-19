@@ -1,0 +1,15 @@
+t1 yes(/root) 
+t2 yes(/root/x) 
+t3 yes(/root//x) 
+t4 yes(/root/a/b) 
+t5 ex(existence_error(user,nosuchuserxyz)) 
+t6 ex(existence_error(user,nosuchuserxyz)) 
+t7 yes(/root) 
+t8 yes(/root/y) 
+t9 no 
+t10 no 
+t11 yes 
+t12 ex(existence_error(user,nosuchuserxyz)) 
+t13 no 
+t14 no 
+t15 yes 

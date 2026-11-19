@@ -103,12 +103,70 @@ def run_target(target, limit):
         return "hang", out
 
 
+PRECOMPILE_LIMIT = int(os.environ.get("MUTATE_CI_PRECOMPILE_LIMIT", "3600"))
+LAST_PRECOMPILE = {"seconds": None}
+
+
+def precompile_tree():
+    """THE MUTATED TREE IS PRECOMPILED ONCE, BEFORE THE TARGETS, under a limit of its own (audit D-0852 (4), D-0888 (3)): the
+    target limit then counts the tests, not the package load and precompile, which on a loaded host read as TIMEOUT (TB5-P7 and
+    PR1-R7 on 2026-11-17: 1500 s, caught in 1075 s and 935 s at 4000 s). Past its limit the precompile is killed and the targets
+    compile for themselves, as before. Only in a Julia project (a Project.toml in the working directory). Seconds, or None."""
+    LAST_PRECOMPILE["seconds"] = None
+    if not os.path.isfile("Project.toml"):
+        return None
+    t0 = time.time()
+    p = subprocess.Popen(["julia", "--project=.", "--startup-file=no", "-e", "using Pkg; Pkg.precompile()"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        p.communicate(timeout=PRECOMPILE_LIMIT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.communicate()
+    LAST_PRECOMPILE["seconds"] = round(time.time() - t0)
+    return LAST_PRECOMPILE["seconds"]
+
+
 def run_targets(targets, limit):
     """mutate_drive.py's `run_targets`, each target in a fresh process: (result, log, line)."""
+    if any(not t.startswith("sh:") for t in targets):      # a Julia target: precompile first (the limit counts the tests)
+        precompile_tree()
     def run1(t):
         rc, out = run_target(t, limit)
         return judge(t, rc, out, os.getcwd())[0], out
     return _run_targets(targets, run1, os.getcwd())
+
+
+REACH_LINE = re.compile(r"^MUTREACH (\S+) (\d+)\s*$", re.M)
+REACH_BUDGET = int(os.environ.get("MUTATE_CI_REACH_BUDGET", "5400"))
+
+
+def reach_probe(name):
+    """A Julia statement that COUNTS its executions in the process environment (a `const` defined during a running top-level
+    block is not visible to the calls inside it: Julia's world age) and prints the total at exit, once per process:
+    `MUTREACH <name> <n>`. One line, no dollar sign."""
+    x = re.sub(r"\W", "_", name)
+    return ('let _k = "MR_%s", _v = get(ENV, _k, nothing); _v === nothing && atexit(() -> println(stderr, "MUTREACH %s ", '
+            'get(ENV, _k, "0"))); ENV[_k] = string(_v === nothing ? 1 : parse(Int, _v) + 1) end' % (x, x))
+
+
+def reach_pass(m, src, name, targets, limit):
+    """How often the targets REACH the mutated line (audit D-0849, D-0868 (2)(c): a mutant that survives through a line no
+    target reaches proves nothing): the ORIGINAL code with a counter in front of `old`, each target in a fresh process, the
+    counts summed over their `MUTREACH` lines. None when the count cannot be read: the probe does not load (`old` is not at a
+    statement start) or a target fails or hangs under it (the counter, not the mutation, is then in doubt)."""
+    with open(m["file"], "w") as f:
+        f.write(src.replace(m["old"], reach_probe(name) + "\n" + m["old"]))
+    rc, log, _ = run_targets(targets, limit)
+    with open(m["file"], "w") as f:                      # the file as it was found
+        f.write(src)
+    if rc != 0:
+        return None
+    x = re.sub(r"\W", "_", name)
+    return sum(int(n) for who, n in REACH_LINE.findall(log) if who == x)
 
 
 MAX_CAUSE_LINES = 30
@@ -232,7 +290,20 @@ def one(argv):
     else:
         verdict = "INVALID"
     why = "; ".join(x for x in (why, noload_hint(m, verdict)) if x)
-    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why)
+    record.update(verdict=verdict, exit=rc, seconds=round(time.time() - t0), first_failure=why,
+                  precompile_seconds=LAST_PRECOMPILE["seconds"])     # `seconds` includes it: the limit does not
+    if verdict in ("EQUIVALENT (declared)", "SURVIVED") and not os.environ.get("MUTATE_CI_NO_REACH"):
+        # a survivor: does any target execute the mutated line at all? (audit D-0849). The pass is a SECOND run of the targets: a slow
+        # survivor must not push the job past its timeout (a cancelled job uploads nothing, so the verdict would be lost too: TB5-E9 on
+        # 2026-11-17, normal run ~48 min, cancelled at the 120-minute timeout): the pass runs only when twice the normal run fits in
+        # MUTATE_CI_REACH_BUDGET (default 5400 s), else it is recorded as skipped.
+        normal = round(time.time() - t0)
+        if normal * 2 > REACH_BUDGET:
+            record.update(reach=None, reach_seconds=0,
+                          reach_note="skipped: the normal run took %d s, a second run would pass the job budget of %d s" % (normal, REACH_BUDGET))
+        else:
+            t1 = time.time()
+            record.update(reach=reach_pass(m, src, name, targets, limit), reach_seconds=round(time.time() - t1))
     write(name, record, log)
     print(name, verdict, "—", why or "-")
     return 0                                            # the verdict is data: `collect` judges
@@ -278,6 +349,11 @@ def collect(argv):
         shown = r.get("first_failure") or ""
         if cause and v.startswith("NO VERDICT"):
             shown = "baseline red, " + cause[0]
+        if "reach" in r:                  # a survivor: does ANY target execute the mutated line? (audit D-0849)
+            n = r["reach"]
+            shown = (shown + " " if shown else "") + (
+                "[reach skipped: slow target]" if n is None and str(r.get("reach_note", "")).startswith("skipped") else
+                "[reach unknown]" if n is None else "[NOT REACHED by the targets]" if n == 0 else "[reached %d times]" % n)
         rows.append("| %s | %s | %s s | %s | %s |" % (name, v, r.get("seconds", 0), what.replace("|", "\\|"),
                                                    shown.replace("|", "\\|")))
     lines = ["## Mutation battery — %s" % path, "",
