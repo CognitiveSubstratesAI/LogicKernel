@@ -8,8 +8,7 @@
 # the clock — get_time/1 — and sleep/1. They call the OS layer of src/os/pl-os.jl (`getenv3`, `Setenv`,
 # `Unsetenv`, `WallTime`, `Pause`).
 #
-# NOT PORTED: shell/2 (`System`: running a command through the shell; not needed before the loader's
-# `shell` callers, which no R2 step reaches).
+# shell/2 (Q10) runs the command through `System` (src/os/pl-os.jl).
 #
 # CT1a: setlocale/3 (pl-ctype.c) is here as well: the boot's `os_user_lang` (boot/messages.pl) calls it, and the file of its
 # upstream, src/os/pl-ctype.jl, is loaded before the FLI that a predicate needs. Its category table is in that file.
@@ -96,10 +95,25 @@ function pl_sleep1_va(
     return Pause(t) ? FTRUE : FFALSE
 end
 
+# PORT: pl-sys.c shell as pl_shell2_va
+# (PRED_IMPL("shell", 2, shell, 0), pl-sys.c:51-64 at the pin)
+# DIVERGES: the text is read as `_sys_chars` reads it (`CVT_ALL|CVT_EXCEPTION`; `REP_FN` is UTF-8 here).
+"`shell(+Command, -Status)`: run the text `Command` through the shell, wait, and unify `Status` with its exit status (pl-sys.c)."
+function pl_shell2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    cmd = _sys_chars(ld, A1)
+    cmd === nothing && return FFALSE
+    rval = System(ld, cmd)
+    PL_exception(ld, 0) != 0 && return FFALSE                   # it could not run the command
+    return PL_unify_integer(ld, A2, rval) ? FTRUE : FFALSE
+end
+
 # PORT: pl-sys.c BeginPredDefs as PL_predicates_from_system
-# DIVERGES: the ported entries (upstream's table also has `shell/2`).
-"pl-sys.c's registration table (`BeginPredDefs(system)`): the ported entries."
+"pl-sys.c's registration table (`BeginPredDefs(system)`)."
 const PL_predicates_from_system = (
+    PL_extension("shell", 2, pl_shell2_va, PL_FA_VARARGS),
     PL_extension("setenv", 2, pl_setenv2_va, PL_FA_VARARGS),
     PL_extension("unsetenv", 1, pl_unsetenv1_va, PL_FA_VARARGS),
     PL_extension("getenv", 2, pl_getenv2_va, PL_FA_VARARGS),
@@ -158,8 +172,8 @@ end
 # PORT: pl-ctype.c setlocale as pl_setlocale3_va
 # (PRED_IMPL("setlocale", 3, setlocale, 0))
 # DIVERGES: the old locale is an atom of its UTF-8 text; no `CMP_ERROR` from the comparison (the kernel's compare
-# raises nothing, src/pl-prims.jl); a failed query (libc answers NULL) fails. LEFT to the port of pl-locale.c:
-# `updateLocale(category, locale)`, which updates the default locale object (`O_LOCALE`: locale_create/3 and its rows).
+# raises nothing, src/pl-prims.jl); a failed query (libc answers NULL) fails. `updateLocale` (src/os/pl-locale.jl) is
+# called as upstream does, with the gd of the local data.
 "`setlocale(+Category, -Old, +New)`: unify `Old` with the locale of `Category` and set it to `New` unless `Old` equals `New`; an unbound `New` only queries (pl-ctype.c)."
 function pl_setlocale3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -192,6 +206,7 @@ function pl_setlocale3_va(
                 end
             end
 
+            updateLocale(ld.GD::PL_global_data{T}, lcp.category, locale)   # pl-ctype.c:944-946: also when `Old` equals `New`
             return FTRUE
         end
     end
@@ -201,7 +216,9 @@ function pl_setlocale3_va(
 end
 
 # PORT: pl-ctype.c BeginPredDefs as PL_predicates_from_ctype
-# DIVERGES: the ported entries (upstream's table also has char_type/2, code_type/2, downcase_atom/2, ...).
+# DIVERGES: the entries written here: `setlocale/3`. The rest of upstream's table is in `PL_predicates_from_ctype_pred`
+# (src/os/pl-ctype-pred.jl, loaded after this file): char_type/2, code_type/2,
+# downcase_atom/2, upcase_atom/2, string_lower/2, string_upper/2, normalize_space/2.
 "pl-ctype.c's registration table (`BeginPredDefs(ctype)`): the ported entries."
 const PL_predicates_from_ctype = (
     PL_extension("setlocale", 3, pl_setlocale3_va, PL_FA_VARARGS),

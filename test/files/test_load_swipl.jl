@@ -273,7 +273,7 @@ const _TL_CASES = [
     # … and '$set_predicate_attribute'/3, whose head or indicator (pl-proc.c get_procedure's
     # Name/Arity) and value (get_bool_or_int_ex) were read only through `:- dynamic` (which
     # reaches it with `true`, after boot's '$head_name_arity' has refused a bad indicator). The
-    # non-indicator head `1` is a KNOWN DIFFERENCE, below.
+    # non-indicator head `1` is the row below.
     ("'\$set_predicate_attribute'/3: the value and the indicator read",
         ":- '\$set_predicate_attribute'(p/1, dynamic, 1).\n" *
         ":- '\$set_predicate_attribute'(p/1, dynamic, 2).\n" *
@@ -298,10 +298,9 @@ const _TL_CASES = [
 #      `unwrap_predicate/2`): the case "incremental" is now equal to swipl's lines (`ok`, no undefined_export line; no pin;
 #      refusal-flip rule). Before: existence_error(procedure, prolog_wrap:unwrap_predicate/2) and undefined_export.
 #   L4 `initialization(main)`: swipl autoloads library(main)'s main/0, which calls the undefined main/1 and prints an
-#      initialization_error (line 2: existence_error(procedure, main/1), context system:catch/3). Since DWIM1 the kernel's report of
-#      an undefined procedure no longer raises (L1), and its line 1 is `ok`; main/0 runs, and set_signals calls
-#      `$syspreds:on_signal/3`, which calls the undefined `$syspreds:'$on_signal'/4` (pl-setup.c; docs/r2_owners.tsv, owner Q10): the
-#      initialization_error of line 2 carries that existence_error. Measured at DWIM1's bring-up (2026-11-05).
+#      initialization_error (line 2: existence_error(procedure, main/1), context system:catch/3). FLIPPED by Q10 (`$on_signal/4`,
+#      src/pl-setup.jl): the case "initialization" is now equal to swipl's lines (no pin; refusal-flip rule). Before: the kernel's
+#      line 2 carried existence_error(procedure, $syspreds:'$on_signal'/4) (measured at DWIM1's bring-up, 2026-11-05).
 "The lines of `ours` and `theirs` that differ, `(line, kernel, swipl)`, `path` (the case file) written `<path>`."
 function _tl_diff(
     ours::Vector{String}, theirs::Vector{String}, path::String
@@ -430,14 +429,6 @@ const _TL_KNOWN_DIFFS = Dict{String, Vector{Tuple{Int, String, String}}}(
             "error c[101,114,114,111,114]/2(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,100,101,102,105,110,101],a[98,117,105,108,116,95,105,110,95,112,114,111,99,101,100,117,114,101],c[47]/2(a[97,116,111,109,95,110,117,109,98,101,114],i2)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[36,114,101,99,111,114,100,95,99,108,97,117,115,101],i3)),V0))"
         ),
         (3, "—", "atom_number/2 static exception")
-    ],
-    # L4 (the autoload of library(main), then `$on_signal/4`; DWIM1 removed the dwim raise that stood here)
-    "initialization" => [
-        (
-        2,
-        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[36,111,110,95,115,105,103,110,97,108],i4))),c[99,111,110,116,101,120,116]/2(c[58]/2(a[36,115,121,115,112,114,101,100,115],c[47]/2(a[111,110,95,115,105,103,110,97,108],i3)),V0)),c[58]/2(a<path>,i1))",
-        "error c[105,110,105,116,105,97,108,105,122,97,116,105,111,110,95,101,114,114,111,114]/3(c[58]/2(a[117,115,101,114],a[109,97,105,110]),c[101,114,114,111,114]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[109,97,105,110],i1)),c[99,111,110,116,101,120,116]/2(c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[99,97,116,99,104],i3)),V0)),c[58]/2(a<path>,i1))"
-    )
     ]
 )
 
@@ -558,15 +549,12 @@ else
     end
 end
 
-# KNOWN DIFFERENCE, pinned (R2 checklist: "'$set_predicate_attribute'/3 on a head that is no
-# indicator"; f3b-5a's gap row):
-#   swipl 10.1.18 (probed 2026-10-22, `:- '$set_predicate_attribute'(1, dynamic, true).`):
+# '$set_predicate_attribute'/3 on a head that is no indicator (R2 checklist; f3b-5a's gap row). It was a KNOWN DIFFERENCE
+# (kernel: type_error(callable, 1), `get_procedure` read a head with `get_head_functor`); FLIPPED by `get_procedure` as pl-proc.c
+# writes it (GP_NAMEARITY: `get_functor`, the C's own type_error), now the same as swipl 10.1.18's (probed 2026-10-22,
+# `:- '$set_predicate_attribute'(1, dynamic, true).`):
 #     error(type_error(predicate_indicator, 1), context(system:'$set_predicate_attribute'/3, _))
-#     (pl-proc.c get_functor: `1` is neither Name/Arity nor a functor)
-#   kernel: type_error(callable, 1), the rest the same — `get_procedure` (pl-proc.jl) reads a head
-#     that is no `Name/Arity` with `get_head_functor`, whose error is `callable` (pl-proc.c).
-# The kernel's line was confirmed by running this row on the base, 42d6205 (2026-10-22).
-@testset "'\$set_predicate_attribute'(1, ...): predicate_indicator to swipl, callable here" begin
+@testset "'\$set_predicate_attribute'(1, ...): predicate_indicator, as swipl" begin
     line(formal) =
         "error " * _tl_enc(
             mk_expr(
@@ -603,7 +591,7 @@ end
         path = joinpath(d, "attr1.pl")
         write(path, ":- '\$set_predicate_attribute'(1, dynamic, true).\n")
         ours = _tl_kernel(path, Tuple{String, Int}[])
-        @test line("callable") in ours
+        @test line("predicate_indicator") in ours
         if _TL_SWIPL !== nothing
             @test line("predicate_indicator") in _tl_swipl(path, Tuple{String, Int}[])
         else

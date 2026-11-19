@@ -38,6 +38,7 @@
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
+# Since Q10 garbage_collect_atoms/0 (pl-atom.c) between `$garbage_collect/1` and garbage_collect_clauses/0, pl-ext.c:170.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
     PL_extension("write_canonical", 1, pl_write_canonical, PL_FA_ISO),
@@ -63,6 +64,7 @@ const foreigns = (
     PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)
     PL_extension("context_module", 1, pl_context_module, PL_FA_TRANSPARENT),   # META (MOD2)
     PL_extension("\$garbage_collect", 1, pl_garbage_collect, 0x00),            # BOOTPRED (pl-ext.c:168)
+    PL_extension("garbage_collect_atoms", 0, pl_garbage_collect_atoms0, 0x00),     # Q10 (pl-ext.c:170)
     PL_extension("garbage_collect_clauses", 0, pl_garbage_collect_clauses0, 0x00),  # PR1 (pl-ext.c:171)
     PL_extension("read", 2, pl_read2, PL_FA_ISO),                   # RD1 (pl-ext.c:175)
     PL_extension("write", 2, pl_write2, PL_FA_ISO),
@@ -75,8 +77,8 @@ const foreigns = (
 )
 
 # The PRED_DEF tables, in `initBuildIns`' order (pl-ext.c:501-574: arith, bag, comp, list, module, prims, variant,
-# copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), setup (TRIMST: trim_stacks/0), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
-# termhash and bisim, between op and attvar upstream, are not ported; strings (T2), then tai (TAI1: stamp_date_time/3, date_time_stamp/2, format_time/3,4, in src/os/pl-tai.jl) are appended last); and the two dispatch tables. A comment, not a docstring,
+# copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), setup (pl-setup.c: $set_prolog_stack/4, trim_stacks/0, $on_signal/4, prolog_alert_signal/2; TRIMST and R2), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
+# termhash and bisim (lane F), between op and attvar upstream, sit after error/event here; strings (T2), tabling and wrap, then ctype_pred (CT1b: char_type/2, code_type/2, in src/os/pl-ctype-pred.jl), then tai (TAI1: stamp_date_time/3, date_time_stamp/2, format_time/3,4, in src/os/pl-tai.jl), then locale (CT1 LOCALE: locale_property/2, locale_create/3, locale_destroy/1, set_locale/1, current_locale/1, in src/os/pl-locale.jl) then coverage (lane F: the $cov_* predicates, in src/pl-coverage.jl), then profile (lane F: pl-prof.c, in src/pl-prof.jl) then zip (ZIP1: the zip predicates, in src/pl-zip.jl) are appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
@@ -95,9 +97,16 @@ const _PRED_TABLES = (
     PL_predicates_from_attvar, PL_predicates_from_gvar, PL_predicates_from_dict,
     PL_predicates_from_strings,
     PL_predicates_from_error, PL_predicates_from_event,
-    PL_predicates_from_termhash, PL_predicates_from_trie, PL_predicates_from_tabling,
+    PL_predicates_from_termhash, PL_predicates_from_bisim, PL_predicates_from_trie,
+    PL_predicates_from_tabling,
     PL_predicates_from_wrap, PL_predicates_from_transaction, PL_predicates_from_undo,
-    PL_predicates_from_tai
+    PL_predicates_from_alloc,
+    PL_predicates_from_ctype_pred,
+    PL_predicates_from_tai,
+    PL_predicates_from_locale,
+    PL_predicates_from_coverage,
+    PL_predicates_from_profile,
+    PL_predicates_from_zip
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -116,11 +125,16 @@ const _FOREIGN_VA = (
     PL_predicates_from_op..., PL_predicates_from_rec..., PL_predicates_from_attvar...,
     PL_predicates_from_gvar..., PL_predicates_from_dict..., PL_predicates_from_strings...,
     PL_predicates_from_error..., PL_predicates_from_event...,
-    PL_predicates_from_termhash..., PL_predicates_from_trie...,
+    PL_predicates_from_termhash..., PL_predicates_from_bisim..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
     PL_predicates_from_wrap..., PL_predicates_from_transaction...,
-    PL_predicates_from_undo...,
-    PL_predicates_from_tai...
+    PL_predicates_from_undo..., PL_predicates_from_alloc...,
+    PL_predicates_from_ctype_pred...,
+    PL_predicates_from_tai...,
+    PL_predicates_from_locale...,
+    PL_predicates_from_coverage...,
+    PL_predicates_from_profile...,
+    PL_predicates_from_zip...
 )
 const _FOREIGN_DET = foreigns
 
@@ -174,7 +188,7 @@ end
 
 # DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
 # dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
-# or more entries (`_PRED_TABLES` has 41) takes Base's `Any32` method, whose result is not inferred (JET).
+# or more entries (`_PRED_TABLES` has 46) takes Base's `Any32` method, whose result is not inferred (JET).
 "Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
 function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
     return first
