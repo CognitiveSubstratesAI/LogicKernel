@@ -1,0 +1,46 @@
+# The probe (D-0945 (2)): run ONE probe file from a branch against the pinned swipl (the oracle) and print the
+# result into the job summary. ORDINARY SEMANTICS PROBES ONLY (D-0164: the repo and its logs are public; a probe that
+# touches an upstream defect or crash mechanism stays on the VM). No secrets, no network step beyond the oracle build,
+# no artifact. Off switch: disable the workflow.
+name: Probe (swipl at the pin)
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: 'path of the probe file in the dispatched ref, probes/<name>.pl (first line must be "% ordinary")'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: probe-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PROBE: ${{ inputs.probe }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Validate the input (a path under probes/, ordinary)
+        shell: bash
+        run: |
+          [[ "$PROBE" =~ ^probes/[A-Za-z0-9_.-]+\.pl$ ]] || { echo "::error::probe must be probes/<name>.pl"; exit 1; }
+          [ -f "$PROBE" ] || { echo "::error::no such file"; exit 1; }
+          head -1 "$PROBE" | grep -qx '% ordinary' || { echo "::error::first line must be '% ordinary'"; exit 1; }
+      - uses: ./.github/actions/oracle
+      - name: Run the probe under swipl (60 s, 2 GB)
+        shell: bash
+        run: |
+          set +e
+          ulimit -v 2097152
+          start=$(date +%s.%N)
+          timeout 60 swipl -q -f none -g main -t halt "$PROBE" >"$RUNNER_TEMP/out" 2>"$RUNNER_TEMP/err"
+          rc=$?
+          t=$(echo "$(date +%s.%N) - $start" | bc)
+          {
+            echo "### $PROBE  (exit $rc, ${t}s)"
+            echo '#### stdout'; echo '```'; head -c 20000 "$RUNNER_TEMP/out"; echo '```'
+            echo '#### stderr'; echo '```'; head -c 20000 "$RUNNER_TEMP/err"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
