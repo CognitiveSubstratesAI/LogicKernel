@@ -563,7 +563,7 @@ function pl_put_attr3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    ensureGlobalSpace(ld, 1) || return FFALSE               # 0 means enough for attvars
+    ensureGlobalSpace(ld, 1, ALLOW_GC, :put_attr3) || return FFALSE               # 0 means enough for attvars   # G1-GC safe point: put_attr3
 
     a = PL_get_atom_ex(ld, A2)                              # if ( !PL_get_atom_ex(A2, &name) ) fail
     a === nothing && return FFALSE
@@ -598,7 +598,7 @@ function pl_put_attrs2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    ensureGlobalSpace(ld, 0) || return FFALSE               # 0 means enough for attvars
+    ensureGlobalSpace(ld, 0, ALLOW_GC, :put_attrs2) || return FFALSE               # 0 means enough for attvars   # G1-GC safe point: put_attrs2
 
     k, w, av = _deref_loc(ld, -(A1 + 1))                    # av = valTermRef(A1); deRef(av)
 
@@ -622,7 +622,7 @@ function pl_del_attr2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    ensureGlobalSpace(ld, 0) || return FFALSE
+    ensureGlobalSpace(ld, 0, ALLOW_GC, :del_attr2) || return FFALSE   # G1-GC safe point: del_attr2
 
     a = PL_get_atom_ex(ld, A2)                              # if ( !PL_get_atom_ex(A2, &name) ) return false
     a === nothing && return FFALSE
@@ -649,7 +649,7 @@ function pl_del_attrs1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
-    ensureGlobalSpace(ld, 0) || return FFALSE
+    ensureGlobalSpace(ld, 0, ALLOW_GC, :del_attrs1) || return FFALSE   # G1-GC safe point: del_attrs1
 
     k, _, av = _deref_loc(ld, -(A1 + 1))                    # av = valTermRef(A1); deRef(av)
 
@@ -675,7 +675,7 @@ function pl_attv_unify2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    ensureGlobalSpace(ld, 0) || return FFALSE
+    ensureGlobalSpace(ld, 0, ALLOW_GC, :attv_unify2) || return FFALSE   # G1-GC safe point: attv_unify2
 
     k, _, av = _deref_loc(ld, -(A1 + 1))                    # Word av = valTermRef(A1); deRef(av)
 
@@ -705,7 +705,7 @@ function pl_dfreeze2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    ensureGlobalSpace(ld, 0) || return FFALSE
+    ensureGlobalSpace(ld, 0, ALLOW_GC, :dfreeze2) || return FFALSE   # G1-GC safe point: dfreeze2
 
     k, _, v = _deref_loc(ld, -(A1 + 1))                     # v = valTermRef(A1); deRef(v)
     if k == DU_CELL || k == DU_ATTVAR                       # if ( isVar(*v) || isAttVar(*v) )
@@ -920,7 +920,7 @@ function pl_dsuspend3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
-    ensureGlobalSpace(ld, 6) || return FFALSE
+    ensureGlobalSpace(ld, 6, ALLOW_GC, :dsuspend3) || return FFALSE   # G1-GC safe point: dsuspend3
     a = PL_get_atom_ex(ld, A2)
     a === nothing && return FFALSE
     name = _atom_word!(ld, a)

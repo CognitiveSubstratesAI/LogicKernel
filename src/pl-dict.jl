@@ -395,7 +395,7 @@ function PL_get_dict_ex(
         len = lengthList(ld, data, true)
         len < 0 && return false                     # not a proper list
 
-        ensureGlobalSpace(ld, len * 2 + 2) || return false
+        ensureGlobalSpace(ld, len * 2 + 2, ALLOW_GC, :get_dict_ex) || return false   # G1-GC safe point: get_dict_ex
         m = Mark(ld)
         dp = allocGlobalCells!(ld, len * 2 + 2)
         ap = dp
