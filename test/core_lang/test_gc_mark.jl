@@ -48,6 +48,17 @@ function _gm_fli_roots(ld)::Vector{UInt64}
     return out
 end
 
+"The word a global variable's value word names, references to global cells followed (no gc bits): `nb_setval/2` stores what
+`duplicate_term/2` leaves in the copy's term reference, `makeRefG(dest)` of a fresh global cell that holds the copy (pl-copyterm.c
+copy_term_refs: `*valTermRef(to) = makeRefG(dest)`), so the value word of a variable is a REFERENCE to the cell of the compound."
+function _gm_value_word(ld, w::UInt64)::UInt64
+    w &= LK.VALUE_MASK
+    while LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL
+        w = ld.gstack[LK.unRef(w)] & LK.VALUE_MASK
+    end
+    return w
+end
+
 "The cells of the global stack reachable from the words `roots`: a plain walk by tags (no mark bit is read)."
 function _gm_reach(ld, roots::Vector{UInt64})::Set{Int}
     seen = Set{Int}()
@@ -281,7 +292,7 @@ end
     LK.PL_close_foreign_frame(ld, fid0)                         # the source term and the copy's temporary references are dead now
     @test !isempty(ld.gvar_nb_vars)
     gvals = UInt64[w for w in values(ld.gvar_nb_vars) if _gm_is_global(w)]
-    @test any(LK._is_gcompound, gvals)                          # our compound value: a global root
+    @test any(w -> LK._is_gcompound(_gm_value_word(ld, w)), gvals)   # our compound value: a global root (the variable holds a reference to its copy, pl-copyterm.c copy_term_refs)
     fli_before = _gm_fli_roots(ld)
     roots = vcat(fli_before, gvals)                             # the roots as the test lists them: frames + the variables
     model = _gm_reach(ld, roots)
@@ -294,7 +305,9 @@ end
     marked = _gm_marked(ld)
     @test marked == model
     @test st.total_marked == length(model) == length(marked)
-    @test all(w -> LK._is_gcompound(w) ? LK.valPtr(w) in marked : true, gvals)   # each copy's functor cell
+    @test all(
+        w -> (v=_gm_value_word(ld, w); LK._is_gcompound(v) && LK.valPtr(v) in marked), gvals
+    )   # each copy's functor cell (and the cell the variable's reference names, the walk below it)
     LK.gc_clear_marks!(ld)
     LK.term_refs_to_gvars(ld, fid, sb)
     @test ld.frozen_bar == bar0                                 # the saved bar is back
@@ -381,7 +394,14 @@ end
             end
             @test cl != 0
             fi = ld.choices[cl].frame
-            @test fi != 0 && ld.frames[fi].parent == 0          # the query's top frame of n/1
+            # the frame of n/1 is a CHILD of the query's top frame: PL_open_query makes the top frame for `$c_call_prolog/0` (pl-wam.c
+            # PL_open_query, PROCEDURE_dc_call_prolog) and calls the goal from it, so the frame with no parent is the top frame, not n/1's
+            @test fi != 0 && ld.frames[fi].parent != 0
+            top = fi
+            while ld.frames[top].parent != 0
+                top = ld.frames[top].parent
+            end
+            @test top != fi && ld.frames[top].parent == 0       # the query's top frame
             vm = LK.vm_state()
             vm.frame = fi
             vm.choice = ld.BFR
@@ -393,7 +413,12 @@ end
                 c.frame != 0 && c.type == LK.CHP_CLAUSE && push!(frames, c.frame)
                 ch = c.parent
             end
-            qf = LK.queryOfFrame(ld, fi)
+            qf = LK.queryOfFrame(ld, top)                       # pl-gc.c queryOfFrame: of a TOP frame
+            fp = ld.frames[fi].parent
+            while fp != 0                                       # the frames between n/1's and the top (mark_stacks walks the parent chain)
+                push!(frames, fp)
+                fp = ld.frames[fp].parent
+            end
             se = ld.queries[qf].saved_environment
             se != 0 && push!(frames, se)
             roots = _gm_fli_roots(ld)
