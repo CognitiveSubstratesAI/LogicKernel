@@ -4916,6 +4916,137 @@ _manifest_g1gc2(::Type{T}) where {T} = (
     (LK.copyRecordToGlobal, Tuple{LK.PL_local_data{T}, Int, LK.record{T}, Int}, false)
 )
 
+# G1-4: the trail half of the collector (src/pl-gctrail.jl); every entry AllocCheck-false (they build vectors)
+_manifest_g1gc4(::Type{T}) where {T} = (
+    (LK.gc_trail_state, Tuple{}, false),
+    (LK.gc_trail_begin!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gc_trail_end!, Tuple{LK.PL_local_data{T}, LK.gc_trail_state}, false),
+    (LK.gc_trail_tagged_isval, Tuple{UInt64}, false),
+    (LK.gc_trail_tagged_pos, Tuple{UInt64}, false),
+    (LK.gc_trail_tag_entry, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.gc_trail_untag_entry, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.tag_trail, Tuple{LK.PL_local_data{T}, LK.gc_trail_state}, false),
+    (LK.untag_trail, Tuple{LK.PL_local_data{T}, LK.gc_trail_state}, false),
+    (LK.gc_trail_sweep_entries, Tuple{LK.PL_local_data{T}, LK.gc_trail_state}, false),
+    (LK.gc_trail_no_chain, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.compact_trail, Tuple{LK.PL_local_data{T}, LK.gc_trail_state}, false),
+    (
+        LK.compact_trail,
+        Tuple{LK.PL_local_data{T}, LK.gc_trail_state, typeof(LK.gc_trail_no_chain)},
+        false
+    ),
+    (LK.is_dead_attvar, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.clean_attvar_chain, Tuple{LK.PL_local_data{T}}, false)
+)
+
+# G1-5 (src/pl-gcsweep.jl, pl-gc.c's sweep phase: the relocation chains, the hole fillers, the sweep of the trail and the stacks).
+# Held to no allocation bound: the sweep writes through the stacks and builds error messages.
+_manifest_g1gc5(::Type{T}) where {T} = (
+    (LK.gc_sweep_counts, Tuple{}, false),
+    (LK.makePtr, Tuple{Int, UInt64}, false),
+    # the cell addressing of the chains (src/pl-gcsweep.jl `_gcs_*`)
+    (LK._gcs_mfield, Tuple{Bool, Int, Int}, false),
+    (LK._gcs_is_mfield, Tuple{Int}, false),
+    (LK._gcs_mf_get, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._gcs_mf_set!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK._gcs_get, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._gcs_set!, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK._gcs_stg, Tuple{Int}, false),
+    (LK._gcs_unptr, Tuple{UInt64}, false),
+    (LK._gcs_chainable, Tuple{UInt64}, false),
+    (LK._gcs_h_get, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._gcs_h_set!, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (
+        LK._gcs_sweep_marked_slot,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int},
+        false
+    ),
+    (LK.offset_word, Tuple{UInt64}, false),
+    (LK.offset_cell, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gc_box_index, Tuple{LK.PL_local_data{T}, Int}, false),
+    (
+        LK.update_relocation_chain,
+        Tuple{LK.PL_local_data{T}, LK.gc_sweep_counts, Int, Int},
+        false
+    ),
+    (
+        LK.into_relocation_chain,
+        Tuple{LK.PL_local_data{T}, LK.gc_sweep_counts, Int, UInt64},
+        false
+    ),
+    (
+        LK.alien_into_relocation_chain,
+        Tuple{LK.PL_local_data{T}, LK.gc_sweep_counts, Int, UInt64},
+        false
+    ),
+    (LK.make_gc_hole, Tuple{LK.PL_local_data{T}, Int, Int}, false),
+    (LK.is_downward_ref, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.is_upward_ref, Tuple{LK.PL_local_data{T}, Int}, false),
+    (
+        LK.sweep_global_mark,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int},
+        false
+    ),
+    (
+        LK.sweep_mark,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Bool, Int},
+        false
+    ),
+    (
+        LK.sweep_frozen_bar,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int},
+        false
+    ),
+    (
+        LK.sweep_foreign,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts},
+        false
+    ),
+    (
+        LK.sweep_trail,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts},
+        false
+    ),
+    (
+        LK.sweep_frame,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int, Int},
+        false
+    ),
+    (
+        LK.sweep_environments,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int, Int},
+        false
+    ),
+    (
+        LK.sweep_choicepoints,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, Int},
+        false
+    ),
+    (
+        LK.sweep_new_arguments,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state},
+        false
+    ),
+    (
+        LK.sweep_stacks,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state},
+        false
+    ),
+    # the keyword-argument method (`vmi_state_of`), reached through `Core.kwcall` as the `stack_violations` entry above
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:vmi_state_of,), Tuple{Nothing}},
+            typeof(LK.sweep_stacks),
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.gc_sweep_counts,
+            LK.vm_state
+        },
+        false
+    )
+)
+
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
@@ -5908,6 +6039,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_cont(_M2)...,
     # G1-3a: the mark phase (src/pl-gcmark.jl)
     _manifest_g1gc3a(_M2)...,
+    # G1-4: the trail half of the collector (src/pl-gctrail.jl)
+    _manifest_g1gc4(_M2)...,
+    # G1-5: the sweep phase (src/pl-gcsweep.jl)
+    _manifest_g1gc5(_M2)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,
