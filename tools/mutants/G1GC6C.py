@@ -17,8 +17,8 @@
 #   ES = "gcEnsureSpace: the terms of lneeded, the spare arm, the growing arm, the overflow"
 #   TG = "tight, growStacks_tight!, shiftTightStacks!: the formula of pl-gc.c tight() in positions"
 # TARGETS (audit D-0238): the driver is reached by test/core_lang/test_gc_driver.jl (its own rows) and, through `garbageCollect` and `considerGC`, by
-#   test_g1gc_safe_points.jl; the phases it calls are the rows of test_gc_mark.jl, test_gc_sweep.jl, test_gc_trail.jl. A test_gc_compact.jl (G1-6b)
-#   is not in this tree: the merge adds it to TARGETS if it exists then.
+#   test_g1gc_safe_points.jl; the phases it calls are the rows of test_gc_mark.jl, test_gc_sweep.jl, test_gc_trail.jl. test_gc_vmi_state.jl (G1-2b) runs whole
+#   collections through the provider the safe points pass (D-0238).
 # NOT COVERED by a kill (read off the rows; a lane may add rows): the `Int(rc) < 0` return and the `rc == BOOLEX_FALSE` reload of `garbageCollect`
 #   (the grown/overflow arms are exercised through `gcEnsureSpace` directly, not through the driver), `restore_grefs` (no attributed variable in the
 #   heaps), the `saved_bar_at` keyword (frozen_bar is 0 in the heaps), `trimStacks!(ld, false)` (nothing to trim at these sizes).
@@ -31,7 +31,8 @@ SP = "test/core_lang/test_g1gc_safe_points.jl"
 GM = "test/core_lang/test_gc_mark.jl"
 GS = "test/core_lang/test_gc_sweep.jl"
 GT = "test/core_lang/test_gc_trail.jl"
-TARGETS = [GD, SP, GM, GS, GT]
+GV = "test/core_lang/test_gc_vmi_state.jl"          # D-0238: G1-2b's rows run whole collections (the safe points pass get_vmi_state)
+TARGETS = [GD, SP, GM, GS, GT, GV]
 D = "src/pl-gcdriver.jl"
 
 def m(id, old, new, file=D, eq=None):

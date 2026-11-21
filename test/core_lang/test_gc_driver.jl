@@ -375,7 +375,7 @@ end
     @test length(ans) == 3
 end
 
-@testset "gc_force at the audited safe points of a small program: the answers are the same (the collector declines inside the VM without G1-2b's callback)" begin
+@testset "gc_force at the audited safe points of a small program: the answers are the same (the safe points pass G1-2b's `get_vmi_state`, so the collector runs inside the VM too)" begin
     prog = Tuple{_R, Union{Nothing, _R}}[
         (
             _rf("gd8", _rv(1)),
@@ -409,7 +409,7 @@ end
     @test isempty(hits_off)
     @test !isempty(hits_on)                                       # the sites were reached
     @info "gc_force program row" coll_on coll_off hits_on          # diagnostic only (D-0644: the two assertions below stay strict)
-    @test coll_on > 0                                             # G1GC2-E5: a foreign safe point (registers_fr == 0) really collects: the totals of the statistics moved
+    @test coll_on > 0                                             # G1GC2-E5: a foreign safe point (I_FCALLDET* saves the registers, `registers_fr != 0`: the `get_vmi_state` arm of G1-2b) really collects: the totals of the statistics moved
     @test coll_on >= coll_off
     @test b0 == 0 && b1 == 0 && !a0 && !a1
 end

@@ -26,11 +26,12 @@ GS = "test/core_lang/test_gc_sweep.jl"
 GM = "test/core_lang/test_gc_mark.jl"
 GC = "test/core_lang/test_gc_compact.jl"            # D-0238: the collector's own tests (G1-6a/6b, 6c) run the whole mark/trail/sweep chain
 GD = "test/core_lang/test_gc_driver.jl"
-TARGETS = [GS, GM, GC, GD]
+GV = "test/core_lang/test_gc_vmi_state.jl"          # D-0238: G1-2b's rows run whole collections (the safe points pass get_vmi_state)
+TARGETS = [GS, GM, GC, GD, GV]
 S = "src/pl-gcsweep.jl"
 
 def m(id, old, new, file=S, eq=None):
-    d = dict(id=id, file=file, old=old, new=new, targets=[GS, GM, GC, GD])
+    d = dict(id=id, file=file, old=old, new=new, targets=[GS, GM, GC, GD, GV])
     if eq:
         d["equivalent"] = eq
     return d

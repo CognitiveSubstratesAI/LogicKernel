@@ -24,9 +24,10 @@
 # pl-gctrail.jl and pl-gccompact.jl).
 #
 # THE VM STATE (`vmi_state_of`): the state of a query that is INSIDE the VM (`registers.fr != 0`) is built by
-# G1-2b (the callback `vmi_state_of(ld, query_index) -> vm_state`, as `mark_stacks` takes it). The state of the
+# the callback `vmi_state_of(ld, query_index) -> vm_state` (as `mark_stacks` takes it): `get_vmi_state` below
+# (G1-2b), which the engine's safe points (`considerGC`, `pl_garbage_collect`) pass. The state of the
 # other case — no query, or one whose registers hold no frame (upstream's `else` arm, :3779-3786) — is built
-# here. A collection that needs the callback and has none DECLINES (`BOOLEX_FALSE`, nothing touched, no
+# here. A collection that needs the callback and has none (a caller that passes none: the driver alone) DECLINES (`BOOLEX_FALSE`, nothing touched, no
 # statistics record): the answer the placeholder gave and upstream's own for a blocked collector.
 
 # PORT: pl-incl.h GROW_TIGHT
@@ -35,8 +36,8 @@ const GROW_TIGHT = 1
 
 # PORT: pl-gc.c get_vmi_state as gc_get_vmi_state
 # DIVERGES: (1) the registers are positions and indices (`vm_state`, pl-gcmark.jl); (2) the arm of a query inside
-# the VM (`qf->registers.fr != 0`, :3735-3789: the frame, the pc, `setStartOfVMI`, the body-mode `lTop`) is G1-2b's
-# `vmi_state_of` callback; without one the answer is `nothing` and `garbageCollect` declines; (3) `state->frame
+# the VM (`qf->registers.fr != 0`, :3735-3789: the frame, the pc, `setStartOfVMI`, the body-mode `lTop`) is the
+# `vmi_state_of` callback (`get_vmi_state`, G1-2b); without one the answer is `nothing` and `garbageCollect` declines; (3) `state->frame
 # = environment_frame` and the argument position are the frame's index and its base position.
 "The `vm_state` of the safe point, `nothing` when the query is inside the VM and no `vmi_state_of` was given (pl-gc.c `get_vmi_state`)."
 function gc_get_vmi_state(
@@ -74,6 +75,126 @@ function gc_restore_vmi_state(ld::PL_local_data{T}, vm::vm_state)::Nothing where
         ld.lTop = vm.lSave
     end
     return nothing
+end
+
+# PORT: pl-gc.c setStartOfVMI as gc_walk_start_of_vmi!
+# DIVERGES: (1) the code is the clause's `codes` vector, `vm.pc`/`vm.pc_start_vmi` are 1-based indexes into it (0 = NULL), `argp`/`argp0` positions
+# (`argp` only a slot of the frame here: a write-mode ARGP on the global stack is never read at `adepth > 0`); (2) `stepPC` is `pc + 1 + codeTable(op).arguments`;
+# (3) the `assert`s are debug-only upstream and are not kept; (4) `H_SMALLINTW` and the other `CODES_PER_WORD` variants do not exist; (5) as at the pin there is NO case
+# for `H_RFUNCTOR`/`H_RLIST`/`B_RFUNCTOR`/`B_RLIST`: they neither change `adepth` nor move `argp` (ported as is). The pure part of `setStartOfVMI`: the walk over one clause's code;
+# `as`: the C function is split in two, and `setStartOfVMI` below (the finder, which picks the clause's code) carries the C name.
+"Walk the clause code from its start to the instruction that holds `vm.pc`, tracking `argp`, `argp0`, `adepth`, `in_body`; sets `vm.pc_start_vmi` (0 when none holds it) (pl-gc.c `setStartOfVMI`)."
+function gc_walk_start_of_vmi!(vm::vm_state, codes::Vector{code}, base::Int)::Nothing
+    pc = 1
+    ep = length(codes)
+    while pc <= ep
+        op = codes[pc]
+        nxt = pc + 1 + codeTable(op).arguments          # next = stepPC(PC)
+        if nxt >= vm.pc
+            vm.pc_start_vmi = pc
+            return nothing
+        end
+        if op == H_STRING || op == H_MPZ || op == H_MPQ || op == H_LIST_FF ||
+            op == H_FIRSTVAR || op == H_VAR || op == H_ATOM || op == H_SMALLINT ||
+            op == H_NIL || op == H_FLOAT || op == H_VOID
+            vm.adepth == 0 && (vm.argp += 1)
+        elseif op == H_VOID_N
+            vm.adepth == 0 && (vm.argp += Int(codes[pc + 1]))
+        elseif op == B_UNIFY_VAR || op == B_UNIFY_FIRSTVAR
+            vm.argp = varFrameP(base, Int(codes[pc + 1]))
+        elseif op == H_FUNCTOR || op == H_LIST
+            if vm.adepth == 0
+                vm.argp0 = vm.argp
+                vm.argp += 1
+            end
+            vm.adepth += 1
+        elseif op == B_FUNCTOR || op == B_LIST
+            vm.adepth += 1
+        elseif op == H_POP || op == B_POP
+            vm.adepth -= 1
+            vm.adepth == 0 && (vm.argp0 = 0)
+        elseif op == I_ENTER || op == I_SSU_COMMIT || op == I_SSU_CHOICE
+            vm.in_body = true
+        end                                             # B_UNIFY_EXIT: nothing (an assert upstream)
+        pc = nxt
+    end
+    vm.pc_start_vmi = 0
+    return nothing
+end
+
+# PORT: pl-gc.c setStartOfVMI
+# DIVERGES: `registers.pc` is an index into THAT clause's code only when `pcc` is the same vector (upstream compares addresses; a pc outside the clause finds no
+# instruction): a pc in other code (a supervisor) leaves `pc_start_vmi` 0.
+"Find the start of the VMI the registers of a saved query point into (pl-gc.c `setStartOfVMI`)."
+function setStartOfVMI(
+    ld::PL_local_data{T}, vm::vm_state, pcc::Vector{code}
+)::Nothing where {T}
+    fr = ld.frames[vm.frame]
+    cref = fr.clause
+    pred = fr.predicate::Definition{T}
+    if cref !== nothing && (pred.flags & P_FOREIGN) == 0 && vm.pc != 0
+        codes = (cref::ClauseRef{T}).clause.codes
+        if pcc === codes
+            if pred === (ld.GD::PL_global_data{T}).procedures_dcall1.definition
+                vm.in_body = true                       # There is no head code
+            end
+            gc_walk_start_of_vmi!(vm, codes, fr.base)
+            return nothing
+        end
+    end
+    vm.pc_start_vmi = 0
+    return nothing
+end
+
+# PORT: pl-gc.c get_vmi_state
+# DIVERGES: (1) the arm of a query inside the VM only (:3746-3792); the other arm is `gc_get_vmi_state`; (2) positions and indexes (`next_environment` a frame index,
+# `registers_argp` an `argp_t`: ARGP_SLOT is upstream's `ap > lBase`; the argument-stack entries are records); (3) `lTop` is raised through `ld.lTop`
+# (only upward: `ap.pos > lTop`); `gc_restore_vmi_state` lowers it again. FOR A FOREIGN CALL (functor/3, =../2, '$length'/2: `I_FCALLDET*` saves the registers with
+# FR the foreign frame): frame = that frame, argp its first slot, `save_argp` false, `pc_start_vmi` 0, `in_body` false, no new arguments.
+"The `vm_state` of a query inside the VM (`registers_fr != 0`): the `vmi_state_of(ld, query_index)` callback of the collector (pl-gc.c `get_vmi_state`)."
+function get_vmi_state(ld::PL_local_data{T}, qi::Int)::vm_state where {T}
+    qf = ld.queries[qi]
+    vm = vm_state()
+    vm.choice = ld.BFR
+    vm.lSave = ld.lTop
+    vm.in_body = false
+    vm.adepth = 0
+    vm.new_args = 0
+    vm.lNext = 0
+    vm.frame = qf.registers_fr
+    fr = ld.frames[vm.frame]
+    qlTop = qf.next_environment != 0 ? ld.frames[qf.next_environment].base : ld.lTop
+    if qlTop <= fr.base
+        qlTop = argFrameP(fr.base, (fr.predicate::Definition{T}).arity)
+    end
+    vm.argp = argFrameP(fr.base, 0)
+    vm.argp0 = 0
+    vm.pc = qf.registers_pc.pc
+    vm.save_argp = fr.clause !== nothing
+    setStartOfVMI(ld, vm, qf.registers_pc.codes)
+    if vm.in_body
+        ap = qf.registers_argp
+        at = ld.aTop
+        ab = qf.aSave
+        while true
+            if ap.form == ARGP_SLOT                     # ap > (Word)lBase: a cell of the local stack
+                newbase = argFrameP(qlTop, 0)
+                if ap.pos > newbase
+                    vm.new_args = ap.pos - newbase
+                    vm.lNext = qlTop
+                    ap.pos > ld.lTop && (ld.lTop = ap.pos)
+                end
+                break
+            end
+            if at > ab
+                ap = ld.astack[at].argp                 # ap = *--at (the UWRITE bit is a field)
+                at -= 1
+            else
+                break
+            end
+        end
+    end
+    return vm
 end
 
 # ORIGINAL: the number of global-stack values of the nb_ variables `gvars_to_term_refs` turns into term references.

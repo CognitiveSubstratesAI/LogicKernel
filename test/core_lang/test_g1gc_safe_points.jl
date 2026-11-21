@@ -10,8 +10,8 @@
 #     `ld.gc_force` off and on; the answers equal the .out (swipl's) either way, the heap with the flag on is never larger than with it off (the
 #     collector runs at a foreign site, G1-6c: the answers are compared equal in the same row), with the flag off
 #     nothing is recorded, with it on the row's site is recorded and nothing outside the table is (a site the table rules NEEDS-ROOT passes no ALLOW_GC).
-# `ld.gc_force` is the model of upstream's FAKE_GC (pl-vmi.c:238-251). The collector is src/pl-gcdriver.jl (G1-6c): it runs at a foreign safe point (no query
-# state in the VM: functor/3, =../2, '$length'/2) and declines where a query inside the VM needs the `vmi_state_of` callback (G1-2b, a later piece); the hook test
+# `ld.gc_force` is the model of upstream's FAKE_GC (pl-vmi.c:238-251). The collector is src/pl-gcdriver.jl (G1-6c): it runs at a foreign safe point (functor/3, =../2, '$length'/2:
+# I_FCALLDET* saves the registers, so the query is inside the VM; `considerGC` passes G1-2b's `get_vmi_state`, which builds its state); the hook test
 # by hand blocks the collector.
 # NOT HERE: the VM macro sites (@ENSURE_GLOBAL_SPACE: no ALLOW_GC yet, table A "VM" rows), the signal and exception points (table C).
 # The kill rows are `@test`s INSIDE testsets (a top-level failing `@test` gives no verdict in CI mode).

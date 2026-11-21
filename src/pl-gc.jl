@@ -91,7 +91,7 @@ function considerGC(ld::PL_local_data, flags::Int, reason::Integer, site::Symbol
     elseif !considerGarbageCollect(ld, nothing)             # considerGarbageCollect(NULL)
         return false
     end
-    return garbageCollect(ld, Int(reason)) == BOOLEX_TRUE   # garbageCollect(reason): the GC_* constants are unsigned hex literals, `Int` here
+    return garbageCollect(ld, Int(reason); vmi_state_of=get_vmi_state) == BOOLEX_TRUE   # garbageCollect(reason): the GC_* constants are unsigned hex literals, `Int` here
 end
 
 # PORT: pl-gc.c growStacks as growStacks!
@@ -320,11 +320,11 @@ end
 # (FRG("$garbage_collect", 1, pl_garbage_collect, 0), pl-ext.c:168; pl-gc.c:4570-4584 at the pin. The
 # Prolog `garbage_collect/0` is boot/syspred.pl:1423-1424: `garbage_collect :- '$garbage_collect'(0).`)
 # DIVERGES: the debug level argument `d` is read only under `#if O_DEBUG` (pl-gc.c:4573-4579), which a release build of swipl does
-# not define, so `d` is not examined. `garbageCollect(GC_USER)` (pl-gc.c:4581) is called WITHOUT the `vmi_state_of` callback (G1-2b, a later
-# piece): it collects when the query's registers hold no frame (`registers_fr == 0`) and DECLINES (`BOOLEX_FALSE`, nothing touched) when they do; the answer is true either way.
+# not define, so `d` is not examined. `garbageCollect(GC_USER)` (pl-gc.c:4581) passes `get_vmi_state` (G1-2b, pl-gcdriver.jl) as the `vmi_state_of`
+# callback, so a query inside the VM is collected (since G1-2b; before it the collection DECLINED); the answer is true either way.
 "`'\$garbage_collect'(+DebugLevel)`: run the stack garbage collector (pl-gc.c `garbageCollect(GC_USER)`); true either way."
 function pl_garbage_collect(ld::PL_local_data{T}, d::term_t)::foreign_t where {T}
-    garbageCollect(ld, Int(GC_USER))
+    garbageCollect(ld, Int(GC_USER); vmi_state_of=get_vmi_state)
     return FTRUE
 end
 

@@ -5147,6 +5147,13 @@ _manifest_g1gc6c(::Type{T}) where {T} = (
     (LK.shiftTightStacks!, Tuple{LK.PL_local_data{T}}, false)
 )
 
+# G1-GC G1-2b: the VM-state provider the safe points pass to the driver (src/pl-gcdriver.jl); every entry AllocCheck-false (it builds a vm_state).
+_manifest_g1gc2b(::Type{T}) where {T} = (
+    (LK.get_vmi_state, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.setStartOfVMI, Tuple{LK.PL_local_data{T}, LK.vm_state, Vector{LK.code}}, false),
+    (LK.gc_walk_start_of_vmi!, Tuple{LK.vm_state, Vector{LK.code}, Int}, false)
+)
+
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
@@ -6147,6 +6154,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_g1gc5(_M2)...,
     # G1-GC G1-6c: the driver of the collector (src/pl-gcdriver.jl); reference type only, as the sibling groups (3a, 3b, 4, 5, 6a)
     _manifest_g1gc6c(_M2)...,
+    # G1-GC G1-2b: the VM-state provider (src/pl-gcdriver.jl); reference type only
+    _manifest_g1gc2b(_M2)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,
