@@ -6528,7 +6528,7 @@ const DISPATCH_EXEMPT = (
         (LK.var"@FASTCOND_FAILED", Tuple{LineNumberNode, Module}) => "a macro (pl-vmi.c FASTCOND_FAILED): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
     ),
     (
-        (LK.var"@ENSURE_GLOBAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_GLOBAL_SPACE, L1f f2): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
+        (LK.var"@ENSURE_GLOBAL_SPACE", Tuple{LineNumberNode, Module, Any, Any, Vararg{Any}}) => "a macro (pl-vmi.c ENSURE_GLOBAL_SPACE, L1f f2; G1-C4: n, site, onchange...): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
     ),
     (
         (LK.var"@ENSURE_LOCAL_SPACE", Tuple{LineNumberNode, Module, Any}) => "a macro (pl-vmi.c ENSURE_LOCAL_SPACE): it builds Exprs at load time; its expansion runs in PL_next_solution_guarded, which is checked"
