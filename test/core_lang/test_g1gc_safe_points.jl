@@ -5,12 +5,14 @@
 #     are the same set of names (each side read through ONE extractor, both non-empty), each name's line is in the file the table names, and
 #     every row of the tables carries a verdict word;
 #   * THE HOOK, by hand: `ensureGlobalSpace(ld, n, flags, site)` with `ld.gc_force` records `site` only when `flags` has ALLOW_GC, and a
-#     placeholder collection moves nothing (the global stack's words, its top, the trail, the value table are as they were);
+#     BLOCKED collection (the collector declines) moves nothing (the global stack's words, its top, the trail, the value table are as they were);
 #   * THE SITES, through a program: test_g1gc_safe_points.pl holds a row `gN(R)` per SAFE site; every row runs on a fresh kernel with
-#     `ld.gc_force` off and on; the answers equal the .out (swipl's) either way, the heap's size is the same either way, with the flag off
+#     `ld.gc_force` off and on; the answers equal the .out (swipl's) either way, the heap with the flag on is never larger than with it off (the
+#     collector runs at a foreign site, G1-6c: the answers are compared equal in the same row), with the flag off
 #     nothing is recorded, with it on the row's site is recorded and nothing outside the table is (a site the table rules NEEDS-ROOT passes no ALLOW_GC).
-# `ld.gc_force` is the model of upstream's FAKE_GC (pl-vmi.c:238-251). The collector itself is G1-3..G1-6: until it exists a "collection" is
-# the declining placeholder `garbageCollect`, so what is checked is WHERE the hook is reached and that reaching it changes nothing.
+# `ld.gc_force` is the model of upstream's FAKE_GC (pl-vmi.c:238-251). The collector is src/pl-gcdriver.jl (G1-6c): it runs at a foreign safe point (no query
+# state in the VM: functor/3, =../2, '$length'/2) and declines where a query inside the VM needs the `vmi_state_of` callback (G1-2b, a later piece); the hook test
+# by hand blocks the collector.
 # NOT HERE: the VM macro sites (@ENSURE_GLOBAL_SPACE: no ALLOW_GC yet, table A "VM" rows), the signal and exception points (table C).
 # The kill rows are `@test`s INSIDE testsets (a top-level failing `@test` gives no verdict in CI mode).
 using Test, LogicKernel
@@ -145,6 +147,7 @@ _heap(ld::LK.PL_local_data) =
     LK.allocGlobalCells!(ld, 5)
     before = _heap(ld)
     @test before[1] >= 5 && !isempty(before[2])                       # something on the heap to move
+    ld.gc.status.blocked = 1          # G1-6c: the collector is real now and would compact this heap; blocked it declines, as the placeholder did
     @test !ld.gc_force && isempty(ld.gc_safe_hits)
 
     # not forced: the hook may run (the area is full) but nothing is recorded (it records only under the flag)
@@ -161,12 +164,12 @@ _heap(ld::LK.PL_local_data) =
     @test LK.ensureGlobalSpace(ld, 4, LK.ALLOW_GC | LK.ALLOW_SHIFT, :probe_both)
     @test ld.gc_safe_hits == [:probe_site, :probe_both]               # ALLOW_GC among other bits: reached
 
-    # considerGC directly: the placeholder collector declines, the hook says so
+    # considerGC directly: the blocked collector declines, the hook says so
     @test !LK.considerGC(ld, LK.ALLOW_GC, LK.GC_USER, :probe_direct)
     @test ld.gc_safe_hits == [:probe_site, :probe_both, :probe_direct]
     @test !LK.considerGC(ld, 0, LK.GC_USER, :probe_none)
     @test length(ld.gc_safe_hits) == 3
-    @test LK.garbageCollect(ld, Int(LK.GC_USER)) == LK.BOOLEX_FALSE
+    @test LK.garbageCollect(ld, Int(LK.GC_USER)) == LK.BOOLEX_FALSE     # blocked: BOOLEX_FALSE
     @test !LK.considerGarbageCollect(ld)
 
     @test _heap(ld) == before                                          # nothing moved, nothing freed
@@ -225,20 +228,21 @@ function _tp_row(
 end
 
 # every row on a fresh kernel (`force` = ld.gc_force, set after the program is loaded): the lines (`ok`, then each row), each row's recorded
-# sites, and the heap's size after each row (the global stack's top, the trail's and the value table's lengths)
+# sites, the heap's size after each row (the global stack's top, the trail's and the value table's lengths), and the number of collections that ran
 function run_rows(path::String, names::Vector{String}; force::Bool)
     gd, ld, st = _tp_load(_GP, path)
     ld.gc_force = force
     lines = String[st]
     hits = Vector{Vector{Symbol}}()
     heap = Vector{Tuple{Int, Int, Int}}()
+    ncoll = Int(ld.gc.stats.totals.collections)
     for name in names
         empty!(ld.gc_safe_hits)
         push!(lines, _tp_row(gd, ld, name))
         push!(hits, copy(ld.gc_safe_hits))
         push!(heap, (ld.gTop, length(ld.trail), length(ld.vtable)))
     end
-    return lines, hits, heap
+    return lines, hits, heap, Int(ld.gc.stats.totals.collections) - ncoll
 end
 
 # the driver swipl runs to print its lines (the .out is its output; the text of test_trie_gen_swipl.jl's DRIVER)
@@ -297,8 +301,8 @@ end
     @test !isempty(required) && !isempty(table)
     @test required == table
 
-    off_lines, off_hits, off_heap = run_rows(_G_PL, names; force=false)
-    on_lines, on_hits, on_heap = run_rows(_G_PL, names; force=true)
+    off_lines, off_hits, off_heap, _ = run_rows(_G_PL, names; force=false)
+    on_lines, on_hits, on_heap, on_coll = run_rows(_G_PL, names; force=true)
     @test length(off_lines) == length(expected) == length(on_lines)
     for i in eachindex(expected)
         @test (i, off_lines[i]) == (i, expected[i])                   # the flag off: swipl's answers
@@ -310,8 +314,18 @@ end
             @test (name, site, site in on_hits[i]) == (name, site, true)   # the flag on: the row's site recorded
         end
         @test all(s -> s in table, on_hits[i])                        # nothing outside the table (NEEDS-ROOT sites pass no ALLOW_GC)
-        @test on_heap[i] == off_heap[i]                               # the heap the same size
+        # G1-6c: the collector RUNS at a foreign safe point, so the heap may be SMALLER with the flag on (never larger). The answers are compared equal in
+        # THIS row, through the same reader for both runs and swipl's (`expected`, the .out): equal answers and a heap that did not grow is the claim; a
+        # different answer would be a collector bug, not a tolerance (audit D-0644 item 2).
+        @test (
+            i, on_lines[i + 1] == off_lines[i + 1] == expected[i + 1],
+            !isempty(on_lines[i + 1]),
+            on_heap[i][1] <= off_heap[i][1], on_heap[i][2] <= off_heap[i][2],
+            on_heap[i][3] <= off_heap[i][3]
+        ) == (i, true, true, true, true, true)
     end
+    @info "G1-GC safe-points row" on_coll hits_on=length(union(on_hits...))    # diagnostic only (D-0644: the assertions stay strict)
+    @test on_coll > 0                                                 # the collector ran at the foreign sites, so the `<=` above is not vacuous
     @test !isempty(union(on_hits...))
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
@@ -325,7 +339,7 @@ end
 # The kill rows: single rows, each fails on its own when the one thing it names breaks.
 @testset "G1-GC kill rows: the answers of single rows and their sites" begin
     names = _g_names()
-    lines, hits, _ = run_rows(_G_PL, names; force=true)
+    lines, hits, _, _ = run_rows(_G_PL, names; force=true)
     kl = Dict(zip(["ok"; names], lines))
     kh = Dict(zip(names, hits))
     @test kl["ok"] == "ok"

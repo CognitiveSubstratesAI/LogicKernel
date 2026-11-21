@@ -14,7 +14,7 @@
 #   CO = "deliberate corruptions of a chain FAIL the comparison"
 # TARGETS (audit D-0238): every test file that runs the mutated code and can see its effect: test_gc_sweep.jl runs all of src/pl-gcsweep.jl;
 #   test_gc_mark.jl is listed as well (its mark phase is what the sweep rows run first; a mutant of the sweep cannot be seen there, a bug in
-#   the shared helpers could). `git grep` of the names in test/ finds no other file that calls the sweep (G1-6's compaction adds itself later).
+#   the shared helpers could). `git grep` of the names in test/ finds no other file that calls the sweep (since the compaction and the driver exist their tests, test_gc_compact.jl and test_gc_driver.jl, are targets too, D-0238).
 # VERDICTS: the CI battery runs one fresh process per mutant and its verdicts are authoritative. A mutant that corrupts a chain (G1GC5-C*, G1GC5-U*)
 #   may loop or fail with an error instead of a failed comparison: an error is a kill, a timeout is NO verdict (never caught).
 # EQUIVALENT mutants: none declared. Drafted and left out as equivalent or unseen by any row: the easy-case TEST of sweep_global_mark (its scan
@@ -24,11 +24,13 @@
 # `new` != `old`; no duplicate id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 GS = "test/core_lang/test_gc_sweep.jl"
 GM = "test/core_lang/test_gc_mark.jl"
-TARGETS = [GS, GM]
+GC = "test/core_lang/test_gc_compact.jl"            # D-0238: the collector's own tests (G1-6a/6b, 6c) run the whole mark/trail/sweep chain
+GD = "test/core_lang/test_gc_driver.jl"
+TARGETS = [GS, GM, GC, GD]
 S = "src/pl-gcsweep.jl"
 
 def m(id, old, new, file=S, eq=None):
-    d = dict(id=id, file=file, old=old, new=new, targets=[GS, GM])
+    d = dict(id=id, file=file, old=old, new=new, targets=[GS, GM, GC, GD])
     if eq:
         d["equivalent"] = eq
     return d

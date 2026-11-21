@@ -4910,6 +4910,17 @@ _manifest_g1gc2(::Type{T}) where {T} = (
     (LK.ensureGlobalSpace, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
     # (`considerGarbageCollect`'s entries are G1-1's, `_manifest_g1gc1`: the scheduler is the one method)
     (LK.garbageCollect, Tuple{LK.PL_local_data{T}, Int}, false),
+    # the keyword-argument method (`vmi_state_of`), through `Core.kwcall`
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:vmi_state_of,), Tuple{Nothing}},
+            typeof(LK.garbageCollect),
+            LK.PL_local_data{T},
+            Int
+        },
+        false
+    ),
     # the three-argument default-argument wrapper (`flags` given, `site` defaulted)
     (LK.ensureGlobalSpace, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.considerGC, Tuple{LK.PL_local_data{T}, Int, Int, Symbol}, false),
@@ -5045,6 +5056,95 @@ _manifest_g1gc5(::Type{T}) where {T} = (
         },
         false
     )
+)
+
+# G1-6a/6b: the compaction of the collector (src/pl-gccompact.jl); every entry AllocCheck-false (they build vectors and error messages).
+# `gc_trail_chain` is a callable struct: its call method is reached through an INSTANCE, and `compact_trail` with it is its own specialisation.
+# A manifest entry's first element is a `Function` or a `Type` (`ManifestEntry`), never an instance: the call method is analysed
+# through this named function, which takes the instance as its first argument (the same call, the same argument types), and the
+# coverage of the method itself is a DISPATCH_EXEMPT row below (`which` on the instance, as `manifest_uncovered` does for an entry).
+_manifest_call_gc_trail_chain(c::LK.gc_trail_chain, args...) = c(args...)
+_manifest_g1gc6a(::Type{T}) where {T} = (
+    (LK.gc_trail_chain, Tuple{LK.gc_sweep_counts}, false),
+    (
+        _manifest_call_gc_trail_chain,
+        Tuple{LK.gc_trail_chain, LK.PL_local_data{T}, Int, Int},
+        false
+    ),
+    (
+        LK.compact_trail,
+        Tuple{LK.PL_local_data{T}, LK.gc_trail_state, LK.gc_trail_chain},
+        false
+    ),
+    (LK.gc_top_query, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gc_choice_indices, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (
+        LK.gc_alien_trailtops,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state},
+        false
+    ),
+    (LK.gc_check_trail_chains, Tuple{LK.gc_sweep_counts}, false),
+    (
+        LK.gc_trail_phase,
+        Tuple{
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.gc_sweep_counts,
+            LK.gc_trail_state,
+            LK.vm_state
+        },
+        false
+    ),
+    (LK.gc_tombstone_boxes!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gc_truncate_vtable!, Tuple{LK.PL_local_data{T}}, false),
+    (
+        LK.downskip_combine_garbage,
+        Tuple{LK.PL_local_data{T}, LK.gc_sweep_counts, Int, Int},
+        false
+    ),
+    (
+        LK.compact_global,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts},
+        false
+    ),
+    (LK.unsweep_mark, Tuple{LK.PL_local_data{T}, Bool, Int}, false),
+    (LK.unsweep_foreign, Tuple{LK.PL_local_data{T}}, false),
+    (LK.unsweep_choicepoints, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.unsweep_environments, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.unsweep_stacks, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.gc_vword_referrers, Tuple{LK.PL_local_data{T}}, false),
+    (
+        LK.collect_phase,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_sweep_counts, LK.vm_state},
+        false
+    ),
+    # the keyword-argument method (`vmi_state_of`, `saved_bar_at`), through `Core.kwcall`
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:vmi_state_of, :saved_bar_at), Tuple{Nothing, Int}},
+            typeof(LK.collect_phase),
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.gc_sweep_counts,
+            LK.vm_state
+        },
+        false
+    )
+)
+
+# G1-6c: the driver of the collector (src/pl-gcdriver.jl); every entry AllocCheck-false (they build vectors, vm_state and error messages).
+# `garbageCollect` is NOT listed here: `_manifest_g1gc2` holds its `Tuple{LD, Int}` entry (the keyword method forwards to it); the callback
+# form of `gc_get_vmi_state` has a dynamic argument type and is left to the `Nothing` form.
+_manifest_g1gc6c(::Type{T}) where {T} = (
+    (LK.gc_get_vmi_state, Tuple{LK.PL_local_data{T}, Int, Nothing}, false),
+    (LK.gc_restore_vmi_state, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.gc_count_gvar_refs, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gcEnsureSpace, Tuple{LK.PL_local_data{T}, LK.vm_state}, false),
+    (LK.clear_unused_stack, Tuple{LK.PL_local_data{T}}, false),
+    (LK.tight, Tuple{LK.PL_local_data{T}, Symbol}, false),
+    (LK.growStacks_tight!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.shiftTightStacks!, Tuple{LK.PL_local_data{T}}, false)
 )
 
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
@@ -6035,6 +6135,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.mark_choice_mark, Tuple{LK.walk_state, LK.code}, true),
     # G1-3b: the mark phase's walk and drivers (src/pl-gcwalk.jl)
     _manifest_g1gc3b(_M2)...,
+    # G1-6a/6b: the compaction of the collector (src/pl-gccompact.jl)
+    _manifest_g1gc6a(_M2)...,
     # CONT1: the continuations' run side (src/pl-cont.jl, src/pl-gc.jl, src/pl-fli.jl)
     _manifest_cont(_M2)...,
     # G1-3a: the mark phase (src/pl-gcmark.jl)
@@ -6043,6 +6145,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_g1gc4(_M2)...,
     # G1-5: the sweep phase (src/pl-gcsweep.jl)
     _manifest_g1gc5(_M2)...,
+    # G1-GC G1-6c: the driver of the collector (src/pl-gcdriver.jl); reference type only, as the sibling groups (3a, 3b, 4, 5, 6a)
+    _manifest_g1gc6c(_M2)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,
@@ -6311,5 +6415,11 @@ const DISPATCH_EXEMPT = (
     ),
     (
         (LK.var"@_fcall_ndet_body", Tuple{LineNumberNode, Module}) => "a macro (the non-deterministic FRG built-ins' dispatch tree, NF4): it builds Exprs at load time; its expansion is _fcall_ndet, which is checked"
+    ),
+    (
+        (
+            LK.gc_trail_chain(LK.gc_sweep_counts()),
+            Tuple{LK.PL_local_data{_M2}, Int, Int}
+        ) => "G1-6a: the call method of the callable struct gc_trail_chain (src/pl-gccompact.jl); a manifest entry cannot name an instance, so it is analysed through the entry of _manifest_call_gc_trail_chain, and through compact_trail's entry with gc_trail_chain"
     )
 )

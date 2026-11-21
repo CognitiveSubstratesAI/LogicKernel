@@ -23,11 +23,13 @@
 # Every `old` is counted EXACTLY once in its file by `python3 -I ~/code/lk-t27-scratch/oldscan.py G1GC4` from the repository root;
 # `new` != `old`; no duplicate id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 GT = "test/core_lang/test_gc_trail.jl"
-TARGETS = [GT]
+GC = "test/core_lang/test_gc_compact.jl"            # D-0238: the collector's own tests (G1-6a/6b, 6c) run the whole mark/trail/sweep chain
+GD = "test/core_lang/test_gc_driver.jl"
+TARGETS = [GT, GC, GD]
 T = "src/pl-gctrail.jl"
 
 def m(id, old, new, file=T, eq=None):
-    d = dict(id=id, file=file, old=old, new=new, targets=[GT])
+    d = dict(id=id, file=file, old=old, new=new, targets=[GT, GC, GD])
     if eq:
         d["equivalent"] = eq
     return d

@@ -32,15 +32,6 @@ function _gs_engine(vs::Vector{_R})
     return ld, t, n0
 end
 
-# The query frame a frame chain ends in (the walk of pl-gc.c `unsweep_environments`; the collector's own
-# `gc_top_query` arrives with the compaction (pl-gccompact.jl), so this chunk's test carries the 4-line walk).
-function _gs_top_query(ld, fr::Int)::Int
-    while ld.frames[fr].parent != 0
-        fr = ld.frames[fr].parent
-    end
-    return LK.queryOfFrame(ld, fr)
-end
-
 "The words (no gc bits) of the term references of every foreign frame, innermost first."
 function _gs_fli_roots(ld)::Vector{UInt64}
     out = UInt64[]
@@ -718,7 +709,7 @@ end
             @test cl != 0
             fi = ld.choices[cl].frame
             @test fi != 0
-            qf = _gs_top_query(ld, fi)                       # the clause frame has the query's frame above it
+            qf = LK.gc_top_query(ld, fi)                    # the clause frame has the query's frame above it
             @test ld.queries[qf].parent == 0
             vm = LK.vm_state()
             vm.frame = fi
