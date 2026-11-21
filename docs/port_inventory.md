@@ -75,7 +75,8 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-fmt.c` | code | `18168e629eab` | `src/os/pl-fmt.jl` | 45 | 24 |
 | swipl-devel `src/os/pl-fmt.h` | code | `18168e629eab` | `src/os/pl-fmt.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-glob.c` | code | `18168e629eab` | `src/os/pl-glob.jl` | 29 | 11 |
-| swipl-devel `src/os/pl-locale.c` | code | `18168e629eab` | `src/os/pl-locale.jl` | 39 | 24 |
+| swipl-devel `src/os/pl-locale.c` | code | `18168e629eab` | `src/os/pl-locale.jl` | 39 | 26 |
+| swipl-devel `src/os/pl-locale.c` | code | `18168e629eab` | `src/os/pl-stream.jl` | 2 | 0 |
 | swipl-devel `src/os/pl-locale.h` | code | `18168e629eab` | `src/pl-global.jl` | 2 | 1 |
 | swipl-devel `src/os/pl-option.c` | code | `18168e629eab` | `src/os/pl-option.jl` | 4 | 2 |
 | swipl-devel `src/os/pl-option.h` | code | `18168e629eab` | `src/os/pl-option.jl` | 0 | 0 |
@@ -89,7 +90,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/os/pl-prologflag.h` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 0 | 0 |
 | swipl-devel `src/os/pl-prologflag.h` | code | `18168e629eab` | `src/pl-incl.jl` | 7 | 2 |
 | swipl-devel `src/os/pl-stream.c` | code | `18168e629eab` | `src/os/pl-file.jl` | 1 | 1 |
-| swipl-devel `src/os/pl-stream.c` | code | `18168e629eab` | `src/os/pl-stream.jl` | 70 | 23 |
+| swipl-devel `src/os/pl-stream.c` | code | `18168e629eab` | `src/os/pl-stream.jl` | 71 | 24 |
 | swipl-devel `src/os/pl-string.c` | code | `18168e629eab` | `src/os/pl-string.jl` | 1 | 0 |
 | swipl-devel `src/os/pl-table.c` | code | `18168e629eab` | `src/os/pl-table.jl` | 42 | 12 |
 | swipl-devel `src/os/pl-table.h` | code | `18168e629eab` | `src/os/pl-table.jl` | 2 | 0 |
@@ -195,7 +196,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-mutex.c` | code | `18168e629eab` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-op.jl` | 20 | 16 |
-| swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-prims.jl` | 184 | 92 |
+| swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-prims.jl` | 185 | 93 |
 | swipl-devel `src/pl-prims.c` | code | `18168e629eab` | `src/pl-string.jl` | 7 | 4 |
 | swipl-devel `src/pl-prims.h` | code | `18168e629eab` | `src/pl-prims.jl` | 2 | 0 |
 | swipl-devel `src/pl-privitf.c` | code | `18168e629eab` | `src/os/pl-file.jl` | 1 | 1 |
@@ -307,7 +308,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-fmt.c` | `18168e629eab` | 27 | 29 | 17 | src/os/pl-fmt.jl |
 | swipl-devel `src/os/pl-fmt.h` | `18168e629eab` | 0 | 1 | 0 | src/os/pl-fmt.jl |
 | swipl-devel `src/os/pl-glob.c` | `18168e629eab` | 13 | 23 | 10 | src/os/pl-glob.jl |
-| swipl-devel `src/os/pl-locale.c` | `18168e629eab` | 34 | 42 | 23 | src/os/pl-locale.jl |
+| swipl-devel `src/os/pl-locale.c` | `18168e629eab` | 36 | 42 | 25 | src/os/pl-locale.jl, src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-locale.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-global.jl |
 | swipl-devel `src/os/pl-option.c` | `18168e629eab` | 2 | 6 | 2 | src/os/pl-option.jl |
 | swipl-devel `src/os/pl-option.h` | `18168e629eab` | 0 | 1 | 0 | src/os/pl-option.jl |
@@ -315,7 +316,7 @@ checkout is pulled.
 | swipl-devel `src/os/pl-os.h` | `18168e629eab` | 0 | 0 | 0 | src/os/pl-os.jl |
 | swipl-devel `src/os/pl-prologflag.c` | `18168e629eab` | 51 | 83 | 43 | src/os/pl-file.jl, src/os/pl-prologflag.jl, src/pl-incl.jl |
 | swipl-devel `src/os/pl-prologflag.h` | `18168e629eab` | 0 | 1 | 0 | src/os/pl-prologflag.jl, src/pl-incl.jl |
-| swipl-devel `src/os/pl-stream.c` | `18168e629eab` | 54 | 142 | 21 | src/os/pl-file.jl, src/os/pl-stream.jl |
+| swipl-devel `src/os/pl-stream.c` | `18168e629eab` | 55 | 142 | 22 | src/os/pl-file.jl, src/os/pl-stream.jl |
 | swipl-devel `src/os/pl-string.c` | `18168e629eab` | 1 | 12 | 0 | src/os/pl-string.jl |
 | swipl-devel `src/os/pl-table.c` | `18168e629eab` | 31 | 31 | 8 | src/os/pl-table.jl |
 | swipl-devel `src/os/pl-table.h` | `18168e629eab` | 1 | 32 | 1 | src/os/pl-table.jl, src/pl-funct.jl, src/pl-incl.jl, src/pl-trie.jl |
@@ -379,7 +380,7 @@ checkout is pulled.
 | swipl-devel `src/pl-modul.c` | `18168e629eab` | 50 | 70 | 40 | src/pl-modul.jl |
 | swipl-devel `src/pl-mutex.c` | `18168e629eab` | 1 | 33 | 1 | src/pl-mutex.jl |
 | swipl-devel `src/pl-op.c` | `18168e629eab` | 16 | 21 | 15 | src/pl-incl.jl, src/pl-op.jl |
-| swipl-devel `src/pl-prims.c` | `18168e629eab` | 125 | 188 | 74 | src/pl-prims.jl, src/pl-string.jl |
+| swipl-devel `src/pl-prims.c` | `18168e629eab` | 126 | 188 | 75 | src/pl-prims.jl, src/pl-string.jl |
 | swipl-devel `src/pl-prims.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-prims.jl |
 | swipl-devel `src/pl-privitf.c` | `18168e629eab` | 2 | 5 | 2 | src/os/pl-file.jl, src/pl-string.jl |
 | swipl-devel `src/pl-pro.c` | `18168e629eab` | 14 | 33 | 13 | src/pl-pro.jl |
@@ -436,7 +437,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2902** | **5771** | **1694** | |
+| **total** | | **2906** | **5771** | **1698** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

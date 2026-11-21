@@ -5,7 +5,8 @@
 #     format/3 wrote to an atom, string, codes or chars sink (the output redirect: tellString / toldString), or the error formal.
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19, evidence/O1A/o1a_rows.out, two byte-identical runs); with `swipl` on PATH
 #     the live answers are compared with the pins too. UNVERIFIED on the kernel: gate decides (a mismatch is traced, not re-pinned).
-#   * `~:d` and `~:f` print the C locale on the kernel (a stream has no locale, D9): their rows pin the kernel's answer, swipl's in the row.
+#   * `~:d` and `~:f` read the locale of the output stream (LOCALE-FMT: the current locale at the stream's making, as swipl): rows k01-k02 set one
+#     in the program, so the machine's LANG decides nothing, and are swipl's answers on the kernel too.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -410,36 +411,40 @@ const _FM_PINNED = [
     "t_e25 c[116,95,101,50,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[102,111,114,109,97,116,95,99,104,97,114,97,99,116,101,114],a[0])))"
 ]
 
-# rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k01-k02: the kernel prints the C locale (D9); k03: flag (k), the numeric-argument overflow
-const _FM_KNOWN = [
+# the locale rows: the program sets a locale, the kernel and swipl print the same (id, goal, answer); the machine's LANG decides nothing
+const _FM_LOC = ":- locale_create(L, 'C', [thousands_sep(','), decimal_point('.'), grouping([repeat(3)])]), set_locale(L).\n"
+const _FM_LOCALE_ROWS = [
     (
         "k01",
         raw"""format(atom(R), "~:d|~2:d|~:D", [1234567, 1234567, 1234567])""",
-        "1234567|12345.67|1_234_567",
         "1,234,567|12,345.67|1_234_567"
     ),
     (
         "k02",
         raw"""format(atom(R), "~:f|~2:e", [1234567.5, 1234567.5])""",
-        "1234567.500000|1.23e+06",
         "1,234,567.500000|1.23e+06"
-    ),
-    # flag (k): a numeric argument past `int` (pl-fmt.c:553-556). swipl 10.1.19's `int arg2 = arg*10 + dw` wraps and its
-    # overflow test `(arg2 - dw)/10 != arg` is undefined behaviour the compiler removes, so swipl prints `1` (the wrapped
-    # column argument is no column at all); the port raises format('argument overflow') as the source's test says (D-0283 item 4).
-    (
-        "k03",
-        raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""",
-        "argument overflow",
-        "1"
     )
 ]
 
+# rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k03: flag (k), the numeric-argument overflow
+const _FM_KNOWN = [
+# flag (k): a numeric argument past `int` (pl-fmt.c:553-556). swipl 10.1.19's `int arg2 = arg*10 + dw` wraps and its
+# overflow test `(arg2 - dw)/10 != arg` is undefined behaviour the compiler removes, so swipl prints `1` (the wrapped
+# column argument is no column at all); the port raises format('argument overflow') as the source's test says (D-0283 item 4).
+    (
+    "k03",
+    raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""",
+    "argument overflow",
+    "1"
+)
+]
+
 "The program and cases as one file; the case predicates' names."
-function _fm_file(cases)::Tuple{String, Vector{String}}
+function _fm_file(cases; head::String="")::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in cases]
     text =
-        _FM_PROGRAM * join([
+        head * _FM_PROGRAM *
+        join([
             "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
             (id, g) in cases
         ])
@@ -534,7 +539,19 @@ _fm_not_unstable(l) = !startswith(l, _FM_E18 * " ")
     )  # caught(boom)
 end
 
-@testset "known differences on the kernel: the C locale (D9, k01-k02) and the numeric-argument overflow (flag k, k03), swipl's answer noted per row" begin
+@testset "~:d and ~:f follow the locale of the output stream (k01-k02), kernel == swipl" begin
+    f, names = _fm_file([(id, g) for (id, g, _) in _FM_LOCALE_ROWS]; head=_FM_LOC)
+    kl, _, _ = _fm_kernel(f, names)
+    @test kl == ["ok"; [_fm_atomline(id, a) for (id, _, a) in _FM_LOCALE_ROWS]]
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl !== nothing
+        f2, names2 = _fm_file([(id, g) for (id, g, _) in _FM_LOCALE_ROWS])
+        @test _fm_swipl_lines(f2, names2; prelude=_FM_LOC)[2:end] ==
+            [_fm_atomline(id, a) for (id, _, a) in _FM_LOCALE_ROWS]
+    end
+end
+
+@testset "known differences on the kernel: the numeric-argument overflow (flag k, k03), swipl's answer noted per row" begin
     f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
     kl, _, _ = _fm_kernel(f, names)
     @test length(kl) == length(_FM_KNOWN) + 1
@@ -542,14 +559,11 @@ end
         @test k == _fm_atomline(id, ours)
         @test ours != swipl_says                                                        # the row records a known difference
     end
-    # swipl's own answers, live: grouped by the locale
+    # swipl's own answers, live
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl !== nothing
         f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
-        # the locale is set in the driver (the machine's LANG decides otherwise: CI's C locale groups nothing, a developer's
-        # en_US groups with ","; the rows' swipl answers are the grouped ones, measured on swipl 10.1.19)
-        loc = ":- locale_create(L, 'C', [thousands_sep(','), decimal_point('.'), grouping([repeat(3)])]), set_locale(L).\n"
-        @test _fm_swipl_lines(f, names; prelude=loc)[2:end] ==
+        @test _fm_swipl_lines(f, names)[2:end] ==
             [_fm_atomline(id, sw) for (id, _, _, sw) in _FM_KNOWN]
     end
 end

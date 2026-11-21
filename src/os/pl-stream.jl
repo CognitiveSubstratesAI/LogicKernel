@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/os/pl-stream.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/SWI-Stream.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-locale.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -19,7 +20,7 @@
 # `mem` (`buffer == 0` for upstream's NULL buffer); the function table is `functions`, an enum over
 # the three function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`. NOT PORTED: locks and threads, timeouts, `tee`, filter streams (`upstream`,
-# `downstream`), locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
+# `downstream`), ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
 # them), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
@@ -275,6 +276,38 @@ mutable struct wrappedIO
     saved_flags::UInt32                 # SIO_flags we must restore
 end
 
+# The stream layer's view of pl-locale.h `PL_locale` (`IOSTREAM.locale` is a `PL_locale *`): an abstract supertype only: the locale object `PL_locale_rec{T}` (src/pl-global.jl) is parametric in the
+# term type and defined after this file; the stream holds the object itself (so `update_locale`'s change of the system
+# default shows in every stream that holds it, as upstream). `acquireLocale` and `releaseLocale` (pl-locale.c) are defined
+# HERE, on the abstract type, through `getfield`/`setfield!` of the fields `references`, `symbol`, `alias`, so that the
+# call from a stream (whose `locale` field has the abstract type) is one method and not a run-time dispatch; every locale
+# object, whatever its term type, is counted by them (src/os/pl-locale.jl calls them).
+"A locale object as the stream layer holds it (`IOSTREAM.locale`, pl-locale.h `PL_locale *`)."
+abstract type IOLocale end
+
+# PORT: pl-locale.c acquireLocale
+"Count a new reference to `l` (pl-locale.c)."
+function acquireLocale(l::L)::L where {L <: IOLocale}
+    setfield!(l, :references, (getfield(l, :references)::Int) + 1)
+    return l
+end
+
+# PORT: pl-locale.c releaseLocale
+# (free_locale: the strings, the alias and the magic of the object are cleared, as src/os/pl-locale.jl `free_locale`)
+"Drop a reference to `l`; free it when nothing names it any more (pl-locale.c)."
+function releaseLocale(l::IOLocale)::Nothing
+    n = getfield(l, :references)::Int
+    @assert n > 0
+    setfield!(l, :references, n - 1)
+    if n == 1 && getfield(l, :symbol) === nothing && getfield(l, :alias) === nothing
+        setfield!(l, :decimal_point, "")
+        setfield!(l, :thousands_sep, "")
+        setfield!(l, :grouping, Int[0])
+        setfield!(l, :magic, 0)
+    end
+    return nothing
+end
+
 # PORT: SWI-Stream.h io_stream as IOSTREAM
 # DIVERGES: see the file's header — the buffer pointers are indices into `mem`, `functions` names a
 # function set; the fields of the parts not ported are absent. `context` is upstream's `void
@@ -304,10 +337,12 @@ mutable struct IOSTREAM
     context::Int                        # the stream's entry in the database's stream table (0: none)
     erased::Bool                        # closed while a reference is held
     wrapped::Union{Nothing, wrappedIO}  # what wrapIO() replaced the read of (pl-file.c: `handle` is the wrappedIO)
+    locale::Union{Nothing, IOLocale}    # the locale (`fd->locale`): numbers `~:d` and `~:f` print by (nothing: NULL)
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
+        nothing
     )
 end
 
@@ -1096,8 +1131,8 @@ end
 # ── creating and closing ────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c Snew
-# DIVERGES: a text stream's encoding is UTF-8 (`initEncoding`: no locale); no mutex, no file
-# number, no locale.
+# DIVERGES: a text stream's encoding is UTF-8 (`initEncoding`); no mutex, no file number; `initStreamLocale(s)` is NOT
+# called here (it needs the database): the callers that have one call it (`initStreamLocale`, src/os/pl-locale.jl).
 "A new stream over `handle` with `functions`, its flags `flags` (pl-stream.c)."
 function Snew(
     handle::Union{Nothing, memfile, IOSTREAM, Sjulia_io}, flags::UInt32,
@@ -1132,8 +1167,23 @@ function S__close(s::IOSTREAM)::Int
     end
     s.magic = SIO_CMAGIC
     s.message = nothing
+    if s.locale !== nothing                     # `if ( s->locale ) releaseLocale(s->locale)`
+        releaseLocale(s.locale)
+        s.locale = nothing
+    end
     s.references == 0 || (s.erased = true)      # else unallocStream(): Julia's GC frees it
     return rval
+end
+
+# PORT: pl-stream.c Ssetlocale
+# DIVERGES: `old` is the return value (upstream's `PL_locale **old`), `Sset_locale`'s 0 is the `Nothing`.
+"Make `new` (`nothing`: none) the locale of `s`; the locale it had (pl-stream.c)."
+function Ssetlocale(s::IOSTREAM, new::Union{Nothing, IOLocale})::Union{Nothing, IOLocale}
+    lo = s.locale
+    new === lo && return lo
+    s.locale = new === nothing ? nothing : acquireLocale(new)::IOLocale
+    lo === nothing || releaseLocale(lo)
+    return lo
 end
 
 # PORT: pl-stream.c Sclose

@@ -5163,6 +5163,39 @@ function pl_halt1_va(
     return PL_halt(gd, ld, status | PL_HALT_WITH_EXCEPTION) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c collation_key as pl_collation_key2_va
+# (PRED_IMPL("collation_key", 2, collation_key, 0); `WCSXFRM_BUFFER_OVERRUN` is 0 off macOS)
+# DIVERGES: `wcsxfrm` is libc's through `ccall` (`_libc_wcsxfrm`, src/os/pl-os.jl); the buffer is a `Vector{UInt32}`
+# (`wchar_t` is 4 bytes on Linux), the text a NUL-terminated copy of the code points. `HAVE_WCSXFRM` is always set (glibc).
+"`collation_key(+Atom, -Key)`: the key `wcsxfrm` of the current `LC_COLLATE` makes of the text, as a string (pl-prims.c)."
+function pl_collation_key2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    text = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)
+    text === nothing && return FFALSE
+    s = UInt32[UInt32(c) for c in _text_code_points(text)]
+    push!(s, UInt32(0))
+    buflen = 256                                # sizeof(buf)/sizeof(wchar_t) - WCSXFRM_BUFFER_OVERRUN
+    o = Vector{UInt32}(undef, buflen)
+    isbuf = true                                # o == buf
+    while true
+        n = _libc_wcsxfrm(o, s, buflen)
+        if n < buflen
+            key = PL_chars_t(
+                Vector{UInt8}(reinterpret(UInt8, o[1:n])), n, ENC_WCHAR, false
+            )
+            return PL_unify_text(ld, A2, 0, key, PL_STRING) ? FTRUE : FFALSE
+        elseif isbuf                            # see (*)
+            buflen = n + 1
+            isbuf = false
+        else
+            buflen *= 2                         # we get a nonsense return, so, double
+        end
+        o = Vector{UInt32}(undef, buflen)
+    end
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -5234,6 +5267,7 @@ const PL_predicates_from_prims = (
     PL_extension("number_string", 2, pl_number_string2_va, PL_FA_VARARGS),
     PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
+    PL_extension("collation_key", 2, pl_collation_key2_va, PL_FA_VARARGS),
     PL_extension("statistics", 2, pl_statistics2_va, PL_FA_VARARGS),
     PL_extension("\$cmd_option_val", 2, pl_cmd_option_val2_va, PL_FA_VARARGS),     # (LB7)
     PL_extension("\$cmd_option_set", 2, pl_cmd_option_set2_va, PL_FA_VARARGS),

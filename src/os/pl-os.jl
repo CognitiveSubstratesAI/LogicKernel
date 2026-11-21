@@ -26,6 +26,12 @@
 "The C library the OS layer calls (glibc's soname)."
 const LIBC = "libc.so.6"
 
+# ORIGINAL (LOCALE-FMT-1): libc's `wcsxfrm(dest, src, n)` for `collation_key/2` (src/pl-prims.jl): `src` is NUL-terminated, `dest` has room
+# for `n` wide characters. The key of the current `LC_COLLATE` (the process locale, which src/os/pl-ctype-pred.jl sets from the environment).
+"The size of the transformed text `wcsxfrm` made of `src` (it wrote into `dest` when that is smaller than `n`)."
+_libc_wcsxfrm(dest::Vector{UInt32}, src::Vector{UInt32}, n::Int)::Int =
+    Int(ccall((:wcsxfrm, LIBC), Csize_t, (Ptr{UInt32}, Ptr{UInt32}, Csize_t), dest, src, n))
+
 # PORT: pl-os.h CPU_USER
 "Which CPU time `CpuTime` and `ThreadCPUTime` (src/pl-thread.jl) return: the user's (pl-os.h `CPU_USER`)."
 const CPU_USER = 0

@@ -939,7 +939,8 @@ function _manifest_index(T)
         ),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
-                LK.pl_atom_length2_va, LK.pl_name2_va, LK.pl_atom_chars2_va,
+                LK.pl_atom_length2_va, LK.pl_collation_key2_va, LK.pl_name2_va,
+                LK.pl_atom_chars2_va,
                 LK.pl_atom_codes2_va,
                 LK.pl_atom_concat3_va, LK.pl_atomic_concat3_va, LK.pl_number_chars2_va,
                 LK.pl_number_codes2_va, LK.pl_number_string2_va, LK.pl_char_code2_va
@@ -2150,6 +2151,15 @@ function _manifest_index(T)
                 LK.acquire_locale_ref, LK.free_locale_symbol
             )
         ]...,
+        # LOCALE-FMT-1: the locale of a stream (pl-stream.c Ssetlocale, pl-locale.c initStreamLocale, initDefaultsStreamsLocale)
+        (LK.Ssetlocale, Tuple{LK.IOSTREAM, Nothing}, false),
+        (LK.Ssetlocale, Tuple{LK.IOSTREAM, LK.PL_locale_rec{T}}, false),
+        (LK.initStreamLocale, Tuple{LK.PL_global_data{T}, LK.IOSTREAM}, false),
+        (
+            LK.initDefaultsStreamsLocale!,
+            Tuple{LK.PL_global_data{T}, LK.IOSTREAM, LK.IOSTREAM}, false
+        ),
+        (LK._stream_locale, Tuple{LK.IOSTREAM}, false),
         (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, Nothing}, false),
         (LK.update_locale, Tuple{LK.PL_locale_rec{T}, Cint, String}, false),
         (LK._loc_atoms_equal, Tuple{T, T}, false),
@@ -5390,6 +5400,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._ct_encode, Tuple{LK.generator}, false),
     (LK._ct_decode, Tuple{Int64}, false),
     (LK._libc_setlocale, Tuple{Cint, Union{Nothing, String}}, false),
+    (LK._libc_wcsxfrm, Tuple{Vector{UInt32}, Vector{UInt32}, Int}, false),
     # TAI1 — the libtai pieces (src/os/pl-libtai.jl): calendar dates and times, the leap-second table (no term type)
     (LK.caldate_mjd, Tuple{LK.caldate}, false),
     (LK.caldate_frommjd, Tuple{LK.caldate, Int64}, false),
@@ -5798,7 +5809,7 @@ const JET_ANALYSED_THROUGH = Dict(
 # with the callee unknown at compile time: pl-file.c:5987-5997 `Sread_user(void *handle, ...)` calls
 # `(*wio->wrapped_functions->read)(wio->wrapped_handle, buf, size)`, an INDIRECT CALL PER BUFFER FILL, same as upstream.
 # The entry names the function that holds the call (`caller`), the function called and its argument types (the `Tuple`
-# JET reports for the call), not a module. `nonconcrete_fields` stays empty and `field_type_ok` is unchanged. The family
+# JET reports for the call), not a module. `field_type_ok` is unchanged; `nonconcrete_fields` is empty but for the one field allowlisted in test/test_type_discipline.jl (IOSTREAM.locale). The family
 # below (`JET_DISPATCH_FAMILY`) pins the number of reports of `S_read` at 1 and of its neighbours at 0, so a SECOND
 # dispatch in any of them, an identical call included, fails test/static_analysis_body.jl.
 "Runtime dispatches the JET gate lets through: the call (`callee`, `argtypes`) in the function `caller`, and why."
