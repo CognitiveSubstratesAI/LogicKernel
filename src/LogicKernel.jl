@@ -49,6 +49,8 @@ include("pl-coverage.jl")      # swipl-devel src/pl-coverage.c — the '$cov_*' 
 include("pl-prof.jl")          # swipl-devel src/pl-prof.c — the profiler's call tree and '$prof_*' predicates (lane F; collection refuses by name, PROF1)
 include("pl-thread.jl")        # swipl-devel src/pl-thread.c — predicate references
 include("pl-gc.jl")            # swipl-devel src/pl-gc.c — generations in use, for clause GC; growing the local stack
+include("pl-gcmark.jl")        # swipl-devel src/pl-gc.c — the mark phase (G1-3a: mark_variable, the term-reference roots)
+include("pl-gcwalk.jl")        # swipl-devel src/pl-gc.c — the mark phase's walk and drivers (G1-3b; after pl-gcmark.jl of G1-3a)
 include("pl-cont.jl")          # swipl-devel src/pl-cont.c — shift/1: collecting the continuation of a reset/3
 include("pl-alloc.jl")         # swipl-devel src/pl-alloc.c — raising a stack overflow; the argument stack
 include("pl-wam.jl")           # swipl-devel src/pl-wam.c — the local stack's operations; the query API and the run loop

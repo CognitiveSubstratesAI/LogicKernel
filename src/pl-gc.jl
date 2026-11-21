@@ -13,12 +13,31 @@
 # (since V9f) `clearUninitialisedVarsFrame`. Stack garbage collection and stack shifting are not
 # the kernel's.
 
+# PORT: pl-gc.c is_pointer_like
+# DIVERGES: upstream's argument is a `void *` and the test is on its address: not NULL and aligned to the pointer size (a word that is
+# neither is a stale frame slot, not a `Definition`). A `Definition` here is a Julia object, not an address, so there is no alignment to
+# test and the one arm that can fail is the NULL one: `nothing` is false, a `Definition` is true. The `Int` method is the C expression
+# on an address, as written (`ptr && ((intptr_t)ptr&mask) == 0`).
+"Is `ptr` a non-NULL, pointer-aligned address (pl-gc.c `is_pointer_like`)?"
+function is_pointer_like(ptr::Int)::Bool
+    mask = @static if Sys.WORD_SIZE == 32
+        0x3                                         # `#if SIZEOF_VOIDP == 4`
+    elseif Sys.WORD_SIZE == 64
+        0x7                                         # `#elif SIZEOF_VOIDP == 8`
+    else
+        error("Unknown pointer size")               # `#error "Unknown pointer size"`
+    end
+    return ptr != 0 && (ptr & mask) == 0
+end
+is_pointer_like(ptr::Union{Nothing, Definition})::Bool = ptr !== nothing
+
 # PORT: pl-gc.c markPredicatesInEnvironments
 # DIVERGES: walks the live FRAME RECORDS where upstream scans every word of the local stack below
 # `lTop` for a frame (`isFrame`) — the records are the frames. No transactions, so no transaction
 # start to record; the `erased_skipped` statistic is not kept. Then, as upstream, the predicates
 # referenced explicitly (`markAccessedPredicates`): clause/2 and retract/1 (foreign predicates since
-# NF2, and their sinks) reference theirs with `pushPredicateAccessObj!`.
+# NF2, and their sinks) reference theirs with `pushPredicateAccessObj!`. The test of the frame's predicate is upstream's
+# `is_pointer_like(def) && lookupHTablePP(...)`, `is_pointer_like` above (a Julia reference has no alignment: only the NULL arm remains).
 "Record the generations every predicate is being run or accessed in, for clause GC (pl-gc.c)."
 function markPredicatesInEnvironments!(
     ld::PL_local_data{T}, gd::PL_global_data{T}
@@ -28,12 +47,14 @@ function markPredicatesInEnvironments!(
         fr = ld.frames[i]
         if fr.base < lend && isFrame(fr)
             def = fr.predicate
-            if def !== nothing
-                ddi = get(gd.procedures_dirty, def, nothing)
-                if ddi !== nothing
-                    gen = generationFrame(fr)
-                    ddi_add_access_gen!(ddi, gen)
-                end
+            ddi = if is_pointer_like(def)
+                get(gd.procedures_dirty, def::Definition{T}, nothing)
+            else
+                nothing
+            end
+            if ddi !== nothing
+                gen = generationFrame(fr)
+                ddi_add_access_gen!(ddi, gen)
             end
         end
     end
