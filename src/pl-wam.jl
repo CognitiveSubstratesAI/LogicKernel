@@ -2526,6 +2526,30 @@ function _outofstack_gc(ld::PL_local_data, stack::Symbol)::Bool
     return ld.gc.local_policy.gc
 end
 
+# PORT: pl-wam.c exceptionUnwindGC
+# DIVERGES: the `gced_size`s are `ld.gc.global_policy`/`trail_policy`'s; the collector is given the VM-state callback (`get_vmi_state`) as every
+# kernel caller of `garbageCollect` is. Its one caller upstream, `dbg_except_start_tracer` (pl-wam.c:2857, from `b_throw_unwind_debug`
+# pl-vmi.c:5196), is debugger code, DBG1's to port (see `b_throw_debug` in the run loop): nothing in the kernel calls it yet.
+"Before the tracer starts on an exception: reset the `gced_size`s, request a trim and collect when one is due (pl-wam.c `exceptionUnwindGC`)."
+function exceptionUnwindGC(ld::PL_local_data)::Nothing
+    # GC-POINT pl-wam.c:1990-1999
+    #   LD->stacks.global.gced_size = 0;
+    #   LD->stacks.trail.gced_size = 0;
+    #   LD->trim_stack_requested = true;
+    #   if ( considerGarbageCollect(NULL) )
+    #   { garbageCollect(GC_EXCEPTION);
+    #     enableSpareStacks();
+    #   }
+    ld.gc.global_policy.gced_size = 0
+    ld.gc.trail_policy.gced_size = 0
+    ld.trim_stack_requested = true
+    if considerGarbageCollect(ld, nothing)
+        garbageCollect(ld, Int(GC_EXCEPTION); vmi_state_of=get_vmi_state)
+        enableSpareStacks!(ld)
+    end
+    return nothing
+end
+
 """
     PrologThrow()
 
@@ -6656,7 +6680,9 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c b_throw_debug
     # DIVERGES: NOT PORTED: the debugger, and printing an uncaught exception (`print_unhandled_exception`;
-    # swipl prints it under `PL_Q_NORMAL`, the kernel never prints).
+    # swipl prints it under `PL_Q_NORMAL`, the kernel never prints). With it `b_throw_unwind_debug` (owner DBG1), which holds
+    # two GC points: `clearLocalVariablesFrame(FR)` after `Undo(ch->mark); DiscardMark(ch->mark);` (pl-vmi.c:5148) and
+    # `started = dbg_except_start_tracer();` (:5196), whose first statement is `exceptionUnwindGC();` (pl-wam.c:2857; ported, src/pl-wam.jl).
     @label b_throw_debug
     @goto b_throw_unwind
 
