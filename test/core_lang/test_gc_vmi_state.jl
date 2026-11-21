@@ -395,8 +395,15 @@ function _gv_provider_rows(db)
             "dcall1 frame: in_body at once, the VMI is the first",
             vmd.in_body && vmd.pc_start_vmi == 1
         )
-        ld.frames[bfr].predicate =
-            _rproc(db, _rf("functor", _rv(1), _rv(2), _rv(3))).definition
+        # the SYSTEM module's functor/3 (a P_FOREIGN definition): `_rproc` would look it up in `user`, which creates a fresh undefined user:functor/3 (flags 0)
+        fproc = LK.visibleProcedure(
+            db.gd, _rfunctor(_rf("functor", _rv(1), _rv(2), _rv(3)))..., db.user
+        )
+        chk!(
+            "functor/3 is visible and foreign",
+            fproc !== nothing && (fproc.definition.flags & LK.P_FOREIGN) != 0
+        )
+        ld.frames[bfr].predicate = fproc.definition
         q.registers_pc = LK.Code(bcl, pc)
         vmo = LK.get_vmi_state(ld, ld.query)
         ld.frames[bfr].predicate = bframe_pred
