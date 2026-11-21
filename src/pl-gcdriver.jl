@@ -197,6 +197,36 @@ function get_vmi_state(ld::PL_local_data{T}, qi::Int)::vm_state where {T}
     return vm
 end
 
+# PORT: pl-gc.c clearLocalVariablesFrame
+# DIVERGES: (1) the frame is its index (`ld.frames[fr]`), the slots are positions `argFrameP(f.base, i)` (+1 into `ld.slots`); (2) `setVar(*sp)` writes the word 0, the "never
+# written" state, as `clear_frame_var_gc` (pl-gcwalk.jl) does: the kernel's variable of a slot is a cell on the global stack that a `*FIRSTVAR` instruction makes, and
+# a collector-side helper must not allocate. Callers upstream: B_THROW (pl-vmi.c:5148) and deep_backtrack (:6959), G1-C/D.
+"Set the non-argument slots of frame `fr` (`arity` up to `clause->prolog_vars`) to variables; a frame without a clause or of a foreign predicate is left alone (pl-gc.c `clearLocalVariablesFrame`)."
+function clearLocalVariablesFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
+    f = ld.frames[fr]
+    pred = f.predicate::Definition{T}
+    if f.clause !== nothing && (pred.flags & P_FOREIGN) == 0
+        i = pred.arity                                  # size_t i = def->functor->arity
+        slots = Int((f.clause::ClauseRef{T}).clause.prolog_vars)
+        sp = argFrameP(f.base, i)                       # Word sp = argFrameP(fr, i)
+        while i < slots                                 # for( ; i<slots; i++, sp++) setVar(*sp)
+            ld.slots[sp + 1] = word(0)
+            i += 1
+            sp += 1
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-gc.c setLTopInBody
+# DIVERGES: the state is built by `gc_get_vmi_state` with the callback `get_vmi_state` (as the engine's safe points pass it) and DROPPED, as upstream does: the only effect kept is
+# the raise of `lTop` over the argument frame under construction (the in-body arm of `get_vmi_state`); `restore_vmi_state` is NOT called. Its caller D_BREAK has no kernel instruction.
+"Raise `lTop` over the argument frame of the running query's body, by building its VM state and keeping only that side effect (pl-gc.c `setLTopInBody`)."
+function setLTopInBody(ld::PL_local_data{T})::Nothing where {T}
+    gc_get_vmi_state(ld, ld.query, get_vmi_state)  # get_vmi_state(LD->query, &state)
+    return nothing
+end
+
 # ORIGINAL: the number of global-stack values of the nb_ variables `gvars_to_term_refs` turns into term references.
 "The number of global-stack values in the table of global variables (what `gvars_to_term_refs` protects)."
 function gc_count_gvar_refs(ld::PL_local_data{T})::Int where {T}
@@ -311,8 +341,8 @@ end
 # for the `NO_MARK_BAR` case upstream restores right after) is a CLAMP: a bar above the new top is lowered to it (every
 # cell above a lowered bar is newer than the choicepoint, so only trailing becomes more eager, never less);
 # (6) the flags (`blocked`, `active`, the bar) are restored by a `finally`: a collection that throws (a corrupted
-# heap, `error`) leaves the engine unblocked; (7) `trimStacks` takes `false`: `LD->trim_stack_requested` has no
-# counterpart (its writers are the overflow exceptions, pl-alloc.jl); (8) the `trace_gc` message (`verbose`) and the
+# heap, `error`) leaves the engine unblocked; (7) `trimStacks` takes `LD->trim_stack_requested` (G1-A; set by `outOfStack!`, cleared by `trimStacks!`;
+# the writers of pl-wam.c:1976 and :1995 are the resumeAfterException/exceptionUnwindGC edits of G1-C/D, thread_idle(long) is not a kernel predicate); (8) the `trace_gc` message (`verbose`) and the
 # `CHK_SECURE` checks are not kept; (9) `collect_phase`'s count of references to value-table boxes (ruling D1) is
 # non-negative by construction; the driver does not use it.
 """
@@ -393,7 +423,7 @@ function garbageCollect(
 
     preShiftLTop = ld.lTop                          # see (*) above: safe over trimStacks() (shift)
     ld.lTop = safeLTop
-    trimStacks!(ld, false)                          # trimStacks(LD->trim_stack_requested)
+    trimStacks!(ld, ld.trim_stack_requested)        # trimStacks(LD->trim_stack_requested)
     ld.lTop = preShiftLTop
 
     gc_stat_end!(ld, ld.gc.stats)

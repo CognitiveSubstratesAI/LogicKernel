@@ -81,7 +81,7 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 #     until f3b-1 it was a value in `exception_bin`'s side entry (`SLOT_VALUE`). The frozen region is
 #     released when the outermost query ends (`_release_frozen!`, audit D-0029 (b)), as for every ball.
 # NOT PORTED: the backtraces and the low-spare message (the kernel prints nothing, decision 1);
-# `trim_stack_requested` (its readers are the stack garbage collector's, G1); the "no room for
+# the "no room for
 # exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled
 # first, so the five cells are always laid); the longjmp
 # of `STACK_OVERFLOW_THROW` — every caller that throws a local-stack overflow sets `LD->outofstack`
@@ -101,6 +101,7 @@ function outOfStack!(
         error("[Thread 1]: failed to recover from local-overflow: Sorry, cannot continue")
     end
     enableSpareStacks!(ld)
+    ld.trim_stack_requested = true                  # LD->trim_stack_requested = true (pl-alloc.c:695)
     ld.exception_processing = true
     ld.outofstack = true
     ctx = push_overflow_context(T, stack)           # word ctx = push_overflow_context(s, 6)

@@ -771,6 +771,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     exception_processing::Bool                                  # exception.processing
     outofstack::Bool                                            # outofstack (the local stack)
     unusable::Bool                                              # (after a second overflow)
+    trim_stack_requested::Bool                                  # trim_stack_requested (G1-A): perform a trim-stack
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's unread term)
@@ -905,7 +906,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         DEPTH_NO_LIMIT, 0,                      # depth_info: limit (pl-setup.c: DEPTH_NO_LIMIT), reached
         INFERENCE_NO_LIMIT,                     # inference_limit.limit (pl-setup.c: INFERENCE_NO_LIMIT)
         0, 0, 0,                                # tmp: set by emptyStacks!
-        false, false, false, 0,
+        false, false, false, false, 0,          # exception.processing, outofstack, unusable, trim_stack_requested, fast_condition
         ClauseChoice{T}(nothing, word(0)), e,
         gd,                                     # GD: the engine's database (PL_open_query sets it again)
         source_location{T}(nothing, IOPOS()),

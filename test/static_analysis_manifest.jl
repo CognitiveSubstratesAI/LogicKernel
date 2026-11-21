@@ -5154,6 +5154,31 @@ _manifest_g1gc2b(::Type{T}) where {T} = (
     (LK.gc_walk_start_of_vmi!, Tuple{LK.vm_state, Vector{LK.code}, Int}, false)
 )
 
+# G1-GC G1-A: the frame clearing and the body-mode lTop of pl-gc.c (src/pl-gcdriver.jl); setLTopInBody builds a vm_state (AllocCheck-false), the clearing loop writes slots only (not held allocation-free: the frame record is read through an abstract field).
+_manifest_g1gca(::Type{T}) where {T} = (
+    (LK.clearLocalVariablesFrame, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.setLTopInBody, Tuple{LK.PL_local_data{T}}, false)
+)
+
+# G1-B (src/pl-fli.jl PushPtr!/PopPtr!/PushVal!/PopVal!; the `flags` forms of bind_attvar_const, bindConst, PL_unify_functor, PL_unify_compound):
+# the 3-argument forms are the older groups' entries (the default forwards to the 4/5-argument method).
+_manifest_g1gcb(::Type{T}) where {T} = (
+    (LK.PushPtr!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PopPtr!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.PushVal!, Tuple{LK.PL_local_data{T}, UInt64}, false),
+    (LK.PopVal!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.bind_attvar_const, Tuple{LK.PL_local_data{T}, Int, UInt64, Int}, false),
+    (LK.bindConst, Tuple{LK.PL_local_data{T}, Int, UInt64, Int}, false),
+    (LK.PL_unify_compound, Tuple{LK.PL_local_data{T}, Int, UInt64, Int}, false),
+    (LK.PL_unify_functor, Tuple{LK.PL_local_data{T}, Int, T, Int, Int}, false),
+    # the four dict helpers' retry loops: `gc` (the predicate's first pass) and `DictOverflow` (upstream's GLOBAL_OVERFLOW)
+    (LK._dict_overflow, Tuple{LK.PL_local_data{T}, Int, Bool}, false),
+    (LK.put_dict, Tuple{LK.PL_local_data{T}, UInt64, Int, Int, Bool}, false),
+    (LK.select_dict, Tuple{LK.PL_local_data{T}, UInt64, UInt64, Bool}, false),
+    (LK.del_dict, Tuple{LK.PL_local_data{T}, UInt64, UInt64, Bool}, false),
+    (LK.copy_keys_dict, Tuple{LK.PL_local_data{T}, UInt64, Bool}, false)
+)
+
 # G1-3b (src/pl-gcwalk.jl, pl-gc.c's mark phase: the collector's walk, early reset, the choicepoint/environment/query drivers).
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
@@ -6156,6 +6181,12 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_g1gc6c(_M2)...,
     # G1-GC G1-2b: the VM-state provider (src/pl-gcdriver.jl); reference type only
     _manifest_g1gc2b(_M2)...,
+    # G1-GC G1-A: clearLocalVariablesFrame, setLTopInBody (src/pl-gcdriver.jl); reference type only
+    _manifest_g1gca(_M2)...,
+    # G1-B: the temporary-handle twins and the flagged forms, over each term type
+    _manifest_g1gcb(_M1)...,
+    _manifest_g1gcb(_M2)...,
+    _manifest_g1gcb(_M3)...,
     # G1-GC G1-2: the safe-point hook and the flagged global-space check, over each term type
     _manifest_g1gc2(_M1)...,
     _manifest_g1gc2(_M2)...,

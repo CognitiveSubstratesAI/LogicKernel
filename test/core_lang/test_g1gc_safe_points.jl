@@ -78,10 +78,17 @@ const _G_REQ = Dict{String, Vector{Symbol}}(
     "g17" => [:copy_term_refs],
     "g18" => [:get_dict_ex],
     "g19" => [:put_environment],
-    "g20" => Symbol[],    # the wakeup of a frozen variable: bind_attvar_const passes no ALLOW_GC (table A, NEEDS-ROOT)
+    "g20" => Symbol[],    # the wakeup of a frozen variable: the VM caller of bind_attvar_const passes flags 0 (table A pl-attvar.c:212)
     "g21" => [:copyRecordToGlobal],   # recorded/3 with a bound reference (pl-rec.jl, the first call site)
     "g22" => [:copyRecordToGlobal],   # instance/2 of a record reference
-    "g23" => [:copyRecordToGlobal],   # PL_recorded through a trie value
+    "g23" => [:copyRecordToGlobal],  # PL_recorded through a trie value
+    "g24" => [:functor3, :bind_attvar_const],              # G1-B: the attributed variable bound to a compound, p and c rooted
+    "g25" => [:compound_name_arity3, :bind_attvar_const],
+    "g26" => [:setarg],                                    # G1-B: apos re-derived after the call
+    "g27" => [:put_dict3],                                 # G1-B2: the dict predicates' retry loops (the helper reports, the predicate collects and retries)
+    "g28" => [:select_dict3],
+    "g29" => [:del_dict4],
+    "g30" => [:copy_keys_dict]
 )
 
 # ── the table and the code, each through ONE extractor ──────────────────────────────────────────
@@ -292,7 +299,7 @@ end
     names = _g_names()
     expected = String.(readlines(_G_OUT))
     table = Set(Symbol(first(s)) for s in doc_sites(read(_G_DOC, String)))
-    @test length(names) == 23 && Set(keys(_G_REQ)) == Set(names)
+    @test length(names) == 30 && Set(keys(_G_REQ)) == Set(names)
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
@@ -357,5 +364,65 @@ end
     @test all(n -> :copyRecordToGlobal in kh[n], ["g21", "g22", "g23"])   # each caller of copyRecordToGlobal has its own row
     @test kl["g21"] ==
         "g21 c[103,50,49]/1(c[45]/2(a[103,49,103,99,95,107,50],c[102,111,111]/1(a[97])))"   # the key is unified from the reference
-    @test !(:bind_attvar_const in kh["g20"])                           # NEEDS-ROOT: no ALLOW_GC at bind_attvar_const
+    @test !(:bind_attvar_const in kh["g20"])                           # the VM caller passes flags 0: no ALLOW_GC at bind_attvar_const
+    @test kl["g24"] == "g24 c[103,50,52]/1(c[102,111,111]/2(V0,V1))"   # G1-B: functor/3 binds a frozen variable to foo(_,_)
+    @test :bind_attvar_const in kh["g24"] && :bind_attvar_const in kh["g25"]
+    @test !(:bind_attvar_const in kh["g8"])                            # a plain variable: no attvar bind, no site
+    @test kl["g26"] == "g26 c[103,50,54]/1(c[102]/2(a[97],a[121]))"    # G1-B: setarg undone by fail, then kept
+    @test kh["g26"] == [:setarg, :setarg]                              # one hit per backtrackable assignment to a bound argument
+    # G1-B2: the retry loops: the answers, and ONE safe point per call (the first pass reports, the retry does not)
+    @test kl["g27"] ==
+        "g27 c[103,50,55]/1(c[45]/2(a[116],c[91,124,93]/2(c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil))))"   # put_dict/3: t{a:1,b:2}
+    @test kl["g28"] ==
+        "g28 c[103,50,56]/1(c[45]/2(c[45]/2(i1,a[35]),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))"   # select_dict/3: A=1, the rest holds b
+    @test kl["g29"] ==
+        "g29 c[103,50,57]/1(c[45]/2(c[45]/2(i1,a[116]),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))"   # del_dict/4: V=1, tag t, b left
+    @test kl["g30"] ==
+        "g30 c[103,51,48]/1(c[45]/2(V0,c[91,124,93]/2(c[45]/2(a[97],V1),c[91,124,93]/2(c[45]/2(a[98],V2),nil))))"   # dict_same_keys/2: fresh values
+    @test count(==(:put_dict3), kh["g27"]) == 1 && count(==(:select_dict3), kh["g28"]) == 1
+    @test count(==(:del_dict4), kh["g29"]) == 1 &&
+        count(==(:copy_keys_dict), kh["g30"]) == 1
+    @test !(:put_dict3 in kh["g28"]) && !(:select_dict3 in kh["g27"])  # a row records ITS site, not another's
+end
+
+# ── G1-B: the PushPtr/PushVal twins keep a position and a word across a REAL collection ───────────────────
+@testset "G1-B: PushPtr!/PushVal! root a position and a word over garbageCollect; the unrooted garbage is freed" begin
+    gd = LK.PL_global_data{_GP}()
+    ld = LK.PL_local_data{_GP}(gd)
+    LK.allocGlobalCells!(ld, 4)                                       # garbage below: nothing refers to these cells
+    p = LK.allocGlobalCells!(ld, 1)
+    ld.gstack[p] = LK.consInt(7)                                      # a live cell, kept by position
+    a = LK._alloc_compound!(ld, ld.functor_dot2, 2)                   # a live compound, kept by word
+    c = LK.consPtr(a, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    top = ld.gTop
+    LK.PushPtr!(ld, p)
+    LK.PushVal!(ld, c)
+    @test ld.tmp_top == 2
+    @test LK.garbageCollect(ld, Int(LK.GC_USER)) == LK.BOOLEX_TRUE
+    @test ld.gTop < top                                               # the garbage went: the collector compacted
+    c2 = LK.PopVal!(ld)
+    p2 = LK.PopPtr!(ld)
+    @test ld.tmp_top == 0
+    @test p2 < p && ld.gstack[p2] == LK.consInt(7)                    # the position moved down and still names the cell
+    @test LK.valPtr(c2) < a && ld.gstack[LK.valPtr(c2)] == ld.functor_dot2   # the word names the compound at its new place
+    # a constant word comes back unchanged
+    LK.PushVal!(ld, LK.consInt(5))
+    @test LK.PopVal!(ld) == LK.consInt(5)
+    @test ld.tmp_top == 0
+end
+
+# ── bind_attvar_const by hand: flags 0 pushes nothing and records nothing; ALLOW_GC under gc_force records the site and keeps the binding ──
+@testset "G1-B: bind_attvar_const with and without ALLOW_GC binds the same way" begin
+    for flags in (0, Int(LK.ALLOW_GC))
+        gd = LK.PL_global_data{_GP}()
+        ld = LK.PL_local_data{_GP}(gd)
+        LK.allocGlobalCells!(ld, 3)                                   # garbage
+        av = LK.alloc_attvar(ld)                                      # an attributed variable
+        @test av != 0 && LK.isAttVar(ld.gstack[av])
+        ld.gc_force = true
+        @test LK.bind_attvar_const(ld, av, LK.consInt(9), flags)
+        @test ld.tmp_top == 0                                         # nothing left pushed
+        @test (flags == 0) == isempty(ld.gc_safe_hits)                # the site only with ALLOW_GC
+        flags != 0 && @test ld.gc_safe_hits == [:bind_attvar_const]
+    end
 end

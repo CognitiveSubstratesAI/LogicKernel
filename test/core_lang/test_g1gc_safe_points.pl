@@ -48,3 +48,13 @@ g21(R) :- recorda(g1gc_k2, foo(a), Ref), recorded(K, T, Ref), R = K-T.
 g22(R) :- recorda(g1gc_k3, bar(_), Ref), instance(Ref, T), R = T.
 % PL_recorded: the value of a trie node is a record
 g23(R) :- trie_new(Tr), trie_insert(Tr, g1gc_k4, f(a, _)), trie_lookup(Tr, g1gc_k4, R).
+% G1-B: bind_attvar_const (pl-attvar.c:212) reached through functor/3 and compound_name_arity/3 on an attributed variable (frozen: the wakeup runs)
+g24(R) :- freeze(X, true), functor(X, foo, 2), R = X.
+g25(R) :- freeze(X, true), compound_name_arity(X, bar, 1), R = X.
+% G1-B: setarg/3 (pl-prims.c:2854): a backtrackable assignment to a bound argument, undone, then kept
+g26(R) :- T = f(a, b), ( setarg(1, T, x), fail ; true ), setarg(2, T, y), R = T.
+% G1-B: the dict predicates' retry loops (pl-dict.c:1697 put_dict/3, :1877 select_dict/3, :1836 del_dict/4, :1629 dict_same_keys/2's unify_dict_copy)
+g27(R) :- put_dict(_{a:1}, t{b:2}, D), dict_pairs(D, T, P), R = T-P.
+g28(R) :- select_dict(_{a:A}, t{a:1, b:2}, Rest), dict_pairs(Rest, T, P), R = A-T-P.
+g29(R) :- del_dict(a, t{a:1, b:2}, V, D), dict_pairs(D, T, P), R = V-T-P.
+g30(R) :- dict_same_keys(t{a:1, b:2}, D), dict_pairs(D, T, P), R = T-P.

@@ -116,9 +116,9 @@ MUTANTS = [
       "        if false   # G1-GC safe point: garbageCollect(GC_GLOBAL_OVERFLOW)\n",
       HOOK + [GD], AL),
     # ---- a NEEDS-ROOT site made a safe point
-    m("G1GC2-N1 bind_attvar_const passes ALLOW_GC (NEEDS-ROOT: it holds p and c across the call; KILL GS R: g20 records a site outside the table)",
-      "ensureGlobalSpace(ld, 0) || return false                # if ( !hasGlobalSpace(0) )",
-      "ensureGlobalSpace(ld, 0, ALLOW_GC, :bind_attvar_const) || return false                # if ( !hasGlobalSpace(0) )",
+    m("G1GC2-N1 bind_attvar_const's flags-0 path passes ALLOW_GC (the VM callers hold registers across it; KILL GS R: g20 records a site outside the table)",
+      "ensureGlobalSpace(ld, 0) || return false            # if ( !hasGlobalSpace(0) ) … ensureGlobalSpace",
+      "ensureGlobalSpace(ld, 0, ALLOW_GC, :bind_attvar_const) || return false            # if ( !hasGlobalSpace(0) ) … ensureGlobalSpace",
       [GS] + ATT, "src/pl-attvar.jl"),
     # ---- each SAFE site loses its ALLOW_GC
     site("S1", "src/pl-attvar.jl", "put_attr3", [GS] + ATT, "GS R g1, g3, g4, g5"),

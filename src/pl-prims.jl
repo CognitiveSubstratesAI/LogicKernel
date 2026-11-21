@@ -3096,7 +3096,7 @@ function pl_functor3_va(
     name = PL_get_atom_ex(ld, A2)
     if name !== nothing
         ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :functor3) || return FFALSE   # (L1f f2)   # G1-GC safe point: functor3
-        return PL_unify_functor(ld, A1, name, arity) ? FTRUE : FFALSE
+        return PL_unify_functor(ld, A1, name, arity, ALLOW_GC) ? FTRUE : FFALSE   # bind_attvar_const may collect (G1-B)
     end
 
     return FFALSE
@@ -3134,7 +3134,7 @@ function pl_compound_name_arity3_va(
 
     ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :compound_name_arity3) || return FFALSE   # G1-GC safe point: compound_name_arity3
     f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)
-    return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
+    return PL_unify_compound(ld, A1, f, ALLOW_GC) ? FTRUE : FFALSE   # bind_attvar_const may collect (G1-B)
 end
 
 # PORT: pl-prims.c get_arg_integer_ex
@@ -4521,8 +4521,8 @@ function may_share_in_duplicate(ld::PL_local_data{T}, p::Int)::term_t where {T}
 end
 
 # PORT: pl-prims.c setarg
-# DIVERGES: positions stay put (no stack shift, so `term`'s compound is not re-read after `duplicate_term`
-# or `ensureGlobalSpace`); `TrailAssignment!` saves the old value in one global cell (`ensureGlobalSpace(1)`).
+# DIVERGES: positions stay put (no stack shift, so `term`'s compound is not re-read after `duplicate_term`);
+# after the collection `ensureGlobalSpace(.., ALLOW_GC)` may run (G1-B) `apos` is re-derived from `term`, as upstream's (pl-prims.c:2859-2861); `TrailAssignment!` saves the old value in one global cell (`ensureGlobalSpace(1)`).
 # The global stack is frozen AFTER the value is assigned, not before: assigning a side value allocates its
 # entry, which the frozen region must hold too. `storage(*v) == STG_GLOBAL` is: a compound, an attributed
 # variable, a value-table word or a side word.
@@ -4545,7 +4545,9 @@ function setarg(
         if ka == DU_CELL                                    # if ( isVar(*a2) )
             return unify_ptrs_cells(ld, -(value + 1), apos)
         end
-        ensureGlobalSpace(ld, 1) || return false            # if ( !hasGlobalSpace(0) ) ensureGlobalSpace
+        ensureGlobalSpace(ld, 1, ALLOW_GC, :setarg) || return false   # G1-GC safe point: setarg
+        _, w, _ = _deref_loc(ld, -(term + 1))               # a = valTermRef(term); deRef(a): re-derived, a collection may have moved it
+        apos = valPtr(w) + argn                             # a = argTermP(*a, argn-1)
         TrailAssignment!(ld, apos)
     else
         kv, wv, _ = _deref_loc(ld, -(value + 1))            # v = valTermRef(value); deRef(v)

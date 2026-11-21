@@ -156,11 +156,11 @@ end
 # here, as the unbound branch's); until AV3 it was refused (a `NotPortedError` naming AV3, D-0150
 # item 3).
 "Bind the cell at global position `p` — unbound, or an attributed variable — to word `c` (pl-attvar.h)."
-@inline function bindConst(ld::PL_local_data, p::Int, c::word)::Nothing
+@inline function bindConst(ld::PL_local_data, p::Int, c::word, flags::Int=0)::Nothing
     if isVar(ld.gstack[p])                          # if ( isVar(*p) )
         _bind_const!(ld, p, c)                      #   return varBindConst(p, c);
     else
-        bind_attvar_const(ld, p, c)                 # else return bind_attvar_const(p, c);
+        bind_attvar_const(ld, p, c, flags)          # else return bind_attvar_const(p, c);
     end
     return nothing
 end
@@ -252,11 +252,25 @@ end
 
 # PORT: pl-attvar.c bind_attvar_const
 # DIVERGES: `p` a global position; `c` a word a global cell stores, never an attributed variable's;
-# `ensureGlobalSpace` raises the overflow itself and nothing moves (no `PushPtr`/`PopPtr`: positions
-# survive a growth), so upstream's `hasGlobalSpace(0)` test before it is folded into it.
+# `ensureGlobalSpace` raises the overflow itself, so upstream's `hasGlobalSpace(0)` test before it is folded into it.
+# G1-B: `flags` (default 0) says whether the call may collect: upstream's `ensureGlobalSpace(0, ALLOW_GC)` always can, but
+# the kernel's callers include run-loop instructions that hold registers and positions across `bindConst` (H_RFUNCTOR,
+# H_RLIST, H_LIST_FF: G1-D) and Julia helpers that hold positions (docs/g1gc_safe_points.md Table A pl-attvar.c:212), so
+# only a caller the audit rules SAFE passes `ALLOW_GC` (`functor/3`, `compound_name_arity/3`, through `PL_unify_functor`
+# and `PL_unify_compound`). With it, `p` and `c` ride the temporary handles across the collection as upstream's
+# `PushPtr(p); PushVal(c)` / `PopVal(c); PopPtr(p)`; without it nothing can move and nothing is pushed.
 "Bind the attributed variable at global position `p` to word `c`; false when the global stack is full (pl-attvar.c)."
-function bind_attvar_const(ld::PL_local_data, p::Int, c::word)::Bool
-    ensureGlobalSpace(ld, 0) || return false                # if ( !hasGlobalSpace(0) ) … ensureGlobalSpace
+function bind_attvar_const(ld::PL_local_data, p::Int, c::word, flags::Int=0)::Bool
+    if (flags & ALLOW_GC) != 0
+        PushPtr!(ld, p)                                     # PushPtr(p)
+        PushVal!(ld, c)                                     # PushVal(c)
+        rc = ensureGlobalSpace(ld, 0, ALLOW_GC, :bind_attvar_const)   # G1-GC safe point: bind_attvar_const
+        c = PopVal!(ld)                                     # PopVal(c)
+        p = PopPtr!(ld)                                     # PopPtr(p)
+        rc || return false
+    else
+        ensureGlobalSpace(ld, 0) || return false            # if ( !hasGlobalSpace(0) ) … ensureGlobalSpace
+    end
     @assert !isVar(c) && !isRef(c) && !isAttVar(c) "bind_attvar_const: word $(repr(c)) is not a constant"  # assert(!isRef(*value))
     assignAttVar(ld, p, (isTaggedIntW(c) || _is_vword(c) ? DU_VALUE : DU_WORD, c, 0))  # assignAttVar(p, &c)
     return true
