@@ -1280,8 +1280,8 @@ end
 
 # PORT: pl-prims.c PL_factorize_term
 # DIVERGES: the local data is an argument (upstream: `GET_LD`); the wrapper `'var'(Term)` is made
-# with `PL_unify_functor` and `PL_unify_arg` (upstream's `PL_unify_term`). No garbage collector or
-# stack shift to make room (`makeMoreStackSpace`): a global overflow — the list's cells, or the cells
+# with `PL_unify_functor` and `PL_unify_arg` (upstream's `PL_unify_term`). No garbage collection or
+# stack shift to make room (`makeMoreStackSpace(rc, ALLOW_GC|ALLOW_SHIFT)`: a NEEDS-REFACTOR site of docs/g1gc_safe_points.md, not wired): a global overflow — the list's cells, or the cells
 # `TrailAssignment!` saves old values in (`ensureGlobalSpace`) — is raised after the marks are
 # cleared and the frame discarded, and the call fails; the trail grows on demand (no
 # TRAIL_OVERFLOW). No `checkStacks` (`CHK_SECURE` is `O_DEBUG` only).
@@ -1311,7 +1311,7 @@ function PL_factorize_term(
     if rc != BOOLEX_TRUE || !ensureGlobalSpace(ld, count)       # tTop + 2*count > tMax; gTop + count > gMax
         unscan_shared(ld, t)
         PL_discard_foreign_frame(ld, fid)
-        rc != BOOLEX_TRUE && raiseStackOverflow(ld, rc)         # makeMoreStackSpace(rc, …): no GC
+        rc != BOOLEX_TRUE && raiseStackOverflow(ld, rc)         # makeMoreStackSpace(rc, …): no GC here (NEEDS-REFACTOR, docs/g1gc_safe_points.md)
         return false
     end
 

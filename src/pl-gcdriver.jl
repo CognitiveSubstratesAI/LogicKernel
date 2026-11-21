@@ -28,7 +28,7 @@
 # (G1-2b), which the engine's safe points (`considerGC`, `pl_garbage_collect`) pass. The state of the
 # other case — no query, or one whose registers hold no frame (upstream's `else` arm, :3779-3786) — is built
 # here. A collection that needs the callback and has none (a caller that passes none: the driver alone) DECLINES (`BOOLEX_FALSE`, nothing touched, no
-# statistics record): the answer the placeholder gave and upstream's own for a blocked collector.
+# statistics record): upstream's own answer for a blocked collector.
 
 # PORT: pl-incl.h GROW_TIGHT
 "The request of `shiftTightStacks` for a stack that is tight: grow it to the next size (pl-incl.h `GROW_TIGHT`)."

@@ -1076,7 +1076,8 @@ end
 
 # ORIGINAL (e5; audit D-0029 option (b)): the frozen region released when the OUTERMOST query ends.
 # DIVERGES: upstream keeps `frozen_bar` for the thread's life (pl-gvar.c `destroyGlobalVars`) and its
-# garbage collector frees a frozen ball once nothing references it; the kernel has no collector until G1,
+# garbage collector frees a frozen ball once nothing references it; the kernel's collector (G1) keeps the frozen
+# region (`ld.frozen_bar` is a root it saves and relocates, `gvars_to_term_refs`, src/pl-gcmark.jl) and frees no ball,
 # so without this every throw would pin the global stack below its ball for the engine's life
 # (evidence/A-0029 in the audit channel). When the outermost query has ended (`ld.query == 0`) with no
 # exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a

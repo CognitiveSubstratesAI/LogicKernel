@@ -1052,7 +1052,7 @@ end
 # carries no `pl_` prefix: `pl_`/`PL_` names are ports of upstream functions, and this has no
 # counterpart (embedding code discards its frames itself).
 # Since L1c a put copies its term onto the global stack and closing a foreign frame keeps global
-# data, as upstream's `PL_close_foreign_frame` does — with no collector until G1, a host that ran
+# data, as upstream's `PL_close_foreign_frame` does — with the collector (G1) giving back only what no frame keeps, a host that ran
 # many queries through open/close would grow the stack without bound. So this helper copies every
 # answer OUT (resolved: an interface term, no cell of the engine's in it) and then DISCARDS its
 # foreign frame (upstream's `PL_discard_foreign_frame`, as embedding code does with libswipl):

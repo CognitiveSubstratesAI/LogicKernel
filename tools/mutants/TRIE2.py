@@ -187,7 +187,7 @@ MUTANTS = [
       eq="src/pl-trie.jl:2206 enter_query_compound!: `rest` only feeds concrete_ahead (see TR2-Q2)"),
     m("TR2-Q5 restore_cursor!: a kept cursor of an older epoch is used (the epoch never moves; output equivalent)",
       "    if ubr.epoch == st.epoch\n", "    if true\n",
-      eq="src/pl-trie.jl:2163 check_epoch! and :2518 restore_cursor!: the count of collections is the constant 0 and no stack shift moves a position, so a kept cursor stays valid in every epoch; the replay (the branch after) gives the same cursor (ld.trie_gen_force_epoch, testset R, checks that); only the work differs"),
+      eq="src/pl-trie.jl check_epoch! and restore_cursor!: no collection runs in the rows of this file (test_trie_gen_swipl.jl holds no garbage_collection_between_answers row) and no stack shift moves a position, so a kept cursor stays valid in every epoch; the replay (the branch after) gives the same cursor (ld.trie_gen_force_epoch, testset R, checks that); only the work differs"),
     m("TR2-Q6 init_trie_state! does not reset the path and the frames (clear_trie_state! does it)",
       "    st.resume = false\n    st.nch = 0\n    st.nbr = 0\n    empty!(st.frames)\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
       "    st.resume = false\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
@@ -195,7 +195,7 @@ MUTANTS = [
     m("TR2-Q7 $trie_gen_node/3 passes data kind 0 (the argument is not read)",
       "PL__t0 + 1, 0, PL__t0 + 2, 1, PL__ctx)", "PL__t0 + 1, 0, PL__t0 + 2, 0, PL__ctx)",
       eq="src/pl-trie.jl:2620-2715 trie_gen_raw: `data_kind` is an argument and is not read in the body (the handle is unified when `Data != 0`, which pl_trie_gen_node3_va sets by passing PL__t0 + 2)"),
-    m("TR2-Q8 check_epoch! counts an epoch without a collector (the epoch only matters under ld.trie_gen_force_epoch; output equivalent)",
+    m("TR2-Q8 check_epoch! counts an epoch by 2 (the epoch is only compared for equality; output equivalent)",
       "        st.gc_seen = gcs\n        st.epoch += 1\n", "        st.gc_seen = gcs\n        st.epoch += 2\n",
       eq="src/pl-trie.jl:2163-2170 check_epoch!: the epoch is compared for equality with a branch's (restore_cursor!), never ordered; a step of 2 instead of 1 changes nothing"),
 ]

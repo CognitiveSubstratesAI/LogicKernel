@@ -24,7 +24,8 @@ const TRAIL_SPARE = 256
 # PORT: pl-setup.c init_stack as init_stack!
 # DIVERGES: the local stack's, in positions; there is no name (the overflow's context names it,
 # src/pl-alloc.jl), `min_free` (the kernel's growth doubles, src/pl-gc.jl `growStacks!`), `gced_size`
-# or GC policy (no stack garbage collector until G1). The cells and the record pools are grown to
+# or GC policy (the collector's `gced_size` and `min_free` are `ld.gc.global_policy` and `ld.gc.trail_policy`, src/pl-gc.jl; the local
+# stack has none). The cells and the record pools are grown to
 # `size` (`_resize_local!`); `stack_malloc` allocated them upstream.
 "Set up the local stack: `size` positions, of which `spare` are reserved above its `max` (pl-setup.c)."
 function init_stack!(ld::PL_local_data{T}, size::Int, spare::Int)::Nothing where {T}
@@ -135,8 +136,9 @@ end
 # upstream's order), then since AV1 `attvar.head` and `attvar.tail`, each with a PERMANENT global cell
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
-# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1); nor
-# `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
+# stack); the others belong to subsystems not ported (`trim.dummy`; nor
+# `destroyGlobalVars`); `attvar.gc_attvars`, the collector's reference to the newest attvar link, is not made here: `save_grefs`
+# (src/pl-gcmark.jl) makes it for the length of a collection, in a foreign frame of its own, and `restore_grefs` reads it back; since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
 # attvar pair as upstream), since TB6 `tabling.idg_current` (one more reference and permanent cell, right after it as upstream).
 # Since TX1e the undo list's cell is the FIRST global cell (`init_undo_list`, pl-setup.c:1557
 # "must be first": `Undo!` finds it by position 1), allocated before the permanent cells above; it is not a term reference. So later term references
@@ -860,12 +862,14 @@ end
 # DIVERGES: the limit is `ld.stacks_limit`, in positions (words); `limit` is in bytes, as the `stack_limit` flag and
 # `'$set_prolog_stack'/4` give it, and is rounded DOWN to whole words (swipl keeps the exact byte count: 2000001 is reported back
 # as 2000001, here as 2000000). `sizeStack(local) + sizeStack(global) + sizeStack(trail)` is `_stacks_in_use(ld, 0)`, the sum
-# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). There is no stack garbage
-# collector (`garbageCollect(GC_USER)`, src/pl-gc.jl `pl_garbage_collect`): only `trimStacks(true)` is tried.
+# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). `garbageCollect(GC_USER)` is
+# the collector's with the VM-state callback `get_vmi_state` (src/pl-gcdriver.jl), as `pl_garbage_collect` passes it (G1-6; the collection declines
+# while the collector is blocked or off, and `trimStacks(true)` follows either way).
 "Set the combined limit of the stacks to `limit` bytes; a limit below what the stacks hold after trimming them is `permission_error(limit, stacks, Limit)` (pl-setup.c)."
 function set_stack_limit!(ld::PL_local_data{T}, limit::Int)::Bool where {T}
     if limit < 8 * ld.stacks_limit && limit < 8 * _stacks_in_use(ld, 0)
-        trimStacks!(ld, true)                           # garbageCollect(GC_USER); trimStacks(true)
+        garbageCollect(ld, Int(GC_USER); vmi_state_of=get_vmi_state)   # garbageCollect(GC_USER)
+        trimStacks!(ld, true)                           # trimStacks(true)
 
         if limit < 8 * _stacks_in_use(ld, 0)
             ex = PL_new_term_ref(ld)

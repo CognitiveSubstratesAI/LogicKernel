@@ -3828,7 +3828,7 @@ _manifest_tr1(T) = begin
             Tuple{LK.foreign_state_pool{LK.trie_gen_state{T}}, Int},
             false
         ),
-        (LK.init_trie_state!, Tuple{ST, TR, Int, Int}, false),
+        (LK.init_trie_state!, Tuple{LD, ST, TR, Int, Int}, false),
         (LK.add_branch!, Tuple{ST, Int, Int}, false),
         (LK.push_choice!, Tuple{ST}, false),
         (LK.pop_choice!, Tuple{ST, Int}, false),

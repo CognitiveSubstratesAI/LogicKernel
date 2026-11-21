@@ -630,7 +630,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # (`emptyStacks!` makes them, with PERMANENT cells as the exception's: audit D-0122 Q1 (a)), and
 # `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
 # position, 0 for NULL. Since AV9 `call_residue_vars_count` (call_residue_vars/2's nesting:
-# `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
+# `trail_new_attvar`, src/pl-attvar.jl). `gc_attvars`, the collector's reference to the newest attvar link, is no field: `save_grefs` makes it for the length of a collection (src/pl-gcmark.jl, DIVERGES there).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
 # Since R2 CONT1: the five `procedures_*` fields `reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1` (set by

@@ -935,7 +935,7 @@ end
 # DIVERGES (L1e e5): `duplicate_term(ex, bin)` on the CELLS (`do_copy_term_cells`, share off; L1d step 6)
 # into a fresh global cell that `bin` references, as upstream's copy at gTop; PL_raise_exception then
 # freezes the global stack (`freezeGlobal!`), so no undo frees the ball — released when the outermost
-# query ends (`_release_frozen!`, audit D-0029 option (b): no collector until G1). A copy that does
+# query ends (`_release_frozen!`, audit D-0029 option (b): the collector does not free a frozen ball). A copy that does
 # not fit (since L1f f1b: `GLOBAL_OVERFLOW`, the frame rewound, nothing raised to clear) takes upstream's
 # three fallbacks in turn: an `error(F, _)` ball without its context, `error(resource_error(stack),
 # global)` in the global spare, `abort`. The kernel prints none of upstream's three warnings

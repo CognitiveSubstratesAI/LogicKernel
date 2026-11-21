@@ -562,7 +562,7 @@ end
 
 # PORT: pl-gc.c mark_stacks
 # DIVERGES: a parent query that is inside the VM (`registers.fr != 0`) needs the VM state of that query
-# (`get_vmi_state(pqf, &sub_state)`, pin pl-gc.c:3725), which G1-2 builds (`get_vmi_state`, G1-2b, pl-gcdriver.jl): it is passed as the callback
+# (`get_vmi_state(pqf, &sub_state)`, pin pl-gc.c:3725), which `get_vmi_state` builds (G1-2b, src/pl-gcdriver.jl): every kernel caller of `garbageCollect` passes it as the callback
 # `vmi_state_of(ld, query_index) -> vm_state`, and without one this is a named refusal (a
 # NotPortedError naming G1-2). The statistics line (`MSG_GC_STATS`) is not kept.
 """

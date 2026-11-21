@@ -10,8 +10,11 @@
 # PIN1 ledger (V10.1.20): structure only, d755bdc4 — pl-gc.c: cell-tag access behind pl-data.h macros, no change of value, order, error or side effect.
 # What the kernel takes from SWI-Prolog's garbage collector (pl-gc.c, pl-gc.h): finding the
 # generations the predicates are being executed in, for clause GC, growing the local stack, and
-# (since V9f) `clearUninitialisedVarsFrame`. Stack garbage collection and stack shifting are not
-# the kernel's.
+# (since V9f) `clearUninitialisedVarsFrame`. Since G1 the stack collector itself is the kernel's too: this file keeps the
+# statistics and the scheduler (`gc_stat_start!`, `gc_stat_end!`, `considerGarbageCollect`), the safe-point hook (`considerGC`), the
+# virtual signals (`raiseGcSignal!`) and `makeMoreStackSpace`; the mark phase is src/pl-gcmark.jl and src/pl-gcwalk.jl, the trail and
+# the sweep src/pl-gctrail.jl and src/pl-gcsweep.jl, the compaction src/pl-gccompact.jl, the driver `garbageCollect` and the VM state
+# src/pl-gcdriver.jl. Stack SHIFTING is `growStacks!` here and `shiftTightStacks!` in the driver (the stacks are Julia vectors, no `update_pointers`).
 
 # PORT: pl-gc.c is_pointer_like
 # DIVERGES: upstream's argument is a `void *` and the test is on its address: not NULL and aligned to the pointer size (a word that is
@@ -108,9 +111,7 @@ function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::
 end
 
 # ── the stack collector's safe-point hook (G1-GC, piece G1-2; docs/g1gc_safe_points.md) ─────────────
-# (`considerGarbageCollect`, the scheduler, is G1-1's: below, with the statistics)
-
-# (`garbageCollect`, the driver, is G1-6c's: src/pl-gcdriver.jl)
+# (`considerGarbageCollect`, the scheduler, is below, with the statistics; `garbageCollect`, the driver, is in src/pl-gcdriver.jl)
 
 # ORIGINAL: the hook of a SAFE ALLOW_GC site (pl-gc.c:4707-4719 `f_ensureStackSpace`'s "consider, collect" half); `ensureGlobalSpace` calls it only
 # when `flags & ALLOW_GC` and the area is full or `ld.gc_force` is set (the model of `FAKE_GC`, pl-vmi.c:238-251, never defined at the pin). Under
@@ -278,7 +279,7 @@ end
 
 # PORT: pl-gc.c growLocalSpace
 # DIVERGES: `n` is in positions, where upstream's is in bytes; the spare is enabled while an
-# exception is processed (since V5d), not while GC runs (no stack garbage collector until G1).
+# exception is processed (since V5d), not while GC runs (`blockGC` holds the collector off there instead).
 "Make room for `n` positions above `lTop`, growing the stack if `flags` allows (pl-gc.c)."
 function growLocalSpace(ld::PL_local_data{T}, n::Int, flags::Int)::boolex_t where {T}
     if ld.lTop + n <= ld.lMax                   # addPointer(lTop, bytes) <= (void*)lMax
@@ -1273,8 +1274,8 @@ end
 # ── the stack collector's statistics and scheduler (G1-GC, piece G1-1; pl-gc.c:524-703, :3834-3909, :4592-4606) ──
 # DIVERGES (D8, audit D-0634): the pinned build answers `current_prolog_flag(gc_thread, true)` (its collector thread, O_PLMT); the flag is read-only
 # `false` here (src/os/pl-prologflag.jl) and `enterGC`/`leaveGC` (pl-gc.c, O_PLMT only: they hold `LD->gc.active` against a thread suspended by the
-# collector thread) have no body here: one thread, nothing to hold. Everything below stays ZERO until G1-6's driver calls `gc_stat_start!` and
-# `gc_stat_end!` around a collection.
+# collector thread) have no body here: one thread, nothing to hold. Everything below stays ZERO until `garbageCollect` (src/pl-gcdriver.jl) calls
+# `gc_stat_start!` and `gc_stat_end!` around a collection.
 
 # PORT: pl-fli.c PL_raise as raiseGcSignal!
 # DIVERGES: the pending virtual signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`), and only the two collector
@@ -1379,7 +1380,7 @@ end
 
 # PORT: pl-gc.c gc_stat_end as gc_stat_end!
 # DIVERGES: `LD->stacks.global.gced_size` and `.trail.gced_size` are `ld.gc.global_policy.gced_size` and `ld.gc.trail_policy.gced_size`; `PL_raise(SIG_TUNE_GC)`
-# is `raiseGcSignal!` (a pending bit: the handler, `gc_tune_handler` pl-setup.c:838, is left to the signal owner).
+# is `raiseGcSignal!` (a pending bit: the handler, `gc_tune_handler` pl-setup.c:838, is src/pl-setup.jl's, run by `handleSignals`).
 "End the statistics of a collection: the sizes after, the time it took, the totals; asks for `prolog:tune_gc/3` above 20% (pl-gc.c `gc_stat_end`)."
 function gc_stat_end!(ld::PL_local_data, stats::gc_stats)::gc_stat
     this = stats.last[stats.last_index + 1]
@@ -1580,8 +1581,8 @@ end
 
 # PORT: pl-gc.c call_tune_gc_hook
 # DIVERGES: `PROCEDURE_tune_gc3` is looked up as `prolog:tune_gc/3` on each call (upstream: `PL_predicate("tune_gc", 3, "prolog")` at pl-ext.c:385, the
-# same procedure); the database is the running query's (`_query_gd`). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is left
-# to the signal owner; nothing in the kernel raises `SIG_TUNE_GC` before G1-6's driver calls `gc_stat_end!`.
+# same procedure); the database is the running query's (`_query_gd`). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is src/pl-setup.jl's; `gc_stat_end!` raises
+# `SIG_TUNE_GC` (`raiseGcSignal!`) when a collection took more than 20% and `handleSignals` runs the handler at the next safe point.
 "Call `prolog:tune_gc(+GcTime, +LastFraction, +AggregatedFraction)` if the program defines it (pl-gc.c `call_tune_gc_hook`)."
 function call_tune_gc_hook(ld::PL_local_data{T})::Nothing where {T}
     gd = _query_gd(ld)

@@ -160,8 +160,8 @@ end
     (_stacks_in_use(ld, g) <= ld.stacks_limit || ld.exception_processing)
 
 # PORT: pl-gc.h ensureGlobalSpace
-# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036; the garbage collection of `ALLOW_GC` is G1-GC's hook below, the collector itself G1-6's): no garbage collection to try and
-# nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
+# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036; the garbage collection of `ALLOW_GC` is the hook `considerGC` below, src/pl-gc.jl, the collector `garbageCollect`, src/pl-gcdriver.jl): nothing to
+# shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
 # (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
 # `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5381,
@@ -170,7 +170,7 @@ end
 # G1-GC safe point: `flags` (default 0 = no collection: every site not ruled SAFE in docs/g1gc_safe_points.md) and `site` (the name of the
 # audit table's row, recorded under `ld.gc_force`). With `ALLOW_GC` the order is upstream's `f_ensureStackSpace` (pl-gc.c:4707-4719): when the
 # area is full (here: `gTop + n` past the vector, or the limit passed) or the collector is forced, the hook `considerGC` runs, and the limit is
-# checked AFTER it (a collection that gained room lets the call through). The placeholder collector gains nothing (G1-6 fills it).
+# checked AFTER it (a collection that gained room lets the call through). A collection that finds nothing to give back leaves the check as it was.
 "Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`); `flags` `ALLOW_GC` lets the stack collector run first at a site the audit rules SAFE."
 function ensureGlobalSpace(
     ld::PL_local_data, n::Int, flags::Int=0, site::Symbol=:ensureGlobalSpace
@@ -209,8 +209,8 @@ end
 # PORT: pl-alloc.c allocGlobal as allocGlobalCells!
 # DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`); returns the first
 # cell's position, the others follow it (upstream returns its address). Growth is
-# `_growGlobalStack!`'s, the only allocating path; no garbage collection (`ensureGlobalSpace`'s
-# `ALLOW_GC`) until pl-gc.c's collector is ported (the GC step, since L1).
+# `_growGlobalStack!`'s, the only allocating path; no garbage collection here (a caller that may collect passes `ALLOW_GC` to
+# `ensureGlobalSpace` first, as upstream's).
 "Allocate `n` fresh variables on the global stack; the position of the first (pl-alloc.c `allocGlobal`)."
 function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
     p = ld.gTop + 1
@@ -251,7 +251,8 @@ end
 # DIVERGES (TH1): the thread parts are unwritten by design: upstream's `MallocExtension_MarkThreadTemporarilyIdle`,
 # `_MarkThreadIdle` and `_MarkThreadBusy` tell tcmalloc what this thread does (weak symbols, no Prolog-visible effect), and
 # `garbageCollect(GC_USER)` with `trim_stack_requested` set may notify the background GC thread; the kernel has one engine
-# and no collector (`pl_garbage_collect`, src/pl-gc.jl: nothing to collect), so `long` trims the stacks as the collector's
+# and the idle `garbageCollect(GC_USER)` is not wired (the NO-COUNTERPART row of docs/g1gc_safe_points.md; `pl_garbage_collect`, src/pl-gc.jl, is the
+# collector's one entry from Prolog), so `long` trims the stacks as the collector's
 # trim request would (`trimStacks!`) and `short` trims them as upstream's `trimStacks(true)`. As upstream, a `How` that is
 # neither atom `short` nor atom `long` does the housekeeping of neither and still runs `Goal`; a `How` that is no atom raises
 # `type_error(atom, How)` before `Goal` runs. `Goal` runs in the context module as `sig_atomic/1`'s does (`callProlog(NULL, …)`),
@@ -267,7 +268,7 @@ function pl_thread_idle2_va(
     if sym_key(how) == sym_key(mk_sym(T, :short))
         trimStacks!(ld, true)                           # trimStacks(true)
     elseif sym_key(how) == sym_key(mk_sym(T, :long))
-        trimStacks!(ld, true)                           # LD->trim_stack_requested = true; garbageCollect(GC_USER)
+        trimStacks!(ld, true)                           # LD->trim_stack_requested = true; garbageCollect(GC_USER) (not wired: the trim only)
     end
 
     rc = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_PASS_EXCEPTION)

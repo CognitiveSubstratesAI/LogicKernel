@@ -491,8 +491,8 @@ function sweep_new_arguments(
 end
 
 # PORT: pl-gc.c sweep_stacks
-# DIVERGES: as `mark_stacks`: a parent query inside the VM needs G1-2's `vmi_state_of(ld, query_index)`
-# (`get_vmi_state`, pin pl-gc.c) and without it is a named refusal; `local_marked != 0` at the end is an
+# DIVERGES: as `mark_stacks`: a parent query inside the VM needs the callback `vmi_state_of(ld, query_index)`
+# (`get_vmi_state`, src/pl-gcdriver.jl; pin pl-gc.c) that every kernel caller of `garbageCollect` passes, and without it is a named refusal; `local_marked != 0` at the end is an
 # error (upstream's `sysError`), and the `CHK_SECURE` table dump is not kept.
 """
     sweep_stacks(ld, st, sw, vm; vmi_state_of=nothing)

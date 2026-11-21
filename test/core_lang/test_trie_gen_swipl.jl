@@ -5,7 +5,7 @@
 # `tN(R)`, the kernel enumerates every solution of every tN/1 and its lines are compared with test_trie_gen_swipl.out (swipl's own, printed by the
 # driver below); when `swipl` is on PATH the .out is checked against a live run as well.
 # NOT HERE, with the reason: attributed_query, stored_attvar_beside_constants (attributed variables in keys: TR3, a named refusal here);
-# stack_shift and garbage_collection_between_answers (the kernel has no collector: the replay path is exercised by ld.trie_gen_force_epoch below);
+# stack_shift (no stack shift moves a position) and garbage_collection_between_answers (the epoch follows `ld.gc.stats.totals.collections` since G1, but no row here collects between two answers: TODO row; the replay path is exercised by ld.trie_gen_force_epoch below);
 # generated_shapes (random: the rows are a fixed list); the thread, tabling and compiled (trie_gen_compiled: TR4) tests; '$trie_property'
 # invalidated/reevaluated/idg_* (the IDG is TB6's: those names FAIL here, as swipl's do for a trie with no IDG, row t21);
 # trie_insert_insert/3, trie_lookup_gen/3, trie_lookup_delete/3 are not defined at the pin (O_NESTED_TRIES is defined nowhere).

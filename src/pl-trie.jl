@@ -2458,8 +2458,8 @@ const Q_DONE = 0
 const Q_VAR = 1
 const Q_KEY = 2
 
-# ORIGINAL (audit D-0475, TR2): the kernel has no global-stack collector and no shift that moves a position, so `check_epoch!` sees a
-# constant count and the epoch never advances (upstream: a GC or a stack shift). To exercise `restore_cursor!`'s replay path a test
+# ORIGINAL (audit D-0475, TR2): no shift moves a global position in the kernel, so `check_epoch!` sees a new epoch only after a
+# collection (G1: `ld.gc.stats.totals.collections` changed, as upstream's `LD->gc.stats.totals.collections`; upstream adds a moved `gBase`). To exercise `restore_cursor!`'s replay path a test
 # sets `ld.trie_gen_force_epoch` to true: `check_epoch!` then starts a new epoch at every call; the answers must not change.
 # (A field of the engine, not a module-level `Ref`: test/test_lint_globals.jl refuses module-level mutable state.)
 
@@ -2477,16 +2477,16 @@ const Q_KEY = 2
 end
 
 # PORT: pl-trie.c init_trie_state
-# DIVERGES: the record is `st` of the pool; the root is a node id (`TN_PRIMARY` when it is the trie's root, id 1); `gc_seen` is 0 (no
-# collector: see `check_epoch!`).
+# DIVERGES: the local data is an argument (upstream: `GET_LD`); the record is `st` of the pool; the root is a node id (`TN_PRIMARY` when it is the trie's root, id 1); `gc_seen` is the collections count
+# so far (`LD->gc.stats.totals.collections`; see `check_epoch!`).
 "Make `st` the state of a new enumeration of `tr` below `root` for the query `key` (pl-trie.c `init_trie_state`)."
 function init_trie_state!(
-    st::trie_gen_state{T}, tr::trie{T}, root::Int, key::term_t
+    ld::PL_local_data{T}, st::trie_gen_state{T}, tr::trie{T}, root::Int, key::term_t
 )::Nothing where {T}
     st.tr = tr
     st.vflags = root == 1 ? TN_PRIMARY : TN_SECONDARY
     st.epoch = 1
-    st.gc_seen = 0
+    st.gc_seen = ld.gc.stats.totals.collections
     st.key = key
     st.resume = false
     st.nch = 0
@@ -2551,11 +2551,11 @@ function clear_trie_state!(
 end
 
 # PORT: pl-trie.c check_epoch
-# DIVERGES (ORIGINAL): there is no collector and no stack shift that moves a global position, so the count is the constant 0 and the
-# epoch advances only under `ld.trie_gen_force_epoch`.
+# DIVERGES: `gBase` never moves (no stack shift moves a global position), so only the collections count is compared (`gbase_seen` is not kept); the epoch
+# also advances under `ld.trie_gen_force_epoch` (ORIGINAL, above).
 "Start a new epoch if the global stack moved since this one started (pl-trie.c `check_epoch`)."
 function check_epoch!(ld::PL_local_data{T}, st::trie_gen_state{T})::Nothing where {T}
-    gcs = 0
+    gcs = ld.gc.stats.totals.collections            # int64_t gcs = LD->gc.stats.totals.collections
     if gcs != st.gc_seen || ld.trie_gen_force_epoch
         st.gc_seen = gcs
         st.epoch += 1
@@ -3063,7 +3063,7 @@ function trie_gen_raw(
         acquire_trie(trf)
         k = alloc_foreign_state!(pool)
         st = pool.states[k]
-        init_trie_state!(st, trf, root, Key)
+        init_trie_state!(ld, st, trf, root, Key)
         try
             root_cursor!(st.cur, true)
             chi = add_choice!(ld, st, st.cur, root)
