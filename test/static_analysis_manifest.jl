@@ -5219,6 +5219,9 @@ _manifest_g1gc3b(::Type{T}) where {T} = (
     (LK.mark_query_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int, Int}, false),
     (LK.mark_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
     (LK.mark_phase, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    # the `vmi_state_of=` keyword methods (the collector's callers pass `nothing` or `get_vmi_state`; the CI of c3ea5903 named both as NOT CHECKED for dispatch)
+    (Core.kwcall, Tuple{NamedTuple{(:vmi_state_of,), Tuple{Nothing}}, typeof(LK.mark_stacks), LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (Core.kwcall, Tuple{NamedTuple{(:vmi_state_of,), Tuple{Nothing}}, typeof(LK.mark_phase), LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
     (LK.unmark_environments, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
     (LK.unmark_choicepoints, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
     (LK.unmark_stacks, Tuple{LK.PL_local_data{T}, Int, Int, UInt32}, false)
