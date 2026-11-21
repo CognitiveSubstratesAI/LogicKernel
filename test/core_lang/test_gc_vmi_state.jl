@@ -466,6 +466,8 @@ function _gv_expect(cl, base::Int, pc::Int)
         elseif op == LK.I_ENTER || op == LK.I_SSU_COMMIT || op == LK.I_SSU_CHOICE
             body = true
         end
+        # H_RFUNCTOR/H_RLIST/B_RFUNCTOR/B_RLIST: NO case in the pin's setStartOfVMI (18168e62:src/pl-gc.c:3608-3690, the switch lists H_FUNCTOR/H_LIST/B_FUNCTOR/B_LIST
+        # only): neither adepth nor argp changes, they have no H_POP/B_POP. The union's H1 changes the R-form rule for the LAST head argument: this table then gets its branches.
     end
     return (0, ad, ap, a0, body)
 end
@@ -521,7 +523,9 @@ end
     # the table covers the rules: each family of the pin's switch is reached by one of the clauses
     @test LK.H_FUNCTOR in seen && LK.H_POP in seen && LK.I_ENTER in seen
     @test LK.H_VOID_N in seen
-    @test (LK.B_UNIFY_VAR in seen || LK.B_UNIFY_FIRSTVAR in seen) && LK.B_FUNCTOR in seen
+    # the body compound `f(B, g(B))` of the root of a body unify is compiled as B_RFUNCTOR (src/pl-comp.jl:1752-1754: the root and a last-argument compound are "right")
+    @test (LK.B_UNIFY_VAR in seen || LK.B_UNIFY_FIRSTVAR in seen) &&
+        (LK.B_FUNCTOR in seen || LK.B_RFUNCTOR in seen)
     @test LK.H_LIST in seen || LK.H_LIST_FF in seen
 
     # the hand-pinned table of `w1(f(a,B), c, D)`: instructions H_FUNCTOR H_ATOM H_POP H_ATOM I_EXITFACT; the state BEFORE each of them.
