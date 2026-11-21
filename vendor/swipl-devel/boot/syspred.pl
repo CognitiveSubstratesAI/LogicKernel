@@ -59,6 +59,7 @@
             current_module/1,                   % ?Module
             module_property/2,                  % ?Module, ?Property
             module/1,                           % +Module
+            abolish_module/1,                   % +Module
             current_trie/1,                     % ?Trie
             trie_property/2,                    % ?Trie, ?Property
             working_directory/2,                % -OldDir, +NewDir
@@ -100,6 +101,7 @@
     snapshot(0),
     rule(:, -),
     rule(:, -, ?),
+    predicate_property(:, ?),
     sig_block(:),
     sig_unblock(:).
 
@@ -722,9 +724,6 @@ generate_current_predicate(Name, Module, Head) :-
 %
 %   True when Property is a property of Predicate.
 
-:- meta_predicate
-    predicate_property(:, ?).
-
 :- multifile
     '$predicate_property'/2.
 
@@ -1244,6 +1243,25 @@ module(Module) :-
     '$set_typein_module'(Module),
     print_message(warning, no_current_module(Module)).
 
+%!  abolish_module(+Module) is det.
+%
+%   Reset Module to a new empty module.  If  Module was loaded from a
+%   file, this file is unloaded.  See '$abolish_module'/1.
+
+abolish_module(Module) :-
+    (   atom(Module),
+        '$current_module'(Module, File),
+        File \== []
+    ->  true
+    ;   File = []
+    ),
+    '$abolish_module'(Module),
+    retractall(system:'$load_context_module'(_, Module, _)),
+    (   File == []
+    ->  true
+    ;   unload_file(File)
+    ).
+
 %!  working_directory(-Old, +New)
 %
 %   True when Old is the current working directory and the working
@@ -1521,7 +1539,11 @@ numbervars(Term, From, To) :-
 
 %!  term_string(?Term, ?String, +Options)
 %
-%   Parse/write a term from/to a string using Options.
+%   Parse/write a term from/to a string using Options.  The predicate
+%   is module transparent, such that e.g., the portray_goal option is
+%   resolved in the context of the caller.
+
+:- module_transparent term_string/3.
 
 term_string(Term, String, Options) :-
     nonvar(String),

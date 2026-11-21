@@ -904,7 +904,7 @@ pack_unpack_from_local(Source0, PackTopDir, Name, PackDir, Options) :-
     ;   \+ option(git(false), Options),
         is_git_directory(Source)
     ->  remove_existing_pack(PackDir, Options),
-        run_process(path(git), [clone, Source, PackDir], [])
+        run_process(path(git), [clone, '--', Source, PackDir], [])
     ;   prepare_pack_dir(PackDir, Options),
         copy_directory(Source, PackDir)
     ).
@@ -1569,8 +1569,10 @@ download_from_info(Options, Info0, Info),
     select_option(pack_directory(Dir), Options, Options1),
     select_option(version(_), Options1, Options2, _),
     download_info_extra(Info0, InstallOptions, Options2),
+    option(interactive(Interactive), Options, true),
     pack_download_from_url(URL, Dir, Info0.pack,
                            [ interactive(false),
+                             confirm_hash(Interactive),
                              pack_dir(PackDir)
                            | InstallOptions
                            ]),
@@ -1582,6 +1584,10 @@ download_info_extra(Info, [git(true),commit(Hash)|Options], Options) :-
     Hash = Info.get(commit, 'HEAD').
 download_info_extra(Info, [link(true)|Options], Options) :-
     Info.get(link) == true,
+    !.
+download_info_extra(Info, [hash(Hash)|Options], Options) :-
+    Hash = Info.get(hash),
+    is_sha1(Hash),
     !.
 download_info_extra(_, Options, Options).
 
@@ -1955,10 +1961,12 @@ pack_download_from_url(URL, PackTopDir, Pack, Options) :-
     directory_file_path(PackTopDir, Pack, PackDir),
     prepare_pack_dir(PackDir, Options),
     (   option(branch(Branch), Options)
-    ->  Extra = ['--branch', Branch]
+    ->  git_ref_argument(Branch),
+        Extra = ['--branch', Branch]
     ;   Extra = []
     ),
-    run_process(path(git), [clone, URL, PackDir|Extra], []),
+    append([clone|Extra], ['--', URL, PackDir], Argv),
+    run_process(path(git), Argv, []),
     git_checkout_version(PackDir, [update(false)|Options]),
     option(pack_dir(PackDir), Options, _).
 pack_download_from_url(URL0, PackTopDir, Pack, Options) :-
@@ -1983,6 +1991,7 @@ pack_download_from_url(URL0, PackTopDir, Pack, Options) :-
             close(Out)),
         close(In)),
     print_message(informational, pack(download(end, Pack, URL, DownloadFile))),
+    verify_download_hash(DownloadFile, Pack, URL, Options),
     pack_archive_info(DownloadFile, Pack, Info, _),
     (   option(git_url(GitURL), Options)
     ->  Origin = GitURL                 % implicit download from git.
@@ -2000,6 +2009,45 @@ pack_download_from_url(URL, PackTopDir, Pack, Options) :-
     option(pack_dir(PackDir), Options, _).
 pack_download_from_url(URL, _PackTopDir, _Pack, _Options) :-
     domain_error(url, URL).
+
+%!  verify_download_hash(+File, +Pack, +URL, +Options) is semidet.
+%
+%   If the pack server provided  the  SHA1   hash  of  the  archive  as
+%   hash(Hash), verify that the  downloaded  File   has  this  hash. On
+%   mismatch, ask the user if confirm_hash(true)  is given and fail with
+%   an error message otherwise. Archives  generated   by  GitHub are not
+%   verified as GitHub may regenerate them.
+
+verify_download_hash(File, Pack, URL, Options) :-
+    option(hash(Expected), Options),
+    \+ github_generated_archive(URL, Options),
+    !,
+    file_sha1(File, Hash),
+    (   Hash == Expected
+    ->  true
+    ;   Mismatch = hash_mismatch(Pack, URL, Expected, Hash),
+        (   option(confirm_hash(true), Options)
+        ->  print_message(warning, pack(Mismatch)),
+            confirm(accept_hash_mismatch, no, [])
+        ;   print_message(error, pack(Mismatch)),
+            fail
+        )
+    ).
+verify_download_hash(_, _, _, _).
+
+github_generated_archive(_URL, Options) :-
+    option(git_url(_), Options),
+    !.
+github_generated_archive(URL, _Options) :-
+    uri_components(URL, Components),
+    uri_data(authority, Components, Host),
+    memberchk(Host, ['github.com', 'codeload.github.com']).
+
+is_sha1(Hash) :-
+    atom(Hash),
+    atom_length(Hash, 40),
+    atom_codes(Hash, Codes),
+    forall(member(C, Codes), code_type(C, xdigit(_))).
 
 %!  git_checkout_version(+PackDir, +Options) is det.
 %
@@ -2054,6 +2102,7 @@ git_checkout_version(PackDir, Options) :-
 git_checkout_version(PackDir, Options) :-
     option(commit(Hash), Options),
     !,
+    git_ref_argument(Hash),
     run_process(path(git), ['-C', PackDir, checkout, '--quiet', Hash], []).
 git_checkout_version(PackDir, Options) :-
     option(version(Version), Options),
@@ -2068,6 +2117,7 @@ git_checkout_version(PackDir, Options) :-
     ->  true
     ;   existence_error(version_tag, Version)
     ),
+    git_ref_argument(Tag),
     run_process(path(git), ['-C', PackDir, checkout, Tag], []).
 git_checkout_version(_PackDir, Options) :-
     option(fresh(true), Options),
@@ -2089,7 +2139,21 @@ git_ensure_on_branch(PackDir, Branch) :-
     git_current_branch(Branch, [directory(PackDir)]),
     !.
 git_ensure_on_branch(PackDir, Branch) :-
+    git_ref_argument(Branch),
     run_process(path(git), ['-C', PackDir, checkout, Branch], []).
+
+%   git_ref_argument(+Ref) is det.
+%
+%   Ref is passed to git as a commit, tag or branch.  These may come from
+%   the pack server or repository.  Raise an error if git would process
+%   Ref as an option.
+
+git_ref_argument(Ref) :-
+    (   atomic(Ref),
+        sub_atom(Ref, 0, _, _, -)
+    ->  domain_error(git_ref, Ref)
+    ;   true
+    ).
 
 read_lines_to_atoms(Atoms, In) :-
     read_line_to_string(In, Line),
@@ -2197,8 +2261,9 @@ download_scheme(https).
 %   site asks to always use HTTPS. For  SWI-Prolog packages we now force
 %   using HTTPS for all  downloads.  This   may  be  overrules using the
 %   option insecure(true), which  may  also  be   used  to  disable  TLS
-%   certificate  checking.  Note  that  the   pack  integrity  is  still
-%   protected by its SHA1 hash.
+%   certificate checking.  Note that the integrity of archives is still
+%   verified against the SHA1 hash  provided   by  the  pack server (see
+%   verify_download_hash/4), except for archives generated by GitHub.
 
 hsts(URL0, URL, Options) :-
     option(insecure(true), Options, false),
@@ -2577,8 +2642,7 @@ prepare_build_location(Pack, Dir, Clean, Options) :-
         ->  delete_directory_contents(Dir)
         ;   true
         )
-    ;   tmp_file(pack, Dir),
-        make_directory(Dir),
+    ;   tmp_directory(pack, Dir),
         Clean = true
     ),
     (   option(isolated(false), Options)
@@ -3584,6 +3648,13 @@ message(remove(link(To), PackDir)) -->
     [ 'Removing ', url(PackDir), nl, '    as link to ', url(To) ].
 message(remove(directory, PackDir)) -->
     [ 'Removing ~q and contents'-[PackDir] ].
+message(hash_mismatch(Pack, URL, Expected, Hash)) -->
+    [ 'The archive for pack ~q downloaded from ~w'-[Pack, URL], nl,
+      'has SHA1 hash ~w, while the pack server expects ~w.'-[Hash, Expected], nl,
+      'The archive may have been modified.'
+    ].
+message(accept_hash_mismatch) -->
+    [ 'Install the pack anyway?' ].
 message(remove_existing_pack(PackDir)) -->
     [ 'Remove old installation in ~q'-[PackDir] ].
 message(delete_autoload_index(Pack, Index)) -->

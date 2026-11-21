@@ -731,10 +731,88 @@ terms(H, State, State) -->
     ;   []
     ).
 
+%   eval_cond(+Cond, -True) is det.
+%
+%   Evaluate the condition of  ``:- if(Cond)``   or  ``:- elif(Cond)``.
+%   Reading the directives of a file must not run its code: the file is
+%   often one that is merely  opened,   e.g.,  cross-referenced  by an
+%   editor.  We therefore only evaluate conditions  that use the  side
+%   effect free predicates of safe_cond_predicate/1.  Anything else is
+%   false, which is also what  a  call   to  a  predicate  of  the file
+%   itself evaluates to, as that is not defined while reading.
+
 eval_cond(Cond, true) :-
+    safe_cond(Cond),
     catch(Cond, error(_,_), fail),
     !.
 eval_cond(_, false).
+
+safe_cond(Var) :-
+    var(Var),
+    !,
+    fail.
+safe_cond((A,B)) :-
+    !,
+    safe_cond(A),
+    safe_cond(B).
+safe_cond((A;B)) :-
+    !,
+    safe_cond(A),
+    safe_cond(B).
+safe_cond((A->B)) :-
+    !,
+    safe_cond(A),
+    safe_cond(B).
+safe_cond((A*->B)) :-
+    !,
+    safe_cond(A),
+    safe_cond(B).
+safe_cond(\+(A)) :-
+    !,
+    safe_cond(A).
+safe_cond(Goal) :-
+    callable(Goal),
+    Goal \= _:_,
+    functor(Goal, Name, Arity),
+    safe_cond_predicate(Name/Arity).
+
+safe_cond_predicate(true/0).
+safe_cond_predicate(fail/0).
+safe_cond_predicate(false/0).
+safe_cond_predicate(current_prolog_flag/2).
+safe_cond_predicate(current_predicate/1).
+safe_cond_predicate(current_predicate/2).
+safe_cond_predicate(predicate_property/2).
+safe_cond_predicate(current_module/1).
+safe_cond_predicate(current_op/3).
+safe_cond_predicate(exists_source/1).
+safe_cond_predicate(exists_source/2).
+safe_cond_predicate(exists_file/1).
+safe_cond_predicate(exists_directory/1).
+safe_cond_predicate(absolute_file_name/2).
+safe_cond_predicate(absolute_file_name/3).
+safe_cond_predicate(getenv/2).
+safe_cond_predicate(statistics/2).
+safe_cond_predicate(debugging/1).
+safe_cond_predicate((=)/2).
+safe_cond_predicate((\=)/2).
+safe_cond_predicate((==)/2).
+safe_cond_predicate((\==)/2).
+safe_cond_predicate((@<)/2).
+safe_cond_predicate((@>)/2).
+safe_cond_predicate((@=<)/2).
+safe_cond_predicate((@>=)/2).
+safe_cond_predicate((<)/2).
+safe_cond_predicate((>)/2).
+safe_cond_predicate((=<)/2).
+safe_cond_predicate((>=)/2).
+safe_cond_predicate((=:=)/2).
+safe_cond_predicate((=\=)/2).
+safe_cond_predicate(var/1).
+safe_cond_predicate(nonvar/1).
+safe_cond_predicate(atom/1).
+safe_cond_predicate(integer/1).
+safe_cond_predicate(ground/1).
 
 elif(true,  _,    else_false) :- !.
 elif(false, true, true) :- !.
@@ -876,7 +954,7 @@ prolog_canonical_source(Src, Id) :-             % Call hook
     prolog:xref_source_identifier(Src, Id),
     !.
 prolog_canonical_source(Source, Src) :-
-    source_file(Source),
+    loaded_source_file(Source),
     !,
     Src = Source.
 prolog_canonical_source(Source, Src) :-
@@ -885,6 +963,19 @@ prolog_canonical_source(Source, Src) :-
                          access(read),
                          file_errors(fail)
                        ]),
+    !.
+
+%   loaded_source_file(+Source) is semidet.
+%
+%   True if Source is the name of a loaded source file.  Unlike
+%   source_file/1, Source is not resolved: a relative name or alias
+%   for a loaded file must canonicalise to its absolute name, the same
+%   as when the file is not loaded.
+
+loaded_source_file(Source) :-
+    atom(Source),
+    '$time_source_file'(Source, Time, _),
+    float(Time),
     !.
 
 
