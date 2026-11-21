@@ -582,3 +582,28 @@ function gc_clear_marks!(ld::PL_local_data{T})::Nothing where {T}
     end
     return nothing
 end
+
+# ORIGINAL: the BASE PREFIX of the global stack is a root class (audit D-0966 (1), design (a)): the cells
+# 1..`tmp_cells + TMP_PTR_SIZE - 1` that `emptyStacks!` (src/pl-setup.jl) lays down — the undo list's cell
+# (global cell 1, TX1e), the PERMANENT cells of the exception, attvar, delay-list, IDG and tmp term references,
+# the delay list's compound and the cells of the two delay-list references that `init_delay_list` overwrites —
+# are each marked as a start cell, with what they reference. All of them are marked, so the compaction moves none
+# (a cell's new position is its rank among the marked cells) and the positions the engine caches stay valid:
+# `ld.undo_list` (`Undo!`, src/pl-inline.jl), `ld.exception_cells` (`_reset_exception_slot!`, src/pl-wam.jl) and
+# `ld.tmp_cells` (`popTermRef`, src/pl-fli.jl).
+# DIVERGES (G1): upstream has no global cell below its permanent term references: `PL_new_term_ref` makes a
+# variable on the LOCAL stack (pl-fli.c) and the undo list is rooted by a term_t (pl-undo.c:42-52 at the pin
+# 18168e62, `*valTermRef(t) = makeRefG(p)`), so `mark_term_refs` reaches all of it. Here a term reference owns a
+# global cell (L1b C5, src/pl-fli.jl `PL_new_term_refs`) and `ld.undo_list` is an Int position no slot names; a
+# slot that later holds another word (`PushPtr!`, a ball held as a value, `init_delay_list`'s two references)
+# leaves its cell unrooted. Without this rule the first collection frees those cells, everything above moves
+# down, and the three cached positions name other (live) cells.
+"Mark every cell of the base prefix of the global stack, and what it references, as a root (ORIGINAL; G1)."
+function mark_base_cells(ld::PL_local_data{T}, st::gc_mark_counts)::Nothing where {T}
+    ld.tmp_cells == 0 && return nothing             # no base prefix: `emptyStacks!` has not run
+    top = min(ld.tmp_cells + TMP_PTR_SIZE - 1, ld.gTop)
+    for p in 1:top
+        is_marked(ld.gstack[p]) || mark_variable(ld, st, p)
+    end
+    return nothing
+end
