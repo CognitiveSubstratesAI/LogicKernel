@@ -4852,6 +4852,49 @@ function PL_next_solution_guarded(
         rethrow()
     end
     mc_cl === nothing && @goto b_throw              # case false: THROW_EXCEPTION
+    # GC-POINT pl-vmi.c:5558-5581 (the CHECK_INTERRUPT arm: a signal pending at the compiler's test, G1-C)
+    #   case LOCAL_OVERFLOW:
+    #   case CHECK_INTERRUPT:
+    #   { term_t lTopH = consTermRef(lTop);
+    #
+    #     LD->query->next_environment = NFR;
+    #     lTop = (LocalFrame)argFrameP(NFR, 1);
+    #     ARGP = (Word)lTop;
+    #     SAVE_REGISTERS(QID);
+    #     if ( rc == LOCAL_OVERFLOW )
+    #     { size_t room = roomStack(local);
+    #       rc = growLocalSpace(room*2, ALLOW_SHIFT);
+    #     } else
+    #     { rc = (PL_handle_signals() >= 0); /* rc = false: exception */
+    #     }
+    #     LOAD_REGISTERS(QID);
+    #     LD->query->next_environment = NULL;
+    #     lTop = (LocalFrame)valTermRef(lTopH);
+    #     if ( rc != true )
+    #     { if ( rc )           /* rc < 0 (*_OVERFLOW): raise overflow exception */
+    #         raiseStackOverflow(rc);
+    #       THROW_EXCEPTION;
+    #     }
+    #     VMI_GOTO(I_CALL1);
+    #   }
+    # DIVERGES: the LOCAL_OVERFLOW case is compileGoalClause's own (`ensureLocalSpace`, see its DIVERGES); lowering `lTop` back to
+    # the frame drops the record `I_CALL1` pushed (`dropRecords!`), which `I_CALL1` pushes again, where upstream reuses the
+    # position; `lTop` is a position (no stack shift moves it).
+    if mc_cl isa boolex_t                           # case CHECK_INTERRUPT:
+        @assert mc_cl == CHECK_INTERRUPT
+        mc_lTopH = ld.lTop                          # term_t lTopH = consTermRef(lTop);
+        mc_q = ld.queries[QueryFromQid(ld, QID)]
+        mc_q.next_environment = NFR                 # LD->query->next_environment = NFR;
+        setLTop!(ld, argFrameP(mc_nb, 1))           # lTop = (LocalFrame)argFrameP(NFR, 1);
+        ARGP = argp_t{T}(ARGP_SLOT, ld.lTop, ph)    # ARGP = (Word)lTop;
+        @SAVE_REGISTERS(QID)
+        mc_rc = PL_handle_signals(ld) >= 0          # rc = (PL_handle_signals() >= 0);
+        @LOAD_REGISTERS(QID)
+        mc_q.next_environment = 0                   # LD->query->next_environment = NULL;
+        setLTop!(ld, mc_lTopH)                      # lTop = (LocalFrame)valTermRef(lTopH);
+        mc_rc || @goto b_throw                      # if ( rc != true ) THROW_EXCEPTION;
+        @goto I_CALL1                               # VMI_GOTO(I_CALL1);
+    end
     DEF = gd.procedures_dcall1.definition           # NFR->predicate
     mc_f2 = ld.frames[NFR]
     setFramePredicate(mc_f2, DEF)                   # (compileClause: fr->predicate)

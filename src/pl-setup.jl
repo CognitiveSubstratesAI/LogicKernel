@@ -269,6 +269,30 @@ function handleSignals(ld::PL_local_data)::Int
     return done
 end
 
+# PORT: pl-setup.c PL_handle_signals
+# (pl-setup.c:1193-1201 at the pin:
+#     int
+#     PL_handle_signals(void)
+#     { GET_LD
+#
+#       if ( !is_signalled() )
+#         return 0;
+#       else
+#         return handleSignals();
+#     }
+# )
+# DIVERGES: as `handleSignals`'s (the collector's virtual signals). Its caller here is i_metacall_common's
+# CHECK_INTERRUPT arm (src/pl-wam.jl) and assert_term's retry (src/pl-comp.jl); the long-loop callers
+# (pl-list.c, pl-file.c, ...) keep their own DIVERGES lines.
+"Run the pending signals' handlers when one is pending; 0, their number, or -1 for an exception (pl-setup.c `PL_handle_signals`)."
+function PL_handle_signals(ld::PL_local_data)::Int
+    if !is_signalled(ld)                            # if ( !is_signalled() )
+        return 0
+    else
+        return handleSignals(ld)
+    end
+end
+
 # PORT: pl-setup.c signames as SIGNAMES
 # DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
 # `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);

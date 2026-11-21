@@ -651,6 +651,7 @@ trailValP(e::word)::Int = Int(e >> 3)
     BOOLEX_FALSE = 0            # logical failure (= `false`)
     LOCAL_OVERFLOW = -1         # Local stack overflow
     GLOBAL_OVERFLOW = -2        # Global stack overflow (L1f f2)
+    CHECK_INTERRUPT = -7        # Procedure was signalled (G1-C: the analysis' interrupt test, pl-comp.c:971-974)
     DO_COMPOUND = -8            # need more general algorithm
     NOT_CALLABLE = -9           # pl-comp.c
     MAX_ARITY_OVERFLOW = -10    # pl-comp.c

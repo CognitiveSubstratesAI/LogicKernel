@@ -275,8 +275,9 @@ const TARGET_MODULE_NONE = target_module(TM_NONE, 0, 0)
 # argument's placeholder and its WORD, which its pseudo variable's cell takes (`*k = *arg`) — a
 # list, not an `IdDict`: two arguments of one value are one `===` key (a string compares by content,
 # the interned implementation shares a ground compound), and each keeps its own word. No `clause`
-# (the clause is created after the code), and the fields of subsystems not yet ported:
-# `progress` (interrupts). `colon_context` since MOD3a and `at_context` since MOD3b (last, before
+# (the clause is created after the code). `progress` (the interrupt test's count, G1-C) and `ld`
+# (LD, read by that test: the engine's local data, `nothing` in a compileInfo a test builds) come
+# before `gd`. `colon_context` since MOD3a and `at_context` since MOD3b (last, before
 # `gd`; upstream's come after `branch_vars`). Since R1g: `singletons`,
 # `warning_list` (0: the caller wants no warnings) and `warnings` (`nothing` until the first one,
 # then in the order raised — see `c_warning`); `styleCheck` is upstream's GLOBAL
@@ -321,6 +322,8 @@ mutable struct compileInfo{T}
     local_words::Union{Nothing, Vector{Pair{T, word}}}      # (islocal on the cells: argvar → *arg)
     colon_context::target_module                            # Context:Goal (MOD3a)
     at_context::target_module                               # Call@Context (MOD3b)
+    progress::Int                                           # Progress counter (G1-C)
+    ld::Union{Nothing, PL_local_data{T}}                    # (LD: is_signalled(), G1-C)
     const gd::PL_global_data{T}                             # (GD: its atom table, L1b C6b)
 end
 
@@ -339,6 +342,7 @@ compileInfo{T}(
         false, false, 0, 0, nothing, 0, nothing,                # not a goal clause
         TARGET_MODULE_NONE,                                     # ci->colon_context.type = TM_NONE (c:2047)
         TARGET_MODULE_NONE,                                     # ci->at_context.type = TM_NONE (c:2049)
+        0, nothing,                                             # no progress; LD: set by the compiling caller
         gd
     )
 
@@ -976,6 +980,19 @@ function analyseVariables2!(
         @goto resume
     end
     if kind(head) === EXPR
+        # GC-POINT pl-comp.c:971-974 (the signal test that lets i_metacall_common and assert_term
+        # serve a pending SIG_GC; the cycle test before it, :966-970, is the callers', see above)
+        #   if ( (++ci->progress%32768) == 0 && is_signalled() && !LD->critical )
+        #   { nvars = CHECK_INTERRUPT;
+        #     goto error_unwind;
+        #   }
+        # DIVERGES: no `LD->critical` (handleSignals' DIVERGES, src/pl-setup.jl); `ci.ld` is `nothing`
+        # in a compileInfo a test builds, which never interrupts; `error_unwind` drops nothing here
+        # (`ci` is dropped by the caller, which compiles again).
+        ci.progress += 1
+        if ci.progress % 32768 == 0 && (sl = ci.ld) !== nothing && is_signalled(sl)
+            return Int(CHECK_INTERRUPT)                         # nvars = CHECK_INTERRUPT
+        end
         if ci.islocal
             if ci.subclausearg                                  # a compound argument: an argvar
                 ci.argvars += 1
@@ -1230,7 +1247,8 @@ Analyse the variables of `head` and `body` (`nothing` for a fact) of a clause of
 whose global data is `gd`: a variable that occurs once —
 counting the branches of a `;` as one — becomes a void (no slot); the others get their frame offset,
 walking the slots in order and COMPACTING past every void above the arity — an argument keeps its
-slot whatever it holds (pl-comp.c). Returns the frame size.
+slot whatever it holds (pl-comp.c). Returns the frame size, or `Int(CHECK_INTERRUPT)` when the
+analysis' signal test stopped it (G1-C).
 """
 function analyse_variables!(
     gd::PL_global_data{T}, ci::compileInfo{T}, head::Union{Nothing, T},
@@ -1241,8 +1259,10 @@ function analyse_variables!(
     ci.branch_vars = nothing
     ci.singletons = 0
     nvars = head === nothing ? 0 : analyseVariables2!(gd, ci, head, 0, -1, false)
+    nvars == Int(CHECK_INTERRUPT) && return nvars              # (c:1333-1334: `< 0` … `return nvars`, G1-C)
     if body !== nothing
         nvars = analyseVariables2!(gd, ci, body, nvars, arity, true)
+        nvars == Int(CHECK_INTERRUPT) && return nvars          # (c:1337-1338, G1-C)
     end
     argvars = ci.argvars                                       # counted by the analysis
     if ci.warning_list != 0
@@ -3092,6 +3112,7 @@ function _compile_clause_head!(
     flags::UInt32=UInt32(0)
 )::Int where {T}
     nv = analyse_variables!(gd, ci, head, body)               # prolog_vars = variables = nv
+    nv == Int(CHECK_INTERRUPT) && return nv                    # case CHECK_INTERRUPT: return rc; (c:2067-2068, G1-C)
     ci.variables = nv
     initMerge!(ci)
     if (flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)) != 0
@@ -3154,15 +3175,17 @@ result is then `nothing`. With a term reference `warnings`, it is set to the lis
 compiler's warnings for the clause (`[]`: none). `flags` `SSU_COMMIT_CLAUSE` or `SSU_CHOICE_CLAUSE`
 (since SSU1) compiles `head => body` or `head ?=> body`: `I_CHP` first, the head, `I_SSU_COMMIT` or
 `I_SSU_CHOICE` where a rule has `I_ENTER`; such a clause with the body `true` is no fact (no
-`UNIT_CLAUSE`): its head is followed by `I_SSU_*` and `I_EXIT`.
+`UNIT_CLAUSE`): its head is followed by `I_SSU_*` and `I_EXIT`. `CHECK_INTERRUPT` (since G1-C)
+when a signal is pending at the analysis' test: the caller serves it and compiles again.
 """
 function compileClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, head::T, body::Union{Nothing, T},
     proc::Procedure{T}, m::module_t{T}, warnings::term_t, flags::UInt32=UInt32(0);
     ex::Union{Nothing, cell_export{T}}=nothing
-)::Union{Nothing, Clause{T}} where {T}
+)::Union{Nothing, Clause{T}, boolex_t} where {T}
     def = proc.definition                                      # getProcDefinition(proc)
     ci = compileInfo{T}(gd, def.arity, m, proc)
+    ci.ld = ld                                                 # (LD: the analysis' signal test, G1-C)
     ci.styleCheck = ld.debugstatus_styleCheck                  # (debugstatus.styleCheck)
     ci.warning_list = warnings
     ci.warnings = nothing
@@ -3190,6 +3213,7 @@ function compileClause(
     ssu = flags & (SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE)    # clause.flags = flags & (…) (c:2028)
     rule = _is_rule_body(gd, body)
     nv = _compile_clause_head!(gd, ci, head, body, ssu)
+    nv == Int(CHECK_INTERRUPT) && return CHECK_INTERRUPT       # case CHECK_INTERRUPT: return rc; (c:2067-2068)
     flags = ssu
     if rule
         # ok; all live in the same module (pl-comp.c:2133-2142 at the pin; MOD3a)
@@ -3395,14 +3419,15 @@ end
 # slot `i`): `*g = *body` is the location's word, a variable's cell its reference, an argvar's its
 # argument's word, and the NOT_CALLABLE culprit the goal itself (`pushWordAsTermRef(body)`).
 """
-    compileGoalClause(gd, ld, loc, m, base) -> Clause, or nothing
+    compileGoalClause(gd, ld, loc, m, base) -> Clause, nothing, or CHECK_INTERRUPT
 
 Compile the goal at location `loc` to a temporary clause of `'<meta-call>'/1` in module `m` for the
 frame at `base` (= `lTop`), writing its pseudo variables' cells as upstream does (pl-comp.c).
+`CHECK_INTERRUPT` (G1-C) when a signal is pending at the analysis' test.
 """
 function compileGoalClause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, loc::Int, m::module_t{T}, base::Int
-)::Union{Nothing, Clause{T}} where {T}
+)::Union{Nothing, Clause{T}, boolex_t} where {T}
     ci = compileInfo{T}(gd, 0, m, gd.procedures_dcall1)
     ci.cell_export = cell_export{T}()
     ci.local_words = Pair{T, word}[]
@@ -3420,7 +3445,7 @@ end
 function _compileGoalClause!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ci::compileInfo{T}, body::T, base::Int,
     loc::Int
-)::Union{Nothing, Clause{T}} where {T}
+)::Union{Nothing, Clause{T}, boolex_t} where {T}
     def = ci.procedure.definition
     ci.islocal = true
     ci.subclausearg = false
@@ -3429,7 +3454,9 @@ function _compileGoalClause!(
     ci.local_ld = ld
     ci.local_base = base
     ci.head_unify = false
+    ci.ld = ld                                                 # (LD: the analysis' signal test, G1-C)
     nv = analyse_variables!(gd, ci, nothing, body)
+    nv == Int(CHECK_INTERRUPT) && return CHECK_INTERRUPT       # case CHECK_INTERRUPT: return rc; (c:2067-2068)
     ensureLocalSpace(ld, nv + LOCAL_MARGIN) || return nothing
     g = varFrameP(base, Int(VAROFFSET(1))) + 1                 # g = varFrameP(lTop, VAROFFSET(1))
     _slot_link_loc!(ld, g, _deref_loc(ld, loc))                # *g = *body
@@ -4082,11 +4109,37 @@ function assert_term!(
         PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :cyclic_term))
         return nothing
     end
-    ex = cell_export{T}()                                       # (L1f f3a: off the cells, one map)
-    h = export_cells(ld, ex, -(head + 1))
-    b = export_cells(ld, ex, -(body + 1))
-    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)
-    clause === nothing && return nothing
+    # (pl-comp.c:4953-4969 at the pin; the CHECK_INTERRUPT retry since G1-C)
+    #   for(;;)
+    #   { h = valTermRef(head); b = valTermRef(body); deRef(h); deRef(b);
+    #     rc = compileClause(&clause, h, b, proc, module, warnings, hflags);
+    #     if ( rc == CHECK_INTERRUPT )
+    #     { if ( PL_handle_signals() < 0 )
+    #         return NULL;
+    #       assert(!is_signalled());
+    #       continue;
+    #     }
+    #     if ( rc != true )
+    #       return NULL;
+    #     break;
+    #   }
+    # The export is redone with each pass, as upstream reads the cells again: a collection moves them.
+    local clause::Clause{T}
+    while true
+        ex = cell_export{T}()                                   # (L1f f3a: off the cells, one map)
+        h = export_cells(ld, ex, -(head + 1))
+        b = export_cells(ld, ex, -(body + 1))
+        rc = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)
+        if rc isa boolex_t                                      # if ( rc == CHECK_INTERRUPT )
+            @assert rc == CHECK_INTERRUPT
+            PL_handle_signals(ld) < 0 && return nothing         # if ( PL_handle_signals() < 0 ) return NULL;
+            @assert !is_signalled(ld)
+            continue
+        end
+        rc === nothing && return nothing                        # if ( rc != true ) return NULL;
+        clause = rc
+        break
+    end
     def = proc.definition                                       # getProcDefinition(proc)
 
     # If loc is defined, we are called from '$record_clause'/2. This code takes care of
