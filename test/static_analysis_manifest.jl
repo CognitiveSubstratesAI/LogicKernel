@@ -1530,7 +1530,8 @@ function _manifest_index(T)
             true
         ),
         (LK._load_registers!, Tuple{LD, Int}, true),
-        (LK.resumeAfterException, Tuple{LD, Bool, Bool}, false),
+        (LK.resumeAfterException, Tuple{LD, Bool, Nothing}, false),   # G1-C: `outofstack` is the stack's name or nothing
+        (LK.resumeAfterException, Tuple{LD, Bool, Symbol}, false),
         (LK._reset_exception_slot!, Tuple{LD, Int, Int}, true),
         # V9f — catch/3: the catcher search and catch/3's exit position (src/pl-wam.jl)
         (LK.findCatcher, Tuple{GD, LD, Int, Int, Int}, false),
@@ -5160,6 +5161,22 @@ _manifest_g1gca(::Type{T}) where {T} = (
     (LK.setLTopInBody, Tuple{LK.PL_local_data{T}}, false)
 )
 
+# G1-C: the VM's safe-point test (src/pl-alloc.jl), the collector's two signal handlers and their dispatch (src/pl-setup.jl), the signal test
+# (src/pl-inline.jl) and the exception points' collector calls (src/pl-wam.jl). The handlers, the dispatch and exceptionUnwindGC run the
+# collector or the tune hook (AllocCheck-false); the tests and `_outofstack_gc` read fields only. `makeMoreStackSpace` and
+# `resumeAfterException` keep their older groups' entries.
+_manifest_g1c(::Type{T}) where {T} = (
+    (LK.hasStackSpace, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.is_signalled, Tuple{LK.PL_local_data{T}}, true),
+    (LK.gc_handler, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.gc_tune_handler, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._dispatch_gc_signal, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.handleSignals, Tuple{LK.PL_local_data{T}}, false),
+    (LK.PL_handle_signals, Tuple{LK.PL_local_data{T}}, false),
+    (LK._outofstack_gc, Tuple{LK.PL_local_data{T}, Symbol}, true),
+    (LK.exceptionUnwindGC, Tuple{LK.PL_local_data{T}}, false)
+)
+
 # G1-B (src/pl-fli.jl PushPtr!/PopPtr!/PushVal!/PopVal!; the `flags` forms of bind_attvar_const, bindConst, PL_unify_functor, PL_unify_compound):
 # the 3-argument forms are the older groups' entries (the default forwards to the 4/5-argument method).
 _manifest_g1gcb(::Type{T}) where {T} = (
@@ -6183,6 +6200,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_g1gc2b(_M2)...,
     # G1-GC G1-A: clearLocalVariablesFrame, setLTopInBody (src/pl-gcdriver.jl); reference type only
     _manifest_g1gca(_M2)...,
+    # G1-C: the safe-point test, the signal handlers, the exception points' collector calls; reference type only
+    _manifest_g1c(_M2)...,
     # G1-B: the temporary-handle twins and the flagged forms, over each term type
     _manifest_g1gcb(_M1)...,
     _manifest_g1gcb(_M2)...,
