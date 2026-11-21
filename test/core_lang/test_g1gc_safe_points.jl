@@ -2,7 +2,7 @@
 # allow-new-artifact: G1-2, the test of the safe-point table docs/g1gc_safe_points.md and of the hook (src/pl-gc.jl considerGC), after test/core_lang/test_trie_gen_swipl.{jl,pl,out}
 # test/core_lang/test_g1gc_safe_points.jl — what the safe-point audit claims, checked on the code (docs/g1gc_safe_points.md, pin 18168e62):
 #   * TABLE == CODE: the `SITE <name> <file> <upstream>` block of the table and the `ALLOW_GC ... # G1-GC safe point: <name>` lines of src/*.jl
-#     are the same set of names (each side read through ONE extractor, both non-empty), each name's line is in the file the table names, and
+#     with the VM's `@ENSURE_GLOBAL_SPACE(n, :<name>, ..)` calls (G1-C6) are the same set of names (each side read through ONE extractor, both non-empty), each name's line is in the file the table names, and
 #     every row of the tables carries a verdict word;
 #   * THE HOOK, by hand: `ensureGlobalSpace(ld, n, flags, site)` with `ld.gc_force` records `site` only when `flags` has ALLOW_GC, and a
 #     BLOCKED collection (the collector declines) moves nothing (the global stack's words, its top, the trail, the value table are as they were);
@@ -13,7 +13,10 @@
 # `ld.gc_force` is the model of upstream's FAKE_GC (pl-vmi.c:238-251). The collector is src/pl-gcdriver.jl (G1-6c): it runs at a foreign safe point (functor/3, =../2, '$length'/2:
 # I_FCALLDET* saves the registers, so the query is inside the VM; `considerGC` passes G1-2b's `get_vmi_state`, which builds its state); the hook test
 # by hand blocks the collector.
-# NOT HERE: the VM macro sites (@ENSURE_GLOBAL_SPACE: no ALLOW_GC yet, table A "VM" rows), the signal and exception points (table C).
+# The VM macro sites (since G1-C4 `@ENSURE_GLOBAL_SPACE` passes ALLOW_GC with the VMI's name as its site, pl-vmi.c:220-235
+# `ensureStackSpace(g, t)` = `ensureStackSpace_ex(g, t, ALLOW_GC)`, pl-gc.h:95) are `SITE` lines since G1-C6: a row whose VMI crosses the end of
+# the global stack's vector under `gc_force` records one, and it is inside the table. No row here REQUIRES one (which VMI reaches the end depends on
+# the heap's size): their reach, and the signal and exception points (table C), are test_g1c_wiring_swipl.jl's.
 # The kill rows are `@test`s INSIDE testsets (a top-level failing `@test` gives no verdict in CI mode).
 using Test, LogicKernel
 const LK = LogicKernel
@@ -100,7 +103,23 @@ function doc_sites(text::String)::Vector{Tuple{String, String}}
     ]
 end
 
-# the code's sites: a line of `src` passing ALLOW_GC as an argument and marked `# G1-GC safe point: <name>`: (name, file)
+# the VM's sites (G1-C6): a code line of `src` (not a comment) calling `@ENSURE_GLOBAL_SPACE(n, :<name>, ..)`, the macro that passes ALLOW_GC
+# with its second argument as the site (src/pl-wam.jl, pl-vmi.c:220-235): (name, file)
+function src_vm_sites(src::String)::Vector{Tuple{String, String}}
+    out = Tuple{String, String}[]
+    for f in sort(readdir(src))
+        endswith(f, ".jl") || continue
+        # over the whole file text: the Blue formatter wraps a long call so that the site name is on the next line (pl-wam.jl: T_FUNCTOR,
+        # H_RFUNCTOR, H_RLIST); `^[^#\n]*` keeps a comment line out
+        text = read(joinpath(src, f), String)
+        for m in eachmatch(r"^[^#\n]*@ENSURE_GLOBAL_SPACE\(\s*[^,]+,\s*:(\w+)"m, text)
+            push!(out, (String(m[1]), "src/" * f))
+        end
+    end
+    return out
+end
+
+# the code's sites: a line of `src` passing ALLOW_GC as an argument and marked `# G1-GC safe point: <name>`, and the VM's: (name, file)
 function src_sites(src::String)::Vector{Tuple{String, String}}
     out = Tuple{String, String}[]
     for f in sort(readdir(src))
@@ -110,7 +129,7 @@ function src_sites(src::String)::Vector{Tuple{String, String}}
             m === nothing || push!(out, (String(m[1]), "src/" * f))
         end
     end
-    return out
+    return vcat(out, src_vm_sites(src))
 end
 
 const _G_VERDICT = r"\b(SAFE-REGISTERS|SAFE|NEEDS-ROOT|NEEDS-REFACTOR|NOT-A-SAFE-POINT|NO-COUNTERPART|MACRO)\b"
@@ -126,6 +145,9 @@ const _G_VERDICT = r"\b(SAFE-REGISTERS|SAFE|NEEDS-ROOT|NEEDS-REFACTOR|NOT-A-SAFE
         @test (name, file) in ss                                      # and the file the table names holds the line
     end
     @test length(ds) >= 18
+    vs = src_vm_sites(joinpath(_G_ROOT, "src"))
+    @test length(unique(first.(vs))) == 15                            # G1-C6: the 15 VMI names of the 18 macro calls (G1-C4), each a SITE line
+    @test all(v -> v in ds, unique(vs))
     # the rows: Table A has the 129 upstream sites; B and C have rows of their own; each row has one verdict word
     a = split(text, "## Table A")[2]
     arows = filter(l -> startswith(l, "| pl-"), split(first(split(a, "## Table B")), '\n'))
@@ -303,10 +325,13 @@ end
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
     @test !any(l -> occursin(r"export-error|undefined| exception$", l), expected)
-    # every site of the table is required by some row (both sides non-empty): a site no row reaches proves nothing
+    # every foreign site of the table is required by some row (both sides non-empty): a site no row reaches proves nothing. The VM's sites
+    # (G1-C6) are in `table` for the check below; no row requires one (see the header): test_g1c_wiring_swipl.jl reaches them.
+    vmtable = Set(Symbol(first(s)) for s in src_vm_sites(joinpath(_G_ROOT, "src")))
     required = Set(Symbol.(vcat(values(_G_REQ)...)))
-    @test !isempty(required) && !isempty(table)
-    @test required == table
+    @test !isempty(required) && !isempty(table) && !isempty(vmtable)
+    @test isempty(intersect(required, vmtable))
+    @test required == setdiff(table, vmtable)
 
     off_lines, off_hits, off_heap, _ = run_rows(_G_PL, names; force=false)
     on_lines, on_hits, on_heap, on_coll = run_rows(_G_PL, names; force=true)
