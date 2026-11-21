@@ -109,13 +109,13 @@ end
     ld = db.ld
     @test _rlines(db, _R[_rf("thandler", _rv(60))]) ==
         ["thandler(-(resource_error(stack),1000)) det", "end"]
-    @test ld.gTop <= ld.stacks_limit && !ld.exception_processing && !ld.outofstack
+    @test ld.gTop <= ld.stacks_limit && !ld.exception_processing && ld.outofstack === nothing
     LK.PL_open_foreign_frame(ld)
     room = ld.stacks_limit - LK._stacks_in_use(ld, 0)   # (D-0036: the three stacks)
     @test LK.ensureGlobalSpace(ld, room)                   # exactly at the limit: room
     @test !ld.exception_processing
     @test !LK.ensureGlobalSpace(ld, room + 1)              # one cell over: the overflow
-    @test ld.exception_processing && ld.outofstack
+    @test ld.exception_processing && ld.outofstack === :global
     r = lk_answer(ld, ld.exception_bin)
     @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
     @test LK.ensureGlobalSpace(ld, room + 1_000_000)       # processing: the handler's own cells
@@ -212,7 +212,7 @@ _sl_bag!(ld) =
         n += 1
         @assert LK.add_findall_bag(ld, t, 0) == LK.FFALSE
     end
-    @test n == 43691 && ld.bags[end].solutions == 43691 && ld.outofstack
+    @test n == 43691 && ld.bags[end].solutions == 43691 && ld.outofstack === :global
     r = lk_answer(ld, ld.exception_bin)
     @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
     # a compound answer counts its cells: f(a) is 2, so 5 words per answer

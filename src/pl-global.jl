@@ -600,8 +600,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # upstream field, the writers' meter. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
 # The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the global
-# stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack` for the one stack that can
-# overflow, the local stack, so a flag. `unusable` has no upstream field: a second overflow of the
+# stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack`: the stack we are out of, by the name the stack code uses
+# (`:local`, `:global`; `nothing` is NULL; G1-C, dispatcher decision 2, where it was a flag for the local stack). `unusable` has no upstream field: a second overflow of the
 # local stack before the first is recovered from marks the engine broken, where upstream ends the
 # process (`outOfStack`, src/pl-alloc.jl; user, 2026-10-07).
 # `GD` is the database of the query `PL_open_query` opened last (since V9c): upstream's code reaches
@@ -769,7 +769,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
     exception_processing::Bool                                  # exception.processing
-    outofstack::Bool                                            # outofstack (the local stack)
+    outofstack::Union{Nothing, Symbol}                          # outofstack: the Stack we are out of (nothing: NULL)
     unusable::Bool                                              # (after a second overflow)
     trim_stack_requested::Bool                                  # trim_stack_requested (G1-A): perform a trim-stack
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
@@ -906,7 +906,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         DEPTH_NO_LIMIT, 0,                      # depth_info: limit (pl-setup.c: DEPTH_NO_LIMIT), reached
         INFERENCE_NO_LIMIT,                     # inference_limit.limit (pl-setup.c: INFERENCE_NO_LIMIT)
         0, 0, 0,                                # tmp: set by emptyStacks!
-        false, false, false, false, 0,          # exception.processing, outofstack, unusable, trim_stack_requested, fast_condition
+        false, nothing, false, false, 0,        # exception.processing, outofstack, unusable, trim_stack_requested, fast_condition
         ClauseChoice{T}(nothing, word(0)), e,
         gd,                                     # GD: the engine's database (PL_open_query sets it again)
         source_location{T}(nothing, IOPOS()),

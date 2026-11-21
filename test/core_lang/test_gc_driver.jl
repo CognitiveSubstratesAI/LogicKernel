@@ -440,7 +440,7 @@ end
     @test ld.gTop <= gtop0 - length(dead_cells)                  # the dead term's cells are gone: the room that was gained
     @test LK._stacks_in_use(ld, n) <= ld.stacks_limit            # fits now ...
     @test r === true                                             # ... and the re-check says so (the mutant keeps the stale `fits` and raises)
-    @test !ld.exception_processing && !ld.outofstack
+    @test !ld.exception_processing && ld.outofstack === nothing
     @test !isempty(_gd_views(ld, t, 2)) && _gd_views(ld, t, 2) == before
 
     # the control: the SAME call with a limit no collection could meet collects, still does not fit, and raises the overflow
@@ -452,7 +452,7 @@ end
     c2 = st2.totals.collections
     r2 = LK.ensureGlobalSpace(ld2, n, LK.ALLOW_GC, :probe_nogain)
     @test ld2.gc_safe_hits == [:probe_nogain] && st2.totals.collections == c2 + 1
-    @test r2 === false && ld2.outofstack && ld2.exception_processing
+    @test r2 === false && ld2.outofstack === :global && ld2.exception_processing
 end
 
 @testset "clear_unused_stack writes nothing (a release build of swipl)" begin

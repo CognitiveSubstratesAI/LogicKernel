@@ -69,8 +69,8 @@ end
 push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_overflow)
 
 # PORT: pl-alloc.c outOfStack as outOfStack!
-# DIVERGES: the local stack's, the only one that overflows here.
-#   * A SECOND overflow before the first is recovered from (`LD->outofstack` still set): upstream
+# DIVERGES: the stacks that overflow here are the local and the global one (`stack`, the name `LD->outofstack` keeps since G1-C).
+#   * A SECOND overflow OF THE SAME STACK before the first is recovered from (`LD->outofstack` still set): upstream
 #     prints a backtrace and ENDS THE PROCESS (`fatalError`), because it can no longer trust its
 #     state. A library must not end its host, so the kernel marks the local data `unusable` —
 #     `PL_open_query` refuses every later query on it — and throws a Julia error with upstream's
@@ -96,14 +96,14 @@ first is recovered from makes `ld` unusable and throws.
 function outOfStack!(
     ld::PL_local_data{T}, how::stack_overflow_action, stack::Symbol=:local
 )::Bool where {T}
-    if ld.outofstack                                # LD->outofstack == stack
+    if ld.outofstack === stack                      # LD->outofstack == stack (G1-C: the stack, no longer a flag)
         ld.unusable = true                          # (see above: no fatalError)
-        error("[Thread 1]: failed to recover from local-overflow: Sorry, cannot continue")
+        error("[Thread 1]: failed to recover from ", stack, "-overflow: Sorry, cannot continue")   # s->name
     end
     enableSpareStacks!(ld)
     ld.trim_stack_requested = true                  # LD->trim_stack_requested = true (pl-alloc.c:695)
     ld.exception_processing = true
-    ld.outofstack = true
+    ld.outofstack = stack                           # LD->outofstack = stack
     ctx = push_overflow_context(T, stack)           # word ctx = push_overflow_context(s, 6)
     p = allocGlobalCells!(ld, 5)                    # Word p = gTop; … gTop += 5 (see (*) upstream)
     ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)   # p[0] = FUNCTOR_error2

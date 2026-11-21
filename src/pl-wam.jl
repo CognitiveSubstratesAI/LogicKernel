@@ -665,8 +665,8 @@ function findCatcher(
     chpos = ch == 0 ? typemax(Int) : ld.choices[ch].base   # term_t chref = consTermRef(ch)
     wstate = saveWakeup(ld, false)
     if wstate === nothing
-        ld.outofstack = true
-        outOfStack!(ld, STACK_OVERFLOW_THROW)           # throws: see outOfStack!
+        ld.outofstack = :local                          # LD->outofstack = (Stack)&LD->stacks.local
+        outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
         return 0                                        # assert(0)
     end
     while fr != 0
@@ -677,8 +677,8 @@ function findCatcher(
             ex2 = 0                                      # term_t ..., ex2 = 0
             cfid = PL_open_foreign_frame(ld)
             if cfid == 0
-                ld.outofstack = true
-                outOfStack!(ld, STACK_OVERFLOW_THROW)   # throws: see outOfStack!
+                ld.outofstack = :local                  # LD->outofstack = (Stack)&LD->stacks.local
+                outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
                 return 0                                # assert(0)
             end
             f = ld.frames[fr]                            # fr = (LocalFrame)valTermRef(tref)
@@ -2467,19 +2467,17 @@ end
 end
 
 # PORT: pl-wam.c resumeAfterException
-# DIVERGES: `outofstack` is a flag (the local stack is the only one that overflows); there is no
-# stack garbage collector to consult (`considerGarbageCollect`, the `gced_size`s; G1), so the stacks
-# are trimmed (`trimStacks!`: the spare reserved again) as when it declines; `fr_rewritten` is not
-# kept.
+# DIVERGES: `outofstack` is the overflowing stack's name or `nothing` (NULL), `outofstack->gc` its policy's `gc` (`_outofstack_gc`; G1-C decision 2);
+# the `gced_size`s are `ld.gc.global_policy`/`trail_policy`'s; `fr_rewritten` is not kept.
 # NOT PORTED: `clear_low_c_stack` (no C stack) and `updatePendingThreadSignals` (no threads).
 """
     resumeAfterException(ld, clear, outofstack)
 
-After an exception: clear it (when `clear`), reserve the local stack's spare again, and resume
-normal operation (pl-wam.c).
+After an exception: clear it (when `clear`), consider a stack collection, trim the stacks (their spares
+reserved again) and resume normal operation (pl-wam.c).
 """
 function resumeAfterException(
-    ld::PL_local_data{T}, clear::Bool, outofstack::Bool
+    ld::PL_local_data{T}, clear::Bool, outofstack::Union{Nothing, Symbol}
 )::Nothing where {T}
     if clear
         ld.exception_term = 0
@@ -2487,10 +2485,45 @@ function resumeAfterException(
         _reset_exception_slot!(ld, ld.exception_printed, 1)     # setVar(*valTermRef(LD->exception.printed))
         _reset_exception_slot!(ld, ld.exception_pending, 3)     # setVar(*valTermRef(LD->exception.pending))
     end
-    trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
+    # GC-POINT pl-wam.c:1966-1977
+    #   if ( outofstack && outofstack->gc )
+    #   { LD->stacks.global.gced_size = 0;
+    #     LD->stacks.trail.gced_size  = 0;
+    #   }
+    #   if ( !considerGarbageCollect((Stack)NULL) )
+    #   { trimStacks((outofstack != NULL));
+    #   } else
+    #   { trimStacks(false);  /* just re-enable the spare stacks */
+    #     if ( outofstack != NULL )
+    #       LD->trim_stack_requested = true;  /* next time with resize */
+    #   }
+    if outofstack !== nothing && _outofstack_gc(ld, outofstack)
+        ld.gc.global_policy.gced_size = 0
+        ld.gc.trail_policy.gced_size = 0
+    end
+    if !considerGarbageCollect(ld, nothing)
+        trimStacks!(ld, outofstack !== nothing)
+    else
+        trimStacks!(ld, false)                      # just re-enable the spare stacks
+        if outofstack !== nothing
+            ld.trim_stack_requested = true          # next time with resize
+        end
+    end
     ld.exception_processing = false
-    ld.outofstack = false
+    ld.outofstack = nothing                         # LD->outofstack = NULL
     return nothing
+end
+
+# ORIGINAL (G1-C): upstream's `outofstack->gc` (pl-incl.h `struct stack`, field `gc`). The kernel's stacks are not structs (`ld.gc`'s three `gc_stack_policy`s carry `gc`, pl-setup.c:1629-1636 `init_stack(..., gc)`:
+# global and trail true, local false); `stack` is the name `LD->outofstack` keeps (G1-C decision 2). The argument stack never overflows here.
+"`outofstack->gc`: can the stack named `stack` be garbage collected (its `init_stack` flag)?"
+function _outofstack_gc(ld::PL_local_data, stack::Symbol)::Bool
+    if stack === :global
+        return ld.gc.global_policy.gc
+    elseif stack === :trail
+        return ld.gc.trail_policy.gc
+    end
+    return ld.gc.local_policy.gc
 end
 
 """
@@ -2899,7 +2932,7 @@ function PL_next_solution_guarded(
     FFR::Int = 0                                    # FFR_ID: foreign_redo's foreign frame (an index)
     SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
     dot_f::word = gd.functor_dot2                   # FUNCTOR_dot2 (L1c)
-    bt_outofstack::Bool = false                     # b_throw's outofstack
+    bt_outofstack::Union{Nothing, Symbol} = nothing # b_throw's outofstack
     wk_h::Int = 0                                   # wakeup's head cell (AV3)
     tg_base::Int = 0                                # t_trie_gen's frame position (TR4)
     tg_ar::Int = 0                                  # t_trie_gen's arity of `+/n` (TR4)
@@ -6589,8 +6622,8 @@ function PL_next_solution_guarded(
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c b_throw
-    # DIVERGES: since V9f `findCatcher` finds catch/3's frame (an index; 0 when none). `outofstack` is a flag
-    # (the local stack's); with no emergency space, `outOfStack!`'s second-overflow branch marks the
+    # DIVERGES: since V9f `findCatcher` finds catch/3's frame (an index; 0 when none). `outofstack` is the stack's
+    # name (G1-C decision 2); with no emergency space, `outOfStack!`'s second-overflow branch marks the
     # local data unusable and throws, where upstream ends the process (see there). The rewrite loop's
     # `exception_hook` runs only when `'$exception_hook'/5` has clauses — none: not entered.
     @label b_throw
@@ -6599,7 +6632,7 @@ function PL_next_solution_guarded(
     _reset_argument_stack!(ld, ld.queries[QF])
     @assert ld.exception_term != 0
     bt_outofstack = ld.outofstack                   # outofstack = LD->outofstack
-    ld.outofstack = false
+    ld.outofstack = nothing                         # LD->outofstack = NULL
 
     bt_low = argFrameP(ld.frames[FR].base, (ld.frames[FR].predicate::Definition{T}).arity)
     if ld.lTop < bt_low
@@ -6609,8 +6642,8 @@ function PL_next_solution_guarded(
     if has_emergency_space_local(ld, SIZEOF_LOCALFRAME)
         bt_fid = open_foreign_frame(ld)
     else                                            # fatal
-        ld.outofstack = true
-        outOfStack!(ld, STACK_OVERFLOW_THROW)       # throws: see outOfStack!
+        ld.outofstack = :local                      # LD->outofstack = (Stack)&LD->stacks.local
+        outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
         bt_fid = 0
     end
     # find the catching frame (since V9f). The rewrite loop runs `exception_hook` only when

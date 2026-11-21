@@ -1445,7 +1445,7 @@ PL_compare(ld::PL_local_data{T}, t1::term_t, t2::term_t) where {T} =
 function PL_clear_exception(ld::PL_local_data{T})::Nothing where {T}
     if ld.exception_term != 0
         resumeAfterException(ld, true, ld.outofstack)
-        ld.outofstack = false
+        ld.outofstack = nothing                     # LD->outofstack = NULL
     end
     return nothing
 end

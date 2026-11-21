@@ -1981,11 +1981,11 @@ const INFERENCE_NO_LIMIT = typemax(Int)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
-# `outofstack` is a flag (the local stack's, as `LD->outofstack` here).
+# `outofstack` is the stack's name or `nothing`, as `LD->outofstack` here (G1-C).
 "What `saveWakeup` set aside (pl-incl.h `wakeup_state`): its foreign frame, `outofstack`, the flags."
 struct wakeup_state
     fid::Int                                # foreign frame reference
-    outofstack::Bool                        # Stack we are out of
+    outofstack::Union{Nothing, Symbol}      # Stack we are out of
     flags::UInt32                           # WAKEUP_STATE_*
 end
 

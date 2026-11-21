@@ -551,7 +551,7 @@ end
     @test lk_eq(
         ball, _lf("error", _lf("resource_error", _ls("stack")), _ls("stack_overflow"))
     )   # (D-0040)
-    @test ld.outofstack && ld.exception_processing
+    @test ld.outofstack === :local && ld.exception_processing
     @test ld.local_spare == 0 && ld.lMax == region(ld)                 # the spare enabled
     # while the exception is processed the limit stretches by 1 MiB (grow_stacks' error condition)
     full = region(ld)
@@ -559,7 +559,7 @@ end
     @test region(ld) == min(2 * full, full + 1 + LK.LOCAL_SPARE + LK.EMERGENCY_LIMIT) > full
     # recovery gives the spare back (resumeAfterException → trimStacks)
     LK.PL_clear_exception(ld)
-    @test !ld.outofstack && !ld.exception_processing && ld.local_spare == LK.LOCAL_SPARE
+    @test ld.outofstack === nothing && !ld.exception_processing && ld.local_spare == LK.LOCAL_SPARE
     @test LK.raiseStackOverflow(ld, LK.BOOLEX_FALSE) == false
     # exception.processing: set by PL_error and PL_raise_exception, cleared by the recovery; while
     # it is set, growLocalSpace takes the spare before growing (pl-gc.c growLocalSpace)

@@ -271,9 +271,9 @@ end
     LK.PL_open_foreign_frame(ld)
     # set by the overflow exception (pl-alloc.c:695), cleared by resumeAfterException -> trimStacks (pl-setup.c:1715)
     @test LK.outOfStack!(ld, LK.STACK_OVERFLOW_RAISE) === false
-    @test ld.trim_stack_requested && ld.outofstack
-    LK.resumeAfterException(ld, true, true)
-    @test !ld.trim_stack_requested && !ld.outofstack
+    @test ld.trim_stack_requested && ld.outofstack === :local
+    LK.resumeAfterException(ld, true, :local)
+    @test !ld.trim_stack_requested && ld.outofstack === nothing
     LK.trimStacks!(ld, false)
     @test !ld.trim_stack_requested
     ld.trim_stack_requested = true
