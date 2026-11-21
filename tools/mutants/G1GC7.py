@@ -86,7 +86,7 @@ MUTANTS = [
     m("G1GC7-T2 the driver always resizes: trimStacks!(ld, true) (KILL TSR `@test lsize(ld) == big` with the flag clear: the stack shrinks)",
       "    trimStacks!(ld, ld.trim_stack_requested) ",
       "    trimStacks!(ld, true) "),
-    m("G1GC7-T3 outOfStack! does not set the flag (KILL TSR `@test ld.trim_stack_requested && ld.outofstack` after the overflow)",
+    m("G1GC7-T3 outOfStack! does not set the flag (KILL TSR `@test ld.trim_stack_requested && ld.outofstack === :local` after the overflow)",
       "    ld.trim_stack_requested = true ",
       "    ld.trim_stack_requested = false ",
       file=FA),
