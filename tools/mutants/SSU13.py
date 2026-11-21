@@ -37,8 +37,8 @@ MUTANTS = [
          old="        return (true, SSU_CHOICE_CLAUSE)\n",
          new="        return (true, UInt32(0))\n"),
     dict(id="SSU1-N3 assert_term! drops the clause flags: an SSU clause compiles as `:-` (KILL a02, a03, a13r, c15)", file=C, targets=TA + TB,
-         old="    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)\n",
-         new="    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, UInt32(0); ex=ex)\n"),
+         old="        rc = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)\n",
+         new="        rc = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, UInt32(0); ex=ex)\n"),
     # ── pl-comp.c compileClause ──
     dict(id="SSU1-H1 head_unify without the SSU_CHOICE term: a dynamic `?=>` does not move (KILL a13c, a13r)", file=C, targets=TA,
          old="        (flags & SSU_CHOICE_CLAUSE) != 0 || (\n",
