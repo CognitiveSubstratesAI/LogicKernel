@@ -1984,24 +1984,44 @@ macro ENSURE_LOCAL_SPACE(n)
 end
 
 # PORT: pl-vmi.c ENSURE_GLOBAL_SPACE
-# DIVERGES (since L1f f2, audit D-0032): in cells; no garbage collection to try and nothing to shift (no
-# `onchange` to rerun: positions are indices), so the check is the LIMIT, as `ensureGlobalSpace`'s —
-# not applied while an exception is processed (upstream's spare stacks). Its failure is
-# `THROW_EXCEPTION` (`@goto b_throw`).
-# G1-GC safe point: none yet (docs/g1gc_safe_points.md, table A, the VM rows): this macro never collects.
-# B_* / I_* / T_ATTVARA bodies are SAFE once the macro saves ARGP, FR and PC around the hook
-# (`considerGC`); T_FUNCTOR, H_RFUNCTOR, H_RLIST and the H_LIST_FF read arm hold derived positions
-# across it and NEED-REFACTOR: re-derive them after the call, as upstream's `onchange` does. The
-# refactor touches the T_* bodies T27 outlines and the A_* arms AR1 edits: left to G1-6 after both land.
-"Make room for `n` cells above `gTop` within the limit, else raise the global overflow and throw (pl-vmi.c)."
-macro ENSURE_GLOBAL_SPACE(n)
+# PORT: pl-vmi.c ENSURE_STACK_SPACE as ENSURE_GLOBAL_SPACE
+# PORT: pl-vmi.c GROW_STACK_SPACE as ENSURE_GLOBAL_SPACE
+# GC-POINT pl-vmi.c:220-235 (G1-C3: the VM's allocation safe point)
+#   #define ENSURE_GLOBAL_SPACE(cells, onchange) \
+#           ENSURE_STACK_SPACE(cells, 0, onchange)
+#   #define ENSURE_STACK_SPACE(g, t, onchange) \
+#           if ( !hasStackSpace(g, t) )                     \
+#           { GROW_STACK_SPACE(g, t);                       \
+#             onchange;                                     \
+#           }
+#   #define GROW_STACK_SPACE(g, t) \
+#           do \
+#           { bool __rc;                                    \
+#             SAVE_REGISTERS(QID);                          \
+#             __rc = ensureStackSpace(g, t);                \
+#             LOAD_REGISTERS(QID);                          \
+#             if ( __rc != true )                           \
+#               THROW_EXCEPTION;                            \
+#           } while(0)
+# DIVERGES: in cells; `hasStackSpace` is the kernel's (src/pl-alloc.jl); no trail cells (ENSURE_STACK_SPACE's `t`: the trail grows on
+# demand and is never full). `ensureStackSpace(g, t)` is `ensureGlobalSpace(ld, g, ALLOW_GC, site)` (pl-gc.h:95 `ensureStackSpace_ex(g, t,
+# ALLOW_GC)`): `considerGarbageCollect` decides on a collection, then the limit is checked; `site` names the VMI (recorded under `gc_force`,
+# as at every ALLOW_GC site). `onchange` re-derives what was read before the call (`deRef2(ARGP, p)`, `deRef2(TrieCurrentP, p)`): a
+# collection moves the global cells; the slots of the local stack stay where they are, so upstream's `k = varFrameP(FR, …)` onchanges
+# (B_FIRSTVAR, B_UNIFY_FIRSTVAR, B_UNIFY_FC) have nothing to redo here: their slot is computed after the call or stays valid. `ARGP` is
+# reloaded by LOAD_REGISTERS. In an outlined T_* body (T27) the reloaded registers are the function's own: the trie VMIs keep `ARGP` in
+# the local frame. FAKE_GC (pl-vmi.c:238-251, a debugging macro with no user at the pin) is not wired: `gc_force` at the ALLOW_GC sites is
+# its model (G1-D lists it).
+"Make room for `n` global cells, letting the stack collector run first; on failure the overflow is raised and the VM throws (pl-vmi.c)."
+macro ENSURE_GLOBAL_SPACE(n, site, onchange...)
     return esc(
         quote
-            if _stacks_in_use(ld, $n) > ld.stacks_limit && !ld.exception_processing
+            if !hasStackSpace(ld, $n)               # if ( !hasStackSpace(g, t) )
                 @SAVE_REGISTERS(QID)
-                raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+                egs_rc = ensureGlobalSpace(ld, $n, ALLOW_GC, $site)   # __rc = ensureStackSpace(g, t);
                 @LOAD_REGISTERS(QID)
-                @goto b_throw
+                egs_rc || @goto b_throw             # if ( __rc != true ) THROW_EXCEPTION;
+                $(onchange...)                      # onchange;
             end
         end
     )
@@ -2063,7 +2083,7 @@ end
     tg_nvars =
         Int(((ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}).prolog_vars) -
         TRIE_VAR_OFFSET
-    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar)
+    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar, :T_TRIE_GEN)
     tg_s = allocGlobalCells!(ld, 4)                 # the four state cells
     ld.gstack[tg_s] = nil_w                         # *TrieTermP = ATOM_nil
     ld.gstack[tg_s + 1] = consInt(1)                # *TrieOffset = consInt(1)
@@ -2101,7 +2121,9 @@ end
     tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, p)
     if tf_k == DU_CELL || tf_k == DU_ATTVAR         # if ( canBind(*p) )
         tf_ar = arityFunctor(ld.functors, tf_f)
-        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6)     # 4 extra for the '$targp'/3 cell
+        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6, :T_FUNCTOR, begin
+            tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+        end)     # 4 extra for the '$targp'/3 cell
         tf_ap = allocGlobalCells!(ld, 1 + tf_ar)    # ap = gTop; gTop += 1+arity
         tf_c = consPtr(tf_ap, TAG_COMPOUND | STG_GLOBAL)   # c = consCompound(ap)
         _trie_push_argp!(ld, FR)                    # TriePushArgP()
@@ -2113,7 +2135,9 @@ end
     end
     if tf_k == DU_WORD && _is_gcompound(tf_w)       # if ( isTerm(*p) )
         if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )
-            @ENSURE_GLOBAL_SPACE(4)
+            @ENSURE_GLOBAL_SPACE(4, :T_FUNCTOR, begin
+                tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+            end)
             _trie_push_argp!(ld, FR)                # TriePushArgP()
             ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_w      # *TrieTermP = *p
             ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
@@ -2181,7 +2205,7 @@ end
     @nospecialize(PC::Int),
     @nospecialize(ta_n::Int)
 )::Int where {T}
-    @ENSURE_GLOBAL_SPACE(6 + 4 + 6)
+    @ENSURE_GLOBAL_SPACE(6 + 4 + 6, :T_ATTVARA)
     ta_v = _trie_var_cell(ld, FR, ta_n)             # Word vp = TrieVarP(offset)
     if isVar(ld.gstack[ta_v])                       # first encounter
         ta_gp = allocGlobalCells!(ld, 6)            # gp = gTop; gTop += 6
@@ -3226,7 +3250,9 @@ function PL_next_solution_guarded(
     hf_lit = functor_literal(hf_f)
     hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hf_d == DREF_CELL || hf_d == DREF_ATTVAR     # canBind(*p) (an attributed variable: AV1)
-        @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(1 + hf_ar, :H_RFUNCTOR, begin
+            hf_d, hf_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+        end)             # (L1f f2)
         hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
         bindConst(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
@@ -3256,7 +3282,10 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     (hf_cn != ld.atom_dexpr && hf_ca + 1 == hf_ar) || @goto unify_backtrack   # `$expr/n`, g/(n-1)
-    @ENSURE_GLOBAL_SPACE(hf_ar)                     # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(hf_ar, :H_RFUNCTOR, begin
+        hf_d, hf_w = _argp_deref_word(ld, ARGP)   # ORIGINAL onchange (the cross-match is kernel-only): deRef2(ARGP, p)
+        hf_q = valPtr(hf_w)                         # and the compound's position again
+    end)                     # (L1f f2)
     hf_s = allocGlobalCells!(ld, hf_ar)             # the children of g(…), head included:
     ld.gstack[hf_s] = hf_cn                         # g's atom word,
     for hf_i in 1:hf_ca                             # then a reference to each argument cell (a
@@ -3281,7 +3310,9 @@ function PL_next_solution_guarded(
     end
     hl_d, hl_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hl_d == DREF_CELL || hl_d == DREF_ATTVAR     # case TAG_VAR: case TAG_ATTVAR: (AV1)
-        @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(3, :H_RLIST, begin
+            hl_d, hl_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+        end)                     # (L1f f2)
         hl_q = _alloc_compound!(ld, dot_f, 2)
         bindConst(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
@@ -3326,7 +3357,7 @@ function PL_next_solution_guarded(
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if UMODE == uwrite
-        @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(3, :H_LIST_FF)                     # (L1f f2)
         hff_q = _alloc_compound!(ld, dot_f, 2)      # write:
         ld.slots[hff_a + 1] = makeRefG(hff_q + 1)   # varFrame(FR, *PC++) = makeRefG(ap)
         ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
@@ -3343,7 +3374,9 @@ function PL_next_solution_guarded(
             _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
             _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
         elseif hff_d == DREF_CELL || hff_d == DREF_ATTVAR   # canBind(*p) (AV1)
-            @ENSURE_GLOBAL_SPACE(3)                 # (L1f f2)
+            @ENSURE_GLOBAL_SPACE(3, :H_LIST_FF, begin
+                hff_d, hff_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p) (UMODE != uwrite)
+            end)                 # (L1f f2)
             hff_q = _alloc_compound!(ld, dot_f, 2)
             ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
             ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
@@ -3491,7 +3524,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_FIRSTVAR
     # DIVERGES: the cell's reference into the slot and where ARGP points, as words (L1b C6a, L1c).
     @label B_FIRSTVAR
-    @ENSURE_GLOBAL_SPACE(1)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(1, :B_FIRSTVAR)                         # (L1f f2)
     bfv_p = _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)  # *k = w
     PC += 1
     if ARGP.form == ARGP_GLOBAL                     # *ARGP++ = w
@@ -3523,7 +3556,7 @@ function PL_next_solution_guarded(
     @label B_RFUNCTOR
     bf_f = PCc[PC]
     PC += 1
-    @ENSURE_GLOBAL_SPACE(1 + functor_arity(bf_f))   # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(1 + functor_arity(bf_f), :B_RFUNCTOR)   # (L1f f2)
     bf_q = _alloc_compound!(ld, functor_operand_word(bf_f), functor_arity(bf_f))
     bf_c = consPtr(bf_q, TAG_COMPOUND | STG_GLOBAL)     # consPtr(gTop, TAG_COMPOUND|STG_GLOBAL)
     if ARGP.form == ARGP_SLOT                       # *ARGP = …
@@ -3544,7 +3577,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_RLIST
     # DIVERGES: as `B_RFUNCTOR`, for `FUNCTOR_dot2`.
     @label B_RLIST
-    @ENSURE_GLOBAL_SPACE(3)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(3, :B_RLIST)                         # (L1f f2)
     bl_q = _alloc_compound!(ld, dot_f, 2)
     bl_c = consPtr(bl_q, TAG_COMPOUND | STG_GLOBAL)
     if ARGP.form == ARGP_SLOT
@@ -3570,7 +3603,7 @@ function PL_next_solution_guarded(
     @label B_UNIFY_FIRSTVAR
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
-    @ENSURE_GLOBAL_SPACE(1)                         # (L1f f2; upstream's in unify_var_cont)
+    @ENSURE_GLOBAL_SPACE(1, :B_UNIFY_FIRSTVAR)                         # (L1f f2; upstream's in unify_var_cont)
     ld.slots[ARGP.pos + 1] = makeRefG(allocGlobalCells!(ld, 1))   # setVar(*ARGP): needed for GC
     @goto unify_var_cont
 
@@ -3618,7 +3651,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_UNIFY_FF
     # DIVERGES: one fresh variable in both slots (decision 2: no global stack, `makeRefG`).
     @label B_UNIFY_FF
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_UNIFY_FF)                         # (L1f f2)
     buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
@@ -3643,7 +3676,7 @@ function PL_next_solution_guarded(
     # DIVERGES: no `globaliseVar` (decision 2); the first-variable slot gets the value as `bvar_cont`
     # stores one (`linkValI`).
     @label B_UNIFY_FV
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_UNIFY_FV)                         # (L1f f2)
     bufv_f = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
@@ -3724,7 +3757,7 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        @ENSURE_GLOBAL_SPACE(1)                             # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(1, :B_UNIFY_FC)                             # (L1f f2)
         _slot_new_var!(ld, bufc_f + 1)                      # globaliseFirstVar(f): a WORD (L1c-6)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _slot_copy!(ld, ARGP.pos + 1, bufc_f + 1)
@@ -3826,7 +3859,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_ARG_CF
     # DIVERGES: the operand is the integer itself as a signed code (`(scode)PC[-3]`).
     @label B_ARG_CF
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_ARG_CF)                         # (L1f f2)
     a3_idx = 0                                      # aidx = NULL
     a3_ai = reinterpret(Int64, PCc[PC])             # (scode)PC[-3]
     a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1
@@ -3878,7 +3911,7 @@ function PL_next_solution_guarded(
     # variable is handed on whether or not it holds a tagged integer (upstream hands its dereferenced
     # cell: the same word).
     @label B_ARG_VF
-    @ENSURE_GLOBAL_SPACE(3)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(3, :B_ARG_VF)                         # (L1f f2)
     a3_idx = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1        # aidx0
     a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1   # aterm
     a3_arg = varFrameP(ld.frames[FR].base, Int(PCc[PC + 2])) + 1    # aarg

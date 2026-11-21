@@ -491,7 +491,8 @@ end
 # PORT: pl-copyterm.c copy_term_refs
 # DIVERGES: on the CELLS (L1d step 6): a fresh global cell, `to` its `makeRefG`, as upstream; no `vars`
 # (copy_term/4). The loop is upstream's (since L1f f1b): a copy that does not fit is discarded with its
-# foreign frame and `makeMoreStackSpace` asked — which here raises the overflow (see there).
+# foreign frame and `makeMoreStackSpace(rc, ALLOW_SHIFT|ALLOW_GC)` asked (pl-copyterm.c:847; since G1-C4 it may collect: the frame
+# is discarded and `to` reset first, so only term references are held), then the copy runs again.
 "Make term reference `to` hold a copy of the term `from` references; false, the overflow raised, when it does not fit (pl-copyterm.c)."
 function copy_term_refs(
     ld::PL_local_data{T}, from::term_t, to::term_t, options::cp_options
@@ -506,7 +507,7 @@ function copy_term_refs(
         if rc < 0                                           # no space for copy
             PL_discard_foreign_frame(ld, fid)
             _slot_new_var!(ld, to + 1)                      # PL_put_variable(to): gc consistency
-            makeMoreStackSpace(ld, GLOBAL_OVERFLOW, ALLOW_SHIFT) || return false
+            makeMoreStackSpace(ld, GLOBAL_OVERFLOW, ALLOW_SHIFT | ALLOW_GC) || return false   # (rc, ALLOW_SHIFT|ALLOW_GC)
         else
             PL_close_foreign_frame(ld, fid)
             return true

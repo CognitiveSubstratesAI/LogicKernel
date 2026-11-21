@@ -64,14 +64,46 @@ function markPredicatesInEnvironments!(
 end
 
 # PORT: pl-gc.c makeMoreStackSpace
-# DIVERGES (since L1f f1b; the collector hook is G1-GC's `considerGC` above, wired at `ensureGlobalSpace`'s audited sites only): no collector (`garbageCollect`) and no global or trail stack to grow —
-# they grow on demand, so their callers (`allocGlobalNoShift`) were refused for the LIMIT, which growing
-# cannot pass: the overflow is raised and false returned, as upstream's when `growStacks` fails. Upstream's
-# first case — while an exception is processed, the stack's spare enabled — cannot arise: nothing is refused
-# for the limit while one is processed (`ensureGlobalSpace`). A loop that calls it (`copy_term_refs`)
-# therefore runs its body once more only upstream.
-"Make room after `overflow`, or raise it and return false (pl-gc.c `makeMoreStackSpace`)."
+# (pl-gc.c:4622-4672 at 18168e62, G1-C4: the collection and the growth of upstream, replacing the raise-only body of L1f f1b)
+# DIVERGES: the kernel's `boolex_t` has no `TRAIL_OVERFLOW` and no `MEMORY_OVERFLOW` (the trail grows on demand: never full; no
+# memory overflow code), so their arms are the `default` one. The stack `s` is the local stack's or the global stack's spare
+# (`enableSpareStack!` / `enableSpareStack_global!`, src/pl-alloc.jl). `garbageCollect(gc_reason)` is the driver's (src/pl-gcdriver.jl),
+# its `boolex_t` read as the C reads it, true when non-zero; `vmi_state_of` as `considerGC`'s. `growStacks(l, g, t)`: the local stack's
+# is `growStacks!(ld, 1)`, its size `lMax + local_spare` before and after; the global stack grows on demand (`_growGlobalStack!`), so
+# a GLOBAL_OVERFLOW here was refused for the LIMIT, which growing cannot pass: the size does not change and the overflow is raised,
+# as upstream's (*) case. `growStacks!` returns nothing, so upstream's `rc < 0` arm (`raiseStackOverflow(rc)`) cannot arise.
+"Make room after `overflow`: the spare while an exception is processed, a collection, a larger stack; else raise it and return false (pl-gc.c `makeMoreStackSpace`)."
 function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::Bool
+    gc_reason = 0                                   # unsigned int gc_reason = 0;
+    if overflow == LOCAL_OVERFLOW                   # case LOCAL_OVERFLOW:  s = &LD->stacks.local
+    elseif overflow == GLOBAL_OVERFLOW              # case GLOBAL_OVERFLOW: s = &LD->stacks.global
+        gc_reason = Int(GC_GLOBAL_OVERFLOW)
+    else                                            # default: assert(0); return false;
+        @assert false "makeMoreStackSpace: $(overflow)"
+        return false
+    end
+
+    if ld.exception_processing &&                   # if ( LD->exception.processing && s && enableSpareStack(s, true) )
+        (overflow == LOCAL_OVERFLOW ? enableSpareStack!(ld, true) : enableSpareStack_global!(ld, true))
+        return true
+    end
+
+    if ld.gc.inferences != ld.statistics.inferences &&   # LD->gc.inferences != LD->statistics.inferences
+        (flags & ALLOW_GC) != 0 &&
+        gc_reason != 0 &&
+        garbageCollect(ld, gc_reason; vmi_state_of=get_vmi_state) != BOOLEX_FALSE   # garbageCollect(gc_reason)
+        return true
+    end
+
+    if (flags & (ALLOW_SHIFT | ALLOW_GC)) != 0
+        if overflow == LOCAL_OVERFLOW               # l = 1
+            oldsize = ld.lMax + ld.local_spare      # oldsize = sizeStackP(s)
+            growStacks!(ld, 1)                      # if ( (rc = growStacks(l, g, t)) == true )
+            newsize = ld.lMax + ld.local_spare
+            newsize > oldsize && return true        # if ( newsize > oldsize ) return rc;  (See (*))
+        end                                         # GLOBAL_OVERFLOW (g = 1): nothing grows (see above)
+    end
+
     return raiseStackOverflow(ld, overflow)
 end
 
@@ -104,6 +136,23 @@ end
 # in positions; since V5d). Past the limit nothing grows, and the caller's re-check reports the
 # overflow, as upstream's does when `grow_stacks` refuses. After growing, the spare is reserved again
 # at the top (`reenable_spare_stack`: the room is at least the spare, so `trim_stack`).
+# DIVERGES (G1-C5: pl-gc.c:5319-5323 `needStack` and its use in `grow_stacks`, :5369-5416 at 18168e62; KEPT, reviewed): upstream's need of
+# a stack is `usedStackP(s) + s->min_free + s->def_spare`, read only once the three new sizes pass `stacks.limit`. `grow_stacks` sums it
+# over the local stack, the global stack and the trail (each plus its request; outside an exception the trail's plus `uglobal /
+# GLOBAL_TRAIL_RATIO`), raises the TOTAL limit to that sum plus 1 MiB while an exception is processed, and then DISTRIBUTES the limit over
+# the three in proportion (`f = limit/need`, each rounded to 4096) when more than a quarter of it is left (`minav`, 0 in the error
+# condition); else STACK_OVERFLOW. Here the local stack alone has a size, so there is one size to set and nothing to distribute: its need
+# is `want` = `lTop + l + local_def_spare`, the global stack and the trail enter the limit at their use plus their current spares (as
+# `_stacks_in_use`, src/pl-alloc.jl), and the 1 MiB goes to the local stack's need. `min_free` (the local one is `LOCAL_MARGIN`,
+# pl-setup.c:1638) stays out of `want`: upstream adds it as slack on top of requests that already hold `LOCAL_MARGIN` (pl-vmi.c:160/169/
+# 3456/6740; "another s->min_free to give some freedom", pl-gc.c:5266-5267), in `nextStackSize` (`sizeStackP + minfree + min_free +
+# def_spare`, :5279) as in `needStack`, and the kernel's growth, doubling from the current size, aims at the request and the spare only.
+# Adding it to the limit arm alone would make the doubling and the limit disagree; adding it to both is a port of `nextStackSize`, which
+# moves the overflow points test_stack_limit.jl and test_stack_overflow_swipl.jl pin: left to the stack shifter (G1-D). In the error
+# condition the caps part by how much of the 1 MiB (131 072 positions) the local stack may take: upstream's takes its share (`ulocal * f`),
+# the global stack and the trail the rest; here the local stack may take it whole, while the global stack and the trail are held by no
+# limit during exception processing (`hasStackSpace` / `ensureGlobalSpace`, src/pl-alloc.jl:160/178). Kept: the split exists only where
+# upstream sizes three stacks at once, which this kernel's on-demand global stack and trail leave to the local stack alone.
 "Grow the local stack so `l` more positions fit above `lTop` (pl-gc.c `growStacks`)."
 function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     need = ld.lTop + l

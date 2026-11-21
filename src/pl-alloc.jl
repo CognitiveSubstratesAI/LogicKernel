@@ -145,6 +145,20 @@ end
     (ld.lMax + ld.local_spare) + (ld.gTop + g + ld.global_spare) +
     (length(ld.trail) + ld.trail_spare)
 
+# PORT: pl-incl.h hasStackSpace
+# (pl-incl.h:2662-2664 at the pin:
+#     #define hasStackSpace(g, t) \
+#             (hasGlobalSpace_((g)+BIND_GLOBAL_SPACE) && \
+#              hasTrailSpace(t+BIND_TRAIL_SPACE))
+# )
+# DIVERGES (G1-C3): the global stack's "room" is `ensureGlobalSpace`'s full test below: the vector has room for `g` cells (past its end
+# is upstream's `gTop+g > gMax`: it grows on demand) and the three stacks with `g` more stay within the limit (not tested while an
+# exception is processed: upstream's spare stacks), as `ensureGlobalSpace` measures it: no `BIND_GLOBAL_SPACE` margin, and no trail part (the trail grows on demand: never full). Its caller is the VM's `@ENSURE_GLOBAL_SPACE`.
+"Do `g` more global cells fit without growing the stack or passing the limit (pl-incl.h `hasStackSpace`)?"
+@inline hasStackSpace(ld::PL_local_data, g::Int)::Bool =
+    ld.gTop + g <= length(ld.gstack) &&
+    (_stacks_in_use(ld, g) <= ld.stacks_limit || ld.exception_processing)
+
 # PORT: pl-gc.h ensureGlobalSpace
 # DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036; the garbage collection of `ALLOW_GC` is G1-GC's hook below, the collector itself G1-6's): no garbage collection to try and
 # nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three

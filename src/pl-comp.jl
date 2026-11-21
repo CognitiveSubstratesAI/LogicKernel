@@ -4052,8 +4052,7 @@ end
 # load (pl-srcfile.jl): the clause's file and line, its owner, `overruleImportedProcedure`,
 # `redefineProcedure`, the source file's current procedure. `PL_CREATE_INCREMENTAL` (TB6) makes a
 # new procedure incremental, `PL_CREATE_THREAD_LOCAL` is refused by name (owner TH1); the module's assert
-# hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); the `CHECK_INTERRUPT` retry (no signal
-# handling); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
+# hook (`O_PROLOG_HOOK`: `module_t` has no `hook`); system mode (no boot compilation); transactions (`assertDefinition!`'s, not ported
 # there). THE COMPILER'S WARNINGS (since R1g): asked for when loading (`owner`), and printed after
 # the clause is added — `compiler_warnings(Clause, Warnings)`, whose `Clause` is the clause
 # reference, as upstream's (since D1: `PL_put_clref`; it was an unbound variable before clause blobs).
