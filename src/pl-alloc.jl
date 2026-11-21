@@ -268,7 +268,11 @@ function pl_thread_idle2_va(
     if sym_key(how) == sym_key(mk_sym(T, :short))
         trimStacks!(ld, true)                           # trimStacks(true)
     elseif sym_key(how) == sym_key(mk_sym(T, :long))
-        trimStacks!(ld, true)                           # LD->trim_stack_requested = true; garbageCollect(GC_USER) (not wired: the trim only)
+        # DIVERGES (G1): upstream's sequence is `LD->trim_stack_requested = true; garbageCollect(GC_USER); LD->trim_stack_requested = false`
+        # (pl-alloc.c:1880): the collection, whose end does the trim. Here the trim only (`trimStacks!(ld, true)`), by the dispatcher's ruling:
+        # a collection the collector declines (blocked or off, `garbageCollect` returns without reaching its trim) would otherwise leave
+        # the stacks untrimmed, and `long` exists to trim them. No Prolog-visible difference but which cells a `long` idle moves.
+        trimStacks!(ld, true)
     end
 
     rc = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_PASS_EXCEPTION)

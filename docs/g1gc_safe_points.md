@@ -243,8 +243,8 @@ Upstream rows: `ensureGlobalSpace`/`ensureStackSpace`/`ensureTrailSpace`/ENSURE_
 | pl-vmi.c:5570 i_metacall_common CHECK_INTERRUPT `PL_handle_signals()` | a pending signal at the compiler's progress test (pl-comp.c:971-974) | src/pl-wam.jl:4888 `# GC-POINT pl-vmi.c:5558-5581` | the registers and NFR's arguments (lTop set above them, as upstream) | SAFE-REGISTERS | wired G1-C (Q6, 41ce6024); the compile is redone (`@goto I_CALL1`) |
 | pl-vmi.c:6935 deep_backtrack CHP_CLAUSE `handleSignals()` | a pending signal at a clause retry | src/pl-wam.jl:6723 `# GC-POINT pl-vmi.c:6932-6939` | the registers | SAFE-REGISTERS | wired G1-C |
 | pl-gc.c:4583 pl_garbage_collect (GC_USER) | `garbage_collect/0` | src/pl-gc.jl:376 pl_garbage_collect: `garbageCollect(ld, GC_USER; vmi_state_of=get_vmi_state)` | term_t only (foreign call from the VM) | SAFE | collects since G1-2b; no ensure site |
-| pl-setup.c:1868 set_stack_limit (GC_USER) | | left to the stack-limit owner | term_t only | SAFE | G1-6 |
-| pl-alloc.c:1880 the idle hook (`LD->trim_stack_requested`) | | no counterpart (no idle hook) | | NO-COUNTERPART | left to G1-6 |
+| pl-setup.c:1868 set_stack_limit (GC_USER) | garbageCollect(GC_USER) before trimStacks(true), when the new limit is below the use | src/pl-setup.jl:871 set_stack_limit!: garbageCollect(ld, Int(GC_USER); vmi_state_of=get_vmi_state) (G1 chunk 10a) | term_t only | SAFE | wired |
+| pl-alloc.c:1880 the idle hook (`LD->trim_stack_requested`) | | src/pl-alloc.jl:271 thread_idle(long): the trim only (`trimStacks!(ld, true)`), no `garbageCollect(GC_USER)` | | NO-COUNTERPART | DIVERGES (G1), dispatcher's ruling: a declined collection would otherwise stop trimming |
 | pl-gc.c:4646 makeMoreStackSpace (`LD->gc.inferences != statistics.inferences`) | `garbageCollect(gc_reason)` with ALLOW_GC | src/pl-gc.jl:79 makeMoreStackSpace (G1-C4, eadce8f8), the test as written | the caller's: see Table B and Table A pl-copyterm.c:847 | SAFE | ported; collects only for a caller passing ALLOW_GC |
 
 ## Table D: places that never collect upstream (not safe points)
