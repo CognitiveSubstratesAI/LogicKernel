@@ -1167,8 +1167,9 @@ function S__close(s::IOSTREAM)::Int
     end
     s.magic = SIO_CMAGIC
     s.message = nothing
-    if s.locale !== nothing                     # `if ( s->locale ) releaseLocale(s->locale)`
-        releaseLocale(s.locale)
+    slo = s.locale                              # `if ( s->locale ) releaseLocale(s->locale)`: a local, so the
+    if slo !== nothing                          # nothing-test narrows the type (JET cannot narrow a mutable field)
+        releaseLocale(slo)
         s.locale = nothing
     end
     s.references == 0 || (s.erased = true)      # else unallocStream(): Julia's GC frees it
