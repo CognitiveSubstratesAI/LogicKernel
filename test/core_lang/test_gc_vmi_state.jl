@@ -524,16 +524,16 @@ end
     @test (LK.B_UNIFY_VAR in seen || LK.B_UNIFY_FIRSTVAR in seen) && LK.B_FUNCTOR in seen
     @test LK.H_LIST in seen || LK.H_LIST_FF in seen
 
-    # the hand-pinned table of `w1(f(a,B), c, D)`: instructions H_FUNCTOR H_ATOM H_VOID H_POP H_ATOM H_VOID I_EXITFACT; the state BEFORE each of them
+    # the hand-pinned table of `w1(f(a,B), c, D)`: instructions H_FUNCTOR H_ATOM H_POP H_ATOM I_EXITFACT; the state BEFORE each of them.
+    # The compiler's peephole merges away an H_VOID before H_POP and before I_EXITFACT (pl-comp.c:1881 mergeSeq H_VOID,I_EXITFACT; :1887 H_VOID,H_POP;
+    # ported in src/pl-comp.jl `initVMIMerge`), so the void of `B` and the void of `D` have no instruction of their own.
     cl1 = clauses["head with a compound"]
     st = _gv_starts(cl1)
     ops = [cl1.codes[s] for s in st]
-    @test ops == UInt64[
-        LK.H_FUNCTOR, LK.H_ATOM, LK.H_VOID, LK.H_POP, LK.H_ATOM, LK.H_VOID, LK.I_EXITFACT
-    ]
-    depth = [0, 1, 1, 1, 0, 0, 0]
-    argoff = [0, 1, 1, 1, 1, 2, 3]
-    arg0off = [0, 0, 0, 0, 0, 0, 0]
+    @test ops == UInt64[LK.H_FUNCTOR, LK.H_ATOM, LK.H_POP, LK.H_ATOM, LK.I_EXITFACT]
+    depth = [0, 1, 1, 0, 0]
+    argoff = [0, 1, 1, 1, 2]
+    arg0off = [0, 0, 0, 0, 0]
     for k in eachindex(st)
         g = _gv_walk(cl1, base, st[k] + 1)
         @test g[1] == st[k] && g[2] == depth[k]
