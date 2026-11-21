@@ -146,15 +146,17 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-ext.c` | code | `18168e629eab` | `src/pl-ext.jl` | 5 | 3 |
 | swipl-devel `src/pl-fli.c` | code | `18168e629eab` | `src/os/pl-prologflag.jl` | 1 | 1 |
 | swipl-devel `src/pl-fli.c` | code | `18168e629eab` | `src/pl-fli.jl` | 94 | 79 |
+| swipl-devel `src/pl-fli.c` | code | `18168e629eab` | `src/pl-gc.jl` | 2 | 2 |
 | swipl-devel `src/pl-fli.c` | code | `18168e629eab` | `src/pl-pro.jl` | 1 | 1 |
 | swipl-devel `src/pl-fli.h` | code | `18168e629eab` | `src/pl-fli.jl` | 11 | 9 |
+| swipl-devel `src/pl-fli.h` | code | `18168e629eab` | `src/pl-gc.jl` | 1 | 1 |
 | swipl-devel `src/pl-funct.c` | code | `18168e629eab` | `src/pl-funct.jl` | 12 | 9 |
-| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gc.jl` | 14 | 8 |
+| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gc.jl` | 32 | 19 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `18168e629eab` | `src/pl-alloc.jl` | 1 | 0 |
 | swipl-devel `src/pl-gc.h` | code | `18168e629eab` | `src/pl-gc.jl` | 1 | 1 |
 | swipl-devel `src/pl-global.h` | code | `18168e629eab` | `src/os/pl-file.jl` | 5 | 0 |
-| swipl-devel `src/pl-global.h` | code | `18168e629eab` | `src/pl-global.jl` | 10 | 9 |
+| swipl-devel `src/pl-global.h` | code | `18168e629eab` | `src/pl-global.jl` | 11 | 10 |
 | swipl-devel `src/pl-global.h` | code | `18168e629eab` | `src/pl-incl.jl` | 7 | 3 |
 | swipl-devel `src/pl-gmp.c` | code | `18168e629eab` | `src/pl-gmp.jl` | 30 | 9 |
 | swipl-devel `src/pl-gmp.h` | code | `18168e629eab` | `src/pl-gmp.jl` | 4 | 2 |
@@ -174,7 +176,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-comp.jl` | 5 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-funct.jl` | 7 | 1 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-global.jl` | 8 | 4 |
-| swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-incl.jl` | 298 | 31 |
+| swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-incl.jl` | 313 | 33 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-inline.jl` | 9 | 3 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-modul.jl` | 6 | 2 |
 | swipl-devel `src/pl-incl.h` | code | `18168e629eab` | `src/pl-prims.jl` | 6 | 1 |
@@ -355,10 +357,10 @@ checkout is pulled.
 | swipl-devel `src/pl-event.c` | `18168e629eab` | 21 | 23 | 19 | src/pl-event.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-event.h` | `18168e629eab` | 2 | 2 | 2 | src/pl-event.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-ext.c` | `18168e629eab` | 4 | 10 | 2 | src/pl-ext.jl |
-| swipl-devel `src/pl-fli.c` | `18168e629eab` | 90 | 290 | 78 | src/os/pl-prologflag.jl, src/pl-fli.jl, src/pl-pro.jl |
-| swipl-devel `src/pl-fli.h` | `18168e629eab` | 11 | 15 | 9 | src/pl-fli.jl |
+| swipl-devel `src/pl-fli.c` | `18168e629eab` | 92 | 290 | 80 | src/os/pl-prologflag.jl, src/pl-fli.jl, src/pl-gc.jl, src/pl-pro.jl |
+| swipl-devel `src/pl-fli.h` | `18168e629eab` | 12 | 15 | 10 | src/pl-fli.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-funct.c` | `18168e629eab` | 10 | 17 | 7 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `18168e629eab` | 13 | 166 | 8 | src/pl-gc.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-gc.c` | `18168e629eab` | 28 | 166 | 19 | src/pl-gc.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `18168e629eab` | 1 | 2 | 1 | src/pl-alloc.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `18168e629eab` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gmp.c` | `18168e629eab` | 29 | 81 | 8 | src/pl-gmp.jl |
@@ -436,7 +438,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2902** | **5771** | **1694** | |
+| **total** | | **2920** | **5771** | **1708** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

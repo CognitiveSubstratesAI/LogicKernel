@@ -106,7 +106,8 @@ const _PRED_TABLES = (
     PL_predicates_from_locale,
     PL_predicates_from_coverage,
     PL_predicates_from_profile,
-    PL_predicates_from_zip
+    PL_predicates_from_zip,
+    PL_predicates_from_gc
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -134,7 +135,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_locale...,
     PL_predicates_from_coverage...,
     PL_predicates_from_profile...,
-    PL_predicates_from_zip...
+    PL_predicates_from_zip...,
+    PL_predicates_from_gc...
 )
 const _FOREIGN_DET = foreigns
 
@@ -188,7 +190,7 @@ end
 
 # DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
 # dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
-# or more entries (`_PRED_TABLES` has 46) takes Base's `Any32` method, whose result is not inferred (JET).
+# or more entries (`_PRED_TABLES` has 47) takes Base's `Any32` method, whose result is not inferred (JET).
 "Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
 function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
     return first
