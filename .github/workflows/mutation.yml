@@ -129,6 +129,12 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        if: ${{ steps.pin.outputs.commit != '' }}
+        run: tools/fetch_sync_from.sh
       # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
       # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
@@ -206,6 +212,12 @@ jobs:
           ref: ${{ steps.pin.outputs.commit }}
           path: .upstream/swipl-devel
           submodules: true
+      # SYNC ONLY (audit D-0444 item 1): while tools/SWIPL_VERSION has a `sync-from:` line, fetch that commit (depth 1) so
+      # tools/port_check.jl can read the headers that still cite it; a clean no-op without the line. REMOVED, with
+      # tools/fetch_sync_from.sh, by the PIN1 step that moves the last header and the `sync-from:` line.
+      - name: The previous pin (sync-from:), when a sync is in flight
+        if: ${{ steps.pin.outputs.commit != '' }}
+        run: tools/fetch_sync_from.sh
       # PINNED to commit SHAs (D-0562 item 4), no longer rev="master": the same three commits as CI.yml and evidence.yml
       # (JET 6f20b0f0, LoweredCodeUtils 6f5c109b, Aqua 84f9eb4f). Move the three TOGETHER, in every workflow that installs them, with the reason.
       - name: Install the analysis tools (the targets name test/test_static_analysis.jl, one part of it or the whole suite)
