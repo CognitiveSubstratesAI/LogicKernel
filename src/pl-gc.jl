@@ -1228,12 +1228,13 @@ end
 # `gc_stat_end!` around a collection.
 
 # PORT: pl-fli.c PL_raise as raiseGcSignal!
-# DIVERGES: the kernel has no signal machinery; the pending virtual signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`),
-# and only the two collector signals (`SIG_GC`, `SIG_TUNE_GC`) are ever raised. The run loop's `ALERT_SIGNAL` check of a pending `SIG_GC` is G1-2's
-# (engine core). Upstream's `PL_raise` also wakes the engine (`updateAlerted`); there is none to wake. True, as upstream's.
-"Raise the virtual signal `sig` (`SIG_GC` or `SIG_TUNE_GC`): its bit of `ld.gc.sig_pending` (pl-fli.c `PL_raise`)."
+# DIVERGES: the pending virtual signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`), and only the two collector
+# signals (`SIG_GC`, `SIG_TUNE_GC`) are ever raised; `PL_raise` is `raiseSignal(LD, sig)` (pl-wam.c:258-273), whose `WSIGMASK_SET` is the bit
+# and whose compare-and-swap loop sets `ALERT_SIGNAL` in `alerted` (G1-C; one engine per thread: a plain or). True, as upstream's.
+"Raise the virtual signal `sig` (`SIG_GC` or `SIG_TUNE_GC`): its bit of `ld.gc.sig_pending` and `ALERT_SIGNAL` (pl-fli.c `PL_raise`, pl-wam.c `raiseSignal`)."
 function raiseGcSignal!(ld::PL_local_data, sig::Int)::Bool
-    ld.gc.sig_pending |= UInt64(1) << (sig - SIG_PROLOG_OFFSET)
+    ld.gc.sig_pending |= UInt64(1) << (sig - SIG_PROLOG_OFFSET)  # WSIGMASK_SET(ld->signal.pending, sig)
+    ld.alerted |= ALERT_SIGNAL                                  # ... alerted|ALERT_SIGNAL
     return true
 end
 
@@ -1245,9 +1246,10 @@ pendingGcSignal(ld::PL_local_data, sig::Int)::Bool =
 
 # PORT: pl-fli.c PL_clearsig as clearGcSignal!
 # DIVERGES: see `raiseGcSignal!`. True, as upstream's for a valid signal.
-"Clear the virtual signal `sig` (pl-fli.c `PL_clearsig`)."
+"Clear the virtual signal `sig` and recompute `alerted` (pl-fli.c `PL_clearsig`)."
 function clearGcSignal!(ld::PL_local_data, sig::Int)::Bool
-    ld.gc.sig_pending &= ~(UInt64(1) << (sig - SIG_PROLOG_OFFSET))
+    ld.gc.sig_pending &= ~(UInt64(1) << (sig - SIG_PROLOG_OFFSET))  # WSIGMASK_CLEAR(LD->signal.pending, sig)
+    updateAlerted(ld)                                               # updateAlerted(LD)
     return true
 end
 

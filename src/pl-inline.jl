@@ -1175,3 +1175,9 @@ function Undo!(ld::PL_local_data, m::mark)::Nothing
     _truncate_vtable!(ld)                       # (the value table follows it: L1b stage C2)
     return nothing
 end
+
+# PORT: pl-inline.h is_signalled
+# DIVERGES: the pending signals are the bits of `ld.gc.sig_pending` (the collector's virtual signals, src/pl-gc.jl `raiseGcSignal!`; G1-C);
+# `HAS_LD` always holds.
+"Is a signal pending (pl-inline.h `is_signalled`)?"
+is_signalled(ld::PL_local_data)::Bool = ld.gc.sig_pending != 0

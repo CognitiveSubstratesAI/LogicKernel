@@ -1950,9 +1950,14 @@ const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
 "Wakeup-state flag: keep the most urgent exception (pl-incl.h)."
 const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
+# PORT: pl-incl.h ALERT_SIGNAL
+# DIVERGES: the pending signals are the collector's two virtual ones (`ld.gc.sig_pending`, src/pl-gc.jl; G1-C, dispatcher decision 1).
+"Alert bit: a signal is pending (pl-incl.h `ALERT_SIGNAL`)."
+const ALERT_SIGNAL = Int32(0x001)
+
 # PORT: pl-incl.h ALERT_WAKEUP
-# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output, …) — nothing here
-# sets them; `LD->alerted` carries the wakeup bit, since TX1e the undo bit and, since P3, the two limit bits.
+# NOT PORTED: the other `ALERT_*` bits (profiling, the debugger, buffered output, exit requests, coverage, …) — nothing here
+# sets them; `LD->alerted` carries the signal and the wakeup bits (G1-C), since TX1e the undo bit and, since P3, the two limit bits.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
 
@@ -3664,9 +3669,19 @@ const GC_FAST_POLICY = 1
 "How many collections the statistics keep (`gc_stats.last`) and how many aggregates (`gc_stats.aggr`) (pl-incl.h)."
 const GC_STAT_WINDOW_SIZE = 3
 
-# The virtual signal numbers `SIG_PROLOG_OFFSET`, `SIG_GC` and `SIG_TUNE_GC` (pl-incl.h) are defined in src/pl-setup.jl on main (included after this file; the
-# collector code reads them inside functions only). `raiseGcSignal!`/`pendingGcSignal` (src/pl-gc.jl) use them as the bits of `ld.gc.sig_pending`
-# (`VSIG_GC` is 1, the enum order ATOM_GC, GC, THREAD_SIGNAL, CLAUSE_GC, PLABORT, PLHALT, TUNE_GC).
+# PORT: pl-incl.h SIG_PROLOG_OFFSET
+"The number of the first Prolog (virtual) signal (pl-incl.h)."
+const SIG_PROLOG_OFFSET = 32
+
+# PORT: pl-incl.h SIG_GC
+# DIVERGES: the kernel's signals are the collector's virtual ones: the number names a bit of `ld_gc.sig_pending`
+# (`raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl), served by `handleSignals` (src/pl-setup.jl; G1-C). `VSIG_GC` is 1 (the enum order is ATOM_GC, GC, THREAD_SIGNAL, CLAUSE_GC, then the unwind and halt signals, TUNE_GC).
+"The virtual signal asking the run loop to collect (`SIG_PROLOG_OFFSET + VSIG_GC`, pl-incl.h)."
+const SIG_GC = SIG_PROLOG_OFFSET + 1
+
+# PORT: pl-incl.h SIG_TUNE_GC
+"The virtual signal asking for the `prolog:tune_gc/3` hook (`SIG_PROLOG_OFFSET + VSIG_TUNE_GC`, pl-incl.h)."
+const SIG_TUNE_GC = SIG_PROLOG_OFFSET + 6
 
 # PORT: pl-incl.h gc_stat
 # DIVERGES: `local` is a Julia keyword: the field is `local_used`; `size_t` is `Int`, `gc_reason_t` (`uint64_t`) is `UInt64`.

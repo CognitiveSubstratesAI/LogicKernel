@@ -194,6 +194,81 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-setup.c gc_handler
+# (pl-setup.c:829-834 at the pin, registered at :931 `PL_signal(SIG_GC|PL_SIGSYNC, gc_handler)`:
+#     static void
+#     gc_handler(int sig)
+#     { (void)sig;
+#       garbageCollect(0);
+#     }
+# DIVERGES: the collector is given the VM-state callback (`get_vmi_state`), as every kernel caller of `garbageCollect`; reason 0 takes
+# `LD->gc.stats.request` (`gc_stat_start!`, pl-gc.c:573-574).
+"The handler of `SIG_GC`: run the stack collector for the requested reason (pl-setup.c `gc_handler`)."
+function gc_handler(ld::PL_local_data, sig::Int)::Nothing
+    garbageCollect(ld, 0; vmi_state_of=get_vmi_state)
+    return nothing
+end
+
+# PORT: pl-setup.c gc_tune_handler
+# (pl-setup.c:836-841 at the pin, registered at :932 `PL_signal(SIG_TUNE_GC|PL_SIGSYNC, gc_tune_handler)`:
+#     static void
+#     gc_tune_handler(int sig)
+#     { (void)sig;
+#       call_tune_gc_hook();
+#     }
+"The handler of `SIG_TUNE_GC`: call the `prolog:tune_gc/3` hook (pl-setup.c `gc_tune_handler`)."
+function gc_tune_handler(ld::PL_local_data, sig::Int)::Nothing
+    call_tune_gc_hook(ld)
+    return nothing
+end
+
+# PORT: pl-setup.c dispatch_signal as _dispatch_gc_signal
+# DIVERGES (G1-C, dispatcher decision 1): only the two collector signals have a handler (`PL_signal(SIG_GC|PL_SIGSYNC, gc_handler)` and
+# `SIG_TUNE_GC`'s, pl-setup.c:931-932, both C handlers: `dispatch_signal` calls `sh->handler(sig)` for them). The rest of `dispatch_signal`
+# (Prolog handlers, `PLSIG_THROW`, the frame it opens, the OS signals) is the signal owner's (`on_signal/4`, Q10/TH1); no other bit is raised
+# here, so another number is refused by name.
+"Run the handler of the virtual signal `sig` (pl-setup.c `dispatch_signal`, the collector's two)."
+function _dispatch_gc_signal(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
+    if sig == SIG_GC
+        gc_handler(ld, sig)
+    elseif sig == SIG_TUNE_GC
+        gc_tune_handler(ld, sig)
+    else
+        throw(NotPortedError{T}(mk_sym(T, :signal), "dispatch_signal for signal $sig", "Q10/TH1 (on_signal/4)"))
+    end
+    return nothing
+end
+
+# PORT: pl-setup.c handleSignals
+# (pl-setup.c:1225-1270 at the pin)
+# DIVERGES (G1-C, dispatcher decision 1): the pending signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`: one word,
+# `SIGMASK_WORDS` 1, the first signal `SIG_PROLOG_OFFSET`), dispatched by `_dispatch_gc_signal`. `HAS_LD` always holds; `handleSigInt` is not
+# Unix's. `LD->critical` is not kept: its writers (`startCritical`: sig_atomic/1, src/pl-pro.jl; the cleanup handler, src/pl-wam.jl) are
+# themselves left to the signal owner, so a pending collection is served inside such a region where upstream serves it at the next safe
+# point after it; the collector keeps every reachable term, so only the moment of the collection differs.
+"Run the handlers of the pending signals; the number handled, or -1 when an exception is pending (pl-setup.c `handleSignals`)."
+function handleSignals(ld::PL_local_data)::Int
+    done = 0
+    is_signalled(ld) || return 0                    # if ( !is_signalled() ) return 0;
+    ld.exception_term != 0 && return -1             # if ( exception_term ) return -1;
+    while ld.gc.sig_pending != 0                    # while( LD->signal.pending[i] )
+        sig = SIG_PROLOG_OFFSET                     # int sig = MINSIGNAL+SIGMASK_WIDTH*i;
+        mask = UInt64(1)                            # sigmask_t mask = 1;
+        while mask != 0                             # for( ; mask ; mask <<= 1, sig++ )
+            if (ld.gc.sig_pending & mask) != 0
+                ld.gc.sig_pending &= ~mask          # ATOMIC_AND(&LD->signal.pending[i], ~mask);
+                done += 1
+                _dispatch_gc_signal(ld, sig)        # dispatch_signal(sig, true);
+                ld.exception_term != 0 && return -1 # if ( exception_term ) return -1;
+            end
+            mask <<= 1
+            sig += 1
+        end
+    end
+    done != 0 && updateAlerted(ld)                  # if ( done ) updateAlerted(LD);
+    return done
+end
+
 # PORT: pl-setup.c signames as SIGNAMES
 # DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
 # `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);
@@ -208,9 +283,8 @@ const SIGNAMES = (
     ("winch", 28)
 )
 
-# PORT: pl-incl.h SIG_PROLOG_OFFSET
-"The number of the first Prolog (virtual) signal (pl-incl.h)."
-const SIG_PROLOG_OFFSET = 32
+# `SIG_PROLOG_OFFSET`, `SIG_GC` and `SIG_TUNE_GC` (pl-incl.h) are defined in src/pl-incl.jl (G1-C: the run loop and the collector, included
+# before this file, name them); the other virtual signal numbers are defined here.
 # PORT: pl-incl.h MINSIGNAL
 "The number of the first signal, with OS signals (pl-incl.h `HAVE_OS_SIGNALS`)."
 const MINSIGNAL = 1
@@ -224,8 +298,6 @@ const NUM_SIGNALS = MAXSIGNAL - MINSIGNAL + 1
 # DIVERGES: the `SIG_*` numbers (`SIG_PROLOG_OFFSET + VSIG_*`) as `Int` constants; `O_ATOMGC` and `O_ENGINES` are on.
 "Prolog signal: atom garbage collection (pl-incl.h `SIG_ATOM_GC`)."
 const SIG_ATOM_GC = SIG_PROLOG_OFFSET + 0
-"Prolog signal: stack garbage collection (pl-incl.h `SIG_GC`)."
-const SIG_GC = SIG_PROLOG_OFFSET + 1
 "Prolog signal: run the thread's signal queue (pl-incl.h `SIG_THREAD_SIGNAL`)."
 const SIG_THREAD_SIGNAL = SIG_PROLOG_OFFSET + 2
 "Prolog signal: clause garbage collection (pl-incl.h `SIG_CLAUSE_GC`)."
@@ -234,8 +306,6 @@ const SIG_CLAUSE_GC = SIG_PROLOG_OFFSET + 3
 const SIG_PLABORT = SIG_PROLOG_OFFSET + 4
 "Prolog signal: halt (pl-incl.h `SIG_PLHALT`)."
 const SIG_PLHALT = SIG_PROLOG_OFFSET + 5
-"Prolog signal: tune the GC (pl-incl.h `SIG_TUNE_GC`)."
-const SIG_TUNE_GC = SIG_PROLOG_OFFSET + 6
 
 # PORT: pl-setup.c PLSIG_USERFLAGS
 "The range of the API-visible signal flags (pl-setup.c)."

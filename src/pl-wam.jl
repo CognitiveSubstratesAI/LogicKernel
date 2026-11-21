@@ -200,14 +200,15 @@ end
 end
 
 # PORT: pl-wam.c updateAlerted
-# DIVERGES: the wakeup bit and, since P3, the depth and inference limit bits — `alerted` carries no other (src/pl-incl.jl);
-# no compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
+# DIVERGES: the signal, the wakeup, the undo and, since P3, the depth and inference limit bits — `alerted` carries no other (src/pl-incl.jl);
+# `is_signalled` reads the collector's virtual signals (G1-C); no compare-and-swap (one engine per thread). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
 # Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245); since P3 the depth and inference limit bits.
-# NOT PORTED: the other masks (signals, profiling, exit requests, the debugger, string buffers, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
+# NOT PORTED: the other masks (profiling, exit requests, the debugger, string buffers, coverage).
+"Recompute `ld.alerted` from the engine's state: `ALERT_SIGNAL` while a signal is pending, `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
+    is_signalled(ld) && (mask |= ALERT_SIGNAL)     # if ( is_signalled() ) mask |= ALERT_SIGNAL;
     ld.depth_info_limit != DEPTH_NO_LIMIT && (mask |= ALERT_DEPTHLIMIT)         # if ( ld->depth_info.limit != DEPTH_NO_LIMIT )
     ld.inference_limit_limit != INFERENCE_NO_LIMIT && (mask |= ALERT_INFERENCELIMIT)   # inference_limit.limit != INFERENCE_NO_LIMIT
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
@@ -4445,7 +4446,7 @@ function PL_next_solution_guarded(
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
-    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit and the two limit bits (P3:
+    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the signal and wakeup bits (G1-C) and the two limit bits (P3:
     # the limits are handled in `depart_alerted`; `i_enter_alerted` tests the wakeup bit only).
     @label I_ENTER
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
@@ -4517,10 +4518,10 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the two limit bits (P3) and
-    # the undo bit (TX1e); signals and the debugger are not ported. Upstream's order inside `depart_alerted` is kept: the
-    # autoloader's early exit, the scheduled undo goals (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit,
-    # then the inference limit.
+    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the signal bit (G1-C), the two limit
+    # bits (P3) and the undo bit (TX1e), not for the wakeup bit; the debugger is not ported. Upstream's order inside `depart_alerted` is kept:
+    # the autoloader's early exit, the pending signals (`is_signalled`, a SAFE POINT of the stack collector), the scheduled undo goals
+    # (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit, then the inference limit.
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4538,7 +4539,7 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
-    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
+    (ld.alerted & (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes
     PCl = gd.no_literals
@@ -4562,8 +4563,11 @@ function PL_next_solution_guarded(
     # and, at its start, the autoloader's early exit:
     #     if ( DEF->codes[0] == encode(S_VIRGIN) && !DEF->impl.any.defined && isoff(DEF, PROC_DEFINED) )
     #     { PC = DEF->codes; NEXT_INSTRUCTION; }
-    # DIVERGES: NOT PORTED: the signals, `getProcDefinedDefinition`, the profiler and the coverage and debugger
-    # ports (none is ported). `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
+    # (pl-vmi.c:1947-2055 at the pin.) G1-C, dispatcher decision 1: the `is_signalled()` arm (a SAFE POINT of the stack collector:
+    # `handleSignals` serves a pending `SIG_GC`, pl-setup.c `gc_handler`) is ported, between the autoloader's early exit and the undo goals.
+    # DIVERGES: `enterDefinition(DEF)` is `(void)0` without threads (pl-incl.h:1349), so it has no line; `PROCEDURE_catch3` is `gd.procedures_catch3`.
+    # NOT PORTED: `getProcDefinedDefinition`'s other users, the profiler and the coverage and debugger ports (none is ported).
+    # `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
     @label depart_alerted
     setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))      # lTop = argFrameP(FR, DEF->functor->arity)
     PCc = DEF.codes
@@ -4571,6 +4575,50 @@ function PL_next_solution_guarded(
     PC = 1
     if PCc[1] == S_VIRGIN && !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
         @goto next_instruction                      # we need the autoloader and get back
+    end
+    # GC-POINT pl-vmi.c:1958-1984
+    #   if ( is_signalled() )
+    #   { SAVE_REGISTERS(QID);
+    #     DEF = getProcDefinedDefinition(DEF); /* see (*) above */
+    #     LOAD_REGISTERS(QID);
+    #     if ( FR->predicate != DEF )   /* auto imported/loaded */
+    #     { setFramePredicate(FR, DEF);
+    #       setGenerationFrame(FR);
+    #     }
+    #     if ( isoff(DEF, P_SIG_ATOMIC) )
+    #     { SAVE_REGISTERS(QID);
+    #       handleSignals();
+    #       LOAD_REGISTERS(QID);
+    #       if ( exception_term )
+    #       { CL = NULL;
+    #         enterDefinition(DEF);
+    #         /* The catch is not yet installed, so we ignore it */
+    #         if ( FR->predicate == PROCEDURE_catch3->definition )
+    #           setLocal(FR, FR_CAUGHT);
+    #         THROW_EXCEPTION;
+    #       }
+    #     }
+    #   }
+    if is_signalled(ld)
+        @SAVE_REGISTERS(QID)
+        DEF = getProcDefinedDefinition(gd, ld, DEF) # see (*) above
+        @LOAD_REGISTERS(QID)
+        if ld.frames[FR].predicate !== DEF          # auto imported/loaded
+            setFramePredicate(ld.frames[FR], DEF)
+            setGenerationFrame(gd, ld, FR)
+        end
+        if (DEF.flags & P_SIG_ATOMIC) == 0          # isoff(DEF, P_SIG_ATOMIC)
+            @SAVE_REGISTERS(QID)
+            handleSignals(ld)
+            @LOAD_REGISTERS(QID)
+            if ld.exception_term != 0
+                ld.frames[FR].clause = nothing      # CL = NULL
+                if ld.frames[FR].predicate === gd.procedures_catch3.definition
+                    ld.frames[FR].flags |= FR_CAUGHT    # setLocal(FR, FR_CAUGHT)
+                end
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        end
     end
     if (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld)     # if ( UNDO_SCHEDULED(LD) ) (TX1e; lTop is set above)
         @SAVE_REGISTERS(QID)
@@ -6358,10 +6406,28 @@ function PL_next_solution_guarded(
     @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c I_FREDO
-    # DIVERGES: NOT PORTED: signals — `LD->alerted` and `handleSignals` (no signals; the kernel keeps no
-    # `alerted`, as at I_ENTER and I_DEPART). A `REDO_PTR` context is passed as the word, as upstream's.
+    # DIVERGES: the signals are the collector's virtual ones (G1-C, dispatcher decision 1). A `REDO_PTR` context is passed as the word,
+    # as upstream's.
     @label I_FREDO
     @assert (DEF.flags & P_FOREIGN) != 0
+    # GC-POINT pl-vmi.c:4765-4773
+    #   if ( unlikely(LD->alerted) && is_signalled() )
+    #   { if ( isoff(DEF, P_SIG_ATOMIC) )
+    #     { SAVE_REGISTERS(QID);
+    #       handleSignals();
+    #       LOAD_REGISTERS(QID);
+    #       if ( exception_term )
+    #         THROW_EXCEPTION;
+    #     }
+    #   }
+    if ld.alerted != 0 && is_signalled(ld)
+        if (DEF.flags & P_SIG_ATOMIC) == 0
+            @SAVE_REGISTERS(QID)
+            handleSignals(ld)
+            @LOAD_REGISTERS(QID)
+            ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
+        end
+    end
     fd_wcl = ld.frames[FR].fctx
     fd_ctx = ld.queries[QueryFromQid(ld, QID)].fndet_context
     if (fd_wcl & FRG_REDO_MASK) == REDO_INT
@@ -6577,6 +6643,33 @@ function PL_next_solution_guarded(
         PC = 1
         ld.lTop = argFrameP(ld.frames[FR].base, Int(db_clause.variables))
         UMODE = uread
+
+        # GC-POINT pl-vmi.c:6932-6939
+        #   if ( unlikely(LD->alerted) )
+        #   { if ( is_signalled() )
+        #     { SAVE_REGISTERS(QID);
+        #       handleSignals();
+        #       LOAD_REGISTERS(QID);
+        #       if ( exception_term )
+        #         THROW_EXCEPTION;
+        #     }
+        # DIVERGES: `chp` is the C stack's; here it is `ld.chp_scratch`, which a Prolog hook run by a handler (`prolog:tune_gc/3`)
+        # reuses when it backtracks, so its two fields are kept in locals around the call. NOT PORTED: the block's other arms,
+        # `O_INFERENCE_LIMIT` (call_with_inference_limit/3's owner) and the debugger's redo port with its `clearLocalVariablesFrame(FR)`
+        # (pl-vmi.c:6959; DBG1).
+        if ld.alerted != 0
+            if is_signalled(ld)
+                db_sig_cref = db_chp.cref
+                db_sig_key = db_chp.key
+                @SAVE_REGISTERS(QID)
+                handleSignals(ld)
+                @LOAD_REGISTERS(QID)
+                db_chp = ld.chp_scratch
+                db_chp.cref = db_sig_cref
+                db_chp.key = db_sig_key
+                ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
+            end
+        end
 
         if db_chp.cref !== nothing
             db_new = newChoice(ld, CHP_CLAUSE, FR)
