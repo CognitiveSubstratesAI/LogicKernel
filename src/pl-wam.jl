@@ -6727,7 +6727,8 @@ function PL_next_solution_guarded(
     # kept. An `unwind(_)` ball (`uncachableException`, pl-wam.c:2253-2263, on the words: `PL_is_functor`)
     # wraps the recover goal as `'$recover_and_rethrow'(Goal, Ball)` (boot/init.pl, booted since LB4 b2;
     # pin pl-vmi.c:5266-5278), both arguments stored dereferenced (`_cell_link!`: upstream copies the
-    # recover goal's word as is, the ball's deRef'd). `fatalError` is a Julia `error`. No GC request to honour.
+    # recover goal's word as is, the ball's deRef'd). `fatalError` is a Julia `error`. The query's arm honours a pending `SIG_GC`
+    # (G1-C), the collector given the VM-state callback (`get_vmi_state`).
     @label b_throw_resume
     ld.statistics.inferences += 1                   # box exit, needed for GC (Y1)
     if bt_catchfr != 0
@@ -6775,6 +6776,20 @@ function PL_next_solution_guarded(
     @SAVE_REGISTERS(QID)
     resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0, bt_outofstack)
     @LOAD_REGISTERS(QID)
+    # GC-POINT pl-vmi.c:5312-5316
+    #   if ( PL_pending(SIG_GC) )
+    #   { SAVE_REGISTERS(QID);
+    #     garbageCollect(LD->gc.stats.request);
+    #     LOAD_REGISTERS(QID);
+    #   }
+    #   QF = QueryFromQid(QID);  /* may be shifted: recompute */
+    if pendingGcSignal(ld, SIG_GC)
+        @SAVE_REGISTERS(QID)
+        garbageCollect(ld, Int(ld.gc.stats.request); vmi_state_of=get_vmi_state)
+        @LOAD_REGISTERS(QID)
+    end
+    QF = QueryFromQid(ld, QID)                      # may be shifted: recompute
+    br_q = ld.queries[QF]
 
     return (br_q.flags & PL_Q_EXT_STATUS) != 0 ? PL_S_EXCEPTION : 0
 end
