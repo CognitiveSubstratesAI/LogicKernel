@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-alloc.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam

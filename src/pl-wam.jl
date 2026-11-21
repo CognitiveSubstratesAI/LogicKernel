@@ -1984,8 +1984,8 @@ macro ENSURE_LOCAL_SPACE(n)
 end
 
 # PORT: pl-vmi.c ENSURE_GLOBAL_SPACE
-# PORT: pl-vmi.c ENSURE_STACK_SPACE as ENSURE_GLOBAL_SPACE
-# PORT: pl-vmi.c GROW_STACK_SPACE as ENSURE_GLOBAL_SPACE
+# (this one macro also holds upstream's ENSURE_STACK_SPACE and GROW_STACK_SPACE, quoted below: one Julia definition cannot carry
+# three PORT markers, a marker needs a definition of its own, MARKER-ORPHAN)
 # GC-POINT pl-vmi.c:220-235 (G1-C3: the VM's allocation safe point)
 #   #define ENSURE_GLOBAL_SPACE(cells, onchange) \
 #           ENSURE_STACK_SPACE(cells, 0, onchange)
