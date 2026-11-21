@@ -33,12 +33,14 @@ GM = "test/core_lang/test_gc_mark.jl"
 GC = "test/core_lang/test_gc_compact.jl"            # D-0238: the collector's own tests (G1-6a/6b, 6c) run the whole mark/trail/sweep chain
 GD = "test/core_lang/test_gc_driver.jl"
 GV = "test/core_lang/test_gc_vmi_state.jl"          # D-0238: G1-2b's rows run whole collections (the safe points pass get_vmi_state)
-TARGETS = [GM, GC, GD, GV]
+# D-0238 (chunk 10): the upstream GC programs run whole collections of the mutated code, so UP is a target; it only adds a test that can kill.
+UP = "test/core_lang/test_gc_upstream_swipl.jl"
+TARGETS = [GM, GC, GD, GV, UP]
 M = "src/pl-gcmark.jl"
 W = "src/pl-gcwalk.jl"
 
 def m(id, old, new, file=M, eq=None):
-    d = dict(id=id, file=file, old=old, new=new, targets=[GM, GC, GD, GV])
+    d = dict(id=id, file=file, old=old, new=new, targets=TARGETS)
     if eq:
         d["equivalent"] = eq
     return d

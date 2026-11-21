@@ -36,6 +36,7 @@ GCT = [
     "test/core_lang/test_gc_driver.jl",
     "test/core_lang/test_gc_vmi_state.jl",
     "test/core_lang/test_gc_frames.jl",
+    "test/core_lang/test_gc_upstream_swipl.jl",   # D-0238 (chunk 10): whole collections through the VM; it only adds a test that can kill
 ]
 STK = [
     "test/core_lang/test_stack_limit.jl",

@@ -32,7 +32,9 @@ GM = "test/core_lang/test_gc_mark.jl"
 GS = "test/core_lang/test_gc_sweep.jl"
 GT = "test/core_lang/test_gc_trail.jl"
 GV = "test/core_lang/test_gc_vmi_state.jl"          # D-0238: G1-2b's rows run whole collections (the safe points pass get_vmi_state)
-TARGETS = [GD, SP, GM, GS, GT, GV]
+# D-0238 (chunk 10): the upstream GC programs run whole collections of the mutated code, so UP is a target; it only adds a test that can kill.
+UP = "test/core_lang/test_gc_upstream_swipl.jl"
+TARGETS = [GD, SP, GM, GS, GT, GV, UP]
 D = "src/pl-gcdriver.jl"
 
 def m(id, old, new, file=D, eq=None):

@@ -28,9 +28,11 @@ GC = "test/core_lang/test_gc_compact.jl"
 GS = "test/core_lang/test_gc_sweep.jl"
 GT = "test/core_lang/test_gc_trail.jl"
 GM = "test/core_lang/test_gc_mark.jl"
-TARGETS = [GC, GS, GT, GM]                   # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
+# D-0238 (chunk 10): the upstream GC programs run whole collections of the mutated code, so UP is a target; it only adds a test that can kill.
+UP = "test/core_lang/test_gc_upstream_swipl.jl"
+TARGETS = [GC, GS, GT, GM, UP]                   # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 F = "src/pl-gccompact.jl"
-TT = [GC, GS, GM]                            # compaction and its sweep
+TT = [GC, GS, GM, UP]                           # compaction and its sweep
 
 
 def m(id, old, new, targets=TT, file=F, eq=None):
@@ -123,19 +125,19 @@ MUTANTS = [
     m("G1GC6A-J1 gc_trail_chain: the chain is unwound to the entry's old index (KILL TP, MODEL: the marks' new trail counts)",
       "GC_TRAIL_BASE + current, GC_TRAIL_BASE + dest)",
       "GC_TRAIL_BASE + current, GC_TRAIL_BASE + current)",
-      targets=[GC, GS, GT]),
+      targets=[GC, GS, GT, UP]),
     m("G1GC6A-J2 gc_alien_trailtops: a NoMark foreign frame is chained too (KILL AT: `alien_relocations == nreal - 1`)",
       "        if isRealMark(f.mark)\n            alien_into_relocation_chain(ld, sw, _gcs_mfield(true, fr, 2), STG_STATIC)\n",
       "        if true\n            alien_into_relocation_chain(ld, sw, _gcs_mfield(true, fr, 2), STG_STATIC)\n",
-      targets=[GC, GT]),
+      targets=[GC, GT, UP]),
     m("G1GC6A-J3 gc_check_trail_chains: unbalanced counters pass (KILL CK: `@test_throws` with relocated_cells = 1)",
       "    sw.relocated_cells == sw.relocation_cells ||\n        error(",
       "    true ||\n        error(",
-      targets=[GC, GT]),
+      targets=[GC, GT, UP]),
     m("G1GC6A-J4 gc_check_trail_chains: an open chain passes (KILL CK: `@test_throws` with relocation_chains = 1)",
       "    sw.relocation_chains == 0 ||\n        error(\"GC: after compact_trail",
       "    true ||\n        error(\"GC: after compact_trail",
-      targets=[GC, GT]),
+      targets=[GC, GT, UP]),
     # ---- collect_phase and gc_vword_referrers
     m("G1GC6A-R1 collect_phase: the vword references are not subtracted from needs_relocation (KILL MODEL: the check throws on the first collection; NV)",
       "sw.relocated_cells == st.needs_relocation - nvword\n",
