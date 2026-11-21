@@ -109,7 +109,8 @@ end
     ld = db.ld
     @test _rlines(db, _R[_rf("thandler", _rv(60))]) ==
         ["thandler(-(resource_error(stack),1000)) det", "end"]
-    @test ld.gTop <= ld.stacks_limit && !ld.exception_processing && ld.outofstack === nothing
+    @test ld.gTop <= ld.stacks_limit && !ld.exception_processing &&
+        ld.outofstack === nothing
     LK.PL_open_foreign_frame(ld)
     room = ld.stacks_limit - LK._stacks_in_use(ld, 0)   # (D-0036: the three stacks)
     @test LK.ensureGlobalSpace(ld, room)                   # exactly at the limit: room

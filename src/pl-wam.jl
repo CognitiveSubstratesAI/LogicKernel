@@ -2121,9 +2121,13 @@ end
     tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, p)
     if tf_k == DU_CELL || tf_k == DU_ATTVAR         # if ( canBind(*p) )
         tf_ar = arityFunctor(ld.functors, tf_f)
-        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6, :T_FUNCTOR, begin
-            tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
-        end)     # 4 extra for the '$targp'/3 cell
+        @ENSURE_GLOBAL_SPACE(
+            1 + tf_ar + 4 + 6,
+            :T_FUNCTOR,
+            begin
+                tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+            end
+        )     # 4 extra for the '$targp'/3 cell
         tf_ap = allocGlobalCells!(ld, 1 + tf_ar)    # ap = gTop; gTop += 1+arity
         tf_c = consPtr(tf_ap, TAG_COMPOUND | STG_GLOBAL)   # c = consCompound(ap)
         _trie_push_argp!(ld, FR)                    # TriePushArgP()
@@ -2135,9 +2139,13 @@ end
     end
     if tf_k == DU_WORD && _is_gcompound(tf_w)       # if ( isTerm(*p) )
         if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )
-            @ENSURE_GLOBAL_SPACE(4, :T_FUNCTOR, begin
-                tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
-            end)
+            @ENSURE_GLOBAL_SPACE(
+                4,
+                :T_FUNCTOR,
+                begin
+                    tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+                end
+            )
             _trie_push_argp!(ld, FR)                # TriePushArgP()
             ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_w      # *TrieTermP = *p
             ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
@@ -3250,9 +3258,13 @@ function PL_next_solution_guarded(
     hf_lit = functor_literal(hf_f)
     hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hf_d == DREF_CELL || hf_d == DREF_ATTVAR     # canBind(*p) (an attributed variable: AV1)
-        @ENSURE_GLOBAL_SPACE(1 + hf_ar, :H_RFUNCTOR, begin
-            hf_d, hf_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
-        end)             # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(
+            1 + hf_ar,
+            :H_RFUNCTOR,
+            begin
+                hf_d, hf_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+            end
+        )             # (L1f f2)
         hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
         bindConst(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
@@ -3282,10 +3294,14 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     (hf_cn != ld.atom_dexpr && hf_ca + 1 == hf_ar) || @goto unify_backtrack   # `$expr/n`, g/(n-1)
-    @ENSURE_GLOBAL_SPACE(hf_ar, :H_RFUNCTOR, begin
-        hf_d, hf_w = _argp_deref_word(ld, ARGP)   # ORIGINAL onchange (the cross-match is kernel-only): deRef2(ARGP, p)
-        hf_q = valPtr(hf_w)                         # and the compound's position again
-    end)                     # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(
+        hf_ar,
+        :H_RFUNCTOR,
+        begin
+            hf_d, hf_w = _argp_deref_word(ld, ARGP)   # ORIGINAL onchange (the cross-match is kernel-only): deRef2(ARGP, p)
+            hf_q = valPtr(hf_w)                         # and the compound's position again
+        end
+    )                     # (L1f f2)
     hf_s = allocGlobalCells!(ld, hf_ar)             # the children of g(…), head included:
     ld.gstack[hf_s] = hf_cn                         # g's atom word,
     for hf_i in 1:hf_ca                             # then a reference to each argument cell (a
@@ -3310,9 +3326,13 @@ function PL_next_solution_guarded(
     end
     hl_d, hl_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hl_d == DREF_CELL || hl_d == DREF_ATTVAR     # case TAG_VAR: case TAG_ATTVAR: (AV1)
-        @ENSURE_GLOBAL_SPACE(3, :H_RLIST, begin
-            hl_d, hl_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
-        end)                     # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(
+            3,
+            :H_RLIST,
+            begin
+                hl_d, hl_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+            end
+        )                     # (L1f f2)
         hl_q = _alloc_compound!(ld, dot_f, 2)
         bindConst(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
@@ -3374,9 +3394,13 @@ function PL_next_solution_guarded(
             _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
             _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
         elseif hff_d == DREF_CELL || hff_d == DREF_ATTVAR   # canBind(*p) (AV1)
-            @ENSURE_GLOBAL_SPACE(3, :H_LIST_FF, begin
-                hff_d, hff_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p) (UMODE != uwrite)
-            end)                 # (L1f f2)
+            @ENSURE_GLOBAL_SPACE(
+                3,
+                :H_LIST_FF,
+                begin
+                    hff_d, hff_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p) (UMODE != uwrite)
+                end
+            )                 # (L1f f2)
             hff_q = _alloc_compound!(ld, dot_f, 2)
             ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
             ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
@@ -4572,7 +4596,8 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
-    (ld.alerted & (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
+    (ld.alerted & (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) !=
+    0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes
     PCl = gd.no_literals

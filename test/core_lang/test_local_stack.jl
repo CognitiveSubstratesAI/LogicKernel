@@ -559,7 +559,8 @@ end
     @test region(ld) == min(2 * full, full + 1 + LK.LOCAL_SPARE + LK.EMERGENCY_LIMIT) > full
     # recovery gives the spare back (resumeAfterException → trimStacks)
     LK.PL_clear_exception(ld)
-    @test ld.outofstack === nothing && !ld.exception_processing && ld.local_spare == LK.LOCAL_SPARE
+    @test ld.outofstack === nothing && !ld.exception_processing &&
+        ld.local_spare == LK.LOCAL_SPARE
     @test LK.raiseStackOverflow(ld, LK.BOOLEX_FALSE) == false
     # exception.processing: set by PL_error and PL_raise_exception, cleared by the recovery; while
     # it is set, growLocalSpace takes the spare before growing (pl-gc.c growLocalSpace)

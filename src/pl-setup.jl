@@ -236,7 +236,13 @@ function _dispatch_gc_signal(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
     elseif sig == SIG_TUNE_GC
         gc_tune_handler(ld, sig)
     else
-        throw(NotPortedError{T}(mk_sym(T, :signal), "dispatch_signal for signal $sig", "Q10/TH1 (on_signal/4)"))
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :signal),
+                "dispatch_signal for signal $sig",
+                "Q10/TH1 (on_signal/4)"
+            )
+        )
     end
     return nothing
 end

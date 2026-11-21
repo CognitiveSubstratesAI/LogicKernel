@@ -4772,7 +4772,11 @@ _manifest_g1gc3a(::Type{T}) where {T} = (
     (LK.mark_variable, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
     (LK.mark_local_variable, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
     (LK.mark_arguments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
-    (LK.mark_new_arguments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (
+        LK.mark_new_arguments,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state},
+        false
+    ),
     (LK.mark_trie_gen, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int}, false),
     (LK.mark_term_refs, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts}, false),
     (LK.mark_foreign_frame, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int}, false),
@@ -4785,7 +4789,7 @@ _manifest_g1gc3a(::Type{T}) where {T} = (
     (LK.count_need_protection_attvars, Tuple{LK.PL_local_data{T}}, false),
     (LK.link_attvars, Tuple{LK.PL_local_data{T}}, false),
     (LK.restore_attvars, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.gc_clear_marks!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.gc_clear_marks!, Tuple{LK.PL_local_data{T}}, false)
 )
 
 # CONT1 (pl-cont.c, pl-gc.c's liveness walker, pl-fli.c): the continuation builders and readers that name a term type (the
@@ -5200,28 +5204,91 @@ _manifest_g1gcb(::Type{T}) where {T} = (
 # Not held allocation-free: the drivers build error messages and the callback `vmi_state_of` is dynamic.
 _manifest_g1gc3b(::Type{T}) where {T} = (
     (LK.gc_walk_state, Tuple{Int, Int, Int, Int}, false),
-    (LK.mark_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, LK.code}, false),
-    (LK.clear_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_walk_state, LK.code}, false),
-    (LK.mark_argp_gc, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state}, false),
     (
-        LK.walk_and_mark_gc,
-        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, Vector{LK.code}, Int, LK.code},
+        LK.mark_frame_var_gc,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state, LK.code},
         false
     ),
-    (LK.mergeTrailedAssignments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int, Int}, false),
-    (LK.early_reset_vars, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark, Int}, false),
+    (LK.clear_frame_var_gc, Tuple{LK.PL_local_data{T}, LK.gc_walk_state, LK.code}, false),
+    (
+        LK.mark_argp_gc,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.gc_walk_state},
+        false
+    ),
+    (
+        LK.walk_and_mark_gc,
+        Tuple{
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.gc_walk_state,
+            Vector{LK.code},
+            Int,
+            LK.code
+        },
+        false
+    ),
+    (
+        LK.mergeTrailedAssignments,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, Int, Int},
+        false
+    ),
+    (
+        LK.early_reset_vars,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark, Int},
+        false
+    ),
     (LK.gc_slots_in_frame, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK._gc_is_trie_gen, Tuple{LK.localFrame{T}}, false),
-    (LK.mark_alt_clauses, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, LK.ClauseRef{T}}, false),
-    (LK.early_reset_choicepoint, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
-    (LK.mark_environments, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int}, false),
-    (LK.mark_choicepoints, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int}, false),
-    (LK.mark_query_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int, Int}, false),
+    (
+        LK.mark_alt_clauses,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, Int, LK.ClauseRef{T}},
+        false
+    ),
+    (
+        LK.early_reset_choicepoint,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int},
+        false
+    ),
+    (
+        LK.mark_environments,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int},
+        false
+    ),
+    (
+        LK.mark_choicepoints,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int},
+        false
+    ),
+    (
+        LK.mark_query_stacks,
+        Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.mark_state, Int, Int, Int},
+        false
+    ),
     (LK.mark_stacks, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
     (LK.mark_phase, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
     # the `vmi_state_of=` keyword methods (the collector's callers pass `nothing` or `get_vmi_state`; the CI of c3ea5903 named both as NOT CHECKED for dispatch)
-    (Core.kwcall, Tuple{NamedTuple{(:vmi_state_of,), Tuple{Nothing}}, typeof(LK.mark_stacks), LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
-    (Core.kwcall, Tuple{NamedTuple{(:vmi_state_of,), Tuple{Nothing}}, typeof(LK.mark_phase), LK.PL_local_data{T}, LK.gc_mark_counts, LK.vm_state}, false),
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:vmi_state_of,), Tuple{Nothing}},
+            typeof(LK.mark_stacks),
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.vm_state
+        },
+        false
+    ),
+    (
+        Core.kwcall,
+        Tuple{
+            NamedTuple{(:vmi_state_of,), Tuple{Nothing}},
+            typeof(LK.mark_phase),
+            LK.PL_local_data{T},
+            LK.gc_mark_counts,
+            LK.vm_state
+        },
+        false
+    ),
     (LK.unmark_environments, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
     (LK.unmark_choicepoints, Tuple{LK.PL_local_data{T}, Int, UInt32}, false),
     (LK.unmark_stacks, Tuple{LK.PL_local_data{T}, Int, Int, UInt32}, false)

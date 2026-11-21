@@ -87,7 +87,13 @@ function makeMoreStackSpace(ld::PL_local_data, overflow::boolex_t, flags::Int)::
     end
 
     if ld.exception_processing &&                   # if ( LD->exception.processing && s && enableSpareStack(s, true) )
-        (overflow == LOCAL_OVERFLOW ? enableSpareStack!(ld, true) : enableSpareStack_global!(ld, true))
+        (
+        if overflow == LOCAL_OVERFLOW
+            enableSpareStack!(ld, true)
+        else
+            enableSpareStack_global!(ld, true)
+        end
+    )
         return true
     end
 

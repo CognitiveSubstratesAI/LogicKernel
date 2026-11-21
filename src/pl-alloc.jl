@@ -98,7 +98,11 @@ function outOfStack!(
 )::Bool where {T}
     if ld.outofstack === stack                      # LD->outofstack == stack (G1-C: the stack, no longer a flag)
         ld.unusable = true                          # (see above: no fatalError)
-        error("[Thread 1]: failed to recover from ", stack, "-overflow: Sorry, cannot continue")   # s->name
+        error(
+            "[Thread 1]: failed to recover from ",
+            stack,
+            "-overflow: Sorry, cannot continue"
+        )   # s->name
     end
     enableSpareStacks!(ld)
     ld.trim_stack_requested = true                  # LD->trim_stack_requested = true (pl-alloc.c:695)
