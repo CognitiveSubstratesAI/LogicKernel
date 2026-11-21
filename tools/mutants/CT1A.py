@@ -66,11 +66,10 @@ MUTANTS = [
          file=S, targets=TS,
          old="UInt32(c) > 0xff",
          new="UInt32(c) > 0xffff"),
-    dict(id="CT1a-B2 the text keeps its first NUL: an embedded NUL reaches libc (rows t25, t26 are swipl's; the kernel cannot build their atoms)",
+    dict(id="CT1a-B2 the text keeps its first NUL: an embedded NUL reaches libc (KILL t25, t26, t31: since ATOM1 the atoms of those rows hold the character 0, swipl's answers are 'C', ok and the encoding error)",
          file=S, targets=TS,
          old="resize!(b, i - 1)",
-         new="resize!(b, i)",
-         equivalent="src/pl-read.jl:2005 — a kernel atom cannot hold the character 0 (_atom_from_text raises NotPortedError, 'the term interface'), so the bytes b never hold a 0 and the cut is dead code on this term interface; rows t25, t26, t31 pin the NotPortedError"),
+         new="resize!(b, i)"),
     # ── pl-ctype.c lccats ──
     dict(id="CT1a-C1 messages is LC_CTYPE: an environment read for messages takes LANG, not LC_MESSAGES (KILL t14)",
          file=C, targets=TS,

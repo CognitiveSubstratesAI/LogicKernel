@@ -2055,19 +2055,14 @@ end
 
 # ── the tokeniser (pl-read.c) ───────────────────────────────────────────────────────────────────
 
-# The atom whose text is `str` (upstream's `textToAtom`). An atom is a Julia `Symbol` in the term
-# interface, which cannot hold the character 0; upstream's atoms can (`'a\0\b'` reads as
-# `[97,0,98]` in swipl 10.1.16): refused explicitly here, never misread.
+# The atom whose text is `str` (upstream's `textToAtom`). An atom is a Julia `Symbol` in the term interface, which
+# cannot hold the character 0; upstream's atoms can (`'a\0\b'` reads as `[97,0,98]` in swipl 10.1.20): the atom is
+# named by the ESCAPED text (`atom_escape`, ATOM1) and `sym_text` answers the text. The atom of a text with no NUL is
+# named by the text itself.
+# DIVERGES (representation only, ATOM1): the name of an atom holding the character 0 is not its text; behaviour
+# (identity, order, text, length) is swipl's.
 function _atom_from_text(::Type{T}, str::String)::T where {T}
-    # DIVERGES (settled, user 2026-10-10: keep refusing): upstream's atoms hold the character 0,
-    # the kernel's do not; the point to revisit is phase 2's atom table.
-    occursin('\0', str) && throw(
-        NotPortedError{Nothing}(
-            nothing, "an atom containing the character 0 (a Symbol cannot hold it)",
-            "the term interface"
-        )
-    )
-    return mk_sym(T, Symbol(str))
+    return mk_sym(T, Symbol(atom_escape(str)))
 end
 
 # The atom whose text is the `len` UTF-8 bytes at index `s` of `b` (upstream's `textToAtom`).
@@ -4575,7 +4570,7 @@ function read_clause(
             rd.subtpos = something(vals[3], 0)::Int
             process_comment = vals[4] === nothing ? false : vals[4]::Bool
             opt_comments = something(vals[5], 0)::Int
-            vals[6] === nothing || (syntax_errors = Symbol(sym_text(vals[6]::T)))
+            vals[6] === nothing || (syntax_errors = Symbol(sym_text(vals[6]::T)))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
             opt_unicode_atoms = vals[7]
             opt_blobs = vals[8]
             varprefix = something(vals[9], 0)::Int
@@ -4817,7 +4812,7 @@ function read_term_from_stream(
     varprefix = something(vals[7], 0)::Int
     dq = vals[8]
     mname = vals[9]
-    vals[10] === nothing || (rd.on_error = Symbol(sym_text(vals[10]::T)))
+    vals[10] === nothing || (rd.on_error = Symbol(sym_text(vals[10]::T)))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
     bq = vals[11]
     tcomments = something(vals[12], 0)::Int
     qq = something(vals[13], 0)::Int

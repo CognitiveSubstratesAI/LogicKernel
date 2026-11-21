@@ -629,7 +629,7 @@ function get_variable_names(ci::compileInfo{T})::Int where {T}
             if kind(n) === SYM && kind(v) === VAR               # isAtom(*n) && isVarInfo(*v)
                 vd = get(ci.vardefs, var_key(v), nothing)
                 if vd !== nothing
-                    vd.name = Symbol(sym_text(n))
+                    vd.name = Symbol(sym_text(n))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
                     found += 1
                 end
             end

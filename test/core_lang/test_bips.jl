@@ -104,8 +104,12 @@ end
     end
 
     # PORT: test_bips.pl zero_codes
-    # DIVERGES: upstream compares two ATOMS containing NUL; a Julia Symbol cannot contain NUL, so the case is ported on STRINGS, which SWI orders by the same character-code rule — the point (a NUL code does not end the comparison) is the same.
+    # Ported on ATOMS as upstream states it since ATOM1 (an atom holding the character 0 is named by the escaped text,
+    # `atom_escape`); until then it was ported on STRINGS (a Symbol cannot hold the 0), which stays as a second row: the
+    # same order rule. compare(Order, '\u1000hello\u0000world', '\u1000hello') is `>` in swipl 10.1.20 as well.
     @testset "zero_codes" begin
+        @test _border(_ba(Symbol(atom_escape("ကhello\0world"))), _ba(Symbol("ကhello"))) === :>
+        @test _border(_ba(Symbol("ကhello")), _ba(Symbol(atom_escape("ကhello\0world")))) === :<
         @test _border(_bg("ကhello\0world"), _bg("ကhello")) === :>
     end
 end

@@ -88,18 +88,12 @@ function _cr_read(text::String)::Union{Nothing, _CR}
     return rc === :true ? ans[1] : nothing
 end
 
-# A STRING holding the character 0 reads (a string can hold it) but term_to_atom/2 of it cannot
-# make the atom (R1f's named term-interface gap): named here too, as `NUL-TEXT`.
-_cr_nul(t::_CR)::Bool =
-    (
-        kind(t) === GND && lk_value(t) isa AbstractString &&
-        occursin('\0', String(lk_value(t)))
-    ) ||
-    (kind(t) === EXPR && any(i -> _cr_nul(child(t, i)), 1:nchildren(t)))
+# (Until ATOM1 a string holding the character 0 could not become an atom through term_to_atom/2, R1f's named
+# term-interface gap, and such a result was excluded by name as `NUL-TEXT`; the atoms hold the character 0 now,
+# and every result is compared with swipl's.)
 
-"The kernel's writeq text of `t` (term_to_atom/2); `NUL-TEXT` for the named exclusion."
+"The kernel's writeq text of `t` (term_to_atom/2)."
 function _cr_text(t::_CR)::String
-    _cr_nul(t) && return "NUL-TEXT"
     rc, ans, _ = _cr_call("term_to_atom", _CR[t, _cr_var()])
     @assert rc === :true "term_to_atom: $rc on $t"
     return sym_text(ans[2])
@@ -230,24 +224,14 @@ end
 function _cr_compare(labels, ours, theirs; norm=true)
     @test length(ours) == length(theirs)
     bad = String[]
-    cut = 0
     for k in 1:min(length(ours), length(theirs))
         o = norm ? [_cr_norm(x) for x in ours[k]] : copy(ours[k])
         s = norm ? [_cr_norm(x) for x in theirs[k]] : copy(theirs[k])
-        if any(x -> occursin("NUL-TEXT", x), o)   # named, counted
-            cut += 1
-            continue
-        end
         o == s || push!(bad, "$(labels[k])\n    kernel $(repr(o))\n    swipl  $(repr(s))")
     end
     for b in bad[1:min(end, 12)]
         println(stderr, "  DIVERGES: ", b)
     end
-    cut > 0 && println(
-        stderr,
-        "  excluded by name (a string holding the character 0): ",
-        cut
-    )
     @test isempty(bad)
     return length(bad)
 end
@@ -473,7 +457,7 @@ if _CR_SWIPL !== nothing
             end
         end
         theirs = _cr_swipl(["wc(" * _cr_codes(s) * ")" for s in texts])
-        # texts the kernel cannot read (the character 0) differ: both sides then say `false` here
+        # (the texts holding the character 0 are compared like every other since ATOM1)
         @test _cr_compare(labels, ours, theirs; norm=false) == 0
         # (the reader's corpus holds 86 texts neither side reads: syntax errors, refusals)
         @test count(r -> r[3] == "true", theirs) > 0.8 * length(theirs)
@@ -531,11 +515,9 @@ if _CR_SWIPL !== nothing
         theirs = _cr_swipl([
             "rt(" * _cr_codes(s) * ", " * _CR_OPTS_TEXT * ")" for s in texts
         ])
-        # the character 0: the kernel cannot make the atom (R1f's named gap) — those lines differ
-        nul = [k for (k, l) in enumerate(labels) if occursin("\\0", l)]
-        for k in nul
-            theirs[k] = ours[k]
-        end
+        # the texts holding the character 0 (labels with `\0`) are compared with swipl's lines like the rest (ATOM1;
+        # their lines were copied from the kernel's before: R1f's named gap)
+        @test any(l -> occursin("\\0", l), labels)
         @test _cr_compare(labels, ours, theirs) == 0
         @test count(r -> startswith(r[3], "ex:error(syntax_error"), theirs) > 50
         @test count(r -> occursin("warning:singletons", r[4]), theirs) > 10      # (17 measured)

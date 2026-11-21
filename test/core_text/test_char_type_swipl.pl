@@ -4,8 +4,8 @@
 % row: its name and every solution). The characters are named by code, so the rows do not depend on the source encoding.
 % No row reads the locale (the classes are the Unicode map's, as the pin's swipl answers them).
 ct_codes([0'a, 0'Z, 0'5, 0' , 0'_, 0'., 0'(, 0'", 0'\n, 0xe9, 0x3b1, 0x660, 0x20ac, 0x2028, 0, 0x7f, 0'`]).
-% the same characters without code 0: char_code/2 on 0 makes the atom of the character 0, which the kernel refuses
-% (DIVERGES, settled: src/pl-read.jl `_atom_from_text`); the code-0 rows of t1 and t3 are t42 and t43; the rows after them (t44 on) run again on a fresh engine
+% the same characters without code 0: the code-0 rows of t1 and t3 are t42 and t43 (char_code/2 on 0 makes the atom of the
+% character 0; the kernel's atoms hold it since ATOM1, so t42 and t43 are compared like every row)
 ct_codes_nz(Cs) :- ct_codes(All), ct_nz(All, Cs).
 ct_nz([], []).
 ct_nz([C|T], R) :- ( C =:= 0 -> R = R1 ; R = [C|R1] ), ct_nz(T, R1).
@@ -71,7 +71,7 @@ t38(R) :- ct_res(code_type(0'5, digit(5)), R).
 t39(R) :- ct_res(code_type(0'5, digit(6)), R).
 t40(R) :- ct_res(code_type(0'f, xdigit(15)), R).
 t41(R) :- code_type(0'f, xdigit(W)), R = W.
-% t1 and t3 for the character 0 alone (the atom of the character 0: the kernel refuses it, swipl answers)
+% t1 and t3 for the character 0 alone (the atom of the character 0)
 t42(R) :- ct_cls0(Ts), C = 0, char_code(Ch, C), findall(T, ( member(T, Ts), char_type(Ch, T) ), L), R = C-L.
 t43(R) :- ct_cls1(Ns), C = 0, char_code(Ch, C),
     findall(N-V, ( member(N, Ns), T =.. [N, X], char_type(Ch, T), ( atom(X) -> char_code(X, V) ; V = X ) ), L),

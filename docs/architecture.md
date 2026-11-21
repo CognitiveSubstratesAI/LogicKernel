@@ -562,7 +562,7 @@ ported files' headers to either.
     differential compares every predicate in full (its carve-out for predicates with an
     `H_VOID_N` is removed). The canonical differential's two named exclusions STAY, measured
     (50 balls a run are still named and counted): a ball holding a cut UTF-8 sequence (upstream
-    defect, see register Q1) and a string holding the character 0 (the term interface's gap).
+    defect, see register Q1) and a string holding the character 0 (the term interface's gap; LIFTED by ATOM1: such a string is compared like every other).
 * **The 2026-10-13 mini-sync: `ac807ba8` → `8609e216`** (10.1.18; 26 upstream commits, 10 of them
   in `src/` or `boot/`; the pin was frozen at upstream's head when the sync started). ONE commit
   here, so no `sync-from:` line and no expected-mismatch list were needed: the pin, the oracle,
@@ -3306,8 +3306,8 @@ src/pl-write.jl, src/pl-read.jl, src/os/pl-prologflag.jl, pl-ext.jl, pl-global.j
   factorises it, `@(_, [=(_, f(_))])`) until group F (D-0123), which writes it as swipl does.
 * **Named, counted exclusions (the gate):** a syntax error whose culprit holds a CUT UTF-8 byte
   (`«x`: swipl names the quote's first byte, `string("Â", 0)`, and so does the kernel; its writer
-  cannot write that string); a STRING holding the character 0 (readable; no atom can be made of it:
-  R1f's gap).
+  cannot write that string); a STRING holding the character 0 (readable; no atom could be made of it:
+  R1f's gap; LIFTED by ATOM1, the atom is made and the lines are compared with swipl's).
 * **Gates:** test/core_text/test_canonical_readatom_swipl.jl (new): write_canonical/1 and /2 on
   the reader's and writer's hand corpora (400 lines) and 1,000 random terms, compared LITERALLY
   with swipl (both sides number the variables: `A`, `B`, `_`), and read back; read_term_from_atom/3
@@ -3484,17 +3484,17 @@ pl-incl.jl, pl-global.jl, pl-ext.jl; tools/bench.jl). Decided by the user, 2026-
   analysis, `VD_*` — a multiton `v(_A, _A)`, a singleton in one branch of a disjunction) were a
   named, counted exclusion in the differential here; PORTED in R1g (above), the exclusion lifted.
 * **The round trip's exclusions, each with its cause:** a float — the writer's floats were R1e's
-  rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is (LIFTED at the 2026-10-11 sync: fixed upstream in `765ef01`, `b0eadba`); a text holding the character 0 — a KERNEL GAP in
+  rest (LIFTED since R1e (floats)); #11, #12 — upstream defects, ported as is (LIFTED at the 2026-10-11 sync: fixed upstream in `765ef01`, `b0eadba`); a text holding the character 0 — was a KERNEL GAP in
   the term interface (an atom is named by a Julia `Symbol`, which cannot hold `\0`; swipl writes
-  and reads it back unchanged, so no report), planned in the R1 row.
+  and reads it back unchanged, so no report); LIFTED by ATOM1 (the atom is named by the escaped text, section "ATOM1" below): such texts round-trip like any other.
 * **Gates:** test/files/test_load_swipl.jl (new): 12 case files consulted by the kernel and by
   swipl — messages (as terms), status, every solution and the dynamic flag of each case predicate;
   the four bench programs' answers vs swipl; a loaded predicate's source record (static, file,
   lines); 25 refusals. test/core_text/test_roundtrip_swipl.jl (new): both directions over R1d's and
   R1e's hand corpora (383 texts), the four bench programs' 31 clauses (NOTHING excluded: the float
-  condition holds) and 2,000 random terms — floats, #11, #12 and texts holding the character 0
+  condition holds) and 2,000 random terms — floats, #11, #12 and (until ATOM1) texts holding the character 0
   excluded by name and counted, and an excluded #11/#12 must still FAIL (a stale exclusion is an
-  error). All three term types.
+  error); since ATOM1 no exclusion is left and the corpus texts holding the character 0 round-trip. All three term types.
 * **The bench switch (decision addition 3):** tools/bench.jl loads the four programs from their .pl
   files; at load it ASSERTS that every loaded predicate compiles to exactly the hand-built clauses'
   VM code, literal table, called procedures, frame size and flags (`_vm_code_differences`), and the
@@ -3567,8 +3567,8 @@ IO (with the rest of R1e); 3a — print/1 as swipl's with portray/1 undefined, p
   pl-wam.c's `TrailAssignment`, `restore_shared_functors`, `reunify_acyclic_substitutions`), tested
   first, so no write walks a cycle — `X = f(X)`, a cycle through two lists, a cyclic exception
   ball (V5d); with `cycles(false)` the domain error, as upstream; user:portray/1 defined (above;
-  called since group F, D-0123); an atom holding the character 0 (term_to_atom/2 of a string with one: the
-  term interface's atoms cannot hold it; term_string/2 can); a grounded value SWI has no type for.
+  called since group F, D-0123); an atom holding the character 0 (term_to_atom/2 of a string with one: refused until
+  ATOM1, written as swipl writes it since: `"a\0b"` with the 0 raw; term_string/2 always did); a grounded value SWI has no type for.
 * **DIVERGES (WR2, src/os/pl-text.jl:62 `_get_text_write`, PL_get_text's `case_write`):** the stream layer
   writes UTF-8 only (ENC1 refusals in src/os/pl-stream.jl), so the `CVT_WRITE*` text is written as UTF-8
   and returned as a non-canonical `PL_chars_t` (as an atom's text is); upstream tries ISO Latin-1, then
@@ -3754,8 +3754,7 @@ constructs an explicit error.
   functions; a text stream is UTF-8 (`initEncoding`: no locale); the read buffer is zeroed
   (`clearBuffer`) and, until the 2026-10-11 sync, `pl_atom_number2_va` had one more end test
   (docs/upstream_reports.md #8 and #9, fixed upstream in `5f50eb2` and `baf5745`); an atom holding the
-  character 0 is refused (`NotPortedError`):
-  the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
+  character 0 was refused (`NotPortedError`: the term interface's atoms are Julia Symbols) until ATOM1, which reads it (section "ATOM1" below); the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
 * **NOT PORTED (explicit errors where reachable):** ENC_ANSI, UTF-16 and wchar encodings (UTF-8
   only); `read_term`'s `comments(C)` option; reading past the end of a stream that raises it and a
@@ -6066,6 +6065,40 @@ test/compile/test_ssu_compile_swipl.jl (`_SU_PARITY`, swipl's line re-run live).
 Tests: test/compile/test_ssu_compile_swipl.jl (the v-, c- and a-rows of evidence/r2/design/ssu_rows.out, swipl 10.1.19;
 test/db/test_assert_swipl.jl's SSU refusal flipped to the assert's answer and the call's refusal); mutants: tools/mutants/SSU1.py.
 
+## ATOM1 — atoms holding the character 0 (representation only; src/term_interface.jl `atom_escape`, D-0410 item 7)
+
+swipl's atoms hold the character 0 (`atom_codes(A, [97,0,98])`), a Julia `Symbol` cannot. Until ATOM1 the kernel refused such an
+atom (`NotPortedError`, `_atom_from_text`). The settled term interface keeps its SHAPE (`mk_sym(T, name::Symbol)`, `sym_text`,
+`sym_first_byte`, `sym_key`, `sym_hash`); what changes is the CONTRACT of the name:
+
+- **The name of an atom whose text holds the character 0 is the ESCAPED text**, per UTF-8 byte: 0x00 is the two bytes 0xC0 0x80,
+  the byte 0xC0 (never in valid UTF-8, the escape's own lead byte) is 0xC0 0x81, every other byte is itself. So no atom of
+  ordinary text changes its name (not even U+0001), and the escape is total and injective on byte strings. `atom_escape(text)` and
+  `atom_unescape(name)` (both exported) are the two directions; both term types use them.
+- **`mk_sym` takes the NAME; `sym_text` and `sym_first_byte` answer for the TEXT** (the unescaped bytes; the first byte of an atom
+  starting with the character 0 is 0x00, as for upstream's C string); `sym_key` / `sym_hash` are functions of the NAME (one name,
+  one atom). The kernel's readers and text builtins build the name through `_atom_from_text`, which escapes.
+- **The standard order is the TEXT's.** `compareAtoms(::Symbol, ::Symbol)` (src/pl-prims.jl, the engine's hot path: it was one
+  `strcmp`) is a byte loop that takes a slow path (`_cmp_escaped`, no allocation) only at the first 0xC0, reading the escaped
+  bytes as the characters they stand for, so `'a\0b' @> a` and `a @< 'a\0b'` as in swipl (conformance rows with swipl 10.1.20's
+  order, test/core_lang/term_interface_testlib.jl, both term types). **For the audit's ratification: this touches `compareAtoms`
+  although the design is representation only on its face; AllocCheck covers `compareAtoms`, `_cmp_escaped` and `_unescaped_byte`
+  (test/static_analysis_manifest.jl), and the bench check must show no change in allocations (time is a sanity check).**
+  Upstream's `compareAtoms` (pin 18168e62, pl-prims.c:1662-1686) is LENGTH-AWARE (`memcmp` over the shorter length, then the lengths:
+  a NUL is an ordinary byte), not a C-string compare, so the new byte loop equals upstream's order and is a PORT, not a DIVERGES;
+  the pre-ATOM1 `strcmp` agreed with it only because a `Symbol` could not hold a NUL.
+- **KNOWN DIFFERENCE, TEMPORARY (owner ATOM1, ruling of the dispatcher 2026-11-21; DIVERGES): ten sites build a Julia `Symbol` FROM the text of an atom**
+  (`Symbol(sym_text(x))`): src/pl-comp.jl (the variable name of `'$var_info'`), src/pl-write.jl (the `spacing` option),
+  src/pl-prims.jl (the `statistics/2` key and a second flag-name site), src/os/pl-file.jl (the encoding name of
+  `PL_atom_to_encoding`, the functor name of a stream property, a stream attribute name, an alias name test), src/pl-read.jl
+  (the `syntax_errors` and `on_error` options). For an atom whose
+  text holds the character 0 `Symbol(text)` throws Julia's `ArgumentError` (not a `NotPortedError`, and not swipl's
+  `existence_error`/`domain_error`): these names (flags, aliases, options) are never a text with a NUL in practice, and the
+  sites are NOT wrapped. Everywhere else an atom with a NUL behaves as swipl's. **Deferred kill, owner ATOM1: wrap each of the ten in
+  `Symbol(atom_escape(sym_text(x)))` (or refuse by name with swipl's `domain_error`) and pin the swipl answer; the COUNTER is the
+  number of `Symbol(sym_text(` occurrences in `src/` (10 at this commit): a new site, or a wrapped one, changes it** (the white-box
+  count test is proposed in evidence/R2/atom1_1_handoff.md, section ATOM1-4; each site carries a `# DIVERGES (ATOM1)` comment).
+
 ## BLOB — non-text atoms (`blob/2`) in the term interface (R2, D-0153, D-0200)
 
 What BLOB adds (pl-atom.c blob types, seen through the term interface; `is_blob` / `blob_type` / `blob_handle` / `blob_rank`):
@@ -6807,7 +6840,7 @@ What O1A ports (written edit-only, nothing compiled when this was written; write
 - **User directives (W5b):** `format_predicate/2` fills `gd.format_predicates` (a vector of (character, procedure) pairs in insertion order; upstream's `GD->format.predicates` is a hash table), `current_format_predicate/2` answers its entries (redo context = the next index) and `do_format` looks a directive up there before the built-in ones. The first argument of `current_format_predicate/2` is answered as the pinned swipl answers (pl-fmt.c:300-304 at 18168e62; rows t19-t22). Rows: test/core_lang/test_format_predicate_swipl.{pl,jl}. The LibBF branch of `formatFloat` and the `__WINDOWS__` exponent fix-up are left out (the pinned swipl is a GMP build).
 - **DIVERGES, kept (the audit decides the behaviour-changing ones; O1A decided none):**
   `~:d`, `~:D`, `~:f` use the C locale: the stream has no locale field (D9), swipl groups the digits (`~:f` of 10**10 is `10,000,000,000.000000` there); the K rows pin the kernel's answer
-  with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` is refused in the kernel (handoff flag b). a bignum `formatInteger` with
+  with swipl's in the row. `format("a~")`: swipl raises `existence_error(format_character, '\0')`; `codeToAtom(T, 0)` was refused in the kernel (handoff flag b) until ATOM1: e25 (`"abc~"`) is compared with swipl's pin, e18 (swipl reads past the text, an unstable pin) by its shape. a bignum `formatInteger` with
   more fraction digits than digits pads `0` where upstream reads before the buffer; `~25d` of 2^64 is therefore left out of the rows. a raw Latin-1 byte in pending rubber is decoded as
   UTF-8 as upstream does. the mpf of `g` is a truncated exact rational (GMP: `prec+1` limbs of 64 bits, cut by limb); the mpq cut is placed by bit length, so a result differs from GMP only within
   2^-(64*prec) of a rounding boundary. float `~e ~f ~g` use `Base.Ryu` in place of libc snprintf. `mpz_sizeinbase(z, 10)` is emulated as floor(bits*log10 2)+1, GMP's value (one too big at times),
@@ -8449,11 +8482,10 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
   `existence_error(locale, Name)` every time because its `errno` stays ENOENT by accident. The kernel clears `errno` before
   the call (`_libc_setlocale`) and reads a failure that left it 0 as ENOENT; another errno (EINVAL for a name of 5000
   characters, row t24) stays `system_error`. Mutants CT1a-A3, A3b, A4.
-- **KNOWN DIFFERENCE (the character 0; owner: ATOM1, PROPOSED on the status board (atoms holding the character 0), src/pl-read.jl:2005):** the kernel's atoms are Symbols and cannot hold the character 0 (`NotPortedError`, 'the
-  term interface', src/pl-read.jl:2005), so rows t25, t26 and t31, which build such an atom with `atom_codes/2`, raise it
-  before `setlocale/3` is reached; the test pins that and carries swipl's answers (t25 `'C'`, t26 `ok`, t31
-  `representation_error(encoding)`). The cut of the name at its NUL stays in `_ctype_chars` (mutant B2, declared
-  equivalent) for the day atoms can hold it.
+- **The character 0 (owner: ATOM1; was a KNOWN DIFFERENCE until ATOM1, section "ATOM1" below):** rows t25, t26 and t31 build an
+  atom holding the character 0 with `atom_codes/2`; they are compared with swipl's answers like every row (t25 `'C'`, t26 `ok`,
+  t31 `representation_error(encoding)`). The cut of the name at its NUL stays in `_ctype_chars` (mutant B2: killed by t25/t26/t31
+  now that the atom exists; the catalogue row is a kill row, not an equivalent).
 - **LEFT to the port of pl-locale.c, owner CT1:** `updateLocale(category, locale)` (`#ifdef O_LOCALE`), the update of the
   default locale object after a successful set. It shows in `locale_property/2`, `current_locale/1` and `format/2`'s
   grouping, whose rows are `pred:locale_create/3` and its neighbours in docs/r2_upstream.tsv (class `other`). The gate

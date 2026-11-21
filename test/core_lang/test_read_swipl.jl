@@ -102,7 +102,7 @@ end
 function _rd_write(t::_RD)::String
     k = kind(t)
     if k === SYM
-        n = String(lk_name(t))
+        n = atom_unescape(String(lk_name(t)))           # the TEXT (the name of an atom holding the character 0 is escaped: ATOM1)
         return if all(c -> islowercase(c) || c == '_' || isdigit(c), n) && !isempty(n) &&
             islowercase(n[1])
             n
@@ -176,7 +176,7 @@ function _rd_first_text(text::String)::String
     out = if tk === nothing
         "err " * _rd_write(child(lk_answer(ld, rd.exception), 2))
     elseif tk.type == LK.TK_QNAME || tk.type == LK.TK_NAME
-        "a[" * join(Int.(collect(String(lk_name(tk.atom)))), ",") * "]"
+        "a[" * join(Int.(collect(atom_unescape(String(lk_name(tk.atom))))), ",") * "]"
     elseif tk.type == LK.TK_STRING
         "s[" * join(Int.(collect(lk_value(tk.term_value))), ",") * "]"
     else
@@ -224,10 +224,10 @@ end
         "NAME('!')"]
     # Unicode: an uppercase letter starts a variable, a lowercase one an atom
     @test _rd_tokens("Ébc ébc.")[1:2] == ["VARIABLE(Ébc)", "NAME('ébc')"]
-    # an atom holding the character 0: swipl reads `'a\0\b'` as [97,0,98]; a Symbol cannot hold
-    # it, so the kernel refuses it explicitly (DIVERGES, src/pl-read.jl `_atom_from_text`) — this
-    # pin fails when the term interface can represent it
-    @test_throws LK.NotPortedError _rd_tokens("'a\\0\\b'.")
+    # an atom holding the character 0 (ATOM1): swipl reads `'a\0\b'` as [97,0,98]; the kernel's atom is named by the
+    # escaped text (`atom_escape`) and the token's text is the three characters, the 0 included (swipl 10.1.20)
+    @test any(==("QNAME('a\0b')"), _rd_tokens("'a\\0\\b'."))
+    @test !any(startswith("err"), _rd_tokens("'a\\0\\b'."))
 end
 
 const _RD_SWIPL = (

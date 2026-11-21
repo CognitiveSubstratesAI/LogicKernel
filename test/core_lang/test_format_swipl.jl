@@ -494,26 +494,26 @@ end
 _fm_atomline(id::String, s::String)::String =
     "t_$id c" * _fm_codes("t_$id") * "/1(a" * _fm_codes(s) * ")"
 
-# KNOWN DIFFERENCE (e18, "~`" with no fill character): swipl raises
-# existence_error(format_character, '\0') (its atom holds the character 0, pinned above as a[0]); the
-# kernel's atoms cannot (`_atom_from_text`, settled: keep refusing), so `codeToAtom` throws a
-# NotPortedError before any answer. The row leaves the comparison below and is pinned by its own testset.
-# Checklist: revisit with phase 2's atom table.
-# e25 ("abc~", the text ends right after the tilde) is the same cause and a STABLE pin: swipl reads the NUL terminator as the
-# directive character and raises existence_error(format_character, '\0') (two byte-identical swipl runs; the live check below
-# compares it). e18's pin is NOT stable: after "~`" swipl reads PAST the text (`fmt->text.t[length+1]`, undefined), and one
-# binary answered `not enough arguments`, another existence_error(format_character, ' ') for the same text; the pinned a[0] is
-# what one build read. e18 therefore stays out of the live comparison (`_fm_not_unstable`), as its kernel answer is a refusal.
+# e18 ("~`" with no fill character): swipl raises existence_error(format_character, C) for the character it reads PAST the text
+# (its atom may hold the character 0, pinned above as a[0]). Until ATOM1 the kernel's atoms could not hold the character 0
+# (`_atom_from_text` refused it), so `codeToAtom` threw a NotPortedError before any answer and e18 and e25 were pinned
+# apart as a known difference. They are not any more: e25 ("abc~", the text ends right after the tilde) is a STABLE pin:
+# swipl reads the NUL terminator as the directive character and raises existence_error(format_character, '\0') (two
+# byte-identical swipl runs; the live check below compares it), and the kernel is compared with that pin like every row.
+# e18's pin is NOT stable: after "~`" swipl reads PAST the text (`fmt->text.t[length+1]`, undefined), and one
+# binary answered `not enough arguments`, another existence_error(format_character, ' ') for the same text; the pinned a[0]
+# is what one build read. e18 therefore stays out of the live comparison (`_fm_not_unstable`), and the kernel's answer
+# is checked by its shape only (its own testset below), not by the character.
 const _FM_E18 = "t_e18"
 const _FM_E25 = "t_e25"
-_fm_not_e18(l) = !startswith(l, _FM_E18 * " ") && !startswith(l, _FM_E25 * " ")
+_fm_not_e18(l) = !startswith(l, _FM_E18 * " ")
 _fm_not_unstable(l) = !startswith(l, _FM_E18 * " ")
 
 @testset "format/2,3 as swipl's (f01-f74, e01-e19)" begin
-    f, names = _fm_file(filter(c -> c[1] != "e18" && c[1] != "e25", _FM_CASES))
+    f, names = _fm_file(filter(c -> c[1] != "e18", _FM_CASES))
     kl, _, _ = _fm_kernel(f, names)
     pinned = filter(_fm_not_e18, _FM_PINNED)
-    @test length(pinned) == length(_FM_PINNED) - 2
+    @test length(pinned) == length(_FM_PINNED) - 1
     @test length(kl) == length(pinned)
     for (k, p) in zip(kl, pinned)
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
@@ -554,19 +554,16 @@ end
     end
 end
 
-@testset "e18, e25 on the kernel: swipl's format_character '\\0' cannot be an atom here (known difference)" begin
-    for id in ("e18", "e25")
-        @test any(l -> startswith(l, "t_$id ") && endswith(l, "a[0])))"), _FM_PINNED)  # swipl's answer
-        f, names = _fm_file(filter(c -> c[1] == id, _FM_CASES))
-        err = try
-            _fm_kernel(f, names)
-            nothing
-        catch e
-            e
-        end
-        @test err isa LK.NotPortedError                                                 # ours: refused, not misread
-        @test occursin("character 0", err.what)
-    end
+@testset "e18 on the kernel: an existence_error(format_character, C) (the pin's character is not stable: swipl reads past the text)" begin
+    # e25's pin (a[0]) is compared in the testset above since ATOM1; e18 only by its shape: raised(existence_error(format_character, <an atom>))
+    @test any(l -> startswith(l, "t_e18 ") && endswith(l, "a[0])))"), _FM_PINNED)  # the pinned build's answer
+    f, names = _fm_file(filter(c -> c[1] == "e18", _FM_CASES))
+    kl, _, _ = _fm_kernel(f, names)
+    @test length(kl) == 2
+    pre = "t_e18 c" * _fm_codes("t_e18") * "/1(c" * _fm_codes("raised") * "/1(c" * _fm_codes("existence_error") *
+          "/2(a" * _fm_codes("format_character") * ",a["
+    @test startswith(kl[2], pre) && endswith(kl[2], "])))")
+    @test any(l -> startswith(l, "t_e25 ") && endswith(l, "a[0])))"), _FM_PINNED)   # e25 is the NUL terminator: pinned
 end
 
 # KNOWN DIFFERENCE: C undefined behaviour (size_t underflow / reads past the buffer). Rows whose swipl answer is not reproducible,

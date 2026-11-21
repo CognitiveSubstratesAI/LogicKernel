@@ -78,9 +78,22 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "findall/3 the String of sym_text cost (A-0091 item 4)"
     ),
     "default_term.jl unsafe_load" => (
-        1,
+        2,
         "sym_first_byte: reads byte 1 of that name, which is NUL-terminated, so the empty atom reads 0x00 " *
-        "and the read never passes the name's end"
+        "and the read never passes the name's end; ATOM1: byte 2 only when byte 1 is 0xC0 (the escape's lead, so " *
+        "the name has at least the terminator at byte 2)"
+    ),
+    "pl-prims.jl unsafe_convert" => (
+        2,
+        "compareAtoms(::Symbol, ::Symbol) (ATOM1): the two interned Symbols' name pointers (jl_symbol_name), held " *
+        "by GC.@preserve; a Symbol is never freed. Replaces Base's strcmp, which read the same pointers"
+    ),
+    "pl-prims.jl unsafe_load" => (
+        6,
+        "compareAtoms / _unescaped_byte / _cmp_escaped (ATOM1): bytes of the NUL-terminated names of two Symbols. " *
+        "A read at index i happens only after every byte before it was found equal and non-zero in BOTH names, " *
+        "so it never passes a terminator; the one read at i+1 happens only after byte i was 0xC0, which is not " *
+        "the terminator, so index i+1 holds a byte or the terminator"
     ),
     "os/pl-os.jl ccall" => (
         4,

@@ -94,11 +94,9 @@ p2_wide(A) :- atom_codes(A, [945, 98, 233]).
 p2_ty(X, T) :- ( atom(X) -> T = atom ; string(X) -> T = string ; T = other ).
 """
 
-# KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
-# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0 (a Symbol cannot
-# hold it)"), here from atom_codes/2 in q17's goal; the refusal is a Julia exception, not a Prolog error, so the row's own
-# catch/3 does not see it. The kernel's line for q17 is `t_q17 notported` (a refused row ends one run: `_p2b_kernel_all`
-# runs the rows after it on a fresh engine, so no other row is lost); swipl's pinned answer (`i0`) stays in _P2B_PINNED.
+# q17's atom_codes(N, [0]) makes the atom of the character 0: swipl's atoms hold it and, since ATOM1, the kernel's do (the atom is
+# named by the escaped text, `atom_escape`); before ATOM1 the kernel REFUSED it (`NotPortedError`: the line `t_q17 notported`,
+# the swipl line `t_q17 c[..]/1(i0)` stayed in _P2B_PINNED as an `@test_broken`). The row is compared with the pin like every row.
 const _P2B_NUL_ROWS = ("t_q17",)
 
 const _P2B_CASES = [
@@ -320,18 +318,13 @@ end
     kl, _, _ = _p2b_kernel_all(f, names)
     @test length(kl) == length(_P2B_PINNED)
     for (k, p) in zip(kl, _P2B_PINNED)
-        row = first(split(p, ' '))
-        if row in _P2B_NUL_ROWS
-            @test k == row * " notported"                  # the refusal, by name
-            @test_broken k == p                            # swipl's pinned line
-        else
-            k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
-            @test k == p
-        end
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
     end
 end
 
 @testset "the P2b rows are not vacuous" begin
+    @test all(r -> any(l -> startswith(l, r * " "), _P2B_PINNED), _P2B_NUL_ROWS)     # the row of the character 0 has its pin (ATOM1)
     # the program loaded; every case has a line; answering rows answer, failing rows have none, raising rows raise
     @test _P2B_PINNED[1] == "ok"
     @test length(_P2B_PINNED) == length(_P2B_CASES) + 1

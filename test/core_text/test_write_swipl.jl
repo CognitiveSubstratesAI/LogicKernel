@@ -11,7 +11,7 @@
 #     texts name their variables `_V0`, `_V1`… by first occurrence before they are compared;
 #   * THE OPERATOR TABLE: swipl's boot files add `$` (boot/topvars.pl, R2; the kernel has pl-op.c's
 #     table, `.` and `:=` included); the driver removes it, so both sides write with one table;
-#   * THE REFUSALS: a float (R1e's floats), an atom holding the character 0 — each an explicit
+#   * THE REFUSALS: a float (R1e's floats), an atom holding the character 0 (both written since: R1e, ATOM1) — each was an explicit
 #     `NotPortedError`, never a wrong text, a hang or a stack overflow. Since group F (D-0123),
 #     compared with swipl instead of refused: a cyclic term (`X = f(X)`, a cycle through two
 #     lists, and a cyclic exception ball: `PL_factorize_term`, decision 4a) and user:portray/1
@@ -463,10 +463,12 @@ end
     @test rc === :true && sym_text(ans[2]) == "f(1.5)"
     @test _tw_write(lk_gnd(_TW, -0.0), _TW_WRITE) == "-0.0"
     @test _tw_write(_twf("-", lk_gnd(_TW, 1.0)), _TW_WRITEQ) == "- 1.0"
-    # an atom holding the character 0 (a string written quoted keeps it raw, as upstream): the
-    # term interface's atoms cannot hold it; term_string/2's string can
+    # an atom holding the character 0 (a string written quoted keeps it raw, as upstream). Until ATOM1 the term interface's
+    # atoms could not hold it and term_to_atom/2 was refused (`:notported`); now both give swipl's answer, taken from
+    # swipl 10.1.20 (`term_to_atom("a\0\b", A), atom_codes(A, Cs)`: Cs = [34,97,0,98,34]; term_string/2 the same codes)
     s0 = lk_gnd(_TW, "a\0b")
-    @test _tw_call("term_to_atom", _TW[s0, _tw_var()])[1] === :notported
+    rc, ans = _tw_call("term_to_atom", _TW[s0, _tw_var()])
+    @test rc === :true && collect(codeunits(sym_text(ans[2]))) == UInt8[34, 97, 0, 98, 34]
     rc, ans = _tw_call("term_string", _TW[s0, _tw_var()])
     @test rc === :true && lk_value(ans[2]) == "\"a\0b\""
 end

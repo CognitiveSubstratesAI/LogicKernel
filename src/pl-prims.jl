@@ -73,16 +73,71 @@ _sign(x::Integer)::Int =
 
 # ── leaf comparisons ─────────────────────────────────────────────────────────────────────────────
 
-# PORT: pl-prims.c compareAtoms
+# PORT: pl-prims.c compareAtoms (pin 18168e62, :1662-1686: two text atoms of one blob type, `text_atom` has no
+# `compare` hook, are `memcmp(a1->name, a2->name, l)` over the shorter length `l` and then `SCALAR_TO_CMP(a1->length,
+# a2->length)`: LENGTH-AWARE, a character 0 is an ordinary byte, the shorter text first). Before ATOM1 the kernel used
+# `strcmp` (a C-string compare: a NUL would end it), which agreed with upstream only because a Symbol cannot hold a NUL.
+# The byte loop below compares the full text, as upstream does: no DIVERGES (swipl 10.1.20: compare(O,'a\0b',a) is `>`,
+# compare(O,'a\0b','a\x01\') is `<`, the rows of term_interface_testlib.jl). The UTF-8 byte order of two valid texts is
+# upstream's Latin-1 / code point order (PL_cmp_text, pl-text.c:1746, for the mixed-width case).
 """
     compareAtoms(a::Symbol, b::Symbol) -> Int
 
 Atoms by their text: byte-wise, then shorter first (pl-prims.c `compareAtoms`, the text-blob
-branch). `Base.cmp` on two `Symbol`s is `strcmp`, which is exactly that order for text without NUL
-— and a Julia `Symbol` cannot contain NUL, so an upstream atom with an embedded NUL (test_bips.pl
-`zero_codes`) has no counterpart in the reference type.
+branch). `Base.cmp` on two `Symbol`s is `strcmp`, which is exactly that order for text without NUL.
+A Julia `Symbol` cannot contain NUL, so an atom whose text does (test_bips.pl `zero_codes`) is named
+by its ESCAPED text (`atom_escape`, ATOM1: NUL is the two bytes 0xC0 0x80, a raw 0xC0 is 0xC0 0x81):
+the order is that of the TEXT, so the bytes are read one by one and, at the first 0xC0 in either name
+(the escape's lead, which no valid UTF-8 text holds), the rest is compared by the characters the
+escapes stand for (`_cmp_escaped`). Allocation-free.
 """
-compareAtoms(a::Symbol, b::Symbol)::Int = a === b ? CMP_EQUAL : _sign(cmp(a, b))
+function compareAtoms(a::Symbol, b::Symbol)::Int
+    a === b && return CMP_EQUAL
+    pa = Base.unsafe_convert(Ptr{UInt8}, a)
+    pb = Base.unsafe_convert(Ptr{UInt8}, b)
+    GC.@preserve a b begin
+        i = 1
+        while true
+            ca = unsafe_load(pa, i)                     # a name ends with its terminator, 0x00
+            cb = unsafe_load(pb, i)
+            (ca == 0xc0 || cb == 0xc0) && return _cmp_escaped(pa, pb)   # an escape: by the characters
+            if ca != cb
+                return ca < cb ? CMP_LESS : CMP_GREATER
+            end
+            ca == 0x00 && return CMP_EQUAL              # both ended together (two names, one text: not reached)
+            i += 1
+        end
+    end
+end
+
+# ORIGINAL (ATOM1): the characters the escapes of two atom NAMES stand for, compared byte by byte: the text's byte
+# at `i` is the name's (a name ends at its terminator, which is the end of the text: no escape yields it).
+# 0xC0 0x80 is the byte 0x00, 0xC0 0x81 the byte 0xC0; a 0xC0 followed by anything else is the byte 0xC0.
+@inline function _unescaped_byte(p::Ptr{UInt8}, i::Int)::Tuple{UInt8, Int}
+    b = unsafe_load(p, i)
+    b == 0xc0 || return (b, i + 1)
+    b2 = unsafe_load(p, i + 1)
+    b2 == 0x80 && return (0x00, i + 2)
+    b2 == 0x81 && return (0xc0, i + 2)
+    return (b, i + 1)
+end
+
+# Two atom names by their texts' bytes, from the start (called at the first 0xC0 of either): a name's own terminator
+# (0x00; a NUL of the text is 0xC0 0x80, never a bare 0x00) is the end of its text, the shorter text first.
+function _cmp_escaped(pa::Ptr{UInt8}, pb::Ptr{UInt8})::Int
+    i = 1
+    j = 1
+    while true
+        enda = unsafe_load(pa, i) == 0x00               # the name's terminator: the text ends (a NUL is 0xC0 0x80)
+        endb = unsafe_load(pb, j) == 0x00
+        enda && endb && return CMP_EQUAL
+        enda && return CMP_LESS                         # the shorter text first
+        endb && return CMP_GREATER
+        ca, i = _unescaped_byte(pa, i)
+        cb, j = _unescaped_byte(pb, j)
+        ca != cb && return ca < cb ? CMP_LESS : CMP_GREATER
+    end
+end
 
 # The whole of pl-prims.c `compareAtoms`, for an implementation's `atomic_compare` (Q1, 2026-10-03):
 # an atom is its name and whether it is a reserved symbol — the two blob types a kernel term can
@@ -4400,7 +4455,7 @@ end
 function pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T}
     a = PL_get_atom_ex(ld, k)
     a === nothing && return false
-    key = Symbol(sym_text(a))
+    key = Symbol(sym_text(a))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
 
     if !PL_is_list(ld, value)
         result = number()
@@ -4438,7 +4493,7 @@ function pl_statistics2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     a = PL_get_atom(ld, A1)
     if a !== nothing
-        k = Symbol(sym_text(a))
+        k = Symbol(sym_text(a))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
         st = ld.statistics
         k === :process_cputime && (st.process_cputime = CpuTime(CPU_USER))
         if k === :cputime || k === :runtime

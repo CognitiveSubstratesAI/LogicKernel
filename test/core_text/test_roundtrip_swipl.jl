@@ -11,8 +11,9 @@
 #     Upstream's two writer defects (#11: a prefix operator named by letters before an atom
 #     starting with a Latin-1 letter; #12: `'[]'(X)`, `'()'(X)`) were excluded until upstream
 #     fixed them (765ef01, b0eadba): LIFTED at the 2026-10-11 sync, those terms round-trip. Texts
-#     either side cannot read (the R1d corpus's syntax errors and refusals) are counted, and a
-#     text holding the character 0 (an atom cannot hold it: R1e's refusal). A FLOAT was excluded
+#     either side cannot read (the R1d corpus's syntax errors and refusals) are counted. A text holding the
+#     character 0 was excluded too (an atom could not hold it: R1e's refusal): LIFTED by ATOM1, such texts
+#     round-trip like any other. A FLOAT was excluded
 #     until R1e's floats (format_float); lifted, the corpora's floats must round-trip, and a set of
 #     floats in operator contexts (`- 1.0`, `a- -0.0`, `1.5NaN`, …) is checked on its own.
 using Test, LogicKernel, Random
@@ -103,13 +104,10 @@ _rt_has(p, t) =
 
 _rt_float(t) = kind(t) === GND && lk_value(t) isa AbstractFloat
 
-# a text holding the character 0. CAUSE (probed 2026-10-08): a KERNEL GAP in the term interface —
-# an atom is named by a Julia `Symbol` (`mk_sym(T, ::Symbol)`), which cannot hold `\0`, so
-# term_to_atom/2 cannot make the atom of the written text (R1e's named refusal; the reader refuses
-# such an atom too, R1d). Not the writer (it writes the 0 raw inside the quotes, as swipl does),
-# not the stream layer, not the harness, not a swipl defect: swipl writes `'a\0b'` and
-# `"a\0b"` raw and reads both back unchanged. term_string/2 round-trips them (a string can hold
-# 0). Lifted when the interface's atoms can hold any text (docs/port_inventory.md, R1 row).
+# a text holding the character 0. It was EXCLUDED until ATOM1 (CAUSE, probed 2026-10-08: an atom was named by a Julia
+# `Symbol`, which cannot hold `\0`, so term_to_atom/2 could not make the atom of the written text; not the writer, which
+# writes the 0 raw inside the quotes as swipl does). ATOM1 names such an atom by the escaped text (`atom_escape`), so
+# the exclusion is LIFTED: `_rt_nul` only detects the texts, to show the corpora hold some and that they round-trip.
 _rt_nul(t) =
     (
         kind(t) === GND && lk_value(t) isa AbstractString &&
@@ -117,13 +115,8 @@ _rt_nul(t) =
     ) ||
     (kind(t) === SYM && occursin('\0', sym_text(t)))
 
-"The reason `t` is excluded, or `nothing`."
-_rt_exclusion(t::_RT) =
-    if _rt_has(_rt_nul, t)
-        :nul
-    else
-        nothing
-    end
+"The reason `t` is excluded, or `nothing` (no named exclusion is left)."
+_rt_exclusion(t::_RT) = nothing
 
 # ── swipl's side ────────────────────────────────────────────────────────────────────────────────
 
@@ -245,6 +238,10 @@ if _RT_SWIPL !== nothing
         # and round-trip like any other
         @test all(s -> s in texts, ("dynamic é", "'[]'(a)", "'()'(a)", "- '()'(a)"))
         @test !haskey(excluded, :issue11) && !haskey(excluded, :issue12)
+        # the character-0 exclusion is LIFTED (ATOM1): the corpora's texts holding it round-trip
+        nnul = count(it -> it[3] !== nothing && _rt_has(_rt_nul, it[3]), items)
+        println(stderr, "  hand corpora: $nnul items hold the character 0")
+        @test nnul > 0 && !haskey(excluded, :nul)
     end
 
     @testset "the four bench programs' clauses: both directions" begin

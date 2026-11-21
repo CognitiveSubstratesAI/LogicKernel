@@ -803,9 +803,9 @@ function charCode(w)::Int
 end
 
 # PORT: pl-fli.c codeToAtom
-# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so a
-# code 0 is refused as in every atom: `NotPortedError`); no `GD->atoms.for_code` cache of the atoms of the
-# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
+# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so the
+# code 0 is the atom whose NAME is the escape `atom_escape("\0")`, ATOM1; its text is the one character 0); no
+# `GD->atoms.for_code` cache of the atoms of the codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
 "The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
 function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
     chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
