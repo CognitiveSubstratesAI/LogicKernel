@@ -1140,6 +1140,7 @@ function _manifest_index(T)
         (LK.read_term, Tuple{Int64, LK.read_data{T}}, false),
         (LK.instantiate_template, Tuple{LD, Int64, Int64}, false),  # group F (D-0123): cycles(true)
         (LK.atom_to_term, Tuple{LD, Int64, Int64, Int64, Int64}, false),
+        (LK.PL_put_term_from_chars, Tuple{LD, Int64, UInt32, Vector{UInt8}, Int64}, false),   # JSON1
         (LK.pl_atom_to_term3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_term_to_atom2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_term_string2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
@@ -4378,6 +4379,7 @@ _index_entry_points(T) = (
     (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_get_pointer_ex, Tuple{LK.PL_local_data{T}, Int}, false),   # TB4e: pl-error.c PL_get_pointer_ex
     (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, Nothing}, false),
+    (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, LK.IOSTREAM}, false),   # JSON1: the stream form
     (LK.string_bytes_text_error, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.text_representation_error, Tuple{LK.PL_local_data{T}, LK.IOENC}, false),
     (LK.PL_text_recode, Tuple{LK.PL_local_data{T}, LK.PL_chars_t, LK.IOENC}, false),
@@ -5524,6 +5526,29 @@ _manifest_zlib_plain() = (
     # ZLIB1 piece Z2
     (LK.gz_header_zero!, Tuple{Ptr{Cvoid}}, false)
 )
+# JSON1 — packages/json/json.c (src/pl-json.jl) and pl-load.c's static-extension form (src/pl-load.jl): the four predicates,
+# their code helpers, `$activate_static_extension/1` and the install function. Checked for every payload type; the helpers
+# that name no term type, once.
+_manifest_json(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.install_json, Tuple{LD}, false),
+        (LK.activate_static_extension, Tuple{LD, String}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_json_read_number3_va, LK.pl_json_skip_ws3_va,
+                LK.pl_json_write_string2_va, LK.pl_json_write_indent3_va,
+                LK.pl_activate_static_extension1_va
+            )
+        ]...
+    )
+end
+_manifest_json_plain() = (
+    (LK.is_ws, Tuple{Int}, false),
+    (LK._json_put_u, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.json_put_code, Tuple{LK.IOSTREAM, Int, Int}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -6414,6 +6439,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_hashstream(_M2)...,
     _manifest_hashstream(_M3)...,
     _manifest_hashstream_plain()...,
+    _manifest_json(_M1)...,
+    _manifest_json(_M2)...,
+    _manifest_json(_M3)...,
+    _manifest_json_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,
@@ -7283,6 +7312,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_thread)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_hashstream)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zlib4pl)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_json)}, false),   # JSON1
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type

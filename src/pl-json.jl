@@ -23,11 +23,12 @@
 #      same code sequence and raise the same errors, so one call is the same observable behaviour.
 #   3. NO TEXT BUFFER: `json_read_number/3` collects the characters in a `Vector{UInt8}` where upstream's `text`
 #      is a growing C buffer (`init_text`, `put_byte`, `free_text`), so there is no `PL_resource_error("memory")`.
-#   4. `json_write_indent/3` with tab 0 divides by zero in C (the process dies): refused by name (NotPortedError,
+#   4. `json_write_indent/3` with tab 0 divides by zero in C (the C process is killed by SIGFPE): refused by name (NotPortedError,
 #      step JSON1). A negative tab or indent follows C's truncating `/` and `%` (`÷`, `rem`).
 #   5. `Sfprintf(out, "u%04x", c)` is not ported (`Sfprintf`): the `u` and the four or more lowercase hex digits are
 #      written by `_json_put_u`.
-#   6. NO LOCKS: `PL_get_stream` is `term_stream_handle`, `PL_release_stream` is `streamStatus` (src/os/pl-file.jl).
+#   6. NO LOCKS: `PL_get_stream(t, &s, SIO_INPUT)` is `term_stream_handle(ld, t, SH_ERRORS|SH_ALIAS|SH_INPUT)` (src/os/pl-file.jl:2041);
+#      `PL_release_stream` is src/pl-string.jl's (`streamStatus`).
 
 # PORT: packages/json/json.c json_put_code
 # DIVERGES: see the file header, 5; the `escape` table is a `Dict`-free chain of the seven characters upstream
@@ -123,7 +124,7 @@ function pl_json_read_number3_va(
         rc = PL_syntax_error(ld, "illegal_number", inp)
     end
 
-    streamStatus(ld, inp)                           # PL_release_stream(in): its value is ignored, its error is not
+    PL_release_stream(ld, inp)                           # PL_release_stream(in): its value is ignored, its error is not
 
     return rc ? FTRUE : FFALSE
 end
@@ -151,7 +152,7 @@ function pl_json_skip_ws3_va(
             is_ws(c) || break
         end
 
-        streamStatus(ld, inp) || return FFALSE      # PL_release_stream(in)
+        PL_release_stream(ld, inp) || return FFALSE      # PL_release_stream(in)
     end
 
     return PL_unify_integer(ld, A3, c) ? FTRUE : FFALSE
@@ -191,7 +192,7 @@ function pl_json_write_string2_va(
         rc = false
     end
 
-    streamStatus(ld, out)                           # PL_release_stream(out): its value is ignored
+    PL_release_stream(ld, out)                           # PL_release_stream(out): its value is ignored
     return rc ? FTRUE : FFALSE
 end
 
@@ -244,7 +245,7 @@ function pl_json_write_indent3_va(
         end
     end
 
-    streamStatus(ld, out)                           # PL_release_stream(out): its value is ignored
+    PL_release_stream(ld, out)                           # PL_release_stream(out): its value is ignored
     return rc ? FTRUE : FFALSE
 end
 
