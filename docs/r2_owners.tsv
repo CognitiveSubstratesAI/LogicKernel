@@ -8,9 +8,6 @@ pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
-pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
-pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
-pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
 pred:$leash/2	DBG1	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
@@ -74,6 +71,7 @@ vmi:T_TRY_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): 
 cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without an exact key; `$thread_local_predicate_size/3` is new at V10.1.20 (pl-thread.c, O_ENGINES; thread-local predicates are TH1's)
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables (wip/tb9 ports the transaction tables and the eight sites call `tt_*`: the three refusal sites of TB9 are gone; the one refusal that still names TB9 is the tracked branch of `reset_answer_table`, whose callers `destroy_answer_trie`, `abolish_table` and `reset_table_bulk` run `reset_answer_table_tracked` first), TH1 shared tables, which stay named)
+refusal:src/pl-thread.jl::pl_gc_wait::gc_wait/1: blocks for the GC thread (none)	TH1	`$gc_wait/1` waits for a request of the GC thread (pl-thread.c:7299), which the kernel does not have: it would block for ever, so it is refused by name
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
