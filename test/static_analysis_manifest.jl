@@ -1511,6 +1511,7 @@ function _manifest_index(T)
         (LK._code_atom_key, Tuple{PCd}, true),
         (LK._code_smallint_key, Tuple{PCd}, true),
         (LK._shared_supervisor, Tuple{LK.PL_code_data, Vector{LK.code}}, true),
+        (LK.supervisorLength, Tuple{LK.PL_code_data, Vector{LK.code}}, false),
         (LK.freeSupervisor, Tuple{D, Vector{LK.code}, Bool}, true),
         (
             LK.equalSupervisors,
@@ -2658,6 +2659,7 @@ function _manifest_index(T)
         (LK.pl_redefine_system_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # WRAPPERS-2
         (LK.pl_predefine_foreign1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_vmi_property2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_fetch_vm4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.mustBeVar, Tuple{LD, Int}, false),
         # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
         (LK.acquire_clause_blob, Tuple{GD, T}, false),

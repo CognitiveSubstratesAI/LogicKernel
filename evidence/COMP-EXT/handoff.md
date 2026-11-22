@@ -30,6 +30,24 @@ Commit 2 (54381a53, `TEST: COMP-EXT rows and mutants`) DONE, no julia run, nothi
   `functor_literal` name for `H_FUNCTOR`, the compile of the file. swipl 10.1.20 shows e.g. `h_smallint(1)`, `i_call(g/2)`, `i_departm(lists,lists:append/3)`,
   `a_add_fc(1,0,1)`, `b_unify_exit`, `i_enter`, `i_exitfact`, `h_functor(foo/2)`, `h_var(1)`, `h_firstvar(2)`, `b_void`.
 
+## DEC1 PIECE 2 STATE (UNCOMMITTED in the worktree at the hand-back: the 150k cap blocked the commit step)
+- Piece 2, committed by the dispatcher after DEC1's context cap as `UPSTREAM: pl-comp.c $fetch_vm (swipl-devel 18168e62)` (comments state what the code does, positively):
+  * src/pl-comp.jl: `pl_fetch_vm4_va` (before the PL_predicates_from_comp table; clause ref -> clause.codes/literals/procedures; else get_functor(GF_PROCEDURE) +
+    resolveProcedure -> def.codes, `supervisor_crefs`, `supervisorLength`), registered after `$vmi_property` as `PL_FA_TRANSPARENT | PL_FA_VARARGS`.
+  * src/pl-supervisor.jl: `supervisorLength(cd::PL_code_data, base)` at the end (a non-shared block = its vector length; a shared block walked to I_EXIT).
+  * test/static_analysis_manifest.jl: entries for `pl_fetch_vm4_va` and `supervisorLength` (alloc flag false).
+- NOT written: the ROWS (cx65+ in test/core_lang/test_compext_swipl.jl; evidence/COMP-EXT/gen_rows.py asserts `len(cases) == 64`: raise it to the new count, run it with
+  the scratchpad as cwd: it writes cx_rows.* and rewrites `_CX_PINNED` in place from two capped swipl runs) and the MUTANTS (tools/mutants/COMPEXT.py, "aimed by <rows>", exactly-once `old`,
+  NO equivalent= field, TARGETS as the file's other mutants). The `_CX_PROGRAM` needs the added clauses; the probe program is scratchpad/compext/f2.pl (NOT yet run: it was the
+  next call). Row plan: a `vm_all(Ref, L)` helper (loop `'$fetch_vm'(Ref, PC, N, I)` until failure); `clause(H, _, Ref), vm_all(Ref, R)` for a fact with an atom (`vf1(a)`),
+  a small int, a nil, a compound `f(X,X)`, a float, a string; rules `vg(X)`, `vg(X), !, vg(X)`, `Y is X+1, vg(Y)`, `X = foo(_,bar)`, `lists:append(X,[],_)`;
+  the error forms on a clause reference (PC -1, 99, `a`, unbound) and the end of code (PC == length fails); a bound NextPC/Instruction that mismatches fails; the supervisor of a
+  never-called predicate (`'$fetch_vm'(vq1(_), 0, N, I)`, expect `1-s_virgin` as swipl showed for `f/1`, then `i_exit`, then fail at 2, domain_error at 3).
+  The h_string/h_mpz offsets (NextPC) differ in the kernel (one literal word; swipl inline block): compare the instruction LISTS only (offset-independent through vm_all), not N, for those.
+- swipl 10.1.20 facts seen in a probe (f1.pl): `h_smallint(1)`, `h_atom(a)`, `h_float(2.5)`, `h_string("s")`, `h_mpz(100000000000000000000)`, `i_exitfact`;
+  `i_enter, b_var0, b_smallint(3), i_call(g/2), i_cut, a_add_fc(1,0,1), b_eq_vc(1,2), b_unify_var(0), h_functor(foo/2), h_var(1), h_firstvar(2), h_pop, b_unify_exit, b_unify_vc(2,bar), b_void, b_void, b_void, i_departm(lists,lists:append/3), i_exit`.
+- Left after the rows: the commit of the rows (+ handoff), then the dispatcher's gates (fmt, check, three-type run of the changed test file, pkgtest_way, test_type_discipline.jl).
+
 ## PLAN (separate steps, NOT started): `$fetch_vm/4`, `$xr_member/2`, B_THROW
 Upstream: swipl-devel 18168e62, copies in the scratchpad `compext/` (pl-comp.c, pl-vmi.c). Both predicates need ONE shared piece first: an OPERAND DECODER
 for a clause's code (the kernel's operands are table INDEXES, src/pl-vmi.jl header "OPERANDS"; upstream's are pointers/words), and a walk by `stepPC`

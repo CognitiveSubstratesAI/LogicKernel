@@ -352,3 +352,16 @@ function createForeignSupervisor!(def::Definition{T}, f::Int)::Bool where {T}
     end
     return true
 end
+
+# PORT: pl-supervisor.c supervisorLength
+# DIVERGES: a supervisor is its code vector without upstream's length word `base[-1]`: a block that is not one of the database's
+# shared ones (`_shared_supervisor`: upstream's length word 0) is as long as its vector; a shared block is walked to its `I_EXIT`.
+"The number of code words of the supervisor `base`, `I_EXIT` included (pl-supervisor.c)."
+function supervisorLength(cd::PL_code_data, base::Vector{code})::Int
+    _shared_supervisor(cd, base) || return length(base)         # size_t len = base[-1]; if ( len != 0 ) return len
+    pc = 1
+    while base[pc] != I_EXIT                                    # decode(*PC) != I_EXIT
+        pc += 1 + codeTable(base[pc]).arguments                 # PC = stepPC(PC)
+    end
+    return pc                                                   # PC++; return PC-base
+end

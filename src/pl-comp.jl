@@ -5011,6 +5011,65 @@ function pl_vmi_property2_va(
     return FFALSE
 end
 
+# PORT: pl-comp.c fetch_vm as pl_fetch_vm4_va
+# (PRED_IMPL("$fetch_vm", 4, fetch_vm, PL_FA_TRANSPARENT)) — pl-comp.c:8151-8206 at the pin; under `O_DEBUGGER`
+# DIVERGES: the code of a clause reference is `clause.codes` with its literal and procedure tables, the code of a predicate
+# its supervisor `def.codes` with the side table of clause references (`supervisor_crefs`, src/pl-wrap.jl) and an empty literal
+# table (a supervisor's operands are words or side-table indexes); positions are 0-based offsets as upstream's (`unify_vmi` takes the 1-based `Code`);
+# `supervisorLength` takes the database's shared blocks (src/pl-supervisor.jl); `PL_get_intptr_ex` is `PL_get_int64_ex`.
+"""
+    '\$fetch_vm'(+ClauseOrProc, +PC, -NextPC, -Instruction)
+
+`Instruction` is the VM instruction at offset `PC` of the clause reference, or of the supervisor of the predicate, and
+`NextPC` the offset of the next instruction (pl-comp.c). A `PC` outside the code is `domain_error(program_counter, PC)`;
+`PC` at the end of the code fails.
+"""
+function pl_fetch_vm4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    from, offset, noffset, instruction = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    local base::Vector{code}
+    local literals::Vector{T}
+    local procedures::Vector{Procedure{T}}
+    local crefs::Vector{ClauseRef{T}}
+    if PL_is_dbref(gd, ld, from)
+        rc, clause = PL_get_clref(gd, ld, from)
+        rc == 1 || return FFALSE                                # PL_get_clref(from, &clause) != true
+        cl = clause::Clause{T}
+        base = cl.codes
+        literals = cl.literals
+        procedures = cl.procedures
+        crefs = ClauseRef{T}[]
+        len = length(base)                                      # clause->code_size
+    else
+        name, arity, mi = get_functor(gd, ld, from, 0, 0, GF_PROCEDURE)
+        arity < 0 && return FFALSE
+        proc = resolveProcedure(gd, name, arity, gd.modules[mi])
+        def = proc.definition
+        base = def.codes
+        isempty(base) && return FFALSE                          # if ( !base ) return false
+        literals = T[]
+        procedures = Procedure{T}[]
+        crefs = supervisor_crefs(gd, def, base)
+        len = supervisorLength(def.code_data, base)
+    end
+
+    pcoffset = PL_get_int64_ex(ld, offset)
+    pcoffset === nothing && return FFALSE
+    if pcoffset < 0 || pcoffset > len
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :program_counter), offset)
+        return FFALSE
+    end
+    pcoffset == len && return FFALSE
+
+    next = unify_vmi(
+        gd, ld, instruction, Code{T}(base, literals, pcoffset + 1), procedures, crefs
+    )
+    next === nothing && return FFALSE
+    return PL_unify_int64(ld, noffset, next.pc - 1) ? FTRUE : FFALSE    # next-base
+end
+
 # ── the source level debugger (pl-comp.c:8484-8900) ─────────────────────────────────────────────
 # ORIGINAL: upstream's pointer arithmetic on a `Code`: `PC + n` and `PC[n]`. The position `n` words
 # on, and the operand word `n` words on (a negative `n` reads back, as `jmploc[-1]` does).
@@ -5363,6 +5422,9 @@ const PL_predicates_from_comp = (
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
     PL_extension("\$vmi_property", 2, pl_vmi_property2_va, PL_FA_VARARGS),  # PRED_DEF("$vmi_property", 2, vmi_property, 0)
+    PL_extension(                                   # PRED_DEF("$fetch_vm", 4, fetch_vm, META)
+        "\$fetch_vm", 4, pl_fetch_vm4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
     PL_extension(                                   # PRED_DEF("$clause_term_position", 3, clause_term_position, 0)
         "\$clause_term_position", 3, pl_clause_term_position3_va, PL_FA_VARARGS
     )
