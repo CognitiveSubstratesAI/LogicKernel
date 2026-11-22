@@ -61,10 +61,19 @@ function _tb_check(id::String, evs::Vector{String})::Nothing
 end
 
 "A database whose three user streams are buffers: `(db, (ui, uo, ue))`; `tp_ev/1` and `tp_seen/0` are dynamic in `user`."
-function _tb_db(; booted::Bool)
+function _tb_db(; booted::Bool, hook::Union{Nothing, String}=nothing)
     db = booted ? _RDB() : _RDB_unbooted()
     # the booted copy records the `informational` messages (break(begin|end, Level)) through a user:message_hook/3 collector
-    booted && lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
+    # (or, with `hook` = the text of a file of its own, through that file's user:message_hook/3 instead: a database holds ONE definition)
+    if hook === nothing
+        booted && lk_install_message_collector!(db.gd, db.ld; kinds=(:informational,))
+    else
+        hf = tempname() * "_tb_hook.pl"
+        write(hf, hook)
+        hst, hball = LK.load_file!(db.gd, db.ld, hf)
+        rm(hf; force=true)
+        hst === :ok || error("_tb_db: the hook file did not load: $hst $hball")
+    end
     db.gd.halt_exit = false
     ld = db.ld
     ui = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
@@ -288,6 +297,52 @@ end
     _tb_check("tb04", vcat(before, inside, after))
     @test length(inside) == 2
     @test after == before                                           # restored to the saved streams, not to the user streams
+end
+
+# TOP1B-E1 (EQ2, audit D-0472 item 4): a user:message_hook/3 on break(begin, _) runs BEFORE query_loop's first resetProlog, so the
+# current input it sees is the one pl_break1 itself set (pl-pro.c: `Scurin = Sinput`, the user's input). swipl 10.1.20, 2026-11-10, two runs:
+# `swipl -q -f hk.pl < in.txt` with hk.pl = `:- multifile user:message_hook/3. user:message_hook(break(begin,_),_,_) :- current_input(I),
+# ( stream_property(I,alias(A)) -> true ; A = none ), format(user_output, "R:hook_in(~w)~n", [A]).` and in.txt = `open('/dev/null',read,S),
+# set_input(S), break.` then `end_of_file.`: the output line is `R:hook_in(user_input)`. Without the line (mutant: `nothing`) the hook
+# sees the outer stream, which has no alias: `hook_in(none)`.
+const _TB_HOOK_TEXT = """
+message_hook(break(begin, _), _, _) :-
+    current_input(I),
+    ( stream_property(I, alias(A)) -> true ; A = none ),
+    assertz(tp_ev(hook_in(A))).
+message_hook(break(end, _), _, _).
+"""
+const _TB_HOOK_PINNED = "hook_in(user_input)"
+
+@testset "pl_break1: a message_hook on break(begin, _) already sees the user's input as the current input (TOP1B-E1; swipl-pinned)" begin
+    # UNVERIFIED on the kernel: gate decides
+    db, (ui, uo, ue) = _tb_db(; booted=true, hook=_TB_HOOK_TEXT)
+    gd, ld = db.gd, db.ld
+    _tb_sys!(db, :tp_ok)
+    other = LK.Sopen_string(UInt8[0x78], 1, "r")                 # an outer current input without an alias, as swipl's /dev/null stream
+    ld.IO_streams[LK.SNO_CURRENT_INPUT + 1] = other
+    ld.break_level = 0                                           # inside a toplevel: level 0 -> 1 prints break(begin, 1)
+    @test LK.pl_break1(gd, ld, _rs(:tp_ok))
+    @test _tb_events(db) == [_TB_HOOK_PINNED]
+    @test ld.break_level == 0
+    @test LK.Scurin(ld) === other                                # and afterwards the saved stream again
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl !== nothing                                         # the live pin: the same hook and script in swipl
+        mktempdir() do dir
+            hk = joinpath(dir, "hk.pl")
+            write(
+                hk,
+                ":- multifile user:message_hook/3.\nuser:message_hook(break(begin,_),_,_) :- current_input(I), ( stream_property(I,alias(A)) -> true ; A = none ), format(user_output, \"R:hook_in(~w)~n\", [A]).\n"
+            )
+            inp = joinpath(dir, "in.txt")
+            write(inp, "open('/dev/null',read,S), set_input(S), break.\nend_of_file.\n")
+            out = read(
+                pipeline(`$swipl -q -f $hk`; stdin=inp, stderr=devnull), String
+            )
+            @test [l for l in split(out, '\n') if startswith(l, "R:")] ==
+                ["R:" * _TB_HOOK_PINNED]
+        end
+    end
 end
 
 @testset "pl_break1: the debugger is off inside and back afterwards (pl-pro.c:239-241, :259-260, :283-284; hand-written)" begin
