@@ -59,6 +59,7 @@ const foreigns = (
     PL_extension("fail", 0, pl_fail, PL_FA_ISO),
     PL_extension("true", 0, pl_true, PL_FA_ISO),
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
+    PL_extension("notrace", 0, pl_notrace, PL_FA_NOTRACE),                     # DBG1 (pl-ext.c:141)
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
     PL_extension("dwim_match", 3, pl_dwim_match, 0x00),                         # DWIM1 (pl-ext.c:155)
     PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)

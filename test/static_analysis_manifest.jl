@@ -1893,6 +1893,7 @@ function _manifest_index(T)
         (LK.PL_unify_choice, Tuple{LD, Int, Int}, false),
         (LK.put_frame_goal, Tuple{LD, Int, Int}, false),     # SSU2: the matching-rule error's goal
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
+        (LK.pl_notrace, Tuple{LD}, false),                   # DBG1: notrace/0 (the tabling supervisor tests)
         (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
         (LK.unifiable_occurs_check_cells, Tuple{LD, Int, Int}, false),   # L1e e4 (unifiable/3)
         (LK.unify_all_trail_ptrs_cells, Tuple{LD, Int, Int}, false),
