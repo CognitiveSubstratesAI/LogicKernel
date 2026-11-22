@@ -2754,7 +2754,7 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va,
                 LK.pl_restore_trace2_va, LK.pl_prolog_listen2_va, LK.pl_prolog_listen3_va,
-                LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va
+                LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va, LK.pl_can_yield0_va
             )
         ]...,
         (LK.prolog_listen, Tuple{GD, LD, Int, Int, Int}, false),
