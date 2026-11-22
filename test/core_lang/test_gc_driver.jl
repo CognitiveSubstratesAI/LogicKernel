@@ -71,7 +71,14 @@ _gd_snap(ld) = (
     nf=ld.nframes
 )
 
-"An engine with a DEAD term built first (its only root dropped) and the values of `vs` above it: `(ld, t, n0, dead_cells)`."
+"""
+An engine with a DEAD term built first (its only root dropped) and the values of `vs` above it: `(ld, t, n0, dead_cells)`.
+`dead_cells` are the cells no root reaches: td's own cell (`g0`: a kernel term reference owns a global cell, src/pl-fli.jl
+`PL_new_term_refs`), the dead term's (`g0 + 1 .. g1`) and the cells of the references `t + 1 .. t + n` (`g1 + 1 .. g1 + n`), which
+`putSlotValue!` leaves when it writes the value's word into the slot. (Until audit D-0966 (1) the model left out the three reference
+cells; the rows passed only because the collector also freed three unrooted cells of the base prefix below them, and moved the cells
+the engine caches by position: `mark_base_cells`, src/pl-gcmark.jl.)
+"""
 function _gd_engine(dead::_R, vs::Vector{_R})
     @assert !isempty(vs)
     db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
