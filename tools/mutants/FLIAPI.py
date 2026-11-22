@@ -18,6 +18,11 @@
 # PL_unify_list_chars (PL_unify_chars is wip/clib-uri's and wip/clib1's) and the helpers _fli_chars_text and _latin1_string; no row feeds invalid UTF-8
 # (the canonicalisation failure of PL_put_chars' PL_ATOM, `false`, has no mutant), nor a 0 byte to PL_put_list_nchars
 # (codeToAtom refuses it).
+# GROUP E2 (ids E37-E56 and E61-E66; E30-E36 and E57-E60 aimed at wip/clib-uri's PL_unify_chars, PL_unify_wchars(_diff), PL_get_wchars: removed): PL_cvt_encoding, _PL_cvt_i_char
+# (PL_cvt_i_schar, PL_cvt_i_uchar), _PL_cvt_i_short, PL_cvt_i_int64, PL_cvt_i_uint64 (and its helper _fli_get_uint64_ex),
+# PL_get_list_nchars, PL_get_nchars, PL_get_chars, uncachedCodeToAtom, codeToAtom. NOT LISTED: cleanupCodeToAtom (a no-op: no
+# state), and the PL_STRINGS_MARK / PL_save_text buffer code (left out). The codeToAtom ids use TC: char_code/2 and
+# PL_unify_text's lists reach it.
 # GROUP 3 (ids H1-H12): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info (resolveModule is wip/clib1's); PL_context's
 # frame branch (the context module of an environment frame) has no row: no frame is open in the test's engine.
 # NOT LISTED (group 2): the canonicalisation failure of PL_new_atom_mbchars (no input of the two encodings it takes
@@ -26,6 +31,7 @@
 # would be read past, a garbage read, not a verdict).
 TS = ["test/core_lang/test_fli_api1_cells.jl"]
 TU = TS + ["test/core_lang/test_fli_unify_cells.jl"]
+TC = TS + ["test/core_text/test_atom_text_swipl.jl"]     # codeToAtom is also char_code/2's and PL_unify_text's
 F = "src/pl-fli.jl"
 MUTANTS = [
     dict(id="FLIAPI-B1 PL_put_bool puts the opposite atom (aimed by PL_put_bool)", file=F, targets=TS,
@@ -265,4 +271,82 @@ MUTANTS = [
     dict(id="FLIAPI-E29 PL_unify_list_chars counts the whole vector, not strlen (aimed by PL_unify_list_chars: the cut at the first 0)", file=F, targets=TS,
          old="PL_unify_list_nchars(ld, l, _c_strlen(chars), chars)",
          new="PL_unify_list_nchars(ld, l, length(chars), chars)"),
+    dict(id="FLIAPI-E37 PL_cvt_encoding is ISO Latin-1 (aimed by PL_cvt_encoding: === REP_UTF8)", file=F, targets=TS,
+         old='const _sp_encoding = Ref{UInt32}(REP_UTF8)',
+         new='const _sp_encoding = Ref{UInt32}(REP_ISO_LATIN_1)'),
+    dict(id="FLIAPI-E38 _PL_cvt_i_char excludes the lower bound (aimed by PL_cvt_i_schar and PL_cvt_i_uchar: -128 and 0)", file=F, targets=TS,
+         old='if i !== nothing && i >= mn && i <= mx\n        return UInt8(i & 0xff)',
+         new='if i !== nothing && i > mn && i <= mx\n        return UInt8(i & 0xff)'),
+    dict(id="FLIAPI-E39 _PL_cvt_i_char excludes the upper bound (aimed by PL_cvt_i_schar and PL_cvt_i_uchar: 127 and 255)", file=F, targets=TS,
+         old='if i !== nothing && i >= mn && i <= mx\n        return UInt8(i & 0xff)',
+         new='if i !== nothing && i >= mn && i < mx\n        return UInt8(i & 0xff)'),
+    dict(id="FLIAPI-E40 _PL_cvt_i_char accepts a longer text (aimed by PL_cvt_i_schar and PL_cvt_i_uchar: the two-character atom)", file=F, targets=TS,
+         old='txt.length == 1 &&\n       txt.encoding === ENC_ISO_LATIN_1',
+         new='txt.length >= 1 &&\n       txt.encoding === ENC_ISO_LATIN_1'),
+    dict(id="FLIAPI-E41 _PL_cvt_i_char accepts a wide character (aimed by PL_cvt_i_schar and PL_cvt_i_uchar: the euro sign atom)", file=F, targets=TS,
+         old='txt.length == 1 &&\n       txt.encoding === ENC_ISO_LATIN_1',
+         new='txt.length == 1 &&\n       true'),
+    dict(id="FLIAPI-E42 _PL_cvt_i_char reads the text without canonicalising it (aimed by PL_cvt_i_uchar: the one-character atom, string and lists)", file=F, targets=TS,
+         old='PL_canonicalise_text(txt) == 1 && txt.length == 1 &&',
+         new='txt.length == 1 &&'),
+    dict(id="FLIAPI-E43 _PL_cvt_i_char names the representation error the wrong way round (aimed by PL_cvt_i_schar and PL_cvt_i_uchar: the representation_error rows)", file=F, targets=TS,
+         old='mk_sym(T, mn < 0 ? :char : :uchar)',
+         new='mk_sym(T, mn < 0 ? :uchar : :char)'),
+    dict(id="FLIAPI-E44 PL_cvt_i_schar accepts 128 (aimed by PL_cvt_i_schar: 128 is a representation_error)", file=F, targets=TS,
+         old='_PL_cvt_i_char(ld, p, -128, 127)',
+         new='_PL_cvt_i_char(ld, p, -128, 128)'),
+    dict(id="FLIAPI-E45 PL_cvt_i_uchar accepts 256 (aimed by PL_cvt_i_uchar: 256 is a representation_error)", file=F, targets=TS,
+         old='_PL_cvt_i_char(ld, p, 0, 255)',
+         new='_PL_cvt_i_char(ld, p, 0, 256)'),
+    dict(id="FLIAPI-E46 PL_cvt_i_uchar accepts -1 (aimed by PL_cvt_i_uchar: -1 is a representation_error)", file=F, targets=TS,
+         old='_PL_cvt_i_char(ld, p, 0, 255)',
+         new='_PL_cvt_i_char(ld, p, -1, 255)'),
+    dict(id="FLIAPI-E47 _PL_cvt_i_short returns the value plus one (aimed by _PL_cvt_i_short: the values)", file=F, targets=TS,
+         old='return i                                            # *s = (short)i',
+         new='return i + 1                                            # *s = (short)i'),
+    dict(id="FLIAPI-E48 _PL_cvt_i_short names the representation error the wrong way round (aimed by _PL_cvt_i_short: the representation_error rows)", file=F, targets=TS,
+         old='mk_sym(T, mn < 0 ? :short : :ushort)',
+         new='mk_sym(T, mn < 0 ? :ushort : :short)'),
+    dict(id="FLIAPI-E49 _PL_cvt_i_short excludes the upper bound (aimed by _PL_cvt_i_short: 32767 and 65535)", file=F, targets=TS,
+         old='if i !== nothing && i >= mn && i <= mx\n        return i ',
+         new='if i !== nothing && i >= mn && i < mx\n        return i '),
+    dict(id="FLIAPI-E50 PL_cvt_i_int64 raises no error (aimed by PL_cvt_i_int64: the type_error and representation_error rows)", file=F, targets=TS,
+         old='PL_cvt_i_int64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64_ex(ld, p)',
+         new='PL_cvt_i_int64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64(ld, p)'),
+    dict(id="FLIAPI-E51 _fli_get_uint64_ex refuses 0 (aimed by PL_cvt_i_uint64: the value 0)", file=F, targets=TS,
+         old='if v < 0\n        PL_error(ld, ERR_DOMAIN',
+         new='if v <= 0\n        PL_error(ld, ERR_DOMAIN'),
+    dict(id="FLIAPI-E52 _fli_get_uint64_ex refuses typemax(UInt64) (aimed by PL_cvt_i_uint64: 2^64 - 1)", file=F, targets=TS,
+         old='elseif v > typemax(UInt64)',
+         new='elseif v >= typemax(UInt64)'),
+    dict(id="FLIAPI-E53 _fli_get_uint64_ex names the representation error int64_t (aimed by PL_cvt_i_uint64: 2^64)", file=F, targets=TS,
+         old='ERR_REPRESENTATION, mk_sym(T, :uint64_t))',
+         new='ERR_REPRESENTATION, mk_sym(T, :int64_t))'),
+    dict(id="FLIAPI-E54 PL_cvt_i_uint64 reads an int64 (aimed by PL_cvt_i_uint64: 2^64 - 1 and 2^63)", file=F, targets=TS,
+         old='PL_cvt_i_uint64(ld::PL_local_data{T}, p::term_t) where {T} = _fli_get_uint64_ex(ld, p)',
+         new='PL_cvt_i_uint64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64_ex(ld, p)'),
+    dict(id="FLIAPI-E55 PL_get_list_nchars reads wide characters too (aimed by PL_get_list_nchars: the euro sign code list)", file=F, targets=TS,
+         old='b, _ = codes_or_chars_to_buffer(ld, l, false)           # codes_or_chars_to_buffer(l, flags, false, &result)',
+         new='b, _ = codes_or_chars_to_buffer(ld, l, true)           # codes_or_chars_to_buffer(l, flags, false, &result)'),
+    dict(id="FLIAPI-E56 PL_get_list_nchars counts one byte too many (aimed by PL_get_list_nchars: the lengths)", file=F, targets=TS,
+         old='return (b, length(b))                                   # len = entriesBuffer(b, char)',
+         new='return (b, length(b) + 1)                                   # len = entriesBuffer(b, char)'),
+    dict(id="FLIAPI-E61 PL_get_nchars counts characters, not bytes (aimed by PL_get_nchars: the euro sign atom and the é atom)", file=F, targets=TS,
+         old='return (Vector{UInt8}(text.text), length(text.text))    # *length = text.length, in bytes',
+         new='return (Vector{UInt8}(text.text), text.length)    # *length = text.length, in bytes'),
+    dict(id="FLIAPI-E62 PL_get_nchars does not recode (aimed by PL_get_nchars: REP_ISO_LATIN_1 and REP_MB are refused by name)", file=F, targets=TS,
+         old='PL_mb_text(text, flags) || return nothing\n    return (Vector{UInt8}(text.text), length(text.text))',
+         new='return (Vector{UInt8}(text.text), length(text.text))'),
+    dict(id="FLIAPI-E63 PL_get_chars returns the length (aimed by PL_get_chars: == the bytes)", file=F, targets=TS,
+         old='    return r[1]\nend',
+         new='    return r[2]\nend'),
+    dict(id="FLIAPI-E64 codeToAtom: EOF is another atom (aimed by codeToAtom: -1 is end_of_file)", file=F, targets=TC,
+         old='chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file',
+         new='chrcode == -1 && return mk_sym(T, :eof)         # EOF: ATOM_end_of_file'),
+    dict(id="FLIAPI-E65 codeToAtom makes the atom of the next code (aimed by codeToAtom and char_code/2: the codes)", file=F, targets=TC,
+         old='return uncachedCodeToAtom(T, chrcode)                   # the cache miss and the codes from 2^15 on',
+         new='return uncachedCodeToAtom(T, chrcode + 1)                   # the cache miss and the codes from 2^15 on'),
+    dict(id="FLIAPI-E66 uncachedCodeToAtom makes a wide character a byte (aimed by uncachedCodeToAtom: the euro sign and the emoji)", file=F, targets=TC,
+         old='return _atom_from_text(T, string(Char(chrcode)))',
+         new='return _atom_from_text(T, string(Char(chrcode & 0xff)))'),
 ]

@@ -898,15 +898,32 @@ function charCode(w)::Int
     return -1
 end
 
+# PORT: pl-fli.c uncachedCodeToAtom
+# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` from the
+# character (so a code 0 is refused as in every atom: `NotPortedError`); upstream's `lookupAtom` of the one byte
+# (a code below 256) or its UCS-atom blob (`lookupBlob`, `put_wchar`) are one symbol of the character here.
+"The one-character atom of the code `chrcode`, made afresh (pl-fli.c)."
+function uncachedCodeToAtom(::Type{T}, chrcode::Int)::T where {T}
+    return _atom_from_text(T, string(Char(chrcode)))
+end
+
 # PORT: pl-fli.c codeToAtom
-# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so a
-# code 0 is refused as in every atom: `NotPortedError`); no `GD->atoms.for_code` cache of the atoms of the
-# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
+# DIVERGES: no `GD->atoms.for_code` cache of the atoms of the codes below 2^15 (see `cleanupCodeToAtom`): a
+# symbol is its text and costs no table lookup, so the page/entry branch is `uncachedCodeToAtom` itself, the
+# same atom as the cache would hand back. `EOF` (-1) is `end_of_file`.
 "The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
 function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
     chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
     @assert chrcode >= 0
-    return _atom_from_text(T, string(Char(chrcode)))
+    return uncachedCodeToAtom(T, chrcode)                   # the cache miss and the codes from 2^15 on
+end
+
+# PORT: pl-fli.c cleanupCodeToAtom
+# DIVERGES: a no-op, as there is no `GD->atoms.for_code` page table to free (the cache of `codeToAtom` is
+# absent: a representation difference, `codeToAtom` gives the same atom with or without it).
+"Free the cache of the atoms of character codes; nothing here, there is none (pl-fli.c)."
+function cleanupCodeToAtom()::Nothing
+    return nothing
 end
 
 # PORT: pl-fli.c PL_strip_module_ex
@@ -2109,6 +2126,158 @@ end
 "Unify the term `l` references with the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
 PL_unify_list_chars(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
     PL_unify_list_nchars(ld, l, _c_strlen(chars), chars)
+
+# ── FLI-API group E2 (pl-fli.c): getting text, the cvt_i family, the code-to-atom cache (PL_get_wchars, PL_unify_wchars
+# and PL_unify_wchars_diff are wip/clib-uri's) ─────────────────────────────────────────────────────────────────────
+
+# ORIGINAL (FLI-API): the sp_encoding of pl-fli.c (`static int sp_encoding = REP_UTF8`).
+const _sp_encoding = Ref{UInt32}(REP_UTF8)
+
+# PORT: pl-fli.c PL_cvt_encoding
+# DIVERGES: the value is a `UInt32`, the type of the `REP_*` constants; `PL_cvt_set_encoding` (the only writer of
+# `sp_encoding`) is unwritten, so it is `REP_UTF8`.
+"The encoding the `PL_cvt_i_string` family of conversions uses, `REP_UTF8` (pl-fli.c)."
+PL_cvt_encoding()::UInt32 = _sp_encoding[]
+
+# PORT: pl-fli.c _PL_cvt_i_char
+# DIVERGES: the local data is an argument; returns the byte stored through `c` (a `UInt8`, the C `char`'s bit
+# pattern: the caller reads it signed or unsigned), `nothing` after the error where upstream returns false;
+# `PL_get_text` gives the kernel's non-canonical UTF-8 text, so it is canonicalised first (upstream's is canonical
+# already: an `ENC_ISO_LATIN_1` text of one character); no `PL_STRINGS_MARK`; `PL_representation_error` is
+# `PL_error(..., ERR_REPRESENTATION, ...)`; no `valid_term_t` check.
+"The C `char` of the term reference `p`: an integer in `mn..mx` or a one-character ISO Latin-1 text, else `nothing` after an error (pl-fli.c)."
+function _PL_cvt_i_char(
+    ld::PL_local_data{T}, p::term_t, mn::Int, mx::Int
+)::Union{Nothing, UInt8} where {T}
+    i = PL_get_integer(ld, p)
+    if i !== nothing && i >= mn && i <= mx
+        return UInt8(i & 0xff)                              # *c = (char)i
+    end
+    txt = PL_get_text(ld, p, CVT_ATOM | CVT_STRING | CVT_LIST)
+    if txt !== nothing && PL_canonicalise_text(txt) == 1 && txt.length == 1 &&
+       txt.encoding === ENC_ISO_LATIN_1
+        return txt.text[1]                                  # *c = txt.text.t[0]
+    end
+    if PL_is_integer(ld, p)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, mn < 0 ? :char : :uchar))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), p)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_cvt_i_schar
+# DIVERGES: returns the `Int8`, or `nothing` after the error, where upstream writes it through `c`.
+"The C `signed char` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function PL_cvt_i_schar(ld::PL_local_data{T}, p::term_t)::Union{Nothing, Int8} where {T}
+    c = _PL_cvt_i_char(ld, p, -128, 127)                    # SCHAR_MIN, SCHAR_MAX
+    c === nothing && return nothing
+    return reinterpret(Int8, c)                             # (char *)c written as a signed char
+end
+
+# PORT: pl-fli.c PL_cvt_i_uchar
+# DIVERGES: returns the `UInt8`, or `nothing` after the error, where upstream writes it through `c`.
+"The C `unsigned char` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function PL_cvt_i_uchar(ld::PL_local_data{T}, p::term_t)::Union{Nothing, UInt8} where {T}
+    return _PL_cvt_i_char(ld, p, 0, 255)                    # 0, UCHAR_MAX
+end
+
+# PORT: pl-fli.c _PL_cvt_i_short
+# DIVERGES: returns the value `i` (the `short` or `unsigned short` it narrows to, as the range `mn..mx` says), or
+# `nothing` after the error, where upstream writes it through `s`; no `valid_term_t` check.
+"The C `short` (or `unsigned short`, by `mn`) term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function _PL_cvt_i_short(
+    ld::PL_local_data{T}, p::term_t, mn::Int, mx::Int
+)::Union{Nothing, Int} where {T}
+    i = PL_get_integer(ld, p)
+    if i !== nothing && i >= mn && i <= mx
+        return i                                            # *s = (short)i
+    end
+    if PL_is_integer(ld, p)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, mn < 0 ? :short : :ushort))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), p)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_cvt_i_int64
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`.
+"The `int64_t` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+PL_cvt_i_int64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64_ex(ld, p)
+
+# ORIGINAL (FLI-API): pl-error.c `PL_get_uint64_ex`, which the kernel has not written; as `PL_get_size_ex` above it
+# with the range of `uint64_t`: a non-negative integer up to `typemax(UInt64)`, else the error.
+"The `uint64_t` term reference `t` holds, or `nothing` after `domain_error(not_less_than_zero, T)`, `representation_error(uint64_t)` or `type_error(integer, T)`."
+function _fli_get_uint64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt64} where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))
+    if k != DU_VALUE                                        # a variable, an atom, a compound
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+        return nothing
+    end
+    p = isTaggedIntW(x) ? nothing : _value_term(ld, x)
+    v = if p === nothing
+        BigInt(valInt(x))
+    elseif isInteger(p)
+        integer_is_int64(p) ? BigInt(int64_value(p)) : bigint_value(p)
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+        return nothing
+    end
+    if v < 0
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        return nothing
+    elseif v > typemax(UInt64)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint64_t))
+        return nothing
+    end
+    return UInt64(v)
+end
+
+# PORT: pl-fli.c PL_cvt_i_uint64
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`;
+# `PL_get_uint64_ex` is `_fli_get_uint64_ex`.
+"The `uint64_t` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+PL_cvt_i_uint64(ld::PL_local_data{T}, p::term_t) where {T} = _fli_get_uint64_ex(ld, p)
+
+# PORT: pl-fli.c PL_get_list_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the ISO Latin-1 bytes a
+# fresh vector without the terminating 0; `flags` has no `BUF_MALLOC` to read (no buffer ring); no
+# `valid_term_t` check.
+"The ISO Latin-1 bytes and their count of the code or character list `l` holds, else `nothing` (pl-fli.c)."
+function PL_get_list_nchars(
+    ld::PL_local_data{T}, l::term_t, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    b, _ = codes_or_chars_to_buffer(ld, l, false)           # codes_or_chars_to_buffer(l, flags, false, &result)
+    b === nothing && return nothing
+    return (b, length(b))                                   # len = entriesBuffer(b, char)
+end
+
+# PORT: pl-fli.c PL_get_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the bytes a fresh
+# vector without the terminating 0, the length in bytes (`PL_mb_text` leaves the length of a UTF-8 text the kernel
+# gives in characters: the byte count is the bytes' own); no `PL_save_text`, no `PL_STRINGS_MARK_IF_MALLOC`; as
+# `PL_mb_text`, only `REP_UTF8` is written: any other target of `flags` raises `NotPortedError`; no `valid_term_t` check.
+"The bytes and their count of the text term reference `l` holds as `flags` (`CVT_*`, `REP_UTF8`) say, else `nothing` (pl-fli.c)."
+function PL_get_nchars(
+    ld::PL_local_data{T}, l::term_t, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    text = PL_get_text(ld, l, flags)
+    text === nothing && return nothing
+    PL_mb_text(text, flags) || return nothing
+    return (Vector{UInt8}(text.text), length(text.text))    # *length = text.length, in bytes
+end
+
+# PORT: pl-fli.c PL_get_chars
+# DIVERGES: returns the bytes (the length is not asked for: `PL_get_nchars(t, NULL, s, flags)`), or `nothing`.
+"The bytes of the text term reference `t` holds as `flags` say, else `nothing` (pl-fli.c)."
+function PL_get_chars(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32
+)::Union{Nothing, Vector{UInt8}} where {T}
+    r = PL_get_nchars(ld, t, flags)
+    r === nothing && return nothing
+    return r[1]
+end
 
 # ── modules and predicates (FLI-API group H): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info
 # (pl-fli.c; resolveModule is wip/clib1's) ───────────────────────────────────────────────────────────────────────────

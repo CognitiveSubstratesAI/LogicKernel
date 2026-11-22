@@ -7,7 +7,10 @@
 # group E1: PL_put_atom_chars, PL_put_atom_nchars, PL_put_string_chars, PL_put_string_nchars, PL_put_chars,
 # PL_put_list_ncodes, PL_put_list_codes, PL_put_list_nchars, PL_put_list_chars, PL_unify_atom_chars, PL_unify_atom_nchars,
 # PL_unify_string_chars, PL_unify_string_nchars, PL_unify_list_ncodes, PL_unify_list_codes, PL_unify_list_nchars,
-# PL_unify_list_chars (PL_unify_chars: skipped, wip/clib-uri and wip/clib1 define it).
+# PL_unify_list_chars (PL_unify_chars: skipped, wip/clib-uri and wip/clib1 define it); group E2: PL_cvt_i_schar,
+# PL_cvt_i_uchar, _PL_cvt_i_short, PL_cvt_i_int64, PL_cvt_i_uint64, PL_get_list_nchars, PL_get_nchars, PL_get_chars,
+# PL_cvt_encoding, uncachedCodeToAtom, cleanupCodeToAtom (PL_get_wchars, PL_unify_wchars, PL_unify_wchars_diff: skipped,
+# wip/clib-uri defines them).
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -558,6 +561,173 @@ end
     @test _fa_chars(ld, t + 2) == [:a, :b]
     @test LK.PL_unify_list_chars(ld, t + 2, UInt8[0x61, 0x62, 0x00, 0x63])        # strlen
     @test !LK.PL_unify_list_chars(ld, t + 2, _fa_b("abc"))
+end
+
+"The error `f(ld, t)` raises on an engine holding `v` in `t`: `(result, nothing)` for none, else `(result, (formal name, atom of its first argument or nothing))`."
+function _fa_err(v::_R, f)
+    ld, t = _fa_engine(_R[v])
+    r = f(ld, t)
+    ex = ld.exception_term
+    ex == 0 && return (r, nothing)
+    fm, a = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    LK.PL_get_arg(ld, 1, ex, fm) || return (r, :malformed)          # error(Formal, Context)
+    na = LK.PL_get_name_arity(ld, fm)
+    na === nothing && return (r, :malformed)
+    n, ar = na
+    if ar >= 1 && LK.PL_get_arg(ld, 1, fm, a) && LK.PL_is_atom(ld, a)
+        return (r, (lk_name(n), _fa_atom(ld, a)))
+    end
+    return (r, (lk_name(n), nothing))
+end
+
+# LK-ONLY (pl-fli.c:1166-1205): _PL_cvt_i_char reads an integer in the range (:1172) or a one-character ISO Latin-1 text — an
+# atom, a string, a code or a character list (:1178) — as the byte; PL_cvt_i_schar reads the byte signed, PL_cvt_i_uchar unsigned;
+# an integer out of range is representation_error(char) / (uchar) (:1191), anything else type_error(integer, X) (:1193).
+@testset "LK-ONLY: PL_cvt_i_schar and PL_cvt_i_uchar (pl-fli.c:1166, :1198, :1203)" begin
+    ld, t = _fa_engine(_R[_fa_k(-5), _fa_k(200), _fa_k(-128), _fa_k(127), _fa_k(255), _fa_k(0)])
+    @test LK.PL_cvt_i_schar(ld, t) === Int8(-5)
+    @test LK.PL_cvt_i_schar(ld, t + 2) === Int8(-128) && LK.PL_cvt_i_schar(ld, t + 3) === Int8(127)
+    @test LK.PL_cvt_i_uchar(ld, t + 1) === 0xc8 && LK.PL_cvt_i_uchar(ld, t + 4) === 0xff
+    @test LK.PL_cvt_i_uchar(ld, t + 5) === 0x00 && LK.PL_cvt_i_schar(ld, t + 5) === Int8(0)
+    @test ld.exception_term == 0
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5)])
+    @test LK.PL_put_atom_chars(ld, t, _fa_b("a")) && LK.PL_cvt_i_uchar(ld, t) === 0x61
+    @test LK.PL_put_string_chars(ld, t + 1, _fa_b("b")) && LK.PL_cvt_i_uchar(ld, t + 1) === 0x62
+    @test LK.PL_put_list_codes(ld, t + 2, _fa_b("c")) && LK.PL_cvt_i_uchar(ld, t + 2) === 0x63
+    @test LK.PL_put_list_chars(ld, t + 3, _fa_b("d")) && LK.PL_cvt_i_schar(ld, t + 3) === Int8(100)
+    @test LK.PL_put_atom_chars(ld, t + 4, UInt8[0xe9])                            # Latin-1 byte 0xe9
+    @test LK.PL_cvt_i_uchar(ld, t + 4) === 0xe9 && LK.PL_cvt_i_schar(ld, t + 4) === Int8(-23)
+    @test ld.exception_term == 0
+    schar(ld, t) = LK.PL_cvt_i_schar(ld, t)
+    uchar(ld, t) = LK.PL_cvt_i_uchar(ld, t)
+    @test _fa_err(_fa_k(128), schar) == (nothing, (:representation_error, :char))
+    @test _fa_err(_fa_k(-129), schar) == (nothing, (:representation_error, :char))
+    @test _fa_err(_fa_k(256), uchar) == (nothing, (:representation_error, :uchar))
+    @test _fa_err(_fa_k(-1), uchar) == (nothing, (:representation_error, :uchar))
+    @test _fa_err(_fa_k(1 << 40), schar) == (nothing, (:representation_error, :char))   # not a C int: still an integer
+    @test _fa_err(_rs("ab"), schar) == (nothing, (:type_error, :integer))                # two characters
+    @test _fa_err(_rs("€"), uchar) == (nothing, (:type_error, :integer))                 # one character, not Latin-1
+    @test _fa_err(_rg(1.5), uchar) == (nothing, (:type_error, :integer))
+    @test _fa_err(_rv(1), uchar) == (nothing, (:instantiation_error, nothing))
+end
+
+# LK-ONLY (pl-fli.c:1215-1230): _PL_cvt_i_short reads an integer in mn..mx (the C int range first: :1220), an integer out of it is
+# representation_error(short) (mn < 0) or (ushort), anything else type_error(integer, X).
+@testset "LK-ONLY: _PL_cvt_i_short (pl-fli.c:1215)" begin
+    ld, t = _fa_engine(_R[_fa_k(7), _fa_k(-32768), _fa_k(32767), _fa_k(65535), _fa_k(0)])
+    @test LK._PL_cvt_i_short(ld, t, -32768, 32767) === 7
+    @test LK._PL_cvt_i_short(ld, t + 1, -32768, 32767) === -32768
+    @test LK._PL_cvt_i_short(ld, t + 2, -32768, 32767) === 32767
+    @test LK._PL_cvt_i_short(ld, t + 3, 0, 65535) === 65535
+    @test LK._PL_cvt_i_short(ld, t + 4, 0, 65535) === 0
+    @test ld.exception_term == 0
+    short(ld, t) = LK._PL_cvt_i_short(ld, t, -32768, 32767)
+    ushort(ld, t) = LK._PL_cvt_i_short(ld, t, 0, 65535)
+    @test _fa_err(_fa_k(32768), short) == (nothing, (:representation_error, :short))
+    @test _fa_err(_fa_k(-32769), short) == (nothing, (:representation_error, :short))
+    @test _fa_err(_fa_k(65536), ushort) == (nothing, (:representation_error, :ushort))
+    @test _fa_err(_fa_k(-1), ushort) == (nothing, (:representation_error, :ushort))
+    @test _fa_err(_fa_k(1 << 40), short) == (nothing, (:representation_error, :short))
+    @test _fa_err(_rs("a"), short) == (nothing, (:type_error, :integer))               # no text conversion, unlike char
+    @test _fa_err(_rg(2.0), ushort) == (nothing, (:type_error, :integer))
+end
+
+# LK-ONLY (pl-fli.c:1291-1299): PL_cvt_i_int64 is PL_get_int64_ex, PL_cvt_i_uint64 is PL_get_uint64_ex: the value in range,
+# else an error. The pin's PL_get_uint64_ex (pl-error.c) is not in the kernel: the negative / too large / not an integer
+# errors are written as PL_get_size_ex's with uint64_t's range.
+@testset "LK-ONLY: PL_cvt_i_int64 and PL_cvt_i_uint64 (pl-fli.c:1291, :1296)" begin
+    ld, t = _fa_engine(_R[_fa_k(7), _fa_k(-7), _fa_k(typemax(Int64)), _fa_k(typemin(Int64)), _fa_k(0)])
+    @test LK.PL_cvt_i_int64(ld, t) === 7 && LK.PL_cvt_i_int64(ld, t + 1) === -7
+    @test LK.PL_cvt_i_int64(ld, t + 2) === typemax(Int64) && LK.PL_cvt_i_int64(ld, t + 3) === typemin(Int64)
+    @test LK.PL_cvt_i_uint64(ld, t) === UInt64(7) && LK.PL_cvt_i_uint64(ld, t + 4) === UInt64(0)
+    @test LK.PL_cvt_i_uint64(ld, t + 2) === UInt64(typemax(Int64))
+    @test ld.exception_term == 0
+    i64(ld, t) = LK.PL_cvt_i_int64(ld, t)
+    u64(ld, t) = LK.PL_cvt_i_uint64(ld, t)
+    @test _fa_err(_rs("a"), i64) == (nothing, (:type_error, :integer))
+    @test _fa_err(_rg(big(2)^64), i64) == (nothing, (:representation_error, :int64_t))
+    @test _fa_err(_rs("a"), u64) == (nothing, (:type_error, :integer))
+    @test _fa_err(_rg(1.5), u64) == (nothing, (:type_error, :integer))
+    @test _fa_err(_rv(1), u64) == (nothing, (:instantiation_error, nothing))
+    @test _fa_err(_fa_k(-1), u64) == (nothing, (:domain_error, :not_less_than_zero))
+    @test _fa_err(_fa_k(typemin(Int64)), u64) == (nothing, (:domain_error, :not_less_than_zero))
+    @test _fa_err(_rg(-big(2)^70), u64) == (nothing, (:domain_error, :not_less_than_zero))
+    @test _fa_err(_rg(big(2)^64), u64) == (nothing, (:representation_error, :uint64_t))
+    ld2, t2 = _fa_engine(_R[_rg(big(2)^64 - 1), _rg(big(2)^63)])
+    @test LK.PL_cvt_i_uint64(ld2, t2) === typemax(UInt64)
+    @test LK.PL_cvt_i_uint64(ld2, t2 + 1) === UInt64(2)^63
+    @test ld2.exception_term == 0
+end
+
+# LK-ONLY (pl-fli.c:2126-2151): PL_get_list_nchars reads a code or character list of Latin-1 characters as its bytes (and their
+# count), nothing for a partial list, a wide character, or no list.
+@testset "LK-ONLY: PL_get_list_nchars (pl-fli.c:2126)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5), _rv(6), _rv(7)])
+    @test LK.PL_put_list_codes(ld, t, _fa_b("hi"))
+    @test LK.PL_get_list_nchars(ld, t, UInt32(0)) == (_fa_b("hi"), 2)
+    @test LK.PL_put_list_chars(ld, t + 1, _fa_b("abc"))
+    @test LK.PL_get_list_nchars(ld, t + 1, UInt32(0)) == (_fa_b("abc"), 3)
+    @test LK.PL_put_list_ncodes(ld, t + 2, 0, _fa_b("x"))                         # []
+    @test LK.PL_get_list_nchars(ld, t + 2, UInt32(0)) == (UInt8[], 0)
+    @test LK.PL_put_list_ncodes(ld, t + 3, 2, UInt8[0xe9, 0xff])                  # codes up to 255
+    @test LK.PL_get_list_nchars(ld, t + 3, UInt32(0)) == (UInt8[0xe9, 0xff], 2)
+    @test LK.PL_put_atom_chars(ld, t + 4, _fa_b("hi"))                            # an atom is no list
+    @test LK.PL_get_list_nchars(ld, t + 4, UInt32(0)) === nothing
+    @test LK.PL_put_list(ld, t + 5)                                               # [_|_]: partial
+    @test LK.PL_get_list_nchars(ld, t + 5, UInt32(0)) === nothing
+    h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)                        # the code list [0x20ac]
+    @test LK.PL_unify_list(ld, t + 6, h, tl) && LK.PL_unify_integer(ld, h, 0x20ac % Int) && LK.PL_unify_nil(ld, tl)
+    @test LK.PL_get_list_nchars(ld, t + 6, UInt32(0)) === nothing                 # a code above 255: wide = false
+    @test LK.PL_get_list_nchars(ld, t, UInt32(LK.CVT_EXCEPTION)) == (_fa_b("hi"), 2)
+end
+
+# LK-ONLY (pl-fli.c:2184-2209): PL_get_nchars reads the text the CVT_* flags allow (PL_get_text), recoded as REP_UTF8 asks
+# (PL_mb_text), as its bytes and their count; PL_get_chars the bytes. A flag that does not allow the term's type gives
+# nothing; CVT_EXCEPTION raises. REP_ISO_LATIN_1 and REP_MB targets are refused by name (PL_mb_text's).
+@testset "LK-ONLY: PL_get_nchars and PL_get_chars (pl-fli.c:2184, :2207)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rs("€"), _rv(3), _rv(4), _rv(5), _fa_k(42)])
+    u8 = LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_LIST | LK.REP_UTF8
+    @test LK.PL_put_atom_chars(ld, t, _fa_b("abc"))
+    @test LK.PL_get_nchars(ld, t, u8) == (_fa_b("abc"), 3)
+    @test LK.PL_get_chars(ld, t, u8) == _fa_b("abc")
+    @test LK.PL_get_nchars(ld, t + 1, u8) == (_fa_b("€"), 3)                      # three bytes, one character
+    @test LK.PL_put_atom_chars(ld, t + 2, UInt8[0xe9])
+    @test LK.PL_get_nchars(ld, t + 2, u8) == (UInt8[0xc3, 0xa9], 2)               # Latin-1 é recoded as UTF-8
+    @test LK.PL_put_string_chars(ld, t + 3, _fa_b("hi"))
+    @test LK.PL_get_nchars(ld, t + 3, LK.CVT_STRING | LK.REP_UTF8) == (_fa_b("hi"), 2)
+    @test LK.PL_get_nchars(ld, t + 3, LK.CVT_ATOM | LK.REP_UTF8) === nothing      # a string is no atom for the flags
+    @test LK.PL_get_chars(ld, t + 3, LK.CVT_ATOM | LK.REP_UTF8) === nothing
+    @test LK.PL_put_list_codes(ld, t + 4, _fa_b("ok"))
+    @test LK.PL_get_nchars(ld, t + 4, u8) == (_fa_b("ok"), 2)
+    @test LK.PL_get_nchars(ld, t + 4, LK.CVT_ATOM | LK.REP_UTF8) === nothing
+    @test LK.PL_get_nchars(ld, t + 5, LK.CVT_INTEGER | LK.REP_UTF8) == (_fa_b("42"), 2)
+    @test LK.PL_get_nchars(ld, t + 5, u8) === nothing
+    @test ld.exception_term == 0
+    @test_throws LK.NotPortedError LK.PL_get_nchars(ld, t, LK.CVT_ATOM)           # REP_ISO_LATIN_1: PL_mb_text refuses
+    @test_throws LK.NotPortedError LK.PL_get_chars(ld, t, LK.CVT_ATOM | LK.REP_MB)
+    r, e = _fa_err(_fa_k(7), (ld, t) -> LK.PL_get_nchars(ld, t, LK.CVT_ATOM | LK.CVT_EXCEPTION | LK.REP_UTF8))
+    @test r === nothing && e !== nothing
+end
+
+# LK-ONLY (pl-fli.c:1132-1134, :1113): PL_cvt_encoding is sp_encoding, REP_UTF8 until PL_cvt_set_encoding changes it.
+@testset "LK-ONLY: PL_cvt_encoding (pl-fli.c:1132)" begin
+    @test LK.PL_cvt_encoding() === LK.REP_UTF8
+    @test LK.PL_cvt_encoding() != LK.REP_ISO_LATIN_1 && LK.PL_cvt_encoding() != LK.REP_MB
+end
+
+# LK-ONLY (pl-fli.c:3531-3595): uncachedCodeToAtom makes the one-character atom of a code (a byte below 256: Latin-1; above: the
+# wide character); codeToAtom is end_of_file for EOF (:3555) and else that atom — the code cache (:3560-3577) is a named DIVERGES
+# (Symbol atoms, see the PORT comment in src/pl-fli.jl) and cleanupCodeToAtom (:3584) has nothing to free.
+@testset "LK-ONLY: uncachedCodeToAtom, codeToAtom and cleanupCodeToAtom (pl-fli.c:3532, :3552, :3584)" begin
+    @test lk_name(LK.uncachedCodeToAtom(_R, 97)) === :a
+    @test lk_name(LK.uncachedCodeToAtom(_R, 233)) === Symbol("é")
+    @test lk_name(LK.uncachedCodeToAtom(_R, 0x20ac)) === Symbol("€")
+    @test lk_name(LK.uncachedCodeToAtom(_R, 0x1f600)) === Symbol("😀")              # past the BMP
+    @test lk_name(LK.codeToAtom(_R, 97)) === :a && lk_name(LK.codeToAtom(_R, 0x20ac)) === Symbol("€")
+    @test lk_name(LK.codeToAtom(_R, 0x1f600)) === Symbol("😀")
+    @test lk_name(LK.codeToAtom(_R, -1)) === :end_of_file
+    @test LK.cleanupCodeToAtom() === nothing
+    @test lk_name(LK.codeToAtom(_R, 98)) === :b                                   # still the same atom after the cleanup
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
