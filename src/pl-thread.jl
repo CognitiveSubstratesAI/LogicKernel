@@ -346,9 +346,9 @@ function _create_engine(
     eld = _bare_local_data(gd)
     gd.thread.highest_id += 1
     info = PL_thread_info{T}(
-        gd.thread.highest_id, 1, false, true, false, false, stack_limit, PL_THREAD_RUNNING,
+        gd.thread.highest_id, 1, true, true, false, false, stack_limit, PL_THREAD_RUNNING,
         eld, nothing, :user
-    )
+    )                                               # detached: `attrs = {0}` has no PL_THREAD_NOT_DETACHED (pl-thread.c:6967, 4101)
     push!(gd.thread.infos, info)                    # index = pl_tid
     eld.thread_info = info
     copy_local_data!(eld, ld, info)
@@ -697,4 +697,388 @@ function pl_engine_post3(
     ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
 )::foreign_t where {T}
     return interactor_post_answer(_query_gd(ld), ld, A1, A2, A3) ? FTRUE : FFALSE
+end
+
+# ---- THREAD PROPERTIES: thread_property/2 (TH1, pl-thread.c:3150-3512 and get_prop_def :8376 at 18168e62) ----
+# `thread_property/2` runs over the thread records of the database: the engines (`gd.thread.infos`, by `pl_tid`) and the main thread, which
+# has no record here (its slot 1 stays `nothing`) and is answered as a record `nothing`, as `unify_thread_id` does. DIVERGES (TH1): the
+# enumeration state (`tprop_enum`: tid, the property cursor, the two enumeration flags) is ONE integer, the `PL_retry` context
+# (`ForeignRedoInt`) where upstream allocates it (`allocForeignState`): a cut has nothing to free.
+
+# PORT: pl-thread.c get_prop_def
+# DIVERGES: returns `(rc, index)`, the index into the property names `names` (upstream: a pointer into the `tprop` list); `rc` as
+# upstream: 1 the property is given, 0 a variable (enumerate), -1 an error raised. A property is its name with ONE argument.
+"The property `t` names in `names` (1 and its index), 0 when `t` is a variable, -1 with the error raised (pl-thread.c)."
+function get_prop_def(
+    ld::PL_local_data{T}, t::term_t, expected::Symbol, names::NTuple{N, Symbol}
+)::Tuple{Int, Int} where {T, N}
+    f = PL_get_functor(ld, t)
+    if f !== nothing
+        key = sym_key(f[1])
+        for i in 1:N
+            if f[2] == 1 && key == sym_key(mk_sym(T, names[i]))
+                return (1, i)
+            end
+        end
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, expected), t)
+        return (-1, 0)
+    end
+    PL_is_variable(ld, t) && return (0, 0)
+    PL_error(ld, ERR_TYPE, mk_sym(T, expected), t)
+    return (-1, 0)
+end
+
+# PORT: pl-thread.c get_thread
+# (pl-thread.c:2580-2628 at the pin)
+# DIVERGES: returns the thread id `pl_tid` (0: false, the error raised when `warn`), as the record is read again from the id by the caller;
+# the main thread (id 1, no record) is its text alias `main` (upstream: `main` is in `threadTable`) or the integer 1.
+"The thread id of the thread `t` names (an integer, an alias or a handle), 0 when there is none (pl-thread.c)."
+function get_thread(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, warn::Bool
+)::Int where {T}
+    i = -1
+    a = PL_get_atom(ld, t)
+    if a !== nothing
+        symbol = a
+        while true                                          # from_symbol:
+            th = symbol_thread_handle(gd, symbol)
+            if th !== nothing
+                thinfo = th.info
+                if thinfo !== nothing && thinfo.status >= PL_THREAD_RUNNING
+                    i = th.engine_id
+                    break
+                end
+                warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)    # no_thread
+                return 0
+            elseif !is_blob(symbol)                         # isTextAtom(symbol)
+                serial = get(gd.thread.thread_table, sym_key(symbol), 0)
+                if serial != 0
+                    symbol = gd.thread.handles[serial].symbol::T    # symbol = word2atom(w)
+                    continue
+                end
+                if sym_key(symbol) == sym_key(mk_sym(T, :main))
+                    i = 1
+                    break
+                end
+                warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)    # no_thread
+                return 0
+            else
+                warn && PL_type_error(ld, "thread", t)
+                return 0
+            end
+        end
+    else
+        n = PL_get_integer(ld, t)
+        if n === nothing
+            warn && PL_type_error(ld, "thread", t)
+            return 0
+        end
+        i = n
+    end
+
+    if i < 1 || i > gd.thread.highest_id || !_thread_slot_valid(gd, i)
+        warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)    # no_thread
+        return 0
+    end
+    return i
+end
+
+# ORIGINAL: the test `THREAD_STATUS_INVALID(GD->thread.threads[i]->status)` of get_thread/advance_state, on the kernel's table: the main
+# thread (slot 1) is always valid, a slot of an engine that was destroyed is `nothing` (upstream: its status is UNUSED).
+"Whether the thread id `i` (1 <= i <= highest_id) is a running thread or engine."
+function _thread_slot_valid(gd::PL_global_data{T}, i::Int)::Bool where {T}
+    i == 1 && return true
+    info = gd.thread.infos[i]
+    return info !== nothing && info.status >= PL_THREAD_RUNNING
+end
+
+# PORT: pl-thread.c symbol_alias
+"The alias of the thread handle the blob `symbol` names, or `nothing` (pl-thread.c)."
+function symbol_alias(gd::PL_global_data{T}, symbol::Union{Nothing, T})::Union{Nothing, T} where {T}
+    th = symbol_thread_handle(gd, symbol)
+    th === nothing && return nothing
+    return th.alias
+end
+
+# PORT: pl-thread.c unify_thread_status
+# (pl-thread.c:2698-2765 at the pin; `unify_engine_status` :2690-2696)
+# DIVERGES: the main thread is a record `nothing` and is running; the lock (`lock`) has no counterpart. The statuses `exited`,
+# `exception` and `nomem` need `info->return_value` (a thread's result; no thread here ends with one): refused by name, no record of an
+# engine reaches them (a destroyed engine's slot is dropped).
+"Unify `status` with the status `stat` of the thread `info`: `running`, `suspended` (an engine not entered), `true`, `false` (pl-thread.c)."
+function unify_thread_status(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, status::term_t,
+    info::Union{Nothing, PL_thread_info{T}}, stat::Int
+)::Bool where {T}
+    if stat == PL_THREAD_CREATED || stat == PL_THREAD_RUNNING
+        if info !== nothing && info.is_engine && !info.has_tid
+            return PL_unify_atom(ld, status, mk_sym(T, :suspended))    # unify_engine_status
+        end
+        return PL_unify_atom(ld, status, mk_sym(T, :running))
+    elseif stat == PL_THREAD_SUCCEEDED
+        return PL_unify_atom(ld, status, mk_sym(T, :true))
+    elseif stat == PL_THREAD_FAILED
+        return PL_unify_atom(ld, status, mk_sym(T, :false))
+    elseif stat == PL_THREAD_EXITED || stat == PL_THREAD_EXCEPTION || stat == PL_THREAD_NOMEM
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :thread_status),
+                "thread status exited(T), exception(T), exception(error(resource_error(memory), _)) (info->return_value)",
+                "TH1"
+            )
+        )
+    end
+    return false                                            # default: can happen in current_thread/2
+end
+
+# ORIGINAL: the names of upstream's `tprop_list` (pl-thread.c:3355-3367), in its order; the property functions below are called by index
+# (`_tprop_call`) where upstream calls a function pointer.
+const THREAD_PROPERTY_NAMES = (
+    :id, :alias, :status, :detached, :debug, :debug_mode, :engine, :thread,
+    :system_thread_id, :size, :class,
+)
+
+# PORT: pl-thread.c thread_id_property
+"`id(Id)`: the number of the thread (pl-thread.c)."
+function thread_id_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    return PL_unify_integer(ld, prop, info === nothing ? 1 : info.pl_tid)
+end
+
+# PORT: pl-thread.c thread_alias_property
+# DIVERGES: the alias of the main thread is `main` (it has no record here).
+"`alias(Alias)`: the alias of the thread, when it has one (pl-thread.c)."
+function thread_alias_property(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
+    prop::term_t
+)::Bool where {T}
+    info === nothing && return PL_unify_atom(ld, prop, mk_sym(T, :main))
+    alias = symbol_alias(gd, info.symbol)
+    alias === nothing && return false
+    return PL_unify_atom(ld, prop, alias)
+end
+
+# PORT: pl-thread.c thread_status_property
+"`status(Status)`: the status of the thread (pl-thread.c)."
+function thread_status_property(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
+    prop::term_t
+)::Bool where {T}
+    stat = info === nothing ? PL_THREAD_RUNNING : info.status
+    return unify_thread_status(gd, ld, prop, info, stat)
+end
+
+# PORT: pl-thread.c thread_detached_property
+"`detached(Bool)`: whether the thread is detached; the main thread is not (pl-thread.c)."
+function thread_detached_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    return PL_unify_bool_ex(ld, prop, info === nothing ? false : info.detached)
+end
+
+# PORT: pl-thread.c thread_debug_property
+"`debug(Bool)`: whether the thread can be debugged (pl-thread.c)."
+function thread_debug_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    return PL_unify_bool_ex(ld, prop, info === nothing ? true : info.debug)
+end
+
+# PORT: pl-thread.c thread_debug_mode_property
+# DIVERGES: the local data of the main thread is not kept in the database: it is read when `ld` is the main thread's own, else the
+# property fails (upstream: `info->thread_data`, which the main thread has).
+"`debug_mode(Bool)`: whether the thread is in debug mode (pl-thread.c)."
+function thread_debug_mode_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    dbgmode = nothing
+    if info === nothing
+        ld.thread_info === nothing && (dbgmode = ld.debugstatus_debugging)
+    elseif info.thread_data !== nothing
+        dbgmode = (info.thread_data::PL_local_data{T}).debugstatus_debugging
+    end
+    dbgmode === nothing && return false
+    return PL_unify_bool_ex(ld, prop, dbgmode)
+end
+
+# PORT: pl-thread.c thread_engine_property
+"`engine(Bool)`: whether the thread is an engine (pl-thread.c)."
+function thread_engine_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    return PL_unify_bool_ex(ld, prop, info === nothing ? false : info.is_engine)
+end
+
+# PORT: pl-thread.c thread_thread_property
+"`thread(Thread)`: the thread an engine is called from (pl-thread.c)."
+function thread_thread_property(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
+    prop::term_t
+)::Bool where {T}
+    (info === nothing || !info.is_engine) && return false
+    th = symbol_thread_handle(gd, info.symbol)
+    (th === nothing || th.interactor_thread === nothing) && return false
+    alias = symbol_alias(gd, th.interactor_thread)
+    return PL_unify_atom(ld, prop, alias === nothing ? th.interactor_thread : alias)
+end
+
+# PORT: pl-thread.c thread_tid_property
+# DIVERGES: refused by name: it is the id of the OS thread (`system_thread_id(info)`), and the kernel runs one OS thread.
+"`system_thread_id(Id)`: the operating system's id of the thread (pl-thread.c): refused by name."
+function thread_tid_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :system_thread_id),
+            "thread_property system_thread_id(Id) (pl-thread.c thread_tid_property, system_thread_id)",
+            "TH1"
+        )
+    )
+end
+
+# PORT: pl-thread.c thread_size_property
+# DIVERGES: refused by name: it sums the sizes of the stacks and tables of the thread (`sizeof_thread`).
+"`size(Bytes)`: the memory the thread uses (pl-thread.c): refused by name."
+function thread_size_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :size),
+            "thread_property size(Size) (pl-thread.c thread_size_property, sizeof_thread)",
+            "TH1"
+        )
+    )
+end
+
+# PORT: pl-thread.c thread_class_property
+# DIVERGES: the main thread has no class (upstream: `info->class` is NULL).
+"`class(Class)`: the class of the thread, when it has one (pl-thread.c)."
+function thread_class_property(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
+)::Bool where {T}
+    info === nothing && return false
+    return PL_unify_atom(ld, prop, mk_sym(T, info.class))
+end
+
+# ORIGINAL: the call `(*p->function)(info, arg)` of thread_property/2: the property function number `p` of `THREAD_PROPERTY_NAMES`.
+"Call the property function number `p` on the thread `info` and the argument `arg`."
+function _tprop_call(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, p::Int,
+    info::Union{Nothing, PL_thread_info{T}}, arg::term_t
+)::Bool where {T}
+    p == 1 && return thread_id_property(ld, info, arg)
+    p == 2 && return thread_alias_property(gd, ld, info, arg)
+    p == 3 && return thread_status_property(gd, ld, info, arg)
+    p == 4 && return thread_detached_property(ld, info, arg)
+    p == 5 && return thread_debug_property(ld, info, arg)
+    p == 6 && return thread_debug_mode_property(ld, info, arg)
+    p == 7 && return thread_engine_property(ld, info, arg)
+    p == 8 && return thread_thread_property(gd, ld, info, arg)
+    p == 9 && return thread_tid_property(ld, info, arg)
+    p == 10 && return thread_size_property(ld, info, arg)
+    return thread_class_property(ld, info, arg)
+end
+
+# ORIGINAL: `tprop_enum` as one integer, the `PL_retry` context: tid (bits 0-23), the property number (24-39), `enum_threads` (bit 40) and
+# `enum_properties` (bit 41).
+_tprop_pack(tid::Int, p::Int, enum_threads::Bool, enum_properties::Bool)::Int =
+    tid | (p << 24) | (Int(enum_threads) << 40) | (Int(enum_properties) << 41)
+
+# PORT: pl-thread.c advance_state as tprop_advance_state
+# DIVERGES: the state is the tuple `(tid, p, enum_threads, enum_properties)`, returned advanced with the success flag first; a slot
+# whose engine was destroyed (`nothing`) is skipped as upstream skips the status UNUSED and RESERVED.
+"Advance the enumeration of thread_property/2 to its next property or thread; false when there is none (pl-thread.c)."
+function tprop_advance_state(
+    gd::PL_global_data{T}, tid::Int, p::Int, enum_threads::Bool, enum_properties::Bool
+)::Tuple{Bool, Int, Int} where {T}
+    if enum_properties
+        p += 1
+        p <= length(THREAD_PROPERTY_NAMES) && return (true, tid, p)
+        p = 1
+    end
+    if enum_threads
+        while true
+            tid += 1
+            tid > gd.thread.highest_id && return (false, tid, p)
+            _thread_slot_valid(gd, tid) && break
+        end
+        return (true, tid, p)
+    end
+    return (false, tid, p)
+end
+
+# PORT: pl-thread.c thread_property
+# (PRED_IMPL("thread_property", 2, thread_property, PL_FA_NONDETERMINISTIC), pl-thread.c:3404-3512 at the pin; NDET|PL_FA_ISO, :8849)
+# DIVERGES: see the section head (the state is the retry integer); the main thread is a record `nothing`; the properties
+# `system_thread_id` and `size` are refused by name, so an enumeration of all properties of a thread raises at them.
+"`thread_property(?Thread, ?Property)`: the properties of the threads and engines, on backtracking (pl-thread.c)."
+function pl_thread_property(
+    ld::PL_local_data{T}, thread::term_t, property::term_t, ctx::control_t{T}
+)::foreign_t where {T}
+    ctl = PL_foreign_control(ctx)
+    gd = _query_gd(ld)
+    tid = 0
+    p = 1
+    enum_threads = false
+    enum_properties = false
+
+    if ctl == FRG_FIRST_CALL
+        if PL_is_variable(ld, thread)
+            rc, idx = get_prop_def(ld, property, :thread_property, THREAD_PROPERTY_NAMES)
+            rc == -1 && return FFALSE
+            tid = 1
+            enum_threads = true
+            if rc == 1
+                p = idx
+            else
+                enum_properties = true
+            end
+        else
+            tid = get_thread(gd, ld, thread, true)
+            tid == 0 && return FFALSE
+            rc, idx = get_prop_def(ld, property, :thread_property, THREAD_PROPERTY_NAMES)
+            rc == -1 && return FFALSE
+            if rc == 1
+                p = idx
+            else
+                enum_properties = true
+            end
+        end
+    elseif ctl == FRG_REDO
+        c = PL_foreign_context(ctx)
+        tid = c & 0xffffff
+        p = (c >> 24) & 0xffff
+        enum_threads = ((c >> 40) & 1) != 0
+        enum_properties = ((c >> 41) & 1) != 0
+    else
+        return FTRUE                                        # FRG_CUTTED: the state is an integer, nothing to free
+    end
+
+    arg = PL_new_term_ref(ld)
+    enum_properties || _PL_get_arg(ld, 1, property, arg)
+
+    while true
+        info = tid == 1 ? nothing : gd.thread.infos[tid]
+        if _thread_slot_valid(gd, tid) && _tprop_call(gd, ld, p, info, arg)
+            if enum_properties
+                a2 = PL_new_term_ref(ld)                    # PL_unify_term(property, PL_FUNCTOR, f, PL_TERM, arg)
+                PL_unify_functor(ld, property, mk_sym(T, THREAD_PROPERTY_NAMES[p]), 1) &&
+                    _PL_get_arg(ld, 1, property, a2) && PL_unify(ld, a2, arg) ||
+                    return FFALSE
+            end
+            if enum_threads
+                unify_thread_id(gd, ld, thread, info) || return FFALSE
+            end
+
+            more, tid, p = tprop_advance_state(gd, tid, p, enum_threads, enum_properties)
+            more && return PL_retry(_tprop_pack(tid, p, enum_threads, enum_properties))
+            return FTRUE
+        end
+
+        more, tid, p = tprop_advance_state(gd, tid, p, enum_threads, enum_properties)
+        more || return FFALSE
+    end
 end
