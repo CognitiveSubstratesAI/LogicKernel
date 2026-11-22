@@ -850,6 +850,60 @@ function symbol_alias(gd::PL_global_data{T}, symbol::Union{Nothing, T})::Union{N
     return th.alias
 end
 
+# PORT: pl-thread.c PL_thread_self
+# DIVERGES: the local data is an argument (`GET_LD`); the main thread has no record here (`ld.thread_info === nothing`) and is id 1.
+# The `-1` of a thread with no Prolog thread cannot be reached (every local data of the kernel belongs to the main thread or an engine).
+"The id of the calling thread: its record's `pl_tid`, 1 for the main thread (pl-thread.c `PL_thread_self`)."
+function PL_thread_self(ld::PL_local_data{T})::Int where {T}
+    info = ld.thread_info
+    info === nothing && return 1
+    return info.pl_tid
+end
+
+# PORT: pl-thread.c PL_unify_thread_id
+# DIVERGES: the database and the local data are arguments; the main thread (id 1) has no record and is unified through
+# `unify_thread_id` with `nothing`; the test of an unused or reserved slot is on the kernel's table (a destroyed engine's slot is `nothing`).
+"Unify `t` with the identifier of the thread `i`: 1 or 0 as the unification, -1 when `i` is no thread (pl-thread.c)."
+function PL_unify_thread_id(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, i::Int
+)::Int where {T}
+    if i < 1 || i > gd.thread.highest_id
+        return -1
+    end
+    info = i == 1 ? nothing : gd.thread.infos[i]
+    if i != 1 && (info === nothing || info.status == PL_THREAD_UNUSED || info.status == PL_THREAD_RESERVED)
+        return -1
+    end
+    return unify_thread_id(gd, ld, t, info) ? 1 : 0
+end
+
+# PORT: pl-thread.c PL_get_thread_id_ex
+# DIVERGES: the id is the result (`nothing`: false, the error raised), not an out parameter.
+"The id of the thread `t` names (an integer, an alias or a handle), `nothing` with the error raised when there is none (pl-thread.c)."
+function PL_get_thread_id_ex(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Int} where {T}
+    tid = get_thread(gd, ld, t, true)
+    return tid == 0 ? nothing : tid
+end
+
+# PORT: pl-thread.c PL_get_thread_alias
+# DIVERGES: the alias is the result (`nothing`: false); the database and the local data are arguments; the main thread has no record
+# and no handle here, its alias is `main` (upstream registers it with `aliasThread` at start).
+"The alias atom of the thread `tid` (0: the calling thread), or `nothing` when it has none (pl-thread.c)."
+function PL_get_thread_alias(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, tid::Int
+)::Union{Nothing, T} where {T}
+    tid == 0 && (tid = PL_thread_self(ld))
+    if tid < 1 || tid > gd.thread.highest_id
+        return nothing
+    end
+    tid == 1 && return mk_sym(T, :main)
+    info = gd.thread.infos[tid]
+    info === nothing && return nothing
+    return symbol_alias(gd, info.symbol)
+end
+
 # PORT: pl-thread.c unify_thread_status
 # (pl-thread.c:2698-2765 at the pin; `unify_engine_status` :2690-2696)
 # DIVERGES: the main thread is a record `nothing` and is running; the lock (`lock`) has no counterpart. The statuses `exited`,
