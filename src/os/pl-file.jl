@@ -512,9 +512,30 @@ function PL_unify_stream(ld::PL_local_data, t::term_t, s::IOSTREAM)::Bool
     return unify_stream_ref(ld, t, s)
 end
 
+# PORT: pl-stream.c the `record_t exception` of an IOSTREAM
+"The exception a stream records (`IOSTREAM.exception`): the record of the ball `Sset_exception` was given (pl-stream.c)."
+struct StreamException{T} <: AbstractStreamException
+    record::record{T}
+end
+
+# PORT: pl-stream.c Sset_exception
+# DIVERGES: the recording is made here, the flags and the field are `Sset_exception(s, ex)` of src/os/pl-stream.jl (the first include,
+# which knows neither `record{T}` nor the local data); a zero `ex` is upstream's, a stream of a wrong magic answers -1 as there. The
+# pending exception is compared by `compareStandard_cells` with `eq = true` (upstream's `compareStandard(..., true) == CMPEX_EQUAL`).
+"Record the exception `ex` references on `s` (SIO_FERR set), or with `ex == 0` drop it; an equal pending exception is cleared, reportStreamError raises it again (pl-stream.c)."
+function Sset_exception(ld::PL_local_data{T}, s::IOSTREAM, ex::term_t)::Int where {T}
+    (s.magic == SIO_MAGIC && ex != 0) || return Sset_exception(s, nothing)
+    r = PL_record(ld, ex)
+    pending = PL_exception(ld, 0)
+    if pending != 0 &&
+            compareStandard_cells(ld, -(ex + 1), -(pending + 1), true) == CMPEX_EQUAL
+        PL_clear_exception(ld)
+    end
+    return Sset_exception(s, StreamException{T}(r))
+end
+
 # PORT: pl-file.c reportStreamError
-# DIVERGES: no halt state, no console streams (Windows), no recorded exception (`s->exception`), no
-# timeouts (`SIO_TIMEOUT`); the message of an error without one is "I/O error", where upstream
+# DIVERGES: no halt state, no console streams (Windows), no timeouts (`SIO_TIMEOUT`); the message of an error without one is "I/O error", where upstream
 # reads `errno` (`MSG_ERRNO`) — a Julia IO's failure carries none.
 "Raise the error, or print the warning, that the error state of `s` records (pl-file.c)."
 function reportStreamError(ld::PL_local_data{T}, s::IOSTREAM)::Bool where {T}
@@ -524,6 +545,20 @@ function reportStreamError(ld::PL_local_data{T}, s::IOSTREAM)::Bool where {T}
 
         if (s.flags & SIO_FERR) != 0
             ld.exception_term != 0 && return false
+
+            exr = s.exception
+            if exr !== nothing
+                ld.exception_processing = true      # allow using spare stack
+                fid = PL_open_foreign_frame(ld)
+                fid == 0 && return false
+                ex = PL_new_term_ref(ld)
+                rc = PL_recorded(ld, (exr[]::StreamException{T}).record, ex)
+                s.exception = nothing               # PL_erase(s->exception): the record is Julia's GC's
+                rc && (rc = PL_raise_exception(ld, ex))
+                Sclearerr(s)
+                PL_close_foreign_frame(ld, fid)
+                return rc
+            end
 
             if (s.flags & SIO_INPUT) != 0
                 if Sfpasteof(s) != 0

@@ -1395,6 +1395,7 @@ function _manifest_index(T)
         (LK.do_close, Tuple{LD, LK.IOSTREAM, Bool}, false),
         (LK.pl_close, Tuple{LD, Int64, Bool}, false),
         (LK.reportStreamError, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.Sset_exception, Tuple{LD, LK.IOSTREAM, Int64}, false),
         (LK.streamStatus, Tuple{LD, LK.IOSTREAM}, false),
         (LK.releaseStream, Tuple{LK.IOSTREAM}, false),
         # R1e — write_canonical/1,2 (pl-prims.c numberVars) and read_term_from_atom/3
@@ -5051,6 +5052,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
     (LK.Spending, Tuple{LK.IOSTREAM}, false), (LK.S__fileno, Tuple{LK.IOSTREAM}, false),
     (LK.Sfileno, Tuple{LK.IOSTREAM}, false),
+    (LK.Sset_exception, Tuple{LK.IOSTREAM, Nothing}, false),
     (LK.Sset_filter, Tuple{LK.IOSTREAM, LK.IOSTREAM}, false),
     (LK.Sset_filter, Tuple{LK.IOSTREAM, Nothing}, false),
     (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),

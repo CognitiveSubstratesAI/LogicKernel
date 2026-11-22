@@ -21,7 +21,7 @@
 # `void *`; the open set (`Sfilterfunctions`, STREAMX) takes its callbacks from an `AbstractSfilter` in `filter`, and
 # `Sset_filter` links a filter to the stream it filters (`upstream`, `downstream`). NOT PORTED: locks and threads,
 # timeouts, `tee`, locales, ENC_ANSI and ENC_UTF16* (refused where a stream would use
-# them; ENC_WCHAR is read and written by Sgetcode/Sputcode, not opened by open/4), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
+# them; ENC_WCHAR is read and written by Sgetcode/Sputcode, not opened by open/4), the EINTR and timeout call sites of `Sset_exception` (the kernel has no signals), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
 # database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
@@ -330,6 +330,12 @@ mutable struct wrappedIO
     saved_flags::UInt32                 # SIO_flags we must restore
 end
 
+# PORT: pl-stream.c the `record_t exception` of an IOSTREAM
+# DIVERGES: `record_t` is `record{T}` (src/pl-incl.jl), defined after this file and parametrised by the term type: the stream holds
+# it behind this supertype, and `StreamException{T}` (src/os/pl-file.jl, the one subtype) wraps the record.
+"The pending exception of a stream (`IOSTREAM.exception`): upstream's `record_t`, whose one subtype is `StreamException{T}` (src/os/pl-file.jl)."
+abstract type AbstractStreamException end
+
 # PORT: SWI-Stream.h io_stream as IOSTREAM
 # DIVERGES: see the file's header — the buffer pointers are indices into `mem`, `functions` names a
 # function set (`filter` holds the callbacks of `Sfilterfunctions`, where upstream's `functions` and `handle` are
@@ -364,11 +370,12 @@ mutable struct IOSTREAM
     downstream::Union{Nothing, IOSTREAM}  # stream providing our output (the stream this filter filters)
     filter::Union{Nothing, Base.RefValue{AbstractSfilter}}  # the functions and context of a `Sfilterfunctions` stream
     fileno::Int                         # the cached file number (`Sfileno`), -1: none
+    exception::Union{Nothing, Base.RefValue{AbstractStreamException}}  # the recorded exception (`Sset_exception`)
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
         ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
-        nothing, nothing, nothing, -1
+        nothing, nothing, nothing, -1, nothing
     )
 end
 
@@ -1303,7 +1310,6 @@ end
 const SIO_ERROR_FLAGS = SIO_FEOF | SIO_WARN | SIO_FERR | SIO_FEOF2 | SIO_TIMEOUT
 
 # PORT: pl-stream.c Sclearerr
-# DIVERGES: no pending exception (`Sset_exception`).
 "Clear `s`'s error state, and that of every stream it filters (`downstream`) (pl-stream.c)."
 function Sclearerr(s::IOSTREAM)::Nothing
     us::Union{Nothing, IOSTREAM} = s
@@ -1311,9 +1317,24 @@ function Sclearerr(s::IOSTREAM)::Nothing
         us.flags &= ~SIO_ERROR_FLAGS
         us.io_errno = 0
         Sseterr(us, UInt32(0), nothing)
+        Sset_exception(us, nothing)
         us = us.downstream
     end
     return nothing
+end
+
+# PORT: pl-stream.c Sset_exception
+# DIVERGES: the core of it: the exception is a `StreamException{T}` already recorded (`record_t` of upstream's `term_t`: the recording
+# and the clearing of an equal pending exception are src/os/pl-file.jl's wrapper, `Sset_exception(ld, s, ex)`); `ex === nothing` is
+# upstream's `ex == 0`. Ported as is: `upstream` is not followed (only `s`
+# itself is changed); a stream whose magic is wrong answers -1 (`errno = EINVAL`).
+"Record `ex` as the pending exception of `s` and set `SIO_FERR`, or with `nothing` drop it and clear `SIO_FERR` and `SIO_WARN`: 0, -1 on a closed stream (pl-stream.c)."
+function Sset_exception(s::IOSTREAM, ex::Union{Nothing, AbstractStreamException})::Int
+    s.magic == SIO_MAGIC || return -1
+    nflags = ex !== nothing ? ((s.flags & ~SIO_WARN) | SIO_FERR) : (s.flags & ~(SIO_FERR | SIO_WARN))
+    s.exception = ex === nothing ? nothing : Ref{AbstractStreamException}(ex)
+    s.flags = nflags
+    return 0
 end
 
 # PORT: pl-stream.c Sseterr
