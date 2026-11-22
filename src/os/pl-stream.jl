@@ -17,9 +17,10 @@
 #
 # DIVERGES, the representation: a C pointer into a buffer is an INDEX into the stream's byte vector
 # `mem` (`buffer == 0` for upstream's NULL buffer); the function table is `functions`, an enum over
-# the three function sets, and `handle` their record, where upstream holds function pointers and a
-# `void *`. NOT PORTED: locks and threads, timeouts, `tee`, filter streams (`upstream`,
-# `downstream`), locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
+# the function sets, and `handle` their record, where upstream holds function pointers and a
+# `void *`; the open set (`Sfilterfunctions`, STREAMX) takes its callbacks from an `AbstractSfilter` in `filter`, and
+# `Sset_filter` links a filter to the stream it filters (`upstream`, `downstream`). NOT PORTED: locks and threads,
+# timeouts, `tee`, locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
 # them), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
@@ -161,6 +162,33 @@ const SIO_SEEK_CUR = 1
 "Seek from the end (SWI-Stream.h)."
 const SIO_SEEK_END = 2
 
+# PORT: SWI-Stream.h SIO_GETSIZE
+"`control` action: get the size of the underlying object; `arg` is a `Ref{Int64}` (SWI-Stream.h)."
+const SIO_GETSIZE = 1
+# PORT: SWI-Stream.h SIO_GETFILENO
+"`control` action: get the underlying file (if any); `arg` is a `Ref{Int}` (SWI-Stream.h)."
+const SIO_GETFILENO = 2
+# PORT: SWI-Stream.h SIO_SETENCODING
+"`control` action: modify the encoding of the stream; `arg` is a `Ref{IOENC}` holding the new one (SWI-Stream.h)."
+const SIO_SETENCODING = 3
+# PORT: SWI-Stream.h SIO_FLUSHOUTPUT
+"`control` action: flush the output (SWI-Stream.h)."
+const SIO_FLUSHOUTPUT = 4
+# PORT: SWI-Stream.h SIO_LASTERROR
+"`control` action: the string holding the last error; `arg` is a `Ref{Union{Nothing, String}}` (SWI-Stream.h)."
+const SIO_LASTERROR = 5
+# PORT: SWI-Stream.h SIO_GETPENDING
+"`control` action: get the number of pending bytes; `arg` is a `Ref{Int}` (SWI-Stream.h)."
+const SIO_GETPENDING = 7
+# PORT: SWI-Stream.h SIO_GETREPOSITION
+"`control` action: test if the stream is repositionable (SWI-Stream.h)."
+const SIO_GETREPOSITION = 8
+
+# ORIGINAL: what `S_control` answers for a function set that has no `control` function (upstream's NULL pointer, which
+# every caller tests: `if (s->functions->control)`): a value no real control function returns.
+"The answer of `S_control` for a stream whose function set has no `control` function."
+const SCONTROL_NONE = Int(typemin(Int32))
+
 # PORT: SWI-Stream.h IOENC
 "A stream's character encoding (SWI-Stream.h)."
 @enum IOENC::UInt8 begin
@@ -198,13 +226,14 @@ IOPOS() = IOPOS(0, 0, 0, 0, 0)
 
 # PORT: SWI-Stream.h io_functions as IOFUNCTIONS
 # DIVERGES: the function set's name, where upstream holds its function pointers; `S_read`,
-# `S_write`, `S_seek64`, `S_close` and `S_control` dispatch on it.
+# `S_write`, `S_close` and `S_control` dispatch on it (`S_seek64` is not ported: the memory file's seek is called by name).
 "Which function set a stream reads, writes, seeks and closes with (SWI-Stream.h `IOFUNCTIONS`)."
 @enum IOFUNCTIONS::UInt8 begin
     Smemfunctions
     Sstringfunctions
     Siofunctions
     Sstderrfunctions       # pl-file.c's: write to the stream it copies and flush it (R2 TOP1b F)
+    Sfilterfunctions       # the functions an `AbstractSfilter` supplies (filter streams: zlib, hash, prolog streams; STREAMX)
 end
 
 # PORT: pl-stream.c memfile
@@ -230,6 +259,32 @@ mutable struct Sjulia_io
     io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
     close_io::Bool                                     # close the IO with the stream
 end
+
+# ORIGINAL (STREAMX): upstream's `io_functions` (SWI-Stream.h:181-188: six C function pointers that take the stream's `handle`) is
+# open: the C packages (zlib4pl.c, hash_stream.c, prolog_stream.c) each bring their own. The kernel's sets are the closed enum
+# `IOFUNCTIONS` and the record in `handle`; the open set is `Sfilterfunctions`, whose record is an `AbstractSfilter` that the stream
+# holds in `IOSTREAM.filter` (a `Base.RefValue{AbstractSfilter}`, a concrete type: `field_type_ok`, test/static_analysis_gates.jl:131,
+# allows a Union of at most four concrete types and `handle` already has four). An implementation defines the methods below on its own
+# type, as a package defines its `IOFUNCTIONS`; a method it does not define is the NULL pointer. DIVERGES: the callbacks take the
+# array and the index (`mem`, `from`) where C takes a `char *`; `control`'s `arg` is a typed `Ref`, never a `void *`.
+"The record of a stream over the functions `Sfilterfunctions`: a filter (zlib, hash) or a stream the caller supplies the functions of."
+abstract type AbstractSfilter end
+
+# PORT: SWI-Stream.h Sread_function (the default: a filter without a read function is never read)
+"Read up to `size` bytes into `mem` at `from`: the count, 0 at end of file, -1 on error. Default -1."
+Sfilter_read(::AbstractSfilter, ::Vector{UInt8}, ::Int, ::Int)::Int = -1
+
+# PORT: SWI-Stream.h Swrite_function (the default: a filter without a write function is never written)
+"Write the `size` bytes of `mem` from `from`: the count, -1 on error. Default -1."
+Sfilter_write(::AbstractSfilter, ::Vector{UInt8}, ::Int, ::Int)::Int = -1
+
+# PORT: SWI-Stream.h Sclose_function (the default: a NULL `close` closes nothing, as `S_close_wrapped` of `Sstderrfunctions`)
+"Close the filter's context: 0, or -1 on error. Default 0."
+Sfilter_close(::AbstractSfilter)::Int = 0
+
+# PORT: SWI-Stream.h Scontrol_function (the default: a NULL `control`)
+"Control the filter (`op` is one of the `SIO_*` actions): 0 if handled, -1 if not; `SCONTROL_NONE` (the default) is a NULL `control`."
+Sfilter_control(::AbstractSfilter, ::Int, ::Any)::Int = SCONTROL_NONE
 
 # ORIGINAL (R2 TOP1b E): the thread-local `LD` of upstream (pl-global.h `LD`/`GLOBAL_LD`) is found by thread; the kernel has
 # one thread and `PL_local_data{T}` is defined AFTER this file (it holds `IOSTREAM`s), so a stream names its local
@@ -277,7 +332,8 @@ end
 
 # PORT: SWI-Stream.h io_stream as IOSTREAM
 # DIVERGES: see the file's header — the buffer pointers are indices into `mem`, `functions` names a
-# function set; the fields of the parts not ported are absent. `context` is upstream's `void
+# function set (`filter` holds the callbacks of `Sfilterfunctions`, where upstream's `functions` and `handle` are
+# the pointer table and the context); the fields of the parts not ported are absent (`timeout`, `tee`). `context` is upstream's `void
 # *context` (pl-file.c's `stream_context`): an index into the database's stream table
 # (`PL_global_data.stream_table`) instead of a pointer to a record, 0 for NULL.
 "A stream (SWI-Stream.h `IOSTREAM`)."
@@ -304,10 +360,14 @@ mutable struct IOSTREAM
     context::Int                        # the stream's entry in the database's stream table (0: none)
     erased::Bool                        # closed while a reference is held
     wrapped::Union{Nothing, wrappedIO}  # what wrapIO() replaced the read of (pl-file.c: `handle` is the wrappedIO)
+    upstream::Union{Nothing, IOSTREAM}  # stream providing our input (the filter on this stream; SWI-Stream.h)
+    downstream::Union{Nothing, IOSTREAM}  # stream providing our output (the stream this filter filters)
+    filter::Union{Nothing, Base.RefValue{AbstractSfilter}}  # the functions and context of a `Sfilterfunctions` stream
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
-        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing
+        ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
+        nothing, nothing, nothing
     )
 end
 
