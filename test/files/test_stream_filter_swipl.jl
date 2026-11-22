@@ -21,12 +21,13 @@ mutable struct XorFilter <: LK.AbstractSfilter
     log::Vector{String}               # one entry per callback, in the order called
     fail_read::Bool                   # the read callback fails (-1)
     refuse_enc::Bool                  # SIO_SETENCODING answers -1
+    fail_flush::Bool                  # SIO_FLUSHOUTPUT answers -1
     lasterror::String                 # SIO_LASTERROR's message
     size::Int                         # SIO_GETSIZE's answer
     args::Vector{Any}                 # the argument of each control action, in the order called
 end
 XorFilter(parent::LK.IOSTREAM, key::Integer=0x55; close_parent::Bool=true) =
-    XorFilter(parent, UInt8(key), close_parent, String[], false, false, "no good reason", 1234, Any[])
+    XorFilter(parent, UInt8(key), close_parent, String[], false, false, false, "no good reason", 1234, Any[])
 
 function LK.Sfilter_read(h::XorFilter, mem::Vector{UInt8}, from::Int, size::Int)::Int
     push!(h.log, "read")
@@ -62,7 +63,7 @@ function LK.Sfilter_control(h::XorFilter, op::Int, arg)::Int
         push!(h.args, arg[])
         return h.refuse_enc ? -1 : 0
     elseif op == LK.SIO_FLUSHOUTPUT
-        return 0
+        return h.fail_flush ? -1 : 0
     elseif op == LK.SIO_LASTERROR
         arg[] = h.lasterror
         return 0
@@ -288,9 +289,15 @@ end
     @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
     @test LK.Sflush(filter) == 0                             # empty buffer: no write, but the control action is still asked
     @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)", "control$(LK.SIO_FLUSHOUTPUT)"]
+    # a control function that fails the flush: Sflush is -1 (the buffer was written all the same)
+    impl.fail_flush = true
+    LK.Sputc(Int('c'), filter)
+    @test LK.Sflush(filter) == -1
+    @test impl.log[end - 1:end] == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
+    impl.fail_flush = false
     @test LK.Sclose(filter) == 0
     @test impl.log[end] == "close"
-    @test _sf_bytes(bufp, sizep) == _sf_xor("ab")
+    @test _sf_bytes(bufp, sizep) == _sf_xor("abc")
     # a filter with no control function: the flush works, the control is skipped
     parent2, bufp2, sizep2 = _sf_out()
     f2 = _sf_filter(parent2, NoControlFilter(parent2))
