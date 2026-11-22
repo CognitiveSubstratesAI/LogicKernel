@@ -801,7 +801,7 @@ fixed it or a public issue exists.
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/os/pl-locale.h`, `src/pl-variant.c`, `src/os/pl-file.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/os/pl-locale.h`, `src/pl-variant.c`, `src/os/pl-file.c`, `src/pl-gc.c` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!` (kept at or above the frozen ball's cells: `freezeGlobal!`, L1e e5a); `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h`, `src/pl-gvar.c` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h`, `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/pl-gcmark.jl` | G1 (the stack garbage collector, in pieces): the MARK phase's cell-bit helpers, `mark_variable` (pointer reversal), the term-reference roots and the per-frame marking helpers; cells are addressed by an Int (global position, or a negated local slot index); it moves and frees nothing | `src/pl-gc.c`, `src/pl-data.h`, `src/pl-incl.h`, `src/pl-fli.c` |
@@ -1102,6 +1102,7 @@ graph LR
     pl_incl --> pl_variant
     pl_incl --> pl_coverage
     pl_incl --> pl_arith
+    pl_incl --> os_pl_text
     pl_incl --> pl_tabling
     pl_incl --> pl_wrap
     pl_incl --> pl_trie
@@ -1158,6 +1159,7 @@ graph LR
     pl_global --> pl_index
     pl_global --> pl_funct
     pl_global --> pl_inline
+    pl_global --> pl_gcwalk
     pl_global --> pl_arith
     pl_global --> os_pl_text
     pl_global --> os_pl_os
@@ -1387,7 +1389,6 @@ graph LR
     pl_gc --> SWI_Prolog
     pl_gc --> pl_vmi
     pl_gc --> pl_global
-    pl_gc --> pl_modul
     pl_gc --> pl_inline
     pl_gc --> pl_prims
     pl_gc --> pl_comp
@@ -1413,9 +1414,9 @@ graph LR
     pl_gcmark --> pl_wam
     pl_gcmark --> pl_arith
     pl_gcmark --> os_pl_text
-    pl_gcwalk --> term_interface
     pl_gcwalk --> default_term
     pl_gcwalk --> pl_incl
+    pl_gcwalk --> pl_atom
     pl_gcwalk --> pl_vmi
     pl_gcwalk --> pl_global
     pl_gcwalk --> pl_inline
@@ -1436,7 +1437,6 @@ graph LR
     pl_gctrail --> pl_tabling
     pl_gctrail --> pl_trie
     pl_gctrail --> pl_read
-    pl_gcsweep --> term_interface
     pl_gcsweep --> default_term
     pl_gcsweep --> pl_incl
     pl_gcsweep --> pl_global
@@ -1468,7 +1468,6 @@ graph LR
     pl_gcdriver --> pl_gcmark
     pl_gcdriver --> pl_gcwalk
     pl_gcdriver --> pl_gctrail
-    pl_gcdriver --> pl_gcsweep
     pl_gcdriver --> pl_gccompact
     pl_gcdriver --> pl_alloc
     pl_gcdriver --> pl_wam

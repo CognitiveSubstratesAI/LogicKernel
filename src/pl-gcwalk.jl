@@ -278,7 +278,7 @@ function mergeTrailedAssignments(
     return nothing
 end
 
-# PORT: pl-atom.ih ATOM_garbage_collected (generated from src/ATOMS @ 18168e629eab, line 404: `A garbage_collected
+# The upstream word, pl-atom.ih `ATOM_garbage_collected` (generated from src/ATOMS @ 18168e629eab, line 404: `A garbage_collected
 # "<garbage_collected>"`): the word pl-gc.c writes into a slot whose term was collected (early_reset_vars, :1615;
 # sweep_frame, :3147). A built-in atom, so one word in every database and nothing allocated at the write.
 "The atom word `<garbage_collected>` (pl-atom.ih `ATOM_garbage_collected`): the same in every database."

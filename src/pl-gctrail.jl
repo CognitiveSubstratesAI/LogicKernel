@@ -34,6 +34,8 @@
 # ── the state of the trail during one collection ────────────────────────────────────────────────
 # (the struct `gc_trail_state` is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 
+nothing   # ends the header comment block: the ORIGINAL line below belongs to `gc_trail_begin!`, not to the file
+
 # ORIGINAL: `tTop->address = 0` of garbageCollect(): the sentinel entry past the last one (see above).
 "Push the zero sentinel word on the trail and return the state naming it; the first call of a collection."
 function gc_trail_begin!(ld::PL_local_data{T})::gc_trail_state where {T}

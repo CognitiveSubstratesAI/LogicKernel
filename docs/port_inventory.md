@@ -156,10 +156,11 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gc.jl` | 33 | 21 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gccompact.jl` | 8 | 8 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcdriver.jl` | 13 | 13 |
-| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcmark.jl` | 20 | 11 |
+| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcmark.jl` | 18 | 9 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcsweep.jl` | 18 | 13 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gctrail.jl` | 5 | 5 |
-| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcwalk.jl` | 21 | 12 |
+| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-gcwalk.jl` | 20 | 11 |
+| swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-global.jl` | 3 | 3 |
 | swipl-devel `src/pl-gc.c` | code | `18168e629eab` | `src/pl-wam.jl` | 1 | 1 |
 | swipl-devel `src/pl-gc.h` | code | `18168e629eab` | `src/pl-alloc.jl` | 1 | 0 |
 | swipl-devel `src/pl-gc.h` | code | `18168e629eab` | `src/pl-gc.jl` | 1 | 1 |
@@ -372,7 +373,7 @@ checkout is pulled.
 | swipl-devel `src/pl-fli.c` | `18168e629eab` | 93 | 290 | 81 | src/os/pl-prologflag.jl, src/pl-fli.jl, src/pl-gc.jl, src/pl-gcmark.jl, src/pl-pro.jl |
 | swipl-devel `src/pl-fli.h` | `18168e629eab` | 12 | 15 | 10 | src/pl-fli.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-funct.c` | `18168e629eab` | 10 | 17 | 7 | src/pl-funct.jl |
-| swipl-devel `src/pl-gc.c` | `18168e629eab` | 102 | 166 | 76 | src/pl-gc.jl, src/pl-gccompact.jl, src/pl-gcdriver.jl, src/pl-gcmark.jl, src/pl-gcsweep.jl, src/pl-gctrail.jl, src/pl-gcwalk.jl, src/pl-wam.jl |
+| swipl-devel `src/pl-gc.c` | `18168e629eab` | 102 | 166 | 76 | src/pl-gc.jl, src/pl-gccompact.jl, src/pl-gcdriver.jl, src/pl-gcmark.jl, src/pl-gcsweep.jl, src/pl-gctrail.jl, src/pl-gcwalk.jl, src/pl-global.jl, src/pl-wam.jl |
 | swipl-devel `src/pl-gc.h` | `18168e629eab` | 1 | 2 | 1 | src/pl-alloc.jl, src/pl-gc.jl |
 | swipl-devel `src/pl-global.h` | `18168e629eab` | 0 | 0 | 0 | src/os/pl-file.jl, src/pl-global.jl, src/pl-incl.jl |
 | swipl-devel `src/pl-gmp.c` | `18168e629eab` | 29 | 81 | 8 | src/pl-gmp.jl |

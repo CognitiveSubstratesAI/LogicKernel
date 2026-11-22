@@ -4,6 +4,7 @@
 # UPSTREAM: swipl-devel src/os/pl-locale.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
