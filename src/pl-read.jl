@@ -4770,7 +4770,7 @@ function atom_to_term(
 
     txt = PL_get_text(ld, atom, CVT_ALL | CVT_EXCEPTION)
     txt === nothing && return false
-    stream = Sopen_text(txt, "r")
+    stream = Sopen_text(txt, "r", ld.unicode_atoms)
     stream === nothing && error("atom_to_term: Sopen_text")
 
     rd = init_read_data(gd, ld, stream)
@@ -4985,7 +4985,7 @@ function pl_read_term_from_atom3_va(
     txt === nothing && return FFALSE
 
     oldsrc = ld.read_source
-    stream = Sopen_text(txt, "r")
+    stream = Sopen_text(txt, "r", ld.unicode_atoms)
     rc = if stream !== nothing
         r = read_term_from_stream(gd, ld, stream, A2, A3)
         Sclose(stream)

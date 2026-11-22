@@ -879,8 +879,7 @@ end
 
 # PORT: pl-file.c stream_encoding_options
 # DIVERGES: returns `(encoding, bom)` or `nothing` with the error raised, where upstream writes them
-# through `enc` and `bom`; `bom` is -1 (not given), 0 or 1; the `encoding` flag (`LD->encoding`) is
-# UTF-8 (the flag table is F1's).
+# through `enc` and `bom`; `bom` is -1 (not given), 0 or 1; the `encoding` flag is `ld.encoding` (pl-file.c:4173).
 "The encoding and the BOM policy an `open/4` with these `type` and `encoding` options gives (pl-file.c)."
 function stream_encoding_options(
     ld::PL_local_data{T}, type::T, encoding::Union{Nothing, T}, bom::Int
@@ -903,7 +902,7 @@ function stream_encoding_options(
     elseif _sym_is(type, :binary)
         return (ENC_OCTET, 0)
     elseif _sym_is(type, :text)
-        return (ENC_UTF8, bom)                      # LD->encoding
+        return (ld.encoding, bom)                   # LD->encoding (pl-file.c:4173)
     end
     ex = PL_new_term_ref(ld)
     PL_cons_functor(ld, ex, _err_functor(ld, :type, 1), _err_atom(ld, type))
@@ -1014,7 +1013,7 @@ end
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
 # `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`),
 # the `locale` option (`PL_locale`). The encodings ENC_ANSI (`text`: libc's `mbrtowc`/`wcrtomb`, ENC1), UTF-16 and wchar_t are ported.
-# `locale`'s default is the `encoding` flag's (`LD->encoding`): UTF-8.
+# `locale`'s default is the `encoding` flag's (`LD->encoding`).
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
     ld::PL_local_data{T}, file::term_t, mode::term_t, options::term_t
@@ -1161,7 +1160,7 @@ function openStream(
             PL_error(ld, ERR_TYPE, mk_sym(T, :atom), a)
             return nothing
         end
-        s, errno = Sopen_pipe(text_string(txt), String(how))
+        s, errno = Sopen_pipe(text_string(txt), String(how), ld.encoding, ld.unicode_atoms)
         if s === nothing
             PL_error(
                 ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
@@ -1172,7 +1171,7 @@ function openStream(
     else
         path = PL_get_file_name(ld, file, 0)
         path === nothing && return nothing
-        s, errno = Sopen_file(path, String(how))
+        s, errno = Sopen_file(path, String(how), ld.encoding, ld.unicode_atoms)
         if s === nothing
             PL_error(                                           # error:
                 ld, "", 0, Base.Libc.strerror(errno), ERR_FILE_OPERATION, mk_sym(T, :open),
@@ -3907,7 +3906,7 @@ function set_stream(
         type = PL_get_atom_ex(ld, a)
         type === nothing && return false
         if _sym_is(type, :text)
-            if (s.flags & SIO_TEXT) == 0 && Ssetenc(s, ENC_UTF8) != 0       # LD->encoding
+            if (s.flags & SIO_TEXT) == 0 && Ssetenc(s, ld.encoding) != 0    # LD->encoding (pl-file.c:2303)
                 return _PL_permission_error(ld, :encoding, :stream, stream)
             end
             s.flags |= SIO_TEXT

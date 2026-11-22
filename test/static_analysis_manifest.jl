@@ -5114,6 +5114,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),
     (LK.Snew, Tuple{LK.Sjulia_io, UInt32, LK.IOFUNCTIONS}, false),
+    (LK.Snew, Tuple{LK.Sjulia_io, UInt32, LK.IOFUNCTIONS, LK.IOENC, LK.Sunicode_atoms_t}, false),   # ENC1 flags: LD->encoding, LD->unicode_atoms
     (LK.Snpgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sopen_julia_io, Tuple{IOStream, String, Bool}, false),
     (LK.Sopen_julia_io, Tuple{IOBuffer, String, Bool}, false),
@@ -5140,7 +5141,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._mbrtowc, Tuple{Vector{UInt8}, Int64, Int64, Vector{UInt64}}, false),
     (LK._mbsnrtowcs_count, Tuple{Vector{UInt8}, Int64, Vector{UInt64}}, false),
     (LK.Sopen_file, Tuple{String, String}, false),
+    (LK.Sopen_file, Tuple{String, String, LK.IOENC, LK.Sunicode_atoms_t}, false),
     (LK.Sopen_pipe, Tuple{String, String}, false),
+    (LK.Sopen_pipe, Tuple{String, String, LK.IOENC, LK.Sunicode_atoms_t}, false),
     (LK.getStream, Tuple{LK.IOSTREAM}, false),
     (LK.stream_ref, Tuple{Int64, Int64}, false),
     (LK._stream_ref_bytes, Tuple{LK.stream_ref}, false),
@@ -5153,6 +5156,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.HAS_OPT_MODE, Tuple{Int64, Int64}, true),
     (LK.PL_option_t, Tuple{Symbol, Int64}, false),
     (LK.Sopen_string, Tuple{Vector{UInt8}, Int64, String}, false),
+    (LK.Sopen_string, Tuple{Vector{UInt8}, Int64, String, LK.Sunicode_atoms_t}, false),
     (
         LK.Sopenmem,
         Tuple{Base.RefValue{Union{Nothing, Vector{UInt8}}}, Nothing, String},
@@ -5393,6 +5397,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._dtoa_mode0, Tuple{Float64}, false),
     (LK.writeNaN, Tuple{Float64}, false), (LK.writeINF, Tuple{Float64}, false),
     (LK.Sopen_text, Tuple{LK.PL_chars_t, String}, false),
+    (LK.Sopen_text, Tuple{LK.PL_chars_t, String, LK.Sunicode_atoms_t}, false),
     (LK.PL_init_text, Tuple{}, false),
     (LK.get_text_status, Tuple{Union{Nothing, LK.PL_chars_t}}, false),
     (LK.PL_text_length, Tuple{LK.PL_chars_t}, false),

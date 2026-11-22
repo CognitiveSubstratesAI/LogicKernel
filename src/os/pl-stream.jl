@@ -1289,12 +1289,15 @@ end
 # ── creating and closing ────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c Snew
-# DIVERGES: a text stream's encoding is UTF-8 (`initEncoding`: no locale); no mutex, no file
+# DIVERGES: a text stream's encoding and `unicode_atoms` are `initEncoding()` and `initUnicodeAtoms()` (pl-stream.c:3544-3545,
+# `LD->encoding` and `LD->unicode_atoms`): the stream layer has no local data (`GET_LD`), so a caller that has one passes them
+# as `enc` and `uatoms` (`ld.encoding`, `ld.unicode_atoms`); the defaults are the kernel's UTF-8 and `accept`; no mutex, no file
 # number, no locale.
 "A new stream over `handle` with `functions`, its flags `flags` (pl-stream.c)."
 function Snew(
     handle::Union{Nothing, memfile, IOSTREAM, Sjulia_io}, flags::UInt32,
-    functions::IOFUNCTIONS
+    functions::IOFUNCTIONS, enc::IOENC = ENC_UTF8,
+    uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
 )::IOSTREAM
     s = IOSTREAM()
     s.magic = SIO_MAGIC
@@ -1303,7 +1306,12 @@ function Snew(
     s.handle = handle
     s.functions = functions
     s.posbuf.lineno = 1
-    s.encoding = (flags & SIO_TEXT) != 0 ? ENC_UTF8 : ENC_OCTET
+    if (flags & SIO_TEXT) != 0
+        s.encoding = enc                            # initEncoding()
+        s.unicode_atoms = uatoms                    # initUnicodeAtoms()
+    else
+        s.encoding = ENC_OCTET
+    end
     (flags & SIO_RECORDPOS) != 0 && (s.position = s.posbuf)
     return s
 end
@@ -1807,12 +1815,14 @@ end
 
 # PORT: pl-stream.c Sopen_string
 # DIVERGES: no static stream argument (`s`); `size` -1 reads up to the first 0 byte; Julia's GC
-# owns the stream.
+# owns the stream; `uatoms` is `initUnicodeAtoms()` (the stream layer has no `LD`): the caller passes `ld.unicode_atoms`.
 """
 A stream on the user's byte vector `buf` (pl-stream.c): mode `"r"` reads its first `size` bytes,
 `"w"` writes into it; ISO Latin-1, as upstream opens it (`Sopen_text` sets the text's encoding).
 """
-function Sopen_string(buf::Vector{UInt8}, size::Int, mode::String)::Union{Nothing, IOSTREAM}
+function Sopen_string(
+    buf::Vector{UInt8}, size::Int, mode::String, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Union{Nothing, IOSTREAM}
     flags = SIO_FBUF | SIO_USERBUF
     s = IOSTREAM()
     s.mem = buf
@@ -1822,6 +1832,7 @@ function Sopen_string(buf::Vector{UInt8}, size::Int, mode::String)::Union{Nothin
     s.handle = s                                # for Sclose_string()
     s.functions = Sstringfunctions
     s.encoding = ENC_ISO_LATIN_1
+    s.unicode_atoms = uatoms                    # initUnicodeAtoms() (pl-stream.c:4441): the caller's `ld.unicode_atoms`
     m = isempty(mode) ? ' ' : first(mode)
     if m == 'r'
         if size == -1
@@ -1933,8 +1944,11 @@ end
 # typed `IO` and made `open`'s call a runtime dispatch under JET; `redirect_stdout` re-points descriptor 1, so the child follows it); no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
 # upstream's `popen` takes `type[0]` (`r` or `w`: another first character is EINVAL here as `popen` gives), and its `assert(0)` on a
 # character other than `r`, `w`, `b` is EINVAL here. Returns `(stream, errno)` as `Sopen_file` does.
+# `enc` and `uatoms` are `Snew`'s (`initEncoding()`, `initUnicodeAtoms()`: the caller's `ld.encoding`, `ld.unicode_atoms`).
 "Open a `/bin/sh -c command` child as a stream: `type` is `r` or `w`, then `b` for binary; the stream and 0, or `nothing` and the errno (pl-stream.c)."
-function Sopen_pipe(command::String, type::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+function Sopen_pipe(
+    command::String, type::String, enc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(type) && return (nothing, EINVAL)
     mode = type[1]
     (mode == 'r' || mode == 'w') || return (nothing, EINVAL)
@@ -1961,7 +1975,7 @@ function Sopen_pipe(command::String, type::String)::Tuple{Union{Nothing, IOSTREA
     end
     io = mode == 'r' ? proc.out : proc.in
     io isa Base.PipeEndpoint || error("Sopen_pipe: the child's pipe end is a ", typeof(io))
-    s = Snew(Sjulia_io(io, true, proc), flags, Siofunctions)
+    s = Snew(Sjulia_io(io, true, proc), flags, Siofunctions, enc, uatoms)
     return (s, 0)
 end
 
@@ -2040,10 +2054,12 @@ end
 # in `errno`; the file is Julia's (`open`, an `IOStream`), so a failure's errno is what Julia's
 # `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open; the
 # advisory lock (`l`, `L`: upstream's FCNTL_LOCKS branch) is `_fcntl_lock` on the descriptor of the
-# Julia file. `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `lr`/`lw`/`Lr`/`Lw`
+# Julia file. `initenc` and `uatoms` are `Snew`'s (`ld.encoding`, `ld.unicode_atoms`). `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `lr`/`lw`/`Lr`/`Lw`
 # (a read or write lock; `L` fails instead of waiting), `m` and three octal digits (the mode of a new file).
 "Open the file `path` as `how` says: the stream and 0, or `nothing` and the errno (pl-stream.c)."
-function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+function Sopen_file(
+    path::String, how::String, initenc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(how) && return (nothing, EINVAL)
     op = how[1]
     flags = SIO_FILE | SIO_TEXT | SIO_RECORDPOS | SIO_FBUF
@@ -2101,7 +2117,7 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
             return (nothing, lerr)
         end
     end
-    s = Snew(Sjulia_io(io, true), flags, Siofunctions)
+    s = Snew(Sjulia_io(io, true), flags, Siofunctions, initenc, uatoms)
     enc != ENC_UNKNOWN && (s.encoding = enc)
     return (s, 0)
 end
