@@ -5526,6 +5526,23 @@ decode(PC::Code)::code = PC.codes[PC.pc]
 stepPC(PC::Code{T}) where {T} =
     Code{T}(PC.codes, PC.literals, PC.pc + 1 + codeTable(decode(PC)).arguments)::Code{T}
 
+# PORT: pl-comp.c prevPC
+# DIVERGES: the pointer comparisons are `pc.codes === clause.codes` and the 1-based index in `1:length(codes)`; the instruction that
+# precedes is returned as a `Code`, or `nothing` (NULL) when `pc` does not point into the clause's code or at an instruction start.
+"The position of the instruction in `clause` that comes just before the one at `pc` (a continuation point), or `nothing` (pl-comp.c)."
+function prevPC(clause::Clause{T}, pc::Code{T})::Union{Nothing, Code{T}} where {T}
+    codes = clause.codes
+    if pc.codes === codes && 1 <= pc.pc <= length(codes)
+        p = Code{T}(codes, clause.literals, 1)
+        while p.pc <= length(codes)
+            n = stepPC(p)
+            n.pc == pc.pc && return p
+            p = n
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-comp.c skipArgs
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
 """
