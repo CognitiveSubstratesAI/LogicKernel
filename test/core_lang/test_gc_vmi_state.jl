@@ -502,10 +502,20 @@ end
             _rf("w3", A, _rcons(B, D)),
             _rf("q", A, B, D)
         ),
-        "unify var, compound in the body" => _radd!(
+        # `B = f(A, g(A))` with B a FIRST-occurrence body variable compiles to B_UNIFY_FIRSTVAR, B_FUNCTOR, B_ARGVAR, B_RFUNCTOR, B_ARGVAR, B_POP, B_UNIFY_EXIT
+        # (probed on the kernel, G1-FIX-6). A unify whose variable is a HEAD argument at the start of the body (`w(A) :- A = f(..), q(B)`) is moved into the
+        # head by the compiler (H_FUNCTOR ... H_RFUNCTOR ..., no body unify opcode), so it would not reach B_UNIFY_VAR or B_FUNCTOR at all.
+        "unify first var, compound in the body" => _radd!(
             db,
             _rf("w4", A),
-            _rconj(_rf("=", A, _rf("f", B, _rf("g", B))), _rf("q", B))
+            _rconj(_rf("q", A), _rconj(_rf("=", B, _rf("f", A, _rf("g", A))), _rf("r", B)))
+        ),
+        # an earlier-seen variable (`A = f(B, g(B))` after q(A)): B_UNIFY_VAR, then the compound is compiled with the HEAD opcodes H_FUNCTOR/H_RFUNCTOR/H_POP
+        # inside the body (probed G1-FIX-6), the in-body state of the walk with head-style opcodes
+        "unify var, head-style compound in the body" => _radd!(
+            db,
+            _rf("w5", A),
+            _rconj(_rf("q", A), _rconj(_rf("=", A, _rf("f", B, _rf("g", B))), _rf("r", B)))
         )
     )
     checked = 0
@@ -530,9 +540,10 @@ end
     # the table covers the rules: each family of the pin's switch is reached by one of the clauses
     @test LK.H_FUNCTOR in seen && LK.H_POP in seen && LK.I_ENTER in seen
     @test LK.H_VOID_N in seen
-    # the body compound `f(B, g(B))` of the root of a body unify is compiled as B_RFUNCTOR (src/pl-comp.jl:1752-1754: the root and a last-argument compound are "right")
-    @test (LK.B_UNIFY_VAR in seen || LK.B_UNIFY_FIRSTVAR in seen) &&
-        (LK.B_FUNCTOR in seen || LK.B_RFUNCTOR in seen)
+    # a body unify and its body compound: `B = f(A, g(A))` on a first-occurrence B gives B_UNIFY_FIRSTVAR, B_FUNCTOR (the root) and B_RFUNCTOR (the last-argument
+    # compound, src/pl-comp.jl:1752-1754); `A = f(B, g(B))` on a seen A gives B_UNIFY_VAR and the head-style H_FUNCTOR/H_RFUNCTOR
+    @test LK.B_UNIFY_FIRSTVAR in seen && LK.B_FUNCTOR in seen && LK.B_RFUNCTOR in seen
+    @test LK.B_UNIFY_VAR in seen && LK.H_RFUNCTOR in seen
     @test LK.H_LIST in seen || LK.H_LIST_FF in seen
 
     # the hand-pinned table of `w1(f(a,B), c, D)`: instructions H_FUNCTOR H_ATOM H_POP H_ATOM I_EXITFACT; the state BEFORE each of them.
