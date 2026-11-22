@@ -1160,6 +1160,7 @@ graph LR
     pl_global --> pl_funct
     pl_global --> pl_inline
     pl_global --> pl_gcwalk
+    pl_global --> pl_comp
     pl_global --> pl_arith
     pl_global --> os_pl_text
     pl_global --> os_pl_os
@@ -1642,9 +1643,11 @@ graph LR
     pl_arith --> default_term
     pl_arith --> pl_incl
     pl_arith --> SWI_Prolog
+    pl_arith --> pl_atom
     pl_arith --> pl_global
     pl_arith --> pl_inline
     pl_arith --> pl_prims
+    pl_arith --> pl_comp
     pl_arith --> pl_cont
     pl_arith --> pl_alloc
     pl_arith --> pl_fli
@@ -7638,7 +7641,7 @@ os/pl-option.c (`get_optval`'s `OPT_INT64`). Sizing: evidence/R2/lb5_sizing.md o
   are the twin of `current_output/1` in one upstream function and upstream's aliases of `put_code`. (4) Rows lb010-lb011 pin swipl's answer for
   `open(..., [record_position(false)])` (`ok-1`, `ok-0`); the kernel's stream may answer `permission_error` there: UNVERIFIED, judged by the gate.
   (5) The /0 forms that read the process's standard input (`at_end_of_stream/0`, `get_code/1`) have no row.
-- **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff): `succ/2` (pl-arith.c:274-355), `peek_string/3`, `seek/4`, `set_stream_position/2`
+- **Left out of this step** (the dispatcher's ruling, D-0388 and the writer handoff; `succ/2` (pl-arith.c:274-355) is written since AR1, src/pl-arith.jl `pl_succ2_va`): `peek_string/3`, `seek/4`, `set_stream_position/2`
   (these two need `Sseek64`/`Stell64`: the stream layer has none), `with_tty_raw/1`, `nb_set_dict/3` and `del_dict/4` (they wait for pl-dict).
 
 Tests: test/core_lang/test_lb5_swipl.jl (ORIGINAL; rows lb001-lb110 from swipl 10.1.19 under `LC_ALL=C.UTF-8`, two byte-identical runs, generator
@@ -8965,3 +8968,12 @@ a comment in the `.pl` program naming both. CHECKLIST: close a DIVERGES = make t
 
 Not a TAI1 difference: `parse_time/2,3` (library(date)) needs `code_type/2`, which belongs to the ENGINE unit (CT1b/CT1c); without it the call is an existence_error. With a
 shim for `code_type/2` the fuzz found 0 `parse_time` differences in about 830 cases per seed.
+
+Known-difference checklist item (AR1, assumed until Shivaji rules; dispatcher decision of 2026-11-13): **the rounding mode a throw inside a
+NESTED `roundtoward` leaves behind.** The pin's `AR_CLEANUP` (pl-gmp.h, 18168e62) puts back the mode BEFORE the last `roundtoward` that ran, so
+after `catch(_ is roundtoward(roundtoward(1/0, to_zero), to_positive), _, true)` (the `is` in a compiled clause, `optimise` on) the process stays at
+to_positive while the `float_rounding` flag reads to_nearest, and a later `Y is 1/3.0` is 0.33333333333333337. The kernel sets the flag's mode per
+evaluation (`A_ENTER`) and restores the entry mode at every end, so it answers 0.3333333333333333; reproducing the leak needs a mode held between
+evaluations, which the model of src/pl-arith.jl's header excludes. Pinned both ways by rows k0/k1 of test/core_lang/test_arith_roundopt_swipl.jl
+(swipl's lines re-run live); the DIVERGES comment is at `ar_throw` in src/pl-wam.jl. A single roundtoward, or an error before the inner one ran,
+leaks nothing on the pin, and those rows (t15..t19) agree.

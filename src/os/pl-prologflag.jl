@@ -741,10 +741,12 @@ end
 # (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
 # no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
 # `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
-# `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
-# `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
+# `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`,
+# `var_tag`
 # (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
-# constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
+# constants here) and the arithmetic LIMITS (`max_rational_size`, `max_integer_size`: set_arith_flag refuses a value other than
+# `infinite`, AR1). Since FL1 `incomparable`, `file_name_case_handling` and `theme` have their setters (`setIncomparable`,
+# `setFileNameCaseHandling`, `setTheme`); since ENC1 `encoding` and `unicode_atoms` have theirs (`setEncoding`, `setUnicodeAtoms`).
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
 function _flag_not_ported(key::T, effect::String) where {T}
@@ -962,6 +964,78 @@ function setUnicodeAtoms(ld::PL_local_data{T}, a::T)::Bool where {T}
     mode === nothing && return false
     ld.unicode_atoms = mode
     return true
+end
+
+# PORT: pl-prologflag.c setIncomparable
+# DIVERGES: the field is stored and read by no kernel code yet: `compareStandard`'s partial mode (`CMP_MODE_PARTIAL`) is unwritten
+# (src/pl-prims.jl), so the flag changes no answer of the kernel's compare.
+"Set the `incomparable` flag from the atom `a` (`arbitrary`, `error`); else `domain_error(incomparable, A)` (pl-prologflag.c)."
+function setIncomparable(ld::PL_local_data{T}, a::T)::Bool where {T}
+    k = sym_key(a)
+    if k == sym_key(mk_sym(T, :arbitrary)) || k == sym_key(mk_sym(T, :error))
+        ld.prolog_flag_incomparable_error = (k == sym_key(mk_sym(T, :error)))
+        return true
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :incomparable), _flag_atom_ref(ld, a))
+end
+
+# PORT: pl-prologflag.c setFileNameCaseHandlingName
+# DIVERGES: the local data is an argument (upstream's `GET_LD`); `name` is a Julia string (`const char *`).
+"Set the file-name case bits of the mask from `case_sensitive`, `case_preserving` or `case_insensitive`; false for another name (pl-prologflag.c)."
+function setFileNameCaseHandlingName(ld::PL_local_data, name::AbstractString)::Bool
+    if name == "case_sensitive"
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+    elseif name == "case_preserving"
+        setPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+    elseif name == "case_insensitive"
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE)
+        clearPrologFlagMask!(ld, PLFLAG_FILE_CASE_PRESERVING)
+    else
+        return false
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c setFileNameCaseHandling
+"Set the `file_name_case_handling` flag from the atom `a`; else `domain_error(file_name_case_handling, A)` (pl-prologflag.c)."
+function setFileNameCaseHandling(ld::PL_local_data{T}, a::T)::Bool where {T}
+    if !setFileNameCaseHandlingName(ld, sym_text(a))
+        return PL_error(
+            ld, ERR_DOMAIN, mk_sym(T, :file_name_case_handling), _flag_atom_ref(ld, a)
+        )
+    end
+    return true
+end
+
+# PORT: pl-prologflag.c setTheme
+# DIVERGES: the database and the local data are arguments; no `lock_shared_value` (one thread). `PL_predicate("theme_changed", 1,
+# "$toplevel")` is `lookupProcedure` in `lookupModule`'s module, looked up on each call (as `propagateAutoload`). Before
+# boot/toplevel.pl is loaded `$toplevel:theme_changed/1` has no clauses, so a call outside the boot session raises the existence
+# error upstream raises too (`PL_Q_PASS_EXCEPTION`).
+"Set the flag `f` (`theme`) to the atom `a`: if it changes, call `\$toplevel:theme_changed(A)` (not in the boot session) and store it unless that raised (pl-prologflag.c)."
+function setTheme(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, f::prolog_flag{T}, a::T
+)::Bool where {T}
+    sym_key(a) == sym_key(f.a) && return true
+
+    if !gd.bootsession
+        pred = lookupProcedure(
+            mk_sym(T, :theme_changed), 1,
+            lookupModule(gd, mk_sym(T, Symbol("\$toplevel")))
+        )
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return false
+        av = PL_new_term_ref(ld)
+        rc =
+            PL_put_atom(ld, av, a) &&
+            PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av)
+        PL_close_foreign_frame(ld, fid)
+        rc || return false
+    end
+
+    return set_flag_atom(f, a)
 end
 
 # PORT: pl-prologflag.c setStreamTypeCheck
@@ -1291,8 +1365,8 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`,
-# `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
+# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`,
+# `table_monotonic`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `string_stack_tripwire` and `heartbeat`.
 # Since ENC1 `encoding` and `unicode_atoms` are accepted: `setEncoding` and `setUnicodeAtoms` set `LD->encoding` and `LD->unicode_atoms`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
@@ -1392,7 +1466,7 @@ function set_flag_value(
         elseif name == "occurs_check"
             setOccursCheck(ld, a) || return false
         elseif name == "incomparable"
-            _flag_not_ported(k, "setIncomparable (LD->prolog_flag.incomparable_error)")
+            setIncomparable(ld, a) || return false
         elseif name == "access_level"
             setAccessLevelFromAtom(ld, a) || return false
         elseif name == "encoding"
@@ -1402,13 +1476,13 @@ function set_flag_value(
         elseif name == "stream_type_check"
             setStreamTypeCheck(ld, a) || return false
         elseif name == "file_name_case_handling"
-            _flag_not_ported(k, "setFileNameCaseHandling")
+            setFileNameCaseHandling(ld, a) || return false
         elseif name == "autoload"
             setAutoload(ld, a) || return false
         elseif name == "table_monotonic"
             setMonotonicMode(ld, a) || return false
         elseif name == "theme"
-            _flag_not_ported(k, "setTheme (the theme of the messages)")
+            return setTheme(gd, ld, f, a)       # stores the value itself
         end
 
         f.a = a
@@ -1526,8 +1600,8 @@ end
 
 # PORT: pl-prologflag.c set_prolog_flag_unlocked
 # DIVERGES: no thread-local table (`FF_LOCAL`, `copy_prolog_flag`, `register_local_flag`): the table is the global
-# one. The module is its record. A flag that lives outside the table is refused by name (design D4): the arithmetic
-# flags (`set_arith_flag`, pl-arith.c) and the clause-indexing flags (`ci_set_flag`, pl-index.c); the tabling restraints are
+# one. The module is its record. A flag that lives outside the table is set by its owner (`set_arith_flag`,
+# pl-arith.c: the limits are a named refusal there) or refused by name (design D4): the clause-indexing flags (`ci_set_flag`, pl-index.c); the tabling restraints are
 # set by `tbl_set_restraint_flag` (pl-tabling.c, TAB1 TB8). A creation that `check_create_flag` refuses returns at once
 # (upstream's code continues below the `if` chain).
 "Set, or with `FF_ISCREATE`/`FF_NOCREATE` create, the flag `k` to the value of the term `value`; the flag, `PSEUDO_FLAG`, or `nothing` after an error (pl-prologflag.c)."
@@ -1546,7 +1620,7 @@ function set_prolog_flag_unlocked(
 
         tbl_is_restraint_flag(k) &&
             return tbl_set_restraint_flag(ld, value, k) ? PSEUDO_FLAG : nothing   # pl-prologflag.c:1628
-        is_arith_flag(k) && _flag_not_ported(k, "set_arith_flag (pl-arith.c)")
+        is_arith_flag(k) && return set_arith_flag(ld, value, k) ? PSEUDO_FLAG : nothing
         ci_is_flag(k) && _flag_not_ported(k, "ci_set_flag (pl-index.c)")
 
         if (flags & FF_ISCREATE) != 0 && (flags & FF_SHARED) != 0 && f.index == 0

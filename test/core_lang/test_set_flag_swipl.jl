@@ -575,10 +575,9 @@ end
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
     ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
-    ("incomparable", "error"),
-    ("theme", "dark"), ("agc_margin", "100"),
+    ("agc_margin", "100"),
     ("heartbeat", "0"),
-    ("float_overflow", "infinity")
+    ("max_integer_size", "2000")
 ]
 
 @testset "the flags refused by name raise NotPortedError (design D4)" begin
@@ -595,8 +594,8 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 8                 # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit) - 2 (ENC1: encoding, unicode_atoms)
-    @test !any(f in ("encoding", "unicode_atoms") for (f, _) in _SF_REFUSED)       # ENC1: both are set now (the testset below)
+    @test length(_SF_REFUSED) >= 6                 # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit) - 2 (ENC1: encoding, unicode_atoms) - 2 (incomparable, theme: setters ported) = 6 (float_overflow became max_integer_size on late-flag-2: one for one)
+    @test !any(f in ("encoding", "unicode_atoms", "incomparable", "theme") for (f, _) in _SF_REFUSED)       # ENC1: encoding and unicode_atoms are set now (the testset below); late-flag-2: incomparable and theme are set (fs01-fs04, fs12-fs17)
 end
 
 # ENC1 flag setters (pl-prologflag.c setEncoding :768-781, setUnicodeAtoms :891-901; LD->encoding read by pl-file.c:4173 `stream_encoding_options`

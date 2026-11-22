@@ -257,6 +257,7 @@ mutable struct PL_global_data{T}
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
     char_conversion_table::Vector{Int}                          # (pl-read.c static `char_table[257]`: the entry of code c is at c + 2, EOF at 1; RD2b)
+    const flags_table::Dict{word, flag{T}}                      # flags.table: the key's word -> its `flag` (pl-flag.c get_flag/2, set_flag/2; FL1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -860,7 +861,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     vt_ids::Vector{Int32}                                       # =@='s node numbers, by position (L1d step 8a)
     vt_nodes::Vector{vt_node}                                   # … its node buffer (VARIANT_BUFFER)
     vt_agenda::vt_pairs                                         # … its argPairs
-    random_state::UInt64                                        # LD->arith.random: the generator (0: not seeded; arith-b)
+    random_state::Vector{UInt32}                                # LD->arith.random: GMP's Mersenne twister, mt[624] then mti (empty: not initialised; arith-c)
     frozen_bar::Int                                             # LD->frozen_bar: the frozen part of the global stack (0: none; e5)
     index_ctx::index_context{T}                                 # firstClause/nextClause scratch
     slots::Vector{word}                                         # stacks.local: the cells' WORDS
@@ -926,6 +927,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
+    prolog_flag_incomparable_error::Bool                        # prolog_flag.incomparable_error (FL1: `setIncomparable`)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -1014,7 +1016,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         cell_agenda(0, 0, NTuple{2, Int}[]), Bool[], Int[],      # the walks on cells (L1d step 5)
         UInt8[], Int[], Int[], cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),   # copy_term on cells (L1d step 6)
         Int32[], vt_node[], vt_pairs(0, 0, 0, 0, NTuple{4, Int}[]),        # =@= on cells (L1d step 8a)
-        UInt64(0),                                                 # random/1's state (arith-b)
+        UInt32[],                                                  # random/1's state: gmp_randstate_t (arith-c)
         0,                                                         # frozen_bar (e5)
         # idle until a search resets it (`_index_context!`): any predicate will do
         index_context{T}(
@@ -1063,6 +1065,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
+        false,                                  # incomparable_error: the flag `incomparable` is `arbitrary`
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none

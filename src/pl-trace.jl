@@ -109,6 +109,15 @@ function pl_prolog_current_frame(ld::PL_local_data{T}, frame::term_t)::foreign_t
     return PL_unify_frame(ld, frame, fr) ? FTRUE : FFALSE
 end
 
+# PORT: pl-trace.c pl_notrace
+# (FRG("notrace", 0, pl_notrace, NOTRACE), pl-ext.c:141 at the pin 18168e62; pl-trace.c:2292-2295)
+# DIVERGES: the local data is an argument (upstream's `GET_LD` inside `tracemode`); the pin's `#else /*O_DEBUGGER*/` stub
+# (`tracemode` returning true) has no counterpart: the kernel's `tracemode` is the O_DEBUGGER one above.
+"`notrace/0` (pl-trace.c): switch the trace mode off (`tracemode(false, NULL)`)."
+function pl_notrace(ld::PL_local_data{T})::foreign_t where {T}
+    return tracemode(ld, false, nothing) ? FTRUE : FFALSE
+end
+
 # PORT: pl-trace.c prolog_current_choice as pl_prolog_current_choice1_va
 # (PRED_IMPL("prolog_current_choice", 1, prolog_current_choice, 0))
 "`prolog_current_choice/1` (pl-trace.c): the newest choice point's position (not the debugger's)."
