@@ -1853,6 +1853,13 @@ function _manifest_index(T)
         (LK.PL_warning, Tuple{GD, LD, String}, false),
         (LK._fli_vfatal_error, Tuple{GD, LD, String}, false),
         (LK.PL_fatal_error, Tuple{GD, LD, String}, false),
+        # FLI-API group K (pl-fli.c): the state, the queries, the version (PL_action is varargs: no entry, as PL_unify_term)
+        (LK.SP_set_state, Tuple{LD, Int}, false),
+        (LK.SP_get_state, Tuple{LD}, false),
+        (LK._fli_sys_error, Tuple{GD, LD, String}, false),
+        (LK._fli_sfputs, Tuple{Union{Nothing, LK.IOSTREAM}, String}, false),
+        (LK.PL_query, Tuple{GD, LD, Int}, false),
+        (LK.PL_version_info, Tuple{Int}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (

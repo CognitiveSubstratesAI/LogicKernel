@@ -17,6 +17,8 @@
 # PL_unify_term (their text tags call PL_unify_chars and PL_unify_wchars of wip/clib-uri / wip/clib1: rows on those tags need that merge).
 # group G: PL_unify_blob, PL_put_blob, PL_get_blob, PL_blob_data.
 # group I: PL_throw, PL_rethrow, PL_warning, PL_fatal_error.
+# group K: SP_set_state, SP_get_state, PL_action, PL_query, PL_version_info (and the constants PL_ACTION_*, PL_VERSION_*, PL_QUERY_*,
+# PL_FLI_VERSION, PL_REC_VERSION, PL_QLF_VERSION, PL_QLF_LOADVERSION against the C text of SWI-Prolog.h, T2-generated).
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -1344,6 +1346,555 @@ end
     @test text == ""
     @test gd2.halt_exited == [134]
     @test LK._FLI_FATAL_ACTIVE[] == 0
+end
+
+# group K (FLI-API16): SP_set_state, SP_get_state, PL_action, PL_query, PL_version_info (pl-fli.c) ──────────────────────────
+# UNVERIFIED on the kernel: the gate decides. Expected values: from the C at 18168e62 (the line per row); where swipl itself answers
+# (the version, the tagged-integer limits, the encoding: swipl 18168e62 `current_prolog_flag/2`, `--abi-version`) its answer is the value.
+
+"`(rc, text)` of `f()` with `current_output` a memory stream (UTF-8): `rc`, and what was written to it."
+function _fa_cout(ld, f)
+    buf = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+    sz = Ref(0)
+    s = LK.Sopenmem(buf, sz, "w")
+    s.encoding = LK.ENC_UTF8
+    old = ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1]
+    ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1] = s
+    rc = try
+        f()
+    finally
+        ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1] = old
+    end
+    LK.Sclose(s)
+    return rc, buf[] === nothing ? "" : String(copy(buf[][1:sz[]]))
+end
+
+"A database with the seam off (`halt_exit` false): `(gd, ld)`."
+function _fa_hdb()
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    db.gd.halt_exit = false
+    return db.gd, db.ld
+end
+
+"`name :- body` (a fact for `body` nothing) in the module `system`, as `_tb_sys!` of test_top1b_swipl.jl."
+function _fa_sys!(db, name::Symbol, body::Union{Nothing, _R}=nothing)
+    head = _rs(name)
+    sys = LK.MODULE_system(db.gd)
+    pr = LK.lookupProcedure(head, 0, sys)
+    cl = LK.compileClause(db.gd, db.ld, head, body, pr, sys)
+    LK.assertDefinition!(db.gd, pr.definition, cl, LK.CL_END)
+    return nothing
+end
+
+# LK-ONLY (pl-fli.c:1116-1128): SP_set_state stores LD->fli.SP_state, SP_get_state reads it: 0 on a fresh engine; one slot per engine.
+@testset "LK-ONLY: SP_set_state and SP_get_state (pl-fli.c:1116, :1124)" begin
+    gd, ld = _fa_db()
+    gd2, ld2 = _fa_db()
+    @test LK.SP_get_state(ld) === 0
+    @test LK.SP_set_state(ld, 7) === nothing
+    @test LK.SP_get_state(ld) === 7
+    LK.SP_set_state(ld, -3)
+    @test LK.SP_get_state(ld) === -3
+    @test LK.SP_get_state(ld2) === 0
+end
+
+# LK-ONLY (pl-fli.c:6167-6178): PL_version_info answers the five numbers; the VM and built-in signatures are hashes of upstream's
+# tables (NotPortedError, owner FLI1); any other selector 0. swipl: flag version 100120, `--abi-version` swipl-abi-2-68-af434211-e5ee110c.
+@testset "LK-ONLY: PL_version_info (pl-fli.c:6167)" begin
+    V = LK.PL_version_info
+    @test V(LK.PL_VERSION_SYSTEM) === UInt32(100120)
+    @test V(LK.PL_VERSION_FLI) === UInt32(2)
+    @test V(LK.PL_VERSION_REC) === UInt32(3)
+    @test V(LK.PL_VERSION_QLF) === UInt32(72)
+    @test V(LK.PL_VERSION_QLF_LOAD) === UInt32(68)
+    @test_throws LK.NotPortedError V(LK.PL_VERSION_VM)
+    @test_throws LK.NotPortedError V(LK.PL_VERSION_BUILT_IN)
+    for w in (0, 8, -1, 100)
+        @test V(w) === UInt32(0)
+    end
+end
+
+# LK-ONLY (pl-fli.c:6046-6098): PL_query, arm by arm. swipl: max_tagged_integer 72057594037927935, min_tagged_integer
+# -72057594037927936, version 100120, encoding utf8. The USER_CPU row is a sandwich (the clock moves between two reads).
+@testset "LK-ONLY: PL_query (pl-fli.c:6046)" begin
+    gd, ld = _fa_db()
+    Q = (q) -> LK.PL_query(gd, ld, q)
+    gd.cmdline.appl_argv = ["a", "b", "c"]
+    @test Q(LK.PL_QUERY_ARGC) === 3
+    @test_throws LK.NotPortedError Q(LK.PL_QUERY_ARGV)
+    @test Q(LK.PL_QUERY_MAX_INTEGER) === 0
+    @test Q(LK.PL_QUERY_MIN_INTEGER) === 0
+    @test Q(LK.PL_QUERY_MAX_TAGGED_INT) === 72057594037927935
+    @test Q(LK.PL_QUERY_MIN_TAGGED_INT) === -72057594037927936
+    @test Q(LK.PL_QUERY_VERSION) === 100120
+    @test Q(LK.PL_QUERY_ENCODING) === Int(LK.ENC_UTF8)
+    a = trunc(Int, LK.CpuTime(LK.CPU_USER) * 1000.0)
+    v = Q(LK.PL_QUERY_USER_CPU)
+    b = trunc(Int, LK.CpuTime(LK.CPU_USER) * 1000.0)
+    @test a <= v <= b && v > 0
+    @test Q(LK.PL_QUERY_HALTING) === 0
+    gd.halt_cleaning = LK.CLN_ATEXIT
+    @test Q(LK.PL_QUERY_HALTING) === 1
+    gd.halt_cleaning = LK.CLN_NORMAL
+    # PL_QUERY_MAX_THREADS: the O_PLMT arm of the pin: the message on user_error (Sdprintf), the answer 100000 (:6072-6075)
+    @test _fa_uerr(ld, () -> Q(LK.PL_QUERY_MAX_THREADS)) ==
+          (100000, "PL_query(PL_QUERY_MAX_THREADS) is no longer supported\n")
+    # PL_QUERY_GETC: Sgetchar() on user_input: the bytes, then -1 at the end; no user_input: -1 (DIVERGES (c))
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(UInt8[0x61, 0x62]), Ref(2), "r")
+    ld.IO_streams[LK.SNO_USER_INPUT + 1] = s
+    @test (Q(LK.PL_QUERY_GETC), Q(LK.PL_QUERY_GETC), Q(LK.PL_QUERY_GETC)) === (97, 98, -1)
+    ld.IO_streams[LK.SNO_USER_INPUT + 1] = nothing
+    @test Q(LK.PL_QUERY_GETC) === -1
+end
+
+# LK-ONLY (pl-fli.c:6093, pl-init.c:2241-2284): an unknown query is sysError("PL_query: Illegal query: %d"): "ERROR: system error: " and the
+# message on user_error, then abort() (the seam: status 134), answer 0 where the seam returns; a second system error while one is
+# reported is abort() alone.
+@testset "LK-ONLY: PL_query, an illegal query is a system error (pl-fli.c:6093)" begin
+    gd, ld = _fa_hdb()
+    @test _fa_uerr(ld, () -> LK.PL_query(gd, ld, 99)) == (0, "\nERROR: system error: PL_query: Illegal query: 99\n")
+    @test gd.halt_exited == [134]
+    @test LK._FLI_SYS_ACTIVE[] == 0
+    gd2, ld2 = _fa_hdb()
+    LK._FLI_SYS_ACTIVE[] = 1
+    @test _fa_uerr(ld2, () -> LK.PL_query(gd2, ld2, 99)) == (0, "")
+    @test gd2.halt_exited == [134]
+    @test LK._FLI_SYS_ACTIVE[] == 0
+end
+
+# LK-ONLY (pl-fli.c:5935-6039, PL_ACTION_TRACE/DEBUG :5942-5947): TRACE is pl_trace(): trace and debug mode on; DEBUG is debug mode only.
+@testset "LK-ONLY: PL_action TRACE and DEBUG (pl-fli.c:5942)" begin
+    gd, ld = _fa_db()
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_DEBUG) === true
+    @test ld.debugstatus_debugging && !ld.debugstatus_tracing
+    gd2, ld2 = _fa_db()
+    @test LK.PL_action(gd2, ld2, LK.PL_ACTION_TRACE) === true
+    @test ld2.debugstatus_debugging && ld2.debugstatus_tracing
+end
+
+# LK-ONLY (pl-fli.c:5948-5972): BACKTRACE while booting prints "\n[Cannot print stack while initialising]\n" to user_error and is false;
+# outside the boot the backtrace is PL_backtrace, DBG1's (NotPortedError).
+@testset "LK-ONLY: PL_action BACKTRACE (pl-fli.c:5948)" begin
+    gd, ld = _fa_db()
+    gd.bootsession = true
+    @test _fa_uerr(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)) ==
+          (false, "\n[Cannot print stack while initialising]\n")
+    gd.bootsession = false
+    @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)
+end
+
+# LK-ONLY (pl-fli.c:5973-5975, pl-pro.c:285): BREAK is pl_break(): the answer of the nested `$query_loop` goal in `system` (a fact: true, fail: false).
+@testset "LK-ONLY: PL_action BREAK (pl-fli.c:5973)" begin
+    for (body, want) in ((nothing, true), (_rs(:fail), false))
+        db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+        db.gd.halt_exit = false
+        LK.set_standard_stream!(db.ld, LK.SNO_USER_INPUT, IOBuffer())
+        LK.set_standard_stream!(db.ld, LK.SNO_USER_OUTPUT, IOBuffer())
+        LK.set_standard_stream!(db.ld, LK.SNO_USER_ERROR, IOBuffer())
+        _fa_sys!(db, Symbol("\$query_loop"), body)
+        @test LK.PL_action(db.gd, db.ld, LK.PL_ACTION_BREAK) === want
+    end
+end
+
+# LK-ONLY (pl-fli.c:5983-5985, pl-pro.c abortProlog): ABORT is abortProlog(): false, with unwind(abort) pending.
+@testset "LK-ONLY: PL_action ABORT (pl-fli.c:5983)" begin
+    gd, ld = _fa_db()
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_ABORT) === false
+    ex = ld.exception_term
+    @test ex != 0
+    na = LK.PL_get_name_arity(ld, ex)
+    @test na !== nothing && lk_name(na[1]) === :unwind && na[2] == 1
+    a = LK.PL_new_term_ref(ld)
+    @test LK.PL_get_arg(ld, 1, ex, a) && _fa_atom(ld, a) === :abort
+end
+
+# LK-ONLY (pl-fli.c:5986-5993, :6014-6029): GUIAPP stores a Win32 flag: true; TRADITIONAL is setTraditional(): NotPortedError (SWI-7 only);
+# PL_GMP_SET_ALLOC_FUNCTIONS: initGMP ran at setupProlog (pl-setup.c:166), so `else { rval = false; }` whatever the argument.
+@testset "LK-ONLY: PL_action GUIAPP, TRADITIONAL, GMP_SET_ALLOC_FUNCTIONS (pl-fli.c:5986)" begin
+    gd, ld = _fa_db()
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_GUIAPP, 1) === true
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_GUIAPP, 0) === true
+    @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_TRADITIONAL)
+    @test LK.PL_action(gd, ld, LK.PL_GMP_SET_ALLOC_FUNCTIONS, 1) === false
+    @test LK.PL_action(gd, ld, LK.PL_GMP_SET_ALLOC_FUNCTIONS, 0) === false
+end
+
+# LK-ONLY (pl-fli.c:5994-6004; Sfputs, pl-stream.c:2395-2402): WRITE is Sfputs(s, Scurout) == 0: every byte up to the first 0 is a code point written
+# by Sputcode (so the two UTF-8 bytes of "é", C3 A9, are two characters, "Ã©": the row that tells Sputcode from Sputc); FLUSH is
+# Sflush(Scurout) == 0; with no current output both are false (DIVERGES: upstream would dereference NULL).
+@testset "LK-ONLY: PL_action WRITE and FLUSH (pl-fli.c:5994)" begin
+    gd, ld = _fa_db()
+    W = (s) -> _fa_cout(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, s))
+    @test W("ab") == (true, "ab")
+    @test W("") == (true, "")
+    @test W("é") == (true, "Ã©")
+    @test W("a\0b") == (true, "a")
+    @test _fa_cout(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_FLUSH)) == (true, "")
+    ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1] = nothing
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "ab") === false
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_FLUSH) === false
+end
+
+# LK-ONLY (pl-fli.c:6005-6012, pl-thread.c:7027): ATTACH_CONSOLE (O_PLMT) is attachConsole(): user:attach_console/0 called with PL_Q_NODEBUG; its answer.
+@testset "LK-ONLY: PL_action ATTACH_CONSOLE (pl-fli.c:6005)" begin
+    for (body, want) in ((nothing, true), (_rs(:fail), false))
+        db = _rdb(Tuple{_R, Union{Nothing, _R}}[(_rs("attach_console"), body)])
+        @test LK.PL_action(db.gd, db.ld, LK.PL_ACTION_ATTACH_CONSOLE) === want
+    end
+end
+
+# LK-ONLY (pl-fli.c:6030-6033, pl-init.c:2241-2284): an unknown action (7 is the obsolete one) is sysError("PL_action(): Illegal action: %d"):
+# the message on user_error, abort() (the seam: 134), false where the seam returns.
+@testset "LK-ONLY: PL_action, an illegal action is a system error (pl-fli.c:6030)" begin
+    for act in (99, 7)
+        gd, ld = _fa_hdb()
+        @test _fa_uerr(ld, () -> LK.PL_action(gd, ld, act)) ==
+              (false, "\nERROR: system error: PL_action(): Illegal action: $act\n")
+        @test gd.halt_exited == [134]
+        @test LK._FLI_SYS_ACTIVE[] == 0
+    end
+end
+
+# LK-ONLY (pl-fli.c:5976-5981): HALT is PL_halt(a) and false: with the seam off the clean-up runs on this engine, the seam records the status,
+# the halt state is reset. Last of the group: PL_cleanup ran on its database.
+@testset "LK-ONLY: PL_action HALT (pl-fli.c:5976)" begin
+    gd, ld = _fa_hdb()
+    @test LK.PL_action(gd, ld, LK.PL_ACTION_HALT, 3) === false
+    @test length(gd.halt_exited) == 1 && gd.halt_exited[1] & 0xffff == 3
+    @test gd.halt_cleaning == LK.CLN_NORMAL
+end
+
+# The constants of group K against the C text: T2-generated (t2_table_from_c.py; `python3 -I t2_table_from_c.py --rev 18168e62 --file src/SWI-Prolog.h
+# --lines R --name 'PL_*' --skip-unparsed`, R = 79-82, 1333-1345, 1364-1370, 1380-1393; not 1333-1393: it includes PL_BT_SAFE/PL_BT_USER, DBG1's).
+# GENERATED by t2_table_from_c.py from swipl-devel@18168e62 src/SWI-Prolog.h lines 79-82 (define `PL_*`, C text sha256/12 9a54c50a004c). Do not edit by hand.
+# Needs `using Test` and the module alias LK in scope. Cell kinds: S = C string, E = C integer expression (text as in C, evaluated below), N = NULL.
+@testset "PL_*: every row against the C text (swipl-devel@18168e62 src/SWI-Prolog.h)" begin
+    # (name, kind, C text of the value)
+    rows = [
+        ("PL_FLI_VERSION", "E", "2"),
+        ("PL_REC_VERSION", "E", "3"),
+        ("PL_QLF_LOADVERSION", "E", "68"),
+        ("PL_QLF_VERSION", "E", "72"),
+    ]
+    # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
+    # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
+    function ceval(M::Module, s::AbstractString)
+        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
+        pos = 1
+        levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
+        function lvl(lv)
+            if lv > length(levels)
+                t = toks[pos]
+                pos += 1
+                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                    j = findnext(==(")"), toks, pos)
+                    ty = toks[pos:j-1]
+                    pos = j + 1
+                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
+                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
+                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    x = lvl(lv) & ((Int128(1) << bits) - 1)
+                    return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
+                elseif t == "("
+                    local v = lvl(1)
+                    toks[pos] == ")" || error("missing ) in $s")
+                    pos += 1
+                    return v
+                elseif t == "~"
+                    return ~lvl(lv)
+                elseif t == "-"
+                    return -lvl(lv)
+                elseif t == "+"
+                    return lvl(lv)
+                elseif isdigit(t[1])
+                    d = rstrip(t, ['u', 'U', 'l', 'L'])
+                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
+                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
+                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                else
+                    return Int128(Integer(getfield(M, Symbol(t))))
+                end
+            end
+            local v = lvl(lv + 1)   # `local`: the outer `v` below is shared by every closure call otherwise (the T2 bug)
+            while pos <= length(toks) && toks[pos] in levels[lv]
+                op = toks[pos]
+                pos += 1
+                w = lvl(lv + 1)
+                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
+                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+            end
+            return v
+        end
+        res = lvl(1)
+        pos == length(toks) + 1 || error("trailing C text in $s")
+        return res
+    end
+    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    # ROW-COUNT GUARD (D-0984/T2): the C extractor found 4 name(s); each must exist in LK and carry the C value
+    @test !isempty(rows) && length(rows) == 4 && allunique(first.(rows))
+    for (nm, k, c) in rows
+        sym = Symbol(nm)
+        @test isdefined(LK, sym)
+        isdefined(LK, sym) || continue
+        v = getfield(LK, sym)
+        ok = k == "S" ? v == c : ceq(v, ceval(LK, c))
+        ok || @info "constant mismatch" name = nm julia = v c_text = c
+        @test ok
+    end
+end
+
+# GENERATED by t2_table_from_c.py from swipl-devel@18168e62 src/SWI-Prolog.h lines 1333-1345 (define `PL_*`, C text sha256/12 5eaa303d0186). Do not edit by hand.
+# Needs `using Test` and the module alias LK in scope. Cell kinds: S = C string, E = C integer expression (text as in C, evaluated below), N = NULL.
+@testset "PL_*: every row against the C text (swipl-devel@18168e62 src/SWI-Prolog.h)" begin
+    # (name, kind, C text of the value)
+    rows = [
+        ("PL_ACTION_TRACE", "E", "1"),
+        ("PL_ACTION_DEBUG", "E", "2"),
+        ("PL_ACTION_BACKTRACE", "E", "3"),
+        ("PL_ACTION_BREAK", "E", "4"),
+        ("PL_ACTION_HALT", "E", "5"),
+        ("PL_ACTION_ABORT", "E", "6"),
+        ("PL_ACTION_WRITE", "E", "8"),
+        ("PL_ACTION_FLUSH", "E", "9"),
+        ("PL_ACTION_GUIAPP", "E", "10"),
+        ("PL_ACTION_ATTACH_CONSOLE", "E", "11"),
+        ("PL_GMP_SET_ALLOC_FUNCTIONS", "E", "12"),
+        ("PL_ACTION_TRADITIONAL", "E", "13"),
+    ]
+    # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
+    # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
+    function ceval(M::Module, s::AbstractString)
+        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
+        pos = 1
+        levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
+        function lvl(lv)
+            if lv > length(levels)
+                t = toks[pos]
+                pos += 1
+                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                    j = findnext(==(")"), toks, pos)
+                    ty = toks[pos:j-1]
+                    pos = j + 1
+                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
+                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
+                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    x = lvl(lv) & ((Int128(1) << bits) - 1)
+                    return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
+                elseif t == "("
+                    local v = lvl(1)
+                    toks[pos] == ")" || error("missing ) in $s")
+                    pos += 1
+                    return v
+                elseif t == "~"
+                    return ~lvl(lv)
+                elseif t == "-"
+                    return -lvl(lv)
+                elseif t == "+"
+                    return lvl(lv)
+                elseif isdigit(t[1])
+                    d = rstrip(t, ['u', 'U', 'l', 'L'])
+                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
+                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
+                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                else
+                    return Int128(Integer(getfield(M, Symbol(t))))
+                end
+            end
+            local v = lvl(lv + 1)   # `local`: the outer `v` below is shared by every closure call otherwise (the T2 bug)
+            while pos <= length(toks) && toks[pos] in levels[lv]
+                op = toks[pos]
+                pos += 1
+                w = lvl(lv + 1)
+                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
+                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+            end
+            return v
+        end
+        res = lvl(1)
+        pos == length(toks) + 1 || error("trailing C text in $s")
+        return res
+    end
+    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    # ROW-COUNT GUARD (D-0984/T2): the C extractor found 12 name(s); each must exist in LK and carry the C value
+    @test !isempty(rows) && length(rows) == 12 && allunique(first.(rows))
+    for (nm, k, c) in rows
+        sym = Symbol(nm)
+        @test isdefined(LK, sym)
+        isdefined(LK, sym) || continue
+        v = getfield(LK, sym)
+        ok = k == "S" ? v == c : ceq(v, ceval(LK, c))
+        ok || @info "constant mismatch" name = nm julia = v c_text = c
+        @test ok
+    end
+end
+
+# GENERATED by t2_table_from_c.py from swipl-devel@18168e62 src/SWI-Prolog.h lines 1364-1370 (define `PL_*`, C text sha256/12 2dd12ced9e48). Do not edit by hand.
+# Needs `using Test` and the module alias LK in scope. Cell kinds: S = C string, E = C integer expression (text as in C, evaluated below), N = NULL.
+@testset "PL_*: every row against the C text (swipl-devel@18168e62 src/SWI-Prolog.h)" begin
+    # (name, kind, C text of the value)
+    rows = [
+        ("PL_VERSION_SYSTEM", "E", "1"),
+        ("PL_VERSION_FLI", "E", "2"),
+        ("PL_VERSION_REC", "E", "3"),
+        ("PL_VERSION_QLF", "E", "4"),
+        ("PL_VERSION_QLF_LOAD", "E", "5"),
+        ("PL_VERSION_VM", "E", "6"),
+        ("PL_VERSION_BUILT_IN", "E", "7"),
+    ]
+    # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
+    # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
+    function ceval(M::Module, s::AbstractString)
+        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
+        pos = 1
+        levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
+        function lvl(lv)
+            if lv > length(levels)
+                t = toks[pos]
+                pos += 1
+                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                    j = findnext(==(")"), toks, pos)
+                    ty = toks[pos:j-1]
+                    pos = j + 1
+                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
+                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
+                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    x = lvl(lv) & ((Int128(1) << bits) - 1)
+                    return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
+                elseif t == "("
+                    local v = lvl(1)
+                    toks[pos] == ")" || error("missing ) in $s")
+                    pos += 1
+                    return v
+                elseif t == "~"
+                    return ~lvl(lv)
+                elseif t == "-"
+                    return -lvl(lv)
+                elseif t == "+"
+                    return lvl(lv)
+                elseif isdigit(t[1])
+                    d = rstrip(t, ['u', 'U', 'l', 'L'])
+                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
+                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
+                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                else
+                    return Int128(Integer(getfield(M, Symbol(t))))
+                end
+            end
+            local v = lvl(lv + 1)   # `local`: the outer `v` below is shared by every closure call otherwise (the T2 bug)
+            while pos <= length(toks) && toks[pos] in levels[lv]
+                op = toks[pos]
+                pos += 1
+                w = lvl(lv + 1)
+                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
+                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+            end
+            return v
+        end
+        res = lvl(1)
+        pos == length(toks) + 1 || error("trailing C text in $s")
+        return res
+    end
+    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    # ROW-COUNT GUARD (D-0984/T2): the C extractor found 7 name(s); each must exist in LK and carry the C value
+    @test !isempty(rows) && length(rows) == 7 && allunique(first.(rows))
+    for (nm, k, c) in rows
+        sym = Symbol(nm)
+        @test isdefined(LK, sym)
+        isdefined(LK, sym) || continue
+        v = getfield(LK, sym)
+        ok = k == "S" ? v == c : ceq(v, ceval(LK, c))
+        ok || @info "constant mismatch" name = nm julia = v c_text = c
+        @test ok
+    end
+end
+
+# GENERATED by t2_table_from_c.py from swipl-devel@18168e62 src/SWI-Prolog.h lines 1380-1393 (define `PL_*`, C text sha256/12 580f5d57db14). Do not edit by hand.
+# Needs `using Test` and the module alias LK in scope. Cell kinds: S = C string, E = C integer expression (text as in C, evaluated below), N = NULL.
+@testset "PL_*: every row against the C text (swipl-devel@18168e62 src/SWI-Prolog.h)" begin
+    # (name, kind, C text of the value)
+    rows = [
+        ("PL_QUERY_ARGC", "E", "1"),
+        ("PL_QUERY_ARGV", "E", "2"),
+        ("PL_QUERY_GETC", "E", "5"),
+        ("PL_QUERY_MAX_INTEGER", "E", "6"),
+        ("PL_QUERY_MIN_INTEGER", "E", "7"),
+        ("PL_QUERY_MAX_TAGGED_INT", "E", "8"),
+        ("PL_QUERY_MIN_TAGGED_INT", "E", "9"),
+        ("PL_QUERY_VERSION", "E", "10"),
+        ("PL_QUERY_MAX_THREADS", "E", "11"),
+        ("PL_QUERY_ENCODING", "E", "12"),
+        ("PL_QUERY_USER_CPU", "E", "13"),
+        ("PL_QUERY_HALTING", "E", "14"),
+    ]
+    # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
+    # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
+    function ceval(M::Module, s::AbstractString)
+        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
+        pos = 1
+        levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
+        function lvl(lv)
+            if lv > length(levels)
+                t = toks[pos]
+                pos += 1
+                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                    j = findnext(==(")"), toks, pos)
+                    ty = toks[pos:j-1]
+                    pos = j + 1
+                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
+                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
+                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    x = lvl(lv) & ((Int128(1) << bits) - 1)
+                    return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
+                elseif t == "("
+                    local v = lvl(1)
+                    toks[pos] == ")" || error("missing ) in $s")
+                    pos += 1
+                    return v
+                elseif t == "~"
+                    return ~lvl(lv)
+                elseif t == "-"
+                    return -lvl(lv)
+                elseif t == "+"
+                    return lvl(lv)
+                elseif isdigit(t[1])
+                    d = rstrip(t, ['u', 'U', 'l', 'L'])
+                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
+                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
+                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                else
+                    return Int128(Integer(getfield(M, Symbol(t))))
+                end
+            end
+            local v = lvl(lv + 1)   # `local`: the outer `v` below is shared by every closure call otherwise (the T2 bug)
+            while pos <= length(toks) && toks[pos] in levels[lv]
+                op = toks[pos]
+                pos += 1
+                w = lvl(lv + 1)
+                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
+                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+            end
+            return v
+        end
+        res = lvl(1)
+        pos == length(toks) + 1 || error("trailing C text in $s")
+        return res
+    end
+    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    # ROW-COUNT GUARD (D-0984/T2): the C extractor found 12 name(s); each must exist in LK and carry the C value
+    @test !isempty(rows) && length(rows) == 12 && allunique(first.(rows))
+    for (nm, k, c) in rows
+        sym = Symbol(nm)
+        @test isdefined(LK, sym)
+        isdefined(LK, sym) || continue
+        v = getfield(LK, sym)
+        ok = k == "S" ? v == c : ceq(v, ceval(LK, c))
+        ok || @info "constant mismatch" name = nm julia = v c_text = c
+        @test ok
+    end
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
