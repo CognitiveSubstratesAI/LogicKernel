@@ -235,6 +235,26 @@ end
     @test count(s -> s in vmtable, hits[1]) == length(hits[1])        # and only there (no foreign site in w2)
 end
 
+# The number of signals a call handled DEPENDS ON TIME (D-0970 (3), CI: `PL_handle_signals(ld) == 1` got 2 on alt, alt_interned and reference):
+# gc_stat_end! raises SIG_TUNE_GC when the collection took more than 20% of its window's CPU (src/pl-gc.jl; upstream's pl-gc.c gc_stat_end is the
+# same), and the handler loop serves it in the same call. The exact count is kept, the clock is read through the record it decided on:
+# `handled == (the signals pending BEFORE the call) + (1 when that collection's gc_percentage > 0.2)`. When the count differs from the
+# pending number the pending bits and the percentage are printed (the diagnostic that rides on the fix tip).
+function _handled_signals_exact(ld, call)
+    pending = ld.gc.sig_pending
+    n_pending = count_ones(pending)
+    c0 = Int(ld.gc.stats.totals.collections)
+    handled = call()
+    ran = Int(ld.gc.stats.totals.collections) - c0
+    pct = ran == 0 ? 0.0 : LK.gc_percentage(LK.last_gc_stats(ld.gc.stats))
+    want = n_pending + (pct > 0.2 ? 1 : 0)
+    handled == n_pending ||
+        @info "signals handled differ from the pending number" pending_bits = string(
+            pending; base=2
+        ) n_pending handled collections = ran gc_percentage = pct
+    return handled, want
+end
+
 @testset "G1-C: raiseGcSignal!, handleSignals and PL_handle_signals (pl-fli.c PL_raise, pl-setup.c:1193-1270)" begin
     gd = LK.PL_global_data{_GP}()
     ld = LK.PL_local_data{_GP}(gd)
@@ -247,13 +267,15 @@ end
     @test ld.gc.sig_pending == UInt64(1) << (LK.SIG_GC - LK.SIG_PROLOG_OFFSET)
     @test (ld.alerted & LK.ALERT_SIGNAL) != 0 && LK.is_signalled(ld) &&
         LK.pendingGcSignal(ld, LK.SIG_GC)
-    @test LK.handleSignals(ld) == 1                                   # one signal handled
+    handled, want = _handled_signals_exact(ld, () -> LK.handleSignals(ld))
+    @test handled == want && handled >= 1                             # one signal handled (+ SIG_TUNE_GC when the collection took > 20%)
     @test ld.gc.sig_pending == 0 && !LK.is_signalled(ld)
     @test (ld.alerted & LK.ALERT_SIGNAL) == 0                         # updateAlerted after `done`
     @test Int(ld.gc.stats.totals.collections) == c0 + 1               # gc_handler ran the collector once
     # through PL_handle_signals
     @test LK.raiseGcSignal!(ld, LK.SIG_GC)
-    @test LK.PL_handle_signals(ld) == 1
+    handled, want = _handled_signals_exact(ld, () -> LK.PL_handle_signals(ld))
+    @test handled == want && handled >= 1
     @test ld.gc.sig_pending == 0 && (ld.alerted & LK.ALERT_SIGNAL) == 0
     @test Int(ld.gc.stats.totals.collections) == c0 + 2
     # an exception pending: -1, the signal kept
