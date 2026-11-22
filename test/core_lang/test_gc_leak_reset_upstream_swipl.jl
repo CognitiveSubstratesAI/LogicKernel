@@ -8,6 +8,8 @@
 #   * DIVERGES from the file: the module `test_gc` is `user`; plunit is not used.
 #   * held out: matches the D-0164 term list (class only): two further units of the file, upstream lines 141-194 and 196-218, and their lines of
 #     `test_gc/0`. They are not embedded and have no row.
+#   * KNOWN DIFFERENCES (G1-FIX-5, `_GR_KNOWN_DIFF`): t_gl01 raises existence_error(procedure, succ/2) (AR1 owns succ/2; swipl: ok). t_gl02 is NOT pinned: it answers
+#     `failed` (`Used 0+-8`: globalused one cell lower after the second collection), cause not yet proven (the kernel's void/first-var arguments are global cells).
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
 using Test, LogicKernel
@@ -189,6 +191,19 @@ const _GR_PINNED = [
     "t_gr01 c[116,95,103,114,48,49]/1(a[111,107])"
 ]
 
+"""
+KNOWN DIFFERENCE (premise, owner AR1; G1-FIX-5): rows whose kernel answer differs from swipl's pin at this base, each pinned at the kernel's EXACT current
+answer (feedback: a known-difference test pins the exact answer, swipl's in the comment, and a checklist item flips it).
+  * `t_gl01` (det_freeze_no_space): `det_freeze_loop/2` calls `succ/2` (upstream line 128), which the kernel does not define at this base (`succ/2` is
+    AR1's: docs/r2_owners.tsv `pred:succ/2 AR1`, pl-arith.c `succ`). Kernel: `raised(existence_error(procedure, succ/2))`; swipl: `ok`.
+    CHECKLIST (AR1): when `succ/2` lands, delete this entry; the row must then answer `ok` (it is the first goal that fails; whether `freeze/2` and
+    `statistics(trailused, _)` then give `T < 100` is untested).
+The swipl pins in `_GR_PINNED` stay swipl's (the live check compares them to swipl); only the kernel comparison reads this table.
+"""
+const _GR_KNOWN_DIFF = Dict{String, String}(
+    "t_gl01" => "t_gl01 c[116,95,103,108,48,49]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[115,117,99,99],i2))))"
+)
+
 "The answer the UPSTREAM test expects (the row's `R = ok`), as the driver encodes it."
 const _GR_UPSTREAM = [
     "a[111,107]",
@@ -266,8 +281,10 @@ _gr_corrupt(s::String) = s[1:(end - 2)] * (s[end - 1] == '0' ? "1" : "0") * s[en
     end
     @test length(kl) == length(_GR_PINNED)
     for (k, pn) in zip(kl, _GR_PINNED)
-        k == pn || println(stderr, "  ours  ", k, "\n  swipl ", pn)
-        @test k == pn
+        # a known difference is compared with the kernel's pinned current answer (see `_GR_KNOWN_DIFF`), every other row with swipl's pin
+        want = get(_GR_KNOWN_DIFF, first(split(pn)), pn)
+        k == want || println(stderr, "  ours  ", k, "\n  swipl ", pn)
+        @test k == want
     end
     # must-fail: a corrupted pin is not the kernel's line (the comparison can fail)
     @test length(kl) > 1
@@ -287,6 +304,13 @@ end
     end
     # must-fail: the corruption of a pin is not the upstream expectation
     @test _gr_answer(_gr_corrupt(_GR_PINNED[2])) != _GR_UPSTREAM[1]
+    # the known-difference table: every key is a pinned row, every entry differs from swipl's pin (else it is not a difference: delete it)
+    for (key, line) in _GR_KNOWN_DIFF
+        pins = filter(p -> first(split(p)) == key, _GR_PINNED)
+        @test length(pins) == 1
+        @test !isempty(pins) && line != only(pins)
+        @test startswith(line, key * " ")
+    end
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
