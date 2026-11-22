@@ -1,7 +1,9 @@
 # ORIGINAL: FLI-API group 1 (audit D-0777 (4)(a)) — the pl-fli.c API functions foreign code calls that the
 # kernel did not carry: PL_put_bool, PL_put_pointer, PL_put_functor, PL_put_list, PL_get_uintptr,
 # PL_get_pointer, PL_get_arg (pl-fli.c PL_get_arg_sz), PL_get_compound_name_arity (PL_get_compound_name_arity_sz),
-# PL_unify_int64_ex, PL_unify_pointer (src/pl-fli.jl). test/core_lang/test_fli_api1_cells.jl — on every term type.
+# PL_unify_int64_ex, PL_unify_pointer (src/pl-fli.jl); group 2: PL_new_atom, PL_new_atom_mbchars, PL_new_functor_sz,
+# PL_new_functor, PL_functor_name, PL_functor_arity, PL_atom_chars, PL_atom_nchars, PL_atom_wchars, PL_atom_mbchars,
+# PL_get_atom_chars. test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
 # expected value is written from pl-fli.c at the pin (swipl-devel 18168e62), the line cited per row. The meter
@@ -146,6 +148,122 @@ end
     @test !LK.PL_get_arg(ld2, 3, t2, a2)
 end
 
+# LK-ONLY (pl-fli.c:683-688): PL_new_atom is lookupAtom(s, strlen(s)) — the text up to the first 0, as ISO Latin-1 bytes;
+# one text is one atom, so the atom of the byte 0xe9 is the atom of the character U+00E9 (a text atom of one byte).
+@testset "LK-ONLY: PL_new_atom (pl-fli.c:683)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    a = LK.PL_new_atom(ld, Vector{UInt8}("hello"))
+    @test lk_name(a) === :hello
+    @test LK._atom_word!(ld, a) == LK._atom_word!(ld, _rs("hello"))
+    @test lk_name(LK.PL_new_atom(ld, UInt8[0x61, 0x00, 0x62])) === :a           # strlen: cut at the first 0
+    @test lk_name(LK.PL_new_atom(ld, UInt8[])) === Symbol("")
+    e = LK.PL_new_atom(ld, UInt8[0xe9])
+    @test lk_name(e) === Symbol("é")
+    @test LK._atom_word!(ld, e) == LK._atom_word!(ld, _rs("é"))
+    @test LK.PL_put_atom(ld, t, a) && lk_name(LK.PL_get_atom(ld, t)) === :hello
+end
+
+# LK-ONLY (pl-fli.c:703-722): PL_new_atom_mbchars reads len bytes (len -1: strlen) as UTF-8 with REP_UTF8, else as ISO
+# Latin-1 (:712-713); REP_MB would be ENC_ANSI, unwritten (refused by name). textToAtom canonicalises, so the UTF-8
+# text of U+00E9 is the atom of the byte 0xe9, and a text with a code point past 0xff is a wide atom.
+# A NUL in the text is the kernel's refusal (a symbol cannot hold it), raised before the atom is made.
+@testset "LK-ONLY: PL_new_atom_mbchars (pl-fli.c:703)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    u8 = Int(LK.REP_UTF8)
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 2, UInt8[0xc3, 0xa9])) === Symbol("é")
+    @test LK._atom_word!(ld, LK.PL_new_atom_mbchars(ld, u8, 2, UInt8[0xc3, 0xa9])) ==
+          LK._atom_word!(ld, LK.PL_new_atom(ld, UInt8[0xe9]))
+    # no REP_UTF8: the same two bytes are two Latin-1 characters
+    @test lk_name(LK.PL_new_atom_mbchars(ld, 0, 2, UInt8[0xc3, 0xa9])) === Symbol("Ã©")
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 3, UInt8[0xe2, 0x82, 0xac])) === Symbol("€")
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 2, Vector{UInt8}("abc"))) === :ab        # len bytes
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, -1, UInt8[0x61, 0x62, 0x00, 0x63])) === :ab    # len == (size_t)-1: strlen
+    @test lk_name(LK.PL_new_atom_mbchars(ld, 0, 0, UInt8[])) === Symbol("")
+    @test_throws LK.AtomNotRepresentableError LK.PL_new_atom_mbchars(ld, u8, 3, UInt8[0x61, 0x00, 0x62])
+    @test_throws LK.AtomNotRepresentableError LK.PL_new_atom_mbchars(ld, 0, 1, UInt8[0])
+    @test_throws LK.NotPortedError LK.PL_new_atom_mbchars(ld, Int(LK.REP_MB), 1, UInt8[0x61])
+    # REP_UTF8 wins where both are asked (:712)
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8 | Int(LK.REP_MB), 2, UInt8[0xc3, 0xa9])) === Symbol("é")
+end
+
+# LK-ONLY (pl-fli.c:747-788): PL_new_functor_sz and PL_new_functor are lookupFunctorDef (one functor per name and
+# arity); PL_new_functor refuses an arity below 0 (:763, fatalError) — here an error, also past INT_MAX (VALID_INT_ARITY,
+# :119); PL_functor_name and PL_functor_arity read the name and the arity back.
+@testset "LK-ONLY: PL_new_functor_sz, PL_new_functor, PL_functor_name and PL_functor_arity (pl-fli.c:747-788)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    f3 = _fa_functor(ld, "f", 3)
+    @test LK.PL_new_functor_sz(ld, _rs("f"), 3) == f3
+    @test LK.PL_new_functor(ld, _rs("f"), 3) == f3
+    @test LK.PL_new_functor(ld, _rs("f"), 2) != f3 && LK.PL_new_functor(ld, _rs("g"), 3) != f3
+    @test lk_name(LK.PL_functor_name(ld, f3)) === :f
+    @test LK.PL_functor_arity(ld, f3) == 3
+    f0 = LK.PL_new_functor(ld, _rs("k"), 0)
+    @test lk_name(LK.PL_functor_name(ld, f0)) === :k && LK.PL_functor_arity(ld, f0) == 0
+    @test lk_name(LK.PL_functor_name(ld, ld.functor_dot2)) === Symbol("[|]")
+    @test LK.PL_functor_arity(ld, ld.functor_dot2) == 2
+    @test_throws ErrorException("Arity out of range: -1") LK.PL_new_functor(ld, _rs("f"), -1)
+    @test_throws ErrorException("Arity out of range: 2147483648") LK.PL_new_functor(ld, _rs("f"), Int(typemax(Int32)) + 1)
+    # a functor from PL_new_functor builds the term PL_put_functor puts
+    @test LK.PL_put_functor(ld, t, LK.PL_new_functor(ld, _rs("h"), 2))
+    @test LK.PL_is_functor(ld, t, _rs("h"), 2)
+end
+
+# LK-ONLY (pl-fli.c:1033-1081, :2074-2102, :871-893): PL_atom_chars is the atom's name bytes (stringAtom), a wide atom's
+# being 4 bytes a code point; PL_atom_nchars is NULL for a wide atom; PL_atom_wchars widens a narrow text atom with a
+# terminating 0 and is NULL for a non-textual atom (the reserved `[]`).
+@testset "LK-ONLY: PL_atom_chars, PL_atom_nchars and PL_atom_wchars (pl-fli.c:1033-1081)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    abc, e, euro, empty, nil = _rs("abc"), _rs("é"), _rs("€"), _rs(""), _rnil()
+    @test LK.PL_atom_chars(ld, abc) == Vector{UInt8}("abc")
+    @test LK.PL_atom_nchars(ld, abc) == (Vector{UInt8}("abc"), 3)
+    @test LK.PL_atom_wchars(ld, abc) == (UInt32[0x61, 0x62, 0x63, 0x00], 3)
+    @test LK.PL_atom_chars(ld, e) == UInt8[0xe9]                            # ISO Latin-1, one byte
+    @test LK.PL_atom_nchars(ld, e) == (UInt8[0xe9], 1)
+    @test LK.PL_atom_wchars(ld, e) == (UInt32[0xe9, 0x00], 1)
+    @test LK.PL_atom_chars(ld, euro) == collect(reinterpret(UInt8, UInt32[0x20ac]))   # wide: the wchar_t bytes
+    @test LK.PL_atom_nchars(ld, euro) === nothing                           # type == &ucs_atom
+    @test LK.PL_atom_wchars(ld, euro) == (UInt32[0x20ac, 0x00], 1)          # length in wchars
+    @test LK.PL_atom_chars(ld, empty) == UInt8[]
+    @test LK.PL_atom_nchars(ld, empty) == (UInt8[], 0)
+    @test LK.PL_atom_wchars(ld, empty) == (UInt32[0x00], 0)
+    @test LK.PL_atom_wchars(ld, nil) === nothing                            # not PL_BLOB_TEXT
+    @test LK.PL_atom_nchars(ld, nil) == (Vector{UInt8}("[]"), 2)                # NULL only for ucs_atom
+end
+
+# LK-ONLY (pl-fli.c:2035-2050): PL_get_atom_chars reads the name of an atom of a PL_BLOB_TEXT type — a wide atom too,
+# as its wchar_t bytes — and refuses anything else: an integer, a variable, a compound, the reserved `[]`.
+@testset "LK-ONLY: PL_get_atom_chars (pl-fli.c:2035)" begin
+    ld, t = _fa_engine(_R[_rs("abc"), _fa_k(5), _rv(1), _rnil(), _rf("f", _rs("a")), _rs("€"), _rs("")])
+    @test LK.PL_get_atom_chars(ld, t) == Vector{UInt8}("abc")
+    @test LK.PL_get_atom_chars(ld, t + 1) === nothing
+    @test LK.PL_get_atom_chars(ld, t + 2) === nothing
+    @test LK.PL_get_atom_chars(ld, t + 3) === nothing
+    @test LK.PL_get_atom_chars(ld, t + 4) === nothing
+    @test LK.PL_get_atom_chars(ld, t + 5) == collect(reinterpret(UInt8, UInt32[0x20ac]))
+    @test LK.PL_get_atom_chars(ld, t + 6) == UInt8[]
+end
+
+# LK-ONLY (pl-fli.c:2075-2102): PL_atom_mbchars recodes the atom's text (REP_UTF8) and answers the bytes and their count;
+# for an atom that is no text it is false, with type_error(atom, A) raised where CVT_EXCEPTION is set (:2081-2086).
+# A target other than REP_UTF8 is refused by name (PL_mb_text: REP_MB and Latin-1 targets are unwritten).
+@testset "LK-ONLY: PL_atom_mbchars (pl-fli.c:2075)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    u8 = LK.REP_UTF8
+    @test LK.PL_atom_mbchars(ld, _rs("abc"), u8) == (Vector{UInt8}("abc"), 3)
+    @test LK.PL_atom_mbchars(ld, _rs("é"), u8) == (UInt8[0xc3, 0xa9], 2)     # the length is in bytes
+    @test LK.PL_atom_mbchars(ld, _rs("€"), u8) == (UInt8[0xe2, 0x82, 0xac], 3)
+    @test LK.PL_atom_mbchars(ld, _rs(""), u8) == (UInt8[], 0)
+    @test LK.PL_atom_mbchars(ld, _rnil(), u8) === nothing
+    @test ld.exception_term == 0                                             # no CVT_EXCEPTION: no exception
+    @test_throws LK.NotPortedError LK.PL_atom_mbchars(ld, _rs("abc"), UInt32(0))
+    ld2, _ = _fa_engine(_R[_rv(1)])
+    @test LK.PL_atom_mbchars(ld2, _rnil(), u8 | LK.CVT_EXCEPTION) === nothing
+    @test ld2.exception_term != 0                                            # type_error(atom, [])
+    # the atom of PL_new_atom_mbchars reads back
+    a = LK.PL_new_atom_mbchars(ld, Int(u8), 3, UInt8[0xe2, 0x82, 0xac])
+    @test LK.PL_atom_mbchars(ld, a, u8) == (UInt8[0xe2, 0x82, 0xac], 3)
+end
+
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
     ld, t = _fa_engine(_R[_rf("f", _rs("a"), _rv(1)), _rv(2), _rv(3), _rv(4), _fa_k(77)])
     a = LK.PL_new_term_ref(ld)
@@ -158,5 +276,6 @@ end
     @test LK.PL_put_pointer(ld, a, UInt(4096)) && LK.PL_get_pointer(ld, a) === UInt(4096)
     @test LK.PL_get_uintptr(ld, t + 4) === UInt(77)
     @test LK.PL_unify_pointer(ld, t + 4, UInt(77)) && LK.PL_unify_int64_ex(ld, t + 4, 77)
+    @test LK.PL_functor_arity(ld, fk) == 2 && LK.PL_functor_name(ld, fk) isa _R
     @test _fa_counts(ld) == c0
 end

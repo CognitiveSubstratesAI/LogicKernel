@@ -15,19 +15,7 @@
 # `PL_free_text`: Julia's GC owns the bytes; the encodings other than ISO Latin-1, UTF-8 and
 # `ENC_WCHAR`).
 
-# PORT: pl-text.h PL_chars_t
-# DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
-# upstream holds `pl_wchar_t` (ENC_WCHAR), as the term interface's texts are UTF-8; no storage
-# class (`storage`, `buf`: Julia's GC owns the bytes). A UTF-8 text is NEVER canonical, as
-# upstream's never is: `PL_canonicalise_text` recodes it to ISO Latin-1 or `ENC_WCHAR` (since L1b
-# stage A, an `ENC_WCHAR` text is upstream's buffer: native 4-byte `pl_wchar_t`s).
-"A text and its encoding (pl-text.h)."
-mutable struct PL_chars_t
-    text::Vector{UInt8}             # the text
-    length::Int                     # its length, in characters
-    encoding::IOENC                 # how it is encoded
-    canonical::Bool                 # true: ENC_ISO_LATIN_1 or ENC_WCHAR, never ENC_UTF8
-end
+# `PL_chars_t` (pl-text.h) is defined in src/pl-fli.jl, the first file in the include order whose signatures name it.
 
 # PORT: pl-text.h PL_init_text
 # DIVERGES: a function returning the text (upstream's macro initialises the `PL_chars_t` it is given).

@@ -1656,6 +1656,209 @@ function lookupUCSAtom(
     return first(lookupBlob(atoms, bytes, len * sizeof(UInt32), ucs_atom))
 end
 
+# PORT: pl-text.h PL_chars_t
+# DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
+# upstream holds `pl_wchar_t` (ENC_WCHAR), as the term interface's texts are UTF-8; no storage
+# class (`storage`, `buf`: Julia's GC owns the bytes). A UTF-8 text is NEVER canonical, as
+# upstream's never is: `PL_canonicalise_text` recodes it to ISO Latin-1 or `ENC_WCHAR` (since L1b
+# stage A, an `ENC_WCHAR` text is upstream's buffer: native 4-byte `pl_wchar_t`s).
+"A text and its encoding (pl-text.h)."
+mutable struct PL_chars_t
+    text::Vector{UInt8}             # the text
+    length::Int                     # its length, in characters
+    encoding::IOENC                 # how it is encoded
+    canonical::Bool                 # true: ENC_ISO_LATIN_1 or ENC_WCHAR, never ENC_UTF8
+end
+
+# ── FLI-API group 2 (pl-fli.c): atoms and functors ───────────────────────────────────────────────
+# ORIGINAL (FLI-API): the interface symbol of the text atom `w`, recorded in the database's store (what
+# `_atom_word!` does for a symbol it is given); the symbol is made of the characters of `text`.
+"The interface symbol of the text atom `w` made of `text`, recorded in `ld.atom_symbols` where it is new."
+function _record_atom_symbol!(
+    ld::PL_local_data{T}, w::word, text::PL_chars_t
+)::T where {T}
+    v = mk_sym(T, Symbol(_text_string(text)))
+    i = indexAtom(w)
+    atomSymbol(ld.atom_symbols, i) === nothing && setAtomSymbol!(ld.atom_symbols, i, v)
+    return v
+end
+
+# ORIGINAL (FLI-API): `strlen` of a byte vector: the bytes before the first 0, or all of them.
+_c_strlen(s::AbstractVector{UInt8})::Int = something(findfirst(iszero, s), length(s) + 1) - 1
+
+# PORT: pl-fli.c PL_new_atom
+# DIVERGES: the local data is an argument (upstream's `lookupAtom` on `GD->atoms`, after `initAtoms` where the
+# system is not initialised: the kernel's atom table exists); the text is a byte vector, cut at the first 0 as
+# `strlen` cuts it, and the answer is the atom's interface symbol.
+"The text atom of the ISO Latin-1 bytes of `s` before the first 0, created if new; its symbol (pl-fli.c)."
+function PL_new_atom(ld::PL_local_data{T}, s::AbstractVector{UInt8})::T where {T}
+    n = _c_strlen(s)
+    bytes = Vector{UInt8}(view(s, 1:n))
+    w = lookupAtom(ld.atoms, bytes, n)                      # lookupAtom(s, strlen(s))
+    return _record_atom_symbol!(ld, w, PL_chars_t(bytes, n, ENC_ISO_LATIN_1, true))
+end
+
+# PORT: pl-fli.c PL_new_atom_mbchars
+# DIVERGES: the local data is an argument; the text is a byte vector, `len` -1 for `strlen`; `nothing` for
+# upstream's 0 (a text that cannot be canonicalised). A text holding the character 0 raises
+# `AtomNotRepresentableError` before the atom is made (a symbol cannot hold it, `_atom_word!`). `REP_MB`
+# (`ENC_ANSI`) is refused by name.
+"The text atom of `len` bytes of `s` in the encoding `flags` names (`REP_UTF8`, else ISO Latin-1); its symbol (pl-fli.c)."
+function PL_new_atom_mbchars(
+    ld::PL_local_data{T}, flags::Int, len::Int, s::AbstractVector{UInt8}
+)::Union{Nothing, T} where {T}
+    len == -1 && (len = _c_strlen(s))
+    if (flags & REP_UTF8) == 0 && (flags & REP_MB) != 0
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_new_atom_mbchars with REP_MB", "ENC_ANSI is unwritten"
+            )
+        )
+    end
+    enc = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1
+    text = PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, enc, false)
+    PL_canonicalise_text(text) == 1 || return nothing       # textToAtom(&text) == 0
+    codes = if text.encoding === ENC_WCHAR
+        UInt32[reinterpret(UInt32, view(text.text, 1:(4 * text.length)))...]
+    else
+        UInt32[text.text[j] for j in 1:(text.length)]
+    end
+    any(iszero, codes) && throw(AtomNotRepresentableError(codes))
+    w = textToAtom(ld.atoms, text)                          # a = textToAtom(&text)
+    w == 0 && return nothing
+    return _record_atom_symbol!(ld, w, text)
+end
+
+# PORT: pl-fli.c PL_new_functor_sz
+# DIVERGES: the local data is an argument (`DECL_LD`); the name is an interface symbol, the answer a functor word.
+"The functor word of the name `f` and `arity` (pl-fli.c `PL_new_functor_sz`), created if new."
+PL_new_functor_sz(ld::PL_local_data{T}, f::T, arity::Int)::word where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, f), arity)
+
+# PORT: pl-fli.c PL_new_functor
+# DIVERGES: the local data is an argument; the name is an interface symbol; upstream's `fatalError("Arity out of
+# range: %d")` for a negative arity is `error` (a negative `int`, or one past `typemax(Int32)`, is out of range).
+"The functor word of the name `f` and the `int` `arity` (pl-fli.c); an arity out of `int`'s range is an error."
+function PL_new_functor(ld::PL_local_data{T}, f::T, arity::Int)::word where {T}
+    (arity < 0 || arity > typemax(Int32)) && error("Arity out of range: $arity")
+    return PL_new_functor_sz(ld, f, arity)
+end
+
+# PORT: pl-fli.c PL_functor_name
+# DIVERGES: the local data is an argument; the name is its interface symbol (the `$expr` atom as
+# `PL_get_compound_name_arity` names it); no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1).
+"The name, an atom, of functor word `f` (pl-fli.c)."
+function PL_functor_name(ld::PL_local_data{T}, f::word)::T where {T}
+    name = nameFunctor(ld.functors, f)
+    name == ld.atom_dexpr && return mk_sym(T, Symbol("\$expr"))
+    return _atom_value(ld, name)
+end
+
+# PORT: pl-fli.c PL_functor_arity_sz as PL_functor_arity
+# PORT: pl-fli.c PL_functor_arity
+# DIVERGES: the local data is an argument; no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1); `VALID_INT_ARITY`'s
+# `fatalError` is `error`.
+"The arity of functor word `f`, as an `int` (pl-fli.c `PL_functor_arity`; `PL_functor_arity_sz` is the same here)."
+function PL_functor_arity(ld::PL_local_data, f::word)::Int
+    arity = arityFunctor(ld.functors, f)
+    (arity < 0 || arity > typemax(Int32)) && error("Arity out of range: $arity")  # VALID_INT_ARITY(arity)
+    return arity
+end
+
+# ORIGINAL (FLI-API): pl-fli.c get_atom_ptr_text — the text of the atom `a`, `nothing` where it is no text atom.
+# The atom is an argument and the text a COPY of its name (upstream points into the atom): a wide text atom is
+# `ENC_WCHAR` with its length in code points, any other text atom ISO Latin-1; both canonical.
+"The canonical text of the text atom `a`, `nothing` for a non-textual atom (pl-fli.c `get_atom_ptr_text`)."
+function get_atom_ptr_text(a::atom)::Union{Nothing, PL_chars_t}
+    (a.type.flags & PL_BLOB_TEXT) == 0 && return nothing    # isoff(a->type, PL_BLOB_TEXT): non-textual atom
+    bytes = Vector{UInt8}(view(a.name, 1:(a.length)))
+    if a.type === ucs_atom
+        return PL_chars_t(bytes, a.length ÷ sizeof(UInt32), ENC_WCHAR, true)
+    end
+    return PL_chars_t(bytes, a.length, ENC_ISO_LATIN_1, true)
+end
+
+# PORT: pl-fli.c PL_atom_chars
+# DIVERGES: the local data is an argument; a COPY of the atom's name bytes (upstream's `stringAtom(a)`, a pointer
+# to them) without the terminating 0; no `valid_atom_t` check (`O_VALIDATE_API`, owner FLI1).
+"The bytes of the name of atom `a` (pl-fli.c): ISO Latin-1 for a text atom, 4 bytes a code point for a wide one."
+function PL_atom_chars(ld::PL_local_data{T}, a::T)::Vector{UInt8} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    return Vector{UInt8}(view(x.name, 1:(x.length)))
+end
+
+# PORT: pl-fli.c PL_atom_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's NULL), the bytes a COPY.
+"The name bytes and their count of atom `a`, `nothing` for a wide text atom (pl-fli.c)."
+function PL_atom_nchars(
+    ld::PL_local_data{T}, a::T
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    x.type === ucs_atom && return nothing
+    return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length)
+end
+
+# PORT: pl-fli.c PL_atom_wchars
+# DIVERGES: the local data is an argument; `(chars, length)` or `nothing` (upstream's NULL), the code points a COPY
+# with the terminating 0 (upstream's stack buffer for a narrow atom, its own name for a wide one); the length is
+# in code points.
+"The code points and their count of text atom `a`, `nothing` for a non-textual atom (pl-fli.c)."
+function PL_atom_wchars(
+    ld::PL_local_data{T}, a::T
+)::Union{Nothing, Tuple{Vector{UInt32}, Int}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    if x.type === ucs_atom
+        n = x.length ÷ sizeof(UInt32)
+        ws = Vector{UInt32}(reinterpret(UInt32, Vector{UInt8}(view(x.name, 1:(x.length)))))
+        push!(ws, UInt32(0))
+        return (ws, n)
+    elseif (x.type.flags & PL_BLOB_TEXT) != 0
+        ws = UInt32[x.name[j] for j in 1:(x.length)]        # addBuffer(b, *s, wchar_t)
+        push!(ws, UInt32(0))                                # addBuffer(b, 0, wchar_t)
+        return (ws, x.length)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_atom_chars
+# DIVERGES: the local data is an argument; the name bytes (a COPY) or `nothing`, where upstream writes a pointer
+# through `s`; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The name bytes of the text atom term reference `t` holds, else `nothing` (pl-fli.c): a reserved symbol is none."
+function PL_get_atom_chars(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Vector{UInt8}} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && isAtomW(w)                           # isAtom(w)
+        a = atomValue(ld.atoms, w)
+        if (a.type.flags & PL_BLOB_TEXT) != 0               # ison(a->type, PL_BLOB_TEXT)
+            return Vector{UInt8}(view(a.name, 1:(a.length)))
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_atom_mbchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the bytes a COPY,
+# `PL_save_text` and the `PL_STRINGS_MARK` buffers are unwritten. A target other than `REP_UTF8` is refused
+# (`PL_mb_text` refuses it by name, `NotPortedError`). With `CVT_EXCEPTION`, a non-textual atom raises
+# `type_error(atom, A)`.
+"The text of atom `a` recoded as `flags` asks (`REP_UTF8`): the bytes and their count, `nothing` for no text (pl-fli.c)."
+function PL_atom_mbchars(
+    ld::PL_local_data{T}, a::T, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    text = get_atom_ptr_text(atomValue(ld.atoms, _atom_word!(ld, a)))
+    if text === nothing
+        if (flags & CVT_EXCEPTION) != 0
+            t = PL_new_term_ref(ld)
+            PL_put_atom(ld, t, a)
+            PL_type_error(ld, "atom", t)
+        end
+        return nothing
+    end
+    PL_mb_text(text, flags) || return nothing
+    return (text.text, text.length)
+end
+
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
 # DIVERGES: left out: the `GC_DEBUG`/`O_DEBUG`/ASAN line that keeps the memory reclaim (a build option) and the

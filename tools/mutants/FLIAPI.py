@@ -2,7 +2,9 @@
 # tools/mutants/FLIAPI.py — the mutation battery of FLI-API group 1 (audit D-0777 (4)(a)): the pl-fli.c API functions
 # PL_put_bool, PL_put_pointer, PL_put_functor, PL_put_list, PL_get_uintptr, PL_get_pointer, PL_get_arg
 # (PL_get_arg_sz), PL_get_compound_name_arity (PL_get_compound_name_arity_sz), PL_unify_int64_ex, PL_unify_pointer
-# (src/pl-fli.jl), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
+# (src/pl-fli.jl), and of group 2: PL_new_atom, PL_new_atom_mbchars, PL_new_functor_sz, PL_new_functor, PL_functor_name,
+# PL_functor_arity, PL_atom_chars, PL_atom_nchars, PL_atom_wchars, PL_atom_mbchars, PL_get_atom_chars (ids N, M, F, R, C,
+# W, G, B), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format:
 # tools/mutate_drive.py's (as ARGINL.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
 # and `targets`. Each id is AIMED BY the rows its "aimed by" names, all in test/core_lang/test_fli_api1_cells.jl. Verdicts:
 # written by the battery, not yet run. Every `old` was counted in src/pl-fli.jl at the commit that added this list
@@ -10,6 +12,8 @@
 # TARGETS (audit D-0238): the new functions have no caller in the kernel yet (foreign code calls them), so the step's own
 # file is the only one that exercises the mutated code; PL_unify_int64_ex and PL_unify_pointer reach unify_int64_ex, whose
 # other callers' file test_fli_unify_cells.jl is listed too.
+# NOT LISTED (group 2): the canonicalisation failure of PL_new_atom_mbchars (no input of the two encodings it takes
+# fails: `nothing` is upstream's 0 for a wide text with an invalid code point) and the `$expr` branch of PL_functor_name.
 # NOT LISTED: PL_put_list's and PL_put_functor's cell COUNT (the compound's arity is its functor word; a missing cell
 # would be read past, a garbage read, not a verdict).
 TS = ["test/core_lang/test_fli_api1_cells.jl"]
@@ -58,4 +62,73 @@ MUTANTS = [
     dict(id="FLIAPI-Y1 PL_unify_pointer unifies the pointer shifted right by one bit (aimed by the pointer API: PL_unify_pointer on 4096)", file=F, targets=TU,
          old="unify_int64_ex(ld, t, reinterpret(Int, ptr), false)",
          new="unify_int64_ex(ld, t, reinterpret(Int, ptr >> 1), false)"),
+    dict(id="FLIAPI-N1 _c_strlen counts every byte, not up to the first 0 (aimed by PL_new_atom: the cut at the first 0; PL_new_atom_mbchars: len -1)", file=F, targets=TS,
+         old="something(findfirst(iszero, s), length(s) + 1) - 1",
+         new="length(s)"),
+    dict(id="FLIAPI-N2 PL_new_atom looks up one byte too few (aimed by PL_new_atom: hello)", file=F, targets=TS,
+         old="w = lookupAtom(ld.atoms, bytes, n)                      # lookupAtom(s, strlen(s))",
+         new="w = lookupAtom(ld.atoms, bytes, max(n - 1, 0))                      # lookupAtom(s, strlen(s))"),
+    dict(id="FLIAPI-N3 PL_new_atom records the symbol from the bytes as UTF-8 (aimed by PL_new_atom: the byte 0xe9)", file=F, targets=TS,
+         old="return _record_atom_symbol!(ld, w, PL_chars_t(bytes, n, ENC_ISO_LATIN_1, true))",
+         new="return _record_atom_symbol!(ld, w, PL_chars_t(bytes, n, ENC_UTF8, true))"),
+    dict(id="FLIAPI-M1 PL_new_atom_mbchars reads REP_UTF8 text as Latin-1 (aimed by PL_new_atom_mbchars: the bytes c3 a9, the euro sign)", file=F, targets=TS,
+         old="enc = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1",
+         new="enc = ENC_ISO_LATIN_1"),
+    dict(id="FLIAPI-M2 PL_new_atom_mbchars does not refuse REP_MB (aimed by PL_new_atom_mbchars: the NotPortedError rows)", file=F, targets=TS,
+         old="if (flags & REP_UTF8) == 0 && (flags & REP_MB) != 0",
+         new="if (flags & REP_UTF8) != 0 && (flags & REP_MB) != 0"),
+    dict(id="FLIAPI-M3 PL_new_atom_mbchars: len -1 is the vector's length (aimed by PL_new_atom_mbchars: a b 0 c)", file=F, targets=TS,
+         old="len == -1 && (len = _c_strlen(s))",
+         new="len == -1 && (len = length(s))"),
+    dict(id="FLIAPI-M4 PL_new_atom_mbchars makes the atom of a text holding 0 (aimed by PL_new_atom_mbchars: AtomNotRepresentableError rows)", file=F, targets=TS,
+         old="any(iszero, codes) && throw(AtomNotRepresentableError(codes))",
+         new="false && throw(AtomNotRepresentableError(codes))"),
+    dict(id="FLIAPI-F1 PL_new_functor_sz looks up the arity plus one (aimed by PL_new_functor_sz: == the functor of f/3)", file=F, targets=TS,
+         old="where {T} =\n    lookupFunctorDef(ld.functors, _atom_word!(ld, f), arity)",
+         new="where {T} =\n    lookupFunctorDef(ld.functors, _atom_word!(ld, f), arity + 1)"),
+    dict(id="FLIAPI-F2 PL_new_functor accepts an arity past INT_MAX (aimed by PL_new_functor: the arity 2147483648)", file=F, targets=TS,
+         old="(arity < 0 || arity > typemax(Int32)) && error(\"Arity out of range: $arity\")\n    return PL_new_functor_sz(ld, f, arity)",
+         new="arity < 0 && error(\"Arity out of range: $arity\")\n    return PL_new_functor_sz(ld, f, arity)"),
+    dict(id="FLIAPI-F3 PL_new_functor accepts a negative arity (aimed by PL_new_functor: the arity -1)", file=F, targets=TS,
+         old="(arity < 0 || arity > typemax(Int32)) && error(\"Arity out of range: $arity\")\n    return PL_new_functor_sz(ld, f, arity)",
+         new="arity > typemax(Int32) && error(\"Arity out of range: $arity\")\n    return PL_new_functor_sz(ld, f, arity)"),
+    dict(id="FLIAPI-R1 PL_functor_name names the empty list (aimed by PL_new_functor_sz and PL_functor_name: the name f)", file=F, targets=TS,
+         old="name = nameFunctor(ld.functors, f)\n    name == ld.atom_dexpr && return mk_sym(T, Symbol(\"\\$expr\"))\n    return _atom_value(ld, name)",
+         new="name = ld.atom_nil_w\n    name == ld.atom_dexpr && return mk_sym(T, Symbol(\"\\$expr\"))\n    return _atom_value(ld, name)"),
+    dict(id="FLIAPI-R2 PL_functor_arity answers one more (aimed by PL_functor_arity: 3, 0, 2, the meter)", file=F, targets=TS,
+         old="arity = arityFunctor(ld.functors, f)\n    (arity < 0 || arity > typemax(Int32)) && error(\"Arity out of range: $arity\")  # VALID_INT_ARITY(arity)",
+         new="arity = arityFunctor(ld.functors, f) + 1\n    (arity < 0 || arity > typemax(Int32)) && error(\"Arity out of range: $arity\")  # VALID_INT_ARITY(arity)"),
+    dict(id="FLIAPI-C1 PL_atom_chars drops the last byte (aimed by PL_atom_chars: abc, the euro sign)", file=F, targets=TS,
+         old="return Vector{UInt8}(view(x.name, 1:(x.length)))\nend\n\n# PORT: pl-fli.c PL_atom_nchars",
+         new="return Vector{UInt8}(view(x.name, 1:(x.length - 1)))\nend\n\n# PORT: pl-fli.c PL_atom_nchars"),
+    dict(id="FLIAPI-C2 PL_atom_nchars reads a wide atom as bytes (aimed by PL_atom_nchars: the euro sign)", file=F, targets=TS,
+         old="x.type === ucs_atom && return nothing\n    return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length)",
+         new="false && return nothing\n    return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length)"),
+    dict(id="FLIAPI-C3 PL_atom_nchars counts one byte too many (aimed by PL_atom_nchars: abc, 3)", file=F, targets=TS,
+         old="return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length)",
+         new="return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length + 1)"),
+    dict(id="FLIAPI-W1 PL_atom_wchars of a narrow atom has no terminating 0 (aimed by PL_atom_wchars: abc, the Latin-1 e)", file=F, targets=TS,
+         old="push!(ws, UInt32(0))                                # addBuffer(b, 0, wchar_t)",
+         new="nothing                                # addBuffer(b, 0, wchar_t)"),
+    dict(id="FLIAPI-W2 PL_atom_wchars counts a wide atom in bytes (aimed by PL_atom_wchars: the euro sign, 1)", file=F, targets=TS,
+         old="n = x.length ÷ sizeof(UInt32)",
+         new="n = x.length"),
+    dict(id="FLIAPI-W3 PL_atom_wchars widens a non-textual atom (aimed by PL_atom_wchars: the empty list)", file=F, targets=TS,
+         old="elseif (x.type.flags & PL_BLOB_TEXT) != 0",
+         new="elseif true"),
+    dict(id="FLIAPI-G1 PL_get_atom_chars reads a non-textual atom (aimed by PL_get_atom_chars: the empty list)", file=F, targets=TS,
+         old="if (a.type.flags & PL_BLOB_TEXT) != 0               # ison(a->type, PL_BLOB_TEXT)",
+         new="if true               # ison(a->type, PL_BLOB_TEXT)"),
+    dict(id="FLIAPI-B1 PL_atom_mbchars raises no exception for CVT_EXCEPTION (aimed by PL_atom_mbchars: type_error of [])", file=F, targets=TS,
+         old="if (flags & CVT_EXCEPTION) != 0\n            t = PL_new_term_ref(ld)",
+         new="if (flags & CVT_EXCEPTION) == 0\n            t = PL_new_term_ref(ld)"),
+    dict(id="FLIAPI-B2 PL_atom_mbchars counts one byte too many (aimed by PL_atom_mbchars: abc, 3)", file=F, targets=TS,
+         old="return (text.text, text.length)\nend",
+         new="return (text.text, text.length + 1)\nend"),
+    dict(id="FLIAPI-B3 get_atom_ptr_text counts a wide atom's length in bytes (aimed by PL_atom_mbchars: the euro sign)", file=F, targets=TS,
+         old="a.length ÷ sizeof(UInt32), ENC_WCHAR, true)",
+         new="a.length, ENC_WCHAR, true)"),
+    dict(id="FLIAPI-B4 get_atom_ptr_text reads a non-textual atom as text (aimed by PL_atom_mbchars: the empty list)", file=F, targets=TS,
+         old="(a.type.flags & PL_BLOB_TEXT) == 0 && return nothing",
+         new="false && return nothing"),
 ]

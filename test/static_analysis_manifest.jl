@@ -1764,6 +1764,18 @@ function _manifest_index(T)
         (LK.PL_get_compound_name_arity, Tuple{LD, Int}, false),
         (LK.PL_unify_int64_ex, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_pointer, Tuple{LD, Int, UInt}, false),
+        # FLI-API group 2 (pl-fli.c): atoms and functors
+        (LK.PL_new_atom, Tuple{LD, Vector{UInt8}}, false),
+        (LK.PL_new_atom_mbchars, Tuple{LD, Int, Int, Vector{UInt8}}, false),
+        (LK.PL_new_functor_sz, Tuple{LD, T, Int}, false),
+        (LK.PL_new_functor, Tuple{LD, T, Int}, false),
+        (LK.PL_functor_name, Tuple{LD, UInt64}, false),
+        (LK.PL_functor_arity, Tuple{LD, UInt64}, false),
+        (LK.PL_atom_chars, Tuple{LD, T}, false),
+        (LK.PL_atom_nchars, Tuple{LD, T}, false),
+        (LK.PL_atom_wchars, Tuple{LD, T}, false),
+        (LK.PL_atom_mbchars, Tuple{LD, T, UInt32}, false),
+        (LK.PL_get_atom_chars, Tuple{LD, Int}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
