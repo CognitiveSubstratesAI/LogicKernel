@@ -794,7 +794,15 @@ end
             @test _gs_counter_problems(st, sw, M, n0) == String[]
             @test st.local_marked == 0
             @test all(i -> (ld.frames[i].flags & LK.FR_MARKED) == 0, 1:(ld.nframes))
-            gc_atom = _gs_atom(ld, "garbage_collected")
+            # a PORT correction (ALLOC-FIX a, D-0971 (2)): the kernel pinned the text atom `garbage_collected`; upstream
+            # (swipl-devel @ 18168e629eab) writes the built-in atom, pl-gc.c:3147 sweep_frame `*sp = ATOM_garbage_collected;`
+            # (and :1615 early_reset_vars `*tard = ATOM_garbage_collected;`), src/ATOMS:404 `A garbage_collected "<garbage_collected>"`
+            gc_atom = LK.ATOM_garbage_collected
+            @test gc_atom == LK.builtin_atom("garbage_collected")
+            @test LK._BUILTIN_ATOMS[findfirst(
+                ==("garbage_collected"), LK._BUILTIN_ATOM_IDS
+            )] == "<garbage_collected>"
+            @test gc_atom != _gs_atom(ld, "garbage_collected")          # not the text atom the kernel wrote before
             @test all(idx -> (ld.slots[idx] & LK.VALUE_MASK) == gc_atom, M.garb)
             # restore, then sweep_frame with NOTHING marked: every global-reference argument becomes garbage_collected
             _gs_restore!(ld, sn0)

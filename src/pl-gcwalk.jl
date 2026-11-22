@@ -294,6 +294,12 @@ function mergeTrailedAssignments(
     return nothing
 end
 
+# PORT: pl-atom.ih ATOM_garbage_collected (generated from src/ATOMS @ 18168e629eab, line 404: `A garbage_collected
+# "<garbage_collected>"`): the word pl-gc.c writes into a slot whose term was collected (early_reset_vars, :1615;
+# sweep_frame, :3147). A built-in atom, so one word in every database and nothing allocated at the write.
+"The atom word `<garbage_collected>` (pl-atom.ih `ATOM_garbage_collected`): the same in every database."
+const ATOM_garbage_collected = builtin_atom("garbage_collected")
+
 # PORT: pl-gc.c early_reset_vars
 # DIVERGES: heights where upstream has addresses: `gKeep` is the first free cell, `max(frozen_bar,
 # globaltop) + 1`, so upstream's `tard >= gKeep` is `tard > gk` and `tard > gKeep` is `tard > gk + 1`
@@ -334,7 +340,7 @@ function early_reset_vars(
             else
                 if isAttVar(ld.gstack[gp]) && ld.attvar_call_residue_vars_count != 0 &&
                     ld.attvar_attvars != 0
-                    ld.gstack[tard] = _atom_word!(ld, mk_sym(T, :garbage_collected))   # see (*)
+                    ld.gstack[tard] = ATOM_garbage_collected       # see (*)
                     domark(ld, st, tard)
                     keep = true
                 else

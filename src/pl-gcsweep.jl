@@ -419,7 +419,8 @@ end
 
 # PORT: pl-gc.c sweep_frame
 # DIVERGES: `fr` is an index into `ld.frames`; there is no atom GC (ruling D5), so no atom is volatile and an
-# unmarked slot is replaced only when it references the global stack (by `garbage_collected`).
+# unmarked slot is replaced only when it references the global stack (by `ATOM_garbage_collected`, the atom
+# `<garbage_collected>`, as upstream).
 "Sweep the first `slots` argument/variable slots of frame `fr` (pl-gc.c)."
 function sweep_frame(
     ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, fr::Int, slots::Int
@@ -431,7 +432,7 @@ function sweep_frame(
         if is_marked(w)
             _gcs_sweep_marked_slot(ld, st, sw, idx)
         elseif _gc_is_global_ref(w)
-            ld.slots[idx] = _atom_word!(ld, mk_sym(T, :garbage_collected))
+            ld.slots[idx] = ATOM_garbage_collected      # *sp = ATOM_garbage_collected
         end
     end
     return nothing
