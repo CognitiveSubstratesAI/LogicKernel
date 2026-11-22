@@ -692,6 +692,7 @@ ck_ae_destroy(ok) :- retract(ev_keep(E)), engine_destroy(E).
 ck_ae_listen(ok) :- prolog_listen(thread_exit, ev_hook, []).
 ck_ae_listen_fail(ok) :- prolog_listen(thread_exit, ev_hook_fail, []).
 ck_ae_log(N) :- findall(T, evlog(T), L), length(L, N).
+ck_ae_new_alias(ok) :- engine_create(X, member(X,[a,b]), E, [alias(foo)]), assertz(ev_keep(E)).
 """
 
 function _en_ae_load()
@@ -781,6 +782,69 @@ _en_ae_fn(log, tag) = (g, l, c) -> (push!(log, (tag, c, _en_ae_place(l))); nothi
         @test log == [(:b, true, :engine)]
         @test _en_ask(gd, ld, "ck_ae_log") == _en_ae_nlog(want ? 1 : 0)
     end
+end
+
+# the C API on thread identifiers (pl-thread.c PL_thread_self, PL_unify_thread_id, PL_get_thread_id_ex, PL_get_thread_alias): C-reachable only,
+# the expected values are read from the C (blind: correct on the lane, never the kernel)
+@testset "the thread identifier API of the C interface (white-box, read from the C)" begin
+    gd, ld = _en_ae_load()
+    selfs = Int[]
+    @test LK.PL_thread_at_exit(gd, ld, (g, l, c) -> (push!(selfs, LK.PL_thread_self(l)); nothing), :s, true)
+    @test LK.PL_thread_self(ld) == 1                                    # the main thread
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    info = gd.thread.infos[2]
+    @test LK.PL_thread_self(info.thread_data) == 2                      # inside the engine
+    # PL_unify_thread_id: an engine without an alias is its handle, main is `main`, a non-thread is -1
+    t = LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_thread_id(gd, ld, t, 2) == 1
+    a = LK.PL_get_atom(ld, t)
+    @test a !== nothing && sym_key(a) == sym_key(info.symbol)
+    t1 = LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_thread_id(gd, ld, t1, 1) == 1
+    @test sym_key(LK.PL_get_atom(ld, t1)) == sym_key(_ens(:main))
+    @test LK.PL_unify_thread_id(gd, ld, LK.PL_new_term_ref(ld), 0) == -1
+    @test LK.PL_unify_thread_id(gd, ld, LK.PL_new_term_ref(ld), 3) == -1
+    t2 = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, t2, _ens(:other))
+    @test LK.PL_unify_thread_id(gd, ld, t2, 2) == 0                     # a failed unification is 0, not -1
+    # PL_get_thread_id_ex: handle, integer, `main`, and the errors
+    @test LK.PL_get_thread_id_ex(gd, ld, t) == 2
+    t3 = LK.PL_new_term_ref(ld)
+    LK.PL_put_intptr(ld, t3, 2)
+    @test LK.PL_get_thread_id_ex(gd, ld, t3) == 2
+    @test LK.PL_get_thread_id_ex(gd, ld, t1) == 1
+    @test LK.PL_exception(ld, 0) == 0
+    t4 = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, t4, _ens(:nosuch))
+    @test LK.PL_get_thread_id_ex(gd, ld, t4) === nothing
+    @test LK.PL_exception(ld, 0) != 0                                   # existence_error(thread, nosuch)
+    LK.PL_clear_exception(ld)
+    t5 = LK.PL_new_term_ref(ld)
+    LK.PL_put_float(ld, t5, 2.5)
+    @test LK.PL_get_thread_id_ex(gd, ld, t5) === nothing
+    @test LK.PL_exception(ld, 0) != 0                                   # type_error(thread, 2.5)
+    LK.PL_clear_exception(ld)
+    # PL_get_thread_alias: none for an engine without one, `main` for 0 on the main thread and for 1, none outside the table
+    @test LK.PL_get_thread_alias(gd, ld, 2) === nothing
+    @test sym_key(LK.PL_get_thread_alias(gd, ld, 0)) == sym_key(_ens(:main))
+    @test sym_key(LK.PL_get_thread_alias(gd, ld, 1)) == sym_key(_ens(:main))
+    @test LK.PL_get_thread_alias(gd, ld, 7) === nothing
+    @test LK.PL_get_thread_alias(gd, ld, -1) === nothing
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test selfs == [2]
+    @test LK.PL_unify_thread_id(gd, ld, LK.PL_new_term_ref(ld), 2) == -1    # a destroyed engine is no thread
+    @test LK.PL_get_thread_alias(gd, ld, 2) === nothing
+    # an engine with an alias: its alias is its identifier
+    @test _en_ask(gd, ld, "ck_ae_new_alias") == _en_ok_line("ae_new_alias")
+    @test sym_key(LK.PL_get_thread_alias(gd, ld, 3)) == sym_key(_ens(:foo))
+    t6 = LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_thread_id(gd, ld, t6, 3) == 1
+    @test sym_key(LK.PL_get_atom(ld, t6)) == sym_key(_ens(:foo))
+    t7 = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, t7, _ens(:foo))
+    @test LK.PL_get_thread_id_ex(gd, ld, t7) == 3
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test selfs == [2, 3]
 end
 
 @testset "engine_yield/1 rows (need the VM yield: FAILS until the VM step lands)" begin
