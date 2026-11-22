@@ -431,6 +431,284 @@ function pl_message_queue_set2_va(
     return PL_type_error(ld, "compound", A2) ? FTRUE : FFALSE
 end
 
+# ── SENDING AND READING (pl-thread.c:4580-5470 and :6130-6210 at the pin) ──────────────────────────────────────────────────
+
+# PORT: pl-thread.c timeout_options
+# DIVERGES: `PL_scan_options` has no `OPT_DOUBLE` (src/os/pl-option.jl): `process_deadline_options` scans the list itself, for these three
+# names. An option no name matches is ignored (the `unknown_option` flag is not read: swipl's default is `ignore`).
+const _DEADLINE_OPTION_NAMES = (:timeout, :deadline, :signals)
+
+# PORT: pl-thread.c process_deadline_options
+# DIVERGES: returns -1 for upstream's `false` (an error raised, or the call fails: a deadline in the past, a negative timeout), 0 when the
+# options give no deadline and 1 when they give one (`*pts` set): the deadline itself is not needed, a wait with one fails at once (see
+# the file header). `signals` is checked as upstream does (a Boolean, or a float above 0, else `domain_error(signal_option, S)`), before the
+# deadline; its value, the retry interval, is not kept: no signal arrives while the kernel waits. The wall clock is `WallTime`.
+"Scan the options of thread_send_message/3 and thread_get_message/3: -1 to fail, 0 for no deadline, 1 for a deadline (pl-thread.c)."
+function process_deadline_options(ld::PL_local_data{T}, options::term_t)::Int where {T}
+    tmo = Inf
+    dlo = Inf
+    sigo = 0
+    av = PL_new_term_refs(ld, 4)
+    head, tmp, val, list = av + 0, av + 1, av + 2, av + 3
+    PL_put_term(ld, list, options)
+    count = 0
+    while PL_get_list(ld, list, head, list)
+        if count == 1000
+            if !is_acyclic_cells(ld, -(list + 1))
+                PL_error(ld, ERR_TYPE, mk_sym(T, :list), options)
+                return -1
+            end
+        end
+        count += 1
+
+        na = PL_get_name_arity(ld, head)
+        name = mk_nil(T)
+        itemerror = na === nothing
+        if !itemerror
+            name, arity = na
+            if sym_key(name) == sym_key(mk_sym(T, :(=))) && arity == 2
+                _PL_get_arg(ld, 1, head, tmp)
+                a = PL_get_atom(ld, tmp)
+                if a === nothing
+                    itemerror = true
+                else
+                    name = a
+                    _PL_get_arg(ld, 2, head, val)
+                end
+            elseif arity == 1
+                _PL_get_arg(ld, 1, head, val)
+            elseif arity == 0
+                PL_put_atom(ld, val, mk_sym(T, :true))              # a bare name is `true`: a type error for the two floats
+            else
+                itemerror = true
+            end
+        end
+        if itemerror
+            PL_error(ld, ERR_TYPE, mk_sym(T, :option), head)
+            return -1
+        end
+
+        k = sym_key(name)
+        if k == sym_key(mk_sym(T, :timeout)) || k == sym_key(mk_sym(T, :deadline))
+            d = PL_get_float_ex(ld, val)
+            d === nothing && return -1
+            if k == sym_key(mk_sym(T, :timeout))
+                tmo = d
+            else
+                dlo = d
+            end
+        elseif k == sym_key(mk_sym(T, :signals))
+            sigo = PL_copy_term_ref(ld, val)                # can't reuse anymore
+        end
+    end
+    PL_get_nil_ex(ld, list) || return -1
+
+    if sigo != 0
+        if PL_get_bool(ld, sigo) === nothing
+            sigf = PL_get_float(ld, sigo)
+            if !(sigf !== nothing && sigf > 0.0)
+                PL_domain_error(ld, "signal_option", sigo)
+                return -1
+            end
+        end
+    end
+
+    has_deadline = false
+    if dlo != Inf
+        dlo < WallTime() && return -1                       # deadline in the past: FAIL
+        has_deadline = true
+    end
+    if tmo != Inf
+        tmo < 0.0 && return -1                              # negative timeout: FAIL
+        has_deadline = true                                 # 0: scan once, > 0: now + timeout
+    end
+    return has_deadline ? 1 : 0
+end
+
+# PORT: pl-thread.c thread_send_message
+# DIVERGES: see the file header: a full queue (`max_size > 0 && size >= max_size`) with a deadline fails at once, without one it is the
+# blocking send of upstream's `dispatch_cond_wait(queue, QUEUE_WAIT_DRAIN, ...)`, which the kernel refuses (no other thread can drain it).
+# The message is recorded before the queue is looked up, as upstream's `create_thread_message` is.
+"Send the term `msgterm` to the queue `queue` (a queue, thread name or id); a deadline fails a send to a full queue at once (pl-thread.c)."
+function thread_send_message(
+    ld::PL_local_data{T}, queue::term_t, msgterm::term_t, deadline::Bool
+)::Bool where {T}
+    msg = PL_record(ld, msgterm)                        # create_thread_message
+    q = get_message_queue(ld, queue)
+    q === nothing && return false
+
+    if q.max_size > 0 && length(q.messages) >= q.max_size
+        deadline && return false                        # MSG_WAIT_TIMEOUT
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :thread_send_message),
+                "thread_send_message/N: a full queue with no other thread to drain it (blocking send)", "TH1"
+            )
+        )
+    end
+    push!(q.messages, msg)                              # queue_message: the message goes to the tail
+    return true
+end
+
+# PORT: pl-thread.c thread_send_message
+# (PRED_IMPL("thread_send_message", 2, thread_send_message, PL_FA_ISO))
+"`thread_send_message(+QueueOrThreadId, +Term)`: add a copy of `Term` to the queue (pl-thread.c)."
+function pl_thread_send_message2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return thread_send_message(ld, PL__t0, PL__t0 + 1, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c thread_send_message
+# (PRED_IMPL("thread_send_message", 3, thread_send_message, 0); PRED_DEF flags `PL_FA_ISO`, pl-thread.c:8885)
+"`thread_send_message(+QueueOrThreadId, +Term, +Options)`: as thread_send_message/2 with `timeout`, `deadline` and `signals` options (pl-thread.c)."
+function pl_thread_send_message3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    d = process_deadline_options(ld, PL__t0 + 2)
+    d < 0 && return FFALSE
+    return thread_send_message(ld, PL__t0, PL__t0 + 1, d == 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c get_message
+# DIVERGES: see the file header: ONE pass over the messages, in arrival order, of which the first that unifies with `msg` is taken out; the
+# end of the pass is upstream's `dispatch_cond_wait(queue, QUEUE_WAIT_READ, ...)`: with a deadline it times out at once (false, the frame
+# discarded: `MSG_WAIT_TIMEOUT`), without one it never ends, which the kernel refuses (a refusal, step TH1). `key` and `sequence_id` are omitted. A queue is never
+# `destroyed` here (`get_message_queue` raises for one).
+"Take the first message of `queue` that unifies with `msg`; false when there is none (and a deadline), an exception stops the pass (pl-thread.c)."
+function get_message!(
+    ld::PL_local_data{T}, queue::message_queue{T}, msg::term_t, deadline::Bool
+)::Bool where {T}
+    fid = PL_open_foreign_frame(ld)
+    i = 1
+    while i <= length(queue.messages)
+        tmp = PL_new_term_ref(ld)
+        if !PL_recorded(ld, queue.messages[i], tmp)
+            PL_discard_foreign_frame(ld, fid)
+            return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+        end
+
+        rc = PL_unify(ld, msg, tmp)
+        if rc
+            ex = PL_new_term_ref(ld)
+            rc = foreignWakeup(ld, ex)
+            if !rc && !PL_is_variable(ld, ex)
+                PL_raise_exception(ld, ex)
+            end
+        end
+
+        if rc
+            deleteat!(queue.messages, i)                # the message leaves the queue
+            PL_close_foreign_frame(ld, fid)
+            return true
+        elseif ld.exception_term != 0
+            PL_close_foreign_frame(ld, fid)
+            return false
+        end
+
+        PL_rewind_foreign_frame(ld, fid)
+        i += 1
+    end
+
+    PL_discard_foreign_frame(ld, fid)
+    deadline && return false                            # MSG_WAIT_TIMEOUT
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :thread_get_message),
+            "thread_get_message/N: an empty queue, or one with no matching message, and no other thread to send (blocking wait)",
+            "TH1"
+        )
+    )
+end
+
+# PORT: pl-thread.c thread_get_message
+# DIVERGES: the queue is looked up once (no `MSG_WAIT_INTR` retry: no signal arrives while the kernel waits).
+"Take the first message of the queue `queue` names that unifies with `msg` (pl-thread.c)."
+function thread_get_message(
+    ld::PL_local_data{T}, queue::term_t, msg::term_t, deadline::Bool
+)::Bool where {T}
+    q = get_message_queue(ld, queue)
+    q === nothing && return false
+    return get_message!(ld, q, msg, deadline)
+end
+
+# PORT: pl-thread.c thread_get_message
+# (PRED_IMPL("thread_get_message", 1, thread_get_message, PL_FA_ISO))
+"`thread_get_message(?Term)`: take the first message of the calling thread's queue that unifies with `Term` (pl-thread.c)."
+function pl_thread_get_message1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    q = _thread_queue(_query_gd(ld), PL_thread_self(ld))    # LD->thread.messages
+    return get_message!(ld, q, PL__t0, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c thread_get_message
+# (PRED_IMPL("thread_get_message", 2, thread_get_message, 0); PRED_DEF flags `PL_FA_ISO`)
+"`thread_get_message(+Queue, ?Term)`: take the first message of `Queue` that unifies with `Term` (pl-thread.c)."
+function pl_thread_get_message2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return thread_get_message(ld, PL__t0, PL__t0 + 1, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c thread_get_message
+# (PRED_IMPL("thread_get_message", 3, thread_get_message, 0); PRED_DEF flags `PL_FA_ISO`)
+"`thread_get_message(+Queue, ?Term, +Options)`: as thread_get_message/2 with `timeout`, `deadline` and `signals` options (pl-thread.c)."
+function pl_thread_get_message3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    d = process_deadline_options(ld, PL__t0 + 2)
+    d < 0 && return FFALSE
+    return thread_get_message(ld, PL__t0, PL__t0 + 1, d == 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c peek_message
+# DIVERGES: the foreign frame is closed or discarded on every exit; no `key` (see the file header).
+"Whether a message of `queue` unifies with `msg`, which stays in the queue (pl-thread.c)."
+function peek_message(
+    ld::PL_local_data{T}, queue::message_queue{T}, msg::term_t
+)::Bool where {T}
+    tmp = PL_new_term_ref(ld)
+    fid = PL_open_foreign_frame(ld)
+    for rec in queue.messages
+        if !PL_recorded(ld, rec, tmp)
+            PL_discard_foreign_frame(ld, fid)
+            return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+        end
+        if PL_unify(ld, msg, tmp)
+            PL_close_foreign_frame(ld, fid)
+            return true
+        elseif ld.exception_term != 0
+            PL_close_foreign_frame(ld, fid)
+            return false
+        end
+        PL_rewind_foreign_frame(ld, fid)
+    end
+    PL_discard_foreign_frame(ld, fid)
+    return false
+end
+
+# PORT: pl-thread.c thread_peek_message_1
+# (PRED_IMPL("thread_peek_message", 1, thread_peek_message_1, PL_FA_ISO))
+"`thread_peek_message(?Term)`: whether a message of the calling thread's queue unifies with `Term`, which stays (pl-thread.c)."
+function pl_thread_peek_message1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    q = _thread_queue(_query_gd(ld), PL_thread_self(ld))
+    return peek_message(ld, q, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c thread_peek_message_2
+# (PRED_IMPL("thread_peek_message", 2, thread_peek_message_2, 0); PRED_DEF flags `PL_FA_ISO`)
+"`thread_peek_message(+Queue, ?Term)`: whether a message of `Queue` unifies with `Term`, which stays (pl-thread.c)."
+function pl_thread_peek_message2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    q = get_message_queue(ld, PL__t0)
+    q === nothing && return FFALSE
+    return peek_message(ld, q, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
 # PORT: pl-thread.c BeginPredDefs as PL_predicates_from_queue (the message queue entries of pl-thread.c's table, pl-thread.c:8870-8893)
 # (message_queue_create/1 and /2, message_queue_set/2 and is_message_queue/1 flags 0, message_queue_destroy/1 `PL_FA_ISO`, message_queue_property/2
 # `NDET|PL_FA_ISO`)
@@ -445,5 +723,12 @@ const PL_predicates_from_queue = (
         PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
     ),
     PL_extension("message_queue_set", 2, pl_message_queue_set2_va, PL_FA_VARARGS),
-    PL_extension("is_message_queue", 1, pl_is_message_queue1_va, PL_FA_VARARGS)
+    PL_extension("is_message_queue", 1, pl_is_message_queue1_va, PL_FA_VARARGS),
+    PL_extension("thread_send_message", 2, pl_thread_send_message2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_send_message", 3, pl_thread_send_message3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_get_message", 1, pl_thread_get_message1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_get_message", 2, pl_thread_get_message2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_get_message", 3, pl_thread_get_message3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_peek_message", 1, pl_thread_peek_message1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_peek_message", 2, pl_thread_peek_message2_va, PL_FA_ISO | PL_FA_VARARGS)
 )

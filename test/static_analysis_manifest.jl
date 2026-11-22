@@ -2659,9 +2659,18 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_message_queue_create1_va, LK.pl_message_queue_create2_va,
                 LK.pl_message_queue_destroy1_va, LK.pl_message_queue_property2_va,
-                LK.pl_message_queue_set2_va, LK.pl_is_message_queue1_va
+                LK.pl_message_queue_set2_va, LK.pl_is_message_queue1_va,
+                LK.pl_thread_send_message2_va, LK.pl_thread_send_message3_va,
+                LK.pl_thread_get_message1_va, LK.pl_thread_get_message2_va,
+                LK.pl_thread_get_message3_va, LK.pl_thread_peek_message1_va,
+                LK.pl_thread_peek_message2_va
             )
         ]...,
+        (LK.process_deadline_options, Tuple{LD, Int}, false),
+        (LK.thread_send_message, Tuple{LD, Int, Int, Bool}, false),
+        (LK.get_message!, Tuple{LD, LK.message_queue{T}, Int, Bool}, false),
+        (LK.thread_get_message, Tuple{LD, Int, Int, Bool}, false),
+        (LK.peek_message, Tuple{LD, LK.message_queue{T}, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
         (LK.is_dict_functor, Tuple{LD, UInt64}, false),
