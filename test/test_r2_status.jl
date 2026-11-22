@@ -540,6 +540,8 @@ end
     # 146 -> 147 (INT-MERGE-14, wip/int-g1 + wip/c29-tty), D-0083 disclosure: DERIVED from the diff of docs/r2_owners.tsv against the tip before this merge, NOT RUN: +2 refusal rows with an owner
     # (src/os/pl-os.jl PushTty and PopTty, TOP1b, both sites present), -1 (the `indexed(L)` refusal row of pl_get_predicate_attribute3_va went: the branch ports it). A LOWER BOUND, as above; the lane measures.
     # 147 -> 148 (INT-MERGE-14, wip/int-g1 + wip/termhash-reg), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: +1 refusal row with an owner (src/pl-termhash.jl `_term_hash_arg`: the hash of a cyclic term, R2; the site is present).
+    # 148 -> 148 (INT-MERGE-15, wip/int-g1 + wip/b1-preds), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: -1 (the `pred:thread_statistics/3` owner line went: the branch ports it), +1 refusal row with
+    # an owner (src/pl-thread.jl `pl_thread_statistics`: the main thread named from an engine, TH1; the site is present): net 0. A LOWER BOUND as above; the lane measures.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
         count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 148
 end

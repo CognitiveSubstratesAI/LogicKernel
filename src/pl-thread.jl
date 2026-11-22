@@ -1461,6 +1461,50 @@ function pl_set_thread(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t 
     return PL_type_error(ld, "property", A2) ? FTRUE : FFALSE
 end
 
+# PORT: pl-thread.c thread_statistics
+# (PRED_IMPL("thread_statistics", 3, thread_statistics, 0), pl-thread.c:7416-7459 at the pin)
+# DIVERGES: no `L_THREAD` lock (one OS thread). The statistics of an engine are those of its local data (`info.thread_data`); the main thread's local
+# data is reachable only from the main thread itself (`_thread_ld`), so the main thread named from an engine is refused by name, owner TH1.
+# `ThreadCPUTime` is the clock of the calling thread (an engine runs on its caller's), so `cputime`, `runtime` and `system_time` of an engine are
+# read from that clock. `warnings` and `errors` are 0: `ld_statistics` does not count them (src/pl-error.jl `$inc_message_count`). The term references
+# `A2` and `A3` are the calling thread's, the statistics the target's: `pl_statistics_ld(ld, k, value, tld)`.
+"`thread_statistics(+Thread, +Key, -Value)`: `statistics/2` on the thread `Thread` (an engine or the main thread) (pl-thread.c)."
+function pl_thread_statistics(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tid = get_thread(gd, ld, A1, true)
+    tid == 0 && return FFALSE
+    info = _thread_info_of(gd, tid)
+    tld = _thread_ld(ld, info)
+    if tld === nothing
+        info === nothing && throw(
+            NotPortedError{T}(
+                mk_sym(T, :thread_statistics), "thread_statistics/3: the main thread from an engine",
+                "TH1"
+            )
+        )
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :statistics), mk_sym(T, :thread), A1
+        ) ? FTRUE : FFALSE
+    end
+
+    k = PL_get_atom(ld, A2)                                 # not an atom: k = 0
+    if k !== nothing
+        if _thr_is(k, :heapused)
+            tld = ld
+        elseif _thr_is(k, :cputime) || _thr_is(k, :runtime)
+            tld.statistics.user_cputime = ThreadCPUTime(CPU_USER)
+        elseif _thr_is(k, :system_time)
+            tld.statistics.system_cputime = ThreadCPUTime(CPU_SYSTEM)
+        elseif _thr_is(k, :warnings) || _thr_is(k, :errors)
+            return PL_unify_integer(ld, A3, 0) ? FTRUE : FFALSE
+        end
+    end
+
+    return pl_statistics_ld(ld, A2, A3, tld) ? FTRUE : FFALSE
+end
+
 # PORT: pl-thread.c debug_reset_from_class
 # (PRED_IMPL("debug_reset_from_class", 0, debug_reset_from_class, 0), pl-thread.c:3145-3150 at the pin)
 "`debug_reset_from_class`: set the debug mode of the calling thread from its class (pl-thread.c)."
