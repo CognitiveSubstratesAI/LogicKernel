@@ -544,3 +544,157 @@ function pl_engine_fetch(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
         )
     ) ? FTRUE : FFALSE
 end
+
+# ---- ENGINES: engine_next/2, engine_post/3 AND THE ANSWER (TH1 engines, pl-thread.c at 18168e62) ----
+
+# PORT: pl-thread.c YIELD_ENGINE_YIELD
+# (#define YIELD_ENGINE_YIELD 256, pl-thread.c:4290: the code `engine_yield/1` makes `PL_next_solution` return)
+const YIELD_ENGINE_YIELD = 256
+
+# PORT: pl-thread.c thread_symbol
+# DIVERGES: the database is an argument; the main thread has no record, so its symbol is its alias `main`.
+"The symbol the posting thread of an engine call is known by: the engine's caller thread inside an engine, else its own (pl-thread.c)."
+function thread_symbol(
+    gd::PL_global_data{T}, ld::PL_local_data{T}
+)::Union{Nothing, T} where {T}
+    info = ld.thread_info
+    info === nothing && return mk_sym(T, :main)
+    if info.is_engine
+        th = symbol_thread_handle(gd, info.symbol)::thread_handle{T}
+        return th.interactor_thread
+    end
+    return info.symbol
+end
+
+# PORT: pl-thread.c interactor_post_answer_nolock
+# (pl-thread.c:4293-4389 at the pin; `activate_interactor` = the engine's record gets its thread id, `suspend_interactor` = it loses it)
+# DIVERGES: the database and the caller's local data are arguments, the engine's local data is the one of its record (`WITH_LD`), the
+# answer travels through `PL_record` (made in the engine's local data) and `PL_recorded` (read in the caller's): a record holds its own
+# values, no `duplicate_term`. The engine is marked `running` while its query runs (see `interactor_post_answer`). The default case
+# (an unknown yield code) raises in the caller's local data and the engine stays active (upstream raises in the engine's, unsuspended).
+"Run the engine `th` to its next answer and unify it with `term`; `package` is the term to hand to it (pl-thread.c)."
+function interactor_post_answer_nolock(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, th::thread_handle{T}, ref::term_t,
+    package::Union{Nothing, term_t}, term::term_t
+)::Bool where {T}
+    if package !== nothing && th.interactor_package !== nothing
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :post_to), mk_sym(T, :engine), ref
+        )
+    end
+
+    if th.interactor_query == 0
+        if (th.flags & TH_INTERACTOR_NOMORE) != 0
+            th.flags &= ~TH_INTERACTOR_NOMORE
+            th.flags |= TH_INTERACTOR_DONE
+            return false
+        end
+        return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :engine), ref)
+    end
+
+    if package !== nothing
+        th.interactor_package = PL_record(ld, package)
+    end
+
+    info = th.info::PL_thread_info{T}
+    eld = info.thread_data::PL_local_data{T}
+    info.has_tid = true                             # activate_interactor
+    copy_debug_mode(eld, ld)
+    q = th.interactor_query
+    th.running = true
+    rc = try
+        PL_next_solution(gd, eld, q)
+    finally
+        th.running = false
+    end
+
+    r = nothing                                     # the answer, recorded in the engine's local data
+    if rc == PL_S_TRUE
+        r = PL_record(eld, th.interactor_argv)
+    elseif rc == PL_S_LAST
+        r = PL_record(eld, th.interactor_argv)
+        PL_close_query(eld, q)
+        th.interactor_query = 0
+        done_interactor!(gd, th)
+        th.flags |= TH_INTERACTOR_NOMORE
+    elseif rc == PL_S_FALSE
+        PL_close_query(eld, q)
+        th.interactor_query = 0
+        done_interactor!(gd, th)
+        info.has_tid = false                        # suspend_interactor
+        return false
+    elseif rc == PL_S_EXCEPTION
+        er = PL_record(eld, PL_exception(eld, q))
+        PL_close_query(eld, q)
+        th.interactor_query = 0
+        done_interactor!(gd, th)
+        info.has_tid = false                        # suspend_interactor
+        ex = PL_new_term_ref(ld)
+        ok = ex != 0 && PL_recorded(ld, er, ex) && PL_raise_exception(ld, ex)
+        PL_erase(er)
+        return ok
+    elseif rc == YIELD_ENGINE_YIELD                 # engine_yield/1
+        # DIVERGES (TH1): `PL_yielded` (pl-wam.c:3331) and the resumable yield of the VM (I_YIELD, pl-vmi.c:2410-2448; resume,
+        # pl-wam.c:3870-3910) are the VM step's, an engine-core step of their own; until it lands `rc == 256` cannot occur and a
+        # query that returns it is refused by name.
+        info.has_tid = false
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :engine_yield), "PL_yielded (pl-wam.c:3331), the VM yield", "TH1"
+            )
+        )
+    else
+        info.has_tid = false
+        ex = PL_new_term_ref(ld)
+        return ex != 0 && PL_put_integer(ld, ex, rc) &&
+               PL_domain_error(ld, "engine_yield_code", ex)
+    end
+
+    info.has_tid = false                            # suspend_interactor
+    t = PL_new_term_ref(ld)
+    ok = t != 0 && PL_recorded(ld, r::record{T}, t) && PL_unify(ld, term, t)
+    PL_erase(r::record{T})
+    return ok
+end
+
+# PORT: pl-thread.c interactor_post_answer
+# (pl-thread.c:4402-4423 at the pin)
+# DIVERGES (TH1): a call to an engine that is already running (an engine that calls `engine_next/2` on itself, or on the engine that is
+# calling it) is `permission_error(resume, engine, Engine)`, made BEFORE the caller's symbol is set (the nested call would reset it);
+# upstream waits for the engine's mutex, which the running call holds (a deadlock on one thread). The mutex itself does not exist here.
+"Post `package` (if any) to the engine `ref` names and unify its next answer with `term` (pl-thread.c)."
+function interactor_post_answer(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ref::term_t,
+    package::Union{Nothing, term_t}, term::term_t
+)::Bool where {T}
+    th = get_interactor(gd, ld, ref, true)
+    th === nothing && return false
+    if th.running                                   # DIVERGES (TH1): upstream hangs on the mutex
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :resume), mk_sym(T, :engine), ref
+        )
+    end
+    th.interactor_thread = thread_symbol(gd, ld)
+    rc = try
+        interactor_post_answer_nolock(gd, ld, th, ref, package, term)
+    finally
+        th.interactor_thread = nothing
+    end
+    return rc
+end
+
+# PORT: pl-thread.c engine_next
+# (PRED_IMPL("engine_next", 2, engine_next, 0), pl-thread.c:4428-4433 at the pin)
+"`engine_next(+Engine, -Term)`: run the engine to its next answer (pl-thread.c)."
+function pl_engine_next(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t where {T}
+    return interactor_post_answer(_query_gd(ld), ld, A1, nothing, A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c engine_post
+# (PRED_IMPL("engine_post", 3, engine_post, 0), pl-thread.c:4465-4470 at the pin)
+"`engine_post(+Engine, +Term, -Next)`: `engine_post/2` and `engine_next/2` in one (pl-thread.c)."
+function pl_engine_post3(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
+)::foreign_t where {T}
+    return interactor_post_answer(_query_gd(ld), ld, A1, A2, A3) ? FTRUE : FFALSE
+end
