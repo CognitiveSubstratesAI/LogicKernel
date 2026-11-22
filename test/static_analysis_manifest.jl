@@ -5044,6 +5044,14 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    # STREAMX: the filter streams (pl-stream.c Sset_filter, the open function set); the callbacks' defaults are exempt
+    (LK.Sset_filter, Tuple{LK.IOSTREAM, LK.IOSTREAM}, false),
+    (LK.Sset_filter, Tuple{LK.IOSTREAM, Nothing}, false),
+    (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
+    (LK.Swrite_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
+    (LK.Sclose_filter, Tuple{LK.IOSTREAM}, false),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Nothing}, false),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Base.RefValue{Int64}}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),
@@ -5961,6 +5969,21 @@ const SPAN_CALLEE_EXEMPT = [
 ]
 
 const DISPATCH_EXEMPT = (
+    (
+        (LK.Snew, Tuple{LK.AbstractSfilter, UInt32, LK.IOFUNCTIONS}) => "STREAMX: the filter stream's constructor; the record is a package's own subtype of the abstract type (an open set), the abstract argument has no concrete reference type; its body is Snew over `nothing`, which is checked"
+    ),
+    (
+        (LK.Sfilter_read, Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int}) => "STREAMX: the default of a filter's read callback (the record's methods are a package's, an open set); the dispatch to them is Sread_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_write, Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int}) => "STREAMX: the default of a filter's write callback (the record's methods are a package's, an open set); the dispatch to them is Swrite_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_close, Tuple{LK.AbstractSfilter}) => "STREAMX: the default of a filter's close callback (the record's methods are a package's, an open set); the dispatch to them is Sclose_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_control, Tuple{LK.AbstractSfilter, Int, Any}) => "STREAMX: the default of a filter's control callback (the record's methods are a package's, an open set); the dispatch to them is S_control, which is checked"
+    ),
     (
         (is_ground, Tuple{Int}) => "interface fallback; Term overrides it, and its body is_ground_walk is checked"
     ),
