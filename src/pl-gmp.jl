@@ -673,3 +673,62 @@ function addMPQToBuffer(b::Vector{UInt8}, mpq::Rational{BigInt})::Nothing
     add_mpz_bits_buffer(b, den, den_size)
     return nothing
 end
+
+# ── import (pl-gmp.c, FAST-2: an integer or rational read from an external record's bytes) ───────
+# PORT: pl-gmp.c load_mpz_size
+# DIVERGES: the record is a `Vector{UInt8}` read at the 1-based index `pos`; the position after the header is
+# returned with the size, a read past the end is a `BoundsError` (the caller's `PL_recorded_external` fails on it).
+"The signed size in the 4-byte big-endian header at `pos` of `data`, and the position after it (pl-gmp.c)."
+function load_mpz_size(data::Vector{UInt8}, pos::Int)::Tuple{Int,Int}
+    usize =
+        (UInt32(data[pos]) << 24) | (UInt32(data[pos + 1]) << 16) |
+        (UInt32(data[pos + 2]) << 8) | UInt32(data[pos + 3])
+    return (Int(reinterpret(Int32, usize)), pos + 4)
+end
+
+# PORT: pl-gmp.c load_abs_mpz_size
+# DIVERGES: the sign is returned as a `Bool`; the position after the header is the third value.
+"The byte count and sign of the header at `pos` of `data`, and the position after it (pl-gmp.c)."
+function load_abs_mpz_size(data::Vector{UInt8}, pos::Int)::Tuple{Int,Bool,Int}
+    size, next = load_mpz_size(data, pos)
+    return size < 0 ? (-size, true, next) : (size, false, next)
+end
+
+# PORT: pl-gmp.c load_mpz_bits
+# DIVERGES: the big-endian bytes are the magnitude of the result (`mpz_import(…, 1, 1, 1, 0, …)` inverse of
+# `add_mpz_bits_buffer`), whose sign the caller applies; the cells upstream fills with the limbs are the caller's
+# layout. A record shorter than `size` bytes is a `BoundsError`.
+"The `size` bytes at `pos` of `data` as a non-negative integer, and the position after them (pl-gmp.c)."
+function load_mpz_bits(data::Vector{UInt8}, pos::Int, size::Int)::Tuple{BigInt,Int}
+    size == 0 && return (BigInt(0), pos)
+    stop = pos + size - 1
+    stop <= length(data) || throw(BoundsError(data, stop))
+    return (parse(BigInt, bytes2hex(view(data, pos:stop)); base=16), pos + size)
+end
+
+# PORT: pl-gmp.c loadMPZFromCharp
+# DIVERGES: the VALUE is returned, with the position after the integer and the number of global-stack cells it takes on
+# upstream's stack (limbs in words, header and trailer, `MPZ_STACK_EXTRA`); the caller lays the cells out. Upstream's
+# `O_BF` limb count is the GMP build's (64-bit limbs).
+"The integer stored at `pos` of `data`: its value, the position after it and its cells (pl-gmp.c)."
+function loadMPZFromCharp(data::Vector{UInt8}, pos::Int)::Tuple{BigInt,Int,Int}
+    size, neg, next = load_abs_mpz_size(data, pos)
+    limbsize = (size + 7) ÷ 8                               # (size+sizeof(mp_limb_t)-1)/sizeof(mp_limb_t)
+    wsize = limbsize                                        # a limb is a word
+    mag, next = load_mpz_bits(data, next, size)
+    return (neg ? -mag : mag, next, wsize + 2 + MPZ_STACK_EXTRA)
+end
+
+# PORT: pl-gmp.c loadMPQFromCharp
+# DIVERGES: as `loadMPZFromCharp`: the numerator and the denominator are returned apart (a denominator of 0 is the
+# caller's to refuse), with the position after them and the cells the pair takes on upstream's stack.
+"The rational stored at `pos` of `data`: numerator, denominator, the position after it and its cells (pl-gmp.c)."
+function loadMPQFromCharp(data::Vector{UInt8}, pos::Int)::Tuple{BigInt,BigInt,Int,Int}
+    num_size, num_neg, next = load_abs_mpz_size(data, pos)
+    den_size, den_neg, next = load_abs_mpz_size(data, next)
+    num_wsize = (num_size + 7) ÷ 8
+    den_wsize = (den_size + 7) ÷ 8
+    num, next = load_mpz_bits(data, next, num_size)
+    den, next = load_mpz_bits(data, next, den_size)
+    return (num_neg ? -num : num, den_neg ? -den : den, next, num_wsize + den_wsize + 2 + 2 * MPZ_STACK_EXTRA)
+end

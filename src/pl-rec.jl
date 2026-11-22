@@ -60,6 +60,8 @@ const PL_TYPE_ATOM = 0x02
 const PL_TYPE_INTEGER = 0x03
 "Record opcode: a tagged integer, its value following (pl-rec.c)."
 const PL_TYPE_TAGGED_INTEGER = 0x04
+"Record opcode (external): a float, its 8 bytes following; the decoder reads it as `PL_TYPE_EXT_FLOAT` (pl-rec.c)."
+const PL_TYPE_FLOAT = 0x05
 "Record opcode (external): a string, its byte count and bytes following (pl-rec.c)."
 const PL_TYPE_STRING = 0x06
 "Record opcode: a compound, its functor word following (pl-rec.c)."
@@ -88,6 +90,8 @@ const PL_REC_ALLOCVAR = 0x10
 const PL_REC_MPZ = 0x12
 "Record opcode (external): a GMP rational, the two headers and the two byte strings following (pl-rec.c)."
 const PL_REC_MPQ = 0x13
+"Record opcode (external): a compound of the version 2 records, its arity and a name atom without an opcode byte following (pl-rec.c)."
+const PL_TYPE_EXT_COMPOUND_V2 = 0x14
 # ORIGINAL: see the file header.
 "Record opcode: an indirect, its index in the record's `values` following."
 const PL_REC_VALUE = 0x40
@@ -148,9 +152,8 @@ function addSizeInt(info::compile_info, val::Int)::Nothing
 end
 
 # PORT: pl-rec.c addUintBuffer
-# DIVERGES: the buffer is a `Vector{UInt8}`. The mask is `~Int(0x7f)`: `addSizeInt` above keeps `~0x7f` of the
-# UInt8 `0x7f` (= `0x80`), which writes a value in 256..383, 512..639, ... as ONE byte (a separate fix branch,
-# wip/rec-sizeint, corrects it; it is not changed on this branch).
+# DIVERGES: the buffer is a `Vector{UInt8}`. The mask is `~Int(0x7f)`, as `addSizeInt`'s above: a bare `~0x7f` is the
+# UInt8 `0x80` in Julia, which would write a value in 256..383, 512..639, ... as ONE byte.
 "Add `val` to the buffer `b`: 7 bits per byte, most significant first, every byte but the last with its 8th bit set (pl-rec.c)."
 function addUintBuffer(b::Vector{UInt8}, val::Int)::Nothing
     if (val & ~Int(0x7f)) == 0
@@ -494,6 +497,19 @@ const REC_VSHIFT = 5
 # DIVERGES: always `REC_64` (the kernel's word is 64 bits).
 "The first byte of an external record without its type bits: the word size and the version (pl-rec.c)."
 const REC_HDR = REC_64 | (PL_REC_VERSION << REC_VSHIFT)
+# PORT: pl-rec.c REC_SZMASK
+"External record header: the word-size bits (pl-rec.c)."
+const REC_SZMASK = REC_32 | REC_64
+
+# PORT: pl-rec.c REC_COMPAT
+"Whether the first byte `m` of an external record has this build's version and word size (pl-rec.c)."
+REC_COMPAT(m::UInt8)::Bool = (m & (REC_VMASK | REC_SZMASK)) == REC_HDR
+
+# PORT: pl-rec.c v2_map
+# DIVERGES: the table is indexed by the opcode PLUS ONE (Julia's 1-based index); the versions upstream leaves
+# `NULL` (0, 1 and 3..7) are an empty vector, as `fetchOpCode` reads it.
+"The opcodes of a version 2 external record to this version's (pl-rec.c): index = opcode + 1."
+const v2_map = Int[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, Int(PL_TYPE_EXT_COMPOUND_V2), 14, 15, 16, 17, 18]
 
 # PORT: pl-rec.c record_data
 # DIVERGES: `info.code` and `hdr` are `Vector{UInt8}`s; the constructor makes the `compile_info` with
@@ -722,6 +738,70 @@ function fetchWord(code::Vector{UInt8}, b::copy_info)::word
     end
     b.data += 8
     return w
+end
+
+# PORT: pl-rec.c fetchOpCode
+# DIVERGES: the version map is a `Vector{Int}` indexed by the opcode plus one (`v2_map`), an empty vector for upstream's
+# `NULL` (the opcode is its own); an opcode past the end of the map is its own too (upstream reads past the table).
+"The opcode at the copy's position, advanced past it and mapped through `version_map` (pl-rec.c)."
+function fetchOpCode(code::Vector{UInt8}, b::copy_info, version_map::Vector{Int})::UInt8
+    tag = code[b.data]
+    b.data += 1
+    (isempty(version_map) || Int(tag) >= length(version_map)) && return tag
+    return UInt8(version_map[Int(tag) + 1])
+end
+
+# PORT: pl-rec.c fetchExtFloat
+# DIVERGES: the 8 bytes are read LSB first (`double_byte_order` of a little-endian build) into a `Float64`, returned.
+"The float at the copy's position in the external record's byte order, advanced past it (pl-rec.c)."
+function fetchExtFloat(code::Vector{UInt8}, b::copy_info)::Float64
+    bits = UInt64(0)
+    for i in 0:7
+        bits |= UInt64(code[b.data + i]) << (8 * i)
+    end
+    b.data += 8
+    return reinterpret(Float64, bits)
+end
+
+# PORT: pl-rec.c fetchAtom
+# DIVERGES: the atom is a `T` made from the text (`lookupAtom` of the Latin-1 bytes: each byte is the character of its
+# value); a text with the character 0 is refused by name as in every atom (`_atom_from_text`). A record shorter than
+# its length says is a `BoundsError`, which `PL_recorded_external` answers by failing.
+"The Latin-1 atom (byte count, then the bytes) at the copy's position, advanced past it (pl-rec.c)."
+function fetchAtom(::Type{T}, code::Vector{UInt8}, b::copy_info)::T where {T}
+    len = fetchSizeInt(code, b)
+    stop = b.data + len - 1
+    stop <= length(code) || throw(BoundsError(code, stop))
+    text = String(Char.(view(code, b.data:stop)))
+    b.data += len
+    return _atom_from_text(T, text)
+end
+
+# PORT: pl-rec.c fetchAtomW
+# DIVERGES: the atom is a `T` made from the text (`lookupUCSAtom` of the 4-byte little-endian characters, `len/4` of them);
+# a wide atom whose characters are all <= 0xFF is the ordinary text atom (an atom is a `Symbol`). A code point that is
+# no Julia `Char` (above 0x10FFFF, or a surrogate) is refused by name.
+"The wide atom (byte count, then 4-byte characters) at the copy's position, advanced past it (pl-rec.c)."
+function fetchAtomW(::Type{T}, code::Vector{UInt8}, b::copy_info)::T where {T}
+    len = fetchSizeInt(code, b)
+    stop = b.data + len - 1
+    stop <= length(code) || throw(BoundsError(code, stop))
+    chars = Char[]
+    for k in 0:(len ÷ 4 - 1)
+        cp = UInt32(0)
+        for i in 0:3
+            cp |= UInt32(code[b.data + 4 * k + i]) << (8 * i)
+        end
+        isvalid(Char, cp) || throw(
+            NotPortedError{T}(
+                mk_sym(T, :fast_term_serialized),
+                "a wide atom with a code point above 0x10FFFF or a surrogate", "the term interface"
+            )
+        )
+        push!(chars, Char(cp))
+    end
+    b.data += len
+    return _atom_from_text(T, String(chars))
 end
 
 # ORIGINAL: `_vword!` with its box at position `p` of the block `copy_record` lays out (upstream lays
