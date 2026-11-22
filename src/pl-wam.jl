@@ -5650,9 +5650,15 @@ function PL_next_solution_guarded(
     # `leave` (since V9g): a cleanup frame that exits deterministically has run its handler at
     # `I_EXITCLEANUP` (`FR_CAUGHT`; asserted), so `frameFinished` finds nothing to do — it reads the
     # dropped record's flags only. NOT PORTED: the profiler (`profResumeParent`).
+    # A frame watched only through `FR_NOTIFY` (pl-trace.c:2509: every `prolog_frame_attribute/3` call sets
+    # it on the frame it reads, and the frame exits here) is no cleanup frame: `FR_CAUGHT` is never set on it
+    # and `frameFinished` runs its `frame_finished` event hook (EV1) as the C's does; the invariant is the
+    # cleanup frames'.
+    # DIVERGES: the C's exit_watched has no assertion here (it calls `frameFinished(leave, FINISH_EXIT)` directly); kept as a Julia-side check for CLEANUP frames only.
     @label exit_watched
     ew_f = ld.frames[FR]
-    @assert (ew_f.flags & FR_CAUGHT) != 0 "exit_watched: a cleanup frame exits before its handler ran"
+    @assert (ew_f.flags & FR_CLEANUP) == 0 ||
+        (ew_f.flags & FR_CAUGHT) != 0 "exit_watched: a cleanup frame exits before its handler ran"
     ew_leave = FR                                   # LocalFrame leave = FR
     ew_f.clause = nothing                           # leaveDefinition() destroys clause
     # leaveDefinition(DEF): (void)0 upstream
