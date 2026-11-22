@@ -665,6 +665,31 @@ end
     @test !LK.truePrologFlag(ld, LK.PLFLAG_TTY_CONTROL)
 end
 
+# C29: setting tty_control true sets the mask bit (setPrologFlagMask(PLFLAG_TTY_CONTROL), pl-prologflag.c set_flag_value) BEFORE PushTty reads it, and then
+# calls PushTty(Sinput, &ttytab, TTY_SAVE): with `user_input` a terminal the termios step is refused by name (a Julia stream has no file number: see
+# the DIVERGES of PushTty), with the flag set to false nothing is called (`ttymodified` is false). The generic code after the arm sets the same mask
+# bit, so only the PushTty call tells the arm's own `setPrologFlagMask!` from it: kills PUSHTTY-9 (no mask before PushTty: PushTty leaves at the
+# tty_control exit) and PUSHTTY-10 (the arm taken for the false value: no PushTty for true). HAND-WRITTEN: swipl has no Prolog-visible PushTty.
+@testset "tty_control true on a terminal reaches PushTty, false does not (PUSHTTY-9, PUSHTTY-10)" begin
+    gd = LK.PL_global_data{_SF}()
+    ld = LK.PL_local_data{_SF}(gd)
+    sin = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
+    sin.flags |= LK.SIO_ISATTY
+    path = joinpath(mktempdir(), "tty2.pl")
+    write(
+        path,
+        "t_ttyt(R) :- set_prolog_flag(tty_control, true), R = ok.\n" *
+        "t_ttyf(R) :- set_prolog_flag(tty_control, false), R = ok.\n"
+    )
+    LK.load_file!(gd, ld, path)
+    LK.clearPrologFlagMask!(ld, LK.PLFLAG_TTY_CONTROL)           # false: the arm must set it before PushTty
+    @test_throws LK.NotPortedError _sf_query(gd, ld, "t_ttyt")
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_TTY_CONTROL)
+    line = _sf_query(gd, ld, "t_ttyf")                            # false: nothing is pushed or popped
+    @test occursin("a" * _sf_codes("ok"), line)
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_TTY_CONTROL)
+end
+
 # PushTty and PopTty (pl-os.c:2294-2346, :2354-2379 at the pin): HAND-WRITTEN rows, swipl has no Prolog-visible PushTty and a test run has
 # no terminal, so the expected values are the C at the pin; each row names the exit it takes. The termios step is refused by name.
 @testset "PushTty and PopTty: upstream's exits, the terminal refused by name (hand-written)" begin
