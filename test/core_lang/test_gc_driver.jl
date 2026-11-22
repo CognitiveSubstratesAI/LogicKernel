@@ -96,7 +96,8 @@ function _gd_engine(dead::_R, vs::Vector{_R})
     for (i, v) in enumerate(vs)
         LK.putSlotValue!(ld, t + i, v, pvm2)
     end
-    return ld, t, n0, (g0 + 1):g1
+    @assert all(i -> ld.slots[t + i] != LK.makeRefG(g1 + i), 1:length(vs))   # each reference's own cell is left behind
+    return ld, t, n0, g0:(g1 + length(vs))
 end
 
 "The standard heap of the rows: a dead term (a float, a string, nested compounds, a list) below two live roots sharing a variable."
