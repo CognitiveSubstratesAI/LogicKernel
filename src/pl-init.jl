@@ -684,7 +684,11 @@ end
 # `apply_options_to_flags!` where upstream's `initPrologFlags` read the options, then the tail. (2) `GD->initialised` is not stored
 # (the database is new at each call, the early return `if GD->initialised` has no case). (3) `-c` (`GD->options.compile`) and
 # `--config` run `'\$compile'` and `'\$config'` as upstream does, then `PL_halt`: the seam `gd.halt_exit` (off) returns the call,
-# and the answer is false, as upstream's `fail`. (4) `query_loop(goal, false)` is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false`
+# and the answer is false, as upstream's `fail`. A halt that ran INSIDE the query (`'\$compile'` ends in `halt/1`: toplevel.pl, `halt(1)` in its
+# catch) is upstream's exit: `unwind(halt(S))` reaches `query_loop` (pl-pro.c:170 `PL_Q_NORMAL|PL_Q_EXCEPT_HALT`, :184-188
+# `halt_from_exception(except)`), whose `PL_halt` ends the process, so upstream never reaches pl-init.c:1678's `PL_halt(status)`. With the seam
+# off the first `PL_halt` returns, so the closing one runs only when the number of recorded halts is unchanged (the status is recorded once; a halt
+# recorded BEFORE the call does not silence it: the count, not `isempty`). (4) `query_loop(goal, false)` is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false`
 # branch: `$initialise` is neither `$query_loop` nor `$toplevel`, so `break_level` is not touched); owner TOP1b only for what the kernel's
 # reduced `query_loop` leaves out of it (audit D-0416 item 4). (5) `initialiseForeign`, `registerForeignLicenses`, the resource
 # database flag and `enableThreads` have nothing to do (no foreign libraries, no resource database, one thread).
@@ -704,12 +708,14 @@ function PL_initialise_tail!(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool 
     setAccessLevel!(ld, ACCESS_LEVEL_USER)                         # :1666
 
     if o.config !== nothing                                        # :1672
+        n = length(gd.halt_exited)                                 # the halts recorded before the query
         status = query_loop(gd, ld, mk_sym(T, Symbol("\$config")), false) == 1 ? 0 : 1
-        PL_halt(gd, ld, status)
+        length(gd.halt_exited) == n && PL_halt(gd, ld, status)     # a halt inside the query is upstream's exit (DIVERGES 3)
         return false                                               # fail; (the halt seam returned)
     elseif o.compile                                               # :1676
+        n = length(gd.halt_exited)
         status = query_loop(gd, ld, mk_sym(T, Symbol("\$compile")), false) == 1 ? 0 : 1
-        PL_halt(gd, ld, status)
+        length(gd.halt_exited) == n && PL_halt(gd, ld, status)
         return false
     end
     return query_loop(gd, ld, mk_sym(T, Symbol("\$initialise")), false) == 1   # prologToplevel("$initialise")

@@ -73,8 +73,15 @@ A run of swipl's `main()` on `args` (the words after `swipl -f none -F none`): `
 standard streams are buffers, installed before `PL_initialise!` (the `-g` goals run inside it).
 """
 function _fb_run(args::Vector{String})
+    st, o, w, _ = _fb_run_gd(args)
+    return st, o, w
+end
+
+"As `_fb_run`, with the database as a fourth answer (`gd.halt_exited` is read by the rows of the halt count); `prehalt` records a status before `PL_initialise!`."
+function _fb_run_gd(args::Vector{String}; prehalt::Union{Nothing, Int} = nothing)
     gd = LK.PL_global_data{_FB}()
     gd.halt_exit = false
+    prehalt === nothing || push!(gd.halt_exited, prehalt)
     ld = LK.PL_local_data{_FB}(gd)
     bufs = (IOBuffer(), IOBuffer(), IOBuffer())
     ui = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, bufs[1])
@@ -94,7 +101,7 @@ function _fb_run(args::Vector{String})
         l for l in split(String(take!(bufs[3])), '\n') if startswith(l, "Warning:")
     ]
     status = length(gd.halt_exited) == 1 ? gd.halt_exited[1] : -1
-    return status, out, warns
+    return status, out, warns, gd
 end
 
 @testset "first boot: exit status, -g output and the halt warning against swipl 10.1.19" begin
@@ -162,5 +169,23 @@ const _FB_CONFIG_KEYS = String[
         @test w == String[
             "Warning: [Thread main] Halting with status 1 due to 1 errors and 0 warnings"
         ]
+    end
+end
+
+# The halt is recorded ONCE: `'\$compile'` ends in `halt/1`, which upstream's `query_loop` turns into `exit` (pl-pro.c:184-188), so pl-init.c:1678's
+# closing `PL_halt` is never reached; with the seam off the closing halt runs only where the query recorded none (src/pl-init.jl, DIVERGES 3).
+@testset "first boot: the closing PL_halt of -c and --dump-runtime-variables is skipped after a halt inside the query" begin
+    @testset "-c <a file that does not exist>: the query's halt is the only one" begin
+        st, o, w, gd = _fb_run_gd(String["-c", "/nonexistent_zz.pl"])
+        @test length(gd.halt_exited) == 1
+        @test gd.halt_exited == [1]
+    end
+    @testset "--dump-runtime-variables: no halt inside the query, the closing halt is recorded once" begin
+        st, o, w, gd = _fb_run_gd(String["--dump-runtime-variables"])
+        @test gd.halt_exited == [0]
+    end
+    @testset "--dump-runtime-variables after a halt recorded before the call: the closing halt still runs" begin
+        st, o, w, gd = _fb_run_gd(String["--dump-runtime-variables"]; prehalt = 7)
+        @test gd.halt_exited == [7, 0]
     end
 end
