@@ -5126,12 +5126,14 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
-    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, Sseek64, Stell64
+    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, S__seek_update, Sseek64, Sseek, Stell64, Stell
     (LK.Sunit_size, Tuple{LK.IOSTREAM}, false), (LK.S_has_seek, Tuple{LK.IOSTREAM}, false),
-    (LK.Sseek_julia_io, Tuple{LK.Sjulia_io, Int64, Int}, false),
+    (LK.Sseek_julia_io, Tuple{LK.IOSTREAM, LK.Sjulia_io, Int64, Int}, false),
     (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
+    (LK.S__seek_update, Tuple{LK.IOSTREAM, Int64}, false),
     (LK.Sseek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
-    (LK.Stell64, Tuple{LK.IOSTREAM}, false),
+    (LK.Sseek, Tuple{LK.IOSTREAM, Int, Int}, false),
+    (LK.Stell64, Tuple{LK.IOSTREAM}, false), (LK.Stell, Tuple{LK.IOSTREAM}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),

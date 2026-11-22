@@ -1408,62 +1408,128 @@ function Sunit_size(s::IOSTREAM)::Int
 end
 
 # ORIGINAL: whether the stream's function set has a `seek` or `seek64` (upstream tests the function pointers):
-# the memory functions, the null functions and a file's Julia IO; the string, stderr, terminal and pipe functions have none.
+# the memory functions, the null functions and a Julia IO that is not a `popen` pipe (upstream's `Sfilefunctions` and
+# `Sttyfunctions` seek with `lseek`, which says ESPIPE for a pipe or a terminal; `Spipefunctions` has no seek:
+# `Sjulia_io.proc` marks it); the string and stderr functions have none.
 "Whether the stream's function set can seek."
 function S_has_seek(s::IOSTREAM)::Bool
     f = s.functions
     (f == Smemfunctions || f == Snullfunctions) && return true
     if f == Siofunctions
         h = s.handle
-        return h isa Sjulia_io && h.io isa IOStream
+        return h isa Sjulia_io && h.proc === nothing
     end
     return false
 end
 
 # PORT: pl-stream.c Sseek_file64 as Sseek_julia_io
-# DIVERGES: on a file's Julia IO (`IOStream`) in place of `lseek()`: -1 for a negative result, as the system call's EINVAL.
-"Move the file's position (`SIO_SEEK_SET`, `SIO_SEEK_CUR`, `SIO_SEEK_END`): the new position, or -1 (pl-stream.c)."
-function Sseek_julia_io(h::Sjulia_io, pos::Int64, whence::Int)::Int64
+# DIVERGES: seeks a Julia IO where upstream calls `lseek(fd, pos, whence)`, never libc's `lseek` (it would ignore
+# the IO's own buffer: Julia's `seek`, `position` and `seekend` do not). A file (`IOStream`) may be seeked past its
+# end as `lseek` allows, but not before its start (EINVAL, nothing moved); a buffer (`IOBuffer`), which
+# Julia's `seek` clamps without a word, is bounds-checked: a position before its start or after its end is EINVAL;
+# a terminal or a pipe is not seekable (ESPIPE, as `lseek` says); a closed IO is EBADF. The reason is left in
+# `s.io_errno`, where upstream leaves it in `errno`.
+"Seek the Julia IO `h` holds to `pos` as `whence` says: the new position, or -1 with `s.io_errno` set."
+function Sseek_julia_io(s::IOSTREAM, h::Sjulia_io, pos::Int64, whence::Int)::Int64
     io = h.io
-    io isa IOStream || return Int64(-1)
-    try
-        if whence == SIO_SEEK_SET
-            target = pos
-        elseif whence == SIO_SEEK_CUR
-            target = Int64(position(io)) + pos
-        elseif whence == SIO_SEEK_END
-            target = Int64(filesize(io)) + pos
-        else
+    if io isa IOStream || io isa IOBuffer
+        try
+            here = Int64(position(io))
+            if io isa IOStream
+                size = Int64(-1)                        # `lseek` allows a seek past the end
+            else
+                seekend(io)
+                size = Int64(position(io))
+                seek(io, here)
+            end
+            if whence == SIO_SEEK_SET
+                target = pos
+            elseif whence == SIO_SEEK_CUR
+                target = here + pos
+            elseif whence == SIO_SEEK_END
+                if io isa IOStream
+                    seekend(io)
+                    size = Int64(position(io))
+                    seek(io, here)                      # a failed seek leaves the position
+                end
+                target = size + pos
+            else
+                s.io_errno = EINVAL
+                return Int64(-1)
+            end
+            if target < 0 || (io isa IOBuffer && target > size)
+                s.io_errno = EINVAL
+                return Int64(-1)
+            end
+            target == here || seek(io, target)
+            return target
+        catch e
+            e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+            s.io_errno = if e isa SystemError
+                Int(e.errnum)
+            elseif e isa Base.IOError
+                -Int(e.code)
+            else
+                io isa IOBuffer ? ESPIPE : EBADF        # not seekable / closed
+            end
             return Int64(-1)
         end
-        target < 0 && return Int64(-1)
-        seek(io, target)
-        return target
-    catch e
-        e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
-        return Int64(-1)
     end
-end
-
-# ORIGINAL: `(*s->functions->seek64)(s->handle, pos, whence)`: the function set's seek, on its handle; -1 for a set with none.
-"Seek as the stream's own function set does: the new position, or -1."
-function S_seek64(s::IOSTREAM, pos::Int64, whence::Int)::Int64
-    h = s.handle
-    s.functions == Smemfunctions && h isa memfile && return Sseek_memfile64(h, pos, whence)
-    s.functions == Siofunctions && h isa Sjulia_io && return Sseek_julia_io(h, pos, whence)
-    s.functions == Snullfunctions && return Int64(Sseek_null(Int(pos), whence))
+    s.io_errno = ESPIPE                                 # a terminal or a pipe: ESPIPE
     return Int64(-1)
 end
 
+# ORIGINAL: `(*s->functions->seek64)(s->handle, pos, whence)`: the function set's seek, on its handle; -1 for a set with none.
+# DIVERGES: where upstream's backend leaves the reason in the global `errno` (`Sseek_memfile64`: EINVAL; `lseek`: ESPIPE, EINVAL,
+# EBADF), this sets `s.io_errno` at each failure, and the callers (`Sseek64`, `Stell64`, pl-file.c's seek/4 and
+# set_stream_position/2) read that field where upstream reads `errno`. `Sseek_null` leaves none: its failure is EINVAL. A set
+# whose seek is NULL (`Sstringfunctions`, `Sstderrfunctions`) fails with ESPIPE.
+"Seek `s`'s handle to `pos` as `whence` (`SIO_SEEK_*`) says: the new position, or -1 with `s.io_errno` set."
+function S_seek64(s::IOSTREAM, pos::Int64, whence::Int)::Int64
+    h = s.handle
+    if s.functions == Smemfunctions && h isa memfile
+        r = Sseek_memfile64(h, pos, whence)
+        r < 0 && (s.io_errno = EINVAL)                  # Sseek_memfile64: errno = EINVAL
+        return r
+    end
+    if s.functions == Siofunctions && h isa Sjulia_io
+        return Sseek_julia_io(s, h, pos, whence)
+    end
+    if s.functions == Snullfunctions
+        r = Int64(Sseek_null(Int(pos), whence))
+        r < 0 && (s.io_errno = EINVAL)
+        return r
+    end
+    s.io_errno = ESPIPE
+    return Int64(-1)
+end
+
+# ORIGINAL: the label `update:` of `Sseek64`: the stream is repositioned to `pos`.
+"Record that `s` now stands at byte `pos`: off its end, its line number and column left alone (pl-stream.c `update:`)."
+function S__seek_update(s::IOSTREAM, pos::Int64)::Int
+    s.flags &= ~(SIO_FEOF | SIO_FEOF2)                             # not on eof of file anymore
+
+    p = s.position
+    if p !== nothing
+        s.flags |= (SIO_NOLINENO | SIO_NOLINEPOS)                  # no update this
+        Sresetesc(p)
+        p.byteno = pos
+        p.charno = div(pos, Sunit_size(s))                         # compatibility
+    end
+
+    return 0
+end
+
 # PORT: pl-stream.c Sseek64
-# DIVERGES: `errno` is the stream's `io_errno`, set here before the error is recorded (`ESPIPE`: no seek function; `EINVAL`
-# for the seek that failed or the stream layer that cannot say more); the position `s.position` is `s.posbuf` or `nothing`.
+# DIVERGES: the `goto update` is `S__seek_update`; a set carries `seek64` alone (the 32-bit `seek` is one function
+# of the same body), so the branch with the `LONG_MAX` test and its `EINVAL` is unwritten; `errno` is the stream's
+# `io_errno`: `ESPIPE` is set here for a set with no seek function, the reason of a seek that failed by `S_seek64`; the
+# position `s.position` is `s.posbuf` or `nothing`; `nbufp` is an index into `mem`.
 """
 Re-position the stream to byte `pos` (`whence`): 0, or -1 (pl-stream.c). First tries to move the read pointer in the
 buffer; else flushes, drops the buffer and asks the function set.
 """
 function Sseek64(s::IOSTREAM, pos::Int64, whence::Int)::Int
-    update = false
     if (s.flags & SIO_INPUT) != 0 && s.limitp > s.buffer           # something there
         now = Stell64(s)
 
@@ -1484,49 +1550,35 @@ function Sseek64(s::IOSTREAM, pos::Int64, whence::Int)::Int
             if nbufp >= s.buffer && nbufp < s.limitp
                 s.bufp = Int(nbufp)
 
-                pos = newpos
-                update = true
+                return S__seek_update(s, newpos)
             end
         end
     end
 
-    if !update
-        if !S_has_seek(s)
-            s.io_errno = ESPIPE
-            S__seterror(s)
-            return -1
-        end
-
-        Sflush(s)
-
-        s.bufp = s.buffer
-        (s.flags & SIO_INPUT) != 0 && (s.limitp = s.buffer)
-
-        if whence == SIO_SEEK_CUR
-            pos += Stell64(s)
-            whence = SIO_SEEK_SET
-        end
-
-        pos = S_seek64(s, pos, whence)
-
-        if pos < 0
-            s.io_errno = EINVAL
-            S__seterror(s)
-            return -1
-        end
+    if !S_has_seek(s)
+        s.io_errno = ESPIPE
+        S__seterror(s)
+        return -1
     end
 
-    s.flags &= ~(SIO_FEOF | SIO_FEOF2)                             # not on eof of file anymore
+    Sflush(s)
 
-    p = s.position
-    if p !== nothing
-        s.flags |= (SIO_NOLINENO | SIO_NOLINEPOS)                  # no update this
-        Sresetesc(p)
-        p.byteno = pos
-        p.charno = div(pos, Sunit_size(s))                         # compatibility
+    s.bufp = s.buffer
+    (s.flags & SIO_INPUT) != 0 && (s.limitp = s.buffer)
+
+    if whence == SIO_SEEK_CUR
+        pos += Stell64(s)
+        whence = SIO_SEEK_SET
     end
 
-    return 0
+    pos = S_seek64(s, pos, whence)
+
+    if pos < 0
+        S__seterror(s)
+        return -1
+    end
+
+    return S__seek_update(s, pos)
 end
 
 # PORT: pl-stream.c Stell64
@@ -1553,6 +1605,22 @@ function Stell64(s::IOSTREAM)::Int64
         S__seterror(s)
         return -1
     end
+end
+
+# PORT: pl-stream.c Sseek
+"`Sseek64` with a `long` position (pl-stream.c)."
+Sseek(s::IOSTREAM, pos::Int, whence::Int)::Int = Sseek64(s, Int64(pos), whence)
+
+# PORT: pl-stream.c Stell
+# DIVERGES: the errno of the failure is left in `s.io_errno` (see `S_seek64`).
+"`Stell64` as a `long`: -1 if the position is not (pl-stream.c)."
+function Stell(s::IOSTREAM)::Int
+    pos = Stell64(s)
+    pos == -1 && return -1
+    pos <= typemax(Clong) && return Int(pos)
+    s.io_errno = EINVAL
+    S__seterror(s)
+    return -1
 end
 
 # ── pending input (pl-stream.c) ─────────────────────────────────────────────────────────────────
