@@ -203,6 +203,7 @@ function initIO(ld::PL_local_data)::Nothing
     getStreamContext(gd, sin)                       # add for enumeration
     getStreamContext(gd, sout)
     getStreamContext(gd, serr)
+    initDefaultsStreamsLocale!(gd, sin, sout)       # initLocale's initDefaultsStreamsLocale (src/os/pl-locale.jl)
     ld.IO_initialised = true
     return nothing
 end
@@ -231,6 +232,7 @@ function set_standard_stream!(
     end
     s = _std_stream(io, flags)::IOSTREAM
     s.position = s.posbuf
+    initStreamLocale(_query_gd(ld), s)              # Snew's initStreamLocale (src/os/pl-locale.jl)
     old = ld.IO_streams[which + 1]
     old === nothing || (old.flags & SIO_OUTPUT) == 0 || Sflush(old)
     ld.IO_streams[which + 1] = s
@@ -1093,6 +1095,7 @@ function openStream(
         )
         return nothing
     end
+    initStreamLocale(gd, s)                                     # Snew's initStreamLocale (src/os/pl-locale.jl)
     setFileNameStream(gd, s, mk_sym(T, Symbol(path)))
 
     s.encoding = enc
@@ -3330,6 +3333,7 @@ function setupOutputRedirect(
         ctx.size[] = 0
         stream = Sopenmem(ctx.data, ctx.size, "w")
         stream === nothing && error("setupOutputRedirect: Sopenmem")
+        initStreamLocale(_query_gd(ld), stream)         # Snew's initStreamLocale (src/os/pl-locale.jl)
         stream.encoding = ENC_UTF8
         ctx.stream = stream
     end
@@ -3458,6 +3462,7 @@ function tellString(
 )::Bool
     stream = Sopenmem(bufp, sizep, "w")
     stream === nothing && error("tellString: Sopenmem")
+    initStreamLocale(_query_gd(ld), stream)             # Snew's initStreamLocale (src/os/pl-locale.jl)
     stream.encoding = enc
     pushOutputContext(ld, stream)
 

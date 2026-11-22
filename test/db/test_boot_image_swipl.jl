@@ -182,7 +182,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # G1 (chunk 1, the gc_statistics port): the kernel registers '$gc_statistics'/5 (pl-gc.c:4592, PL_FA_VARARGS), one foreign row of `system` that
 # swipl's boot list has: 210 - 1 = 209, MEASURED in CI on gate/wip-g1c2 f023834b, 9895c698 being chunk 1 (all three types: `missing_foreign == _BI_KERNEL_MISSING_FOREIGN`:
 # 209 == 210 failed; 2026-11-21, D-0083, internal identity: the count of a registration table, read from the run's own answer).
-const _BI_KERNEL_MISSING_FOREIGN = 209    # RT: 322 - 43 - 69 - 1 (G1 '$gc_statistics'/5), MEASURED; see the comment lines above
+# STREAM unit (LOCALE-FMT, 21958d3d): collation_key/2 (pl-prims.c, `system`) is registered by pl-prims.jl (PL_extension), one foreign row fewer missing:
+# 210 - 1 = 209, MEASURED on this tree: the `PIN (_BI_KERNEL_MISSING_FOREIGN): 209` line on all three types (D-0083, internal identity: a count of a registration table).
+# INTEGRATION (wip/int-g1: G1 tip + wip/stream1): both sides registered ONE foreign row of `system` each (G1 '$gc_statistics'/5, STREAM collation_key/2): 210 - 1 - 1 = 208, DERIVED, NOT RUN (the gate measures: D-0083, internal identity)
+const _BI_KERNEL_MISSING_FOREIGN = 208    # INT: 322 - 43 - 69 - 1 ($gc_statistics/5) - 1 (collation_key/2), DERIVED; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave

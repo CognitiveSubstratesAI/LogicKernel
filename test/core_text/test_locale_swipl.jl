@@ -322,7 +322,8 @@ end
 end
 
 # LC-I2 (pl-locale.c initLocale: `GD->locale.default_locale = acquireLocale(def)`): the default locale is held by its alias, by the current locale and
-# by default_locale itself. Row t15 (swipl: true, true, no locale named default) takes the alias's reference with locale_destroy/1 and the current
+# by default_locale itself (and, since the stream port, by the standard input and output: initDefaultsStreamsLocale; set_locale/1 hands every standard
+# stream to the new locale, Ssetlocale releasing the old). Row t15 (swipl: true, true, no locale named default) takes the alias's reference with locale_destroy/1 and the current
 # locale's with set_locale/1, so only default_locale's own reference keeps it. Without that reference the locale is freed there (free_locale: the
 # strings emptied, magic 0), and nothing in Prolog can name it any more (a blob of it holds a reference of its own): the free shows only in the
 # database. So this runs the row's sequence and reads `gd.locale.default_locale`.
@@ -335,16 +336,24 @@ wb2_gone :- \\+ locale_property(default, alias(_)).
         f = joinpath(d, "wb2.pl")
         write(f, _LCS_WB2)
         gd = LK.PL_global_data{_TL}()
+        # the template's copy holds no stream (the boot ld's standard streams were dropped and gave back
+        # their reference, src/pl-qlf.jl drop_boot_std_streams!): the alias, current, default_locale itself
+        @test gd.locale.default_locale.references == 3
         ld = LK.PL_local_data{_TL}(gd)
         st, _ = LK.load_file!(gd, ld, f)
         @test st === :ok
         dl = gd.locale.default_locale::LK.PL_locale_rec{_TL}
-        @test dl.references == 3 && dl.alias !== nothing                 # the alias, the current locale and default_locale itself
+        # pl-locale.c initLocale also runs initDefaultsStreamsLocale(def): `for(i=0; i<2; i++, s++) if ( !s->locale ) s->locale = acquireLocale(l)`, the
+        # standard input and output (S__iob[0], S__iob[1]; not the error stream) each hold the default locale since the stream port (a stream holds
+        # a locale until S__close's `releaseLocale(s->locale)`): five references, not three.
+        held0 = count(s -> s !== nothing && s.locale === dl, unique(ld.IO_streams[1:5]))
+        @test held0 == 2                                                 # stdin and stdout, not stderr (not vacuous: read from the engine's streams)
+        @test dl.references == 3 + held0 && dl.alias !== nothing         # the alias, the current locale, default_locale itself, and the two streams
         @test gd.locale.current === dl
         @test _lcs_wb_once(gd, ld, "wb2_seq")
         @test _lcs_wb_once(gd, ld, "wb2_gone")                           # no locale named default any more
         @test gd.locale.default_locale === dl && gd.locale.current !== dl
-        @test dl.alias === nothing && dl.references == 1                 # only default_locale's own reference is left
+        @test dl.alias === nothing && dl.references == 1                 # only default_locale's own reference is left (the streams gave theirs back at set_locale)
         @test dl.magic == LK.LOCALE_MAGIC                                # not freed
         @test dl.decimal_point != ""                                     # its strings are kept
     end

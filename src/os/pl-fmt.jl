@@ -11,8 +11,9 @@
 # and `formatFloat` write the numbers into a byte buffer first. The redirect part (`setupOutputRedirect`,
 # `closeOutputRedirect`, `discardOutputRedirect`, `tellString`, `toldString`) is pl-file.c's: O1B.
 #
-# DIVERGES (D9): the default C locale only. `~:d` and `~:f` take the C locale (`.` as decimal point, no
-# grouping) because a stream here has no locale (`fd->locale`); `~D` and `~I` build their own, as upstream does.
+# `~:d` and `~:f` read the locale of the output stream (`fd->locale`, LOCALE-FMT-1: `set_locale/1` and the current locale at
+# the stream's making, src/os/pl-locale.jl); a stream with no locale (`nothing`, upstream NULL) prints as the C locale;
+# `~D` and `~I` build their own, as upstream does.
 # The user-defined directives: `format_predicate/2` fills `gd.format_predicates` (upstream's `GD->format.predicates`, a hash table;
 # here a vector in insertion order), `current_format_predicate/2` reads it, and `do_format` looks a directive up in it before
 # the built-in ones. The arithmetic and the stream lock calls (`AR_BEGIN`, `Slock`) are left out: a single
@@ -53,7 +54,8 @@ end
 
 # PORT: pl-fmt.c PL_locale
 # (`prolog_locale` and `PL_locale` of pl-locale.h)
-# DIVERGES: a locale is its three strings (upstream's has more fields and a reference count). `grouping` is
+# DIVERGES: a locale is its three strings (upstream's has more fields and a reference count; the object a stream holds is
+# `PL_locale_rec`, src/pl-global.jl, `_stream_locale` reads the three strings of it). `grouping` is
 # upstream's `char*`: the group sizes, ended by 0 (`CHAR_MAX`: no more groups), `nothing` for NULL.
 "The part of a `PL_locale` that format/2 reads: decimal point, thousands separator, grouping (pl-locale.h)."
 struct PL_locale
@@ -64,6 +66,16 @@ end
 
 "The locale of format/2 when no stream locale is asked for: `.` and no grouping (pl-fmt.c `prolog_locale`)."
 const prolog_locale = PL_locale(".", nothing, nothing)
+
+"The three strings of the locale of the stream `fd` (`fd->locale`), `nothing` for NULL (pl-fmt.c)."
+function _stream_locale(fd::IOSTREAM)::Union{Nothing, PL_locale}
+    l = fd.locale
+    l === nothing && return nothing
+    return PL_locale(
+        getfield(l, :decimal_point)::String, getfield(l, :thousands_sep)::String,
+        getfield(l, :grouping)::Vector{Int}
+    )
+end
 
 # PORT: pl-fmt.c FMT_ERROR as PL_format_error
 # (FMT_ERROR, FMT_ARG, FMT_ARGC; pl-error.c ERR_FORMAT, ERR_FORMAT_ARG)
@@ -465,7 +477,7 @@ end
 # PORT: pl-fmt.c do_format
 # DIVERGES: the format text is a vector of code points (`_text_code_points`); the lookup of a user-defined directive is a
 # loop over `gd.format_predicates`, whose directive and the built-in chain below are one chain (upstream's `else { switch }`); `~@` needs `callProlog`'s `ex` argument (O1B,
-# src/pl-pro.jl: `ex::Ref{Int}` for upstream's `term_t *ex`); `~:d` and `~:f` take the C locale (no stream locale); no `AR_BEGIN`/`AR_END`.
+# src/pl-pro.jl: `ex::Ref{Int}` for upstream's `term_t *ex`); no `AR_BEGIN`/`AR_END`.
 """
     do_format(ld, fd, fmt, argc, argv, m) -> Bool
 
@@ -611,8 +623,11 @@ function do_format(
                 end
                 argc -= 1
                 argv += 1
-                # `l = fd->locale` for `~:f`: the stream has no locale, D9
-                l = prolog_locale
+                l = if (c == Int('f') || c == Int('F')) && mod_colon
+                    _stream_locale(fd)
+                else
+                    prolog_locale
+                end
                 b = UInt8[]
                 rc = formatFloat(ld, l, c, arg, n, b)
                 rc && (rc = oututf80(state, b))
@@ -633,7 +648,7 @@ function do_format(
                         # pl-fmt.c do_format: `static char grouping[] = {3,0}`, a local per call, so a fresh vector here
                         l = PL_locale(".", mod_colon ? "_" : ",", Int[3, 0])
                     elseif mod_colon
-                        l = prolog_locale       # fd->locale, D9
+                        l = _stream_locale(fd)  # fd->locale
                     else
                         l = nothing
                     end

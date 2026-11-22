@@ -51,6 +51,17 @@ end
 good4(v::Vector{T}, a::T)::T where {T} = mk_expr(T, T[a])
 """
 
+# The ALLOWLIST of abstractly typed struct fields: `"Struct.field::Type" => reason`. One entry (dispatcher,
+# LOCALE-FMT-4): upstream's IOSTREAM holds `PL_locale *locale` (pl-stream.h), a pointer to the very structure the
+# kernel types as PL_locale_rec{T}, parametric in the term type (its alias and symbol are atoms of T), while IOSTREAM
+# is not parametrised by T; a concrete field would need IOSTREAM{T}. Every read of the field goes through a typed
+# accessor (`getfield(..)::String` / `::Int`, `_stream_locale`), and JET reports no dispatch for it.
+const _TD_NONCONCRETE_ALLOWED = Dict(
+    "IOSTREAM.locale::Union{Nothing, LogicKernel.IOLocale}" =>
+        "upstream's `PL_locale *locale` in IOSTREAM: a pointer to the same structure the kernel types as " *
+        "PL_locale_rec{T}; every read goes through a typed accessor getfield(..)::String/Int; JET clean"
+)
+
 # The ALLOWLIST of unchecked constructs in src/ (user, 2026-10-04): `"file construct" => (count,
 # reason)`. A new one fails the rule until it is listed here with a measured reason; a listed one
 # that is gone fails it too — so the list cannot go stale.
@@ -83,7 +94,10 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         "and the read never passes the name's end"
     ),
     "os/pl-os.jl ccall" => (
-        4,
+        5,
+        "LOCALE-FMT: collation_key/2's wcsxfrm (pl-prims.c), the C library's, which Julia does not give: handed " *
+        "two Vector{UInt32} (the wchar_t buffers, NUL-terminated text) and a size, returns the size_t the " *
+        "caller compares with the buffer's length; " *
         "Y1: pl-os.c's three C-library calls, as upstream makes them: clock_gettime (CpuTime, WallTime, " *
         "ThreadCPUTime: the nanosecond clocks Julia does not give), setenv and unsetenv (the errno " *
         "setenv/2 and unsetenv/1 report, EINVAL for an empty name or one with `=`); each is handed " *
@@ -220,10 +234,15 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         end
     end
 
-    @testset "no abstractly typed struct field in LogicKernel" begin
-        bad = nonconcrete_fields(LogicKernel)
+    @testset "no abstractly typed struct field in LogicKernel beyond the allowlist" begin
+        found = nonconcrete_fields(LogicKernel)
+        bad = setdiff(found, keys(_TD_NONCONCRETE_ALLOWED))
         isempty(bad) || foreach(b -> println(stderr, "  abstract field: ", b), bad)
         @test isempty(bad)
+        # a listed field that is gone (or became concrete) fails too, so the list cannot go stale
+        @test sort!(collect(keys(_TD_NONCONCRETE_ALLOWED))) ==
+            sort!(intersect(found, keys(_TD_NONCONCRETE_ALLOWED)))
+        @test all(v -> length(v) > 20, values(_TD_NONCONCRETE_ALLOWED))   # every entry says why
     end
 
     @testset "no unchecked memory access in src beyond the allowlist" begin

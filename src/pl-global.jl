@@ -137,13 +137,14 @@ end
 const LOCALE_MAGIC = 37838743
 
 # PORT: pl-locale.h PL_locale as PL_locale_rec
-# DIVERGES: named `PL_locale_rec` (src/os/pl-fmt.jl's `PL_locale` is the three-string view format/2 reads). `decimal_point`
+# DIVERGES: named `PL_locale_rec` (src/os/pl-fmt.jl's `PL_locale` is the three-string view format/2 reads); a subtype of
+# `IOLocale` (src/os/pl-stream.jl), the type of `IOSTREAM.locale`. `decimal_point`
 # and `thousands_sep` are `String`s (upstream's `wchar_t *`); `grouping` is upstream's `char *` as the group sizes then a
 # 0 (a `CHAR_MAX` entry: no more groups); `alias` and `symbol` are `nothing` for upstream's 0. `serial` has no upstream
 # field: the number of the locale in `gd.locale.refs`, the payload of its blob (0 until the first blob is made), as the
 # clause and record blobs of src/pl-dbref.jl.
 "A locale object: its alias, blob handle, reference count and the numeric conventions (pl-locale.h `PL_locale`)."
-mutable struct PL_locale_rec{T}
+mutable struct PL_locale_rec{T} <: IOLocale
     alias::Union{Nothing, T}                    # alias: named alias (if any)
     symbol::Union{Nothing, T}                   # symbol: blob handle
     magic::Int                                  # magic: LOCALE_MAGIC

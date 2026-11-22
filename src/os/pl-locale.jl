@@ -15,9 +15,13 @@
 #     enumerates several locales is NOT upstream's (rows must not enumerate more than one locale).
 #   * The strings are `String`s (upstream `wchar_t *`). `ls_to_wcs` reads the bytes of `localeconv()` as UTF-8: invalid UTF-8,
 #     or 16 or more characters (`LSTR_MAX`), print "Illegal locale string: ..." on stderr (`Sdprintf`) and give the fallback.
-#   * The kernel's streams carry no locale (`IOSTREAM` has no `locale` field): `Ssetlocale` in `set_locale/1`,
-#     `initDefaultsStreamsLocale` and `initStreamLocale` are NOT PORTED, and `locale(L)` of open/4 and set_stream/2 stays the
-#     refusal of src/os/pl-file.jl.
+#   * A stream carries its locale (`IOSTREAM.locale`, LOCALE-FMT-1) and format/2's `~:d` and `~:f` read it. `Snew` (src/os/
+#     pl-stream.jl) has no database, so it does not call `initStreamLocale`: the places that make a stream Prolog writes to
+#     and have the database call it (`openStream`, `setupOutputRedirect`, `tellString`, `set_standard_stream!`); a stream the
+#     stream layer makes for itself (`Sopen_text`, `Sopenmem` in the reader and the string predicates) keeps NULL, which
+#     `format/3` never writes to. `initDefaultsStreamsLocale` is `initIO`'s (the two input/output standard streams, as
+#     upstream: the error stream gets its locale from the first `set_locale/1`). `locale(L)` of open/4 and set_stream/2
+#     stays the refusal of src/os/pl-file.jl, and the `locale(L)` stream property stays false (src/os/pl-file.jl).
 #   * The blob type has no hook slots (`PL_blob_t` has none, as src/pl-dbref.jl): `acquire_locale_ref` is called by
 #     `unifyLocale` for an atom it has just made; `release_locale_ref`, `write_locale_ref`, `save_locale_ref` and
 #     `load_locale_ref` are NOT PORTED (no atom GC: a blob keeps its locale for ever). The blob's payload is the number of the
@@ -180,23 +184,7 @@ function update_locale(
     return nothing
 end
 
-# PORT: pl-locale.c acquireLocale
-"Count a new reference to `l` (pl-locale.c)."
-function acquireLocale(l::PL_locale_rec{T})::PL_locale_rec{T} where {T}
-    l.references += 1
-    return l
-end
-
-# PORT: pl-locale.c releaseLocale
-"Drop a reference to `l`; free it when nothing names it any more (pl-locale.c)."
-function releaseLocale(l::PL_locale_rec{T})::Nothing where {T}
-    @assert l.references > 0
-    l.references -= 1
-    if l.references == 0 && l.symbol === nothing && l.alias === nothing
-        free_locale(l)
-    end
-    return nothing
-end
+# `acquireLocale` and `releaseLocale` (pl-locale.c) are not here: they are defined in src/os/pl-stream.jl, on the abstract `IOLocale` (the type of `IOSTREAM.locale`); a stream holds a locale.
 
 # ── the table of aliased locales ─────────────────────────────────────────────────────────────────────
 
@@ -832,8 +820,8 @@ end
 
 # PORT: pl-locale.c set_locale as pl_set_locale1_va
 # (PRED_IMPL("set_locale", 1, set_locale, 0))
-# DIVERGES: the loop that sets the locale of the five standard streams (`Ssetlocale`) is NOT PORTED (see the header). As
-# upstream, the reference `getLocaleEx` acquired is not released when `l` is the current locale already.
+# DIVERGES: `_PL_streams()` is the first five entries of `ld.IO_streams` (the user and current streams; `nothing` is skipped).
+# As upstream, the reference `getLocaleEx` acquired is not released when `l` is the current locale already.
 "`set_locale(+Locale)`: make `Locale` the current locale (pl-locale.c)."
 function pl_set_locale1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -845,6 +833,10 @@ function pl_set_locale1_va(
     if l !== ol
         gd.locale.current = l                                   # already acquired
         ol === nothing || releaseLocale(ol)
+        for i in 1:5                                            # set locale of standard streams
+            si = ld.IO_streams[i]
+            si === nothing || Ssetlocale(si, l)
+        end
     end
     return FTRUE
 end
@@ -865,7 +857,7 @@ end
 
 # PORT: pl-locale.c initLocale
 # DIVERGES: the database is the argument (called by `setupProlog`, src/pl-setup.jl, where pl-setup.c:176 calls it);
-# `initDefaultsStreamsLocale` is NOT PORTED (see the header).
+# `initDefaultsStreamsLocale` is `initDefaultsStreamsLocale!` below, called by `initIO` (the streams are per local data).
 "Register the locale blob type and make the default locale `default`, the system default and the current locale (pl-locale.c)."
 function initLocale!(gd::PL_global_data{T})::Nothing where {T}
     PL_register_blob_type(gd.atoms, locale_blob, builtin_atom("locale"))
@@ -874,6 +866,30 @@ function initLocale!(gd::PL_global_data{T})::Nothing where {T}
     gd.locale.default_locale = acquireLocale(def)
     gd.locale.current = acquireLocale(def)
     return nothing
+end
+
+# PORT: pl-locale.c initDefaultsStreamsLocale
+# DIVERGES: the two streams are the arguments (upstream: `S__iob`'s first two, the input and the output), the locale is the
+# database's default locale.
+"Give the standard input and output streams `sin` and `sout` the default locale when they have none (pl-locale.c)."
+function initDefaultsStreamsLocale!(
+    gd::PL_global_data, sin::IOSTREAM, sout::IOSTREAM
+)::Nothing
+    l = gd.locale.default_locale
+    l === nothing && return nothing
+    for s in (sin, sout)
+        s.locale === nothing && (s.locale = acquireLocale(l))
+    end
+    return nothing
+end
+
+# PORT: pl-locale.c initStreamLocale
+# DIVERGES: the database is the argument; `HAS_LD` is always true (a thread has `current`), so no `default_locale` branch.
+"Give the new stream `s` the current locale (pl-locale.c)."
+function initStreamLocale(gd::PL_global_data, s::IOSTREAM)::Bool
+    l = gd.locale.current
+    l === nothing || (s.locale = acquireLocale(l))
+    return true
 end
 
 # PORT: pl-locale.c updateLocale

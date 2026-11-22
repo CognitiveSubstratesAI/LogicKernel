@@ -410,7 +410,9 @@ end
 # (pl-init.c:1620-1646), and the state it writes carries no stream table: the process that loads it registers its own
 # three at its own initIO. The kernel's boot ld (`initIO` the first time the boot writes, src/os/pl-file.jl) is dropped,
 # so the entries of its three user streams are cleared as a close clears one (`freeStream`: the slot becomes
-# `nothing`), after a flush of the output ones (upstream's halt flushes them). Only those three: any other stream the
+# `nothing`), after a flush of the output ones (upstream's halt flushes them), and the locale reference the input and output
+# ones hold is given back (the process that loads the state makes its own streams and takes its own references: the
+# template's default locale counts its alias, `current` and `default_locale` only). Only those three: any other stream the
 # boot left open stays, and the template's copy refuses it (src/gd_template.jl `_copy_stream_free`).
 "Clear the stream-table entries of `ld`'s three user standard streams (flushed first) from `gd`: the boot's dropped ld."
 function drop_boot_std_streams!(
@@ -420,6 +422,11 @@ function drop_boot_std_streams!(
         s = ld.IO_streams[i + 1]
         s === nothing && continue
         (s.flags & SIO_OUTPUT) == 0 || Sflush(s)
+        slo = s.locale          # the locale reference `initDefaultsStreamsLocale!` gave it (src/os/pl-locale.jl): the dropped stream
+        if slo !== nothing      # goes with the boot session, as S__close's `releaseLocale(s->locale)` (src/os/pl-stream.jl)
+            releaseLocale(slo)
+            s.locale = nothing
+        end
         if 1 <= s.context <= length(gd.stream_table) && gd.stream_table[s.context] === s
             gd.stream_table[s.context] = nothing                  # deleteHTablePP(streamContext, s), as freeStream
         end
