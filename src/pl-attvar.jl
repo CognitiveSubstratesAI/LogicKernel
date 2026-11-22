@@ -44,7 +44,7 @@ by [`restoreWakeup`](@ref).
 function saveWakeup(
     ld::PL_local_data{T}, forceframe::Bool
 )::Union{Nothing, wakeup_state} where {T}
-    outofstack = ld.outofstack
+    outofstack = _stack_code(ld.outofstack)
     h = _attvar_head_cell(ld)
     if ld.gstack[h] != 0 || ld.exception_term != 0 || forceframe   # *valTermRef(LD->attvar.head) || …
         fid = PL_open_foreign_frame(ld)
@@ -101,7 +101,7 @@ it, or to keep the more urgent of it and one raised since — the saved wakeup l
 the frame discarded, which undoes the bindings made since (pl-attvar.c).
 """
 function restoreWakeup(ld::PL_local_data{T}, state::wakeup_state)::Nothing where {T}
-    ld.outofstack = state.outofstack
+    ld.outofstack = _stack_name(state.outofstack)
 
     if state.fid != 0
         if state.flags != 0

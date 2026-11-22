@@ -1987,12 +1987,32 @@ const INFERENCE_NO_LIMIT = typemax(Int)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
-# `outofstack` is the stack's name or `nothing`, as `LD->outofstack` here (G1-C).
+# `outofstack` is `LD->outofstack` (G1-C: the stack's name or `nothing`) as a one-byte CODE (`_stack_code`), so that
+# the struct is bits-only: with a `Symbol` field `saveWakeup`'s value was a heap object, one allocation per call
+# (G1 chunk 8a; findall/3's and bagof/3's cleanup calls it once, the pins of test_zero_exports.jl).
 "What `saveWakeup` set aside (pl-incl.h `wakeup_state`): its foreign frame, `outofstack`, the flags."
 struct wakeup_state
     fid::Int                                # foreign frame reference
-    outofstack::Union{Nothing, Symbol}      # Stack we are out of
+    outofstack::UInt8                       # Stack we are out of, as `_stack_code` (0: none)
     flags::UInt32                           # WAKEUP_STATE_*
+end
+
+"`LD->outofstack` (`nothing` or the stack's name: `:local`, `:global`, `:trail`) as the byte `wakeup_state` keeps."
+function _stack_code(stack::Union{Nothing, Symbol})::UInt8
+    stack === nothing && return 0x00
+    stack === :local && return 0x01
+    stack === :global && return 0x02
+    stack === :trail && return 0x03
+    error("_stack_code: no such stack: ", stack)
+end
+
+"The inverse of [`_stack_code`](@ref)."
+function _stack_name(code::UInt8)::Union{Nothing, Symbol}
+    code == 0x00 && return nothing
+    code == 0x01 && return :local
+    code == 0x02 && return :global
+    code == 0x03 && return :trail
+    error("_stack_name: no such stack code: ", code)
 end
 
 # The VM's argument pointer — upstream's `Word ARGP` register (pl-wam.c), which points at "the
