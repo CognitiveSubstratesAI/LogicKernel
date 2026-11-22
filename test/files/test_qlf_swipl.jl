@@ -154,6 +154,32 @@ const _QL_AUTOLOAD_PINNED = [
     "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[97,117,116,111,108,111,97,100,95,111,102,102],nil))"
 ]
 
+# EQ2 (LB3-D4, audit D-0472 item 4): the conditional directives qualified with a module (`:- user:if(G)`, `:- user:else`, `:- system:endif`).
+# pl-qlf.c's update_conditional_compilation reads the qualified directive's argument 2, so the boot compile treats them as conditionals;
+# swipl's CONSULT does not (its Prolog loader runs `user:if(fail)` as a goal and raises), so the oracle is swipl's own BOOT compile of the
+# file, not the consult driver: with the pin's boot/ sources in a directory `boot/` (`git show 18168e62:boot/<f>` for every file of boot/)
+# `swipl -o x.prc -b boot/init.pl prog.pl` then `swipl -x x.prc -g "findall(X,r(X),L),print(L),nl,halt"` printed
+# [else_arm,end,if_true,sys_else] (swipl 10.1.20, 2026-11-10). Without the qualification handling (mutant: `if false`) the
+# directives run as goals, no part is skipped and `skipped`, `sys_hidden` are compiled. No live check: the boot sources are not on PATH.
+const _QL_QUAL_PROGRAM = raw"""
+:- user:if(fail).
+r(skipped).
+:- user:else.
+r(else_arm).
+:- user:endif.
+r(end).
+:- if(true).
+r(if_true).
+:- system:if(fail).
+r(sys_hidden).
+:- system:else.
+r(sys_else).
+:- system:endif.
+:- endif.
+t_q01(L) :- findall(X, r(X), L).
+"""
+const _QL_QUAL_PINNED = "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[101,108,115,101,95,97,114,109],c[91,124,93]/2(a[101,110,100],c[91,124,93]/2(a[105,102,95,116,114,117,101],c[91,124,93]/2(a[115,121,115,95,101,108,115,101],nil)))))"
+
 "A fresh database and the file `text` written to a temporary directory."
 function _ql_db(text::String; name::String="prog.pl")
     gd = LK.PL_global_data{_QL}()
@@ -388,6 +414,17 @@ end
     @test String(sym_text(LK.PL_current_prolog_flag(gd, mk_sym(_QL, :autoload), :atom))) ==
         "true"                                            # restored after the list
     @test isempty(_ql_messages(ld))
+end
+
+@testset "a module-qualified if/else/endif is a conditional (LB3-D4; swipl pin: its boot compile)" begin
+    gd, ld, f = _ql_db(_QL_QUAL_PROGRAM; name="qual.pl")
+    @test LK.compileFile(gd, ld, nothing, f)
+    kl = _ql_query_lines(gd, ld, ["t_q01"])
+    @test _ql_list_atoms(kl[1]) == _ql_list_atoms(_QL_QUAL_PINNED) ==
+        ["else_arm", "end", "if_true", "sys_else"]
+    @test kl[1] == _QL_QUAL_PINNED
+    @test !any(in(_ql_list_atoms(kl[1])), ["skipped", "sys_hidden"])
+    @test isempty(_ql_messages(ld))                      # no directive ran as a goal (that would leave `if/1` undefined)
 end
 
 @testset "R-B: closing a query after an exception on the unbooted database (owner ENG2, audit D-0377 item 3)" begin
