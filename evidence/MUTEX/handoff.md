@@ -20,6 +20,11 @@ Worktree /home/shivaji1012/code/lk-mutex, branch wip/mutex. Scratch (upstream co
   test_p2_swipl; total count at its top moves by 1); (3) tools/mutants/MUTEX.py ("aimed by <rows>", python3 -I exactly-once; model
   tools/mutants/BOOTPRED3.py; candidates listed under "Mutants" below; TARGETS = the new test file); (4) docs/architecture.md
   MUTEX section (hand-written part) and the refused-functions lines :813 and :6319.
+* MUTEX step (Sonnet writer, narrow): (1) tools/mutants/MUTEX.py WRITTEN (53 mutants, 4 declared equivalent: L11, D8, P13, R4;
+  every `old` exactly once, `python3 -I` count), commit `TEST: MUTEX mutants`. (2) tools/test_warm_shards.tsv: test_p2_swipl is not
+  listed there (no file list), so NO entry. (3) docs/architecture.md MUTEX section: see the next lines for its state.
+  Mutants not written (no row kills them, would survive): `state.p = 1` reset in advance_mstate! (needs a var-var
+  mutex_property(M, P) row over two mutexes); a constant `mutex_serial` (anonymous blobs of one payload).
 * Pins come from `~/.local/bin/swipl` (10.1.20, the pin binary), NOT the 10.1.19 path in the test plan below.
 
 ## Scope
