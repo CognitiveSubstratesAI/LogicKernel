@@ -26,7 +26,7 @@
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
 # database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
 # held), reference counting (`Sacquire`, `Srelease`), `Sopen_file`, the BOM (`ScheckBOM`,
-# `SwriteBOM`) and `Ssize`.
+# `SwriteBOM`), `Ssize` and the seek family. Since STREAM-API: the string calls `Sfgets`, `Sfputs` and `Sfree`.
 
 # PORT: SWI-Stream.h EOF
 "End of file, as the character functions return it (SWI-Stream.h)."
@@ -1651,6 +1651,47 @@ function Stell(s::IOSTREAM)::Int
     S__seterror(s)
     return -1
 end
+
+# PORT: pl-stream.c Sfgets
+# DIVERGES: `buf` is a byte vector of at least `n` bytes, the result is `buf` or `nothing` (upstream's NULL); the
+# terminating NUL is the byte 0x00 in `buf`.
+"Read a line of at most `n - 1` bytes into `buf`, newline included: `buf`, or `nothing` at end of file (pl-stream.c)."
+function Sfgets(buf::Vector{UInt8}, n::Int, s::IOSTREAM)::Union{Nothing, Vector{UInt8}}
+    q = 1
+    while n > 0
+        n -= 1
+        c = Sgetc(s)
+        if c == EOF
+            buf[q] = 0x00
+            return q == 1 ? nothing : buf
+        else
+            buf[q] = c % UInt8
+            q += 1
+            if c == Int('\n')
+                n > 0 && (buf[q] = 0x00)
+                return buf
+            end
+        end
+    end
+    return buf
+end
+
+# PORT: pl-stream.c Sfputs
+# DIVERGES: the C string is a byte vector up to its first 0x00, or a `String` (its UTF-8 bytes).
+"Write the bytes of the C string `q` as characters: 0, or -1 (EOF) on error (pl-stream.c)."
+function Sfputs(q::AbstractVector{UInt8}, s::IOSTREAM)::Int
+    for b in q
+        b == 0x00 && break
+        Sputcode(Int(b), s) < 0 && return EOF
+    end
+    return 0
+end
+Sfputs(q::String, s::IOSTREAM)::Int = Sfputs(codeunits(q), s)
+
+# PORT: pl-stream.c Sfree
+# DIVERGES: nothing is freed (Julia's GC owns the memory upstream's `free()` returns).
+"Free memory the stream layer allocated (pl-stream.c)."
+Sfree(ptr)::Nothing = nothing
 
 # ── pending input (pl-stream.c) ─────────────────────────────────────────────────────────────────
 
