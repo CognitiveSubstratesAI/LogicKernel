@@ -42,7 +42,8 @@ const _SC_CLAUSES = Tuple{_R, Union{Nothing, _R}}[
     (
         _rf("sc1", _rv(1)),
         _rconj(_sc_stat("global_shifts", _rv(2)), _sc_stat("local_shifts", _rv(3)),
-            _sc_stat("trail_shifts", _rv(4)), _rf("=", _rv(1), _rlist(_rv(2), _rv(3), _rv(4))))
+            _sc_stat("trail_shifts", _rv(4)),
+            _rf("=", _rv(1), _rlist(_rv(2), _rv(3), _rv(4))))
     ),
     (
         _rf("sc2", _rv(1)),

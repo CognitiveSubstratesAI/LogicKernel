@@ -261,7 +261,10 @@ end
     @test ld.gTop >= tc + LK.TMP_PTR_SIZE - 1
     # non-vacuity: no slot names the undo cell, so no reference keeps it (only the rule roots it) ...
     @test !any(
-        i -> (w = ld.slots[i] & LK.VALUE_MASK; LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && LK.unRef(w) == ul),
+        i -> (
+            w=ld.slots[i] & LK.VALUE_MASK;
+            LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && LK.unRef(w) == ul
+        ),
         1:(ld.lTop)
     )
     @test ld.lTop > 0
