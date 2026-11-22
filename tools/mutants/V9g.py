@@ -161,9 +161,9 @@ MUTANTS = [
     dict(id="MB2 compileTermToHeap leaves the cyclic copies' bindings on the trail", file=REC, targets=T_FIND,
          old='''    restoreVars(ld, info)
     unvisit(ld, info)
-''',
+    @assert rc''',
          new='''    restoreVars(ld, info)
-'''),
+    @assert rc'''),
     dict(id="MB3 copyRecordToGlobal does not bind the cyclic references", file=REC, targets=T_FIND,
          old='''            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))''',
          new='''            nothing'''),
