@@ -2586,6 +2586,7 @@ function _manifest_index(T)
         # BOOTPRED — '$garbage_collect'/1 (src/pl-gc.jl), thread_self/1 (src/pl-thread.jl), with_mutex/2 (src/pl-mutex.jl)
         (LK.pl_garbage_collect, Tuple{LD, Int}, false),
         (LK.pl_thread_self, Tuple{LD, Int}, false),
+        (LK.pl_sig_unblock0_va, Tuple{LD, Int64, Int64, LK.control_t{T}}, false),   # MISS1: '$sig_unblock'/0 (pl-thread.c)
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
@@ -6222,6 +6223,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_coverage)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_profile)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zip)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_thread)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type

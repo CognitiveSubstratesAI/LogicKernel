@@ -1,5 +1,5 @@
 # ORIGINAL: MISS1's gate — the predicates the missing-C-predicates list left open: the legacy character I/O put/1,2 and get/1,2 of pl-file.c
-# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450) and '$unload_file'/1 (pl-srcfile.c:839-885)
+# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450), '$unload_file'/1 (pl-srcfile.c:839-885) and '$sig_unblock'/0 (pl-thread.c:3897)
 # test/core_lang/test_miss_preds_swipl.jl — put/1,2 and get/1,2 over open_string/2 and with_output_to/2 streams, '$call_no_catch'/1:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the answer lines are the driver's `enc`oded form (test_s2a_swipl.jl's driver).
@@ -219,6 +219,9 @@ const _MG_CASES = [
         raw"load_files('@DIR@/miss_u.pl', []), '$unload_file'('@DIR@/miss_u.pl'), '$unload_file'('@DIR@/miss_u.pl'), R = ok",
         _mga("ok")
     ),   # the second call finds the file (still in the table) with no procedures and no modules: unloadFile does nothing, true
+    # '$sig_unblock'/0 (pl-thread.c:3897): unblock_signals(); return true — always true (no thread signal is queued here or in the program)
+    ("sg01", raw"'$sig_unblock', R = ok", _mga("ok")),
+    ("sg02", raw"'$sig_unblock', '$sig_unblock', R = ok", _mga("ok")),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -287,7 +290,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()

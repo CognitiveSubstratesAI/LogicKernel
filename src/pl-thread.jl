@@ -121,3 +121,24 @@ end
 function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
     return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE
 end
+
+# PORT: pl-thread.c sig_unblock as pl_sig_unblock0_va
+# (PRED_IMPL("$sig_unblock", 0, sig_unblock, 0), pl-thread.c:3895-3902 at the pin: `unblock_signals(); return true;`)
+# DIVERGES: the kernel has no thread signals (`thread_signal/2`, `LD->thread.sig_head`): `unblock_signals` (pl-thread.c:3836-3855) walks that list,
+# clears `blocked` on its cells and raises SIG_THREAD_SIGNAL when it cleared one; with the list always empty it does nothing, so the
+# predicate just succeeds.
+"`'\$sig_unblock'`: let the signals the calling thread blocked while handling one run again (pl-thread.c); no thread signals here: succeeds."
+function pl_sig_unblock0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return FTRUE
+end
+
+# PORT: pl-thread.c BeginPredDefs as PL_predicates_from_thread
+# DIVERGES: `$sig_unblock/0` only: the other entries (threads, message queues, engines, thread signals, mutex statistics, the GC thread's
+# `$gc_*`) belong to the thread work (TH1) or need a second thread. The table sits at the end of `_PRED_TABLES` (upstream: after read,
+# pl-ext.c:519), as the other tables added after the fact; `PRED_DEF` ors in `PL_FA_VARARGS`.
+"pl-thread.c's registration table (`BeginPredDefs(thread)`): the ported entries."
+const PL_predicates_from_thread = (
+    PL_extension("\$sig_unblock", 0, pl_sig_unblock0_va, PL_FA_VARARGS),
+)
