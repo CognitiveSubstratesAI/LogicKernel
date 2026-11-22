@@ -601,6 +601,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     initLocale!(gd)                             # setup:176 (src/os/pl-locale.jl): after initIO, the locale blob type and the default locale
+    register_main_thread!(gd)                   # pl-init.c:1606 aliasThread(PL_thread_self(), ATOM_thread, ATOM_main) (src/pl-thread.jl; TH1 engines)
     return gd
 end
 
