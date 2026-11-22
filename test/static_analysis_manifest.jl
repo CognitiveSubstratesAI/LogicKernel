@@ -1729,6 +1729,18 @@ function _manifest_index(T)
         # FAST-2a — the external record's atoms (src/pl-rec.jl)
         (LK.fetchAtom, Tuple{Type{T}, Vector{UInt8}, LK.copy_info}, false),
         (LK.fetchAtomW, Tuple{Type{T}, Vector{UInt8}, LK.copy_info}, false),
+        # FAST-2b — the external record's decoder (src/pl-rec.jl), pl-dict.c's resortDictsInTerm (src/pl-dict.jl)
+        (LK.fetchExtAtomWord, Tuple{LD, Vector{UInt8}, LK.copy_info, UInt8}, false),
+        (LK._rec_indirect!, Tuple{LD, Int, Int, LK.copy_info, T, Int}, false),
+        (LK._rec_int64!, Tuple{LD, Int, Int, LK.copy_info, Int64, Int}, false),
+        (LK._rec_mpz!, Tuple{LD, Int, Int, LK.copy_info, BigInt, Int}, false),
+        (
+            LK.copy_external_record,
+            Tuple{LD, Int, Vector{UInt8}, LK.copy_info, Vector{Int}, Vector{Int}},
+            false
+        ),
+        (LK.PL_recorded_external, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK.resortDictsInTerm, Tuple{LD, Vector{Int}}, false),
         (LK.copy_record, Tuple{LD, Int, LK.record{T}, LK.copy_info}, false),
         (LK._vword_at!, Tuple{LD, T, Int}, false),
         (LK._rec_put!, Tuple{LD, Int, Int, UInt64}, true),
