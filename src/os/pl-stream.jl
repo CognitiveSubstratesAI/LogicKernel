@@ -363,11 +363,12 @@ mutable struct IOSTREAM
     upstream::Union{Nothing, IOSTREAM}  # stream providing our input (the filter on this stream; SWI-Stream.h)
     downstream::Union{Nothing, IOSTREAM}  # stream providing our output (the stream this filter filters)
     filter::Union{Nothing, Base.RefValue{AbstractSfilter}}  # the functions and context of a `Sfilterfunctions` stream
+    fileno::Int                         # the cached file number (`Sfileno`), -1: none
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
         ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
-        nothing, nothing, nothing
+        nothing, nothing, nothing, -1
     )
 end
 
@@ -959,6 +960,75 @@ function Sfwrite(data::Vector{UInt8}, size::Int, elms::Int, s::IOSTREAM)::Int
     return (size * elms - chars) ÷ size
 end
 
+# PORT: SWI-Stream.h SIO_RP_BLOCK
+"`Sread_pending` flag: wait for new input if nothing is buffered (SWI-Stream.h)."
+const SIO_RP_BLOCK = 0x1
+# PORT: SWI-Stream.h SIO_RP_NOPOS
+"`Sread_pending` flag: do not update the position (SWI-Stream.h)."
+const SIO_RP_NOPOS = 0x2
+
+# PORT: pl-stream.c Sread_pending
+# DIVERGES: `buf` is a byte vector filled from index 1 (upstream's `char *`); the count is the bytes delivered, an end of file the
+# stream's own (`Sfpasteof`) is 0, any other failure -1.
+"Read what is buffered on `s` (at most `limit` bytes) into `buf`; with `SIO_RP_BLOCK` fill the buffer first if it is empty: the count (pl-stream.c)."
+function Sread_pending(s::IOSTREAM, buf::Vector{UInt8}, limit::Int, flags::Int)::Int
+    done = 0
+    if s.bufp >= s.limitp && (flags & SIO_RP_BLOCK) != 0
+        c = S__fillbuf(s)
+        if c < 0
+            (s.flags & SIO_FEOF) != 0 && Sfpasteof(s) != 1 && return 0
+            return c
+        end
+        buf[1] = c % UInt8
+        limit -= 1
+        done = 1
+    end
+    n = s.limitp - s.bufp
+    n > limit && (n = limit)
+    copyto!(buf, done + 1, s.mem, s.bufp, n)
+    if s.position !== nothing && (flags & SIO_RP_NOPOS) == 0
+        p = s.position
+        for i in 1:(done + n)
+            update_linepos(s, Int(buf[i]))
+            p.charno += 1
+        end
+    end
+    s.bufp += n
+    return done + n
+end
+
+# PORT: pl-stream.c Spending
+# DIVERGES: the control function is a filter's (`S_control`, `SIO_GETPENDING`, a `Ref{Int}`); no other function set has one.
+"The number of bytes pending on `s`: the buffered ones, else what the control function says (pl-stream.c)."
+function Spending(s::IOSTREAM)::Int
+    s.bufp < s.limitp && return s.limitp - s.bufp
+    pending = Ref(0)
+    S_control(s, SIO_GETPENDING, pending) == 0 && return pending[]
+    return 0
+end
+
+# PORT: pl-stream.c S__fileno
+# DIVERGES: upstream's `SIO_FILE` stream is its handle (the OS descriptor): no stream here holds one, so only a control function
+# (a filter's, `SIO_GETFILENO`, a `Ref{Int}`) can answer.
+"The file number `s`'s control function reports, or -1 (pl-stream.c)."
+function S__fileno(s::IOSTREAM)::Int
+    if s.magic == SIO_MAGIC
+        n = Ref(0)
+        S_control(s, SIO_GETFILENO, n) == 0 && return n[]
+    end
+    return -1                                   # errno = EINVAL
+end
+
+# PORT: pl-stream.c Sfileno
+# DIVERGES: the cached `fileno` is set by `Snew` of a filter stream only (`S__fileno`); the standard streams' 0, 1, 2 are
+# `_std_fileno`'s (src/os/pl-file.jl, FILENO1), a file stream has none.
+"The cached file number of `s`: >= 0, or -1 (pl-stream.c)."
+function Sfileno(s::IOSTREAM)::Int
+    s.magic != SIO_MAGIC && return -1           # errno = EINVAL
+    s.fileno >= 0 && return s.fileno
+    return -1
+end
+
 # ── characters ──────────────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c reperror
@@ -1296,6 +1366,7 @@ function Snew(impl::AbstractSfilter, flags::UInt32, functions::IOFUNCTIONS)::IOS
     @assert functions == Sfilterfunctions
     s = Snew(nothing, flags, functions)
     s.filter = Ref{AbstractSfilter}(impl)
+    s.fileno = S__fileno(s)
     return s
 end
 
