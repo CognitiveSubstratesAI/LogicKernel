@@ -290,24 +290,19 @@ end
 
 # ORIGINAL: the `TAG_INTEGER`, `TAG_STRING` and `TAG_FLOAT` cases of `compile_term_to_heap` for an EXTERNAL
 # record, on the indirect's value `v`.
-# DIVERGES: an integer that fits an `Int64` is `PL_TYPE_INTEGER` (upstream's `V_INTEGER`: the indirect int64), a
-# larger one `PL_REC_MPZ`; the size accounting is upstream's global-stack cells (`wsizeofIndirect(w) + 2`: 3 for
-# an int64 or a float, an mpz's limbs and `MPZ_STACK_EXTRA`, an mpq's two). A value of no SWI type (`NUM_OTHER`: no
-# upstream counterpart) is refused as a blob, `econtext` the value.
+# DIVERGES: an integer outside the tagged range (the tagged ones are `PL_TYPE_TAGGED_INTEGER`, above) is `PL_REC_MPZ`
+# whatever its size: the pin's bytes for such an integer are an mpz, an `Int64` among them (no `PL_TYPE_INTEGER` is written);
+# the size accounting is upstream's global-stack cells (`wsizeofIndirect(w) + 2`: 3 for a float, an mpz's limbs and
+# `MPZ_STACK_EXTRA`, an mpq's two). A value of no SWI type (`NUM_OTHER`: no upstream counterpart) is refused as a blob,
+# `econtext` the value.
 "Add the indirect value `v` to an external record's code and size (pl-rec.c `compile_term_to_heap`); false, `info.error` set, for a value of no SWI type."
 function addExternalIndirect(info::compile_info{T}, v::T)::Bool where {T}
     k = number_kind(v)
     if k === NUM_INTEGER
-        if integer_is_int64(v)
-            info.size += 1 + 2                              # wsizeofIndirect(w) + 2
-            addOpCode(info, PL_TYPE_INTEGER)
-            addInt64(info, int64_value(v))
-        else
-            z = bigint_value(v)
-            info.size += mpz_wsize(z) + MPZ_STACK_EXTRA + 2
-            addOpCode(info, PL_REC_MPZ)
-            addMPZToBuffer(info.code, z)
-        end
+        z = bigint_value(v)                                 # outside the tagged range, as the pin writes it: PL_REC_MPZ
+        info.size += mpz_wsize(z) + MPZ_STACK_EXTRA + 2
+        addOpCode(info, PL_REC_MPZ)
+        addMPZToBuffer(info.code, z)
     elseif k === NUM_RATIONAL
         q = rational_value(v)
         info.size += mpz_wsize(numerator(q)) + mpz_wsize(denominator(q)) + 2 * MPZ_STACK_EXTRA + 2
