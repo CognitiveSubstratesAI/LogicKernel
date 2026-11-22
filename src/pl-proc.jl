@@ -33,9 +33,12 @@
 
 # PORT: pl-proc.c lookupProcedure
 # DIVERGES: the functor is its parts: the name symbol `name` and the arity (there is no functor
-# table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: for a NEW
-# procedure it sets the debugger's `TRACE_ME`, which the kernel has no debugger for (`resetProcedure!`, since PR1, omits it
-# too), and `SUPERVISOR(virgin)`, which the new definition starts with. No
+# table); the procedure table is keyed by the name's `sym_key`. No `resetProcedure`: the new definition starts with
+# `SUPERVISOR(virgin)` and its flags set here: `TRACE_ME` (what `resetProcedure` sets for a predicate whose name does not
+# start with `$`, the debugger's "can be debugged", read by `isDebugFrame` for `prolog_frame_attribute(F, hidden, H)`)
+# for a procedure of a module that is not a system one only (`M_SYSTEM`: `system` and the `$`-modules): the system
+# module's procedures are the built-ins (`registerBuiltins!`, flags as `builtin_pred_flags` with `defflags` 0) and the boot's,
+# whose `TRACE_ME` stays clear here (upstream sets it, and clears it with `'$hide'/1` and `PL_FA_NOTRACE`). No
 # program-space limit, statistics or lock: there are no threads, so the table cannot gain the
 # functor between the lookup and the add.
 """
@@ -56,8 +59,10 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
         clauses.args = nothing
     end
     cd = m.code_data
+    userpred = (m.flags & M_SYSTEM) == 0 && sym_first_byte(name) != 0x24   # resetProcedure: `stringAtom(name)[0] != '$'`
     def = Definition{T}(
-        key, arity, clauses, UInt64(0), name, cd.virgin, ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
+        key, arity, clauses, userpred ? TRACE_ME : UInt64(0), name, cd.virgin,
+        ClauseRef{T}[], cd, 0, m.index, 1   # def->shared = 1
     )
     proc = Procedure{T}(def, UInt32(0), UInt32(0))
     m.procedures[(key, arity)] = proc
@@ -1164,7 +1169,8 @@ end
 
 # PORT: pl-proc.c resetProcedure
 # DIVERGES: no statistics (`GD->clauses.dirty`); the tabling attributes are cleared and the update listeners destroyed
-# (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
+# (EV1); the debugger's `TRACE_ME` is kept as `lookupProcedure` set it, for a predicate whose name does not start with `$`
+# (upstream sets it for such a name whatever it was: a `'$hide'/1` before the reset is undone there, not here). Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
 # the foreign function index.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
@@ -1191,7 +1197,8 @@ function _resetProcedure!(
     if (def.flags & P_DYNAMIC) != 0 || !defined
         isnew = true
     end
-    def.flags &= (SPY_ME | P_DIRTYREG)                  # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
+    keep = sym_first_byte(def.name) != 0x24 ? TRACE_ME : UInt64(0)  # if ( userpred ) flags |= TRACE_ME
+    def.flags &= (SPY_ME | P_DIRTYREG | keep)           # flags0 ^ (flags0 & ~(SPY_ME|P_DIRTYREG))
     def.impl_clauses.number_of_clauses = 0x00000000
     destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
     def.tabling === nothing || tbl_reset_tabling_attributes!(def)   # if ( def->tabling ) tbl_reset_tabling_attributes(def)

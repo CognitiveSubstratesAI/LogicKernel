@@ -51,7 +51,7 @@ end
     @test length(user.procedures) == length(boot) + 2
     @test setdiff(Set(keys(user.procedures)), boot) == Set([(p, 1), (p, 2)])
     d = p2.definition                                           # a new predicate
-    @test d.functor_name == p && d.arity == 2 && d.flags == 0 && p2.flags == 0
+    @test d.functor_name == p && d.arity == 2 && d.flags == LK.TRACE_ME && p2.flags == 0
     @test lk_eq(d.name, _ps(:p))                                # the name itself, for error terms
     @test d.impl_clauses.first_clause === nothing && d.impl_clauses.number_of_clauses == 0
     @test length(d.impl_clauses.args::Vector{LK.arg_info}) == 2

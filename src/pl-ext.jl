@@ -168,7 +168,7 @@ end
 
 # PORT: pl-ext.c registerBuiltins as registerBuiltins!
 # DIVERGES: no `signonly` (no saved-state signatures). `defflags` is 0 for every predicate:
-# `TRACE_ME` is the debugger's, and `lookupProcedure` does not set it (src/pl-proc.jl), so a new
+# `TRACE_ME` is the debugger's, and `lookupProcedure` does not set it in the system module (src/pl-proc.jl), so a new
 # procedure's flags are 0 — upstream asserts they equal `defflags`. `impl.foreign.function` and the
 # supervisor's operand are the entry's index in its dispatch table, `first + k` for entry `k`.
 "Register the entries `sigs` of a table, the first at dispatch index `first + 1`, in the `system` module (pl-ext.c)."
