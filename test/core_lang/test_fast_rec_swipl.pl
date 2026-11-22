@@ -4,7 +4,7 @@
 % solution). R is the code list of the string fast_term_serialized(Term, String) makes (its bytes), or a short summary.
 %   t0-t6   the pinned layouts (one solution each: the test holds their bytes as literals)
 %   t7-t66  the encoder: term to string
-%   r0-r9   the decoder side (string to term): the round trips and the bound-string answers; the kernel decodes in FAST-2
+%   r0-r12  the decoder side (string to term): the round trips and the bound-string answers; the kernel decodes in FAST-2
 % Characters above 0xFF and 0x80-0xFF are written as escapes, so the file is the same in every encoding.
 % No row carries a size, an offset, a variable number or a length in 256..383, 512..639, 1024..1151 ... (a value written with
 % addSizeInt; the header's two sizes are written with addUintBuffer and are outside them as well). Rows for those ranges follow
@@ -134,3 +134,7 @@ r7(R) :- dict_create(D, t, [a-1]), rt(D, R).
 r8(R) :- member(Cs, [[122, 9], [118, 1, 5], [122, 11, 1, 97], [118, 2, 255, 128]]), string_codes(S, Cs),
     fast_term_serialized(T, S), R = T.     % the header-less records: [], an integer, an atom
 r9(R) :- X is 1 rdiv 3, N is 2**70 rdiv 3, rt(f(X, N, "s", 'a\x3b1\'), R).
+r10(R) :- rt(f(1.5, a, -2.25, "s", 'x'), R).     % floats inside a compound, more cells after each
+r11(R) :- member(E, [2**56, -(2**56)-1, 2**62, 2**63-1, -(2**63), 2**64, 10**30]), N is E, rt(f(N, a, N, "s"), R).   % an mpz record inside a compound, int64 or not
+r12(R) :- member(Cs, [[114, 11, 6, 13, 1, 11, 1, 102, 18, 0, 0, 0, 1, 5], [114, 11, 6, 13, 1, 11, 1, 102, 18, 255, 255, 255, 255, 5]]),
+    string_codes(S, Cs), fast_term_serialized(T, S), R = T.     % PL_REC_MPZ records of the small integers 5 and -5 inside f(_)
