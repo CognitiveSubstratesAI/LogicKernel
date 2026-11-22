@@ -12,8 +12,9 @@
 # unknown option ignored, warned about or a `domain_error`, as the flags or the `unknown_option`
 # flag say (swipl 10.1.16's default: `ignore`). NOT PORTED: option DICTS (`dict_options`: the kernel
 # reads no dicts, R1d), the option types no specification uses yet (`OPT_UINT64`,
-# `OPT_SIZE`, `OPT_DOUBLE`, `OPT_STRING`, `OPT_LOCALE`) — reaching one is an assertion, as upstream's
-# `assert(0)` for an unknown type.
+# `OPT_DOUBLE`, `OPT_STRING`, `OPT_LOCALE`) — reaching one is an assertion, as upstream's
+# `assert(0)` for an unknown type. `OPT_SIZE` (with `OPT_INF`: the atoms `inf` and `infinite`) since
+# TH1: `engine_create/3,4`'s `stack_limit`.
 
 # PORT: pl-option.c MAXOPTIONS
 "The most specifications a table may hold (pl-option.c)."
@@ -23,10 +24,18 @@ const MAXOPTIONS = 64
 "Whether the unknown-option mode of `f` is `m` (pl-option.c)."
 HAS_OPT_MODE(f::Int, m::Int)::Bool = (f & OPT_UNKNOWN_MASK) == m
 
+# PORT: pl-fli.c PL_is_inf
+"Whether term reference `t` holds the atom `inf` or `infinite` (pl-fli.c)."
+function PL_is_inf(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    a = PL_get_atom(ld, t)
+    a === nothing && return false
+    return sym_key(a) == sym_key(mk_sym(T, :inf)) || sym_key(a) == sym_key(mk_sym(T, :infinite))
+end
+
 # PORT: pl-option.c get_optval
 # DIVERGES: returns `(ok, value)` — a `Bool`, an `Int`, an atom or a term reference — where upstream
 # writes through the specification's pointer (`optvalue`); the types listed in the file's header
-# are not ported.
+# are not ported. An `OPT_SIZE` with `OPT_INF` given `inf` is `typemax(Int)` (upstream: `(size_t)-1`).
 "The value of option `spec` in term reference `val`: `(true, value)`, or `(false, nothing)` with the error raised (pl-option.c)."
 function get_optval(
     ld::PL_local_data{T}, spec::PL_option_t, val::term_t
@@ -44,6 +53,13 @@ function get_optval(
         i = PL_get_int64_ex(ld, val)
         i === nothing && return (false, nothing)
         return (true, i)
+    elseif type == OPT_SIZE
+        if (spec.type & OPT_INF) != 0 && PL_is_inf(ld, val)   # *valp.sz = (size_t)-1: the largest Int
+            return (true, typemax(Int))
+        end
+        sz = PL_get_size_ex(ld, val)
+        sz === nothing && return (false, nothing)
+        return (true, sz)
     elseif type == OPT_ATOM
         a = PL_get_atom_ex(ld, val)
         a === nothing && return (false, nothing)

@@ -275,3 +275,272 @@ end
 function pl_thread_self(ld::PL_local_data{T}, self::term_t)::foreign_t where {T}
     return unify_thread_id(_query_gd(ld), ld, self, ld.thread_info) ? FTRUE : FFALSE
 end
+
+# ---- ENGINES: CREATING, DESTROYING, POSTING AND FETCHING (TH1 engines, pl-thread.c at 18168e62) ----
+
+# PORT: pl-thread.c copy_local_data
+# DIVERGES: the fields the kernel's local data has (the rest of upstream's list has no counterpart: `encoding`, `arith.rat`,
+# `gmp.max_integer_size`, `prolog_flag.incomparable_error`, the thread-local flag table (the flags are the database's, ONE copy: `prolog_flag`
+# of `GD`), `fli.string_buffers`, the locale (`locale.current` is in the database), `tabling.node_pool`, the message queue, the
+# predicate references and the coverage data are not per local data here). `copyStandardStreams` shares the standard streams: the
+# creator's `IO_streams` entries are the engine's. `statistics.start_time` is the engine's own (`ld_statistics()` of `_bare_local_data`).
+"Copy the creator `ldold`'s settings into the new engine `ldnew`, whose thread record is `info` (pl-thread.c)."
+function copy_local_data!(
+    ldnew::PL_local_data{T}, ldold::PL_local_data{T}, info::PL_thread_info{T}
+)::Nothing where {T}
+    ldnew.prompt_current = ldold.prompt_current                 # ldnew->prompt = ldold->prompt
+    ldnew.prompt_first = ldold.prompt_first
+    ldnew.prompt_first_used = ldold.prompt_first_used
+    ldnew.prompt_next = ldold.prompt_next
+    ldnew.IO_streams = copy(ldold.IO_streams)                   # copyStandardStreams(ldnew, ldold, attr->flags)
+    ldnew.IO_initialised = ldold.IO_initialised
+    ldnew.modules_source = ldold.modules_source                 # ldnew->modules = ldold->modules
+    ldnew.modules_typein = ldold.modules_typein
+    ldnew.debugstatus_skiplevel = ldold.debugstatus_skiplevel   # ldnew->_debugstatus = ldold->_debugstatus
+    ldnew.debugstatus_tracing = ldold.debugstatus_tracing
+    ldnew.debugstatus_debugging = ldold.debugstatus_debugging
+    if ldold.debugstatus_skiplevel != SKIP_VERY_DEEP
+        ldnew.debugstatus_debugging = false
+        ldnew.debugstatus_tracing = false
+        ldnew.debugstatus_skiplevel = SKIP_VERY_DEEP
+    end
+    ldnew.prolog_flag_mask = ldold.prolog_flag_mask
+    ldnew.prolog_flag_occurs_check = ldold.prolog_flag_occurs_check
+    ldnew.prolog_flag_access_level = ldold.prolog_flag_access_level
+    ldnew.prolog_flag_unknown_option = ldold.prolog_flag_unknown_option
+    ldnew.prolog_flag_write_attributes = ldold.prolog_flag_write_attributes
+    ldnew.arith_f_flags = ldold.arith_f_flags
+    ldnew.stacks_limit = info.stack_limit                       # (`attr->stack_limit`, in positions)
+    rnew = ldnew.tabling.restraint                              # ldnew->tabling.restraint = ldold->tabling.restraint
+    rold = ldold.tabling.restraint
+    rnew.max_table_subgoal_size_action = rold.max_table_subgoal_size_action
+    rnew.max_table_subgoal_size = rold.max_table_subgoal_size
+    rnew.max_table_answer_size_action = rold.max_table_answer_size_action
+    rnew.max_table_answer_size = rold.max_table_answer_size
+    rnew.max_answers_for_subgoal_action = rold.max_answers_for_subgoal_action
+    rnew.max_answers_for_subgoal = rold.max_answers_for_subgoal
+    rnew.max_incomplete_subgoals_action = rold.max_incomplete_subgoals_action
+    rnew.max_incomplete_subgoals = rold.max_incomplete_subgoals
+    rnew.max_scc_subgoals_action = rold.max_scc_subgoals_action
+    rnew.max_scc_subgoals = rold.max_scc_subgoals
+    ldnew.table_flags_compile_threshold = ldold.table_flags_compile_threshold
+    ldnew.table_flags_drop_intermediate = ldold.table_flags_drop_intermediate
+    if !info.debug
+        ldnew.debugstatus_tracing = false
+        ldnew.debugstatus_debugging = false
+        setPrologRunMode!(ldnew, RUN_MODE_NORMAL)
+    end
+    updateAlerted(ldnew)
+    return nothing
+end
+
+# PORT: pl-thread.c PL_create_engine as _create_engine
+# DIVERGES: the engine is a second local data over the database `gd` (`_bare_local_data`: no `initIO`; the creator's streams are copied by
+# `copy_local_data!`); there is no pthread, no `PL_set_engine` (the local data is an argument everywhere) and no `$thread_init`
+# (pl-thread.c:7006: the hook runs the thread initialisation goals and the thread events, owner TH1: the event table). The thread ids
+# count up from 2 and are never reused (upstream reuses a free slot). NOT PORTED: the creator's `inherit_from`.
+"A new engine, created from `ld`, whose stacks may grow to `stack_limit` positions (pl-thread.c `PL_create_engine`)."
+function _create_engine(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, stack_limit::Int
+)::PL_local_data{T} where {T}
+    eld = _bare_local_data(gd)
+    gd.thread.highest_id += 1
+    info = PL_thread_info{T}(
+        gd.thread.highest_id, 1, false, true, false, false, stack_limit, PL_THREAD_RUNNING,
+        eld, nothing, :user
+    )
+    push!(gd.thread.infos, info)                    # index = pl_tid
+    eld.thread_info = info
+    copy_local_data!(eld, ld, info)
+    return eld
+end
+
+# PORT: pl-thread.c PL_thread_destroy_engine as _destroy_engine!
+# DIVERGES: the engine is the handle's (`PL_destroy_engine(th->info->thread_data)` and `PL_thread_destroy_engine()` of the current
+# engine are one function here: there is no current engine to compare with); `free_prolog_thread` is the status `EXITED`, the thread
+# record dropped from `gd.thread.infos` and from the handle. NOT PORTED: the `thread_exit`/`this_thread_exit` events and the
+# `at_thread_exit` goals it runs (owner TH1: the event table).
+"Leave the engine of the handle `th`: the last user ends it (pl-thread.c)."
+function _destroy_engine!(gd::PL_global_data{T}, th::thread_handle{T})::Nothing where {T}
+    info = th.info::PL_thread_info{T}
+    info.open_count -= 1
+    if info.open_count == 0
+        info.status = PL_THREAD_EXITED
+        info.thread_data = nothing
+        info.has_tid = false
+        gd.thread.infos[info.pl_tid] = nothing
+        th.info = nothing
+    end
+    return nothing
+end
+
+# PORT: pl-thread.c destroy_interactor
+# DIVERGES: no mutex (no OS thread: `unlock` has no counterpart); the query is closed in the engine's own local data, passed
+# explicitly (`PL_set_engine`).
+"Close the engine of the handle `th` and make its handle empty again (pl-thread.c)."
+function destroy_interactor!(
+    gd::PL_global_data{T}, th::thread_handle{T}, gc::Bool
+)::Nothing where {T}
+    if th.interactor_query != 0
+        eld = (th.info::PL_thread_info{T}).thread_data::PL_local_data{T}
+        PL_close_query(eld, th.interactor_query)
+        th.interactor_query = 0
+    end
+    if th.info !== nothing
+        _destroy_engine!(gd, th)
+        gd.thread.engines_finished += 1
+    end
+    th.interactor_package = nothing                 # PL_erase(th->interactor.package)
+    th.flags &= ~(TH_INTERACTOR_NOMORE | TH_INTERACTOR_DONE)
+    unalias_thread!(gd, th)
+    return nothing
+end
+
+# PORT: pl-thread.c done_interactor
+"The engine of the handle `th` computed its last result: free it, keep the handle valid for the final `engine_next/2` (pl-thread.c)."
+function done_interactor!(gd::PL_global_data{T}, th::thread_handle{T})::Nothing where {T}
+    th.flags |= TH_INTERACTOR_DONE
+    _destroy_engine!(gd, th)
+    gd.thread.engines_finished += 1
+    return nothing
+end
+
+# PORT: pl-thread.c copy_debug_mode
+"Give the engine `to` the debug and trace mode of the caller `from` (pl-thread.c)."
+function copy_debug_mode(to::PL_local_data{T}, from::PL_local_data{T})::Nothing where {T}
+    if to.debugstatus_debugging != from.debugstatus_debugging
+        debugmode(to, from.debugstatus_debugging, nothing, UInt32(0))
+    end
+    if to.debugstatus_tracing != from.debugstatus_tracing
+        tracemode(to, from.debugstatus_tracing, nothing)
+    end
+    return nothing
+end
+
+# PORT: pl-thread.c make_engine_options
+const make_engine_options = (
+    PL_option_t(:stack_limit, OPT_SIZE | OPT_INF),
+    PL_option_t(:alias, OPT_ATOM),
+    PL_option_t(:inherit_from, OPT_TERM)
+)
+
+# PORT: pl-thread.c engine_create
+# (PRED_IMPL("$engine_create", 3, engine_create, 0), pl-thread.c:4097-4170 at the pin)
+# DIVERGES: the option `stack_limit` is in bytes and the engine's limit in positions (words): `min(bytes ÷ 8, typemax(Int) >> 8)` (`stacks_limit`
+# is multiplied by 8 where bytes are wanted, src/pl-gmp.jl); `inherit_from` is read and ignored, as upstream. The goal's record is made in
+# the caller's local data and read in the engine's (`PL_record`/`PL_recorded` take the local data explicitly; a record holds its own
+# values). The `assert(0)` (TBD: copy exception) of upstream is an error. NOT PORTED: `PL_unregister_atom(th->symbol)` (no atom GC).
+"`\$engine_create(-Handle, +GoalAndTemplate, +Options)`: make an engine that runs `Goal`, answering `Template` (pl-thread.c)."
+function pl_engine_create(
+    ld::PL_local_data{T}, A1::term_t, A2::term_t, A3::term_t
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    vals = PL_scan_options(ld, A3, 0, "engine_option", make_engine_options)
+    vals === nothing && return FFALSE
+    stack = vals[1] === nothing ? 0 : vals[1]::Int
+    alias = vals[2] === nothing ? nothing : vals[2]::T
+    limit = stack != 0 ? min(stack ÷ 8, typemax(Int) >> 8) : ld.stacks_limit   # attrs.stack_limit
+
+    eld = _create_engine(gd, ld, limit)
+    info = eld.thread_info::PL_thread_info{T}
+    info.is_engine = true
+    th = create_thread_handle(gd, info)
+    th.flags |= TH_IS_INTERACTOR
+    gd.thread.engines_created += 1
+
+    if alias !== nothing
+        if !aliasThread!(gd, ld, info, mk_sym(T, :engine), alias)
+            destroy_interactor!(gd, th, false)
+            return FFALSE
+        end
+    end
+
+    if !unify_thread_id(gd, ld, A1, info)
+        destroy_interactor!(gd, th, false)
+        if PL_exception(ld, 0) == 0
+            return PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, A1) ? FTRUE : FFALSE
+        end
+        return FFALSE
+    end
+
+    pred = lookupProcedure(mk_sym(T, :call), 1, MODULE_system(gd))
+    r = PL_record(ld, A2)
+    t = PL_new_term_ref(eld)                        # WITH_LD(new)
+    argv = PL_new_term_refs(eld, 2)
+    th.interactor_argv = argv
+    if t != 0 && argv != 0 && PL_recorded(eld, r, t) && _PL_get_arg(eld, 1, t, argv) &&
+       _PL_get_arg(eld, 2, t, argv + 1)
+        th.interactor_query = PL_open_query(
+            gd, eld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_ALLOW_YIELD | PL_Q_EXT_STATUS, pred,
+            argv + 1
+        )
+    else
+        error("\$engine_create/3: the goal could not be copied into the engine (upstream: assert(0), TBD: copy exception)")
+    end
+    PL_erase(r)
+    return FTRUE
+end
+
+# PORT: pl-thread.c engine_destroy
+# (PRED_IMPL("engine_destroy", 1, engine_destroy, 0), pl-thread.c:4233-4247 at the pin)
+# DIVERGES (TH1): an engine that is running (its query is inside `engine_next/2`, so it is the caller of the running engine or the
+# engine itself) is not destroyed: `permission_error(destroy, engine, E)`, as for the engine itself; upstream waits for the engine's
+# mutex, which the running call holds (a deadlock on one thread). `th->info == LD->thread.info` needs `th.info` to exist: the main
+# thread has no record here.
+"`engine_destroy(+Engine)`: destroy the engine (pl-thread.c)."
+function pl_engine_destroy(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    th = get_interactor(gd, ld, A1, true)
+    th === nothing && return FFALSE
+    if (th.info !== nothing && th.info === ld.thread_info) || th.running
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :destroy), mk_sym(T, :engine), A1
+        ) ? FTRUE : FFALSE
+    end
+    destroy_interactor!(gd, th, false)
+    return FTRUE
+end
+
+# PORT: pl-thread.c engine_post
+# (PRED_IMPL("engine_post", 2, engine_post, 0), pl-thread.c:4437-4461 at the pin)
+# DIVERGES (TH1): posting to a running engine is `permission_error(post_to, engine, E)` (upstream waits for the mutex the running
+# `engine_next/2` holds); a record made in the caller's local data is read in the engine's by `engine_fetch/1`.
+"`engine_post(+Engine, +Term)`: make `Term` available to `engine_fetch/1` of the engine (pl-thread.c)."
+function pl_engine_post2(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    th = get_interactor(gd, ld, A1, true)
+    th === nothing && return FFALSE
+    if th.interactor_package === nothing && !th.running
+        th.interactor_package = PL_record(ld, A2)
+        return FTRUE
+    end
+    return PL_error(
+        ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :post_to), mk_sym(T, :engine), A1
+    ) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c engine_fetch
+# (PRED_IMPL("engine_fetch", 1, engine_fetch, 0), pl-thread.c:4473-4502 at the pin)
+"`engine_fetch(-Term)`: the term `engine_post/2,3` delivered to the running engine (pl-thread.c)."
+function pl_engine_fetch(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    info = ld.thread_info
+    if info !== nothing && info.is_engine
+        th = symbol_thread_handle(gd, info.symbol)::thread_handle{T}
+        if th.interactor_package !== nothing
+            tmp = PL_new_term_ref(ld)
+            rc = tmp != 0 && PL_recorded(ld, th.interactor_package, tmp) && PL_unify(ld, A1, tmp)
+            th.interactor_package = nothing         # PL_erase(th->interactor.package)
+            return rc ? FTRUE : FFALSE
+        end
+    end
+
+    exv = PL_new_term_refs(ld, 2)
+    return (
+        exv != 0 && PL_unify_atom(ld, exv, mk_sym(T, :delivery)) &&
+        unify_thread_id(gd, ld, exv + 1, info) &&
+        PL_existence_error3(
+            ld, mk_sym(T, :term), exv, exv + 1, "engine_fetch", 1, "Use engine_post/2,3"
+        )
+    ) ? FTRUE : FFALSE
+end
