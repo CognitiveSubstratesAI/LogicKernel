@@ -57,11 +57,14 @@ core_lang/test_declare_destroy_swipl.jl	4.4
 core_lang/test_default_term.jl	2.3
 core_lang/test_det_swipl.jl	10.9
 core_lang/test_dict_preds_swipl.jl	3.9
+core_lang/test_dict_set_swipl.jl	3.9
+core_lang/test_dictrec_swipl.jl	3.9
 core_lang/test_dwim_swipl.jl	2.7
 core_lang/test_event_swipl.jl	3.3
 core_lang/test_exception.jl	1.6
 core_lang/test_export_import_swipl.jl	5.3
 core_lang/test_expr_functor.jl	11.3
+core_lang/test_fast_rec_swipl.jl	8.0
 core_lang/test_findall_swipl.jl	10.9
 core_lang/test_firstboot_swipl.jl	4.6
 core_lang/test_firstvar_swipl.jl	5.6

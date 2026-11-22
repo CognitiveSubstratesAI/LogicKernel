@@ -161,20 +161,24 @@ MUTANTS = [
     dict(id="MB2 compileTermToHeap leaves the cyclic copies' bindings on the trail", file=REC, targets=T_FIND,
          old='''    restoreVars(ld, info)
     unvisit(ld, info)
-''',
+    @assert rc''',
          new='''    restoreVars(ld, info)
-'''),
+    @assert rc'''),
     dict(id="MB3 copyRecordToGlobal does not bind the cyclic references", file=REC, targets=T_FIND,
-         old='''            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))''',
-         new='''            nothing'''),
+         old='''            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))
+        elseif tag == PL_TYPE_COMPOUND || tag == PL_TYPE_CONS''',
+         new='''            nothing
+        elseif tag == PL_TYPE_COMPOUND || tag == PL_TYPE_CONS'''),
     # MB4 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # MB5 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     dict(id="MB6 a record's variable met twice gets two fresh variables", file=REC, targets=T_FIND,
          old='''                ld.gstack[p] = word(0)                      # setVar(*p)
                 b.vars[n] = p
-            end''',
+            end
+        elseif tag == PL_REC_ALLOCVAR''',
          new='''                ld.gstack[p] = word(0)                      # setVar(*p)
-            end'''),
+            end
+        elseif tag == PL_REC_ALLOCVAR'''),
     # ── the bag ──
     dict(id="MB7 '$add_findall_bag'/1 succeeds", file=BAG, targets=T_FIND,
          old='''    else

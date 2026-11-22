@@ -8,7 +8,7 @@
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 #   * Dicts are built by dict_create/3 and put_dict/3 only (the reader refuses dicts, the writer has no dict arm) and never appear in an
 #     answer: a row observes a dict through dict_pairs/3, `dpairs/2` (get_dict/3 findall, msort) or a single lookup.
-#   * b_set_dict/3, nb_set_dict/3 and nb_link_dict/3 are left to the SETARG follow-up, which adds their rows.
+#   * b_set_dict/3, nb_set_dict/3 and nb_link_dict/3 have their rows in test_dict_set_swipl.jl (DICT-SET).
 # dp01-dp12: $get_dict_ex/3
 # dp13-dp30: get_dict/5
 # dp31-dp49: put_dict/4

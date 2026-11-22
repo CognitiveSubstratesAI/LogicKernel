@@ -32,8 +32,11 @@ core_lang/test_copyterm_cells.jl	5.3
 core_lang/test_copyterm_swipl.jl	8.9
 core_lang/test_default_term.jl	2.1
 core_lang/test_det_swipl.jl	9.1
+core_lang/test_dict_set_swipl.jl	9.1
+core_lang/test_dictrec_swipl.jl	9.1
 core_lang/test_exception.jl	0.9
 core_lang/test_expr_functor.jl	8.8
+core_lang/test_fast_rec_swipl.jl	6.0
 core_lang/test_findall_swipl.jl	8.8
 core_lang/test_firstvar_swipl.jl	4.9
 core_lang/test_fli_unify_cells.jl	4.9

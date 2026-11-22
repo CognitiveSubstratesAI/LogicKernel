@@ -17,11 +17,12 @@ TARGETS = [
     "test/core_lang/test_slot_indirects.jl",
     "test/core_lang/test_prolog_flag_swipl.jl",
     "test/foreign/test_query.jl",
+    "test/core_lang/test_fast_rec_swipl.jl",     # addSizeInt writes the external record's code too (REPLAY-7, D-0238)
 ]
 PREC = "src/pl-rec.jl"
 MUTANTS = [
     dict(id="RECSIZEINT-1 the one-byte test masks with a UInt8 (0x80): a size of 256 is written as the single byte 0 (KILL R: rows r102-r108)",
          file=PREC, targets=TARGETS,
-         old="    if (val & ~Int(0x7f)) == 0\n",
-         new="    if (val & ~0x7f) == 0\n"),
+         old="    if (val & ~Int(0x7f)) == 0\n        push!(info.code, val % UInt8)",
+         new="    if (val & ~0x7f) == 0\n        push!(info.code, val % UInt8)"),
 ]

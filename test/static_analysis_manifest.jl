@@ -1781,6 +1781,29 @@ function _manifest_index(T)
         (LK.addWord, Tuple{LK.compile_info{T}, UInt64}, false),
         (LK.unvisit, Tuple{LD, LK.compile_info{T}}, true),
         (LK.restoreVars, Tuple{LD, LK.compile_info{T}}, true),
+        # FAST-1b — the external record's encoder (src/pl-rec.jl, src/pl-gmp.jl)
+        (LK.addAtom, Tuple{LD, LK.compile_info{T}, UInt64}, false),
+        (LK.addFunctor, Tuple{LD, LK.compile_info{T}, UInt64}, false),
+        (LK.addExternalIndirect, Tuple{LK.compile_info{T}, T}, false),
+        (LK.record_data, Tuple{Type{T}}, false),
+        (LK.rec_error, Tuple{LD, LK.compile_info{T}}, false),
+        (LK.compile_external_record, Tuple{LD, Int, LK.record_data{T}}, false),
+        (LK.pl_fast_term_serialized2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # FAST-2a — the external record's atoms (src/pl-rec.jl)
+        (LK.fetchAtom, Tuple{Type{T}, Vector{UInt8}, LK.copy_info}, false),
+        (LK.fetchAtomW, Tuple{Type{T}, Vector{UInt8}, LK.copy_info}, false),
+        # FAST-2b — the external record's decoder (src/pl-rec.jl), pl-dict.c's resortDictsInTerm (src/pl-dict.jl)
+        (LK.fetchExtAtomWord, Tuple{LD, Vector{UInt8}, LK.copy_info, UInt8}, false),
+        (LK._rec_indirect!, Tuple{LD, Int, Int, LK.copy_info, T, Int}, false),
+        (LK._rec_int64!, Tuple{LD, Int, Int, LK.copy_info, Int64, Int}, false),
+        (LK._rec_mpz!, Tuple{LD, Int, Int, LK.copy_info, BigInt, Int}, false),
+        (
+            LK.copy_external_record,
+            Tuple{LD, Int, Vector{UInt8}, LK.copy_info, Vector{Int}, Vector{Int}},
+            false
+        ),
+        (LK.PL_recorded_external, Tuple{LD, Vector{UInt8}, Int}, false),
+        (LK.resortDictsInTerm, Tuple{LD, Vector{Int}}, false),
         (LK.copy_record, Tuple{LD, Int, LK.record{T}, LK.copy_info}, false),
         (LK._vword_at!, Tuple{LD, T, Int}, false),
         (LK._rec_put!, Tuple{LD, Int, Int, UInt64}, true),
@@ -3345,6 +3368,7 @@ function _manifest_index(T)
         (LK.cleanDefinition!, Tuple{GD, LD, D, DDI, UInt64, Base.RefValue{Bool}}, false),
         # BOOTPRED-dict — the remaining pl-dict.c predicates (src/pl-dict.jl)
         (LK.put_dict4, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.setdict, Tuple{LD, Int, Int, Int, UInt32}, false),
         (LK.pl_dict_pairs, Tuple{LD, Int}, false),
         (LK.pl_dict_sort_indexes, Tuple{LD, Int, Int}, false),
         (LK.pl_dict_pair, Tuple{LD, Int, Union{Nothing, Vector{Int}}, Int, Int}, false),
@@ -3367,11 +3391,14 @@ function _manifest_index(T)
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
                 LK.pl_get_dict_ex3_va, LK.pl_get_dict5_va, LK.pl_put_dict4_va,
+                LK.pl_b_set_dict3_va, LK.pl_nb_set_dict3_va, LK.pl_nb_link_dict3_va,
                 LK.pl_dict_pairs3_va, LK.pl_del_dict4_va, LK.pl_unify_left_dict2_va,
                 LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
-                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
+                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va, LK.pl_btree_find_node5_va
             )
         ]...,
+        # DICT-REC — src/pl-btree.jl's btree_find_node
+        (LK.btree_find_node, Tuple{LD, Int, Int, Int, Int, Int}, false),
         # RDDICT — the reader's dict branch (src/pl-read.jl), dict_order_term_refs (src/pl-dict.jl) and the
         # var_tag flag helpers (src/os/pl-prologflag.jl)
         (LK.is_key_token, Tuple{LK.token{T}, LK.read_data{T}}, false),
@@ -3438,6 +3465,7 @@ function _manifest_index(T)
             Tuple{LD, Int64, Int64, LK.foreign_context{T}},
             false
         ),
+        (LK.pl_needs_quotes1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
@@ -6845,6 +6873,25 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.fetchSizeInt, Tuple{Vector{UInt8}, LK.copy_info}, true),
     (LK.fetchInt64, Tuple{Vector{UInt8}, LK.copy_info}, true),
     (LK.fetchWord, Tuple{Vector{UInt8}, LK.copy_info}, true),
+    # FAST-1b — the external record's bytes (src/pl-rec.jl, src/pl-gmp.jl): no term type
+    (LK.addUintBuffer, Tuple{Vector{UInt8}, Int}, false),
+    (LK.skipSizeInt, Tuple{Vector{UInt8}, LK.copy_info}, true),
+    (LK.is_external, Tuple{Vector{UInt8}, Int}, false),
+    # FAST-2a — the decoder's primitives (src/pl-rec.jl, src/pl-gmp.jl): no term type
+    (LK.REC_COMPAT, Tuple{UInt8}, false),
+    (LK.fetchOpCode, Tuple{Vector{UInt8}, LK.copy_info, Vector{Int}}, false),
+    (LK.fetchExtFloat, Tuple{Vector{UInt8}, LK.copy_info}, false),
+    (LK.load_mpz_size, Tuple{Vector{UInt8}, Int}, false),
+    (LK.load_abs_mpz_size, Tuple{Vector{UInt8}, Int}, false),
+    (LK.load_mpz_bits, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.loadMPZFromCharp, Tuple{Vector{UInt8}, Int}, false),
+    (LK.loadMPQFromCharp, Tuple{Vector{UInt8}, Int}, false),
+    (LK._external_string, Tuple{String}, false),
+    (LK.mpz_wsize, Tuple{BigInt}, false),
+    (LK.add_mpz_size_buffer, Tuple{Vector{UInt8}, BigInt, Int}, false),
+    (LK.add_mpz_bits_buffer, Tuple{Vector{UInt8}, BigInt, Int}, false),
+    (LK.addMPZToBuffer, Tuple{Vector{UInt8}, BigInt}, false),
+    (LK.addMPQToBuffer, Tuple{Vector{UInt8}, Rational{BigInt}}, false),
     (LK.clearCellAgenda!, Tuple{LK.cell_agenda}, true),
     (LK.nextCellAgendaNoDeRef!, Tuple{LK.cell_agenda}, true),
     (LK.pushWorkCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, false),

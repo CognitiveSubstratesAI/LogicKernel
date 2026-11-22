@@ -544,8 +544,11 @@ end
     # an owner (src/pl-thread.jl `pl_thread_statistics`: the main thread named from an engine, TH1; the site is present): net 0. A LOWER BOUND as above; the lane measures.
     # 148 -> 148 (INT-MERGE-15, wip/int-g1 + wip/prims-replay), D-0083 disclosure: DERIVED, NOT RUN: the merged docs/r2_owners.tsv equals the tip's, line for line (the branch's only change was the owner row of its
     # `pl_collation_key2_va` refusal, whose function is not kept - the tip's collation_key/2 stays - and two rows its old base still carried, `compileArith (optimise)` and the thread events, which the tip had removed).
+    # 148 -> 155 (INT-MERGE-17, wip/int-g1 + wip/dictset-replay), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: +7 owner lines (the branch's DOC rows: `pred:$atom_references/2`, `pred:$atom_completions/2`,
+    # `pred:malloc_property/1`, `pred:wait_for_input/3` REFUSED, and the three FAST-2 refusals of src/pl-rec.jl (copy_external_record x2, fetchAtomW)); none removed. A LOWER BOUND like the figures above: the lane's r2_collect
+    # measures the real count; if the floor test fails, lower it to the measured figure.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 148
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 155
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

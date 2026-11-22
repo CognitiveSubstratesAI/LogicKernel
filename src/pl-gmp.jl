@@ -700,3 +700,119 @@ function mpz_root(x::BigInt, n::UInt64)::Tuple{BigInt, Bool}
     end
     return (y, y^k == x)
 end
+
+# ── export (pl-gmp.c, FAST-1b: the byte form of an external record) ──────────────────────────────
+# PORT: pl-gmp.h MPZ_STACK_EXTRA
+# DIVERGES: the GMP build's value (`O_GMP`: 1, the oracle swipl has `gmp_version` 6 and no `libbf_version`; `O_BF`'s is 2); the kernel has no stack form,
+# the constant only counts the global-stack cells an external record's header states (`compile_info.size`).
+"The extra cells an mpz takes on upstream's global stack, over its limbs (pl-gmp.c, `O_GMP`)."
+const MPZ_STACK_EXTRA = 1
+
+# PORT: pl-gmp.c mpz_wsize
+# DIVERGES: the value's limb count (GMP's `abs(_mp_size)`, 64-bit limbs) times 8 bytes over 8: the limbs, in
+# words; no `s` out-parameter (the byte size).
+"The words an integer's limbs take on upstream's global stack (pl-gmp.c): its 64-bit limbs."
+mpz_wsize(mpz::BigInt)::Int = iszero(mpz) ? 0 : (ndigits(abs(mpz); base=2) + 63) ÷ 64
+
+# PORT: pl-gmp.c add_mpz_size_buffer
+# DIVERGES: the bytes go to a `Vector{UInt8}` (upstream: `*b->top++`).
+"Add the 4-byte big-endian header of `±size` (negative iff `mpz` is) to `b` (pl-gmp.c)."
+function add_mpz_size_buffer(b::Vector{UInt8}, mpz::BigInt, size::Int)::Nothing
+    hdrsize = mpz < 0 ? -size : size
+    push!(b, ((hdrsize >> 24) & 0xff) % UInt8)
+    push!(b, ((hdrsize >> 16) & 0xff) % UInt8)
+    push!(b, ((hdrsize >> 8) & 0xff) % UInt8)
+    push!(b, (hdrsize & 0xff) % UInt8)
+    return nothing
+end
+
+# PORT: pl-gmp.c add_mpz_bits_buffer
+# DIVERGES: `mpz_export(…, 1, 1, 1, 0, …)` (most significant first, 1-byte units, big-endian) is the
+# big-endian digits of the magnitude, `size` of them.
+"Add the `size` bytes of `|mpz|`, most significant first, to `b` (pl-gmp.c)."
+function add_mpz_bits_buffer(b::Vector{UInt8}, mpz::BigInt, size::Int)::Nothing
+    append!(b, UInt8.(reverse(digits(abs(mpz); base=256, pad=size))))
+    return nothing
+end
+
+# PORT: pl-gmp.c addMPZToBuffer
+"Add `mpz` in a machine independent form to `b`: the byte count as a 4-byte big-endian header, then the bytes (pl-gmp.c)."
+function addMPZToBuffer(b::Vector{UInt8}, mpz::BigInt)::Nothing
+    size = (ndigits(abs(mpz); base=2) + 7) ÷ 8              # (mpz_sizeinbase(mpz, 2)+7)/8
+    add_mpz_size_buffer(b, mpz, size)
+    add_mpz_bits_buffer(b, mpz, size)
+    return nothing
+end
+
+# PORT: pl-gmp.c addMPQToBuffer
+"Add `mpq` in a machine independent form to `b`: the two headers, then the two bit patterns (pl-gmp.c)."
+function addMPQToBuffer(b::Vector{UInt8}, mpq::Rational{BigInt})::Nothing
+    num = numerator(mpq)
+    den = denominator(mpq)
+    num_size = (ndigits(abs(num); base=2) + 7) ÷ 8
+    den_size = (ndigits(abs(den); base=2) + 7) ÷ 8
+    add_mpz_size_buffer(b, num, num_size)
+    add_mpz_size_buffer(b, den, den_size)
+    add_mpz_bits_buffer(b, num, num_size)
+    add_mpz_bits_buffer(b, den, den_size)
+    return nothing
+end
+
+# ── import (pl-gmp.c, FAST-2: an integer or rational read from an external record's bytes) ───────
+# PORT: pl-gmp.c load_mpz_size
+# DIVERGES: the record is a `Vector{UInt8}` read at the 1-based index `pos`; the position after the header is
+# returned with the size, a read past the end is a `BoundsError` (the caller's `PL_recorded_external` fails on it).
+"The signed size in the 4-byte big-endian header at `pos` of `data`, and the position after it (pl-gmp.c)."
+function load_mpz_size(data::Vector{UInt8}, pos::Int)::Tuple{Int,Int}
+    usize =
+        (UInt32(data[pos]) << 24) | (UInt32(data[pos + 1]) << 16) |
+        (UInt32(data[pos + 2]) << 8) | UInt32(data[pos + 3])
+    return (Int(reinterpret(Int32, usize)), pos + 4)
+end
+
+# PORT: pl-gmp.c load_abs_mpz_size
+# DIVERGES: the sign is returned as a `Bool`; the position after the header is the third value.
+"The byte count and sign of the header at `pos` of `data`, and the position after it (pl-gmp.c)."
+function load_abs_mpz_size(data::Vector{UInt8}, pos::Int)::Tuple{Int,Bool,Int}
+    size, next = load_mpz_size(data, pos)
+    return size < 0 ? (-size, true, next) : (size, false, next)
+end
+
+# PORT: pl-gmp.c load_mpz_bits
+# DIVERGES: the big-endian bytes are the magnitude of the result (`mpz_import(…, 1, 1, 1, 0, …)` inverse of
+# `add_mpz_bits_buffer`), whose sign the caller applies; the cells upstream fills with the limbs are the caller's
+# layout. A record shorter than `size` bytes is a `BoundsError`.
+"The `size` bytes at `pos` of `data` as a non-negative integer, and the position after them (pl-gmp.c)."
+function load_mpz_bits(data::Vector{UInt8}, pos::Int, size::Int)::Tuple{BigInt,Int}
+    size == 0 && return (BigInt(0), pos)
+    stop = pos + size - 1
+    stop <= length(data) || throw(BoundsError(data, stop))
+    return (parse(BigInt, bytes2hex(view(data, pos:stop)); base=16), pos + size)
+end
+
+# PORT: pl-gmp.c loadMPZFromCharp
+# DIVERGES: the VALUE is returned, with the position after the integer and the number of global-stack cells it takes on
+# upstream's stack (limbs in words, header and trailer, `MPZ_STACK_EXTRA`); the caller lays the cells out. Upstream's
+# `O_BF` limb count is the GMP build's (64-bit limbs).
+"The integer stored at `pos` of `data`: its value, the position after it and its cells (pl-gmp.c)."
+function loadMPZFromCharp(data::Vector{UInt8}, pos::Int)::Tuple{BigInt,Int,Int}
+    size, neg, next = load_abs_mpz_size(data, pos)
+    limbsize = (size + 7) ÷ 8                               # (size+sizeof(mp_limb_t)-1)/sizeof(mp_limb_t)
+    wsize = limbsize                                        # a limb is a word
+    mag, next = load_mpz_bits(data, next, size)
+    return (neg ? -mag : mag, next, wsize + 2 + MPZ_STACK_EXTRA)
+end
+
+# PORT: pl-gmp.c loadMPQFromCharp
+# DIVERGES: as `loadMPZFromCharp`: the numerator and the denominator are returned apart (a denominator of 0 is the
+# caller's to refuse), with the position after them and the cells the pair takes on upstream's stack.
+"The rational stored at `pos` of `data`: numerator, denominator, the position after it and its cells (pl-gmp.c)."
+function loadMPQFromCharp(data::Vector{UInt8}, pos::Int)::Tuple{BigInt,BigInt,Int,Int}
+    num_size, num_neg, next = load_abs_mpz_size(data, pos)
+    den_size, den_neg, next = load_abs_mpz_size(data, next)
+    num_wsize = (num_size + 7) ÷ 8
+    den_wsize = (den_size + 7) ÷ 8
+    num, next = load_mpz_bits(data, next, num_size)
+    den, next = load_mpz_bits(data, next, den_size)
+    return (num_neg ? -num : num, den_neg ? -den : den, next, num_wsize + den_wsize + 2 + 2 * MPZ_STACK_EXTRA)
+end
