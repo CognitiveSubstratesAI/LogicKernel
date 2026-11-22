@@ -82,7 +82,6 @@ refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branc
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
-refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
 refusal:src/os/pl-file.jl::get_stream_handle::a stream pair	S2b	stream_pair/3 handle (pl-file.c get_stream_handle); S2b is the pl-file.c remainder
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c

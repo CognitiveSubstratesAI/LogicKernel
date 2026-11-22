@@ -642,7 +642,7 @@ function pl_tmp_file_stream4_va(
         PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 3, A3)
         return FFALSE
     end
-    s, errno = Sfdopen(Int(file.handle.fd), mode)
+    s, errno = Sfdopen(Int(Base.cconvert(Cint, file.handle)), mode)    # the RawFD's descriptor number
     if s === nothing
         close(file)
         rc = PL_error(

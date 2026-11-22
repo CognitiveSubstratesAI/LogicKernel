@@ -707,7 +707,9 @@ end
 # DIVERGES: see the section's comment: the result is `(name, file)` — `file` the `Base.Filesystem.File` opened
 # with O_CREAT|O_EXCL|O_WRONLY, mode 0600, when `with_file` (upstream's `fdp != NULL`), else `nothing` — or the errno
 # that upstream leaves where it returns NULL_ATOM (`ENAMETOOLONG` for a name of PATH_MAX bytes or more; `ENOENT` after
-# the warning of an invalid `tmp_dir`: the failed `stat(2)` of `ExistsDirectory` is the last errno upstream reads).
+# the warning of an invalid `tmp_dir`). DIVERGES: upstream reads whatever errno the warning's printing leaves (swipl 10.1.20 answers
+# 'No such file or directory' in one run and 'Invalid argument' in another, for the same flag); both give `existence_error(
+# temporary_file, Base)` and only the context's text differs, so `ENOENT` it is.
 """
     TemporaryFile(ld, id, ext, with_file) -> (name, file) or errno
 
