@@ -466,3 +466,153 @@ function yaml_emit_error(ld::PL_local_data{T}, code::Int, problem::String)::Bool
     end
     return false
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# YAML1 piece 3 (packages/yaml/yaml4pl.c, packages-yaml 0ce45ecf, lines 384-560): the ANCHOR TABLE the parser keeps while it reads one
+# document: a chained hash table from an anchor's name to the term that stands for the node (`&name` stores it, `*name` finds it).
+# Ported as it is: the same hash (MurmurHashAligned2 with the seed 0x6263533a, 32-bit arithmetic), the same 16 buckets that double,
+# the same chains (a new cell is put at the HEAD of its chain; `rehash` walks every old chain from its head and puts each cell at the
+# head of its new one, which REVERSES the order of the cells of one name that share a chain: `find_anchor` returns the first match, so
+# the cell it finds depends on this order, and a Dict would not reproduce that). `store_anchor` is the glue the three parser cases
+# (sequence start, mapping start, and the alias lookup) call. Needs `PL_copy_term_ref` (an `ld`); nothing else of the term layer.
+# Nothing here has run (no Julia process was started).
+#
+# DIVERGES (piece 3):
+#   8. `free_anchor_table` is not ported (the garbage collector frees the cells); `new_anchor_table` and `rehash` have no
+#      `PL_resource_error("memory")` branch (a Julia allocation does not fail like that), so `new_anchor_table` cannot fail.
+#   9. A name is a `String`; the C's `strlen`/`strcmp` stop at the first NUL, so `_yaml_cstring` cuts the name there, once, where the C
+#      reads it: the hash is taken over the bytes of that cut name. Buckets are 1-based in `entries`: bucket `k` of the C is
+#      `entries[k + 1]`. `find_anchor` returns the term reference, 0 when there is none (as C: `term_t` is an `Int` here).
+#  10. `rehash`'s return value is read as upstream's `add_anchor` reads it (`if ( !rehash(t) ) return FALSE;`, rehash answering
+#      FALSE when it succeeded): see the comment at `yaml_add_anchor`, and the lane run list of the handoff.
+
+# PORT: packages/yaml/yaml4pl.c ANCHOR_TABLE_SIZE, SEED
+const YAML_ANCHOR_TABLE_SIZE = 16
+const YAML_ANCHOR_SEED = 0x6263533a
+
+# PORT: packages/yaml/yaml4pl.c hcell
+"One cell of an anchor table's chain: the next cell, the anchor's name and the term reference of its node (yaml4pl.c `hcell`)."
+mutable struct yaml_hcell
+    next::Union{Nothing, yaml_hcell}
+    name::String
+    value::Int
+end
+
+# PORT: packages/yaml/yaml4pl.c htable
+"The anchor table (yaml4pl.c `htable`): the number of cells added, the number of buckets, the chains."
+mutable struct yaml_htable
+    count::Int
+    size::Int
+    entries::Vector{Union{Nothing, yaml_hcell}}
+end
+
+# PORT: packages/yaml/yaml4pl.c new_anchor_table
+# DIVERGES: see the piece 3 header, 8.
+"A new anchor table, `YAML_ANCHOR_TABLE_SIZE` empty buckets (yaml4pl.c)."
+function yaml_new_anchor_table()::yaml_htable
+    return yaml_htable(0, YAML_ANCHOR_TABLE_SIZE, fill(nothing, YAML_ANCHOR_TABLE_SIZE))
+end
+
+# PORT: packages/yaml/yaml4pl.c MurmurHashAligned2
+# DIVERGES: `key[1:len]` for C's `(key, len)`; every `unsigned int` is a UInt32 (wrapping), C's `data[i] << n` (an `int` shift of an
+# unsigned char) is the same bits as the UInt32 shift. `len` is cut to 32 bits where C casts `(unsigned int)len`.
+"MurmurHashAligned2 of the first `len` bytes of `key` (yaml4pl.c, the seed `seed`)."
+function yaml_murmur_hash_aligned2(key::AbstractVector{UInt8}, len::Int, seed::UInt32)::UInt32
+    m = 0x5bd1e995
+    r = 24
+    h = seed ⊻ (len % UInt32)
+    i = 1
+    while len >= 4
+        k = UInt32(key[i]) | (UInt32(key[i + 1]) << 8) | (UInt32(key[i + 2]) << 16) | (UInt32(key[i + 3]) << 24)
+        k *= m
+        k ⊻= k >> r
+        k *= m
+        h *= m
+        h ⊻= k
+        i += 4
+        len -= 4
+    end
+    if len == 3
+        h ⊻= UInt32(key[i + 2]) << 16
+    end
+    if len >= 2
+        h ⊻= UInt32(key[i + 1]) << 8
+    end
+    if len >= 1
+        h ⊻= UInt32(key[i])
+        h *= m
+    end
+    h ⊻= h >> 13
+    h *= m
+    h ⊻= h >> 15
+    return h
+end
+
+# `MurmurHashAligned2(name, strlen(name), SEED) % size`, as a 1-based bucket number (DIVERGES 9).
+function _yaml_anchor_bucket(name::String, size::Int)::Int
+    b = codeunits(name)
+    return Int(yaml_murmur_hash_aligned2(b, length(b), YAML_ANCHOR_SEED) % UInt32(size)) + 1
+end
+
+# PORT: packages/yaml/yaml4pl.c rehash
+# DIVERGES: see the piece 3 header, 8 and 10. Returns false, as the C does when the new array was allocated.
+"Double the bucket count of `t`, re-linking every cell at the head of its new chain; returns false (yaml4pl.c's answer on success)."
+function yaml_rehash(t::yaml_htable)::Bool
+    newsize = t.size * 2
+    new = Vector{Union{Nothing, yaml_hcell}}(nothing, newsize)
+    for i in 1:(t.size)
+        c = t.entries[i]
+        while c !== nothing
+            k = _yaml_anchor_bucket(c.name, newsize)
+            n = c.next
+            c.next = new[k]
+            new[k] = c
+            c = n
+        end
+    end
+    t.size = newsize
+    t.entries = new
+    return false
+end
+
+# PORT: packages/yaml/yaml4pl.c add_anchor
+# DIVERGES: see the piece 3 header, 8, 9 and 10. UPSTREAM AS IS: when `count > size` the table is rehashed and the function then
+# returns false WITHOUT adding the cell (the C reads rehash's false as a failure), whatever rehash answered; the next add finds room.
+"Add the anchor `name` for the node `value` (a copy of the reference) to `t`; false when `t` was rehashed instead (yaml4pl.c)."
+function yaml_add_anchor(ld::PL_local_data{T}, t::yaml_htable, name::String, value::term_t)::Bool where {T}
+    s = _yaml_cstring(name)
+    if t.count > t.size
+        if !yaml_rehash(t)
+            return false
+        end
+    end
+    k = _yaml_anchor_bucket(s, t.size)
+    t.entries[k] = yaml_hcell(t.entries[k], s, PL_copy_term_ref(ld, value))
+    t.count += 1
+    return true
+end
+
+# PORT: packages/yaml/yaml4pl.c find_anchor
+# DIVERGES: see the piece 3 header, 9.
+"The term reference stored for the anchor `name` (the first cell of its chain with that name), 0 when there is none (yaml4pl.c)."
+function yaml_find_anchor(t::yaml_htable, name::String)::Int
+    s = _yaml_cstring(name)
+    c = t.entries[_yaml_anchor_bucket(s, t.size)]
+    while c !== nothing
+        c.name == s && return c.value
+        c = c.next
+    end
+    return 0
+end
+
+# PORT: packages/yaml/yaml4pl.c store_anchor
+# DIVERGES: see the piece 3 header, 5 (results as tuples) and 8. `anchors` is C's `htable **` (nothing until the first anchor) and the
+# result's second element is its new value; `anchor` is the event's `data.alias.anchor` (the same field of a sequence or mapping start).
+"`(ok, anchors)`: store the node `node` under the event's `anchor` (when it has one), creating the table on the first (yaml4pl.c)."
+function yaml_store_anchor(
+    ld::PL_local_data{T}, anchors::Union{Nothing, yaml_htable}, node::term_t, anchor::Union{Nothing, String}
+)::Tuple{Bool, Union{Nothing, yaml_htable}} where {T}
+    anchor === nothing && return (true, anchors)
+    anchors === nothing && (anchors = yaml_new_anchor_table())
+    return (yaml_add_anchor(ld, anchors, anchor, node), anchors)
+end

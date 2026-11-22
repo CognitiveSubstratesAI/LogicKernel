@@ -5568,7 +5568,13 @@ _manifest_pkg2_plain() = (
     (LK.re_char_offset, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.re_bytep_to_charp, Tuple{LK.re_subject, Int}, false),
     (LK.init_subject!, Tuple{LK.re_subject}, false),
-    (LK._yaml_cstring, Tuple{String}, false)
+    (LK._yaml_cstring, Tuple{String}, false),
+    # YAML1 piece 3 — the anchor table's pure functions
+    (LK.yaml_new_anchor_table, Tuple{}, false),
+    (LK.yaml_murmur_hash_aligned2, Tuple{Vector{UInt8}, Int, UInt32}, false),
+    (LK._yaml_anchor_bucket, Tuple{String, Int}, false),
+    (LK.yaml_rehash, Tuple{LK.yaml_htable}, false),
+    (LK.yaml_find_anchor, Tuple{LK.yaml_htable, String}, false)
 )
 # YAML1 piece 2 — the event-term decoding of yaml4pl.c (src/pl-yaml.jl): checked for every payload type.
 _manifest_yaml_events(T) = begin
@@ -5579,7 +5585,13 @@ _manifest_yaml_events(T) = begin
         (LK.yaml_get_value, Tuple{LD, Int, String}, false),
         (LK.yaml_get_bool_arg, Tuple{LD, Int, Int, Int}, false),
         (LK.yaml_decode_event, Tuple{LD, Int}, false),
-        (LK.yaml_emit_error, Tuple{LD, Int, String}, false)
+        (LK.yaml_emit_error, Tuple{LD, Int, String}, false),
+        # YAML1 piece 3 — the anchor table (add and store take the local data; the rest is in `_manifest_pkg2_plain`)
+        (LK.yaml_add_anchor, Tuple{LD, LK.yaml_htable, String, Int}, false),
+        (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
+        (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
+        (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
+        (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, String}, false)
     )
 end
 
