@@ -5,7 +5,7 @@
 # swipl 10.1.20's own, printed by the driver below (`ok`, then one line per row: its name and every solution). When `swipl` is
 # on PATH the .out is checked against a live run as well, so it cannot go stale.
 # Rows t0-t66 are the encoder (term to string: the bytes of the record, as the code list R). Rows t0-t6 are ALSO pinned as
-# literal byte vectors below, so the bytes of the layouts are in this file and not only in the .out. Rows r0-r14 are the decoder
+# literal byte vectors below, so the bytes of the layouts are in this file and not only in the .out. Rows r0-r16 are the decoder
 # side (string to term): each against the .out (FAST-2c, the decoder), one fresh kernel run per row.
 # One row stays `@test_broken` among the encoder's, with its owner:
 #   t30       a rational at the root: pending a named DIVERGES (audit ruling).
@@ -48,7 +48,7 @@ end
 const _FR_PL = joinpath(@__DIR__, "test_fast_rec_swipl.pl")
 const _FR_OUT = joinpath(@__DIR__, "test_fast_rec_swipl.out")
 
-# the rows' names, in the order of the program: t0-t66 (the encoder), then r0-r14 (the decoder side)
+# the rows' names, in the order of the program: t0-t66 (the encoder), then r0-r16 (the decoder side)
 _fr_names() =
     unique([String(m[1]) for m in eachmatch(r"^([tr]\d+)\(R\) :-"m, read(_FR_PL, String))])
 
@@ -195,10 +195,10 @@ const _FR_BROKEN_RULING = ["t30"]             # a rational at the root: pending 
 @testset "FAST1: fast_term_serialized/2 term to string == swipl's bytes (the .out), through a program" begin
     names = _fr_names()
     tnames = ["t$i" for i in 0:66]
-    rnames = ["r$i" for i in 0:14]
+    rnames = ["r$i" for i in 0:16]
     expected = String.(readlines(_FR_OUT))
     # not a vacuous agreement: the .out has a line per row, each with at least one solution
-    @test length(names) == 82 && names == vcat(tnames, rnames)
+    @test length(names) == 84 && names == vcat(tnames, rnames)
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(
         i -> startswith(expected[i + 1], names[i] * " ") && length(expected[i + 1]) > length(names[i]) + 1,

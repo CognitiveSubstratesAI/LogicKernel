@@ -141,3 +141,6 @@ r12(R) :- member(Cs, [[114, 11, 6, 13, 1, 11, 1, 102, 18, 0, 0, 0, 1, 5], [114, 
 r13(R) :- X is 2**62 rdiv 3, Y is 3 rdiv 2**62, Z is -2 rdiv 7, rt(f(X, Y, Z, a), R).   % rationals inside a compound: a numerator and a denominator of 8 bytes, a negative one
 r14(R) :- string_codes(S, [114, 18, 6, 13, 5, 10, 11, 1, 116, 11, 1, 97, 4, 1, 2, 11, 1, 98, 4, 1, 1]), fast_term_serialized(T, S),
     findall(K-V, get_dict(K, T, V), R).     % a dict record whose keys are out of order (2 then 1): the copy puts them in order
+r15(R) :- rt(_, R).     % a root variable: a record whose first cell is a variable
+r16(R) :- member(Cs, [[114], [114, 8, 2, 13, 1, 11, 1, 102], [0], [122, 11, 1], [114, 8, 2, 13, 1, 11, 1, 102, 11, 1, 97, 0]]),
+    string_codes(S, Cs), ( fast_term_serialized(_, S) -> R = yes ; R = no ).     % five strings that are not records: a header alone, a record cut short, no header, an atom cut short, a record and a byte more
