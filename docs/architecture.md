@@ -7238,14 +7238,11 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   `PL_FA_ISO` flag mutants; read, not run). test/core_text/test_io.jl carries the upstream `no_protocol_in` unit
   (`read_term/3` on the `protocol` alias: `existence_error(stream, protocol)`).
 * **DEFERRED, each with its reason (none dropped):**
-  * `char_conversion/2` and `current_char_conversion/2` (pl-read.c:552-620, `FRG` at pl-ext.c:120-121): upstream keeps a static
-    257-entry table that `init_read_data` hands to the reader when the flag `char_conversion` is true (pl-read.c:851-854, 1430-1433).
-    The kernel has no home for it short of a `PL_global_data` field (a Tier-1 file), and the reader does no conversion (`read_data`
-    has no table). Left to a step that owns the field together with the conversion in `getchr__`; a half port is not made.
+  * (`char_conversion/2` and `current_char_conversion/2` are written since RD2b: the table is `PL_global_data.char_conversion_table`, applied by `getchr__`
+    while the flag `char_conversion` is set, `init_read_data` taking it; test/core_text/test_char_conversion_swipl.jl.)
   * `$qq_open/2` (pl-read.c:2425-2468, `O_QUASIQUOTATIONS`): its argument is built by the parser's quasi-quotation reader, which
     the kernel's reader refuses (R1's decision), so no term of that shape exists. Deferred with the quasi-quotation step.
-  * `$code_class/2` (pl-read.c:7402, in the table at 7451): not in the sizing's RD1 list; library/prolog_colour.pl is its one
-    caller. Deferred to the library step.
+  * (`$code_class/2` (pl-read.c:7398-7440) is written since RD2b: `pl_code_class2_va`, registered in `PL_predicates_from_read`.)
   * The `unify_location` refusal (src/pl-read.jl:1087, the reader's refusal exception, "a stream's location, `stream(S, L, LP, C)`"): a syntax
     error on a stream with no file name that is no string stream. The stream table exists since S1, so the branch can be written;
     it is the reader's internals, so it waits for a step of its own (question to the audit, flag 4 of evidence/RD1/handoff.md).

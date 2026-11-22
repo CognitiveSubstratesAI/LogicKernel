@@ -132,6 +132,12 @@ const PL_CHAR_LIST = 16
 # PORT: SWI-Prolog.h REP_UTF8
 "Text conversion: the text is UTF-8 (SWI-Prolog.h)."
 const REP_UTF8 = 0x00100000
+# PORT: SWI-Prolog.h REP_ISO_LATIN_1
+"Text conversion: the text is ISO Latin-1 (SWI-Prolog.h)."
+const REP_ISO_LATIN_1 = 0x00000000
+# PORT: SWI-Prolog.h REP_MB
+"Text conversion: the text is in the locale's multibyte encoding (SWI-Prolog.h)."
+const REP_MB = 0x00200000
 # PORT: SWI-Prolog.h CVT_ATOM
 "Text conversion: an atom (SWI-Prolog.h)."
 const CVT_ATOM = 0x00000001

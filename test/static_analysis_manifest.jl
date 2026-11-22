@@ -2665,6 +2665,16 @@ function _manifest_index(T)
         (LK.pl_raw_read, Tuple{LD, Int64}, false),
         (LK.pl_read2, Tuple{LD, Int64, Int64}, false),
         (LK.pl_read, Tuple{LD, Int64}, false),
+        # RD2b: char_conversion/2, current_char_conversion/2 and the conversion table (pl-read.c:552-620)
+        (LK.pl_code_class2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),   # RD2b: $code_class/2
+        # RD2b group 4: the foreign-interface term readers (pl-read.c:7292-7390)
+        (LK._copy_read_source, Tuple{LD}, false),
+        (LK.PL_put_term_from_chars, Tuple{LD, Int64, UInt32, Int64, Vector{UInt8}}, false),
+        (LK.PL_chars_to_term, Tuple{LD, Vector{UInt8}, Int64}, false),
+        (LK.PL_wchars_to_term, Tuple{LD, Vector{UInt32}, Int64}, false),
+        (LK.initCharConversion, Tuple{}, false),
+        (LK.pl_char_conversion, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_current_char_conversion, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # RD1b: pl-read.c's blob(Type) read option and the tokeniser's `<type>(` claim
         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
         (LK.blob_name_char, Tuple{Int}, false),
@@ -5254,6 +5264,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.f_is_decimal, Tuple{Int64}, true),
     (LK.unicode_separator, Tuple{Int64}, true),
     (LK.f_is_quote, Tuple{Int64}, true),
+    (LK.PL_is_id_start, Tuple{Int64}, true),
+    (LK.PL_is_id_continue, Tuple{Int64}, true),
+    (LK.PL_is_uppercase, Tuple{Int64}, true),
+    (LK.PL_is_decimal, Tuple{Int64}, true),
+    (LK.PL_is_layout, Tuple{Int64}, true),
     (LK.stop_matches_codepoint, Tuple{String, Int64}, true),
     (LK.isAnonVarName, Tuple{Vector{UInt8}}, true),
     (LK.wr_is_symbol, Tuple{Int64, Int64}, true),

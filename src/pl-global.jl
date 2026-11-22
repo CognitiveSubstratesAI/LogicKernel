@@ -252,6 +252,7 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    char_conversion_table::Vector{Int}                          # (pl-read.c static `char_table[257]`: the entry of code c is at c + 2, EOF at 1; RD2b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -306,6 +307,9 @@ end
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
 # Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
+# Since RD2b: `char_conversion_table`, DIVERGES (representation): upstream's `char_table[257]` is a static of pl-read.c shared by the process,
+# here a field of the database (the entry of code `c` at index `c + 2`, EOF at 1), filled by `initCharConversion` (src/pl-read.jl) when the
+# database is made; `char_conversion/2` writes it, a read holds it while the Prolog flag `char_conversion` is set.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.

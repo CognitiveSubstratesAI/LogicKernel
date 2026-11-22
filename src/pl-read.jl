@@ -197,6 +197,27 @@ unicode_separator(c::Int)::Bool = PlBlankW(c)
 f_is_quote(c::Int)::Bool =
     c == Int('\'') || c == Int('"') || c == Int('`') || PlCatW(c) == U_CAT_QUOTE
 
+# PORT: pl-read.c PL_is_id_start
+# DIVERGES: a Julia function of the engine-free classifier, not an exported C symbol (the foreign API is the C one).
+"Does the code point `chr` start an identifier (pl-read.c's exported classifier)?"
+PL_is_id_start(chr::Int)::Bool = pl_cat_is_id_start(PlCatW(chr))
+
+# PORT: pl-read.c PL_is_id_continue
+"Does the code point `chr` continue an identifier (pl-read.c's exported classifier)?"
+PL_is_id_continue(chr::Int)::Bool = pl_cat_is_id_continue(PlCatW(chr))
+
+# PORT: pl-read.c PL_is_uppercase
+"Is `chr` in the category that starts a variable (pl-read.c's exported classifier)?"
+PL_is_uppercase(chr::Int)::Bool = PlCatW(chr) == U_CAT_ID_START_VARIABLE
+
+# PORT: pl-read.c PL_is_decimal
+"Is `chr` a decimal digit of any script (pl-read.c's exported classifier)?"
+PL_is_decimal(chr::Int)::Bool = PlCatW(chr) == U_CAT_DECIMAL
+
+# PORT: pl-read.c PL_is_layout
+"Is `chr` layout (pl-read.c's exported classifier)?"
+PL_is_layout(chr::Int)::Bool = PlCatW(chr) == U_CAT_LAYOUT
+
 # PORT: pl-read.c is_bidi_override
 "Is `c` a bidi override or isolate, which the reader always refuses (pl-read.c)?"
 is_bidi_override(c::Int)::Bool =
@@ -358,7 +379,7 @@ const RD_MAGIC = 0xefebe128
 # `gd` and `ld` are the database and the engine's local data, which upstream reaches through `GD`
 # and `LD`. NOT PORTED: quasi-quotations (`quasi_quotations`, `qq`, `qq_tail`: a quasi-quotation
 # is refused, R1's decision); blobs (`blobs`, `blob_start`: read only with the blob option); atom
-# GC (`locked`); the character conversion table (`char_conversion/2`).
+# GC (`locked`). Since RD2b the character conversion table is the database's (`gd.char_conversion_table`).
 "Everything a read of one term needs (pl-read.c `read_data`)."
 mutable struct read_data{T}
     here::Int                       # current character
@@ -388,6 +409,7 @@ mutable struct read_data{T}
     unicode_atoms::Sunicode_atoms_t # per-stream/per-call atom-content policy
     strictness::Int                 # Strictness level
     blobs::Symbol                   # How to read <type>(...): :error, :dead or :resolve (blob_mode)
+    char_conversion_table::Union{Nothing, Vector{Int}}  # active conversion table (the database's, while the flag char_conversion is set)
     _rb::read_buffer                # keep read characters here
     vt::var_table                   # Data about variables
     term_stack::term_stack{T}       # Stack for creating output term
@@ -488,13 +510,16 @@ function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
 end
 
 # PORT: pl-read.c getchr__
-# DIVERGES: no character conversion table.
-"The next character of the stream, its byte position recorded (pl-read.c `getchr`)."
+# DIVERGES: the table is a vector indexed from EOF at 1 (`char_conversion_table[c]` is `table[c + 2]`).
+"The next character of the stream, its byte position recorded, converted by the active table (pl-read.c `getchr`)."
 function getchr__(rd::read_data)::Int
     s = rd._rb.stream
     p = s.position
     p !== nothing && (rd.start_of_term.position.byteno = p.byteno)
-    return Sgetcode(s)
+    c = Sgetcode(s)
+    t = rd.char_conversion_table
+    (t === nothing || c < 0 || c >= 256) && return c
+    return t[c + 2]
 end
 
 # PORT: pl-read.c getchrq
@@ -2445,8 +2470,8 @@ end
 
 # PORT: pl-read.c init_read_data
 # DIVERGES: returns the read data, where upstream initialises a caller's struct; the module is
-# `MODULE_parse` (the source module while loading, else the typein module; `read_clause` sets the source module: `set_module_read_data`); no
-# character conversion table.
+# `MODULE_parse` (the source module while loading, else the typein module; `read_clause` sets the source module: `set_module_read_data`); the
+# conversion table is the database's (`gd.char_conversion_table`, upstream's static), taken while the flag `char_conversion` is set.
 "Fresh read data for reading from stream `inp` (pl-read.c)."
 function init_read_data(
     gd::PL_global_data{T}, ld::PL_local_data{T}, inp::IOSTREAM
@@ -2460,6 +2485,7 @@ function init_read_data(
         0, 0, 0, 0, 0,                              # variables, varnames, singles, subtpos, comments
         false, false, inp.unicode_atoms, 0,          # cycles, dotlists, unicode_atoms, strictness
         :error,                                     # blobs (RD_BLOB_ERROR)
+        truePrologFlag(ld, PLFLAG_CHARCONVERSION) ? gd.char_conversion_table : nothing,
         read_buffer(0, UInt8[], 0, 0, inp), var_table(), term_stack{T}(), op_queues{T}(),
         gd, ld
     )
@@ -4872,6 +4898,113 @@ function pl_term_string2_va(
     return atom_to_term(ld, A2, A1, 0, PL_STRING) ? FTRUE : FFALSE
 end
 
+# ── the term readers of the foreign interface (pl-read.c:7292-7390) ─────────────────────────────
+
+# Copy of `ld.read_source` (a struct assignment upstream: `oldsrc = LD->read_source`).
+function _copy_read_source(ld::PL_local_data{T})::source_location{T} where {T}
+    o = ld.read_source
+    p = o.position
+    return source_location{T}(
+        o.file, IOPOS(p.byteno, p.charno, p.lineno, p.linepos, p.esc_state)
+    )
+end
+
+# PORT: pl-read.c PL_put_term_from_chars
+# DIVERGES: the text is a byte vector `s` and `len` its length in bytes (-1: up to its first 0 byte, upstream's `strlen`);
+# `ld` is an argument; the number fast path reads an EOS-terminated copy (upstream copies only when `s[len]` is not EOS);
+# the memory stream reads a copy of the bytes; `REP_MB` (ENC_ANSI) is refused by name, as streams refuse ENC_ANSI;
+# `free_read_data` is the GC.
+"""
+`PL_put_term_from_chars(ld, t, flags, len, s)` (pl-read.c): read the term in the `len` bytes of `s` (encoding by `flags`: ISO Latin-1,
+`REP_UTF8`) into `t`; a text that is a number is converted without the reader. A syntax error returns false, and `t` holds the error term
+(or, with `CVT_EXCEPTION`, the error is raised).
+"""
+function PL_put_term_from_chars(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    gd = _query_gd(ld)
+    if len == -1
+        z = findfirst(==(0x00), s)
+        len = z === nothing ? length(s) : z - 1
+    end
+
+    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))
+        ns = UInt8[view(s, 1:len); 0x00]
+        n = number()
+        rc, e = str_number(ld, ns, 1, n, UInt32(0))
+        isnum = rc == NUM_OK && e == len + 1            # e == ns+len
+        if isnum
+            rc2 = _PL_put_number(ld, t, n)              # PL_put_number(t, &n)
+            clearNumber(n)
+            return rc2
+        end
+        clearNumber(n)
+    end
+
+    (flags & REP_MB) != 0 && throw(
+        NotPortedError{Nothing}(
+            nothing, "PL_put_term_from_chars: REP_MB", "ENC_ANSI streams are refused (os/pl-stream.jl)"
+        )
+    )
+    stream = Sopen_string(Vector{UInt8}(view(s, 1:len)), len, "r")
+    stream === nothing && return false
+    stream.encoding = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1
+    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0
+            rval = PL_raise_exception(ld, rd.exception)
+        else
+            PL_put_term(ld, t, rd.exception)
+        end
+    end
+    Sclose(stream)                                  # free_read_data(): Julia's GC
+    ld.read_source = oldsrc
+
+    return rval
+end
+
+# PORT: pl-read.c PL_chars_to_term
+"`PL_chars_to_term(ld, s, t)` (pl-read.c): `PL_put_term_from_chars` on the ISO Latin-1 text `s` up to its first 0 byte."
+PL_chars_to_term(ld::PL_local_data{T}, s::AbstractVector{UInt8}, t::term_t) where {T} =
+    PL_put_term_from_chars(ld, t, REP_ISO_LATIN_1, -1, s)
+
+# PORT: pl-read.c PL_wchars_to_term
+# DIVERGES: `s` holds the code points (`wchar_t`) up to its first 0; the text is recoded as UTF-8 (`ENC_UTF8`), where upstream
+# opens an `ENC_WCHAR` stream, which the kernel's streams refuse; `PL_free_text` is the GC.
+"`PL_wchars_to_term(ld, s, t)` (pl-read.c): read the term in the wide text `s` into `t`; a syntax error puts the error term in `t`."
+function PL_wchars_to_term(
+    ld::PL_local_data{T}, s::AbstractVector{UInt32}, t::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    z = findfirst(==(0x00000000), s)
+    n = z === nothing ? length(s) : z - 1               # wcslen(s)
+    bytes = UInt8[]
+    for i in 1:n
+        utf8_put_char(bytes, Int(s[i]))
+    end
+    text = PL_chars_t(bytes, n, ENC_UTF8, false)
+
+    stream = Sopen_text(text, "r")
+    if stream === nothing
+        return false
+    end
+    oldsrc = _copy_read_source(ld)
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rc = read_term(t, rd)
+    if !rc && rd.has_exception
+        PL_put_term(ld, t, rd.exception)
+    end
+    Sclose(stream)                                  # free_read_data(): Julia's GC
+    ld.read_source = oldsrc
+
+    return rc
+end
+
 # PORT: pl-read.c read_term_options
 "read_term/2,3's and read_term_from_atom/3's options, in upstream's order (pl-read.c)."
 const read_term_options = (
@@ -5092,6 +5225,47 @@ function pl_read_term2_va(
     return FFALSE                                   # PL_release_stream(s)
 end
 
+# PORT: pl-read.c code_class as pl_code_class2_va
+# (PRED_IMPL("$code_class", 2, code_class, 0)) — pl-read.c:7398-7440
+# `PL_get_char_ex(A1, &code, false)` is `PL_get_char` (nothing after the error). Upstream goes on after `PL_error` of the
+# VALID_CODE_POINT test (no `return`); `PL_get_char` has raised for an invalid code, so the test cannot be true here.
+"`\$code_class(+Code, +Category)` (pl-read.c): `Code` is a member of the reader's character class `Category` (layout, symbol, solo, punct, upper, id_start, id_continue, invalid)."
+function pl_code_class2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    code = PL_get_char(ld, A1)
+    code === nothing && return FFALSE
+    class = PL_get_atom_ex(ld, A2)
+    class === nothing && return FFALSE
+
+    VALID_CODE_POINT(code) || PL_error(ld, ERR_TYPE, mk_sym(T, :character), A1)
+
+    c = sym_text(class)
+    if c == "layout"
+        rc = PlBlankW(code)
+    elseif c == "symbol"
+        rc = PlSymbolW(code)
+    elseif c == "solo"
+        rc = PlSoloW(code)
+    elseif c == "punct"
+        rc = PlPunctW(code)
+    elseif c == "upper"
+        rc = PlUpperW(code)
+    elseif c == "id_start"
+        rc = PlIdStartW(code)
+    elseif c == "id_continue"
+        rc = PlIdContW(code)
+    elseif c == "invalid"
+        rc = PlInvalidW(code)
+    else
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :category), A2)
+        return FFALSE
+    end
+
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-read.c is_named_var as pl_is_named_var1_va
 # (PRED_IMPL("$is_named_var", 1, is_named_var, 0)) — pl-read.c:537-545
 "`\$is_named_var(+Name)` (pl-read.c): `Name` is an atom that names a variable the style checks treat as a named one."
@@ -5174,13 +5348,75 @@ end
 "`read(-Term)` (pl-read.c): `read/2` on the current input."
 pl_read(ld::PL_local_data{T}, term::term_t) where {T} = pl_read2(ld, 0, term)
 
+# ── char_conversion/2, current_char_conversion/2 (pl-read.c:552-620) ───────────────────────────
+
+# PORT: pl-read.c initCharConversion
+# DIVERGES: returns the table, which the database holds (`gd.char_conversion_table`), where upstream fills a static in place.
+"The identity conversion table: EOF (-1) and the codes 0 to 255 map to themselves (pl-read.c); the entry of code `c` is at `c + 2`."
+initCharConversion()::Vector{Int} = collect(-1:255)
+
+# PORT: pl-read.c pl_char_conversion
+# (FRG("char_conversion", 2, pl_char_conversion, ISO), pl-ext.c:120)
+# DIVERGES: a code `cin` outside 0..255 is not stored: upstream's write lands past the 257-entry table, where nothing reads it.
+"`char_conversion(+In, +Out)` (pl-read.c): the reader, while the flag `char_conversion` is set, reads the character `In` as `Out`."
+function pl_char_conversion(
+    ld::PL_local_data{T}, cin_t::term_t, cout_t::term_t
+)::foreign_t where {T}
+    cin = PL_get_char(ld, cin_t)
+    cin === nothing && return FFALSE
+    cout = PL_get_char(ld, cout_t)
+    cout === nothing && return FFALSE
+    (cin >= 0 && cin < 256) && (_query_gd(ld).char_conversion_table[cin + 2] = cout)
+    return FTRUE
+end
+
+# PORT: pl-read.c pl_current_char_conversion
+# (FRG("current_char_conversion", 2, pl_current_char_conversion, NDET|ISO), pl-ext.c:121)
+# DIVERGES: a bound `In` outside 0..255 fails, where upstream reads past its table. `ForeignRedoInt(ctx+1)` is `PL_retry(ctx + 1)`
+# after the frame is closed, as the kernel's other enumerations (`pl_arg3_va`).
+"`current_char_conversion(?In, ?Out)` (pl-read.c): the characters converted, enumerating `In` over the codes 0 to 255."
+function pl_current_char_conversion(
+    ld::PL_local_data{T}, cin_t::term_t, cout_t::term_t, h::control_t{T}
+)::foreign_t where {T}
+    table = _query_gd(ld).char_conversion_table
+    ctl = PL_foreign_control(h)
+    ctx = 0
+    if ctl == FRG_FIRST_CALL
+        if !PL_is_variable(ld, cin_t)
+            cin = PL_get_char(ld, cin_t)
+            cin === nothing && return FFALSE
+            (cin < 0 || cin >= 256) && return FFALSE
+            return PL_unify_atom(ld, cout_t, codeToAtom(T, table[cin + 2])) ? FTRUE : FFALSE
+        end
+    elseif ctl == FRG_REDO
+        ctx = PL_foreign_context(h)
+    else
+        return FTRUE                                # FRG_CUTTED
+    end
+
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return FFALSE
+    while ctx < 256
+        if PL_unify_atom(ld, cin_t, codeToAtom(T, ctx)) &&
+            PL_unify_atom(ld, cout_t, codeToAtom(T, table[ctx + 2]))
+            PL_close_foreign_frame(ld, fid)
+            return PL_retry(ctx + 1)                # ForeignRedoInt(ctx+1)
+        end
+        PL_rewind_foreign_frame(ld, fid)
+        ctx += 1
+    end
+    PL_close_foreign_frame(ld, fid)
+    return FFALSE
+end
+
 # PORT: pl-read.c BeginPredDefs as PL_predicates_from_read
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (read:7443-7456 at cbf4e189); read_clause/3 since LB1; read_term/3,2 and `$is_named_var/1` since RD1.
-# `read/1,2` and `$raw_read/1,2` are pl-ext.c's FRG entries (`foreigns`, src/pl-ext.jl; pl-ext.c:116-118, 175).
-# LEFT TO A LATER STEP, in the audit's hands (RD1 handoff): `$code_class/2` (no boot file calls it; grep at
-# cbf4e189: library/prolog_colour.pl does), `$qq_open/2` (the kernel's reader refuses quasi-quotations),
-# char_conversion/2 and current_char_conversion/2 (pl-read.c:552-620; the table is state).
+# (read:7443-7456 at cbf4e189); read_clause/3 since LB1; read_term/3,2 and `$is_named_var/1` since RD1; `$code_class/2` since RD2b.
+# `read/1,2` and `$raw_read/1,2` are pl-ext.c's FRG entries (`foreigns`, src/pl-ext.jl; pl-ext.c:116-118, 175);
+# since RD2b so are char_conversion/2 and current_char_conversion/2 (pl-ext.c:120-121).
+# REFUSED, NAMED: `$qq_open/2` (pl-read.c:2435-2485, under O_QUASIQUOTATIONS): the kernel's reader refuses a quasi-quotation (R1's decision),
+# so no `$quasi_quotation` term exists for it to open; its owner row is `pl-read.c::pred:$qq_open/2` (evidence/audit/classify/pl-read.c.tsv),
+# which stays with the quasi-quotation step (library/quasi_quotations.pl is its one library caller).
 "pl-read.c's registration table (`BeginPredDefs(read)`): the ported entries."
 const PL_predicates_from_read = (
     PL_extension("read_term", 3, pl_read_term3_va, PL_FA_ISO | PL_FA_VARARGS),
@@ -5190,5 +5426,6 @@ const PL_predicates_from_read = (
     PL_extension("atom_to_term", 3, pl_atom_to_term3_va, PL_FA_VARARGS),
     PL_extension("term_to_atom", 2, pl_term_to_atom2_va, PL_FA_VARARGS),
     PL_extension("term_string", 2, pl_term_string2_va, PL_FA_VARARGS),
+    PL_extension("\$code_class", 2, pl_code_class2_va, PL_FA_VARARGS),
     PL_extension("\$is_named_var", 1, pl_is_named_var1_va, PL_FA_VARARGS)
 )
