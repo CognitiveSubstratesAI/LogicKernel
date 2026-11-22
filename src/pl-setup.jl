@@ -596,7 +596,10 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         locale_state{T}(),                      # locale: empty until initLocale! (below)
         thread_state{T}(),                      # thread: no engine yet (TH1 engines)
         Dict{UInt64, pl_mutex{T}}(),            # mutexes: no user mutex (initMutexes: newHTableWP(16); MUTEX)
-        0                                       # mutex_serial: none handed out
+        0,                                      # mutex_serial: none handed out
+        Dict{UInt64, message_queue{T}}(),       # message_queues: no user queue (queueTable is NULL until the first message_queue_create; QUEUES)
+        0,                                      # message_queue_serial: none handed out
+        Dict{Int, message_queue{T}}()           # thread_queues: no thread has used its queue yet
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

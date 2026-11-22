@@ -2812,6 +2812,44 @@ mutable struct mutex_prop_enum{T}
 end
 mutex_prop_enum{T}() where {T} = mutex_prop_enum{T}(pl_mutex{T}[], 1, nothing, 1, false, false)
 
+# PORT: pl-thread.c message_queue
+# DIVERGES: the kernel runs one thread, so no `pthread_mutex_t`/`pthread_cond_t` (`mutex`, `cond_var`, `wait_for_cond`, `cond_var_sleeping`) and
+# no `waiting`/`waiting_var`/`getters` counts (nobody can wait while another thread sends: `waiting` is always 0). The messages are
+# `record{T}`s (`PL_record`) in arrival order; upstream's `key`/`sequence_id` only order a skip/wait loop and are omitted. `id` is the atom (a
+# term of type `T`) the queue is known by: a name, or the `message_queue` blob of an anonymous one (`nothing`: a thread's queue, upstream's `id == 0`);
+# `serial` numbers the queues in creation order (upstream enumerates its hash table in hash order, the kernel in this one).
+"A message queue (pl-thread.c `struct message_queue`): its messages, size limit, identifier and type."
+mutable struct message_queue{T}
+    id::Union{Nothing, T}                           # id of the queue (nothing: a thread's queue)
+    messages::Vector{record{T}}                     # the messages, in arrival order
+    max_size::Int                                   # max number of pending messages (0: unlimited)
+    anonymous::Bool                                 # <message_queue>(0x...)
+    type::Int                                       # QTYPE_QUEUE or QTYPE_THREAD
+    tid::Int                                        # the owning thread (QTYPE_THREAD), else 0
+    serial::Int                                     # the creation number (see above)
+    destroyed::Bool                                 # queue is destroyed
+end
+
+"`message_queue.type`: a queue made by `message_queue_create` (pl-thread.c)."
+const QTYPE_QUEUE = 0
+"`message_queue.type`: the queue every thread has (pl-thread.c)."
+const QTYPE_THREAD = 1
+
+# PORT: pl-thread.c qprop_enum
+# DIVERGES: a record of the local data's pool (`ld.queue_enums`, a `foreign_state_pool`), its index the `REDO_PTR` context, as `mutex_prop_enum`.
+# `queues` are the queues of the table at the first call, in creation order, `next` the one handed out next (`enumerating`: `e` is not NULL);
+# `p` is the property being tried, an index (from 1) into `qprop_list`. A pool record is REUSED: every field is set again by the first call.
+"The state of `message_queue_property/2` between answers (pl-thread.c `qprop_enum`)."
+mutable struct qprop_enum{T}
+    queues::Vector{message_queue{T}}                # e: the queues the enumeration walks
+    next::Int                                       # e: the next one to hand out
+    q::Union{Nothing, message_queue{T}}             # q: the current queue (nothing: NULL)
+    p::Int                                          # p: the property in `qprop_list` (an index)
+    enum_properties::Bool                           # enumerate the properties
+    enumerating::Bool                               # e != NULL: enumerating the queues
+end
+qprop_enum{T}() where {T} = qprop_enum{T}(message_queue{T}[], 1, nothing, 1, false, false)
+
 # ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
 
 # PORT: pl-table.h symbol
