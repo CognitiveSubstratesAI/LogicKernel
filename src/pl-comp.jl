@@ -4798,12 +4798,14 @@ const _CA1_NAMES = (
 
 # PORT: pl-comp.c lookup_vmi
 # DIVERGES: a linear walk over the kernel's declared table (`_CODE_TABLE`, src/pl-vmi.jl: upstream's `I_HIGHEST` instructions
-# in a hash table made at the first call), so an instruction the kernel does not declare is not found.
+# in a hash table made at the first call), so an instruction the kernel does not declare is not found. The names are matched
+# LOWER-CASE (`i_enter`, as swipl's `codeTable[].name`: the kernel's table spells them as its constants, `:I_ENTER`; COMPEXT3,
+# found by the row cx_vm01: swipl 10.1.20 gives existence_error(vmi, 'I_ENTER') for the upper-case name).
 "The `code_info` of the instruction named `name`, or `nothing` (pl-comp.c)."
 function lookup_vmi(name::T)::Union{Nothing, code_info} where {T}
     k = sym_key(name)
     for ci in _CODE_TABLE
-        sym_key(mk_sym(T, ci.name)) == k && return ci
+        sym_key(mk_sym(T, Symbol(lowercase(String(ci.name))))) == k && return ci
     end
     return nothing
 end
