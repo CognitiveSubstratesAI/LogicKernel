@@ -2534,6 +2534,7 @@ function _manifest_index(T)
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
+        (LK.PL_thread_at_exit, Tuple{LK.PL_global_data{T}, LD, Any, Any, Bool}, false),
         (
             LK.freePrologThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
@@ -2803,6 +2804,11 @@ function _manifest_index(T)
         (
             LK.register_event_hook,
             Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Int, Int},
+            false
+        ),
+        (
+            LK.register_event_function,
+            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32},
             false
         ),
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
