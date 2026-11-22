@@ -5045,6 +5045,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
     # STREAMX: the filter streams (pl-stream.c Sset_filter, the open function set); the callbacks' defaults are exempt
+    (LK.Sfread, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
+    (LK.Sfwrite, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
     (LK.Sset_filter, Tuple{LK.IOSTREAM, LK.IOSTREAM}, false),
     (LK.Sset_filter, Tuple{LK.IOSTREAM, Nothing}, false),
     (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),

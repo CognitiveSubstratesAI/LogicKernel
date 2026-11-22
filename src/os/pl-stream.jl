@@ -904,6 +904,61 @@ function Sungetc(c::Int, s::IOSTREAM)::Int
     return -1
 end
 
+# PORT: pl-stream.c Sfread
+# DIVERGES: `data` is a byte vector filled from index 1 (upstream's `void *`); `size` 0 reads nothing (upstream divides by it).
+"Read up to `elms` elements of `size` bytes from `s` into `data`: the number of whole elements read (pl-stream.c)."
+function Sfread(data::Vector{UInt8}, size::Int, elms::Int, s::IOSTREAM)::Int
+    size == 0 && return 0
+    chars = size * elms
+    bi = 1                                      # `buf`: the next index of `data`
+    if s.position !== nothing
+        while chars > 0
+            c = Sgetc(s)
+            c == EOF && break
+            data[bi] = c % UInt8
+            bi += 1
+            chars -= 1
+        end
+    else
+        while chars > 0
+            if s.bufp < s.limitp
+                avail = s.limitp - s.bufp
+                if chars <= avail
+                    copyto!(data, bi, s.mem, s.bufp, chars)
+                    s.bufp += chars
+                    return elms
+                else
+                    copyto!(data, bi, s.mem, s.bufp, avail)
+                    chars -= avail
+                    bi += avail
+                    s.bufp += avail
+                end
+            end
+            c = S__fillbuf(s)
+            c == EOF && break
+            data[bi] = c % UInt8
+            bi += 1
+            chars -= 1
+        end
+    end
+    return (size * elms - chars) ÷ size
+end
+
+# PORT: pl-stream.c Sfwrite
+# DIVERGES: `data` is a byte vector read from index 1 (upstream's `void *`); `size` 0 writes nothing (upstream divides by it).
+"Write `elms` elements of `size` bytes from `data` to `s`: the number of whole elements written (pl-stream.c)."
+function Sfwrite(data::Vector{UInt8}, size::Int, elms::Int, s::IOSTREAM)::Int
+    size == 0 && return 0
+    chars = size * elms
+    bi = 1
+    while chars > 0
+        Sputc(Int(data[bi]), s) < 0 && break
+        bi += 1
+        chars -= 1
+    end
+    return (size * elms - chars) ÷ size
+end
+
 # ── characters ──────────────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c reperror
