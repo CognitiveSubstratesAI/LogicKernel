@@ -175,8 +175,8 @@ function TrailAssignment!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
         old = allocGlobalCells!(ld, 1)              # Word old = gTop; gTop++
 
         ld.gstack[old] = ld.gstack[p]               # save the old value on the global
-        push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # (tTop++)->address = p
-        push!(ld.trail, tagTrailPtr(old))           # (tTop++)->address = tagTrailPtr(old)
+        _trail_push!(ld, _trail_addr(p, TRAIL_GLOBAL))  # (tTop++)->address = p
+        _trail_push!(ld, tagTrailPtr(old))          # (tTop++)->address = tagTrailPtr(old)
     end
     return nothing
 end

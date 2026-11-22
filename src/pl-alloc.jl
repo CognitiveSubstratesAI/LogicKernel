@@ -231,10 +231,14 @@ end
 # ORIGINAL: the global stack's growth (upstream: `growStacks`, pl-gc.c, which shifts the stacks):
 # the vector grows to hold position `top`, doubling. No cap of its own: `stacks_limit` governs, where
 # the callers check it (`ensureGlobalSpace`, `allocGlobalNoShift`: L1f f2).
+# DIVERGES (G1, audit D-0966 (2); see `growStacks!`, src/pl-gc.jl): a growth to a size past `GLOBAL_INITIAL` ticks
+# `shift_status.global_shifts` (pl-gc.c:5496-5497 `if ( g ) LD->shift_status.global_shifts++` at 18168e62); the growths up to it
+# stand for upstream's initial allocation (pl-setup.c:1599/1605), not shifts, so a fresh engine reads 0 as swipl's does.
 "Grow the global stack to hold at least `top` cells."
 @noinline function _growGlobalStack!(ld::PL_local_data, top::Int)::Nothing
     n = max(top, 2 * length(ld.gstack), 1024)
     resize!(ld.gstack, n)
+    n > GLOBAL_INITIAL && (ld.shift_status.global_shifts += 1)   # if ( g ) LD->shift_status.global_shifts++ (pl-gc.c:5496-5497)
     return nothing
 end
 
