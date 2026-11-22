@@ -2098,8 +2098,10 @@ foreign_state_pool{S}() where {S} = foreign_state_pool{S}(S[], Int[], 0)
 # are `parent`, `saved_bfr`, `saved_environment` and `next_environment`; `saved_ltop` is a position,
 # `exception` a term reference, `foreign_frame` a foreign-frame handle. `aSave` is the argument
 # stack's height. `registers.pc`
-# is a `Code`. Not kept, but counted in `SIZEOF_QUERYFRAME`: the depth limit (`O_LIMIT_DEPTH`; no
-# depth limit), `yield` (not ported, decision 1), `debugSave` and `flags_saved` (the debugger and
+# is a `Code`. `yield.term` is `yield_term`, a term reference (0 = none; an engine's I_YIELD sets it,
+# TH1). Not kept, but counted in `SIZEOF_QUERYFRAME`: the depth limit (`O_LIMIT_DEPTH`; no
+# depth limit), `yield.wstate` (the debugger's yield, not ported; the foreign-yield sentinels
+# `YIELD_TERM_FOREIGN` and `YIELD_TERM_DEBUG` are not ported either), `debugSave` and `flags_saved` (the debugger and
 # the run-mode flags, not ported), `qid` (the query is identified by its position, decision 1).
 "A query on the local stack (pl-incl.h `struct queryFrame`)."
 mutable struct queryFrame{T}
@@ -2110,6 +2112,7 @@ mutable struct queryFrame{T}
     registers_pc::Code{T}           # registers.pc
     next_environment::Int           # See D_BREAK and get_vmi_state()
     exception::Int                  # Exception term (a term reference; 0 = none)
+    yield_term::Int                 # yield.term: Handle to exchange data (a term reference; 0 = none)
     foreign_frame::Int              # Frame after PL_next_solution() (a handle; 0 = none)
     flags::UInt32
     solutions::Int                  # # of solutions produced
