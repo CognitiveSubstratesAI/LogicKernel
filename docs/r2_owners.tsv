@@ -5,7 +5,6 @@
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
 pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
-pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv

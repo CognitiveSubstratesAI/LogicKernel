@@ -1716,6 +1716,9 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        # MISS1 — '$call_no_catch'/1 (pl-pro.c) and print_unhandled_exception (pl-wam.c)
+        (LK.pl_call_no_catch1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.print_unhandled_exception, Tuple{GD, LD, Int}, false),
         # Q10 (lane C): pl-alloc.c trim_heap/thread_idle, pl-setup.c $on_signal/4, $set_prolog_stack/4, trim_stacks/0 and the signal tables
         (LK.pl_trim_heap0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_thread_idle2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),

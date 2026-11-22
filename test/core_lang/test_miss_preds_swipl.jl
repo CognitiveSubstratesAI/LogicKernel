@@ -1,6 +1,6 @@
-# ORIGINAL: MISS1's gate — the legacy character I/O predicates put/1,2 and get/1,2 of pl-file.c (swipl-devel 18168e62: put1/put2 :3505-3517
-# are put_code's function, get_nonblank :3520-3560)
-# test/core_lang/test_miss_getput_swipl.jl — put/1,2 and get/1,2 over open_string/2 and with_output_to/2 streams:
+# ORIGINAL: MISS1's gate — the predicates the missing-C-predicates list left open: the legacy character I/O put/1,2 and get/1,2 of pl-file.c
+# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450)
+# test/core_lang/test_miss_preds_swipl.jl — put/1,2 and get/1,2 over open_string/2 and with_output_to/2 streams, '$call_no_catch'/1:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the answer lines are the driver's `enc`oded form (test_s2a_swipl.jl's driver).
 #   * The expected lines are DERIVED FROM THE C (written blind, nothing was run when they were written): get_nonblank reads codes until
@@ -178,6 +178,14 @@ const _MG_CASES = [
         raw"open_string('a\n  b', S), get(S, A), get(S, B), get(S, C), R = A-B-C",
         _mgc("-", _mgc("-", _mgi(97), _mgi(98)), _mgi(-1))
     ),
+    # '$call_no_catch'/1 (pl-pro.c:433-450): callProlog with PL_Q_NORMAL; an exception is restored from and cleared, the truth value is ignored,
+    # the predicate always succeeds. The printed message goes to user_error (not compared). callProlog's PL_cut_query keeps the bindings.
+    ("cn01", raw"'$call_no_catch'(X = 1), R = X", _mgi(1)),
+    ("cn02", raw"'$call_no_catch'(fail), R = ok", _mga("ok")),
+    ("cn03", raw"'$call_no_catch'(throw(foo)), R = ok", _mga("ok")),
+    ("cn04", raw"'$call_no_catch'(true), R = ok", _mga("ok")),
+    ("cn05", raw"'$call_no_catch'(_), R = ok", _mga("ok")),   # callProlog's own instantiation error, also swallowed
+    ("cn06", raw"'$call_no_catch'(user:(Y = a)), R = Y", _mga("a")),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -195,7 +203,7 @@ function _mg_file(dir::String)::Tuple{String, Vector{String}}
             "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n"
             for (id, g, _) in _MG_CASES
         ])
-    f = joinpath(dir, "miss_getput.pl")
+    f = joinpath(dir, "miss_preds.pl")
     write(f, text)
     return f, names
 end
@@ -242,7 +250,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2 and get/1,2 as the C of pl-file.c (pu01-pu10, ge01-ge14)" begin
+@testset "put/1,2, get/1,2 and '\$call_no_catch'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()

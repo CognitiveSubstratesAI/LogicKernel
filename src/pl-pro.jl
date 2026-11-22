@@ -20,7 +20,8 @@
 # `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
 # outside a toplevel); `prologToplevel`, `pl_break1`, `pl_break` (`break/0`) and, from pl-fli.c, `PL_toplevel`.
 #
-# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
+# Since MISS1: `'$call_no_catch'/1` (with pl-wam.c's `print_unhandled_exception`, called after the query: the VM does not print).
+# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -139,6 +140,52 @@ function pl_sig_atomic1_va(
     rval = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_PASS_EXCEPTION)
 
     return rval ? FTRUE : FFALSE
+end
+
+# PORT: pl-wam.c print_unhandled_exception
+# DIVERGES: the database and the local data are arguments; the running query's form of `handles_unwind` is
+# `handles_unwind(ld, 0, …)` (src/pl-wam.jl); `EXCEPT_THREAD_EXIT` is not tested (one thread, `PL_Q_EXCEPT_THREAD_EXIT` is not defined). Upstream
+# prints from the VM's `b_throw_debug` at the throw; the kernel's VM never prints (src/pl-wam.jl, `b_throw_debug`), so its one caller
+# (`'$call_no_catch'/1`, below) prints after the query returned: the message is the same term, the stack the debugger would show is not.
+"Print `print_message(error, unhandled_exception(Ball))` for the ball in `ex`, unless it is an abort or a halt/thread-exit a parent query handles (pl-wam.c)."
+function print_unhandled_exception(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ex::term_t
+)::Bool where {T}
+    exclass = classify_exception(ld, ex)
+
+    exclass == EXCEPT_ABORT && return false
+    exclass == EXCEPT_HALT &&
+        (handles_unwind(ld, 0, PL_Q_EXCEPT_HALT) || gd.halt_cleaning != CLN_NORMAL) &&
+        return false
+
+    return printMessage(ld, :error, _message_term(ld, :unhandled_exception, ex))
+end
+
+# PORT: pl-pro.c call_no_catch as pl_call_no_catch1_va
+# (PRED_IMPL("$call_no_catch", 1, call_no_catch, PL_FA_TRANSPARENT))
+# DIVERGES: the query is opened `PL_Q_NORMAL`, which makes upstream's VM print an uncaught exception at the throw; the kernel's VM does not,
+# so the ball is printed here, before `restore_after_exception` (`print_unhandled_exception`, above); an error `callProlog` raises before it opens
+# the query (a goal that is not callable) is printed too, where upstream prints nothing for it. The truth value is ignored, as upstream.
+"""
+    '\$call_no_catch'(:Goal)
+
+Run `Goal` for the toplevel: an exception is considered uncaught, printed and ignored, and the truth value is ignored (pl-pro.c).
+"""
+function pl_call_no_catch1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    gd = _query_gd(ld)
+    ex = Ref(0)
+
+    rc = callProlog(gd, ld, 0, A1, PL_Q_NORMAL, ex)
+    if !rc && ex[] != 0
+        print_unhandled_exception(gd, ld, ex[])     # printed by the VM at the throw upstream
+        restore_after_exception(gd, ld, ex[])
+        PL_clear_exception(ld)
+    end
+
+    return FTRUE
 end
 
 # PORT: pl-pro.c abortProlog
@@ -629,6 +676,7 @@ const PL_predicates_from_pro = (
         "sig_atomic", 1, pl_sig_atomic1_va,
         PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_SIG_ATOMIC
     ),
+    PL_extension("\$call_no_catch", 1, pl_call_no_catch1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)
