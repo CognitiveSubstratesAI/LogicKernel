@@ -7,20 +7,19 @@
 # `pl_variant_sha1`, `pl_variant_hash` and `pl_term_hash` (src/pl-termhash.jl) — under upstream's
 # unit names; a name upstream uses more than once is used as often here.
 #
-# DIVERGES (file-wide): term_hash2's units pin SWI's hash VALUES (one per platform). The port hashes an atom's
-# `sym_hash` and a grounded value's `gnd_key` where SWI hashes names and bytes (src/pl-termhash.jl,
-# DIVERGES 1), so it cannot produce them; each unit asserts what the pinned value stands for — the
-# hash exists, is a 32-bit integer, and (compound_2/compound_3) a shared subterm hashes as its
-# copy does. That the values are REPRODUCIBLE — the same in another process — is checked in
-# test/core_lang/test_termhash.jl.
+# DIVERGES (file-wide): term_hash2's units pin SWI's hash VALUES (one per platform), which these units do not repeat: each
+# asserts what the pinned value stands for — the hash exists, is a 32-bit integer, and (compound_2/compound_3) a shared
+# subterm hashes as its copy does. The VALUES are swipl's since TERMHASH (src/pl-termhash.jl, DIVERGES 1) and are pinned,
+# from the pinned swipl, in test/core_lang/test_term_hash_pred_swipl.jl. That the values are REPRODUCIBLE — the same in
+# another process — is checked in test/core_lang/test_termhash.jl.
 #
 # NOT PORTED, and why:
 #   variant_sha1: cycle ×2, cycle_variant, cycle_distinct, cycle_no_collision, cycle_attvar,
 #                 cycle_attvar_hash — rational trees; interface terms are finite.
 #   variant_sha1: attvar ×2 — here only the Julia function on interface terms runs, where an attributed variable is a
 #                 plain variable; variant_sha1/2 itself is registered on the cells since BOOTPRED3
-#                 (test/core_lang/test_bootpred3_swipl.jl); term_hash/2,4 and variant_hash/2 on the cells are deferred
-#                 to their own step, with R2.
+#                 (test/core_lang/test_bootpred3_swipl.jl); term_hash/2,4 and variant_hash/2 are registered on the
+#                 cells since TERMHASH (test/core_lang/test_term_hash_pred_swipl.jl).
 #   term_hash2:   simple_3 is ported over a `Term{Union{Int64, BigInt}}`: the default term type has
 #                 no big integers.
 using Test, LogicKernel

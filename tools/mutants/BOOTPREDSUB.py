@@ -165,6 +165,6 @@ MUTANTS = [
          new="Symbol(uppercase(pl_variant_sha1(t)))"),
     dict(id="BP3-V3 the term exported is argument 2, the unbound digest: every digest is the same (KILL bp3v03, bp3v06, bp3v12)",
          file=H, targets=TARGETS,
-         old="-(A1 + 1))",
-         new="-(A2 + 1))"),
+         old="t = _variant_arg(ld, A1, true)",
+         new="t = _variant_arg(ld, A2, true)"),
 ]
