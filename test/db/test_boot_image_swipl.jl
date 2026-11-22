@@ -200,7 +200,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # f023834b, where the gate MEASURED 210 and 209, so the script reads 4 too many (rows the kernel defines by another route than a PL_extension literal; the same offset on both points); on the tip
 # before this merge 103 - 4 = 99; wip/queues-1 alone 180 - 4 = 176, the number its own branch derived; merged tree 90 - 4 = 86 (QUEUES registers 13 pairs: 103 - 13 = 90). The 158 of INT-2 above was stale: the
 # merges after INT-2 (TH1 engines/threads/mutex, atom/proc API, miss-preds, ...) registered more rows. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
-const _BI_KERNEL_MISSING_FOREIGN = 86     # INT-MERGE-11: script count 90 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
+# INT-MERGE-11, second step (+ wip/wrappers-1): WRAPPERS registers 8 more foreign rows of `system` ($candidate_indexes/3, $set_candidate_indexes/2, $set_source_files/1, $clause_from_source/4,
+# $flush_predicate/1, $flushed_predicate/1, redefine_system_predicate/1, $predefine_foreign/1: the branch's own 210 - 8 = 202), disjoint from every row counted above; RE-COUNTED by the same script on the
+# merged tree, not summed: 82 not registered - 4 (the calibration offset) = 78 (the script gave 90 before this step: 90 - 8 = 82). DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
+const _BI_KERNEL_MISSING_FOREIGN = 78     # INT-MERGE-11: script count 82 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave

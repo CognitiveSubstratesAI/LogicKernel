@@ -1230,10 +1230,166 @@ function pl_end_consult1_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-srcfile.c set_source_files as pl_set_source_files1_va
+# (PRED_IMPL("$set_source_files", 1, set_source_files, 0)) — pl-srcfile.c:767-792
+"`'\$set_source_files'(+Property)` (pl-srcfile.c): mark every file loaded so far `from_state` (and, for `system`, `system`)."
+function pl_set_source_files1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    prop = PL_get_atom_ex(ld, PL__t0)
+    prop === nothing && return FFALSE
+    if _atom_is(ld, prop, :system) || _atom_is(ld, prop, :from_state)
+        n = highSourceFileIndex(gd)
+        for i in 1:(n - 1)
+            f = indexToSourceFile(gd, i)
+            if f !== nothing
+                _atom_is(ld, prop, :system) && (f.system = true)
+                f.from_state = true
+            end
+        end
+        return FTRUE
+    end
+    return PL_domain_error(ld, "source_property", PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c clause_from_source as pl_clause_from_source4_va
+# (PRED_IMPL("$clause_from_source", 4, clause_from_source, 0)) — pl-srcfile.c:1820-1898
+# DIVERGES: the procedures of the owner are walked newest first, as upstream's list holds them (`sf.procedures` has the
+# newest LAST); the clauses are collected in a vector; no locks. As upstream, a failed unification in the loop is
+# overwritten by the `PL_unify_nil` after it.
+"`'\$clause_from_source'(+Owner, +File, +Line, -Clauses)` (pl-srcfile.c): the clauses that start at the last line of `File` not after `Line`."
+function pl_clause_from_source4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    owner, file, line, clauses = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    owner_name = PL_get_atom_ex(ld, owner)
+    owner_name === nothing && return FFALSE
+    file_name = PL_get_atom_ex(ld, file)
+    file_name === nothing && return FFALSE
+    ln = PL_get_integer_ex(ld, line)
+    ln === nothing && return FFALSE
+    of = lookupSourceFile(gd, owner_name, false)
+    of === nothing && return FFALSE
+
+    sf = nothing
+    rc = false
+    c = nothing
+    buf = Clause{T}[]
+    source_no = 0
+    if sym_key(file_name) == sym_key(owner_name)
+        source_no = of.index
+    else
+        sf = lookupSourceFile(gd, file_name, false)
+        if sf !== nothing
+            source_no = sf.index
+        end
+    end
+    if source_no != 0                                   # (the file is known: upstream's `goto out` otherwise)
+        for proc in Iterators.reverse(of.procedures)
+            def = proc.definition                       # getProcDefinition(proc)
+            if (def.flags & P_FOREIGN) == 0
+                cref = def.impl_clauses.first_clause
+                while cref !== nothing
+                    cl = cref.clause::Clause{T}
+                    if cl.source_no == source_no
+                        if ln >= Int(cl.line_no)
+                            if c === nothing || c.line_no < cl.line_no
+                                c = cl
+                                empty!(buf)
+                                push!(buf, cl)
+                            elseif c.line_no == cl.line_no
+                                push!(buf, cl)
+                            end
+                        end
+                    end
+                    cref = cref.next
+                end
+            end
+        end
+
+        if !isempty(buf)
+            tail = PL_copy_term_ref(ld, clauses)
+            head = PL_new_term_ref(ld)
+            for cl in buf
+                if !PL_unify_list(ld, tail, head, tail) || !PL_unify_clref(gd, ld, head, cl)
+                    rc = false
+                    break
+                end
+            end
+            rc = PL_unify_nil(ld, tail)
+        end
+    end
+
+    releaseSourceFile(of)
+    sf === nothing || releaseSourceFile(sf)
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c flush_procedure as flush_procedure!
+# DIVERGES: a source file has no reload context here (`startConsult` refuses a reconsult), so there is nothing to
+# finalize: true. The reload arm is `NotPortedError`, for a file whose `reload` a white-box row sets.
+"Finalize the definition of `proc` with respect to the file `sf` being reloaded (pl-srcfile.c)."
+function flush_procedure!(sf::SourceFile{T}, proc::Procedure{T})::Bool where {T}
+    sf.reload === nothing && return true
+    throw(NotPortedError{T}(sf.name, "flushing a predicate while its file is reloaded", "LB6b"))
+end
+
+# PORT: pl-srcfile.c flush_predicate
+# DIVERGES: the module `LD->modules.source` is an index; the database is an argument.
+"Flush the predicate indicator `pred` with respect to the file being read, if any (pl-srcfile.c)."
+function flush_predicate(ld::PL_local_data{T}, pred::term_t)::Bool where {T}
+    gd = _query_gd(ld)
+    ReadingSource(ld) || return true                    # not reading source; nothing to flush
+    sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+    rc = false
+    name, arity, mi = get_functor(gd, ld, pred, ld.modules_source, 0, GF_PROCEDURE)
+    if arity >= 0
+        proc = isCurrentProcedure(sym_key(name), arity, gd.modules[mi])
+        proc === nothing || (rc = flush_procedure!(sf, proc))
+    end
+    releaseSourceFile(sf)
+    return rc
+end
+
+# PORT: pl-srcfile.c flush_predicate as pl_flush_predicate1_va
+# (PRED_IMPL("$flush_predicate", 1, flush_predicate, 0)) — pl-srcfile.c:1943-1948
+"`'\$flush_predicate'(+Predicate, +File)` (pl-srcfile.c): finalize the definition of `Predicate` wrt. the file being read."
+function pl_flush_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return flush_predicate(ld, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-srcfile.c flushed_predicate as pl_flushed_predicate1_va
+# (PRED_IMPL("$flushed_predicate", 1, flushed_predicate, 0)) — pl-srcfile.c:1957-1983
+"`'\$flushed_predicate'(:Head)` (pl-srcfile.c): true when the finalized definition of `Head` is defined."
+function pl_flushed_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1 = PL__t0
+    head = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, A1, ld.modules_source, head)
+    ok || return FFALSE
+    nf = PL_get_functor(ld, head)
+    if nf === nothing
+        return PL_type_error(ld, "callable", A1) ? FTRUE : FFALSE
+    end
+    proc = isCurrentProcedure(sym_key(nf[1]), nf[2], gd.modules[mi])
+    proc === nothing && return FFALSE
+    ReadingSource(ld) || return isDefinedProcedure(gd, proc) ? FTRUE : FFALSE
+    sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
+    flush_procedure!(sf, proc)
+    rc = isDefinedProcedure(gd, proc)
+    releaseSourceFile(sf)
+    return rc ? FTRUE : FFALSE
+end
+
 # PORT: pl-srcfile.c BeginPredDefs as PL_predicates_from_srcfile
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (pl-srcfile.c:1987-1999);
-# NOT HERE (LB6): `$clause_from_source`/4, `$set_source_files`/1, `$flush_predicate`/1,
-# `$flushed_predicate`/1. `PRED_DEF` ors in `PL_FA_VARARGS`.
+# NOT HERE: none, every entry of the table is ported (`$unload_file`/1 by SRC2, the rest by WRAPPERS). `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`): the ported entries."
 const PL_predicates_from_srcfile = (
     PL_extension("\$source_file", 2, pl_source_file2_va, PL_FA_VARARGS),
@@ -1247,7 +1403,11 @@ const PL_predicates_from_srcfile = (
     PL_extension("\$source_file_property", 3, pl_source_file_property3_va, PL_FA_VARARGS),
     PL_extension("\$set_source_file", 3, pl_set_source_file3_va, PL_FA_VARARGS),
     PL_extension("\$unload_file", 1, pl_unload_file1_va, PL_FA_VARARGS),
+    PL_extension("\$clause_from_source", 4, pl_clause_from_source4_va, PL_FA_VARARGS),
     PL_extension("\$start_consult", 2, pl_start_consult2_va, PL_FA_VARARGS),
     PL_extension("\$end_consult", 1, pl_end_consult1_va, PL_FA_VARARGS),
-    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS)
+    PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS),
+    PL_extension("\$set_source_files", 1, pl_set_source_files1_va, PL_FA_VARARGS),
+    PL_extension("\$flush_predicate", 1, pl_flush_predicate1_va, PL_FA_VARARGS),
+    PL_extension("\$flushed_predicate", 1, pl_flushed_predicate1_va, PL_FA_VARARGS)
 )

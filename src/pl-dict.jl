@@ -1,6 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-dict.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-dict.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-fli.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2013-2026, VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
@@ -444,6 +445,45 @@ function PL_get_dict_ex(
     end                                             # TBD: {name:value, ...}
 
     return PL_type_error(ld, "dict-data", data)
+end
+
+# PORT: pl-fli.c PL_put_dict
+# DIVERGES: `tag` is an atom or `nothing` (upstream's 0: an unbound tag); `keys` are ATOMS (a tagged-integer key is not
+# built by any caller yet); the `len` values are the term references `values`, `values+1`, ... (upstream's `values+i`);
+# no `valid_*_t` checks; the cells of a refused duplicate are discarded with the mark as `PL_get_dict_ex` does (upstream:
+# `gTop -= size`); the position of the functor cell is `dp`.
+"Make term reference `t` hold the dict of tag `tag` and the `len` pairs `keys[i]` : value `values+i`; false with an error raised (pl-fli.c)."
+function PL_put_dict(
+    ld::PL_local_data{T}, t::term_t, tag::Union{Nothing, T}, len::Int,
+    keys::AbstractVector{T}, values::term_t
+)::Bool where {T}
+    size = len * 2 + 2
+    ensureGlobalSpace(ld, size) || return false
+    m = Mark(ld)
+    dp = allocGlobalCells!(ld, size)
+    ap = dp
+    ld.gstack[ap] = dict_functor(ld, len)           # *p++ = dict_functor(len)
+    ap += 1
+    ld.gstack[ap] = tag === nothing ? word(0) : _atom_word!(ld, tag)   # *p++ = tag, or setVar(*p++)
+    ap += 1
+    for i in 0:(len - 1)
+        _dict_link!(ld, ap, -(values + i + 1))      # *p++ = linkValI(valTermRef(values))
+        ld.gstack[ap + 1] = _atom_word!(ld, keys[i + 1])    # *p++ = *keys
+        ap += 2
+    end
+
+    rc, dupl = dict_order(ld, dp)
+    if rc == PL_DICT_TRUE
+        DiscardMark(ld, m)
+        ld.slots[t + 1] = consPtr(dp, TAG_COMPOUND | STG_GLOBAL)    # setHandle(t, consCompound(p0))
+        return true
+    end
+
+    Undo!(ld, m)
+    DiscardMark(ld, m)
+    ex = PL_new_term_ref(ld)
+    ld.slots[ex + 1] = dupl                         # throw error(duplicate_key(Key), _)
+    return PL_duplicate_key_error(ld, ex)
 end
 
 # PORT: pl-dict.c get_create_dict_ex

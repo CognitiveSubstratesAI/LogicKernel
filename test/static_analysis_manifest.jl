@@ -2502,6 +2502,8 @@ function _manifest_index(T)
         (LK.pl_start_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_end_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_compile_predicates1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_redefine_system_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # WRAPPERS-2
+        (LK.pl_predefine_foreign1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.mustBeVar, Tuple{LD, Int}, false),
         # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
         (LK.acquire_clause_blob, Tuple{GD, T}, false),
@@ -2598,6 +2600,24 @@ function _manifest_index(T)
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # WRAPPERS-2 — pl-srcfile.c: $set_source_files/1, $clause_from_source/4, $flush_predicate/1, $flushed_predicate/1
+        (LK.flush_procedure!, Tuple{LK.SourceFile{T}, LK.Procedure{T}}, false),
+        (LK.flush_predicate, Tuple{LD, Int}, false),
+        [
+            (f, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false) for f in (
+                LK.pl_set_source_files1_va, LK.pl_clause_from_source4_va,
+                LK.pl_flush_predicate1_va, LK.pl_flushed_predicate1_va
+            )
+        ]...,
+        # WRAPPERS-2 — pl-index.c's Prolog connection (src/pl-indexpred.jl)
+        (LK._put_index_args, Tuple{LD, Int, NTuple{4, LK.iarg_t}}, false),
+        (LK._put_hints, Tuple{LD, Int, LK.hash_hints}, false),
+        (LK.pl_candidate_indexes3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_set_candidate_indexes2_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.fileNameStream, Tuple{GD, LK.IOSTREAM}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, T}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, Nothing}, false),
@@ -2887,6 +2907,7 @@ function _manifest_index(T)
         (LK.get_name_value, Tuple{LD, Int, Int, LK.mark}, false),
         (LK.PL_is_dict, Tuple{LD, Int}, false),
         (LK.PL_get_dict_ex, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.PL_put_dict, Tuple{LD, Int, T, Int, Vector{T}, Int}, false),   # pl-fli.c PL_put_dict (WRAPPERS-2)
         (LK.get_create_dict_ex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: put_dict/3, select_dict/3, get_dict/3
         (LK.assign_in_dict, Tuple{LD, Int, Int}, false),
