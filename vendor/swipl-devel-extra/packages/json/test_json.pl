@@ -1,0 +1,273 @@
+/*  Part of SWI-Prolog
+
+    Author:        Jan Wielemaker
+    E-mail:        J.Wielemaker@vu.nl
+    WWW:           http://www.swi-prolog.org
+    Copyright (c)  2007-2025, University of Amsterdam
+                              SWI-Prolog Solutions b.v.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+    1. Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above copyright
+       notice, this list of conditions and the following disclaimer in
+       the documentation and/or other materials provided with the
+       distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+    FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+    COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+    INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+    BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+    LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+    ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+*/
+
+:- module(test_json,
+          [ test_json/0
+          ]).
+
+:- use_module(library(plunit)).
+:- use_module(library(json)).
+
+test_json :-
+    run_tests([ json_read,
+                json_write,
+                json_convert,
+                json_http
+              ]).
+
+:- begin_tests(json_read).
+
+test(true, X == @(true)) :-
+    atom_json_term(true, X, []).
+test(true, X == true) :-
+    atom_json_term(true, X, [true(true)]).
+
+test(string, X == hello) :-
+    atom_json_term('"hello"', X, []).
+test(string, X == '\\\b\f\n\r\t') :-
+    atom_json_term('"\\\\\\b\\f\\n\\r\\t"', X, []).
+test(string, X == '\u1234') :-
+    atom_json_term('"\\u1234"', X, []).
+
+% surrogate pair (an emoji)
+test(string, X == '\U0001F495') :-
+    atom_json_term('"\\ud83d\\udc95"', X, []).
+
+test(int, X == 42) :-
+    atom_json_term('42', X, []).
+test(int, X == -42) :-
+    atom_json_term('-42', X, []).
+
+test(float, X == 3.14) :-
+    atom_json_term('3.14', X, []).
+test(float, X == -3.14) :-
+    atom_json_term('-3.14', X, []).
+test(float, X == 1000.0) :-
+    atom_json_term('1e3', X, []).
+test(float, X == 1000.0) :-
+    atom_json_term('1.0e3', X, []).
+test(float, X == 0.001) :-
+    atom_json_term('1e-3', X, []).
+test(float, X == 0.001) :-
+    atom_json_term('1.0e-3', X, []).
+
+test(empty, X == json([])) :-
+    atom_json_term({}, X, []).
+test(empty, X == json([])) :-
+    atom_json_term('  {  } ', X, []).
+test(empty, X == json([])) :-
+    atom_json_term('  { } ', X, []).
+
+test(long_number, X == Y) :-		% > 256 chars used to fail
+    numlist(1, 200, L), atomic_list_concat(L, A),
+    atom_json_term(A, X, []),
+    atom_number(A, Y).
+
+test(non_finite, error(syntax_error(json(illegal_json)))) :-
+    atom_json_term('NaN', _, []).
+test(non_finite, error(syntax_error(_))) :-
+    atom_json_term('-Infinity', _, []).
+test(non_finite, X == [Inf, NInf]) :-
+    Inf is inf, NInf is -inf,
+    atom_json_term('[Infinity, -Infinity]', X, [non_finite(json5)]).
+test(non_finite, true(float_class(X, nan))) :-
+    atom_json_term('NaN', X, [non_finite(json5)]).
+test(non_finite, X == -1) :-
+    atom_json_term('-1', X, [non_finite(json5)]).
+test(lone_surrogate, error(syntax_error(json(illegal_surrogate_pair)))) :-
+    atom_json_term('"\\udc00"', _, []).
+
+test(empty_key, Tag-Pairs == '#'-[''-"x", a-1]) :- % used to become the tag
+    atom_json_dict('{"":"x","a":1}', D, []),
+    dict_pairs(D, Tag, Pairs).
+
+
+:- end_tests(json_read).
+
+
+                 /*******************************
+                 *            WRITE             *
+                 *******************************/
+
+:- begin_tests(json_write).
+
+test(string, A == '"hello"') :-
+    atom_json_term(A, hello, [width(0)]).
+test(control, A == '"\\u0001"') :-
+    atom_json_term(A, '\u0001', [width(0)]).
+
+% Characters outside the BMP must be emitted as such, also on systems
+% with a 16 bit wchar_t (Windows).  See issue #1528.
+test(non_bmp, A == '{"x":"\U0001F60A"}') :-
+    atom_json_term(A, json([x='\U0001F60A']), [width(0)]).
+
+test(non_finite, error(domain_error(json_number, _))) :-
+    X is inf,
+    atom_json_term(_, [X], [width(0)]).
+test(non_finite, error(domain_error(json_number, _))) :-
+    X is nan,
+    atom_json_term(_, [X], [width(0)]).
+test(non_finite, A == '[null, null, null, 1.5 ]') :-
+    X is inf, Y is -inf, Z is nan,
+    atom_json_term(A, [X,Y,Z,1.5], [non_finite(null)]).
+test(non_finite, A == '[Infinity, -Infinity, NaN, 1.5 ]') :-
+    X is inf, Y is -inf, Z is nan,
+    atom_json_term(A, [X,Y,Z,1.5], [non_finite(json5)]).
+test(html, A == '"<\\/script><\\u0021--"') :-
+    atom_json_term(A, '</script><!--', []).
+test(html, A == '"a\\u2028b\\u2029c"') :-
+    atom_json_term(A, 'a\u2028b\u2029c', []).
+test(int_key, A == '{"1":"a","b":2}') :-
+    atom_json_dict(A, _{1:a, b:2}, []).
+test(int_key, A == '{\n  "1":"a",\n  "b":2\n}') :-
+    atom_json_dict(A, _{1:a, b:2}, [width(1)]).
+test(cyclic, error(domain_error(acyclic_term, _))) :-
+    L = [a=1|L],
+    atom_json_term(_, json(L), [width(0)]).
+
+:- end_tests(json_write).
+
+
+                 /*******************************
+                 *            CONVERT           *
+                 *******************************/
+
+:- begin_tests(json_convert).
+
+:- use_module(library(json_convert)).
+
+:- json_object
+    point(x:integer, y:integer),
+    tpoint(x:integer, y:integer)+[type=point],
+    fpoint(x:float, y:float).
+
+test(pt2json, JSON == json([x=25,y=50])) :-
+    prolog_to_json(point(25,50), JSON).
+test(pt2json, JSON == json([x=25,y=50,type=point])) :-
+    prolog_to_json(tpoint(25,50), JSON).
+
+test(json2pt, X == point(25,50)) :-
+    json_to_prolog(json([x=25,y=50]), X).
+test(cache_bounded, true(C < 1000)) :-
+    forall(between(1, 2000, I),
+           ( format(atom(K), 'k~d', [I]),
+             json_to_prolog(json([K=1]), _) )),
+    predicate_property(json_convert:created_rules_for_pairs(_,_),
+                       number_of_clauses(C)).
+test(json2pt, X == point(25,50)) :-
+    json_to_prolog(json([y=50,x=25]), X).
+test(json2pt, X == fpoint(25.1,50.0)) :-
+    json_to_prolog(json([y=50.0,x=25.1]), X).
+test(json2pt, T == T2) :-
+    T = json([y=50,x=25.1]),
+    json_to_prolog(json([y=50,x=25.1]), T2).
+test(json2pt, X == tpoint(25,50)) :-
+    json_to_prolog(json([x=25,y=50,type=point]), X).
+
+:- end_tests(json_convert).
+
+
+:- if(exists_source(library(http/thread_httpd))).
+
+                 /*******************************
+                 *             HTTP             *
+                 *******************************/
+
+:- use_module(library(http/http_json)).
+:- use_module(library(http/http_client)).
+:- use_module(library(http/thread_httpd)).
+
+:- dynamic
+    port/1.
+
+make_server :-
+    retractall(port(_)),
+    http_server(reply,
+                [ port(Port),
+                  workers(1)
+                ]),
+    assert(port(Port)).
+
+kill_server :-
+    retract(port(Port)),
+    http_stop_server(Port, []).
+
+reply(Request) :-
+    memberchk(path('/json/echo'), Request),
+    !,
+    http_read_json(Request, JSON),
+    reply_json(JSON).
+
+echo(Term, Reply) :-
+    port(Port),
+    format(string(URL), 'http://localhost:~w/json/echo', [Port]),
+    http_post(URL, json(Term), Reply, []).
+
+:- begin_tests(json_http, [ setup(make_server),
+                            cleanup(kill_server)
+                          ]).
+
+test(echo, X == 42) :-
+    echo(42, X).
+test(echo, X == -3.14) :-
+    echo(-3.14, X).
+test(echo, X == name) :-
+    echo(name, X).
+test(echo, X == [1,2,3]) :-
+    echo([1,2,3], X).
+test(echo, X == json([name=json, arity=2])) :-
+    echo(json([name=json, arity=2]), X).
+
+test(unicode, X == Atom) :-
+    Atom = '\u0411\u0435\u0437\u0443\u043f\u0440\u0435\u0447\u043d\u043e\u0435',
+    echo(Atom, X).
+test(quote, X == Atom) :-
+    Atom = 'hello, "world"',
+    echo(Atom, X).
+test(control, X == Atom) :-
+    Atom = 'hello\n\t\r\b\003\',
+    echo(Atom, X).
+
+:- end_tests(json_http).
+
+:- multifile
+    user:message_hook/3.
+
+user:message_hook(httpd_stopped_worker(_, true), _Kind, _Lines).
+
+:- else.                                % have HTTP server
+:- begin_tests(json_http).
+:- end_tests(json_http).
+:- endif.

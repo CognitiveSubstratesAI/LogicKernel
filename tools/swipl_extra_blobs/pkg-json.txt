@@ -1,0 +1,22 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-json — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-json; the files are upstream's bytes, never edited.
+# source: sub packages/json 8be86c195c4aeec339abdbbe15e2110d2e3fd419
+100644 blob fa727fc7dc029a8ff54cfe2dfb3bd6a03874b7c2	packages/json/CMakeLists.txt
+100644 blob 0ff7b3895bc0d7ab11c654a99e40348849230197	packages/json/README.md
+100644 blob e223a27c89097c2c5050c5e5ca760784740c3125	packages/json/compat/js_grammar.pl
+100644 blob c8171be0486e5d33d46f9ed573cc65af1d143380	packages/json/compat/json.pl
+100644 blob 9054607c2b8544135173ed4de2fbe3b687306b44	packages/json/compat/json_convert.pl
+100644 blob 33c01ef01f7a5fe47849c4f9fc6867f6858debab	packages/json/http_json.pl
+100644 blob 18096de2b725c93b2c6f222014c571fdf82bef87	packages/json/json.c
+100644 blob b0e3c0808ae89a35417f58356100ae0fc450a0d1	packages/json/json.pl
+100644 blob c211d6bdbdb2864242bf9874398ed770c6e1660d	packages/json/json.plx
+100644 blob 5da998fe1fcf619df98b5947b48231bad7d60e24	packages/json/json_convert.pl
+100644 blob fb0e975f0295c2fc56e3e118b184e218c0b0beaa	packages/json/json_grammar.pl
+100644 blob 1e6187ac71181616a298632a3d5993a0d714f414	packages/json/json_rpc_client.pl
+100644 blob ba5fbc7fd62e304e6bab08cbc2f6cb7d554974bc	packages/json/json_rpc_common.pl
+100644 blob 9007d8e08976765a10a34f2cb39e7ca9832256dd	packages/json/json_rpc_server.pl
+100644 blob a1df39f112749737996e1aeed18a78bb79f701e6	packages/json/json_schema.pl
+100644 blob 1e297d2048a6eb0454d08a3faf581ff52a447ae6	packages/json/jsonmd.md
+100644 blob 869fa1b9f2d27afb3bcf18bec480a00a26ccca3e	packages/json/test_json.pl
+100644 blob 33d0d19eeac4f78ae5bb9b0b895f3469f89424cf	packages/json/test_json_rpc.pl
+100644 blob 79d0d8307d4aa6554ba3fb464da266b43acc1848	packages/json/test_json_schema.pl
