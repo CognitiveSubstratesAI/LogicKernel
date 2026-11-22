@@ -1829,6 +1829,14 @@ function _manifest_index(T)
         (LK._fli_text_codes, Tuple{LK.PL_chars_t}, false),
         (LK._fli_text_has_nul, Tuple{LK.PL_chars_t}, false),
         (LK.PL_get_text_as_atom, Tuple{LD, Int, UInt32}, false),
+        # FLI-API group F (pl-fli.c): the tagged-list term builder, atomic words, the term type
+        (LK.PL_get_module, Tuple{GD, LD, Int}, false),
+        (LK._PL_get_atomic, Tuple{LD, Int}, false),
+        (LK._PL_put_atomic, Tuple{LD, Int, UInt64}, false),
+        (LK.put_xpce_ref_arg, Tuple{LD, LK.xpceref_t{T}}, false),
+        (LK.PL_term_type, Tuple{LD, Int}, false),
+        (LK.PL_unify_output, Tuple{LD, Int, Int}, false),
+        (LK.PL_unify_termv, Tuple{GD, LD, Int, Vector{Any}}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (

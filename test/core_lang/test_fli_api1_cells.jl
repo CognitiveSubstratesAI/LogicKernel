@@ -13,6 +13,8 @@
 # wip/clib-uri defines them).
 # group D: initUCSAtoms, isUCSAtom, get_atom_ptr_text, get_atom_text, get_string_text, compareUCSAtom, saveUCSAtom, loadUCSAtom,
 # blob_write_usc_atom, is_text_value, get_value_text, PL_get_text_as_atom.
+# group F: PL_get_module, _PL_get_atomic, _PL_put_atomic, put_xpce_ref_arg, PL_term_type, PL_unify_output, PL_unify_termv,
+# PL_unify_term (their text tags call PL_unify_chars and PL_unify_wchars of wip/clib-uri / wip/clib1: rows on those tags need that merge).
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -894,6 +896,212 @@ end
         e
     end
     @test ex isa LK.AtomNotRepresentableError && ex.codes == UInt32[0x61, 0x00, 0x62]
+end
+
+# ── group F (pl-fli.c): PL_get_module, _PL_get_atomic, _PL_put_atomic, put_xpce_ref_arg, PL_term_type, PL_unify_output,
+# PL_unify_termv, PL_unify_term ─────────────────────────────────────────────────────────────────────────────────
+
+"An engine with a database: `(gd, ld, t)` — the value `vs[i]` in term reference `t + i - 1` (as `_fa_engine`)."
+function _fa_gengine(vs::Vector{_R})
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    ld = db.ld
+    LK.PL_open_foreign_frame(ld)
+    t = LK.PL_new_term_refs(ld, length(vs))
+    pvm = LK.PutVarMap()
+    for (i, v) in enumerate(vs)
+        LK.putSlotValue!(ld, t + i, v, pvm)
+    end
+    return db.gd, ld, t
+end
+
+"Whether `t` holds the text atom `name`."
+_fa_is_atom(ld, t, name::Symbol) = LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === name
+
+# LK-ONLY (pl-fli.c:2588-2599): PL_get_module is lookupModule of the atom the term reference holds — the module the name gives
+# (created if new, one index for one name) — and fails for anything but an atom.
+@testset "LK-ONLY: PL_get_module (pl-fli.c:2588)" begin
+    gd, ld, t = _fa_gengine(_R[_rs("m9"), _rs("user"), _fa_k(5), _rf("f", _rs("a")), _rv(1)])
+    m = LK.PL_get_module(gd, ld, t)
+    @test m isa Int && m > 0 && m == LK.PL_new_module(gd, _rs("m9"))
+    @test lk_name(gd.modules[m].atom) === :m9
+    @test LK.PL_get_module(gd, ld, t) == m                                   # the same index again
+    @test LK.PL_get_module(gd, ld, t + 1) == LK.MODULE_user(gd).index
+    @test LK.PL_get_module(gd, ld, t + 2) === nothing                        # an integer
+    @test LK.PL_get_module(gd, ld, t + 3) === nothing                        # a compound
+    @test LK.PL_get_module(gd, ld, t + 4) === nothing                        # a variable
+end
+
+# LK-ONLY (pl-fli.c:4347-4366): _PL_get_atomic is the word the term reference holds (valHandle), _PL_put_atomic makes another
+# reference hold that word: the atom or the integer comes back from the second reference.
+@testset "LK-ONLY: _PL_get_atomic and _PL_put_atomic (pl-fli.c:4347, :4362)" begin
+    ld, t = _fa_engine(_R[_rs("abc"), _fa_k(77), _rv(1), _rv(2)])
+    w = LK._PL_get_atomic(ld, t)
+    @test w == LK._atom_word!(ld, _rs("abc"))
+    @test LK._PL_put_atomic(ld, t + 2, w) === nothing
+    @test _fa_is_atom(ld, t + 2, :abc)
+    @test LK._PL_put_atomic(ld, t + 3, LK._PL_get_atomic(ld, t + 1)) === nothing
+    @test LK.PL_get_integer(ld, t + 3) == 77
+end
+
+# LK-ONLY (pl-fli.c:4278-4289): put_xpce_ref_arg is the tagged integer of an integer reference, the word of the atom of an
+# atom reference; an integer the tag cannot hold raises representation_error(pce_reference) and gives the word 0.
+@testset "LK-ONLY: put_xpce_ref_arg (pl-fli.c:4278)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, 5, nothing)) == LK.consInt(Int64(5))
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, -3, nothing)) == LK.consInt(Int64(-3))
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_ATOM, 0, _rs("obj"))) == LK._atom_word!(ld, _rs("obj"))
+    @test ld.exception_term == 0
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, typemax(Int64), nothing)) == 0
+    @test ld.exception_term != 0
+    fm = LK.PL_new_term_ref(ld)
+    @test LK.PL_get_arg(ld, 1, ld.exception_term, fm)
+    @test LK.PL_get_name_arity(ld, fm) !== nothing && lk_name(LK.PL_get_name_arity(ld, fm)[1]) === :representation_error
+end
+
+# LK-ONLY (pl-fli.c:4539-4569): PL_term_type — a variable PL_VARIABLE, a text atom PL_ATOM, `[]` PL_NIL, an integer PL_INTEGER
+# (a big one too), a float PL_FLOAT, a string PL_STRING, a compound PL_TERM, a list cell PL_LIST_PAIR, a `dict` compound PL_DICT.
+@testset "LK-ONLY: PL_term_type (pl-fli.c:4539)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rs("abc"), _rnil(), _fa_k(5), _rg(2.5), _rg("s"), _rf("f", _rs("a")),
+                          _rlist(_fa_k(1)), _rf("dict", _rs("t"), _fa_k(1), _rs("k")), _rg(big(2)^70)])
+    @test LK.PL_term_type(ld, t) == LK.PL_VARIABLE == 1
+    @test LK.PL_term_type(ld, t + 1) == LK.PL_ATOM == 2
+    @test LK.PL_term_type(ld, t + 2) == LK.PL_NIL == 8
+    @test LK.PL_term_type(ld, t + 3) == LK.PL_INTEGER == 3
+    @test LK.PL_term_type(ld, t + 4) == LK.PL_FLOAT == 5
+    @test LK.PL_term_type(ld, t + 5) == LK.PL_STRING == 6
+    @test LK.PL_term_type(ld, t + 6) == LK.PL_TERM == 7
+    @test LK.PL_term_type(ld, t + 7) == LK.PL_LIST_PAIR == 10
+    @test LK.PL_term_type(ld, t + 8) == LK.PL_DICT == 44
+    @test LK.PL_term_type(ld, t + 9) == LK.PL_INTEGER
+end
+
+# LK-ONLY (pl-fli.c:4601-4614): PL_unify_output binds a variable to a bound value (an atom, a compound, an integer) and
+# otherwise is PL_unify: equal values unify, different ones do not, two variables become one.
+@testset "LK-ONLY: PL_unify_output (pl-fli.c:4601)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rs("a"), _rv(2), _rf("f", _rs("x")), _rv(3), _fa_k(42), _rs("b"), _rv(4), _rv(5)])
+    @test LK.PL_unify_output(ld, t, t + 1) && _fa_atom(ld, t) === :a
+    @test LK.PL_unify_output(ld, t + 2, t + 3)
+    @test LK.PL_get_name_arity(ld, t + 2) !== nothing && lk_name(LK.PL_get_name_arity(ld, t + 2)[1]) === :f
+    @test LK.PL_unify_output(ld, t + 4, t + 5) && LK.PL_get_integer(ld, t + 4) == 42
+    @test LK.PL_unify_output(ld, t, t + 1)                                   # bound to the same atom
+    @test !LK.PL_unify_output(ld, t, t + 6)                                  # bound to another
+    @test LK.PL_unify_output(ld, t + 7, t + 8) && LK.PL_unify_atom(ld, t + 8, _rs("z")) && _fa_atom(ld, t + 7) === :z
+end
+
+"The elements of the integer list term reference `t` holds (`nothing` for no proper list)."
+_fa_ints(ld, t) = _fa_codes(ld, t)
+
+# LK-ONLY (pl-fli.c:4009-4070): PL_unify_termv reads each tag and its values in order: PL_VARIABLE leaves the term alone, PL_ATOM,
+# PL_BOOL (any non-zero is true), the integer tags, PL_POINTER, PL_FLOAT/PL_DOUBLE, PL_STRING, PL_CHARS, PL_NCHARS, PL_TERM.
+@testset "LK-ONLY: PL_unify_term, atomic tags (pl-fli.c:4009)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(i) for i in 1:14])
+    U = LK.PL_unify_term
+    @test U(gd, ld, t, LK.PL_VARIABLE) && LK.PL_is_variable(ld, t)
+    @test U(gd, ld, t + 1, LK.PL_ATOM, _rs("a")) && _fa_atom(ld, t + 1) === :a
+    @test U(gd, ld, t + 2, LK.PL_BOOL, 7) && _fa_atom(ld, t + 2) === :true
+    @test U(gd, ld, t + 3, LK.PL_BOOL, 0) && _fa_atom(ld, t + 3) === :false
+    @test U(gd, ld, t + 4, LK.PL_LIST, 7, LK.PL_SHORT, 1, LK.PL_INT, 2, LK.PL_LONG, 3, LK.PL_INTEGER, 4,
+            LK.PL_INT64, 5, LK.PL_INTPTR, 6, LK.PL_SWORD, 7) && _fa_ints(ld, t + 4) == [1, 2, 3, 4, 5, 6, 7]
+    @test U(gd, ld, t + 5, LK.PL_POINTER, 4096) && LK.PL_get_pointer(ld, t + 5) === UInt(4096)
+    @test U(gd, ld, t + 6, LK.PL_FLOAT, 2.5) && LK.PL_get_float(ld, t + 6) == 2.5
+    @test U(gd, ld, t + 7, LK.PL_DOUBLE, -0.5) && LK.PL_get_float(ld, t + 7) == -0.5
+    @test U(gd, ld, t + 8, LK.PL_STRING, _fa_b("abc")) && LK.PL_is_string(ld, t + 8) && _fa_text(ld, t + 8) == "abc"
+    @test U(gd, ld, t + 9, LK.PL_CHARS, _fa_b("abc")) && _fa_atom(ld, t + 9) === :abc
+    @test U(gd, ld, t + 10, LK.PL_NCHARS, 2, _fa_b("abc")) && _fa_atom(ld, t + 10) === :ab
+    @test LK.PL_unify_atom(ld, t + 11, _rs("q"))
+    @test U(gd, ld, t + 12, LK.PL_TERM, t + 11) && _fa_atom(ld, t + 12) === :q
+    @test U(gd, ld, t + 13, LK.PL_INT64, typemax(Int64)) && LK.PL_get_integer(ld, t + 13) === nothing
+end
+
+# LK-ONLY (pl-fli.c:4065-4140): the text tags — UTF-8 atom and string, UTF-8 with a length (atom, code list, string), wide
+# characters with a length (atom, code list, string); the multibyte tags reach the refusal of PL_unify_chars (REP_MB).
+@testset "LK-ONLY: PL_unify_term, text tags (pl-fli.c:4065)" begin
+    if !(isdefined(LK, :PL_unify_chars) && isdefined(LK, :PL_unify_wchars))
+        # the text tags call PL_unify_chars and PL_unify_wchars, which this branch SKIPS (wip/clib-uri, wip/clib1 define
+        # them): the rows run once a clib branch is merged under this one; until then they are visibly Broken, not absent.
+        @test_broken false
+    else
+        gd, ld, t = _fa_gengine(_R[_rv(i) for i in 1:11])
+        U = LK.PL_unify_term
+        e = Vector{UInt8}("é")
+        @test U(gd, ld, t, LK.PL_UTF8_CHARS, e) && LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === Symbol("é")
+        @test U(gd, ld, t + 1, LK.PL_UTF8_STRING, e) && LK.PL_is_string(ld, t + 1) && _fa_text(ld, t + 1) == "é"
+        @test U(gd, ld, t + 2, LK.PL_NUTF8_CHARS, 2, _fa_b("abc")) && _fa_atom(ld, t + 2) === :ab
+        @test U(gd, ld, t + 3, LK.PL_NUTF8_CODES, 3, _fa_b("abc")) && _fa_codes(ld, t + 3) == [97, 98, 99]
+        @test U(gd, ld, t + 4, LK.PL_NUTF8_STRING, 1, _fa_b("abc")) && LK.PL_is_string(ld, t + 4) && _fa_text(ld, t + 4) == "a"
+        w = UInt32[0x61, 0x20ac, 0x62]
+        @test U(gd, ld, t + 5, LK.PL_NWCHARS, 2, w) && _fa_atom(ld, t + 5) === Symbol("a€")
+        @test U(gd, ld, t + 6, LK.PL_NWCODES, 3, w) && _fa_codes(ld, t + 6) == [0x61, 0x20ac, 0x62]
+        @test U(gd, ld, t + 7, LK.PL_NWSTRING, -1, w) && LK.PL_is_string(ld, t + 7) && _fa_text(ld, t + 7) == "a€b"
+        @test_throws LK.NotPortedError U(gd, ld, t + 8, LK.PL_MBCHARS, _fa_b("abc"))
+        @test_throws LK.NotPortedError U(gd, ld, t + 9, LK.PL_MBCODES, _fa_b("abc"))
+        @test_throws LK.NotPortedError U(gd, ld, t + 10, LK.PL_MBSTRING, _fa_b("abc"))
+    end
+end
+
+# LK-ONLY (pl-fli.c:4141-4233): PL_FUNCTOR_CHARS (name and arity) and PL_FUNCTOR (a functor word) unify the functor and the
+# following tags fill its arguments left to right, a nested functor's arguments before the next argument of its parent;
+# PL_LIST n takes n elements and ends in []; a term already bound is compared, not rebuilt.
+@testset "LK-ONLY: PL_unify_term, functors and lists (pl-fli.c:4141)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(i) for i in 1:8])
+    U = LK.PL_unify_term
+    a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)
+    na = LK.PL_get_name_arity(ld, t)
+    @test na !== nothing && lk_name(na[1]) === :f && na[2] == 2
+    @test LK.PL_get_arg(ld, 1, t, a1) && _fa_atom(ld, a1) === :a
+    @test LK.PL_get_arg(ld, 2, t, a2) && LK.PL_get_integer(ld, a2) == 5
+    ft = _fa_functor(ld, "g", 2)
+    @test U(gd, ld, t + 1, LK.PL_FUNCTOR, ft, LK.PL_VARIABLE, LK.PL_ATOM, _rs("x"))
+    @test LK.PL_get_arg(ld, 1, t + 1, a1) && LK.PL_is_variable(ld, a1)
+    @test LK.PL_get_arg(ld, 2, t + 1, a2) && _fa_atom(ld, a2) === :x
+    @test U(gd, ld, t + 2, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_FUNCTOR_CHARS, _fa_b("g"), 1, LK.PL_INT, 1, LK.PL_INT, 2)
+    @test LK.PL_get_arg(ld, 1, t + 2, a1) && LK.PL_get_arg(ld, 1, a1, a2) && LK.PL_get_integer(ld, a2) == 1
+    @test LK.PL_get_arg(ld, 2, t + 2, a2) && LK.PL_get_integer(ld, a2) == 2
+    @test U(gd, ld, t + 3, LK.PL_LIST, 3, LK.PL_INT, 1, LK.PL_INT, 2, LK.PL_INT, 3) && _fa_ints(ld, t + 3) == [1, 2, 3]
+    @test U(gd, ld, t + 4, LK.PL_LIST, 0) && LK.PL_get_nil(ld, t + 4)
+    @test U(gd, ld, t + 5, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_LIST, 2, LK.PL_INT, 1, LK.PL_INT, 2, LK.PL_ATOM, _rs("x"))
+    @test LK.PL_get_arg(ld, 1, t + 5, a1) && _fa_ints(ld, a1) == [1, 2]
+    @test LK.PL_get_arg(ld, 2, t + 5, a2) && _fa_atom(ld, a2) === :x
+    @test U(gd, ld, t + 6, LK.PL_FUNCTOR_CHARS, _fa_b("c"), 0) && _fa_atom(ld, t + 6) === :c    # arity 0: the atom
+    @test U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)   # compared, not rebuilt
+    @test !U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 6)
+    @test !U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("g"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)
+end
+
+# LK-ONLY (pl-fli.c:4189-4247): a _PL_PREDICATE_INDICATOR is Name/Arity of the predicate (qualified when its module is not user);
+# a failure resets the term references made on the way (4231, 4237); an unknown tag fails (4196-4198); a list longer than the
+# bound one fails. DIVERGES (forced): upstream's PL_LIST with a failing PL_unify_list repeats the call; here it fails.
+@testset "LK-ONLY: PL_unify_term, predicates, failure (pl-fli.c:4189)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(1), _rv(2), _rs("a"), _rlist(_fa_k(1)), _rv(3), _rlist(_fa_k(1), _fa_k(2))])
+    U = LK.PL_unify_term
+    a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    p = LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), 0)
+    @test U(gd, ld, t, LK._PL_PREDICATE_INDICATOR, p)
+    na = LK.PL_get_name_arity(ld, t)
+    @test na !== nothing && lk_name(na[1]) === :/ && na[2] == 2
+    @test LK.PL_get_arg(ld, 1, t, a1) && _fa_atom(ld, a1) === :p
+    @test LK.PL_get_arg(ld, 2, t, a2) && LK.PL_get_integer(ld, a2) == 2
+    m = LK.PL_new_module(gd, _rs("m1"))
+    q = LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), m)
+    @test U(gd, ld, t + 1, LK._PL_PREDICATE_INDICATOR, q)
+    na = LK.PL_get_name_arity(ld, t + 1)
+    @test na !== nothing && lk_name(na[1]) === :(:) && na[2] == 2
+    before = LK.PL_new_term_refs(ld, 0)
+    @test !U(gd, ld, t + 2, LK.PL_ATOM, _rs("b"))
+    @test !U(gd, ld, t + 2, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 1, LK.PL_ATOM, _rs("a"))
+    @test !U(gd, ld, t + 3, LK.PL_LIST, 2, LK.PL_INT, 1, LK.PL_INT, 2)
+    @test !U(gd, ld, t + 5, LK.PL_LIST, 1, LK.PL_INT, 1)                     # the list is longer: the tail is not []
+    @test !U(gd, ld, t + 4, 999)
+    @test LK.PL_new_term_refs(ld, 0) == before
+    @test LK.PL_is_variable(ld, t + 4)
+end
+
+# LK-ONLY: PL_unify_termv takes the vector the variadic call collects; PL_unify_term is its variadic form.
+@testset "LK-ONLY: PL_unify_termv (pl-fli.c:3997)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(1), _rv(2)])
+    @test LK.PL_unify_termv(gd, ld, t, Any[LK.PL_ATOM, _rs("v")]) && _fa_atom(ld, t) === :v
+    @test LK.PL_unify_termv(gd, ld, t + 1, [LK.PL_INT, 9]) && LK.PL_get_integer(ld, t + 1) == 9
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
