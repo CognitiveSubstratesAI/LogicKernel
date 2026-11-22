@@ -1649,6 +1649,11 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for
             f in (LK.pl_get_flag2_va, LK.pl_set_flag2_va)
         ]...,
+        # FL1 — the flag setters (pl-prologflag.c setIncomparable, setFileNameCaseHandling(Name), setTheme)
+        (LK.setIncomparable, Tuple{LD, T}, false),
+        (LK.setFileNameCaseHandlingName, Tuple{LD, String}, false),
+        (LK.setFileNameCaseHandling, Tuple{LD, T}, false),
+        (LK.setTheme, Tuple{GD, LD, LK.prolog_flag{T}, T}, false),
         # AV9 — call_residue_vars/2's C half (src/pl-attvar.jl, src/pl-wam.jl)
         (LK.trail_new_attvar, Tuple{LD, Int}, false),
         (LK.get_value, Tuple{LD, Int}, false),
