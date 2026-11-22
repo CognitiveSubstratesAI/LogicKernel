@@ -68,6 +68,9 @@ _manifest_per_type(T) = (
     # copy_term/2 (src/pl-copyterm.jl)
     (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
     (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, Int, LK.cp_options}, false),   # PRIMS-B2: the `vars` form
+    (LK.copy_term_4, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int}, false),            # PRIMS-B2: copy_term/4, copy_term_nat/4
+    (LK._functor_minus2, Tuple{LK.PL_local_data{T}}, false),
+    (LK.size_abstract_term, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),               # PRIMS-B2: size_abstract_term/3
     (LK.allocGlobalNoShift, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_same_term, Tuple{LK.PL_local_data{T}, Int, Int}, false),       # L1f f1c
     (LK.makeMoreStackSpace, Tuple{LK.PL_local_data{T}, LK.boolex_t, Int}, false),
@@ -1887,7 +1890,7 @@ function _manifest_index(T)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
-                LK.pl_copy_term4_va, LK.pl_size_abstract_term3_va,       # PRIMS-B: refused by name
+                LK.pl_copy_term4_va, LK.pl_copy_term_nat4_va, LK.pl_size_abstract_term3_va,   # PRIMS-B2
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,

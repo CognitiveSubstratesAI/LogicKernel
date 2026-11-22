@@ -20,9 +20,9 @@
 #
 # Attributed variables (AV6): `COPY_ATTRS` copies an attvar's attribute list into a new attvar
 # (`alloc_attvar`), without it (`copy_term_nat/2`) an attvar is copied as a plain variable.
-# `copy_term/4` (`COPY_MARKED`, `mark_vars`, `COPYING_ATTVAR`, `MC_WALK_COPY`) and `size_abstract_term/3` (`COPY_ABSTRACT`,
-# `cp_options.abstract`, the depth agenda) are PRIMS-B2's. Later: `copy_term_nat/4` and `$fast_record/2`,
-# `$fast_recorded/2` (testing bindings). The fast heap terms (`term_to_fastheap`,
+# `copy_term/4` and `copy_term_nat/4` (`COPY_MARKED`, `mark_vars`, `COPYING_ATTVAR`, `MC_WALK_COPY`) and
+# `size_abstract_term/3` (`COPY_ABSTRACT`, `cp_options.abstract`, the depth agenda) are PRIMS-B2's.
+# NOT PORTED: `$fast_record/2`, `$fast_recorded/2` (testing bindings). The fast heap terms (`term_to_fastheap`,
 # R2 EV1) are the term's record. `duplicate_term`'s
 # `nshare`/`share` (the compounds kept shared) are `nb_setarg/3`'s (src/pl-prims.jl).
 
@@ -763,6 +763,16 @@ function pl_copy_term4_va(
     return copy_term_4(ld, A1, A2, A3, A4, Int(COPY_ATTRS)) ? FTRUE : FFALSE
 end
 
+# PORT: pl-copyterm.c copy_term_nat as pl_copy_term_nat4_va
+# (PRED_IMPL("copy_term_nat", 4, copy_term_nat, 0)): `copy_term_4(A1, A2, A3, A4, 0)`, an attvar copied as a variable.
+"`copy_term_nat(+VarsIn, +Term, -VarsOut, -Copy)`: `copy_term/4` without attributes."
+function pl_copy_term_nat4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    return copy_term_4(ld, A1, A2, A3, A4, 0) ? FTRUE : FFALSE
+end
+
 # PORT: pl-copyterm.c size_abstract_term
 "Make `copy` a copy of `in` whose compounds beyond `abstract` are variables (pl-copyterm.c `size_abstract_term`); false, the overflow raised, when it does not fit."
 function size_abstract_term(
@@ -787,12 +797,13 @@ function pl_size_abstract_term3_va(
 end
 
 # PORT: pl-copyterm.c BeginPredDefs as PL_predicates_from_copyterm
-# DIVERGES: upstream's table also has `copy_term_nat/4`, `$fast_record/2`, `$fast_recorded/2`.
+# DIVERGES: upstream's table also has `$fast_record/2`, `$fast_recorded/2`.
 "pl-copyterm.c's registration table (`BeginPredDefs(copyterm)`): the ported entries."
 const PL_predicates_from_copyterm = (
     PL_extension("copy_term", 2, pl_copy_term2_va, PL_FA_VARARGS | PL_FA_ISO),
     PL_extension("copy_term", 4, pl_copy_term4_va, PL_FA_VARARGS),
     PL_extension("duplicate_term", 2, pl_duplicate_term2_va, PL_FA_VARARGS),
     PL_extension("copy_term_nat", 2, pl_copy_term_nat2_va, PL_FA_VARARGS),
+    PL_extension("copy_term_nat", 4, pl_copy_term_nat4_va, PL_FA_VARARGS),
     PL_extension("size_abstract_term", 3, pl_size_abstract_term3_va, PL_FA_VARARGS)
 )
