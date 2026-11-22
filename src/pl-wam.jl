@@ -2739,8 +2739,8 @@ end
     return _VS_NEXT                                 # VMI_GOTO(S_STATIC)
 end
 
-# ORIGINAL (LAT3b): the body of pl-vmi.c I_YIELD, outlined; its notes are at the label I_YIELD. The engine branch ends in the `NotPortedError` throw.
-"The body of I_YIELD (pl-vmi.c): the permission error of a query without `PL_Q_ALLOW_YIELD`: `_VS_THROW`."
+# ORIGINAL (LAT3b): the permission branch of pl-vmi.c I_YIELD, outlined; its notes are at the label I_YIELD. The engine branch is INLINE in the loop (it returns from the run loop: a `_VS_*` status cannot carry that).
+"The permission branch of I_YIELD (pl-vmi.c): the permission error of a query without `PL_Q_ALLOW_YIELD`: `_VS_THROW`; an engine's query: `_VS_NEXT` (the loop then runs the engine branch)."
 @noinline Base.@constprop :none function _vmi_i_yield!(
     ld::PL_local_data{T},
     DEF::Definition{T},
@@ -2757,11 +2757,7 @@ end
         @LOAD_REGISTERS(QID)
         return _VS_THROW                               # THROW_EXCEPTION
     end
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction I_YIELD in an engine (pl-vmi.c:2419)", "TH1"
-        )
-    )
+    return _VS_NEXT                                 # the engine branch, inline in the loop
 end
 
 # ORIGINAL (LAT3b): the body of pl-vmi.c I_EXITRESET, outlined; its notes are at the label I_EXITRESET.
@@ -3387,6 +3383,7 @@ function PL_open_query(
     q.aSave = ld.aTop
     q.solutions = 0
     q.exception = 0
+    q.yield_term = 0                            # qf->yield.term = 0
     q.registers_fr = 0                          # invalid
     q.next_environment = 0                      # see D_BREAK
     # fill frame arguments
@@ -3552,6 +3549,23 @@ function PL_current_query(ld::PL_local_data{T})::Int where {T}
     return 0
 end
 
+# PORT: pl-wam.c PL_can_yield
+# DIVERGES: `HAS_LD` is always true here (the local data is an argument).
+"Whether the innermost query was opened with `PL_Q_ALLOW_YIELD`, so the VM may yield from it (pl-wam.c)."
+function PL_can_yield(ld::PL_local_data{T})::Bool where {T}
+    return ld.query != 0 &&                         # LD->query
+           ld.queries[ld.query].magic == QID_MAGIC &&   # LD->query->magic == QID_MAGIC
+           (ld.queries[ld.query].flags & PL_Q_ALLOW_YIELD) != 0     # ison(LD->query, PL_Q_ALLOW_YIELD)
+end
+
+# PORT: pl-wam.c PL_yielded
+# DIVERGES: `qid` is the query's handle (a position, decision 1); the term reference is an `Int` (0 = none).
+"The term reference an engine's `I_YIELD` left in query `qid`, to be read after `PL_next_solution` returned the yield code (pl-wam.c)."
+function PL_yielded(ld::PL_local_data{T}, qid::Int)::Int where {T}
+    qf = ld.queries[QueryFromQid(ld, qid)]          # QueryFrame qf = QueryFromQid(qid)
+    return qf.yield_term                            # return qf->yield.term
+end
+
 # PORT: pl-wam.c handles_unwind
 # DIVERGES: `qid` 0 stands for upstream's null handle (the running query: `LD->query->qid`); `HAS_LD` is always true here,
 # and a database with no open query handles none (upstream reads `LD->query->qid` of a running query only).
@@ -3631,7 +3645,7 @@ const FUNCTOR_drecover_and_rethrow2 = builtin_functor("drecover_and_rethrow", 2)
 # port_inventory). Blocks for subsystems not ported are marked `NOT PORTED` where they stand: the
 # signals, debugger, profiler, depth and inference limits of `LD->alerted`; `FR_NOTIFY` (the
 # debugger's half of `FR_WATCHED`: `frameFinished` runs the cleanup handler of an `FR_CLEANUP`
-# frame since V9g); yield.
+# frame since V9g); the debugger's yield (`YIELD_TERM_DEBUG`) and the foreign one (`PL_yield_address`).
 """
     PL_next_solution_guarded(gd, ld, qid, except) -> Int
 
@@ -3724,8 +3738,18 @@ function PL_next_solution_guarded(
     end
 
     DEF = ld.frames[FR].predicate::Definition{T}
-    # NOT PORTED: resuming after a yield (decision 1)
-    if q.solutions != 0                             # retry
+    # PORT: pl-wam.c PL_next_solution (the resume after a yield, pl-wam.c:3874-3905 at the pin)
+    # DIVERGES: only the branch "Engine yield using I_YIELD" runs: `YIELD_TERM_FOREIGN` (`PL_yield_address()`) and
+    # `YIELD_TERM_DEBUG` (the debugger) are never set here, so `yield_term` is 0 or a term reference.
+    if q.yield_term != 0                            # resume after yield
+        q.yield_term = 0                            # QF->yield.term = 0
+        fid = q.foreign_frame
+        q.foreign_frame = 0
+        PL_close_foreign_frame(ld, fid)
+        @LOAD_REGISTERS(QID)
+        DEF = ld.frames[FR].predicate::Definition{T}
+        @goto next_instruction                      # NEXT_INSTRUCTION
+    elseif q.solutions != 0                         # retry
         fid = q.foreign_frame
         q.foreign_frame = 0
         PL_close_foreign_frame(ld, fid)
@@ -4639,15 +4663,50 @@ function PL_next_solution_guarded(
     # The clauses of reset/3, '$tbl_reset'/6, shift/1, shift_for_copy/1, call_continuation/1 and
     # '$engine_yield'/2 compile to these instructions as upstream's (LB4 b2, audit D-0363 item 2), so
     # listing, decompile and clause shape are swipl's; CONT1 runs them (C2, C4, C5, C6). The tabled
-    # branches of I_RESET / I_EXITRESET run since TB2c; the engine branch of I_YIELD is deferred to TH1 (below).
+    # branches of I_RESET / I_EXITRESET run since TB2c; the engine branch of I_YIELD runs since TH1 (below).
     # PORT: pl-vmi.c I_YIELD
-    # (pl-vmi.c:2410-2418 at the pin; CONT1 C6) The branch of a query opened without `PL_Q_ALLOW_YIELD`
-    # (every query here): `permission_error(execute, vmi, 'I_YIELD')`, context message "not an engine".
-    # DIVERGES: the branch of an engine's query (pl-vmi.c:2419-2447: `lTop`, the foreign frame, the
-    # yielded term and code, `SOLUTION_RETURN`) is deferred, owner TH1: it raises `NotPortedError`.
+    # (pl-vmi.c:2410-2448 at the pin; CONT1 C6, TH1) The branch of a query opened without `PL_Q_ALLOW_YIELD`
+    # (every query but an engine's): `permission_error(execute, vmi, 'I_YIELD')`, context message "not an engine".
+    # An engine's query: `lTop` above the frame's arguments when no choice point is younger, `ARGP`, the registers
+    # saved (past this operand-less instruction), a foreign frame and the term reference `yield_term` holding
+    # argument 1, then `SOLUTION_RETURN(code)`: `PL_next_solution` returns the integer in argument 2; the next call
+    # resumes at the entry of the run loop (`QF->yield.term`, there).
+    # DIVERGES: no `ENSURE_GLOBAL_SPACE(1)` and `globaliseVar`: a slot's variable is a cell already (decision 2),
+    # so `linkValI(p)` is `_slot_link!` of the argument's slot. DIVERGES: in the type-error branch (argument 2 is no small integer)
+    # the foreign frame is closed and `yield_term` and `foreign_frame` are reset before the throw (as I_RESET closes
+    # its frame): upstream leaves both set, and a caught error would make the next `PL_next_solution` read the stale
+    # `yield.term` as a yield; the answer of the throw itself is upstream's `type_error(integer, Code)`.
     @label I_YIELD
-    vs_st = _vmi_i_yield!(ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
-    @goto vs_status
+    vs_st = _vmi_i_yield!(ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the permission branch (LAT3b: outlined; `_VS_THROW` or `_VS_NEXT`)
+    vs_st == _VS_THROW && @goto b_throw             # THROW_EXCEPTION
+    # the engine branch is INLINE: it returns from the run loop (`SOLUTION_RETURN`), which a `_VS_*` status cannot carry
+    if ld.BFR == 0 || ld.choices[ld.BFR].base < ld.frames[FR].base      # (void*)BFR < (void*)FR
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))          # lTop = argFrameP(FR, DEF->functor->arity)
+    end
+    ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)             # ARGP = argFrameP(lTop, 0)
+    @SAVE_REGISTERS(QID)
+
+    iy_q = ld.queries[QueryFromQid(ld, QID)]
+    iy_q.foreign_frame = PL_open_foreign_frame(ld)  # QF->foreign_frame = PL_open_foreign_frame()
+    iy_q.yield_term = PL_new_term_ref(ld)           # QF->yield.term = PL_new_term_ref()
+    _slot_link!(ld, iy_q.yield_term + 1, argFrameP(ld.frames[FR].base, 0) + 1)   # *valTermRef(QF->yield.term) = linkValI(p)
+
+    iy_k, iy_w, iy_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 1) + 1))   # p = argFrameP(FR, 1); deRef(p)
+    if iy_k == DU_VALUE && isTaggedIntW(iy_w)       # isTaggedInt(*p)
+        iy_code = Int(valInt(iy_w))                 # sword code = valInt(*p)
+        @assert iy_code >= typemin(Int32) && iy_code <= typemax(Int32)  # assert(code >= INT_MIN && code <= INT_MAX)
+        return iy_code                              # SOLUTION_RETURN((int)code)
+    else
+        iy_t = pushWordAsTermRef(ld, (iy_k, iy_w, iy_p))
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), iy_t)   # PL_error(NULL, 0, NULL, ERR_TYPE, ATOM_integer, pushWordAsTermRef(...))
+        popTermRef(ld)
+        iy_fid = iy_q.foreign_frame                 # (DIVERGES, above)
+        iy_q.foreign_frame = 0
+        iy_q.yield_term = 0
+        PL_close_foreign_frame(ld, iy_fid)
+        @LOAD_REGISTERS(QID)
+        @goto b_throw                               # THROW_EXCEPTION
+    end
 
     # PORT: pl-vmi.c I_RESET
     # (pl-vmi.c:5760-5804 at the pin; CONT1 C2, the `dtbl_reset6` branch pl-vmi.c:5768-5798, TB2c)

@@ -20,7 +20,9 @@
 # `restore_after_exception`, `halt_from_exception` and `query_loop`. Since R2 TOP1b: `currentBreakLevel` (`LD->break_level`, -1
 # outside a toplevel); `prologToplevel`, `pl_break1`, `pl_break` (`break/0`) and, from pl-fli.c, `PL_toplevel`.
 #
-# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, `'$can_yield'/0`, the other entries of the table (pl-pro.c:1060-1069),
+# Since TH1: `'$can_yield'/0`.
+#
+# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, `'$call_no_catch'/1`, the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -619,8 +621,19 @@ end
 PL_toplevel(gd::PL_global_data{T}, ld::PL_local_data{T}) where {T} =
     prologToplevel(gd, ld, mk_sym(T, Symbol("\$toplevel")))::Bool
 
+# PORT: pl-pro.c can_yield as pl_can_yield0_va
+# (PRED_IMPL("$can_yield", 0, can_yield, 0), pl-pro.c:455-464 at the pin: `return !!ison(LD->query, PL_Q_ALLOW_YIELD);`)
+# DIVERGES: it asks `PL_can_yield` (pl-wam.c:3254), which also tests that `LD->query` is a query and the magic of its frame; where a query
+# runs this is the same answer (`LD->query` is an index here, 0 for NULL: upstream would read a NULL frame outside a query).
+"`\$can_yield`: true if the current query can use foreign yielding, i.e. was opened with `PL_Q_ALLOW_YIELD` (pl-pro.c)."
+function pl_can_yield0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return PL_can_yield(ld) ? FTRUE : FFALSE
+end
+
 # PORT: pl-pro.c BeginPredDefs as PL_predicates_from_pro
-# DIVERGES: the registered entries only (upstream's table has eight, pl-pro.c:1060-1069). `break/0` is registered here, where
+# DIVERGES: the registered entries only (upstream's table has nine, pl-pro.c:1055-1065). `break/0` is registered here, where
 # upstream's pl-ext.c has it (`FRG("break", 0, pl_break, 0)`, pl-ext.c:108), next to the function it calls.
 "pl-pro.c's registration table (`BeginPredDefs(pro)`): the registered entries."
 const PL_predicates_from_pro = (
@@ -631,5 +644,6 @@ const PL_predicates_from_pro = (
     ),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension("\$can_yield", 0, pl_can_yield0_va, PL_FA_VARARGS),
     PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)
 )

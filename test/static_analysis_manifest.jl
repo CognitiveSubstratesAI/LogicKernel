@@ -1836,6 +1836,7 @@ function _manifest_index(T)
         (LK.PL_cut_query, Tuple{LD, Int}, false),
         (LK.PL_close_query, Tuple{LD, Int}, false),
         (LK.PL_exception, Tuple{LD, Int}, false), (LK.PL_current_query, Tuple{LD}, true),
+        (LK.PL_can_yield, Tuple{LD}, true), (LK.PL_yielded, Tuple{LD, Int}, true),
         (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
         (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
         # the instruction bodies outlined from the run loop (LAT3b): each called by its label of PL_next_solution_guarded
@@ -2758,6 +2759,9 @@ function _manifest_index(T)
         (LK.pl_thread_detach, Tuple{LD, Int}, false),
         (LK.pl_set_thread, Tuple{LD, Int, Int}, false),
         (LK.pl_debug_reset_from_class0, Tuple{LD}, false),
+        (LK.pl_gc_wait, Tuple{LD, Int}, false),
+        (LK.pl_gc_clear, Tuple{LD, Int}, false),
+        (LK.pl_gc_stop, Tuple{LD}, true),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
         (LK.mutex_prop_enum{T}, Tuple{}, false),
@@ -3024,7 +3028,7 @@ function _manifest_index(T)
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va,
                 LK.pl_restore_trace2_va, LK.pl_prolog_listen2_va, LK.pl_prolog_listen3_va,
-                LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va
+                LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va, LK.pl_can_yield0_va
             )
         ]...,
         (LK.prolog_listen, Tuple{GD, LD, Int, Int, Int}, false),

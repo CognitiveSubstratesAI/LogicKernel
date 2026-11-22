@@ -723,15 +723,7 @@ function interactor_post_answer_nolock(
         PL_erase(er)
         return ok
     elseif rc == YIELD_ENGINE_YIELD                 # engine_yield/1
-        # DIVERGES (TH1): `PL_yielded` (pl-wam.c:3331) and the resumable yield of the VM (I_YIELD, pl-vmi.c:2410-2448; resume,
-        # pl-wam.c:3870-3910) are the VM step's, an engine-core step of their own; until it lands `rc == 256` cannot occur and a
-        # query that returns it is refused by name.
-        info.has_tid = false
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :engine_yield), "PL_yielded (pl-wam.c:3331), the VM yield", "TH1"
-            )
-        )
+        r = PL_record(eld, PL_yielded(eld, q))      # the query stays open: the next call resumes after the yield
     else
         info.has_tid = false
         ex = PL_new_term_ref(ld)
@@ -1474,4 +1466,45 @@ end
 function pl_debug_reset_from_class0(ld::PL_local_data{T})::foreign_t where {T}
     update_debug_mode_from_class!(ld, nothing)
     return FTRUE
+end
+
+# PORT: pl-thread.c gc_wait
+# (PRED_IMPL("$gc_wait", 1, gc_wait, 0), pl-thread.c:7299-7324 at the pin)
+# DIVERGES (TH1): the predicate is the loop of the GC thread (boot/gc.pl `gc_loop`): it blocks on `GD->thread.gc.cond` until a request
+# (`GD->thread.gc.requests`: the GCREQUEST_ bits) is posted by `signalGCThreadCond`, then unifies A1 with the action it asks for
+# (`garbage_collect_atoms` or `garbage_collect_clauses`, or the stop request). The kernel has no GC thread, no request word and nothing that posts a request,
+# so the call would block for ever: it is refused by name.
+"`'\$gc_wait'(-Action)`: wait for the GC thread's next request (pl-thread.c); the kernel has no GC thread: a named refusal."
+function pl_gc_wait(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, Symbol("\$gc_wait")), "gc_wait/1: blocks for the GC thread (none)", "TH1"
+        )
+    )
+end
+
+# PORT: pl-thread.c gc_clear
+# (PRED_IMPL("$gc_clear", 1, gc_clear, 0), pl-thread.c:7327-7347 at the pin)
+# DIVERGES (TH1): the C clears the request bit (`GD->thread.gc.requests &= ~mask`, under `GD->thread.gc.mutex`); the kernel has no GC
+# thread and no request word, so there is no bit to clear: after the argument checks (an atom, `garbage_collect_atoms` or
+# `garbage_collect_clauses`) the predicate succeeds.
+"`'\$gc_clear'(+Action)`: clear the GC thread's pending request `Action` (pl-thread.c); no request exists here, so it only checks `Action`."
+function pl_gc_clear(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    a = PL_get_atom_ex(ld, A1)
+    a === nothing && return FFALSE
+    act = Symbol(sym_text(a))
+    if act !== :garbage_collect_atoms && act !== :garbage_collect_clauses
+        PL_domain_error(ld, "action", A1)
+        return FFALSE
+    end
+    return FTRUE
+end
+
+# PORT: pl-thread.c gc_stop
+# (PRED_IMPL("$gc_stop", 0, gc_stop, 0), pl-thread.c:7359-7366 at the pin: `if ( (tid=gc_running()) ) return cancelGCThread(tid) != ...; return false;`)
+# DIVERGES (TH1): `gc_running()` (pl-thread.c:7283-7292) is the id of a GC thread whose status is PL_THREAD_RUNNING; the kernel never starts
+# one (`GCthread()`, :7227), so there is nothing to cancel: the predicate fails, as it does in swipl while no GC thread has been started.
+"`'\$gc_stop'`: stop the GC thread if one runs (pl-thread.c); the kernel has none: fails."
+function pl_gc_stop(ld::PL_local_data{T})::foreign_t where {T}
+    return FFALSE
 end
