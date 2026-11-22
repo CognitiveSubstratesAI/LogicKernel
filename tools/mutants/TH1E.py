@@ -29,6 +29,10 @@
 # pl-thread.c:1444, :1745-1780): TARGETS is the engines test alone (the white-box testset "the thread identifier API"; no other file calls them).
 # No equivalent among ID1-ID7. NOT LISTED: the error kinds of `PL_get_thread_id_ex` (the rows check only that an exception is raised: `get_thread`'s
 # own branches are killed by the Prolog rows of thread_property/engine_next), the `tid == 1` shortcut of `PL_get_thread_alias` vs the `main` alias.
+# THE MAIN THREAD'S ENTRY (TM1..TM8: src/pl-thread.jl `register_main_thread!` and the `engine_id == 1` branch of `get_thread`, its calls in
+# src/pl-setup.jl `setupProlog` and src/gd_template.jl `copy_global_data`; pl-init.c:1606): TARGETS is the engines test (rows mn1-mn7, tp05, tp18,
+# the white-box testset "the main thread's handle") and, for TM6 only, also the template test (every database is a copy). The former TH1E-P6
+# (get_thread's own `main` fallback) went with that code: TM2/TM3 are its successors. No equivalent among TM1-TM8.
 # NOT LISTED (with the reason; a survivor would prove nothing about dead code, D-0238):
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
@@ -194,10 +198,6 @@ MUTANTS = [
          file=T, targets=TARGETS,
          old='                serial = get(gd.thread.thread_table, sym_key(symbol), 0)\n                if serial != 0\n                    symbol = gd.thread.handles[serial].symbol::T    # symbol = word2atom(w)\n                    continue\n',
          new='                serial = get(gd.thread.thread_table, sym_key(symbol), 0)\n                if false\n                    symbol = gd.thread.handles[serial].symbol::T    # symbol = word2atom(w)\n                    continue\n'),
-    dict(id="TH1E-P6 get_thread does not know the alias main (KILL tp05, tp08)",
-         file=T, targets=TARGETS,
-         old='                if sym_key(symbol) == sym_key(mk_sym(T, :main))\n',
-         new='                if false\n'),
     dict(id="TH1E-P7 get_thread reads every integer as 1 (KILL tp24)",
          file=T, targets=TARGETS,
          old='        i = n\n    end\n',
@@ -486,5 +486,38 @@ MUTANTS = [
     dict(id="TH1E-TS15 sizeof_thread leaves the local stack out (KILL the white-box lower bound)",
          file=T, targets=TARGETS,
          old="        size += _size_stack(eld, :local) + 8 * eld.local_spare\n",
+         new=""),
+    # ---- the main thread's entry in the thread table
+    dict(id="TH1E-TM1 main is not entered in the thread table (KILL mn1, mn6, tp05, the white-box testset)",
+         file=T, targets=TARGETS,
+         old="    gd.thread.thread_table[sym_key(th.alias::T)] = th.serial\n",
+         new=""),
+    dict(id="TH1E-TM2 get_thread does not know the main thread's handle (KILL tp05, tp08, the white-box PL_get_thread_id_ex)",
+         file=T, targets=TARGETS,
+         old="if thinfo === nothing && th.engine_id == 1",
+         new="if false"),
+    dict(id="TH1E-TM3 a handle with no record is the main thread whatever its id: a destroyed engine is main (KILL tp18)",
+         file=T, targets=TARGETS,
+         old="if thinfo === nothing && th.engine_id == 1",
+         new="if thinfo === nothing"),
+    dict(id="TH1E-TM4 the main thread's handle has engine id 0 (KILL tp05, the white-box testset)",
+         file=T, targets=TARGETS,
+         old="        nothing, nothing, nothing, 1, UInt32(0), 1, 0, 0, nothing, nothing, false\n",
+         new="        nothing, nothing, nothing, 0, UInt32(0), 1, 0, 0, nothing, nothing, false\n"),
+    dict(id="TH1E-TM5 the main thread's handle has no alias (KILL the white-box testset)",
+         file=T, targets=TARGETS,
+         old="    th.alias = mk_sym(T, :main)\n",
+         new=""),
+    dict(id="TH1E-TM6 a copied database has no main thread entry (KILL mn1-mn7, tp05, the white-box testset, the template test)",
+         file="src/gd_template.jl", targets=TARGETS + ["test/db/test_gd_template.jl"],
+         old="        register_main_thread!(gd2)",
+         new="        nothing"),
+    dict(id="TH1E-TM7 a database made by setupProlog (no copy) has no main thread entry (KILL the white-box testset: g3)",
+         file="src/pl-setup.jl", targets=TARGETS,
+         old="    register_main_thread!(gd)",
+         new="    nothing"),
+    dict(id="TH1E-TM8 registering the main thread twice makes a second handle (KILL the white-box testset)",
+         file=T, targets=TARGETS,
+         old="    isempty(gd.thread.handles) || return nothing\n",
          new=""),
 ]

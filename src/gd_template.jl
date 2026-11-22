@@ -37,7 +37,7 @@ const GD_COPY_POLICY = (
     stream_table=:streams,
     ld_table=:streams,
     paths_CWDdir=:reset,             # pl-os.c:989, :1864-1866 at cbf4e189
-    thread=:reset                    # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines)
+    thread=:reset                    # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines); `copy_global_data` then registers the main thread
 )
 
 "The start-up value of each `:reset` field of `GD_COPY_POLICY`, as `setupProlog` (src/pl-setup.jl) passes it to the constructor."
@@ -83,7 +83,9 @@ field in the struct's order, each by its policy, so the copy follows the struct.
     end
     return quote
         stay = IdDict()   # deepcopy_internal's own stack-dict type (`deepcopy` makes it so)
-        PL_global_data{T}($(args...))
+        gd2 = PL_global_data{T}($(args...))
+        register_main_thread!(gd2)   # the fresh `thread_state` holds no handle: the main thread's is the first (src/pl-thread.jl)
+        gd2
     end
 end
 
