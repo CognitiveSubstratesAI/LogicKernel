@@ -24,7 +24,7 @@
 #                        TB6: `orphan_dynamic_table` is false before it), TH1 (shared tables), TB2 (worklists, an incomplete table), TB4 (delay info),
 #                        (LB6b was listed here for TB5-U1/U5: STEP S3p killed both with AB rows that call `untable_from_clause` / `untable_definition_clauses`
 #                        directly; the call sites pl-srcfile.c:1476 `unloadFile` and :1544 `endReconsult` are still LB6b's.)
-#                        (TAB1-WRAP was listed here: stale. `$wrap_predicate/5` is callable inside TAB1; TB5-P1, -P3, -P7 are killed by test_tabling_tb5wrap_swipl.jl.)
+#                        (TAB1-WRAP was listed here: stale. `$wrap_predicate/5` is callable inside TAB1; TB5-P1, -P3 are killed by test_tabling_tb5wrap_swipl.jl.)
 #                        The owner of each remaining DEFERRED KILL adds the row named. TB5-A9 is a candidate EQUIVALENT (S3p), its entry has the counters.
 # ROWS TO ADD (white-box, in AB's testset "abolish, direct on the tries"; each is an assertion on the already built atries/variants of AB:455-457):
 #   R-A after `clear_variant_table(ld)` (AB:481): `variants.value_count == 0`, `all(a -> a.variant == 0, atries)`, `all(a -> a.magic == LK.TRIE_CMAGIC, atries)`,
@@ -60,7 +60,7 @@ T5R = "test/core_lang/test_tabling_tb5rows_swipl.jl"   # TB5-ROWS: the white-box
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 BI = "test/db/test_boot_image_swipl.jl"
 DYN = [
-    "test/core_lang/test_tabling_tb5wrap_swipl.jl",             # TAB1 S3f: the wrapped-predicate row of TB5-P1, TB5-P3, TB5-P7
+    "test/core_lang/test_tabling_tb5wrap_swipl.jl",             # TAB1 S3f: the wrapped-predicate row of TB5-P1, TB5-P3
     "test/compile/test_body_code_swipl.jl",
     "test/compile/test_call_operands.jl",
     "test/core_lang/test_attvar_wakeup.jl",
@@ -136,9 +136,9 @@ TAB = "src/pl-tabling.jl"
 PROC = "src/pl-proc.jl"
 COMP = "src/pl-comp.jl"
 WRAP = ("KILL tb5wrap (test_tabling_tb5wrap_swipl.jl, TAB1 S3f): a predicate wrapped with `$wrap_predicate/5`, then dynamic/1, a reset of the dynamic attribute and "
-        "abolish/1 over it. The two methods differ ONLY for a wrapped predicate: the 2-argument freeCodesDefinition! throws NotPortedError (src/pl-supervisor.jl:85-98), "
-        "the one with `gd` resets the wrapped supervisor (:62-82), so each of these three mutants turns the answer into a thrown error. Caught in a fresh process "
-        "at 85e79b2f + the rows (audit A-0650, A-0653); the earlier DEFERRED-KILL claim (owner TAB1-WRAP) was stale: `$wrap_predicate/5` is callable in TAB1")
+        "abolish/1 over it. Since WRAP1 `freeCodesDefinition!` has the one method, with `gd` (src/pl-supervisor.jl): a wrapped predicate keeps its wrapper when the "
+        "reset lingers, and drops it when it does not, so each of these mutants (the linger flag inverted at the caller) turns the wrapped row's answer into "
+        "the unwrapped one (no `called` in the log, wrapper count `none`) (U: the CI battery decides)")
 MUTANTS = [
     # ── the registration tuple (pl-tabling.c BeginPredDefs: $tbl_destroy_table/1, $tbl_abolish_local_tables/0) ──
     dict(id="TB5-T1 `$tbl_destroy_table`/1 is not registered (KILL abd01: the call is an existence error, the row answers raised(...); BI's kernel-foreign count 372 fails, too)",
@@ -387,20 +387,16 @@ MUTANTS = [
          old="    if def.arity == 2 && def.functor_name == sym_key(mk_sym(T, Symbol(\"\\$tabled\")))\n",
          new="    if def.arity == 1 && def.functor_name == sym_key(mk_sym(T, Symbol(\"\\$tabled\")))\n"),
     # ── the database threaded through pl-proc.jl / pl-comp.jl (TB5 part 1b): `freeCodesDefinition!(gd, ...)` ──
-    dict(id="TB5-P1 `_setDynamicDefinition!` takes the 2-argument freeCodesDefinition! with a database (" + WRAP + ")",
+    dict(id="TB5-P1 `setDynamicDefinition!` resets without lingering: a wrapped predicate made dynamic or static loses its wrapper (" + WRAP + ")",
          file=PROC, targets=DYN,
-         old="        freeCodesDefinition!(gd, def, true)             # reset to S_VIRGIN\n",
-         new="        freeCodesDefinition!(def, true)             # reset to S_VIRGIN\n"),
-    # TB5-P2 (`gd !== nothing` in `_setDynamicDefinition!`) REMOVED as DOMINATED by TB5-P1 (audit D-0856 (1)(c)): a mutant that cannot load (MethodError at boot)
-    # is no verdict (D-0750 family); P1 and P3 mutate the same hole (the 2-argument freeCodesDefinition! against the gd one).
-    dict(id="TB5-P3 `_resetProcedure!` takes the 2-argument freeCodesDefinition! with a database (" + WRAP + ")",
+         old="    freeCodesDefinition!(gd, def, true)                 # reset to S_VIRGIN\n",
+         new="    freeCodesDefinition!(gd, def, false)                # reset to S_VIRGIN\n"),
+    # TB5-P2 (`gd !== nothing`) and the former TB5-P7 (the abolish path calling the 2-argument methods) are gone with the 2-argument methods (WRAP1):
+    # a mutant that cannot load (MethodError at boot) is no verdict (D-0750 family).
+    dict(id="TB5-P3 `resetProcedure!` resets without lingering when the predicate is not new: a wrapped predicate loses its wrapper (" + WRAP + ")",
          file=PROC, targets=DYN,
-         old="        freeCodesDefinition!(gd, def, !isnew)\n",
-         new="        freeCodesDefinition!(def, !isnew)\n"),
-    dict(id="TB5-P7 the abolish path of src/pl-proc.jl takes the method without a database for the dynamic reset (" + WRAP + ")",
-         file=PROC, targets=DYN,
-         old="        setDynamicDefinition!(gd, def, false)\n        resetProcedure!(gd, proc, false)\n",
-         new="        setDynamicDefinition!(def, false)\n        resetProcedure!(proc, false)\n"),
+         old="    freeCodesDefinition!(gd, def, !isnew)\n",
+         new="    freeCodesDefinition!(gd, def, isnew)\n"),
 ]
 
 # TAB1 GATE: the files of evidence/TAB1/tab1_late.md are not in the gate tree (they stay on wip/tab1-late, each with the line it waits for): a target that is not in the tree makes the

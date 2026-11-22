@@ -1788,7 +1788,7 @@ end
         (_rf("d16", _rg(1)), nothing), (_rf("d16", _rg(2)), nothing),
         (_rf("c16", X), _rconj(_rf("m16", X), _rf("d16", X)))]
     db = _RDB()
-    LK.setDynamicDefinition!(_rproc(db, _rf("d16", X)).definition, true)
+    LK.setDynamicDefinition!(db.gd, _rproc(db, _rf("d16", X)).definition, true)
     for (h, b) in clauses
         _radd!(db, h, b)
     end

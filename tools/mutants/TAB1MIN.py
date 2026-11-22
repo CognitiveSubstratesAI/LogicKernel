@@ -36,8 +36,7 @@
 # test_tabling_min_swipl.jl names `$c_wrap_predicate`, `$tbl_trienode` and sets a tabling attribute; test_pr1_swipl.jl (row
 # pr93) reads the `tabled` attribute through `$get_predicate_attribute`; `freeCodesDefinition!`, `resetProcedure!` and
 # `isCallWrapper`/`skipWrapperPrefix` run on every static clause add and every abolish, so the supervisor and reset mutants also
-# list test_pr1_swipl.jl and test_event_swipl.jl (the update listeners `resetProcedure!` destroys); the 2-argument
-# `freeCodesDefinition!` is also called by test_procedures.jl and test_assert_swipl.jl.
+# list test_pr1_swipl.jl and test_event_swipl.jl (the update listeners `resetProcedure!` destroys).
 TM = ["test/core_lang/test_tabling_min_swipl.jl"]
 WRAP = ["test/core_lang/test_wrap_swipl.jl"]
 TV = ["test/core_lang/test_tabling_variant_swipl.jl"]
@@ -45,7 +44,6 @@ PR1 = ["test/core_lang/test_pr1_swipl.jl"]
 EV = ["test/core_lang/test_event_swipl.jl"]
 GET = TM + PR1                                 # the getter and the flag constants
 SUP = TM + PR1 + EV                            # supervisor / reset code that every clause add reaches
-SUP2 = SUP + ["test/db/test_procedures.jl", "test/db/test_assert_swipl.jl"]   # the 2-argument freeCodesDefinition!
 TARGETS = TM + PR1 + EV + ["test/db/test_procedures.jl", "test/db/test_assert_swipl.jl"]   # the baseline's (mutate_ci.py plan reads TARGETS)
 TB = "src/pl-tabling.jl"
 WR = "src/pl-wrap.jl"
@@ -152,12 +150,10 @@ MUTANTS = [
     dict(id="TAB1MIN-D8 freeCodesDefinition! of a wrapped predicate resets to virgin when lingering (KILL tmc02, tmc03)", file=SV, targets=SUP,
          old="if !do_linger",
          new="if do_linger"),
-    dict(id="TAB1MIN-D9 the 2-argument freeCodesDefinition! no longer refuses a wrapped predicate (KILL white-box @test_throws; two-line anchor)", file=SV, targets=SUP2,
-         old="if isCallWrapper(codes[skipWrapperPrefix(codes)])\n            throw(",
-         new="if false\n            throw("),
-    dict(id="TAB1MIN-D10 _assertDefinition! calls the 2-argument freeCodesDefinition!: a clause added to a wrapped predicate raises (KILL tmc01-tmc07: the program does not load)", file=PR, targets=TM,
+    # TAB1MIN-D9 (the 2-argument freeCodesDefinition! no longer refuses a wrapped predicate) is gone: WRAP1 removed the 2-argument method.
+    dict(id="TAB1MIN-D10 _assertDefinition! resets without lingering: a clause added to a wrapped predicate drops the wrapper (KILL tmc02, tmc03, white-box _tm_wrapped; the same effect as D8, at the caller)", file=PR, targets=TM,
          old="== 0     # see (*) above\n        freeCodesDefinition!(gd, def, true)",
-         new="== 0     # see (*) above\n        freeCodesDefinition!(def, true)"),
+         new="== 0     # see (*) above\n        freeCodesDefinition!(gd, def, false)"),
     # ── T3: pl-vmi.c S_WRAP / S_CALLWRAPPER / S_TABLED, pl-supervisor.c MAKE_SV1(wrapper, S_WRAP), the run loop's named refusals ──
     # (every KILL names the white-box testset "wrapper opcodes and the wrapper block (T3, LK-only)", test/core_lang/test_tabling_min_swipl.jl:451-496)
     dict(id="TAB1MIN-E1 initSupervisors builds the wrapper block from S_TABLED (KILL test_tabling_min_swipl.jl:471 `cd.wrapper == code[S_WRAP, I_EXIT]`; :492 the entered block raises S_TABLED, not S_WRAP)", file=SV, targets=TM,

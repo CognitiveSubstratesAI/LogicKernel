@@ -826,7 +826,7 @@ end
         return pr, cl
     end
     # the fixture's hook and log/1 on a value that is not a variable; `:- dynamic hooklog/2`
-    LK.setDynamicDefinition!(LK.lookupProcedure(s("hooklog"), 2, user).definition, true)
+    LK.setDynamicDefinition!(gd, LK.lookupProcedure(s("hooklog"), 2, user).definition, true)
     add!(c("attr_unify_hook", c("log", v(0)), v(1)), c("assertz", c("hooklog", v(0), v(1))))
     add!(
         c("log", v(2)),

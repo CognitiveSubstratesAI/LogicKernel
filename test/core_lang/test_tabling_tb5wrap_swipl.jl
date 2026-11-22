@@ -1,10 +1,13 @@
 # ORIGINAL: LIVE rows for a WRAPPED predicate that is made dynamic, made static and abolished (TAB1 TB5-WRAP, S3f; audit D-0884 (2)),
-# pinned on swipl at 18168e62 (10.1.20). `freeCodesDefinition!(gd, def, ...)` resets a wrapped predicate through its closure; the method
-# WITHOUT the database raises NotPortedError for one. The three TB5 mutants that take the 2-argument method (TB5-P1 in `_setDynamicDefinition!`,
-# TB5-P3 in `_resetProcedure!`, TB5-P7 in the abolish path) are reached only by a wrapped predicate, which the DYN files never build.
+# pinned on swipl at 18168e62 (10.1.20). `freeCodesDefinition!(gd, def, ...)` (the one method since WRAP1) resets a wrapped predicate through
+# its closure. The two TB5 mutants that invert its linger flag at the caller (TB5-P1 in `setDynamicDefinition!`, TB5-P3 in `resetProcedure!`)
+# are reached only by a wrapped predicate, which the DYN files never build.
 #   * a predicate wrapped with `'$wrap_predicate'/5` (the wrapper body logs `called`, then calls the wrapped predicate), then
 #     `dynamic/1` (P1), `'$set_predicate_attribute'(_, dynamic, false)` (P1, the other direction), `abolish/1` over a static, a dynamic and a
-#     clause-less wrapped predicate (P3 and P7: `resetProcedure!` runs in the abolish path).
+#     clause-less wrapped predicate (P3: `resetProcedure!` runs in the abolish path).
+#   * WRAP1B (the one `freeCodesDefinition!(gd, ...)`, no 2-argument method): the same predicate emptied by `retract`/`retractall` and
+#     then made static or abolished, `det` set and cleared on it (`setDetDefinition!`), a second FILE that REDEFINES it (the unit's
+#     files, `@DIR@`: `redefineProcedure` abolishes the old clauses), and a clause-less wrapped predicate abolished (swipl loses the wrapper, `none`).
 #   * every answer is `~q` of `r(...)`: the wrapper count `'$wrapped_predicate'/2` before and after, the predicate's state, the
 #     answers and the log. Each pin is swipl's own (swipl 10.1.20, two identical runs, evidence/TAB1/s3f_handoff.md), compared with the
 #     kernel's and, with `swipl` on PATH, with a live run. The case ids name the mutants they kill.
@@ -27,17 +30,29 @@ tw_pd(H, P) :- ( predicate_property(user:H, dynamic) -> P = isdyn ; predicate_pr
 tw_all(H, Xs) :- H =.. [_, X], catch(findall(X, H, Xs), error(E, _), Xs = exc(E)).
 """
 
-"The program of a unit: the helpers, the unit's clauses, the cases."
-_tw_text(u) =
-    _TW_COMMON * u.program * join(["t_$(id)(R) :- $body.\n" for (id, body) in u.cases])
+"The program of a unit: the helpers, the unit's clauses, the cases. `@DIR@` in a case is the directory `dir` where the unit's files are written."
+_tw_text(u, dir::AbstractString) =
+    replace(
+        _TW_COMMON * u.program * join(["t_$(id)(R) :- $body.\n" for (id, body) in u.cases]),
+        "@DIR@" => dir
+    )
+
+"Write the unit's files (`u.files`: `(name, text)`) into `dir`."
+function _tw_write_files(u, dir::AbstractString)::Nothing
+    for (name, text) in u.files
+        write(joinpath(dir, name), text)
+    end
+    return nothing
+end
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
 function _tw_swipl_lines(u)::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "tw.pl")
+        _tw_write_files(u, d)
         write(
             f,
-            _tw_text(u) * ":- initialization((forall(member(G, [" *
+            _tw_text(u, d) * ":- initialization((forall(member(G, [" *
             join(["t_$id" for (id, _) in u.cases], ",") *
             "]), (tw_q(G, A), write(A), nl)), halt)).\n"
         )
@@ -74,8 +89,10 @@ end
 
 "A kernel with the unit's program consulted: `(gd, ld, load status)`."
 function _tw_load(u)
-    f = joinpath(mktempdir(), "tabling_tb5wrap.pl")
-    write(f, _tw_text(u))
+    d = mktempdir()
+    f = joinpath(d, "tabling_tb5wrap.pl")
+    _tw_write_files(u, d)
+    write(f, _tw_text(u, d))
     gd = LK.PL_global_data{_TW_T}()
     ld = LK.PL_local_data{_TW_T}(gd)
     st, _ = LK.load_file!(gd, ld, f)
@@ -113,6 +130,16 @@ wu1(1).
 wa2(1).
 """
 
+"The files of the unit, written into the directory its cases name as `@DIR@`: a second file that REDEFINES a wrapped predicate."
+const _TW_FILES = [
+    ("rf1_a.pl", "rf1(1).\nrf1(2).\n"),
+    ("rf1_b.pl", "rf1(5).\n"),
+    ("rf2_a.pl", ":- dynamic rf2/1.\nrf2(1).\n"),
+    ("rf2_b.pl", "rf2(7).\n"),
+    ("rf4_a.pl", "rf4(1).\n"),
+    ("rf4_b.pl", "rf4(2).\n")
+]
+
 "The cases: `(id, body)`; the comment after each names the mutants it kills."
 const _TW_CASES = [
     (
@@ -130,23 +157,55 @@ const _TW_CASES = [
     (
         "abs1",
         raw"tw_wrap(wa1(_)), tw_wr(wa1(_), W0), abolish(wa1/1), tw_pd(wa1(_), P), tw_wr(wa1(_), W1), tw_log(L0), tw_all(wa1(_), Xs), tw_log(L), R = r(W0, L0, P, W1, Xs, L)"
-    ),   # TB5-P3, TB5-P7: abolish of a STATIC wrapped predicate with clauses (resetProcedure! over the wrapper): the wrapper stays, the predicate is undefined
+    ),   # TB5-P3: abolish of a STATIC wrapped predicate with clauses (resetProcedure! over the wrapper): the wrapper stays, the predicate is undefined
     (
         "abs2",
         raw"tw_wrap(wa2(_)), abolish(wa2/1), assertz(wa2(9)), tw_all(wa2(_), Xs), tw_log(L), tw_pd(wa2(_), P), tw_wr(wa2(_), W), R = r(Xs, L, P, W)"
-    ),   # TB5-P3, TB5-P7: the abolished wrapped predicate is dynamic again once a clause is added
+    ),   # TB5-P3: the abolished wrapped predicate is dynamic again once a clause is added
     (
         "abd1",
         raw"tw_wrap(wd1(_)), tw_wr(wd1(_), W0), dynamic(wd1/1), abolish(wd1/1), tw_pd(wd1(_), P), tw_wr(wd1(_), W1), tw_all(wd1(_), Xs), tw_log(L), R = r(W0, P, W1, Xs, L)"
-    ),   # TB5-P1, TB5-P3, TB5-P7: wrapped, made dynamic, abolished (setDynamicDefinition! false, then resetProcedure!)
+    ),   # TB5-P1, TB5-P3: wrapped, made dynamic, abolished (setDynamicDefinition! false, then resetProcedure!)
     (
         "abu1",
         raw"tw_wrap(wu1(_)), abolish(wu1/1), tw_pd(wu1(_), P), tw_wr(wu1(_), W1), assertz(wu1(5)), wu1(X), tw_log(L), R = r(P, W1, X, L)"
-    ),   # TB5-P3, TB5-P7: wrapped before any clause, abolished, then asserted
+    ),   # TB5-P3: wrapped before any clause, abolished, then asserted
     (
         "abd2",
         raw"tw_wrap(wd2(_)), dynamic(wd2/1), assertz(wd2(1)), abolish(wd2/1), tw_pd(wd2(_), P), tw_wr(wd2(_), W1), assertz(wd2(5)), wd2(X), tw_log(L), tw_pd(wd2(_), P2), R = r(P, W1, X, L, P2)"
-    ),   # TB5-P1, TB5-P3, TB5-P7: a dynamic wrapped predicate with a clause, abolished
+    ),   # TB5-P1, TB5-P3: a dynamic wrapped predicate with a clause, abolished
+    (
+        "ret1",
+        raw"dynamic(we1/1), assertz(we1(1)), assertz(we1(2)), tw_wrap(we1(_)), retractall(we1(_)), tw_wr(we1(_), W), tw_pd(we1(_), P), tw_all(we1(_), Xs), tw_log(L), assertz(we1(3)), tw_all(we1(_), Ys), tw_log(L2), R = r(W, P, Xs, L, Ys, L2)"
+    ),   # control: `retractall` over a wrapped dynamic predicate keeps the wrapper and the predicate dynamic
+    (
+        "clr1",
+        raw"tw_wrap(we2(_)), tw_wr(we2(_), W0), abolish(we2/1), tw_wr(we2(_), W1), tw_pd(we2(_), P), assertz(we2(4)), tw_all(we2(_), Xs), tw_log(L), R = r(W0, W1, P, Xs, L)"
+    ),   # TB5-P3, WRAP1B: a wrapped predicate WITHOUT clauses, abolished: `resetProcedure!` takes `isnew` (nothing defined), so the wrapper is dropped (`none`), unlike `abu1`/`abd2` (clauses, or erased ones still linked, keep it)
+    (
+        "ret2",
+        raw"dynamic(we3/1), assertz(we3(1)), tw_wrap(we3(_)), retract(we3(1)), '$set_predicate_attribute'(we3(_), dynamic, false), tw_pd(we3(_), P), tw_wr(we3(_), W), tw_all(we3(_), Xs), tw_log(L), R = r(P, W, Xs, L)"
+    ),   # TB5-P1: a wrapped dynamic predicate emptied by `retract`, then made static
+    (
+        "ret3",
+        raw"dynamic(we4/1), assertz(we4(1)), tw_wrap(we4(_)), retractall(we4(_)), abolish(we4/1), tw_pd(we4(_), P), tw_wr(we4(_), W), tw_all(we4(_), Xs), tw_log(L), R = r(P, W, Xs, L)"
+    ),   # TB5-P3: a wrapped dynamic predicate emptied by `retractall`, then abolished
+    (
+        "det1",
+        raw"tw_wrap(wk1(_)), '$set_predicate_attribute'(wk1(_), det, true), '$get_predicate_attribute'(wk1(_), det, D1), tw_wr(wk1(_), W1), assertz(wk1(1)), tw_all(wk1(_), Xs), tw_log(L1), '$set_predicate_attribute'(wk1(_), det, false), tw_wr(wk1(_), W2), tw_all(wk1(_), Ys), tw_log(L2), R = r(D1, W1, Xs, L1, W2, Ys, L2)"
+    ),   # WRAP1B: `setDetDefinition!` over a wrapped predicate, both directions (the wrapper stays, the answers do not change)
+    (
+        "red1",
+        raw"consult('@DIR@/rf1_a.pl'), tw_wrap(rf1(_)), tw_wr(rf1(_), W0), consult('@DIR@/rf1_b.pl'), tw_wr(rf1(_), W1), tw_pd(rf1(_), P), tw_all(rf1(_), Xs), tw_log(L), R = r(W0, W1, P, Xs, L)"
+    ),   # TB5-P3: a second FILE redefines a wrapped static predicate (`redefineProcedure` abolishes the old clauses): the wrapper stays
+    (
+        "red2",
+        raw"consult('@DIR@/rf2_a.pl'), tw_wrap(rf2(_)), consult('@DIR@/rf2_b.pl'), tw_wr(rf2(_), W1), tw_pd(rf2(_), P), tw_all(rf2(_), Xs), tw_log(L), R = r(W1, P, Xs, L)"
+    ),   # TB5-P1, TB5-P3: the same over a wrapped DYNAMIC predicate (the redefinition makes it static)
+    (
+        "red3",
+        raw"consult('@DIR@/rf4_a.pl'), tw_wrap(rf4(_)), consult('@DIR@/rf4_b.pl'), abolish(rf4/1), tw_wr(rf4(_), W1), tw_pd(rf4(_), P), tw_all(rf4(_), Xs), tw_log(L), R = r(W1, P, Xs, L)"
+    ),   # TB5-P3: redefined, then abolished
     (
         "ctl",
         raw"assertz(wc1(1)), abolish(wc1/1), tw_pd(wc1(_), P), tw_all(wc1(_), Xs), R = r(P, Xs)"
@@ -156,8 +215,12 @@ const _TW_CASES = [
 const _TW_UNIT = (
     unit="tb5wrap",
     program=_TW_PROGRAM,
+    files=_TW_FILES,
     cases=_TW_CASES,
-    kill=["dyn1", "dyn2", "abs1", "abs2", "abd1", "abu1", "abd2"],
+    kill=[
+        "dyn1", "dyn2", "abs1", "abs2", "abd1", "abu1", "abd2", "clr1", "ret2", "ret3",
+        "det1", "red1", "red2", "red3"
+    ],
     # swipl 10.1.20, `tw_q(t_<case>, A)` in order, two identical runs
     pinned=[
         "r(1,isdyn,1,7,[called])",   # dyn1
@@ -168,6 +231,14 @@ const _TW_UNIT = (
         "r(1,undefined,1,exc(existence_error(procedure,wd1/1)),[])",   # abd1
         "r(undefined,1,5,[called])",   # abu1
         "r(undefined,1,5,[called],isdyn)",   # abd2
+        "r(1,isdyn,[],[],[3],[])",   # ret1
+        "r(1,none,undefined,[4],[])",   # clr1
+        "r(undefined,1,exc(existence_error(procedure,we3/1)),[])",   # ret2
+        "r(undefined,1,exc(existence_error(procedure,we4/1)),[])",   # ret3
+        "r(1,1,[1],[],1,[1],[])",   # det1
+        "r(1,1,static,[5],[])",   # red1
+        "r(1,static,[7],[])",   # red2
+        "r(1,undefined,exc(existence_error(procedure,rf4/1)),[])",   # red3
         "r(undefined,exc(existence_error(procedure,wc1/1)))"   # ctl
     ]
 )
@@ -216,8 +287,11 @@ _tw_check_unit(_TW_UNIT)
 @testset "TB5-WRAP: the kill rows hold a wrapped predicate and the answer a thrown error would replace" begin
     ids = [id for (id, _) in _TW_CASES]
     pin(k) = _TW_UNIT.pinned[findfirst(==(k), ids)::Int]
-    # the wrapper is still there after the reset (`'$wrapped_predicate'/2` counts 1): the mutants raise NotPortedError instead of resetting
-    for k in ("dyn1", "dyn2", "abs1", "abd1", "abu1", "abd2")
+    # the wrapper is still there after the reset (`'$wrapped_predicate'/2` counts 1): a mutant that resets without the wrapper loses it
+    for k in (
+        "dyn1", "dyn2", "abs1", "abd1", "abu1", "abd2", "ret2", "ret3", "det1", "red1",
+        "red2", "red3"
+    )
         @test !occursin("NotPorted", pin(k)) && !occursin("failed", pin(k))
     end
     @test pin("dyn2") == "r(static,1,[7],[])"
@@ -226,6 +300,9 @@ _tw_check_unit(_TW_UNIT)
     @test pin("abd1") == "r(1,undefined,1,exc(existence_error(procedure,wd1/1)),[])"
     @test pin("dyn1") == "r(1,isdyn,1,7,[called])"
     @test pin("abu1") == "r(undefined,1,5,[called])"
+    @test pin("clr1") == "r(1,none,undefined,[4],[])"   # the one row whose wrapper is gone after the reset
+    @test pin("det1") == "r(1,1,[1],[],1,[1],[])"
+    @test pin("red1") == "r(1,1,static,[5],[])"
     # the control without a wrapper is the same abolish: undefined, calling raises the existence error
     @test pin("ctl") == "r(undefined,exc(existence_error(procedure,wc1/1)))"
 end

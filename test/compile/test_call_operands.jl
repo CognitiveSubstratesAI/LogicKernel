@@ -47,7 +47,7 @@ end
     @test LK.lookupBodyProcedure(gd, _of(:q, _ov(1)), user) !== pq      # q/1 is another functor
     a = LK.lookupBodyProcedure(gd, _os(:go), user)                      # an atom goal: go/0
     @test a === LK.lookupProcedure(_os(:go), 0, user)
-    LK.setDynamicDefinition!(pq.definition, true)                       # defined: the current one
+    LK.setDynamicDefinition!(gd, pq.definition, true)                       # defined: the current one
     @test LK.isDefinedProcedure(gd, pq)
     @test LK.lookupBodyProcedure(gd, _of(:q, _ov(1), _ov(2)), user) === pq
     # user:exception/3, which G1 declares dynamic at the boot (design D8), is one of the boot's; this test

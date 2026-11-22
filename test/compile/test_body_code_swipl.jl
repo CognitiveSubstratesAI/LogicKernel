@@ -1548,7 +1548,7 @@ end
     gd = LK.PL_global_data{_B}()
     user = LK.MODULE_user(gd)
     dp = LK.lookupProcedure(_bs("dm1"), 1, user)
-    LK.setDynamicDefinition!(dp.definition, true)
+    LK.setDynamicDefinition!(gd, dp.definition, true)
     dyn = _bc_kernel(
         LK.compileClause(gd, _BLD, _bf("dm1", _bv(1)),
             _bconj(_bf("=", _bv(1), _bf("f", _bs("a"))), _bcq(_bv(1))), dp, user)

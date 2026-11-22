@@ -55,7 +55,7 @@ end
 "Declare `user:name/0` dynamic: the markers the system goals assert."
 function _tp_dyn!(db::_RDB, names::Symbol...)
     for n in names
-        LK.setDynamicDefinition!(LK.lookupProcedure(_rs(n), 0, db.user).definition, true)
+        LK.setDynamicDefinition!(db.gd, LK.lookupProcedure(_rs(n), 0, db.user).definition, true)
     end
     return nothing
 end

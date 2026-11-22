@@ -72,7 +72,7 @@ end
     @test p.definition === got
     # a defined user procedure keeps its own: no import
     q = LK.lookupProcedure(_mps(:atom), 1, user)
-    LK.setDynamicDefinition!(q.definition, true)                     # defined: P_DYNAMIC
+    LK.setDynamicDefinition!(gd, q.definition, true)                     # defined: P_DYNAMIC
     @test LK.autoImport(gd, _mps(:atom), 1, user) === q.definition
     # an explicit autoload import of its own imports nothing
     r = LK.lookupProcedure(_mps(:var), 1, user)
