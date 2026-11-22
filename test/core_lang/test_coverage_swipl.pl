@@ -1,5 +1,5 @@
 % ORIGINAL: the rows of test/core_lang/test_coverage_swipl.jl (its predicates are pl-coverage.c's: '$cov_add'/3, '$cov_data'/3,
-% '$cov_reset'/0, '$cov_stop'/1, '$cov_active'/1; '$cov_start'/1 is a named refusal in the kernel and has no row in the .out).
+% '$cov_reset'/0, '$cov_stop'/1, '$cov_active'/1; '$cov_start'/1 is run by the kernel's own row `tcs`, which is no row of the .out).
 % test/core_lang/test_coverage_swipl.pl - COVERAGE's rows. Each `tN(R)` (pass 1, a clean state) and `wN(R)` (pass 2, the collection
 % active twice) is one row; test_coverage_swipl.out holds swipl 10.1.20's answers (`ok`, then one line per row: its name and every
 % solution), as the test's driver prints them. A clause reference is never printed (the encoder takes no blob): a row reads its
@@ -98,7 +98,7 @@ w5(R) :- err('$cov_reset', R).
 w6(R) :- '$cov_stop'(1), ( '$cov_active'(_) -> R = active ; R = failed ).
 w7(R) :- err('$cov_reset', R).
 
-% rows only the kernel runs ('$cov_start'/1 is a named refusal there; swipl would succeed)
+% rows only the kernel runs (`tcs`: '$cov_start'/1 answers the nesting 1 and leaves the collection active; `tcp`, `tcq`: refusals)
 tcs(R) :- '$cov_start'(R).
 % ... and the pc offsets outside 0..2^32-2 of a call site (the table key's low half): a named refusal in the kernel
 tcp(R) :- clause(cvf(1), true, C), '$cov_add'(call_site(C, -2), 1, 1), R = ok.

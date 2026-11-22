@@ -7,10 +7,9 @@
 # runs the loop's hooks; the `tcs` row of test_coverage_swipl.jl runs the port. A KILL row named here is a row of that program (test_coverage_run_swipl.pl).
 TR = "test/core_lang/test_coverage_run.jl"
 TC = "test/core_lang/test_coverage_swipl.jl"
-TARGETS = [TR, TC]
 TS = "test/core_lang/test_coverage_run_swipl.jl"
+TARGETS = [TR, TC, TS]      # the run loop reaches every piece-A function through TS
 TB = [TS, TC]
-THS = [TS]
 C = "src/pl-coverage.jl"
 W = "src/pl-wam.jl"
 MUTANTS = [
@@ -26,11 +25,10 @@ MUTANTS = [
          file=C, targets=TARGETS,
          old='            error("bump: port $port is neither the call nor the exit port")     # assert(0)\n',
          new='            nothing\n'),
-    dict(id="COV1-4 a dynamic or foreign frame counts as a running static predicate (equivalent here: the rows' frames are static; piece B's differential row of a dynamic predicate kills it)",
+    dict(id="COV1-4 a dynamic or foreign frame counts as a running static predicate (KILL r5: a dynamic predicate's clause site; test_coverage_run.jl's frames are static)",
          file=C, targets=TARGETS,
          old='    return (def.flags & (P_DYNAMIC | P_FOREIGN)) == 0\n',
-         new='    return true\n',
-         equivalent="src/pl-coverage.jl running_static_predicate: test_coverage_run.jl runs on static frames only; piece C's rows (a dynamic predicate called while collecting) kill it"),
+         new='    return true\n'),
     dict(id="COV1-5 call_site takes the frame's own clause instead of the parent's (KILL the call-site row: the goal frame has no clause)",
          file=C, targets=TARGETS,
          old='        cref = parent.clause\n',
