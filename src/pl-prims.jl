@@ -5501,6 +5501,7 @@ const PL_predicates_from_prims = (
     PL_extension("atom", 1, pl_atom1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("string", 1, pl_string1_va, PL_FA_VARARGS),
     PL_extension("ground", 1, pl_ground1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("nonground", 2, pl_nonground2_va, PL_FA_VARARGS),
     PL_extension("\$term_size", 3, pl_term_size3_va, PL_FA_VARARGS),
     PL_extension("acyclic_term", 1, pl_acyclic_term1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("cyclic_term", 1, pl_cyclic_term1_va, PL_FA_VARARGS),
@@ -5517,11 +5518,14 @@ const PL_predicates_from_prims = (
     PL_extension("@>", 2, pl_std_gt2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("@>=", 2, pl_std_geq2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("functor", 3, pl_functor3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("functor", 4, pl_functor4_va, PL_FA_VARARGS),
     PL_extension("=..", 2, pl_univ2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("compound_name_arity", 3, pl_compound_name_arity3_va, PL_FA_VARARGS),
     PL_extension(
         "compound_name_arguments", 3, pl_compound_name_arguments3_va, PL_FA_VARARGS
     ),
+    PL_extension("\$filled_array", 4, pl_filled_array4_va, PL_FA_VARARGS),
+    PL_extension("\$unbind_template", 1, pl_unbind_template1_va, PL_FA_VARARGS),
     PL_extension("numbervars", 4, pl_numbervars4_va, PL_FA_VARARGS),     # (L1d step 7a, D-0016)
     PL_extension("term_variables", 2, pl_term_variables2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("term_variables", 3, pl_term_variables3_va, PL_FA_VARARGS),
@@ -5546,7 +5550,12 @@ const PL_predicates_from_prims = (
     PL_extension("number_codes", 2, pl_number_codes2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("number_string", 2, pl_number_string2_va, PL_FA_VARARGS),
     PL_extension("char_code", 2, pl_char_code2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("\$is_char_code", 1, pl_is_char_code1_va, PL_FA_VARARGS),
+    PL_extension("\$is_char", 1, pl_is_char1_va, PL_FA_VARARGS),
+    PL_extension("\$is_code_list", 2, pl_is_code_list2_va, PL_FA_VARARGS),
+    PL_extension("\$is_char_list", 2, pl_is_char_list2_va, PL_FA_VARARGS),
     PL_extension("atom_number", 2, pl_atom_number2_va, PL_FA_VARARGS),
+    PL_extension("collation_key", 2, pl_collation_key2_va, PL_FA_VARARGS),
     PL_extension("statistics", 2, pl_statistics2_va, PL_FA_VARARGS),
     PL_extension("\$cmd_option_val", 2, pl_cmd_option_val2_va, PL_FA_VARARGS),     # (LB7)
     PL_extension("\$cmd_option_set", 2, pl_cmd_option_set2_va, PL_FA_VARARGS),
