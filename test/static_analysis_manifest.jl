@@ -2523,7 +2523,7 @@ function _manifest_index(T)
         ),
         (
             LK.aliasThread!,
-            Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}, T, T},
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, T, T},
             false,
         ),
         (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),

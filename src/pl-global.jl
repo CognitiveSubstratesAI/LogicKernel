@@ -237,7 +237,9 @@ end
 # PORT: pl-global.h thread as thread_state
 # DIVERGES: the members of `GD->thread` the engines read, plus `GD->statistics.engines_created/finished`: `handles` (every handle, by
 # `thread_handle.serial`), `infos` (`GD->thread.threads`, by `pl_tid`; 0: the main thread is not kept, its slot 1 stays `nothing`),
-# `thread_table` (`threadTable`: the alias atom's `sym_key` --> the handle's serial; upstream: alias --> symbol), `highest_id`.
+# `thread_table` (`threadTable`: the alias atom's `sym_key` --> the handle's serial; upstream: alias --> symbol), `highest_id`, and the three
+# members of the main thread's record that `thread_detach/1`, `set_thread/2` and `thread_property/2` read and write (`main_detached`,
+# `main_debug`, `main_class`: initially not detached, debuggable, no class).
 "The thread state of the database: the handles, the thread records, the alias table and the engine counters (pl-global.h)."
 mutable struct thread_state{T}
     const handles::Vector{thread_handle{T}}     # (the handles a thread blob names)
@@ -246,10 +248,13 @@ mutable struct thread_state{T}
     highest_id::Int                             # thread.highest_id
     engines_created::Int                        # statistics.engines_created
     engines_finished::Int                       # statistics.engines_finished
+    main_detached::Bool                         # (the main thread's `info->detached`: it has no record)
+    main_debug::Bool                            # (the main thread's `info->debug`)
+    main_class::Union{Nothing, Symbol}          # (the main thread's `info->class`; `nothing` = none)
 end
 thread_state{T}() where {T} = thread_state{T}(
     thread_handle{T}[], Union{Nothing, PL_thread_info{T}}[nothing],
-    Dict{UInt64, Int}(), 1, 0, 0
+    Dict{UInt64, Int}(), 1, 0, 0, false, true, nothing
 )
 
 # PORT: pl-global.h PL_global_data

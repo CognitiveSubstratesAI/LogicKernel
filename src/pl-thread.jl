@@ -214,12 +214,14 @@ function unify_thread_id(
 end
 
 # PORT: pl-thread.c aliasThread
-# DIVERGES: the thread is its record `info` (upstream: the id `tid`, looked up in `GD->threads`) and the database is an argument; the
+# DIVERGES: the thread is its record `info` (upstream: the id `tid`, looked up in `GD->threads`; `nothing`: the main thread, which has no
+# record, its handle is `gd.thread.handles[1]`) and the database is an argument; the
 # message queues have no table (`queueTable` is NULL: no queue exists), so only a thread name can be taken. `PL_register_atom` does not
 # exist (no atom GC). A taken name raises `permission_error(create, Type, Name)` with the message "Alias name already taken".
 "Give the thread `info` the alias `name`; false (the error raised) when the name is taken (pl-thread.c)."
 function aliasThread!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, info::PL_thread_info{T}, type::T, name::T
+    gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
+    type::T, name::T
 )::Bool where {T}
     if haskey(gd.thread.thread_table, sym_key(name))
         obj = PL_new_term_ref(ld)
@@ -229,7 +231,7 @@ function aliasThread!(
             type, obj
         )
     end
-    th = create_thread_handle(gd, info)
+    th = info === nothing ? gd.thread.handles[1] : create_thread_handle(gd, info)
     th.alias = name
     gd.thread.thread_table[sym_key(name)] = th.serial     # addNewHTable(threadTable, name, info->symbol)
     return true
@@ -1016,19 +1018,25 @@ function thread_status_property(
 end
 
 # PORT: pl-thread.c thread_detached_property
-"`detached(Bool)`: whether the thread is detached; the main thread is not (pl-thread.c)."
+# DIVERGES: the main thread has no record: its flag is `main_detached` of `gd.thread` (false until `thread_detach/1` sets it).
+"`detached(Bool)`: whether the thread is detached (pl-thread.c)."
 function thread_detached_property(
     ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
 )::Bool where {T}
-    return PL_unify_bool_ex(ld, prop, info === nothing ? false : info.detached)
+    return PL_unify_bool_ex(
+        ld, prop, info === nothing ? _query_gd(ld).thread.main_detached : info.detached
+    )
 end
 
 # PORT: pl-thread.c thread_debug_property
+# DIVERGES: the main thread has no record: its flag is `main_debug` of `gd.thread` (true until `set_thread/2` changes it).
 "`debug(Bool)`: whether the thread can be debugged (pl-thread.c)."
 function thread_debug_property(
     ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
 )::Bool where {T}
-    return PL_unify_bool_ex(ld, prop, info === nothing ? true : info.debug)
+    return PL_unify_bool_ex(
+        ld, prop, info === nothing ? _query_gd(ld).thread.main_debug : info.debug
+    )
 end
 
 # PORT: pl-thread.c thread_debug_mode_property
@@ -1131,13 +1139,14 @@ function thread_size_property(
 end
 
 # PORT: pl-thread.c thread_class_property
-# DIVERGES: the main thread has no class (upstream: `info->class` is NULL).
+# DIVERGES: the main thread has no class until `set_thread(main, class(C))` gives it one (`main_class` of `gd.thread`; upstream: `console`).
 "`class(Class)`: the class of the thread, when it has one (pl-thread.c)."
 function thread_class_property(
     ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
 )::Bool where {T}
-    info === nothing && return false
-    return PL_unify_atom(ld, prop, mk_sym(T, info.class))
+    class = info === nothing ? _query_gd(ld).thread.main_class : info.class
+    class === nothing && return false
+    return PL_unify_atom(ld, prop, mk_sym(T, class))
 end
 
 # ORIGINAL: the call `(*p->function)(info, arg)` of thread_property/2: the property function number `p` of `THREAD_PROPERTY_NAMES`.
