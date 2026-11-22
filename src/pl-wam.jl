@@ -4393,9 +4393,10 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c i_enter_alerted
-    # NOT PORTED: coverage (`Coverage(FR, UNIFY_PORT)`) and the debugger's unify port
+    # Since COV1: `Coverage(FR, UNIFY_PORT)` first, as upstream. NOT PORTED: the debugger's unify port
     # (`debug_unify_continue`).
     @label i_enter_alerted
+    Coverage(gd, ld, FR, UNIFY_PORT)                # Coverage(FR, UNIFY_PORT) (COV1)
     (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP
     @goto next_instruction
 
@@ -4457,8 +4458,8 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the two limit bits (P3) and
-    # the undo bit (TX1e); signals and the debugger are not ported. Upstream's order inside `depart_alerted` is kept: the
+    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the two limit bits (P3), the
+    # undo bit (TX1e) and the coverage bit (COV1); signals and the debugger are not ported. Upstream's order inside `depart_alerted` is kept: the
     # autoloader's early exit, the scheduled undo goals (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit,
     # then the inference limit.
     @label depart_or_retry_continue
@@ -4478,7 +4479,7 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
-    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
+    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)) != 0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes
     PCl = gd.no_literals
@@ -4502,8 +4503,8 @@ function PL_next_solution_guarded(
     # and, at its start, the autoloader's early exit:
     #     if ( DEF->codes[0] == encode(S_VIRGIN) && !DEF->impl.any.defined && isoff(DEF, PROC_DEFINED) )
     #     { PC = DEF->codes; NEXT_INSTRUCTION; }
-    # DIVERGES: NOT PORTED: the signals, `getProcDefinedDefinition`, the profiler and the coverage and debugger
-    # ports (none is ported). `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
+    # DIVERGES: NOT PORTED: the signals, `getProcDefinedDefinition`, the profiler and the debugger's ports (none is
+    # ported). Since COV1 the call port's `Coverage(FR, CALL_PORT)` is, after the undo hooks and before the depth limit. `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
     @label depart_alerted
     setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))      # lTop = argFrameP(FR, DEF->functor->arity)
     PCc = DEF.codes
@@ -4520,6 +4521,7 @@ function PL_next_solution_guarded(
             @goto b_throw                           # THROW_EXCEPTION
         end
     end
+    Coverage(gd, ld, FR, CALL_PORT)                 # Coverage(FR, CALL_PORT) (COV1; after Profile(), before the depth limit)
     da_depth = Int(levelFrame(ld.frames[FR]))                   # size_t depth = levelFrame(FR)
     if da_depth > ld.depth_info_reached
         ld.depth_info_reached = da_depth
@@ -5072,9 +5074,17 @@ function PL_next_solution_guarded(
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
-    # DIVERGES: NOT PORTED: the `LD->alerted` test and its helper `i_exit_alerted` (the debugger's
-    # exit port).
+    # DIVERGES: since COV1 the `LD->alerted` test goes to `i_exit_alerted`, which keeps the coverage hook only. NOT PORTED:
+    # the string-buffer release and the debugger's exit port.
     @label I_EXIT
+    ld.alerted != 0 && @goto i_exit_alerted         # if ( unlikely(LD->alerted != 0) )
+    @goto exit_continue                             # VMH_GOTO(exit_continue)
+
+    # PORT: pl-vmi.c i_exit_alerted
+    # NOT PORTED: the `ALERT_BUFFER` release (`release_string_buffers_from_frame`) and the debugger's exit port
+    # (`debug_exit_continue`).
+    @label i_exit_alerted
+    Coverage(gd, ld, FR, EXIT_PORT)                 # Coverage(FR, EXIT_PORT) (COV1)
     @goto exit_continue
 
     # PORT: pl-vmi.c exit_continue
@@ -5156,8 +5166,9 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c I_EXITFACT
-    # DIVERGES: NOT PORTED: the `LD->alerted` block (the debugger's unify port, coverage).
+    # DIVERGES: the `LD->alerted` block keeps the coverage hook (COV1). NOT PORTED: the debugger's unify port.
     @label I_EXITFACT
+    ld.alerted != 0 && Coverage(gd, ld, FR, UNIFY_PORT)     # if ( unlikely(LD->alerted) ) { ... Coverage(FR, UNIFY_PORT); }
     @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c exit_checking_wakeup

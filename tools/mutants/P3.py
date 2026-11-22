@@ -206,9 +206,9 @@ MUTANTS = [
          old='''    ld.inference_limit_limit != INFERENCE_NO_LIMIT && (mask |= ALERT_INFERENCELIMIT)''',
          new='''    false && (mask |= ALERT_INFERENCELIMIT)'''),
     dict(id="P3-36 a call does not look at the alert bits (KILL dl03-dl05, dl08-dl12, dl22, dl23, il03, il04, il11-il14, il18, il19, il21, il26: nothing is stopped, dl_loop is COUNTED and the rows end with `!`; measured, fresh process)", file=W, targets=TV,
-         old='''    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
+         old='''    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)) != 0 &&
         @goto depart_alerted''',
-         new='''    (ld.alerted & ALERT_UNDO) != 0 &&
+         new='''    (ld.alerted & (ALERT_UNDO | ALERT_COVERAGE)) != 0 &&
         @goto depart_alerted'''),
     dict(id="P3-37 the reached depth is never recorded (KILL dl03, dl04, dl10)", file=W, targets=TV,
          old='''    if da_depth > ld.depth_info_reached

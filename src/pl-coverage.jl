@@ -11,14 +11,14 @@
 # an exit counter. The sites are in a hash table of src/os/pl-table.jl, keyed by the clause SERIAL and the pc offset
 # (src/pl-incl.jl, the block `pl-coverage`: the structs and the DIVERGES of the keys).
 #
-# THE COLLECTION ITSELF IS A NAMED REFUSAL. Upstream counts through the VM: `Coverage(FR, port)` (pl-coverage.h) at the
-# call, unify, exit and redo ports, behind `ALERT_COVERAGE` in `updateAlerted` and the run mode `'$cov_start'/1` clears.
-# This VM has none of the three (src/pl-wam.jl: the coverage marker there), so a start that succeeded would collect nothing:
-# `'$cov_start'/1` raises `NotPortedError`. Since COV1 piece A the functions the VM's hooks call, `record_coverage`, `call_site`,
-# `clref_site`, `bump`, `running_static_predicate` and `Coverage`, are written here, and `updateAlerted` sets `ALERT_COVERAGE`
-# (src/pl-wam.jl); NO VM INSTRUCTION CALLS THEM YET (piece B, engine-core: docs in evidence/R2/cov1_design.md section 5). Everything
-# that does not need a collecting VM is ported: '$cov_add'/3 writes the table, '$cov_data'/3 reads it, '$cov_reset'/0, '$cov_stop'/1 and '$cov_active'/1 act
-# on the active count, which stays 0 here (a test sets it to reach their other branches).
+# THE COLLECTION. Upstream counts through the VM: `Coverage(FR, port)` (pl-coverage.h) at the call, unify and exit ports,
+# behind `ALERT_COVERAGE` in `updateAlerted` and the run mode `'$cov_start'/1` clears. Since COV1 the kernel has all three:
+# the functions the VM's hooks call, `record_coverage`, `call_site`, `clref_site`, `bump`, `running_static_predicate` and
+# `Coverage`, are written here (piece A), `updateAlerted` sets `ALERT_COVERAGE`, and the run loop calls `Coverage` at
+# `i_enter_alerted`, `depart_alerted`, `i_exit_alerted` and `I_EXITFACT` (src/pl-wam.jl, piece B). `'$cov_start'/1` is the
+# port. The redo port is not counted by upstream either. NOT PORTED: the child thread's copy of `coverage.active`
+# (pl-thread.c; no thread start). The pc offsets are the kernel's, 0-based indices into the clause's `codes`, not swipl's
+# code layout (evidence/R2/cov1_design.md Q2): a test compares counts, never pcs.
 #
 # DIVERGES (file-wide):
 #   1. KEYS AND OBJECTS: see src/pl-incl.jl (the serial and offset key, the object vector the table's values index).
@@ -501,20 +501,27 @@ end
 
 # PORT: pl-coverage.c cov_start as pl_cov_start1_va
 # (PRED_IMPL("$cov_start(-Nesting)", 1, cov_start, 0))
-# DIVERGES: A NAMED REFUSAL (the file header): upstream unifies the nesting, makes the data, clears the run mode and counts
-# `LD->coverage.active` up; with no `Coverage()` hooks in the VM nothing would be collected after that. Nothing changes
-# before the refusal.
-"`'\$cov_start'(-Nesting)`: refused by name, the VM has no coverage hooks (pl-coverage.c)."
+# Since COV1 the collection is ported: the VM's `Coverage` hooks (src/pl-wam.jl) count while `ld.coverage.active` is non-zero.
+"""
+    '\$cov_start'(-Nesting)
+
+Start collecting coverage information; if it is already collected, count the nesting up (pl-coverage.c).
+"""
 function pl_cov_start1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, Symbol("\$cov_start")),
-            "coverage collection (`record_coverage`: the VM has no `Coverage()` hooks and `updateAlerted` no `ALERT_COVERAGE`)",
-            "COV1"
-        )
-    )
+    if ld.coverage.data === nothing                             # if ( !LD->coverage.data )
+        PL_unify_integer(ld, PL__t0, 1) || return FFALSE
+        ld.coverage.data = newCoverageData(T)
+    else
+        PL_unify_integer(ld, PL__t0, ld.coverage.active + 1) || return FFALSE
+    end
+
+    clearPrologRunMode!(ld, RUN_MODE_NORMAL)                    # clearPrologRunMode(RUN_MODE_NORMAL)
+    ld.coverage.active += 1
+    updateAlerted(ld)
+
+    return FTRUE
 end
 
 # PORT: pl-coverage.c cov_stop as pl_cov_stop1_va

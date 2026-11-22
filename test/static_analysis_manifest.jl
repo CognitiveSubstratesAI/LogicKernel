@@ -4424,7 +4424,7 @@ _manifest_bisim_plain() = (
 )
 
 # LANE F — pl-coverage.c (src/pl-coverage.jl): the '$cov_*' predicates and the coverage records (the structs are in src/pl-incl.jl).
-# `'$cov_start'/1` is a named refusal: its entry only checks that it infers. The functions that take the local data or a
+# `'$cov_start'/1` is the collection's start (COV1). The functions that take the local data or a
 # record of a payload type are checked for every payload type; the ones on plain integers, once, below.
 _manifest_coverage(T) = begin
     LD = LK.PL_local_data{T}
@@ -4442,7 +4442,7 @@ _manifest_coverage(T) = begin
         (LK.free_state, Tuple{ST}, false),
         (LK.is_candidate, Tuple{ST, OBJ}, false),
         (LK.free_coverage_data, Tuple{LD}, false),
-        # COV1 piece A: the VM's coverage hooks (nothing in the run loop calls them before piece B)
+        # COV1: the VM's coverage hooks (the run loop calls `Coverage`, src/pl-wam.jl)
         (LK.running_static_predicate, Tuple{LK.localFrame{T}}, false),
         (LK.call_site, Tuple{GD, LD, LK.localFrame{T}}, false),
         (LK.clref_site, Tuple{GD, LD, LK.ClauseRef{T}}, false),

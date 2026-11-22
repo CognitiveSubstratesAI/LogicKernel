@@ -2,11 +2,15 @@
 # tools/mutants/COV1.py — format of tools/mutate_drive.py's (as COVERAGE.py): `id`, `file`, `old` (EXACTLY once in its file), `new`, `targets`,
 # optional `equivalent`. NOT RUN: written edit-only on wip/rec-cov1, nothing compiled; every `old` was counted exactly once with python3 -I.
 # TARGETS (audit D-0238): the functions are reached by test/core_lang/test_coverage_run.jl (the direct rows); `clause_site`/`pc_call_site`, which
-# they call, are also exercised by test/core_lang/test_coverage_swipl.jl, so both files are targets. Piece B's mutants (the hook sites of the VM,
-# the `$cov_start` port) are written WITH piece B and list test_coverage_run_swipl.jl as well.
+# they call, are also exercised by test/core_lang/test_coverage_swipl.jl, so both files are targets. Piece B's mutants (COV1-15 on: the hook sites of
+# the VM, the `$cov_start` port) also list test_coverage_run_swipl.jl (piece C: the program through the VM, counts against swipl's), the ONLY file that
+# runs the loop's hooks; the `tcs` row of test_coverage_swipl.jl runs the port. A KILL row named here is a row of that program (test_coverage_run_swipl.pl).
 TR = "test/core_lang/test_coverage_run.jl"
 TC = "test/core_lang/test_coverage_swipl.jl"
 TARGETS = [TR, TC]
+TS = "test/core_lang/test_coverage_run_swipl.jl"
+TB = [TS, TC]
+THS = [TS]
 C = "src/pl-coverage.jl"
 W = "src/pl-wam.jl"
 MUTANTS = [
@@ -68,4 +72,73 @@ MUTANTS = [
          file=W, targets=[TR],
          old='    ld.coverage.active != 0 && (mask |= ALERT_COVERAGE)     # if ( ld->coverage.active ) mask |= ALERT_COVERAGE (COV1)\n',
          new='    mask |= ALERT_COVERAGE\n'),
+    # ── piece B: the run loop's hook sites (src/pl-wam.jl) and the `$cov_start` port (src/pl-coverage.jl); KILL rows are rows of test_coverage_run_swipl.pl
+    dict(id="COV1-15 the call alert test ignores the coverage bit (E1; KILL r6-r9: no call site is recorded, the CALL port is reached only through depart_alerted)",
+         file=W, targets=TB,
+         old='    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)) != 0 &&\n        @goto depart_alerted',
+         new='    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&\n        @goto depart_alerted'),
+    dict(id="COV1-16 depart_alerted does not record the call port (E2; KILL r6, r7, r8, r9: the call sites' enter counts)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, CALL_PORT)                 # Coverage(FR, CALL_PORT) (COV1; after Profile(), before the depth limit)\n',
+         new=''),
+    dict(id="COV1-17 depart_alerted records the exit port at the call (E2; KILL r6-r9: the call site's exit counts are bumped at the call)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, CALL_PORT)                 # Coverage(FR, CALL_PORT) (COV1; after Profile(), before the depth limit)\n',
+         new='    Coverage(gd, ld, FR, EXIT_PORT)\n'),
+    dict(id="COV1-18 I_EXIT does not look at the alert (E3; KILL r1, r2, r8: a rule clause's exit count and its call site's exit count stay 0)",
+         file=W, targets=TB,
+         old='    ld.alerted != 0 && @goto i_exit_alerted         # if ( unlikely(LD->alerted != 0) )\n',
+         new=''),
+    dict(id="COV1-19 i_exit_alerted does not record the exit port (E3; KILL r1, r2, r8)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, EXIT_PORT)                 # Coverage(FR, EXIT_PORT) (COV1)\n',
+         new=''),
+    dict(id="COV1-20 i_exit_alerted records the unify port (E3; KILL r1, r2, r8: the clause's enter count is bumped at its exit)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, EXIT_PORT)                 # Coverage(FR, EXIT_PORT) (COV1)\n',
+         new='    Coverage(gd, ld, FR, UNIFY_PORT)\n'),
+    dict(id="COV1-21 i_enter_alerted does not record the unify port (E4; KILL r1, r2, r8: a rule clause's enter count stays 0)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, UNIFY_PORT)                # Coverage(FR, UNIFY_PORT) (COV1)\n',
+         new=''),
+    dict(id="COV1-22 i_enter_alerted records the exit port (E4; KILL r1, r2, r8)",
+         file=W, targets=TB,
+         old='    Coverage(gd, ld, FR, UNIFY_PORT)                # Coverage(FR, UNIFY_PORT) (COV1)\n',
+         new='    Coverage(gd, ld, FR, EXIT_PORT)\n'),
+    dict(id="COV1-23 I_EXITFACT does not record the unify port (E5; KILL r0, r2, r8: a fact's enter count stays 0)",
+         file=W, targets=TB,
+         old='    ld.alerted != 0 && Coverage(gd, ld, FR, UNIFY_PORT)     # if ( unlikely(LD->alerted) ) { ... Coverage(FR, UNIFY_PORT); }\n',
+         new=''),
+    dict(id="COV1-24 I_EXITFACT records the exit port (E5; KILL r0, r2, r8: a fact's exit count is bumped, swipl's stays as measured)",
+         file=W, targets=TB,
+         old='    ld.alerted != 0 && Coverage(gd, ld, FR, UNIFY_PORT)     # if ( unlikely(LD->alerted) ) { ... Coverage(FR, UNIFY_PORT); }\n',
+         new='    ld.alerted != 0 && Coverage(gd, ld, FR, EXIT_PORT)\n'),
+    dict(id="COV1-25 '$cov_start' unifies the nesting 0 for the first start (E6; KILL r0, r3)",
+         file=C, targets=TB,
+         old='        PL_unify_integer(ld, PL__t0, 1) || return FFALSE\n',
+         new='        PL_unify_integer(ld, PL__t0, 0) || return FFALSE\n'),
+    dict(id="COV1-26 '$cov_start' unifies the current nesting, not the next (E6; KILL r3: 1-2-2)",
+         file=C, targets=TB,
+         old='        PL_unify_integer(ld, PL__t0, ld.coverage.active + 1) || return FFALSE\n',
+         new='        PL_unify_integer(ld, PL__t0, ld.coverage.active) || return FFALSE\n'),
+    dict(id="COV1-27 '$cov_start' makes new data at every start (E6; KILL r10: the counts of the first start are dropped)",
+         file=C, targets=TB,
+         old='    if ld.coverage.data === nothing                             # if ( !LD->coverage.data )\n',
+         new='    if true\n'),
+    dict(id="COV1-28 '$cov_start' makes the data before unifying the nesting (E6; KILL r11: a failed start leaves data)",
+         file=C, targets=TB,
+         old='    if ld.coverage.data === nothing                             # if ( !LD->coverage.data )\n        PL_unify_integer(ld, PL__t0, 1) || return FFALSE\n        ld.coverage.data = newCoverageData(T)\n',
+         new='    if ld.coverage.data === nothing                             # if ( !LD->coverage.data )\n        ld.coverage.data = newCoverageData(T)\n        PL_unify_integer(ld, PL__t0, 1) || return FFALSE\n'),
+    dict(id="COV1-29 '$cov_start' does not clear the run mode (E6; KILL r12: the `$notrace` flags keep the last-call and VMI bits)",
+         file=C, targets=TB,
+         old='    clearPrologRunMode!(ld, RUN_MODE_NORMAL)                    # clearPrologRunMode(RUN_MODE_NORMAL)\n',
+         new=''),
+    dict(id="COV1-30 '$cov_start' does not count the nesting up (E6; KILL r0, r3: nothing is collected)",
+         file=C, targets=TB,
+         old='    ld.coverage.active += 1\n    updateAlerted(ld)\n',
+         new='    updateAlerted(ld)\n'),
+    dict(id="COV1-31 '$cov_start' does not refresh the alert mask (E6; KILL r0-r10: the VM never runs the hooks)",
+         file=C, targets=TB,
+         old='    ld.coverage.active += 1\n    updateAlerted(ld)\n',
+         new='    ld.coverage.active += 1\n'),
 ]
