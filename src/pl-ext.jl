@@ -78,6 +78,8 @@ const foreigns = (
     PL_extension("engine_destroy", 1, pl_engine_destroy, 0x00),     # TH1 engines (pl-thread.c:4233)
     PL_extension("engine_post", 2, pl_engine_post2, 0x00),          # TH1 engines (pl-thread.c:4438)
     PL_extension("engine_fetch", 1, pl_engine_fetch, 0x00),         # TH1 engines (pl-thread.c:4474)
+    PL_extension("engine_next", 2, pl_engine_next, 0x00),           # TH1 engines (pl-thread.c:4429)
+    PL_extension("engine_post", 3, pl_engine_post3, 0x00),          # TH1 engines (pl-thread.c:4466)
     PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)   # META|ISO (pl-ext.c:187)
 )
 
