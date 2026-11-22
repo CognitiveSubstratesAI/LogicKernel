@@ -3351,9 +3351,14 @@ function pl_copy_predicate_clauses2_va(
     generation = global_generation(gd)                          # take a consistent snapshot
 
     if (def.flags & P_FOREIGN) != 0
-        return PL_error(
-            ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure), from
-        ) ? FTRUE : FFALSE
+        return if PL_error(
+                ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure),
+                from
+            )
+            FTRUE
+        else
+            FFALSE
+        end
     end
 
     to = get_procedure_create_namearity(gd, ld, PL__t0 + 1)
