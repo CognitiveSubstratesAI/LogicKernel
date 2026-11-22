@@ -311,6 +311,12 @@ end
         "setPrologFlag(gd, \"verbose\", FT_ATOM, 1)\nsetPrologFlag(\n    gd, ld, \"bounded\", FT_BOOL, x)\n# setPrologFlag(gd, \"commented\", FT_BOOL, x)\n"
     ])
     @test defd == Set(["verbose", "bounded"])
+    # the argv setter defines `argv` / `os_argv` (src/pl-init.jl); the function's own definition and a comment are no definition
+    defd_argv = r2_flags_defined([
+        "function _set_argv_prolog_flag!(gd, ld, name, v)\nend\n_set_argv_prolog_flag!(gd, ld, \"os_argv\", cmd.os_argv)\n" *
+            "_set_argv_prolog_flag!(\n    gd, ld, \"argv\", cmd.appl_argv)\n# _set_argv_prolog_flag!(gd, ld, \"commented\", x)\n"
+    ])
+    @test defd_argv == Set(["os_argv", "argv"])
     jl = """
     function $(R2_FLAG_REFUSAL_HELPER)(key::T, effect::String) where {T}
         throw($(R2_REFUSAL_EXCEPTION){T}(key, effect, "R2 F1b"))

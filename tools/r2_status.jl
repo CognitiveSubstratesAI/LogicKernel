@@ -930,12 +930,19 @@ function r2_flag_scan(root::AbstractString, files::Vector{R2File})
     return (; refs, created)
 end
 
-"The flags the kernel defines: `setPrologFlag(gd, [ld,] \"name\", …)` in src/**/*.jl (comments blanked, multi-line calls read)."
+"""
+The flags the kernel defines: `setPrologFlag(gd, [ld,] \"name\", …)` and the argv setter `_set_argv_prolog_flag!(gd, ld, \"name\", …)`
+(`argv`, `os_argv`: src/pl-init.jl) in src/**/*.jl (comments blanked, multi-line calls read).
+"""
 function r2_flags_defined(texts)::Set{String}
     out = Set{String}()
     rx = Regex("\\bsetPrologFlag\\(\\s*gd\\s*,\\s*(?:ld\\s*,\\s*)?$(_R2_RX_NAME)")
-    for t in texts, m in eachmatch(rx, r2_strip_jl(t))
-        push!(out, _r2_unescape(m[1]))
+    rx_argv = Regex("\\b_set_argv_prolog_flag!\\(\\s*gd\\s*,\\s*ld\\s*,\\s*$(_R2_RX_NAME)")
+    for t in texts
+        src = r2_strip_jl(t)
+        for r in (rx, rx_argv), m in eachmatch(r, src)
+            push!(out, _r2_unescape(m[1]))
+        end
     end
     return out
 end
