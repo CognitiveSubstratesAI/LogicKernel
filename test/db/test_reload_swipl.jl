@@ -1,5 +1,5 @@
 # ORIGINAL: R2 LB6b-2's gate - a source file loaded again (a reconsult, `startConsult` -> `startReconsultFile` ... `endConsult` -> `endReconsult`) against swipl-devel 18168e62 (pl-srcfile.c startReconsultFile :900-953, delete_old_predicates, end_reconsult_proc, endReconsult, fix_module, registerReloadModule; pl-proc.c reconsultFinalizePredicate; pl-modul.c declareModule's reload arm); upstream tests it through Prolog (src/Tests/core/test_reload.pl and tests/unprotected/reload), which needs the loader.
-# test/db/test_reload_swipl.jl - rl01-rl12, scenarios of ONE file (or two) loaded in turn on a fresh database, then probed:
+# test/db/test_reload_swipl.jl - rl01-rl15, scenarios of ONE file (or two) loaded in turn on a fresh database, then probed:
 #   * STEPS: (scenario, file, text) loaded in order with `load_file!` (the kernel) and `consult/1` (swipl: the driver writes the same text to the same path first);
 #     a second load of a path is a reload. The printed `ld <id> <n> ok` lines say each load succeeded (a ball is `exc <enc>`).
 #   * PROBES: a program `t_<id>(R)` consulted last, every answer encoded as the driver's `enc/1` (test_miss_preds_swipl.jl's pattern). EVERY expected
@@ -8,7 +8,8 @@
 #     existence error); rl03 a predicate the reload adds; rl04 an identical reload keeps the clauses (the same clause references); rl05 discontiguous and an order change;
 #     rl06 a module reload (exports shrink; the user's import of a dropped export); rl07 dynamic / static / dynamic across three versions; rl08 a multifile predicate
 #     (the other file's clauses stay); rl09 a tabled predicate whose `:- table` is dropped; rl10 a reload that only declares the predicate `dynamic`; rl11 the `untable` event
-#     of a dropped table; rl12 a table kept: no event.
+#     of a dropped table; rl12 a table kept: no event;
+#     rl13 a multifile predicate dropped by file A (B's clause stays); rl14 two tables, one dropped (the untable event of the pending `$tabled` clause); rl15 a rule deleted (number_of_rules 0).
 #   * WHITE-BOX: after the loads no reload context is left (`sf.reload`, `gd.reload_generation`, `ld.reload_nesting`).
 using Test, LogicKernel
 
@@ -103,12 +104,20 @@ const _RL_STEPS = [
     ("rl09", "rl09.pl", "rl09_t(1).\n"),
     ("rl10", "rl10.pl", "rl10_p(1).\nrl10_p(2).\n"),
     ("rl10", "rl10.pl", ":- dynamic rl10_p/1.\n"),
-    ("rl11", "rl11h.pl", ":- dynamic rl11_seen/1.\nrl11_ev(E) :- assertz(rl11_seen(E)).\n:- prolog_listen(untable, rl11_ev).\n"),
+    ("rl11", "rl11h.pl", ":- dynamic rl11_seen/1.\nrl11_ev(user:N/A) :- sub_atom(N, 0, _, _, rl11_), assertz(rl11_seen(user:N/A)).\nrl11_ev(_).\n:- prolog_listen(untable, rl11_ev).\n"),
     ("rl11", "rl11.pl", ":- table rl11_t/1.\nrl11_t(1).\nrl11_t(2).\n"),
     ("rl11", "rl11.pl", "rl11_t(1).\n"),
-    ("rl12", "rl12h.pl", ":- dynamic rl12_seen/1.\nrl12_ev(E) :- assertz(rl12_seen(E)).\n:- prolog_listen(untable, rl12_ev).\n"),
+    ("rl12", "rl12h.pl", ":- dynamic rl12_seen/1.\nrl12_ev(user:N/A) :- sub_atom(N, 0, _, _, rl12_), assertz(rl12_seen(user:N/A)).\nrl12_ev(_).\n:- prolog_listen(untable, rl12_ev).\n"),
     ("rl12", "rl12.pl", ":- table rl12_t/1.\nrl12_t(1).\nrl12_t(2).\n"),
     ("rl12", "rl12.pl", ":- table rl12_t/1.\nrl12_t(5).\n"),
+    ("rl13", "rl13a.pl", ":- multifile rl13_m/1.\nrl13_m(a1).\n"),
+    ("rl13", "rl13b.pl", ":- multifile rl13_m/1.\nrl13_m(b1).\n"),
+    ("rl13", "rl13a.pl", "rl13_x(1).\n"),
+    ("rl14", "rl14h.pl", ":- dynamic rl14_seen/1.\nrl14_ev(user:N/A) :- sub_atom(N, 0, _, _, rl14_), assertz(rl14_seen(user:N/A)).\nrl14_ev(_).\n:- prolog_listen(untable, rl14_ev).\n"),
+    ("rl14", "rl14.pl", ":- table rl14_a/1.\n:- table rl14_b/1.\nrl14_a(1).\nrl14_b(2).\n"),
+    ("rl14", "rl14.pl", ":- table rl14_a/1.\nrl14_a(1).\n"),
+    ("rl15", "rl15.pl", "rl15_p(1).\nrl15_p(X) :- X = 2.\nrl15_p(3).\n"),
+    ("rl15", "rl15.pl", "rl15_p(1).\nrl15_p(3).\n"),
 ]
 
 # (id, goal binding R): the probe program's `t_<id>(R)`
@@ -127,6 +136,9 @@ const _RL_CASES = [
     ("rl10", "findall(X, rl10_p(X), L), predicate_property(rl10_p(_), number_of_clauses(N)), ( predicate_property(rl10_p(_), dynamic) -> D = dyn ; D = st ), R = L-N-D"),
     ("rl11", "findall(E, rl11_seen(E), Es), findall(X, rl11_t(X), L), ( predicate_property(rl11_t(_), tabled) -> T = yes ; T = no ), R = Es-L-T"),
     ("rl12", "findall(E, rl12_seen(E), Es), findall(X, rl12_t(X), L), ( predicate_property(rl12_t(_), tabled) -> T = yes ; T = no ), R = Es-L-T"),
+    ("rl13", "findall(X, rl13_m(X), L), ( predicate_property(rl13_m(_), multifile) -> M = yes ; M = no ), predicate_property(rl13_m(_), number_of_clauses(N)), R = L-M-N"),
+    ("rl14", "findall(E, rl14_seen(E), Es), findall(X, rl14_a(X), L), ( predicate_property(rl14_a(_), tabled) -> A = yes ; A = no ), ( predicate_property(rl14_b(_), tabled) -> B = yes ; B = no ), R = Es-L-A-B"),
+    ("rl15", "findall(X, rl15_p(X), L), predicate_property(rl15_p(_), number_of_clauses(N)), predicate_property(rl15_p(_), number_of_rules(Ru)), R = L-N-Ru"),
 ]
 
 # swipl's answers (pinned 18168e62, run live): `ld` lines, `probe_ok`, then `t_<id>` and its encoded answer
@@ -159,6 +171,14 @@ const _RL_EXPECTED = [
     "ld rl12 1 ok",
     "ld rl12 2 ok",
     "ld rl12 3 ok",
+    "ld rl13 1 ok",
+    "ld rl13 2 ok",
+    "ld rl13 3 ok",
+    "ld rl14 1 ok",
+    "ld rl14 2 ok",
+    "ld rl14 3 ok",
+    "ld rl15 1 ok",
+    "ld rl15 2 ok",
     "probe_ok",
     "t_rl01 c[116,95,114,108,48,49]/1(c[45]/2(c[45]/2(c[45]/2(c[91,124,93]/2(i1,c[91,124,93]/2(i3,c[91,124,93]/2(i4,nil))),i3),i3),i2))",
     "t_rl02 c[116,95,114,108,48,50]/1(c[45]/2(c[45]/2(a[121,101,115],a[110,111]),c[91,124,93]/2(i3,nil)))",
@@ -174,6 +194,9 @@ const _RL_EXPECTED = [
     "t_rl10 c[116,95,114,108,49,48]/1(c[45]/2(c[45]/2(nil,i0),a[100,121,110]))",
     "t_rl11 c[116,95,114,108,49,49]/1(c[45]/2(c[45]/2(c[91,124,93]/2(c[58]/2(a[117,115,101,114],c[47]/2(a[114,108,49,49,95,116],i1)),nil),c[91,124,93]/2(i1,nil)),a[110,111]))",
     "t_rl12 c[116,95,114,108,49,50]/1(c[45]/2(c[45]/2(nil,c[91,124,93]/2(i5,nil)),a[121,101,115]))",
+    "t_rl13 c[116,95,114,108,49,51]/1(c[45]/2(c[45]/2(c[91,124,93]/2(a[98,49],nil),a[121,101,115]),i1))",
+    "t_rl14 c[116,95,114,108,49,52]/1(c[45]/2(c[45]/2(c[45]/2(c[91,124,93]/2(c[58]/2(a[117,115,101,114],c[47]/2(a[114,108,49,52,95,98],i1)),nil),c[91,124,93]/2(i1,nil)),a[121,101,115]),a[110,111]))",
+    "t_rl15 c[116,95,114,108,49,53]/1(c[45]/2(c[45]/2(c[91,124,93]/2(i1,c[91,124,93]/2(i3,nil)),i2),i0))",
 ]
 
 _rl_probe_program() = join(
@@ -263,7 +286,7 @@ function _rl_kernel(dir::String)
     return gd, ld, out
 end
 
-@testset "a reloaded file as swipl (rl01-rl12: clauses, predicates dropped and added, identity, discontiguous, modules, dynamic, multifile, tables)" begin
+@testset "a reloaded file as swipl (rl01-rl15: clauses, predicates dropped and added, identity, discontiguous, modules, dynamic, multifile, tables)" begin
     dir = realpath(mktempdir())
     gd, ld, kl = _rl_kernel(dir)
     @test length(kl) == length(_RL_EXPECTED)
