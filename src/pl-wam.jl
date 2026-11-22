@@ -2781,6 +2781,23 @@ function PL_current_query(ld::PL_local_data{T})::Int where {T}
     return 0
 end
 
+# PORT: pl-wam.c PL_can_yield
+# DIVERGES: `HAS_LD` is always true here (the local data is an argument).
+"Whether the innermost query was opened with `PL_Q_ALLOW_YIELD`, so the VM may yield from it (pl-wam.c)."
+function PL_can_yield(ld::PL_local_data{T})::Bool where {T}
+    return ld.query != 0 &&                         # LD->query
+           ld.queries[ld.query].magic == QID_MAGIC &&   # LD->query->magic == QID_MAGIC
+           (ld.queries[ld.query].flags & PL_Q_ALLOW_YIELD) != 0     # ison(LD->query, PL_Q_ALLOW_YIELD)
+end
+
+# PORT: pl-wam.c PL_yielded
+# DIVERGES: `qid` is the query's handle (a position, decision 1); the term reference is an `Int` (0 = none).
+"The term reference an engine's `I_YIELD` left in query `qid`, to be read after `PL_next_solution` returned the yield code (pl-wam.c)."
+function PL_yielded(ld::PL_local_data{T}, qid::Int)::Int where {T}
+    qf = ld.queries[QueryFromQid(ld, qid)]          # QueryFrame qf = QueryFromQid(qid)
+    return qf.yield_term                            # return qf->yield.term
+end
+
 # PORT: pl-wam.c handles_unwind
 # DIVERGES: `qid` 0 stands for upstream's null handle (the running query: `LD->query->qid`); `HAS_LD` is always true here,
 # and a database with no open query handles none (upstream reads `LD->query->qid` of a running query only).
