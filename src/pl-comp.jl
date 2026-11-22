@@ -5948,6 +5948,24 @@ decode(PC::Code)::code = PC.codes[PC.pc]
 stepPC(PC::Code{T}) where {T} =
     Code{T}(PC.codes, PC.literals, PC.pc + 1 + codeTable(decode(PC)).arguments)::Code{T}
 
+# PORT: pl-comp.c prevPC
+# (pl-comp.c:4852 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: `nothing` is upstream's NULL; the range test `pc >= clause->codes && pc < end` is "`pc` lies in this clause's code vector, at
+# an index in `1:length(codes)`" (positions are `Code`: a vector and an index, 1-based; `code_size` is `length(clause.codes)`).
+"The instruction before the one at `pc` in the code of `clause`, or `nothing` when `pc` is not in it (pl-comp.c)."
+function prevPC(clause::Clause{T}, pc::Code{T})::Union{Nothing, Code{T}} where {T}
+    last = length(clause.codes)                         # end = &clause->codes[clause->code_size]
+    if pc.codes === clause.codes && 1 <= pc.pc <= last
+        p = Code(clause, 1)                             # p = clause->codes
+        while p.pc <= last                              # p < end
+            n = stepPC(p)
+            n.pc == pc.pc && return p                   # n == pc
+            p = n
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-comp.c skipArgs
 # DIVERGES: returns `(position, in_hvoid)` where upstream updates `*in_hvoid` through a pointer.
 """

@@ -414,6 +414,7 @@ function _manifest_index(T)
         (LK.Code, Tuple{C, Int}, true),
         (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
         (LK.skipArgs, Tuple{PCd, Int, Int}, true), (LK.argKey, Tuple{PCd, Int}, true),
+        (LK.prevPC, Tuple{C, PCd}, false),                   # DBG1: prolog_frame_attribute/3 (`is_meta_call`)
         (LK.indexableCompound, Tuple{PCd}, true),
         (LK.isIndexedVarTerm, Tuple{CInfo, T}, false),
         (LK._comp_arg, Tuple{T, Int, Int}, true),
@@ -1649,6 +1650,7 @@ function _manifest_index(T)
         (LK.has_attributes_after, Tuple{LD, Int, Int}, false),
         (LK.scan_trail, Tuple{LD, Int, Bool}, false),
         (LK.existingChoice, Tuple{LD, Int}, false),
+        (LK.existingFrame, Tuple{LD, Int}, false),           # DBG1: prolog_frame_attribute/3
         # AV8 — when/2's C half (src/pl-attvar.jl)
         (LK._when_functor, Tuple{LD, Symbol, Int}, false),
         (LK.is_or, Tuple{LD, UInt64}, false),

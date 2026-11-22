@@ -448,6 +448,41 @@ function existingChoice(ld::PL_local_data{T}, off::Int)::Int where {T}
     return ch2
 end
 
+# PORT: pl-wam.c existingFrame
+# (pl-wam.c:2655 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: takes the frame's local-stack POSITION `off` (upstream's `(LocalFrame)((Word)lBase+i)`, as `PL_unify_frame` gives it,
+# src/pl-trace.jl) and returns the index of the record at that position, 0 for upstream's false; `onStack(local, fr)` is "a live
+# record has this position" (`off < lTop`, found by `base`: the pool is ordered by `base`). The parent walk is upstream's; a top
+# frame is checked against its query record (`queryOfFrame`'s arithmetic, without its error: no record is false) and
+# `qf->magic == QID_MAGIC`.
+"The frame at local-stack position `off` if it is a live frame of a live query, else 0 (pl-wam.c)."
+function existingFrame(ld::PL_local_data{T}, off::Int)::Int where {T}
+    0 <= off < ld.lTop || return 0                  # onStack(local, fr)
+    start = 0
+    for i in ld.nframes:-1:1                        # the pool is ordered by `base`
+        b = ld.frames[i].base
+        b == off && (start = i; break)
+        b < off && return 0
+    end
+    start == 0 && return 0
+    fr = start
+    while true
+        f = ld.frames[fr]
+        isFrame(f) || return 0                      # !isFrame(fr)
+        if f.parent != 0                            # if ( fr->parent )
+            fr = f.parent
+        else
+            qb = f.base - QF_TOP_FRAME              # QueryFrame qf = queryOfFrame(fr)
+            for i in ld.nqueries:-1:1
+                if ld.queries[i].base == qb
+                    return ld.queries[i].magic == QID_MAGIC ? start : 0   # qf->magic == QID_MAGIC
+                end
+            end
+            return 0
+        end
+    end
+end
+
 # ── the overwrite points: never below the newest choice point ───────────────────────────────────
 # ORIGINAL (L1e e1's assertion; audit D-0029, narrowed in D-0031): a slot has ONE side entry and
 # nothing restores a slot word, so no VM writer may OVERWRITE a slot still live below a choice point
