@@ -146,8 +146,10 @@ MUTANTS = [
          new='''            PC = nextpc
         elseif op == B_UNIFY_FIRSTVAR'''),
     dict(id="CTP-30 the unification skips only its first instruction (B_UNIFY_EXIT not awaited)", file=IN, targets=T,
-         old='''                op == B_UNIFY_EXIT && break''',
-         new='''                break'''),
+         old='''                nextpc = stepPC(PC)
+                op == B_UNIFY_EXIT && break''',
+         new='''                nextpc = stepPC(PC)
+                break'''),
     dict(id="CTP-31 ordinary instructions never add a node (VIF_BREAK ignored)", file=IN, targets=T,
          old='''            if (codeTable(op).flags & VIF_BREAK) != 0
                 add_node(ld, tail, 2)''',
