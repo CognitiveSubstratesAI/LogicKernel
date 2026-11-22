@@ -20,6 +20,13 @@
 #   * THE YIELD ROWS (engine_yield/1, the I_YIELD instruction and its resume) need the VM step, which is its own engine-core step. Their testset
 #     starts with `@test isdefined(LK, :PL_yielded)`: it FAILS, loudly, in CI as long as the VM yield is absent; it is never skipped and
 #     never a vacuous pass. Nothing is removed when the VM step lands: the rows then run.
+#   * The ev rows (the thread events of pl-event.c, raised by freePrologThread, pl-thread.c:723-775, when an engine is destroyed or
+#     finished) are read from the C the same way, with a PRELUDE (`_EN_EV_PRELUDE`: the log `evlog/1`, the listeners `ev_hook/1`, `ev_hook0/0`,
+#     `ev_with/3`). Facts: `thread_exit` (global list) gets the engine's id (alias, else the handle) and runs IN THE ENGINE (`thread_self(S)`
+#     is the engine); `this_thread_exit` (the local list of the engine's own local data: a listener made by the MAIN thread is not on it);
+#     `thread_start` is raised by start_thread (pl-thread.c:2212) alone: an engine never raises it; after a failing listener the later ones are
+#     not called; an exception of a hook is printed to Serror and cleared (engine_destroy still succeeds). Least sure: ev06 (thread_self in the
+#     hook), ev09 (swallowed exception), ev13 (term closure).
 #   * No row prints an engine handle (a blob: written `<thread>(0x..)`, `<engine>(N,0x..)` upstream): handles only meet inside `=@=`.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -382,6 +389,93 @@ const _EN_CASES = [
     )
 ]
 
+# the thread events (Q1): the prelude's log and listeners; every row's listeners are removed by `ev_with/3` (also on an error)
+const _EN_EV_PRELUDE = raw"""
+:- dynamic evlog/1, ev_keep/1.
+ev_hook(T) :- assertz(evlog(T)).
+ev_hook0 :- assertz(evlog(this)).
+ev_hook_self(T) :- thread_self(S), assertz(evlog(T-S)).
+ev_hook_fail(_) :- fail.
+ev_hook_throw(_) :- throw(oops).
+ev_tag(Tag, T) :- assertz(evlog(Tag-T)).
+ev_on([], _).
+ev_on([H-O|T], Ev) :- prolog_listen(Ev, H, O), ev_on(T, Ev).
+ev_off([], _).
+ev_off([H-_|T], Ev) :- prolog_unlisten(Ev, H), ev_off(T, Ev).
+ev_with(Ev, Specs, Goal) :-
+    retractall(evlog(_)),
+    setup_call_cleanup(ev_on(Specs, Ev), once(Goal), ev_off(Specs, Ev)).
+"""
+
+# rows: (id, setup, goal, expected, live); `L` is the log after the goal
+const _EN_EV_CASES = [
+    (
+        "ev01", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook-[]], ( engine_next(E,_), engine_destroy(E) )), findall(T, evlog(T), L), ( L = [E1], E1 == E -> R0 = same ; R0 = L )",
+        "same", true
+    ),
+    (
+        "ev02", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook-[]], engine_next(E,_)), findall(T, evlog(T), L), R0 = L",
+        "[]", true
+    ),
+    (
+        "ev03", "engine_create(X, X = a, E)",
+        "ev_with(thread_exit, [ev_hook-[]], engine_next(E,_)), findall(T, evlog(T), L), ( L = [E1], E1 == E -> R0 = same ; R0 = L )",
+        "same", true
+    ),
+    (
+        "ev04", "engine_create(X, member(X,[a,b]), E1), engine_create(Y, member(Y,[a,b]), E2)",
+        "ev_with(thread_exit, [ev_hook-[]], ( engine_destroy(E2), engine_destroy(E1) )), findall(T, evlog(T), L), ( L = [A,B], A == E2, B == E1 -> R0 = same ; R0 = L )",
+        "same", true
+    ),
+    (
+        "ev05", "engine_create(X, member(X,[a,b]), E, [alias(ev_al)])",
+        "ev_with(thread_exit, [ev_hook-[]], engine_destroy(E)), findall(T, evlog(T), L), R0 = L",
+        "[ev_al]", true
+    ),
+    (
+        "ev06", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook_self-[]], engine_destroy(E)), findall(T, evlog(T), L), ( L = [A-B], A == E, B == E -> R0 = same ; R0 = L )",
+        "same", true
+    ),
+    (
+        "ev07", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(this_thread_exit, [ev_hook0-[]], engine_destroy(E)), findall(T, evlog(T), L), R0 = L",
+        "[]", true
+    ),
+    (
+        "ev08", "retractall(evlog(_)), engine_create(X, ( prolog_listen(this_thread_exit, ev_hook0), member(X,[a,b]) ), E)",
+        "engine_next(E,_), engine_destroy(E), findall(T, evlog(T), L), R0 = L",
+        "[this]", true
+    ),
+    (
+        "ev09", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook_throw-[]], engine_destroy(E)), R0 = done",
+        "done", true
+    ),
+    (
+        "ev10", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook-[], ev_hook_fail-[as(first)]], engine_destroy(E)), findall(T, evlog(T), L), R0 = L",
+        "[]", true
+    ),
+    (
+        "ev11", "true",
+        "ev_with(thread_start, [ev_hook-[]], ( engine_create(X, member(X,[a,b]), E), engine_next(E,_), engine_destroy(E) )), findall(T, evlog(T), L), R0 = L",
+        "[]", true
+    ),
+    (
+        "ev12", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_tag(x)-[]], engine_destroy(E)), findall(T, evlog(T), L), ( L = [x-E1], E1 == E -> R0 = same ; R0 = L )",
+        "same", true
+    ),
+    (
+        "ev13", "engine_create(X, member(X,[a,b]), E)",
+        "ev_with(thread_exit, [ev_hook-[], ev_tag(y)-[as(last)]], engine_destroy(E)), findall(T, evlog(T), L), ( L = [A, y-B], A == E, B == E -> R0 = same ; R0 = L )",
+        "same", true
+    )
+]
+
 # rows that need the VM yield (I_YIELD and its resume): their own testset, which fails loudly when the yield is absent
 const _EN_YIELD_CASES = [
     (
@@ -395,9 +489,9 @@ const _EN_YIELD_CASES = [
     )
 ]
 
-"The program of `cases`: one clause `ck_<id>(R)` per row (R is `ok`, or `bad(Got)`)."
-function _en_program(cases)::String
-    return join(
+"The program of `cases`: the `prelude`, then one clause `ck_<id>(R)` per row (R is `ok`, or `bad(Got)`)."
+function _en_program(cases; prelude::String="")::String
+    return prelude * join(
         [
             "ck_$(c[1])(R) :- $(c[2]), ( catch(($(c[3])), error(SsuE, _), R0 = raised(SsuE)) -> true ; R0 = failed ), " *
             "( R0 =@= ($(c[4])) -> R = ok ; R = bad(R0) ).\n" for c in cases
@@ -408,9 +502,9 @@ end
 "The line a passing row gives: the driver's `enc` of `ck_<id>(ok)`."
 _en_ok_line(id) = "ck_$id c$(_en_codes("ck_$id"))/1(a[111,107])"
 
-function _en_file(cases)::Tuple{String, Vector{String}}
+function _en_file(cases; prelude::String="")::Tuple{String, Vector{String}}
     f = joinpath(mktempdir(), "engines.pl")
-    write(f, _en_program(cases))
+    write(f, _en_program(cases; prelude))
     return f, ["ck_$(c[1])" for c in cases]
 end
 
@@ -461,8 +555,8 @@ function _en_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-function _en_check(cases)
-    f, names = _en_file(cases)
+function _en_check(cases; prelude::String="")
+    f, names = _en_file(cases; prelude)
     kl, gd, ld = _en_kernel(f, names)
     @test kl[1] == "ok"
     @test length(kl) == length(cases) + 1
@@ -476,6 +570,59 @@ end
 
 @testset "engines as pl-thread.c's (C-derived rows, kernel)" begin
     _en_check(_EN_CASES)
+end
+
+@testset "the thread events (C-derived rows, kernel)" begin
+    _en_check(_EN_EV_CASES; prelude=_EN_EV_PRELUDE)
+end
+
+@testset "the thread events: the table and the raise paths (white-box)" begin
+    # the event table of the O_ENGINES build (pl-event.c:80-95): twelve rows, in upstream's order, the id the row's index
+    @test length(LK.PL_events) == 12
+    @test [et.name for et in LK.PL_events] == [
+        :abort, :erase, :erase, :break, :break, :break, :break, :frame_finished, :untable,
+        :thread_start, :thread_exit, :this_thread_exit
+    ]
+    @test all(i -> LK.PL_events[i].id == i - 1, 1:12)
+    @test [et.argc for et in LK.PL_events][10:12] == [1, 1, 0]
+    @test [et.local_ for et in LK.PL_events] == vcat(fill(false, 11), [true])
+    # thread_start has no raise site for an engine: raise it by hand with an engine's record (the value `unify_thread_id` puts)
+    prelude = _EN_EV_PRELUDE * """
+    ck_evs1(ok) :- retractall(evlog(_)), engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_start, ev_hook).
+    ck_evs2(R) :- ev_keep(E), findall(T, evlog(T), L), ( L = [T1], T1 == E -> R = ok ; R = bad(L) ).
+    """
+    f = joinpath(mktempdir(), "evs.pl")
+    write(f, prelude)
+    gd, ld, st = _en_load(f)
+    @test st == "ok"
+    @test _en_ask(gd, ld, "ck_evs1") == _en_ok_line("evs1")
+    i = findfirst(!isnothing, gd.thread.infos)
+    @test i !== nothing
+    info = gd.thread.infos[i]
+    @test LK.callEventHook(gd, ld, LK.PLEV_THREAD_START, info)
+    @test _en_ask(gd, ld, "ck_evs2") == _en_ok_line("evs2")
+end
+
+@testset "the thread events: a hook that raises is reported on the engine's messages and cleared (white-box)" begin
+    prelude = _EN_EV_PRELUDE * """
+    ck_evs3a(ok) :- engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_exit, ev_hook_throw).
+    ck_evs3b(ok) :- ev_keep(E), engine_destroy(E).
+    """
+    f = joinpath(mktempdir(), "evs3.pl")
+    write(f, prelude)
+    gd, ld, st = _en_load(f)
+    @test st == "ok"
+    @test _en_ask(gd, ld, "ck_evs3a") == _en_ok_line("evs3a")
+    i = findfirst(!isnothing, gd.thread.infos)
+    @test i !== nothing
+    eld = gd.thread.infos[i].thread_data
+    @test _en_ask(gd, ld, "ck_evs3b") == _en_ok_line("evs3b")        # engine_destroy/1 succeeds
+    @test gd.thread.infos[i] === nothing
+    @test any(
+        m -> m[1] === :error && kind(m[2]) === SYM && occursin("thread_finished", sym_text(m[2])),
+        eld.messages
+    )
+    @test eld.exception_term == 0                                      # the exception was cleared
 end
 
 @testset "engine_yield/1 rows (need the VM yield: FAILS until the VM step lands)" begin
@@ -509,13 +656,13 @@ end
 end
 
 @testset "the engine rows are not vacuous" begin
-    allc = vcat(_EN_CASES, _EN_YIELD_CASES)
+    allc = vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES)
     ids = [c[1] for c in allc]
     @test length(unique(ids)) == length(ids)
     for c in allc
         @test !isempty(c[3]) && !isempty(c[4]) && c[4] != "_"    # a row whose expectation cannot fail
     end
-    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp")
+    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp", "ev")
         @test any(startswith(id, fam) for id in ids)
     end
     @test count(c -> !c[5], _EN_CASES) == 3             # the three named divergences (dv1-dv3) are the only kernel-only rows
@@ -527,8 +674,8 @@ end
     if swipl === nothing
         @info "ENGINES LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES))
-        f, names = _en_file(live)
+        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES))
+        f, names = _en_file(live; prelude=_EN_EV_PRELUDE)
         lines = _en_swipl_lines(f, names)
         @test length(lines) == length(live) + 1
         @test lines[1] == "ok"
