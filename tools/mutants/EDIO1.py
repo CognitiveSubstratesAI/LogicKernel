@@ -3,13 +3,14 @@
 # telling/1, told/0, do_tell, findStreamFromFile and the IO_SEE / IO_TELL stream-context flags), run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as LANED2.py): `id`, `file`, `old` (must occur EXACTLY once), `new` (!= old),
 # optional `equivalent` (the reason, file:line), `targets`.
-# Killed by test/core_lang/test_edinburgh_io_swipl.jl (rows e001-e060) and test/core_lang/test_lane_d_swipl.jl (d070-d097; its own list is LANED2.py:
+# Killed by test/core_lang/test_edinburgh_io_swipl.jl (rows e001-e061) and test/core_lang/test_lane_d_swipl.jl (d070-d097; its own list is LANED2.py:
 # the ids here name the rows that kill the mutant FIRST). pl_see is also called by the loader (compileFile: src/pl-qlf.jl), so the targets add
 # every test file that loads a file or reads the boot image (D-0238: a list names
 # EVERY test file that exercises the mutated code). Verdicts: written by the battery, not yet run. UNTESTED: nothing was compiled.
 # Every `old` was counted exactly once in src/os/pl-file.jl at wip/edinburgh-io by `python3 -I tools/mutants/EDIO1.py --check` (a text count, no Julia);
 # RE-FIT any that fmt rewraps.
-# RECORDED EQUIVALENT (declared in the list, so the driver does not count it as a survivor): EDIO1-12.
+# RECORDED EQUIVALENT: none in the list. (EDIO1-12 was declared equivalent on the reading that no output stream carries SIO_NOFEOF; row e061 refutes it:
+# set_stream/2 on an ALIAS reaches set_stream() with no SS_READ test, so an output stream can carry it, and told then keeps it open.)
 # NOT LISTED (equivalent, read not run): `setStreamContextFlag`'s `| flag` -> `= flag`: a stream is flagged once, at its opening by see/1 or by
 # tell/1, never both, so there is no earlier flag to keep (src/os/pl-file.jl pl_see / do_tell: the only two callers). `freeStream`'s
 # `delete!(gd.stream_context_flags, ...)`: a closed stream's table entry is `nothing`, findStreamFromFile skips it, and a new stream gets a new context
@@ -58,11 +59,9 @@ MUTANTS = [
     dict(id="EDIO1-11 tell/1's open failure is not returned: the nothing reaches setStreamContextFlag (KILL: e043, e044)", file=F, targets=TL,
          old="    s = openStream(ld, f, mode, 0)\n    s === nothing && return false\n\n    setStreamContextFlag(gd, s, IO_TELL)",
          new="    s = openStream(ld, f, mode, 0)\n\n    setStreamContextFlag(gd, s, IO_TELL)"),
-    dict(id="EDIO1-12 told/0 closes a stream that ignores end of file: EQUIVALENT", file=F, targets=TL,
+    dict(id="EDIO1-12 told/0 closes a stream that ignores end of file: the SIO_NOFEOF early return is dropped (KILL: e061)", file=F, targets=TL,
          old="    popOutputContext(ld)\n\n    s !== nothing && (s.flags & SIO_NOFEOF) != 0 && return FTRUE\n",
-         new="    popOutputContext(ld)\n\n",
-         equivalent="src/os/pl-file.jl:4079 `(:eof_action, SS_READ)`: set_stream/2 applies eof_action to the read side only (upstream pl-file.c set_stream's SS_READ test), "
-                    "open/4 sets it for how == 'r' only (pl-file.jl:1190), so no OUTPUT stream carries SIO_NOFEOF; e059 pins that on the pin"),
+         new="    popOutputContext(ld)\n\n"),
     dict(id="EDIO1-13 see/1's argument error is not returned: the nothing reaches get_stream_handle (KILL: e012, e013)", file=F, targets=TL,
          old="    a = PL_get_atom_ex(ld, f)\n    a === nothing && return false\n\n    s = get_stream_handle(ld, a, SH_ALIAS | SH_UNLOCKED)\n",
          new="    a = PL_get_atom_ex(ld, f)\n\n    s = get_stream_handle(ld, a, SH_ALIAS | SH_UNLOCKED)\n"),
