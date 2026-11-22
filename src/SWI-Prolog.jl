@@ -593,3 +593,110 @@ const PL_CREATE_THREAD_LOCAL = 0x0010
 # PORT: SWI-Prolog.h PL_CREATE_INCREMENTAL
 "`PL_assert()` flag: create the predicate incremental, for incremental tabling (SWI-Prolog.h:499 at 18168e629eab)."
 const PL_CREATE_INCREMENTAL = 0x0020
+
+# FLI-API16 (pl-fli.c PL_action, PL_query, PL_version_info): the action, query and version selectors (SWI-Prolog.h:1333-1393, 18168e629eab)
+# PORT: SWI-Prolog.h PL_ACTION_TRACE
+"`PL_action`: switch to trace mode (SWI-Prolog.h)."
+const PL_ACTION_TRACE = 1
+# PORT: SWI-Prolog.h PL_ACTION_DEBUG
+"`PL_action`: switch to debug mode (SWI-Prolog.h)."
+const PL_ACTION_DEBUG = 2
+# PORT: SWI-Prolog.h PL_ACTION_BACKTRACE
+"`PL_action`: show a backtrace (stack dump) (SWI-Prolog.h)."
+const PL_ACTION_BACKTRACE = 3
+# PORT: SWI-Prolog.h PL_ACTION_BREAK
+"`PL_action`: create a break environment (SWI-Prolog.h)."
+const PL_ACTION_BREAK = 4
+# PORT: SWI-Prolog.h PL_ACTION_HALT
+"`PL_action`: halt Prolog execution (SWI-Prolog.h)."
+const PL_ACTION_HALT = 5
+# PORT: SWI-Prolog.h PL_ACTION_ABORT
+"`PL_action`: generate a Prolog abort (SWI-Prolog.h)."
+const PL_ACTION_ABORT = 6
+# PORT: SWI-Prolog.h PL_ACTION_WRITE
+"`PL_action`: write via the Prolog i/o buffer (SWI-Prolog.h)."
+const PL_ACTION_WRITE = 8
+# PORT: SWI-Prolog.h PL_ACTION_FLUSH
+"`PL_action`: flush the Prolog i/o buffer (SWI-Prolog.h)."
+const PL_ACTION_FLUSH = 9
+# PORT: SWI-Prolog.h PL_ACTION_GUIAPP
+"`PL_action`: Win32: set when this is a gui (SWI-Prolog.h)."
+const PL_ACTION_GUIAPP = 10
+# PORT: SWI-Prolog.h PL_ACTION_ATTACH_CONSOLE
+"`PL_action`: MT: attach a console (SWI-Prolog.h)."
+const PL_ACTION_ATTACH_CONSOLE = 11
+# PORT: SWI-Prolog.h PL_GMP_SET_ALLOC_FUNCTIONS
+"`PL_action`: GMP: do not change the allocation functions (SWI-Prolog.h)."
+const PL_GMP_SET_ALLOC_FUNCTIONS = 12
+# PORT: SWI-Prolog.h PL_ACTION_TRADITIONAL
+"`PL_action`: set --traditional (SWI-Prolog.h)."
+const PL_ACTION_TRADITIONAL = 13
+# PORT: SWI-Prolog.h PL_VERSION_SYSTEM
+"`PL_version_info`: the Prolog version (SWI-Prolog.h)."
+const PL_VERSION_SYSTEM = 1
+# PORT: SWI-Prolog.h PL_VERSION_FLI
+"`PL_version_info`: the PL_* compatibility version (SWI-Prolog.h)."
+const PL_VERSION_FLI = 2
+# PORT: SWI-Prolog.h PL_VERSION_REC
+"`PL_version_info`: the PL_record_external() compatibility version (SWI-Prolog.h)."
+const PL_VERSION_REC = 3
+# PORT: SWI-Prolog.h PL_VERSION_QLF
+"`PL_version_info`: the saved QLF format version (SWI-Prolog.h)."
+const PL_VERSION_QLF = 4
+# PORT: SWI-Prolog.h PL_VERSION_QLF_LOAD
+"`PL_version_info`: the minimum loadable QLF format version (SWI-Prolog.h)."
+const PL_VERSION_QLF_LOAD = 5
+# PORT: SWI-Prolog.h PL_VERSION_VM
+"`PL_version_info`: the VM signature (SWI-Prolog.h)."
+const PL_VERSION_VM = 6
+# PORT: SWI-Prolog.h PL_VERSION_BUILT_IN
+"`PL_version_info`: the built-in predicate signature (SWI-Prolog.h)."
+const PL_VERSION_BUILT_IN = 7
+# PORT: SWI-Prolog.h PL_QUERY_ARGC
+"`PL_query`: main()'s argc (SWI-Prolog.h)."
+const PL_QUERY_ARGC = 1
+# PORT: SWI-Prolog.h PL_QUERY_ARGV
+"`PL_query`: main()'s argv (SWI-Prolog.h)."
+const PL_QUERY_ARGV = 2
+# PORT: SWI-Prolog.h PL_QUERY_GETC
+"`PL_query`: read a character from the terminal (SWI-Prolog.h)."
+const PL_QUERY_GETC = 5
+# PORT: SWI-Prolog.h PL_QUERY_MAX_INTEGER
+"`PL_query`: the largest integer (SWI-Prolog.h)."
+const PL_QUERY_MAX_INTEGER = 6
+# PORT: SWI-Prolog.h PL_QUERY_MIN_INTEGER
+"`PL_query`: the smallest integer (SWI-Prolog.h)."
+const PL_QUERY_MIN_INTEGER = 7
+# PORT: SWI-Prolog.h PL_QUERY_MAX_TAGGED_INT
+"`PL_query`: the largest tagged integer (SWI-Prolog.h)."
+const PL_QUERY_MAX_TAGGED_INT = 8
+# PORT: SWI-Prolog.h PL_QUERY_MIN_TAGGED_INT
+"`PL_query`: the smallest tagged integer (SWI-Prolog.h)."
+const PL_QUERY_MIN_TAGGED_INT = 9
+# PORT: SWI-Prolog.h PL_QUERY_VERSION
+"`PL_query`: the version, 207006 = 2.7.6 (SWI-Prolog.h)."
+const PL_QUERY_VERSION = 10
+# PORT: SWI-Prolog.h PL_QUERY_MAX_THREADS
+"`PL_query`: the maximum thread count (SWI-Prolog.h)."
+const PL_QUERY_MAX_THREADS = 11
+# PORT: SWI-Prolog.h PL_QUERY_ENCODING
+"`PL_query`: the I/O encoding (SWI-Prolog.h)."
+const PL_QUERY_ENCODING = 12
+# PORT: SWI-Prolog.h PL_QUERY_USER_CPU
+"`PL_query`: the user CPU time in milliseconds (SWI-Prolog.h)."
+const PL_QUERY_USER_CPU = 13
+# PORT: SWI-Prolog.h PL_QUERY_HALTING
+"`PL_query`: true if the system is in PL_cleanup() (SWI-Prolog.h)."
+const PL_QUERY_HALTING = 14
+# PORT: SWI-Prolog.h PL_FLI_VERSION
+"The version of the PL_*() functions (SWI-Prolog.h:79, 18168e629eab): `PL_version_info(PL_VERSION_FLI)` (SWI-Prolog.h)."
+const PL_FLI_VERSION = 2
+# PORT: SWI-Prolog.h PL_REC_VERSION
+"The version of PL_record_external() and fastrw (SWI-Prolog.h:80, 18168e629eab): `PL_version_info(PL_VERSION_REC)` (SWI-Prolog.h)."
+const PL_REC_VERSION = 3
+# PORT: SWI-Prolog.h PL_QLF_LOADVERSION
+"The oldest QLF version loaded (SWI-Prolog.h:81, 18168e629eab): `PL_version_info(PL_VERSION_QLF_LOAD)`; the oracle's `--abi-version` carries it (SWI-Prolog.h)."
+const PL_QLF_LOADVERSION = 68
+# PORT: SWI-Prolog.h PL_QLF_VERSION
+"The QLF version saved (SWI-Prolog.h:82, 18168e629eab): `PL_version_info(PL_VERSION_QLF)` (SWI-Prolog.h)."
+const PL_QLF_VERSION = 72

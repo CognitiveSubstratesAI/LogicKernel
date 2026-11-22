@@ -628,6 +628,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since FLI-API16: `fli_SP_state` (`LD->fli.SP_state`, pl-global.h; `SP_set_state`, `SP_get_state`: src/pl-fli.jl), placed after `bags`: upstream's `fli` struct follows `bags` (pl-global.h:820-830), so the positional constructor `_bare_local_data` has its entry there.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -757,6 +758,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
+    fli_SP_state::Int                                           # fli.SP_state: the Quintus/SICStus state `SP_set_state` stores (FLI-API16)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
     retract_ctxbuf::retract_context{T}                          # (retract/1's C-stack `ctxbuf`)
@@ -886,6 +888,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
+        0,                                      # fli.SP_state: 0 (pl-global.c: zero; FLI-API16)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
         retract_context{T}(),                   # retract/1's first-call buffer
