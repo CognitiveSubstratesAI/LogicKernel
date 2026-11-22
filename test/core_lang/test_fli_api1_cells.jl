@@ -1369,10 +1369,22 @@ function _fa_cout(ld, f)
     return rc, buf[] === nothing ? "" : String(copy(buf[][1:sz[]]))
 end
 
-"A database with the seam off (`halt_exit` false): `(gd, ld)`."
-function _fa_hdb()
-    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+"""
+A database (with the clauses `rows`) with the seam off (`halt_exit` false) and the three standard streams in memory, so that a mutant
+reaching `PL_halt` or `_fli_sys_error` neither ends the test process nor a mutant reaching `pl_break` or PL_QUERY_GETC reads the real stdin.
+"""
+function _fa_hdb0(rows::Vector{Tuple{_R, Union{Nothing, _R}}}=Tuple{_R, Union{Nothing, _R}}[])
+    db = _rdb(rows)
     db.gd.halt_exit = false
+    LK.set_standard_stream!(db.ld, LK.SNO_USER_INPUT, IOBuffer())
+    LK.set_standard_stream!(db.ld, LK.SNO_USER_OUTPUT, IOBuffer())
+    LK.set_standard_stream!(db.ld, LK.SNO_USER_ERROR, IOBuffer())
+    return db
+end
+
+"`(gd, ld)` of `_fa_hdb0()`."
+function _fa_hdb()
+    db = _fa_hdb0()
     return db.gd, db.ld
 end
 
@@ -1417,7 +1429,8 @@ end
 # LK-ONLY (pl-fli.c:6046-6098): PL_query, arm by arm. swipl: max_tagged_integer 72057594037927935, min_tagged_integer
 # -72057594037927936, version 100120, encoding utf8. The USER_CPU row is a sandwich (the clock moves between two reads).
 @testset "LK-ONLY: PL_query (pl-fli.c:6046)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
+    ld.IO_streams[LK.SNO_USER_INPUT + 1] = nothing                                   # no user_input unless a row sets one
     Q = (q) -> LK.PL_query(gd, ld, q)
     gd.cmdline.appl_argv = ["a", "b", "c"]
     @test Q(LK.PL_QUERY_ARGC) === 3
@@ -1445,6 +1458,9 @@ end
     @test (Q(LK.PL_QUERY_GETC), Q(LK.PL_QUERY_GETC), Q(LK.PL_QUERY_GETC)) === (97, 98, -1)
     ld.IO_streams[LK.SNO_USER_INPUT + 1] = nothing
     @test Q(LK.PL_QUERY_GETC) === -1
+    # no arm above is the default arm: no system error was reported, the seam recorded no exit
+    @test isempty(gd.halt_exited)
+    @test LK._FLI_SYS_ACTIVE[] == 0
 end
 
 # LK-ONLY (pl-fli.c:6093, pl-init.c:2241-2284): an unknown query is sysError("PL_query: Illegal query: %d"): "ERROR: system error: " and the
@@ -1464,10 +1480,10 @@ end
 
 # LK-ONLY (pl-fli.c:5935-6039, PL_ACTION_TRACE/DEBUG :5942-5947): TRACE is pl_trace(): trace and debug mode on; DEBUG is debug mode only.
 @testset "LK-ONLY: PL_action TRACE and DEBUG (pl-fli.c:5942)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
     @test LK.PL_action(gd, ld, LK.PL_ACTION_DEBUG) === true
     @test ld.debugstatus_debugging && !ld.debugstatus_tracing
-    gd2, ld2 = _fa_db()
+    gd2, ld2 = _fa_hdb()
     @test LK.PL_action(gd2, ld2, LK.PL_ACTION_TRACE) === true
     @test ld2.debugstatus_debugging && ld2.debugstatus_tracing
 end
@@ -1475,22 +1491,27 @@ end
 # LK-ONLY (pl-fli.c:5948-5972): BACKTRACE while booting prints "\n[Cannot print stack while initialising]\n" to user_error and is false;
 # outside the boot the backtrace is PL_backtrace, DBG1's (NotPortedError).
 @testset "LK-ONLY: PL_action BACKTRACE (pl-fli.c:5948)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
     gd.bootsession = true
     @test _fa_uerr(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)) ==
           (false, "\n[Cannot print stack while initialising]\n")
     gd.bootsession = false
     @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)
+    # the refusal names the call with the depth the caller passed (PL_backtrace(a, 0), pl-fli.c:5966)
+    ex = try
+        LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)
+        nothing
+    catch e
+        e
+    end
+    @test ex isa LK.NotPortedError && occursin("PL_backtrace(5, 0)", ex.what)
+    @test isempty(gd.halt_exited)
 end
 
 # LK-ONLY (pl-fli.c:5973-5975, pl-pro.c:285): BREAK is pl_break(): the answer of the nested `$query_loop` goal in `system` (a fact: true, fail: false).
 @testset "LK-ONLY: PL_action BREAK (pl-fli.c:5973)" begin
     for (body, want) in ((nothing, true), (_rs(:fail), false))
-        db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
-        db.gd.halt_exit = false
-        LK.set_standard_stream!(db.ld, LK.SNO_USER_INPUT, IOBuffer())
-        LK.set_standard_stream!(db.ld, LK.SNO_USER_OUTPUT, IOBuffer())
-        LK.set_standard_stream!(db.ld, LK.SNO_USER_ERROR, IOBuffer())
+        db = _fa_hdb0()
         _fa_sys!(db, Symbol("\$query_loop"), body)
         @test LK.PL_action(db.gd, db.ld, LK.PL_ACTION_BREAK) === want
     end
@@ -1498,7 +1519,7 @@ end
 
 # LK-ONLY (pl-fli.c:5983-5985, pl-pro.c abortProlog): ABORT is abortProlog(): false, with unwind(abort) pending.
 @testset "LK-ONLY: PL_action ABORT (pl-fli.c:5983)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
     @test LK.PL_action(gd, ld, LK.PL_ACTION_ABORT) === false
     ex = ld.exception_term
     @test ex != 0
@@ -1511,7 +1532,7 @@ end
 # LK-ONLY (pl-fli.c:5986-5993, :6014-6029): GUIAPP stores a Win32 flag: true; TRADITIONAL is setTraditional(): NotPortedError (SWI-7 only);
 # PL_GMP_SET_ALLOC_FUNCTIONS: initGMP ran at setupProlog (pl-setup.c:166), so `else { rval = false; }` whatever the argument.
 @testset "LK-ONLY: PL_action GUIAPP, TRADITIONAL, GMP_SET_ALLOC_FUNCTIONS (pl-fli.c:5986)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
     @test LK.PL_action(gd, ld, LK.PL_ACTION_GUIAPP, 1) === true
     @test LK.PL_action(gd, ld, LK.PL_ACTION_GUIAPP, 0) === true
     @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_TRADITIONAL)
@@ -1523,12 +1544,21 @@ end
 # by Sputcode (so the two UTF-8 bytes of "é", C3 A9, are two characters, "Ã©": the row that tells Sputcode from Sputc); FLUSH is
 # Sflush(Scurout) == 0; with no current output both are false (DIVERGES: upstream would dereference NULL).
 @testset "LK-ONLY: PL_action WRITE and FLUSH (pl-fli.c:5994)" begin
-    gd, ld = _fa_db()
+    gd, ld = _fa_hdb()
     W = (s) -> _fa_cout(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, s))
     @test W("ab") == (true, "ab")
     @test W("") == (true, "")
     @test W("é") == (true, "Ã©")
     @test W("a\0b") == (true, "a")
+    # a stream error ends it: an ASCII stream cannot represent C3 (put_code -> reperror, no SIO_REP* flag on a memory stream:
+    # Sputcode -1, Sfputs EOF, pl-stream.c:2395-2402); the byte before it was written
+    @test _fa_cout(ld, () -> begin
+        ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1].encoding = LK.ENC_ASCII
+        LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "aé")
+    end) == (false, "a")
+    # Sfputs of a missing stream (DIVERGES: upstream would dereference NULL) is EOF, -1
+    @test LK._fli_sfputs(nothing, "a") === -1
+    @test LK._fli_sfputs(nothing, "") === -1
     @test _fa_cout(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_FLUSH)) == (true, "")
     ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1] = nothing
     @test LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "ab") === false
@@ -1538,8 +1568,11 @@ end
 # LK-ONLY (pl-fli.c:6005-6012, pl-thread.c:7027): ATTACH_CONSOLE (O_PLMT) is attachConsole(): user:attach_console/0 called with PL_Q_NODEBUG; its answer.
 @testset "LK-ONLY: PL_action ATTACH_CONSOLE (pl-fli.c:6005)" begin
     for (body, want) in ((nothing, true), (_rs(:fail), false))
-        db = _rdb(Tuple{_R, Union{Nothing, _R}}[(_rs("attach_console"), body)])
+        db = _fa_hdb0(Tuple{_R, Union{Nothing, _R}}[(_rs("attach_console"), body)])
+        before = LK.PL_new_term_refs(db.ld, 0)
         @test LK.PL_action(db.gd, db.ld, LK.PL_ACTION_ATTACH_CONSOLE) === want
+        @test LK.PL_new_term_refs(db.ld, 0) == before                                # the foreign frame is discarded (pl-thread.c:7035)
+        @test isempty(db.gd.halt_exited)
     end
 end
 
@@ -1553,6 +1586,24 @@ end
         @test gd.halt_exited == [134]
         @test LK._FLI_SYS_ACTIVE[] == 0
     end
+end
+
+# LK-ONLY (pl-init.c:2111-2121, :2241-2284): sysError is vsysError and false: the function itself answers false on both paths (the first
+# report, and a second one while one is reported: abort() alone); the callers above hide it (PL_query answers 0, PL_action false by themselves).
+@testset "LK-ONLY: _fli_sys_error answers false (pl-init.c:2111)" begin
+    gd, ld = _fa_hdb()
+    rc, text = _fa_uerr(ld, () -> LK._fli_sys_error(gd, ld, "x"))
+    @test rc === false
+    @test text == "\nERROR: system error: x\n"
+    @test gd.halt_exited == [134]
+    @test LK._FLI_SYS_ACTIVE[] == 0
+    gd2, ld2 = _fa_hdb()
+    LK._FLI_SYS_ACTIVE[] = 1
+    rc2, text2 = _fa_uerr(ld2, () -> LK._fli_sys_error(gd2, ld2, "x"))
+    @test rc2 === false
+    @test text2 == ""
+    @test gd2.halt_exited == [134]
+    @test LK._FLI_SYS_ACTIVE[] == 0
 end
 
 # LK-ONLY (pl-fli.c:5976-5981): HALT is PL_halt(a) and false: with the seam off the clean-up runs on this engine, the seam records the status,
