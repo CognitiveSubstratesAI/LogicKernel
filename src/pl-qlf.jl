@@ -240,7 +240,7 @@ function compileFile(
         return false
     end
     sf = lookupSourceFile(gd, nf, true)::SourceFile{T}
-    startConsult(sf)
+    startConsult(gd, ld, sf)
     st = stat(path)                                 # LastModifiedFile(path, &sf->mtime)
     if ispath(st)
         sf.mtime = st.mtime
