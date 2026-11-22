@@ -53,7 +53,8 @@ t0(R) :-
           functor([], N, A, atomic),
           functor([a|b], N, A, T),
           functor([a|b], N, A, callable),
-          functor('hello world', N, A, T)
+          functor('hello world', N, A, T),
+          ( put_attr(Xa, dwm, 1), functor(Xa, N, A, T) )
         ], R).
 
 % functor/4: a zero-arity compound, and the Type argument that is no atom
