@@ -2784,9 +2784,11 @@ function _manifest_index(T)
                 LK.pl_b_set_dict3_va, LK.pl_nb_set_dict3_va, LK.pl_nb_link_dict3_va,
                 LK.pl_dict_pairs3_va, LK.pl_del_dict4_va, LK.pl_unify_left_dict2_va,
                 LK.pl_punify_dict2_va, LK.pl_dict_same_keys2_va, LK.pl_get_dict_kv4_va,
-                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va
+                LK.pl_get_dict_kv6_va, LK.pl_get_dict_kv8_va, LK.pl_btree_find_node5_va
             )
         ]...,
+        # DICT-REC — src/pl-btree.jl's btree_find_node
+        (LK.btree_find_node, Tuple{LD, Int, Int, Int, Int, Int}, false),
         # RDDICT — the reader's dict branch (src/pl-read.jl), dict_order_term_refs (src/pl-dict.jl) and the
         # var_tag flag helpers (src/os/pl-prologflag.jl)
         (LK.is_key_token, Tuple{LK.token{T}, LK.read_data{T}}, false),
