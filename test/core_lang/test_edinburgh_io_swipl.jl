@@ -1,12 +1,14 @@
 # ORIGINAL: Edinburgh I/O (EDIO1): see/1, seen/0, seeing/1, tell/1, append/1, telling/1, told/0 against swipl 10.1.20 (pin 18168e62), pl-file.c:4465-4645; UNTESTED when written (nothing compiled)
-# test/core_lang/test_edinburgh_io_swipl.jl — the rows e001-e057 the lane D file (test_lane_d_swipl.jl, d070-d097) does not pin: nested see/tell and the context
+# test/core_lang/test_edinburgh_io_swipl.jl — the rows e001-e060 the lane D file (test_lane_d_swipl.jl, d070-d097) does not pin: nested see/tell and the context
 #   stack, see/tell on `user`, `user_input` and stream blobs, seen/told with nothing to close, a stream left open by set_input/set_output and found again by
 #   findStreamFromFile, the IO_SEE/IO_TELL flags kept apart (tell(F) of a file open for see, open/3 of a file then tell), append/1 on a missing file, tell/1
 #   truncating, a closed stream's blob, the argument errors.
+#   * e058 reads a see/1 stream kept open by eof_action(reset) (seen does not close it), e059 the same on an OUTPUT stream, where the pin's told closes it
+#     all the same (its stream_property still says eof_code); e060 reads 98, not 120: the see stream's first buffer fill precedes tell/1's rewrite.
 #   * The harness is test_lane_d_swipl.jl's: a PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database (the cases share
 #     state on purpose: e021 leaves the data file's stream open for e054), each wrapped in `catch(Goal, error(F, _), R = raised(F))` (a stream blob in F
 #     becomes '<stream>').
-#   * Every answer line is swipl's, PINNED (swipl 10.1.20-1-g18168e629, two byte-identical runs on a fresh directory, 2026-11-22, evidence/EDIO1/edio_rows.out);
+#   * Every answer line is swipl's, PINNED (swipl 10.1.20-1-g18168e629, two byte-identical runs on a fresh directory, 2026-11-22, evidence/R2/edio_rows.out);
 #     with `swipl` on PATH the live answers are compared with the pins too.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -154,10 +156,13 @@ const _ED_CASES = [
     ("e054", raw"datafile(F), outfile(G), see(F), tell(G), get_code(C), put_char(x), seen, told, outtext(T), R = C-T"),
     ("e055", raw"datafile(F), outfile(G), see(F), tell(G), seeing(A0), telling(B0), ( blob(A0, stream) -> A = stream ; A = A0 ), ( blob(B0, stream) -> B = stream ; B = B0 ), seen, told, seeing(C), telling(D), R = C-D-A-B"),
     ("e056", raw"current_output(O), outfile(F), tell(F), told, ( current_output(O2), O == O2 -> R = same ; R = diff )"),
-    ("e057", raw"current_input(O), datafile(F), see(F), seen, ( current_input(O2), O == O2 -> R = same ; R = diff )")
+    ("e057", raw"current_input(O), datafile(F), see(F), seen, ( current_input(O2), O == O2 -> R = same ; R = diff )"),
+    ("e058", raw"datafile(F), see(F), get_code(A), seeing(S), set_stream(S, eof_action(reset)), seen, see(F), get_code(B), seeing(S2), set_stream(S2, eof_action(eof_code)), seen, R = A-B"),
+    ("e059", raw"outfile(F), tell(F), write(a), telling(S), set_stream(S, eof_action(reset)), told, tell(F), write(b), told, outtext(T), R = T"),
+    ("e060", raw"outfile(F), see(F), tell(F), write(x), told, get_code(C), seen, R = C")
 ]
 
-# swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/EDIO1/edio_rows.out)
+# swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/R2/edio_rows.out)
 const _ED_PINNED = [
     "ok",
     "t_e001 c[116,95,101,48,48,49]/1(c[45]/2(i97,i97))",
@@ -208,7 +213,10 @@ const _ED_PINNED = [
     "t_e054 c[116,95,101,48,53,52]/1(c[45]/2(i97,a[120]))",
     "t_e055 c[116,95,101,48,53,53]/1(c[45]/2(c[45]/2(c[45]/2(a[117,115,101,114],a[117,115,101,114]),a[115,116,114,101,97,109]),a[115,116,114,101,97,109]))",
     "t_e056 c[116,95,101,48,53,54]/1(a[115,97,109,101])",
-    "t_e057 c[116,95,101,48,53,55]/1(a[115,97,109,101])"
+    "t_e057 c[116,95,101,48,53,55]/1(a[115,97,109,101])",
+    "t_e058 c[116,95,101,48,53,56]/1(c[45]/2(i97,i98))",
+    "t_e059 c[116,95,101,48,53,57]/1(a[98])",
+    "t_e060 c[116,95,101,48,54,48]/1(i98)"
 ]
 
 const _ED_DATA = "abc\nxyz\nlast line\n"
@@ -279,7 +287,7 @@ function _ed_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "Edinburgh I/O as swipl's (e001-e057)" begin
+@testset "Edinburgh I/O as swipl's (e001-e060)" begin
     f, names = _ed_file(mktempdir())
     kl = _ed_kernel(f, names)
     @test length(kl) == length(_ED_PINNED)
