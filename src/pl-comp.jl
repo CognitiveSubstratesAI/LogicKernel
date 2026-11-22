@@ -4788,6 +4788,75 @@ function pl_compile_predicates1_va(
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c ca1_name
+# (the `ca1_name` array, pl-comp.c:8077-8098: index `CA1_PROC` = 1 on; entry 6, `CA1_WORD`, is named `int64`)
+# a comment, not a docstring, as for every module-level constant the global-state lint reads
+const _CA1_NAMES = (
+    :proc, :lproc, :func, :data, :integer, :int64, :float, :string, :mpz, :mpq, :module, :var, :fvar,
+    :chp, :foreign, :clauseref, :jump, :afunc, :trie_node
+)
+
+# PORT: pl-comp.c lookup_vmi
+# DIVERGES: a linear walk over the kernel's declared table (`_CODE_TABLE`, src/pl-vmi.jl: upstream's `I_HIGHEST` instructions
+# in a hash table made at the first call), so an instruction the kernel does not declare is not found.
+"The `code_info` of the instruction named `name`, or `nothing` (pl-comp.c)."
+function lookup_vmi(name::T)::Union{Nothing, code_info} where {T}
+    k = sym_key(name)
+    for ci in _CODE_TABLE
+        sym_key(mk_sym(T, ci.name)) == k && return ci
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c vmi_property as pl_vmi_property2_va
+# (PRED_IMPL("$vmi_property", 2, vmi_property, 0)) — pl-comp.c:8106-8148; under `O_DEBUGGER`
+# DIVERGES: `lookup_vmi` (above); the operand kinds of the declared table are the kernel's, upstream's kinds (`argv` lists
+# them by name, `CA1_WORD` as `int64`).
+"""
+    '\$vmi_property'(+VMI, ?Property)
+
+True when `Property` holds for the VM instruction `VMI`: `break(Boolean)` (a breakable instruction) or `argv(List)`, the
+operand kinds of the instruction by name (pl-comp.c). `existence_error(vmi, VMI)` for an unknown instruction,
+`type_error(vmi_property, P)` for a property that is no `Name(Arg)` and `domain_error(vmi_property, P)` for an unknown one.
+"""
+function pl_vmi_property2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    vname = PL_get_atom_ex(ld, A1)
+    vname === nothing && return FFALSE
+    ci = lookup_vmi(vname)
+    if ci === nothing
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :vmi), A1)            # PL_existence_error("vmi", A1)
+        return FFALSE
+    end
+
+    na = PL_get_name_arity(ld, A2)
+    if na !== nothing && na[2] == 1
+        prop = na[1]
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A2, arg)
+        if sym_key(prop) == sym_key(mk_sym(T, :break))              # ATOM_break
+            return PL_unify_bool_ex(ld, arg, (ci.flags & VIF_BREAK) != 0) ? FTRUE : FFALSE
+        elseif sym_key(prop) == sym_key(mk_sym(T, :argv))           # ATOM_argv
+            tail = PL_copy_term_ref(ld, arg)
+            head = PL_new_term_ref(ld)
+            for at in ci.argtype                                    # the operand kinds, 0-padded (`VM_ARGTYPES`)
+                at == 0x00 && break
+                (PL_unify_list(ld, tail, head, tail) &&
+                 PL_unify_atom(ld, head, mk_sym(T, _CA1_NAMES[Int(at)]))) || return FFALSE
+            end
+            return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+        else
+            PL_error(ld, ERR_DOMAIN, mk_sym(T, :vmi_property), A2)   # PL_domain_error("vmi_property", A2)
+            return FFALSE
+        end
+    end
+
+    PL_error(ld, ERR_TYPE, mk_sym(T, :vmi_property), A2)            # PL_type_error("vmi_property", A2)
+    return FFALSE
+end
+
 # ── the source level debugger (pl-comp.c:8484-8900) ─────────────────────────────────────────────
 # ORIGINAL: upstream's pointer arithmetic on a `Code`: `PC + n` and `PC[n]`. The position `n` words
 # on, and the operand word `n` words on (a negative `n` reads back, as `jmploc[-1]` does).
@@ -5139,6 +5208,7 @@ const PL_predicates_from_comp = (
         "nth_clause", 3, pl_nth_clause3_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     ),
+    PL_extension("\$vmi_property", 2, pl_vmi_property2_va, PL_FA_VARARGS),  # PRED_DEF("$vmi_property", 2, vmi_property, 0)
     PL_extension(                                   # PRED_DEF("$clause_term_position", 3, clause_term_position, 0)
         "\$clause_term_position", 3, pl_clause_term_position3_va, PL_FA_VARARGS
     )

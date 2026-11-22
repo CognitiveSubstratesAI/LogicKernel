@@ -8,7 +8,7 @@
 # PORTED FROM pl-pro.c, exactly these: `callProlog` — calling a goal from foreign code, in a query
 # of its own — and `sig_atomic/1`, its first caller: boot/init.pl's `setup_call_cleanup/3` and
 # `setup_call_catcher_cleanup/4` run their Setup goal through it, as once/1; and (BOOTPRED3)
-# `'$notrace'/2` and `'$restore_trace'/2`, which boot/init.pl's notrace/1 and print_message/2 use to
+# `'$notrace'/1,2` (COMPEXT2: the call form) and `'$restore_trace'/2`, which boot/init.pl's notrace/1 and print_message/2 use to
 # switch the debugger off around a goal; since DBG1-SMALL they save and restore the debugger status of the local data
 # (`ld.debugstatus_*`, R2 F1c) and `'$notrace'/2` sets the normal run mode, as upstream does.
 #
@@ -23,7 +23,7 @@
 # Since TH1: `'$can_yield'/0`.
 #
 # Since MISS1: `'$call_no_catch'/1` (with pl-wam.c's `print_unhandled_exception`, called after the query: the VM does not print).
-# LEFT OUT: the rest of pl-pro.c — `'$notrace'/1`, the other entries of the table (pl-pro.c:1060-1069),
+# LEFT OUT: the rest of pl-pro.c — the other entries of the table (pl-pro.c:1060-1069),
 # `'$trap_gdb'/0`, the metacut `!/0` (`pl_metacut`), `checkStacks` and the C-stack queries.
 
 # PORT: pl-pro.c callProlog
@@ -302,6 +302,37 @@ function pl_notrace2_va(
     end
 
     return FFALSE
+end
+
+# PORT: pl-pro.c notrace as pl_notrace1_va
+# (PRED_IMPL("$notrace", 1, notrace, PL_FA_TRANSPARENT|PL_FA_NOTRACE), pl-pro.c:392-410 at the pin)
+# DIVERGES: `debugstatus` is the local data's `debugstatus_*` fields (as `pl_notrace2_va`); the goal is called in the context
+# module (module 0 of `callProlog`: `user` until R2) and `PL_Q_NODEBUG` is the query flag the kernel's `PL_open_query` takes.
+# `ex` is a `Ref{Int}`, as `callProlog`'s.
+"""
+    '\$notrace'(:Goal)
+
+Call `Goal` once with the debugger off for the call; the tracing status and the skip level are what they were before, whether
+`Goal` succeeds, fails or raises (pl-pro.c). An exception of `Goal` is raised again.
+"""
+function pl_notrace1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    skipSave = ld.debugstatus_skiplevel
+    traceSave = ld.debugstatus_tracing
+    ex = Ref(0)
+
+    rval = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_CATCH_EXCEPTION | PL_Q_NODEBUG, ex)
+
+    ld.debugstatus_skiplevel = skipSave
+    ld.debugstatus_tracing = traceSave
+
+    if !rval && ex[] != 0
+        return PL_raise_exception(ld, ex[]) ? FTRUE : FFALSE
+    end
+
+    return rval ? FTRUE : FFALSE
 end
 
 # PORT: pl-pro.c restoretrace as pl_restore_trace2_va
@@ -691,6 +722,10 @@ const PL_predicates_from_pro = (
     ),
     PL_extension("\$call_no_catch", 1, pl_call_no_catch1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
+    PL_extension(                               # PRED_DEF("$notrace", 1, notrace, PL_FA_TRANSPARENT|PL_FA_NOTRACE)
+        "\$notrace", 1, pl_notrace1_va,
+        PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_NOTRACE
+    ),
     PL_extension("\$restore_trace", 2, pl_restore_trace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension("\$can_yield", 0, pl_can_yield0_va, PL_FA_VARARGS),
     PL_extension("break", 0, pl_break_va, PL_FA_VARARGS)

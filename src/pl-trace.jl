@@ -1119,6 +1119,43 @@ function tracemode(
     return true
 end
 
+# PORT: pl-trace.c pl_spy
+# (FRG("$spy", 1, pl_spy, META), pl-ext.c:143; pl-trace.c:2342-2361 at the pin)
+# DIVERGES: the procedure is `get_procedure_find` (GP_FIND without GP_NAMEARITY, src/pl-proc.jl); the local data is the first
+# argument. The kernel has no tracer (DBG1): `SPY_ME` is set and read (`'$get_predicate_attribute'/3` `spy`), no call stops at it.
+"`'\$spy'(:Head)`: set a spy point on the predicate, report it and switch debug mode on (pl-trace.c)."
+function pl_spy(ld::PL_local_data{T}, p::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    proc = get_procedure_find(gd, ld, p)
+    if proc !== nothing
+        def = proc.definition
+        if (def.flags & SPY_ME) == 0                                    # isoff(def, SPY_ME)
+            def.flags |= SPY_ME
+            printMessage(ld, :informational, _message_term(ld, :spy, p)) || return FFALSE
+        end
+        return debugmode(ld, true, nothing, DBG_ALL) ? FTRUE : FFALSE   # debugmode(NULL, true, NULL, DBG_ALL)
+    end
+    return FFALSE
+end
+
+# PORT: pl-trace.c pl_nospy
+# (FRG("$nospy", 1, pl_nospy, META), pl-ext.c:144; pl-trace.c:2363-2379 at the pin)
+# DIVERGES: as `pl_spy`; the existence error of an unknown predicate is `get_procedure_find`'s (`GP_EXISTENCE_ERROR`).
+"`'\$nospy'(:Head)`: remove the spy point of the predicate and report it (pl-trace.c); an unknown predicate is an existence error."
+function pl_nospy(ld::PL_local_data{T}, p::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    proc = get_procedure_find(gd, ld, p, GP_FIND | GP_EXISTENCE_ERROR)
+    if proc !== nothing
+        def = proc.definition
+        if (def.flags & SPY_ME) != 0                                    # ison(def, SPY_ME)
+            def.flags &= ~SPY_ME
+            return printMessage(ld, :informational, _message_term(ld, :nospy, p)) ? FTRUE : FFALSE
+        end
+        return FTRUE
+    end
+    return FFALSE
+end
+
 # PORT: pl-trace.c resetTracer
 # DIVERGES: the local data is an argument (upstream's `LD`). `debugstatus.suspendTrace` and `debugstatus.retryFrame` are the
 # tracer's (DBG1) and the local data holds no field for them; the other three fields and the run mode are reset as upstream.

@@ -2145,14 +2145,14 @@ end
 
 # PORT: pl-proc.c get_procedure as get_procedure_find
 # (the `GP_FIND` case, as clause/2 asks it: `get_procedure(head, &proc, 0, GP_FIND)`)
-# DIVERGES: `GP_FIND` without `GP_NAMEARITY`, no `h` and no `GP_EXISTENCE_ERROR`, as a function of its own
-# (the generic `get_procedure` above does the same). The term is stripped of its qualifiers (`stripModuleName_cells`) and
+# DIVERGES: `GP_FIND` without `GP_NAMEARITY`, no `h`, as a function of its own (`get_procedure` above refuses it);
+# `GP_EXISTENCE_ERROR` in `how` only (COMPEXT2: `'$nospy'/1`'s). The term is stripped of its qualifiers (`stripModuleName_cells`) and
 # `get_module`'s `GP_FIND` case is inlined: the module a qualifier names if it is current (`isCurrentModule`:
 # none is created), else `user`; no qualifier, the context module (since MOD2; pl-proc.c:727-728). Not found:
 # `nothing` with no error, as upstream's `notfound` without `GP_EXISTENCE_ERROR`.
 "The defined procedure the head term `descr` (`M:Head`) names, as seen from its module, or `nothing` (pl-proc.c)."
 function get_procedure_find(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int=GP_FIND
 )::Union{Nothing, Procedure{T}} where {T}
     head = PL_new_term_ref(ld)
     ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))  # stripModuleName(valTermRef(descr), &mname)
@@ -2169,7 +2169,11 @@ function get_procedure_find(
     end
     name, arity = get_head_functor(ld, head, GP_FIND)
     arity < 0 && return nothing
-    return visibleProcedure(gd, name, arity, m)         # GP_FIND: found -> out; else notfound
+    p = visibleProcedure(gd, name, arity, m)            # GP_FIND: found -> out; else notfound
+    if p === nothing && (how & GP_EXISTENCE_ERROR) != 0
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :procedure), descr)   # notfound: ERR_EXISTENCE, ATOM_procedure, descr
+    end
+    return p
 end
 
 # PORT: pl-proc.c get_procedure as get_procedure_resolve
@@ -2181,7 +2185,7 @@ end
 # undefined procedure when none is visible, as upstream's `GP_RESOLVE` case does.
 "The procedure a dynamic call to the head term `descr` (`M:Head`) runs, created undefined when none is visible, or `nothing` (pl-proc.c)."
 function get_procedure_resolve(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int=GP_FIND
 )::Union{Nothing, Procedure{T}} where {T}
     head = PL_new_term_ref(ld)
     ok, loc, mname = stripModuleName_cells(ld, -(descr + 1))  # stripModuleName(valTermRef(descr), &mname)
