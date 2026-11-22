@@ -8,8 +8,8 @@
 #   * DIVERGES from the file: the module `test_gc` is `user`; plunit is not used.
 #   * held out: matches the D-0164 term list (class only): two further units of the file, upstream lines 141-194 and 196-218, and their lines of
 #     `test_gc/0`. They are not embedded and have no row.
-#   * KNOWN DIFFERENCES (G1-FIX-5, `_GR_KNOWN_DIFF`): t_gl01 raises existence_error(procedure, succ/2) (AR1 owns succ/2; swipl: ok). t_gl02 is NOT pinned: it answers
-#     `failed` (`Used 0+-8`: globalused one cell lower after the second collection), cause not yet proven (the kernel's void/first-var arguments are global cells).
+#   * KNOWN DIFFERENCES (G1-FIX-5, `_GR_KNOWN_DIFF`): t_gl01 raises existence_error(procedure, succ/2) (AR1 owns succ/2; swipl: ok). t_gl02 answers `failed` (`Used 0+-8`: one global cell, the void argument X
+#     of early_reset(_), live at the first collection and dead at the second; swipl keeps that cell local; pl-wam.jl B_VOID, L1c; G1-FIX-6).
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
 using Test, LogicKernel
@@ -198,10 +198,19 @@ answer (feedback: a known-difference test pins the exact answer, swipl's in the 
     AR1's: docs/r2_owners.tsv `pred:succ/2 AR1`, pl-arith.c `succ`). Kernel: `raised(existence_error(procedure, succ/2))`; swipl: `ok`.
     CHECKLIST (AR1): when `succ/2` lands, delete this entry; the row must then answer `ok` (it is the first goal that fails; whether `freeze/2` and
     `statistics(trailused, _)` then give `T < 100` is untested).
+  * `t_gl02` (gc_leak:early_reset, G1-FIX-6): `early_reset(X) :- space(T,G), length(X,10), must_space(T,G)` needs `globalused` EQUAL at its two collections. Kernel:
+    `failed`, stderr `Used 0+-8` (G0 = 192, G1 = 184, bytes); swipl: `ok`. CAUSE (representation, not liveness; probed on the warm lane, three runs each, deterministic):
+    the unbound variable X of the void argument `early_reset(_)` is a GLOBAL cell in the kernel (src/pl-wam.jl `B_VOID` / `B_ARGFIRSTVAR`: "DIVERGES ... a fresh
+    GLOBAL cell", L1c) where swipl leaves the argument an unbound LOCAL cell, so `globalused` does not count it there. X is used by `length/2` AFTER the first
+    collection, so its cell is rightly live at the first collection (G0 = 192) and dead at the second (G1 = 184 = the baseline). The collector's liveness is exact: with
+    `length/2` BEFORE the first collection (X and the list dead at both) G0 = G1 = 184; with X used after the second collection G0 = G1 = 192; without `length/2`
+    (X a singleton void) G0 = G1 = 184 (kernel probe; swipl, same program as a directive, settles at 1944 = 1944 after one warm-up call).
+    CHECKLIST (L1c, no slot is an unbound variable / void and first-var arguments become local cells): when it lands delete this entry; the row must answer `ok`.
 The swipl pins in `_GR_PINNED` stay swipl's (the live check compares them to swipl); only the kernel comparison reads this table.
 """
 const _GR_KNOWN_DIFF = Dict{String, String}(
-    "t_gl01" => "t_gl01 c[116,95,103,108,48,49]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[115,117,99,99],i2))))"
+    "t_gl01" => "t_gl01 c[116,95,103,108,48,49]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[47]/2(a[115,117,99,99],i2))))",
+    "t_gl02" => "t_gl02 c[116,95,103,108,48,50]/1(a[102,97,105,108,101,100])"
 )
 
 "The answer the UPSTREAM test expects (the row's `R = ok`), as the driver encodes it."
