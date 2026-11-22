@@ -414,6 +414,7 @@ function _manifest_index(T)
         (LK.Code, Tuple{C, Int}, true),
         (LK.decode, Tuple{PCd}, true), (LK.stepPC, Tuple{PCd}, true),
         (LK.skipArgs, Tuple{PCd, Int, Int}, true), (LK.argKey, Tuple{PCd, Int}, true),
+        (LK.prevPC, Tuple{C, PCd}, false),                   # DBG1: prolog_frame_attribute/3 (`is_meta_call`)
         (LK.indexableCompound, Tuple{PCd}, true),
         (LK.isIndexedVarTerm, Tuple{CInfo, T}, false),
         (LK._comp_arg, Tuple{T, Int, Int}, true),
@@ -1674,6 +1675,7 @@ function _manifest_index(T)
         (LK.has_attributes_after, Tuple{LD, Int, Int}, false),
         (LK.scan_trail, Tuple{LD, Int, Bool}, false),
         (LK.existingChoice, Tuple{LD, Int}, false),
+        (LK.existingFrame, Tuple{LD, Int}, false),           # DBG1: prolog_frame_attribute/3
         # AV8 — when/2's C half (src/pl-attvar.jl)
         (LK._when_functor, Tuple{LD, Symbol, Int}, false),
         (LK.is_or, Tuple{LD, UInt64}, false),
@@ -1740,6 +1742,9 @@ function _manifest_index(T)
         # group F (D-0123): callPortray calls Prolog (src/pl-fli.jl)
         (LK.PL_call_predicate, Tuple{GD, LD, Nothing, UInt32, LK.Procedure{T}, Int}, false),
         (LK.pl_sig_atomic1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        # MISS1 — '$call_no_catch'/1 (pl-pro.c) and print_unhandled_exception (pl-wam.c)
+        (LK.pl_call_no_catch1_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
+        (LK.print_unhandled_exception, Tuple{GD, LD, Int}, false),
         # Q10 (lane C): pl-alloc.c trim_heap/thread_idle, pl-setup.c $on_signal/4, $set_prolog_stack/4, trim_stacks/0 and the signal tables
         (LK.pl_trim_heap0_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
         (LK.pl_thread_idle2_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
@@ -1977,6 +1982,23 @@ function _manifest_index(T)
         (LK.put_frame_goal, Tuple{LD, Int, Int}, false),     # SSU2: the matching-rule error's goal
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
         (LK.pl_notrace, Tuple{LD}, false),                   # DBG1: notrace/0 (the tabling supervisor tests)
+        (LK.pl_trace, Tuple{LD}, false),                     # MISS1: trace/0, tracing/0, $leash/2, $visible/2 (pl-trace.c)
+        (LK.pl_tracing, Tuple{LD}, false),
+        (LK.pl_leash, Tuple{LD, Int, Int}, false),
+        (LK.pl_visible, Tuple{LD, Int, Int}, false),
+        (LK.setInteger, Tuple{LD, Int, Int, Int}, false),
+        (LK.PL_get_frame, Tuple{LD, Int}, false),            # DBG1: prolog_frame_attribute/3 and its helpers
+        (LK.is_meta_call, Tuple{LD, Int}, false),
+        (LK.isDebugFrame, Tuple{LD, Int, Int}, false),
+        (LK.findQuery, Tuple{LD, Int}, false),
+        (LK.hasAlternativesFrame, Tuple{LD, Int}, false),
+        (LK.alternativeFrame, Tuple{LD, Int}, false),
+        (LK.clear_frame_vars, Tuple{LD, Int}, false),
+        (LK.prolog_frame_attribute, Tuple{LD, Int, Int, Int}, false),
+        (LK._frame_attribute_unknown, Tuple{LD, Int}, false),
+        (LK.PL_get_choice, Tuple{LD, Int}, false),           # DBG1: prolog_choice_attribute/3
+        (LK.in_clause_jump, Tuple{LD, Int}, false),
+        (LK.choice_type_atom, Tuple{LD, Int}, false),
         (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
         (LK.unifiable_occurs_check_cells, Tuple{LD, Int, Int}, false),   # L1e e4 (unifiable/3)
         (LK.unify_all_trail_ptrs_cells, Tuple{LD, Int, Int}, false),
@@ -1991,6 +2013,8 @@ function _manifest_index(T)
                 LK.pl_std_lt2_va, LK.pl_std_leq2_va, LK.pl_std_gt2_va, LK.pl_std_geq2_va,   # (L1d-1)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
+                LK.pl_prolog_frame_attribute3_va,                                    # DBG1
+                LK.pl_prolog_choice_attribute3_va,                                   # DBG1
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
@@ -2519,10 +2543,22 @@ function _manifest_index(T)
         (LK.equal_meta, Tuple{D, Union{Nothing, Vector{LK.arg_info}}}, false),
         (LK.fix_metapredicate, Tuple{GD, LK.p_reload{T}}, false),
         (LK.clear_meta_declaration, Tuple{D}, false),
-        (LK.startConsult, Tuple{LK.SourceFile{T}}, false),
-        (LK.endConsult, Tuple{LK.SourceFile{T}}, false),
+        (LK.startConsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
+        (LK.endConsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
+        # LB6b-2 — the end of a reload (pl-srcfile.c), reconsultFinalizePredicate! (pl-proc.c)
+        (LK.reconsultFinalizePredicate!, Tuple{GD, LD, LK.sf_reload{T}, D, LK.p_reload{T}}, false),
+        (LK.fix_module, Tuple{MOD, LK.m_reload{T}}, false),
+        (LK.delete_old_predicate, Tuple{GD, LD, LK.SourceFile{T}, PR}, false),
+        (LK.delete_old_predicates, Tuple{GD, LD, LK.SourceFile{T}}, false),
+        (LK.delete_pending_clauses, Tuple{GD, LD, LK.SourceFile{T}, D, LK.p_reload{T}}, false),
+        (LK.end_reconsult_proc, Tuple{GD, LD, LK.SourceFile{T}, PR, LK.p_reload{T}}, false),
+        (LK.endReconsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
+        (LK.registerReloadModule, Tuple{LK.SourceFile{T}, MOD}, false),
         (LK.highSourceFileIndex, Tuple{GD}, false),
         (LK.addModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.delModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.delAllModulesSourceFile__unlocked, Tuple{LK.SourceFile{T}}, false),
+        (LK.unloadFile, Tuple{GD, LD, LK.SourceFile{T}}, false),
         (LK._atom_is, Tuple{LD, T, Symbol}, false),
         (LK.unify_src_file_time, Tuple{LD, Int, LK.SourceFile{T}}, false),
         (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD}, false),
@@ -2547,6 +2583,7 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_set_source_file3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_unload_file1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
@@ -2762,6 +2799,7 @@ function _manifest_index(T)
         (LK.pl_gc_wait, Tuple{LD, Int}, false),
         (LK.pl_gc_clear, Tuple{LD, Int}, false),
         (LK.pl_gc_stop, Tuple{LD}, true),
+        (LK.pl_sig_unblock0_va, Tuple{LD, Int64, Int64, LK.control_t{T}}, false),   # MISS1: '$sig_unblock'/0 (pl-thread.c)
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
         (LK.mutex_prop_enum{T}, Tuple{}, false),
@@ -6617,6 +6655,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # LB5-LB7: the registration tables of src/pl-load.jl and src/os/pl-apple.jl
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_load)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_apple)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_thread)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type

@@ -4,22 +4,13 @@
 # A missing or refused row without an owner prints NO OWNER in the status (information). An owner line whose key names no missing or refused row is R2-OWNER-STALE:
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
-pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
-pred:$leash/2	DBG1	seed: missing_c_preds.tsv
-pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
-pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
-pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
-pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
-pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
-pred:trace/0	DBG1	seed: missing_c_preds.tsv
-pred:tracing/0	DBG1	seed: missing_c_preds.tsv
 vmi:A_INTEGERW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3977 (compileArith) for an integer wider than `scode`; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets, where :3970-3971 emits A_INTEGER only); its body pl-vmi.c:3818-3832 is `#if CODES_PER_WORD > 1 ... #else assert(0)`; src/pl-vmi.jl:44
 vmi:B_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3032 for a body integer; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets); src/pl-vmi.jl:42-44
 vmi:B_THROW	REFUSED	never declared (refused by name, no step ports it): defined at the pin (O_CATCHTHROW=1, pl-incl.h:240) but emitted by no compiler site; only the decompiler names it (pl-comp.c:6728); throw/1 compiles to a plain call (oracle vm_list)
@@ -50,7 +41,7 @@ refusal:src/pl-arith.jl::set_arith_flag::LD->arith.rat.max_rational_size_action:
 refusal:src/pl-load.jl::pl_activate_static_extension1_va::activate_static_extension/1: no static extensions in the ker	LB5-LB7	O_STATIC_EXTENSIONS only (pl-load.c:450-540): the pin's own swipl has no such predicate; refused by name, the kernel links no static extension
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
-refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md); the same step calls `untable_definition_clauses` (src/pl-tabling.jl, TAB1 TB5) where upstream's `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544) call `untable_from_clause`: neither function exists in the kernel before LB6b, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until then
+refusal:src/pl-trace.jl::pl_trace::trace/0 with a visible port: the tracer (pl-trace.c tracePor	DBG2	trace/0 while a port is visible stops in the tracer (tracePort, interactive; audit D-0768 (2)): refused by name, with no port visible it is tracemode(true); the key is the first 60 characters of the refusal's text; LK-ONLY test: test_miss_preds_swipl.jl trace testset, mutants MISS1-TR3, TR4
 refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type) choice point (pl-vmi.c:7037	CONT1	backtracking into a choice point of a type outside the pin's choice_type switch: pl-vmi.c:7037-7038 (`assert(0)`) after the CHP_DEBUG case (:7017-7035); choice_type is pl-incl.h:1836-1840 (all five types handled); the refusal is the unreachable arm
 # refusal sites, assignments proposed in evidence/R2/refusal_owners.md (new deferred step names ENC1, RD2, WR2 and the QUESTION rows): confirmed by the audit (D-0415 item 5: ENC1, RD2, WR2 are the names of deferred steps; indexed(L) is PR1b)
 # TAB1 TB5 (wip/tb5): `$tbl_destroy_table/1` and `$tbl_abolish_local_tables/0` are ported (their seed rows left). The shared-table branches of abolish_table, destroy_answer_trie, clear_variant_table
@@ -86,3 +77,4 @@ refusal:src/os/pl-cstack.jl::sigCrashHandler::the fatal-signal handler of os/pl-
 refusal:src/os/pl-cstack.jl::CStackSize::the size and base of the C stack (`getrlimit(RLIMIT_STACK)`,	REFUSED	refused by design (no step ports it): lane F (R2 stack 1), os/pl-cstack.c; the kernel runs on no C stack it can measure (`getrlimit(RLIMIT_STACK)`, `pthread_getattr_np`: no Julia equivalent). The code's step label CSTACK1 is not a plan step
 refusal:src/pl-coverage.jl::pc_call_site::a coverage call site at pc offset $offset (outside 0..2^32-2	REFUSED	refused by design (no step ports it): lane F (R2 stack 1), pl-coverage.c; the table key packs the clause serial and the pc offset into 64 bits (src/pl-incl.jl block pl-coverage), so an offset outside 0..2^32-2 has no key; a real clause's code is far smaller (src/pl-coverage.jl file-wide DIVERGES 1)
 refusal:src/pl-prof.jl::_prof_refuse::what	PROF1	lane F (R2 stack 1), pl-prof.c: the collection entry points (clocks, call tree builders called from the VM, foreign profile nodes) are named refusals; PROF1 is the deferred owner (docs/architecture.md, section on the profiler: the data layer is ported, the collection itself is not)
+refusal:src/pl-init.jl::_parse_long_option!::--traditional (setTraditional, resetListAtoms): the kernel i	REFUSED	refused by design (no step ports it): pl-init.c:1195 --traditional (setTraditional, :1096; resetListAtoms) switches the reader and writer to the pre-7 syntax (strings, dicts, `[]` as an atom); the kernel is SWI-7 only and sets no `traditional` flag, so a command line naming it is refused at the option, by name (NotPortedError, step R2 LB7) before anything starts: a wrong `traditional` flag would be worse than an honest refusal (audit D-0981 (1), option a; a port of the pre-7 syntax is a Phase 1 design step needing the project owner's word); src/pl-init.jl:466; counter-row: the DIVERGES (3) of parseCommandLineOptions' header

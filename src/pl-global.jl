@@ -895,6 +895,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since RD2: `read_contexts`, appended last: the reads whose quasi-quotations the library may open (`'$qq_open'/2`; src/pl-read.jl). Upstream's
 # `'$quasi_quotation'(Ptr, Start, Len)` holds a pointer to the read data; Julia keeps no object in a word, so the pointer is `objectid(rd)` and
 # this vector is where `$qq_open` finds the data again, only while `parse_quasi_quotations` runs the library.
+# Since MISS1: `debugstatus_leashing` and `debugstatus_visible` (`$leash/2`, `$visible/2`; initTracer's port mask), appended after `debugstatus_showContext`.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -1054,6 +1055,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     debugstatus_tracing::Bool                                   # _debugstatus.tracing
     debugstatus_debugging::Bool                                 # _debugstatus.debugging
     debugstatus_showContext::Bool                               # _debugstatus.showContext
+    debugstatus_leashing::Int                                   # _debugstatus.leashing: the ports we are leashing (MISS1; pl-trace.h port masks)
+    debugstatus_visible::Int                                    # _debugstatus.visible: the ports that are visible (MISS1)
 
     event_buffered::Union{Nothing, Vector{delayed_event{T}}}    # event.buffered: the delayed events (R2 EV1; nothing: NULL)
     event_delay_nesting::Int                                    # event.delay_nesting: how deeply is delay nested?
@@ -1194,6 +1197,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         false,                                  # debugstatus.tracing
         false,                                  # debugstatus.debugging
         false,                                  # debugstatus.showContext: zero (static LD)
+        0x14f,                                  # debugstatus.leashing: initTracer (pl-trace.c:2081-2083): CALL|FAIL|REDO|EXIT|CUT_CALL|EXCEPTION
+        0x14f,                                  # debugstatus.visible: the same
         nothing,                                # event.buffered: NULL
         0,                                      # event.delay_nesting
         nothing,                                # event.hook.onthreadexit: no listener yet (R2 EV1)

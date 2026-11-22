@@ -577,7 +577,7 @@ ported files' headers to either.
     `wchar_t` unit — different only where `wchar_t` is 16 bits; the kernel walks a `String` by
     code point), `os/pl-text.c` (`266a7c07`: `PL_unify_text_units`, `PL_text_unit_offset`,
     `text_next_code`, `text_prev_code`, `text_chr` — none ported), `pl-proc.c` (`78073eae`:
-    `reconsultFinalizePredicate` — the reload path, refused by name until R2, where the fix and
+    `reconsultFinalizePredicate` — the reload path, refused by name until R2 LB6b, which ported it; the fix and
     upstream's `tests/unprotected/reload/del_clause_indexed.pl` go with it), `SWI-Prolog.h`
     (`b7c0c6b6`: `PLVERSION` 100118 — the kernel has no version constant and no `version` flag;
     the pin file carries the version. R2 adds the `version` and `version_data` flags).
@@ -2562,8 +2562,8 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | COV1 | 1 | 0 | 1 | `refusal coverage collection ('record_coverage': …` |
+| DBG2 | 1 | 0 | 1 | `refusal trace/0 with a visible port: the tracer …` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
-| LB6 | 1 | 0 | 1 | `refusal consulting a file again (reconsult)` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | PROF1 | 1 | 0 | 1 | `refusal what` |
@@ -6155,7 +6155,7 @@ What SSU1 ports (pl-comp.c, pl-proc.c, pl-supervisor.c, pl-error.c, boot/init.pl
 - **Calling an SSU predicate** raised `NotPortedError` naming `S_SSU_DET` until SSU2 (the run loop's refusal of a
   declared instruction outside `VMI_RUN`); SSU2 runs `I_CHP`, `I_SSU_*`, `S_SSU_DET` and the matching-rule error.
 - **Not here:** `'$rule'/3`, clause/3's `CLAUSE_TYPE_MASK` test and `fixup_ssu` (instance/2's clause branch) came with D1; rule/2,3 and
-  expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6); QLF flags (no QLF).
+  expand.pl's guard expansion (LB4); listing (LB5); `fix_ssu`/`check_ssu` (reconsult: LB6a/LB6b, done); QLF flags (no QLF).
 
 Closed difference (SSU1 checklist, closed by the D stack): **a05** `assertz((d5(X), X > 0 => true))` and **k01** `assertz((a, b))`
 raise swipl 10.1.19's `permission_error(modify, static_procedure, (',')/2)` since `_boot_control!` (src/pl-ext.jl:240) defines
@@ -6482,7 +6482,7 @@ Representation notes (each in a comment too):
   vector (indices stay valid); the old record keeps `M_DESTROYED`, `references == 0`, `file == 0`, and its definitions name the old
   index. A later lookup of the name makes a NEW module (a higher index). Rows e02 and the "H3" testset pin both records.
 - The procedures are walked in the order of the module's table (Julia's `Dict`), where upstream's follows its hash table (D-0149 item 1).
-- `class` and `super` are atoms; the source file has no `reload` (reconsult stays with the loader); the invariant print of
+- `class` and `super` are atoms; since R2 LB6b a source file being reloaded registers the module (`registerReloadModule`) instead of abolishing; the invariant print of
   `destroyModule` and `GD->modules.generation` have no counterpart.
 - **`unlinkSourceFileModule` and `$init_goal/3`**: the second half of upstream's test (the `$init_goal/3` clauses of a file) belongs to
   the loader (L6); the filter here is the first half, `module has a procedure of this functor`.
@@ -6628,8 +6628,8 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
 - **DIVERGES, kept:** `'$source_file'/2` is declared transparent in `PRED_IMPL` but the TABLE's flags (0) win, measured: an unqualified head is
   looked up in `system`, an unknown module qualifier means `user` and creates no module (`get_procedure_findhere`, src/pl-proc.jl);
   `sf.procedures` is a vector with the newest LAST, so `'$source_file_predicates'/2` walks it in reverse to answer upstream's newest-first
-  list; a partly bound list with a bound element (`unify_definition`'s bound-head branch) and a RE-consult (`startConsult` with
-  `count > 1`, `startReconsultFile`) refuse by name, step LB6; `reloading` is always false.
+  list; a partly bound list with a bound element (`unify_definition`'s bound-head branch) refuses by name, step LB6; a RE-consult (`startConsult` with
+  `count > 1`) reloads since R2 LB6b (test/db/test_reload_swipl.jl); `reloading` is always false.
   `'$source_file_property'(+Unknown, loaded, -V)` **fails**, as swipl 10.1.20 does since `c6087acb` (10.1.19 read through a NULL pointer; H10, no longer a difference).
 - **KNOWN DIFFERENCE, TEMPORARY (owner LB6, audit D-0248): `releaseSourceFile` only counts.** Upstream (pl-srcfile.c:376-395) destroys a
   source file whose last reference goes when it has no procedures, no modules, is not a system file and has no current procedure. So an EMPTY file
@@ -7883,9 +7883,9 @@ Written edit-only by two agents on branch wip/tb5 (TB5, TB5b): NOTHING was compi
   6. `sweep_orphan_dynamic_tables`: upstream's callback `collect_orphan_dynamic_table(node, ctx)` is a closure over the buffer `b`; `destroy_delay_info_table(gd)` returns the
      `map_trie_node` callback `map(tr, nid)`.
   7. `untable_from_clause(gd, ld, cl)` takes the database and the local data and reads the first instruction of the clause through `decode`; `fatalError` is an `error`. **The call
-     sites do not exist before LB6b:** upstream calls it from `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544, `delete_old_predicates`); the kernel has neither function
-     yet, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until LB6b, which calls `untable_definition_clauses` (ORIGINAL: the loop of
-     pl-srcfile.c:1460-1478) where upstream calls `untable_from_clause`. The row is in docs/r2_owners.tsv (the LB6 reconsult row).
+     sites exist since LB6b-2:** upstream calls it from `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544, `delete_old_predicates`); the kernel has neither function
+     yet, so the `untable` event of a reloaded `'$tabled'/2` clause was raised from nowhere until LB6b, which calls `untable_definition_clauses` (ORIGINAL: the loop of
+     pl-srcfile.c:1460-1478) where upstream calls `untable_from_clause`. The owner row (the LB6 reconsult refusal) is gone with LB6b-2.
   8. `setDynamicDefinition!(gd, def, isdyn)` and `resetProcedure!(gd, proc, isnew)` carry the database (upstream's `freeCodesDefinition(def)` reaches `LD`/`GD` from globals): one shared
      body each (`_setDynamicDefinition!`, `_resetProcedure!`, `gd::Union{Nothing,PL_global_data}`); the 2-argument methods stay for callers without a database (src/pl-ext.jl boot,
      src/precompile_workload.jl, tests) and pass `nothing`, which selects the 2-argument `freeCodesDefinition!` (it still refuses a wrapped predicate by name, owner TAB1).
@@ -8512,7 +8512,7 @@ cbf4e189.
   L5 FLIPPED at the LB4 b2 gate (audit D-0410
   item 7): redefineProcedure no longer refuses, and both rows (a predicate another file defined; asserted-then-file) load as
   swipl 10.1.19 loads them (`ok`, then `warning redefined_procedure(static, s/1)`), compared with `@test ours == theirs`.
-  L6 a reconsult: deferred, NotPortedError raised in startConsult (src/pl-srcfile.jl), owner LB6.
+  L6 a reconsult: was deferred (NotPortedError in startConsult, owner LB6); flipped at LB6b, the second load is `(:ok, nothing)` as swipl's (test/files/test_load_swipl.jl).
 - **T1 driver** (fixed): `locked` is read as `'$get_predicate_attribute'(M:H, system, 1)` (pl-proc.c:3472-3473); the
   driver had asked predicate_property(_, system), which syspred.pl does not define, and compared 0 with P_LOCKED.
 - **T2 rewritten rows**: the four `_BC_REWRITTEN` hashes are swipl's, computed by the driver over the clause texts the
@@ -8669,6 +8669,11 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
   can observe changes in LB6a. `endReconsult`, `delete_old_predicates`, `reconsultFinalizePredicate`, `registerReloadModule`, `fix_module`, `unloadFile` and `$unload_file/1`,
   `destroySourceFile`, SRC2's three predicates and the `$fixup_reconsult/1` reload arm are LB6b's. The swipl-compared reload rows (exports, clause lists after a reload,
   `source_file_property`) are LB6b's too; LB6a's rows are white-box (Julia calls on a hand-built reload context), each marked UNVERIFIED on the kernel.
+- **LB6b-2 (the reload is live; source ported blind, rows test/db/test_reload_swipl.jl, mutants tools/mutants/LB6B2.py).** `startConsult(gd, ld, sf)` calls `startReconsultFile` on a second consult; `endConsult` and
+  `'$fixup_reconsult'/1` call `endReconsult` (`delete_old_predicates`, `end_reconsult_proc` with `delete_pending_clauses`, `fix_attributes`, `reconsultFinalizePredicate!` (src/pl-proc.jl), `fix_module`,
+  the clause GC, the delayed events); `declareModule` takes `registerReloadModule` instead of abolishing when the file is reloaded; `exportProcedureSource` records the export in the reload. The `untable` event of a
+  reloaded `'$tabled'/2` clause comes from `delete_old_predicate`/`delete_pending_clauses` (`untable_definition_clauses`, `untable_from_clause`). Left: `flush_procedure` (`'$flush_predicate'/1`), `destroySourceFile`,
+  breakpoints of a deleted clause (DBG1). DIVERGES: the reload's procedures and modules are identity tables, so the order the ends are visited in (event order only) is Julia's.
 - **DIVERGES (each in a comment at its site):**
   - *representation, owner TH1:* `gd.reload_generation` (a field of `PL_global_data`) stands in for `LD->reload.generation` and is its ONLY copy (audit D-0416 item 3; the local data has
     no such field). A function that has the database reads it directly (`hasClausesDefinition` and so `isDefinedProcedure`, `_hasLocalClausesDefinition`, `num_visible_clauses`,

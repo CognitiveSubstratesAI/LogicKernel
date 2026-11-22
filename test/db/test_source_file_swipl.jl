@@ -5,10 +5,10 @@
 #     are compared. EVERY expected value is swipl's own answer (the driver runs live). `@FILE@` in a goal is the program's path
 #     (the source file's name in both systems), so the two systems ask about the same file;
 #   * WHITE-BOX: what swipl cannot be asked — the module
-#     list of a source file, the refusal of a reconsult (LB6), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
+#     list of a source file, the start and end of a reload by hand (LB6b), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
 #     bits of a predicate defined in system mode, `isStaticSystemProcedure`).
 # NOT HERE: `nth_clause/3` and `'$get_clause_attribute'/3` rows (test/db/test_nth_clause_swipl.jl), the module sites
-# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (LB6).
+# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (test/db/test_reload_swipl.jl).
 using Test, LogicKernel
 
 const LK = LogicKernel
@@ -257,6 +257,34 @@ const _CASES = [
         "a17",
         "assertz(a17p(1)), '\$start_aux'('/no/such/a17', _), '\$end_aux'('/no/such/a17', user:a17p/1), retract(a17p(1)), '\$set_predicate_attribute'(a17p(_), dynamic, false), '\$start_aux'('/no/such/a17', C), '\$end_aux'('/no/such/a17', C), R = C"
     ),
+    # ---- '$unload_file'/1 (pl-srcfile.c:839-884; SRC2; each row its own file; an unknown file answers true, as swipl's last line does)
+    (
+        "u01",
+        "'\$start_consult'('/no/such/u01', 0), '\$unload_file'('/no/such/u01'), R = ok"
+    ),
+    ("u02", "ex('\$unload_file'(_), R)"),
+    ("u03", "ex('\$unload_file'(1), R)"),
+    ("u04", "ex('\$unload_file'('/no/such/u04'), R)"),
+    (
+        "u05",
+        "'\$start_consult'('/no/such/u05', 1.5), '\$unload_file'('/no/such/u05'), findall(T, '\$time_source_file'('/no/such/u05', T, _), L), R = L"
+    ),
+    (
+        "u06",
+        "'\$start_consult'('/no/such/u06', 1.5), '\$unload_file'('/no/such/u06'), '\$source_file_property'('/no/such/u06', number_of_clauses, V), R = V"
+    ),
+    (
+        "u07",
+        "'\$start_consult'('/no/such/u07', 0), '\$unload_file'('/no/such/u07'), ( '\$unload_file'('/no/such/u07') -> R = twice ; R = once )"
+    ),
+    (
+        "u08",
+        "'\$start_consult'('/no/such/u08', 0), '\$declare_module'(um08, user, user, '/no/such/u08', 7, false), '\$unload_file'('/no/such/u08'), findall(P, ( mem(P, [file(_), line_count(_)]), '\$module_property'(um08, P) ), L), R = L"
+    ),
+    (
+        "u09",
+        "'\$start_consult'('/no/such/u09', 0), '\$declare_module'(um09, user, user, '/no/such/u09', 7, false), '\$unload_file'('/no/such/u09'), '\$module_property'(um09, class(C)), R = C"
+    ),
     # l01: source_location/2 inside the directive at the program's end: the file and the 1-based line (pl-file.c:5805)
     ("l01", "sloc(F, L), ( F == '@FILE@' -> R = L-same ; R = L-F )"),
     # LAST: nothing follows (the program's last row)
@@ -479,11 +507,11 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
             findfirst(_codes("baz"), p01) < findfirst(_codes("foo"), p01) &&
             findfirst(_codes("bar"), p01) < findfirst(_codes("foo"), p01)               # [baz, bar, foo, d]: newest first
         # measured on swipl 10.1.19 (2026-10-29): domain f08 f18 g04; existence g02 g07; instantiation s07 p03 f10 f12 g05 g06 g08 c05 c12 a04;
-        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05
+        # type s08 s09 p04 f09 f11 g03 g09 c04 c11 c13 a05; SRC2's rows add instantiation u02 and type u03
         @test count(l -> occursin(_codes("domain_error"), l), sw) == 3
         @test count(l -> occursin(_codes("existence_error"), l), sw) == 2
-        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 10
-        @test count(l -> occursin(_codes("type_error"), l), sw) == 11
+        @test count(l -> occursin(_codes("instantiation_error"), l), sw) == 11
+        @test count(l -> occursin(_codes("type_error"), l), sw) == 12
         @test any(
             l ->
                 startswith(l, "t_t01 ") && occursin(_codes("user"), l) &&
@@ -492,6 +520,8 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         )
         @test any(l -> startswith(l, "t_l01 ") && occursin(_codes("same"), l), sw)           # source_location/2 inside the directive
         @test any(l -> startswith(l, "t_a17 ") && occursin("nil", l), sw)                   # [] for the abolished current predicate
+        @test any(l -> startswith(l, "t_u04 ") && occursin(_codes("true"), l), sw)           # an unknown file: `$unload_file` answers true
+        @test any(l -> startswith(l, "t_u01 ") && occursin(_codes("ok"), l), sw)
         @test any(l -> startswith(l, "t_c02 ") && occursin("f1.5", l), sw)
         @test any(l -> startswith(l, "t_c03 ") && occursin("i0", l), sw)
         @test startswith(last(sw), "t_z01 ")
@@ -597,15 +627,25 @@ end
     @test st === :false
 end
 
-@testset "'\$start_consult'/2 refuses a reconsult by name (LB6)" begin
+# swipl 10.1.20 (pinned 18168e62, live): after `consult` of a file with `foo(1).`, `'$start_consult'(F, 1.0)` gives load_count 2 at once and
+# starts a reload; `'$fixup_reconsult'(F)` succeeds and ends it: load_count stays 2, number_of_clauses 0, foo/1 is not defined any more.
+@testset "'\$start_consult'/2 on a loaded file starts a reload, '\$fixup_reconsult'/1 ends it (LB6b)" begin
     gd, ld, f = _loaded("foo(1).\n")
-    e = try
-        kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 0)])
-        nothing
-    catch ex
-        ex
-    end
-    @test e isa LK.NotPortedError && e.step == "LB6"
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    pf = LK.isCurrentProcedure(sym_key(_tls("foo")), 1, LK.MODULE_user(gd))
+    @test LK.hasClausesDefinition(gd, pf.definition) !== nothing
+    st, _ = kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 1.0)])
+    @test st === :true
+    @test sf.count == 2 && sf.reload !== nothing && gd.reload_generation == LK.GEN_RELOAD
+    st, _ = kcall(gd, ld, "\$fixup_reconsult", _TL[_tls(f)])
+    @test st === :true
+    @test sf.count == 2 && sf.reload === nothing && sf.number_of_clauses == 0
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test LK.hasClausesDefinition(gd, pf.definition) === nothing           # the reload did not define foo/1 again: its clause is gone
+    st, ans = kcall(
+        gd, ld, "\$source_file_property", _TL[_tls(f), _tls("load_count"), _v()]
+    )
+    @test st === :true && lk_value(ans[3]) == 2
 end
 
 @testset "system mode (H5): access_level, the lock of a predicate defined in it, isStaticSystemProcedure" begin
@@ -701,4 +741,90 @@ end
     )
     @test st === :false                                                       # pl-srcfile.c:726: ltime == 0.0 is false
     LK.releaseSourceFile(sf0)
+end
+
+# ---- white-box (SRC2): '$unload_file'/1 removes the clauses a file loaded and the traces of its predicates; a system file is refused
+@testset "'\$unload_file'/1 removes the file's clauses, its procedure list and its file mark; a system file is refused (pl-srcfile.c:839-884)" begin
+    gd, ld, f = _loaded("foo(1).\nfoo(2).\nbar(1).\n")
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    pf = LK.isCurrentProcedure(sym_key(_tls("foo")), 1, LK.MODULE_user(gd))
+    @test sf.number_of_clauses == 3 && length(sf.procedures) == 2
+    @test pf.definition.impl_clauses.number_of_clauses == 2
+    @test (pf.definition.flags & LK.FILE_ASSIGNED) != 0
+    LK.releaseSourceFile(sf)
+    st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(f)])
+    @test st === :true
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    @test sf.number_of_clauses == 0 && isempty(sf.procedures) && !sf.isfile
+    @test pf.definition.impl_clauses.number_of_clauses == 0
+    @test (pf.definition.flags & LK.FILE_ASSIGNED) == 0
+    LK.releaseSourceFile(sf)
+    # a file marked `system` is refused: permission_error(unload, file, F)
+    gd2, ld2, f2 = _loaded("qux(1).\n")
+    sf2 = LK.lookupSourceFile(gd2, _tls(f2), false)
+    sf2.system = true
+    LK.releaseSourceFile(sf2)
+    st, ans = kcall(gd2, ld2, "\$unload_file", _TL[_tls(f2)])
+    @test st === :exception
+    @test occursin(_codes("permission_error"), enc(ans[1])) &&
+        occursin(_codes("unload"), enc(ans[1]))
+    pq = LK.isCurrentProcedure(sym_key(_tls("qux")), 1, LK.MODULE_user(gd2))
+    @test pq.definition.impl_clauses.number_of_clauses == 1                    # nothing was removed
+end
+
+# ---- white-box (SRC2): a multifile predicate loses only this file's clauses; a meta declaration and a module's file, line and public table are cleared; the reference is released
+@testset "'\$unload_file'/1: multifile clauses of the other file stay; meta declaration, module file/line/public table cleared (pl-srcfile.c:790-834)" begin
+    gd, ld, fa = _loaded(
+        ":- multifile mf/1.\nmf(1).\n:- meta_predicate mp(0).\nmp(G) :- call(G).\n"
+    )
+    fb = _load_more!(gd, ld, ":- multifile mf/1.\nmf(2).\n")
+    pm = LK.isCurrentProcedure(sym_key(_tls("mf")), 1, LK.MODULE_user(gd))
+    pp = LK.isCurrentProcedure(sym_key(_tls("mp")), 1, LK.MODULE_user(gd))
+    @test pm.definition.impl_clauses.number_of_clauses == 2
+    @test (pp.definition.flags & LK.P_META) != 0
+    sf = LK.lookupSourceFile(gd, _tls(fa), false)
+    r0 = sf.references - 1                                                    # (the lookup's own)
+    LK.releaseSourceFile(sf)
+    st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(fa)])
+    @test st === :true
+    sf = LK.lookupSourceFile(gd, _tls(fa), false)
+    @test sf.references - 1 == r0                                             # `$unload_file` released its lookup's reference
+    LK.releaseSourceFile(sf)
+    @test pm.definition.impl_clauses.number_of_clauses == 1                   # multifile: only fa's clause went
+    @test (pm.definition.flags & LK.P_MULTIFILE) != 0
+    @test (pp.definition.flags & LK.P_META) == 0 &&
+        (pp.definition.flags & LK.P_TRANSPARENT) == 0                         # clear_meta_declaration
+    # a module loaded from the file
+    gd2, ld2, fm = _loaded(":- module(wsr_m, [wp/1]).\nwp(1).\n")
+    m = LK.lookupModule(gd2, _tls("wsr_m"))
+    sfm = LK.lookupSourceFile(gd2, _tls(fm), false)
+    @test m.file == sfm.index && m.line_no > 0 && !isempty(m.public_) &&
+        !isempty(sfm.modules)
+    LK.releaseSourceFile(sfm)
+    st, _ = kcall(gd2, ld2, "\$unload_file", _TL[_tls(fm)])
+    @test st === :true
+    @test m.file == 0 && m.line_no == 0 && isempty(m.public_) && isempty(m.public_order)
+    sfm = LK.lookupSourceFile(gd2, _tls(fm), false)
+    @test isempty(sfm.modules)
+    LK.releaseSourceFile(sfm)
+end
+
+# ---- white-box (SRC2 + the C29 reconcile): unloadFile walks the file's procedures newest first (pl-srcfile.c:796-835 over the list
+# addProcedureSourceFile conses onto the front), and every removeClausesPredicate call takes a generation of its own (pl-proc.c): so the clause
+# of the file's LAST predicate is erased at the smallest generation. (swipl cannot show this: its listeners get no event from the unload.)
+@testset "'\$unload_file'/1 erases the clauses of the newest predicate first (pl-srcfile.c:796-835)" begin
+    gd, ld, f = _loaded("foo(1).\nbar(1).\nbaz(1).\n")
+    gens = Dict{String, UInt64}()
+    procs = Dict(
+        n => LK.isCurrentProcedure(sym_key(_tls(n)), 1, LK.MODULE_user(gd)) for
+            n in ("foo", "bar", "baz")
+    )
+    st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(f)])
+    @test st === :true
+    for (n, p) in procs
+        cl = p.definition.impl_clauses.first_clause.clause
+        @test (cl.flags & LK.CL_ERASED) != 0
+        gens[n] = UInt64(cl.generation_erased)
+    end
+    @test gens["baz"] < gens["bar"] < gens["foo"]
 end
