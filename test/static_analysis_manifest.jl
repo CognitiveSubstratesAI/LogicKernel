@@ -1325,6 +1325,8 @@ function _manifest_index(T)
         (LK.getOccursCheckMask, Tuple{LD, T}, false),
         (LK.setOccursCheck, Tuple{LD, T}, false),
         (LK.setStreamTypeCheck, Tuple{LD, T}, false),
+        (LK.setEncoding, Tuple{LD, T}, false),
+        (LK.setUnicodeAtoms, Tuple{LD, T}, false),
         (LK.create_oneof, Tuple{LD, Int64}, false),
         (LK.set_oneof, Tuple{LD, LK.prolog_flag{T}, LK.oneof_t{T}, UInt32}, false),
         (LK.check_oneof_flag, Tuple{LD, LK.oneof_t{T}, T, Bool}, false),
