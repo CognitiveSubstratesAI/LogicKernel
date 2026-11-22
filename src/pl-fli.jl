@@ -209,6 +209,46 @@ end
 "Unify term reference `l` with `[]` (pl-fli.c)."
 PL_unify_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_unify_atom(ld, l, mk_nil(T))
 
+# PORT: pl-fli.c PL_unify_chars
+# DIVERGES: `s` is a byte vector and `len` its used length (`-1`: up to the first NUL, upstream's `strlen`); the text is a COPY of
+# its first `len` bytes. An `ENC_UTF8` text's `length` is in characters (the kernel's convention, src/os/pl-text.jl), counted here
+# from the lead bytes. NOT PORTED: `REP_MB` (`ENC_ANSI`, the locale): refused by name, `NotPortedError`. `PL_free_text` is Julia's GC.
+"""
+Unify `t` with the `len` bytes `s`, made the text type in `flags` (`PL_ATOM`, `PL_STRING`, `PL_CODE_LIST`, `PL_CHAR_LIST`) from
+the representation `REP_UTF8` or `REP_ISO_LATIN_1`; with `PL_DIFF_LIST` a list is a difference list, its tail left in `t+1`
+(pl-fli.c).
+"""
+function PL_unify_chars(
+    ld::PL_local_data{T}, t::term_t, flags::Integer, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    if len == -1
+        z = findfirst(==(0x00), s)
+        len = z === nothing ? length(s) : z - 1
+    end
+    fl = Int(flags)
+    utf8 = (fl & Int(REP_UTF8)) != 0
+    if !utf8 && (fl & Int(REP_MB)) != 0
+        throw(NotPortedError{Nothing}(nothing, "PL_unify_chars with REP_MB (ENC_ANSI, the locale)", "no caller"))
+    end
+    bytes = Vector{UInt8}(s[1:len])
+    text = if utf8
+        nchars = 0
+        for b in bytes
+            (b & 0xc0) != 0x80 && (nchars += 1)         # a lead byte starts a character
+        end
+        PL_chars_t(bytes, nchars, ENC_UTF8, false)
+    else
+        PL_chars_t(bytes, len, ENC_ISO_LATIN_1, false)
+    end
+    fl &= ~(Int(REP_UTF8) | Int(REP_MB) | Int(REP_ISO_LATIN_1))
+    tail = 0
+    if (fl & Int(PL_DIFF_LIST)) != 0
+        tail = t + 1
+        fl &= ~Int(PL_DIFF_LIST)
+    end
+    return PL_unify_text(ld, t, tail, text, fl)
+end
+
 # PORT: pl-fli.c PL_skip_list
 # DIVERGES: returns `(type, length)` where upstream writes the length through `len`; on the WORDS (L1e e2:
 # `skip_list_cells`, L1d step 9). NOT PORTED: `tail` (upstream unifies it with the list's tail): no
