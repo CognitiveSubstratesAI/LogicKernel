@@ -345,11 +345,16 @@ wb2_gone :- \\+ locale_property(default, alias(_)).
         # a locale until S__close's `releaseLocale(s->locale)`): five references, not three.
         held0 = count(s -> s !== nothing && s.locale === dl, unique(ld.IO_streams[1:5]))
         @test held0 == 2                                                 # stdin and stdout, not stderr (not vacuous: read from the engine's streams)
+        held_idx = findall(s -> s !== nothing && s.locale === dl, ld.IO_streams)
+        @info "CT1 LOCALE diag before" dl.references held0 held_idx dl.alias
         @test dl.references == 3 + held0 && dl.alias !== nothing         # the alias, the current locale, default_locale itself, and the two streams
         @test gd.locale.current === dl
         @test _lcs_wb_once(gd, ld, "wb2_seq")
         @test _lcs_wb_once(gd, ld, "wb2_gone")                           # no locale named default any more
         @test gd.locale.default_locale === dl && gd.locale.current !== dl
+        held_idx2 = findall(s -> s !== nothing && s.locale === dl, ld.IO_streams)
+        cur_is_dl = gd.locale.current === dl
+        @info "CT1 LOCALE diag after" dl.references held_idx2 dl.alias cur_is_dl
         @test dl.alias === nothing && dl.references == 1                 # only default_locale's own reference is left (the streams gave theirs back at set_locale)
         @test dl.magic == LK.LOCALE_MAGIC                                # not freed
         @test dl.decimal_point != ""                                     # its strings are kept
