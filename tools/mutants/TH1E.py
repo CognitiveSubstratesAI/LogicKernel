@@ -12,6 +12,9 @@
 # EQUIVALENT (declared, with the code reason): TH1E-E6b (the self test of engine_destroy: the engine that destroys itself is always
 # `running`, so `th.running` alone raises: src/pl-thread.jl `pl_engine_destroy`), TH1E-E12b (the close of the query in destroy_interactor!:
 # the engine's local data is dropped with `th.info = nothing` and nothing reads the closed or open query afterwards).
+# THE THREAD EVENTS (Q1, TH1E-Q1..Q10: src/pl-event.jl `PL_call_event_hook_va`'s thread branch, src/pl-thread.jl `freePrologThread!`): TARGETS is the
+# engines test alone: no other file destroys an engine or listens to a thread event (test_event_swipl.jl reaches the other branches of
+# PL_call_event_hook_va, none a mutant here touches). No equivalent among Q1-Q10.
 # NOT LISTED (with the reason; a survivor would prove nothing about dead code, D-0238):
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
@@ -22,6 +25,7 @@
 TARGETS = ["test/core_lang/test_engines_swipl.jl"]
 T = "src/pl-thread.jl"
 O = "src/os/pl-option.jl"
+EV = "src/pl-event.jl"
 MUTANTS = [
     # ---- get_interactor
     dict(id="TH1E-E1 a handle with no engine and no NOMORE/DONE flag is still an engine (KILL en04, en06, en18)",
@@ -280,4 +284,46 @@ MUTANTS = [
          file=T, targets=TARGETS, equivalent='pl_thread_property tests `_thread_slot_valid` again before it calls a property function, so a destroyed slot is skipped there; only the retry (a choice point) differs',
          old='            _thread_slot_valid(gd, tid) && break\n',
          new='            break\n'),
+    # ---- the thread events (Q1: freePrologThread! and the thread branch of PL_call_event_hook_va; KILL rows are the ev rows of the engines test)
+    dict(id="TH1E-Q1 the thread events do not put the thread id: the listener gets a variable (KILL ev01, ev03, ev04, ev12, ev13, evs2)",
+         file=EV, targets=TARGETS,
+         old="        rc = unify_thread_id(gd, ld, av + 1, info)\n",
+         new="        rc = true\n"),
+    dict(id="TH1E-Q2 thread_start is an unknown event: the raise returns false (KILL the white-box evs2: callEventHook)",
+         file=EV, targets=TARGETS,
+         old="    elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT\n",
+         new="    elseif ev == PLEV_THREAD_EXIT\n"),
+    dict(id="TH1E-Q3 an engine does not raise this_thread_exit (KILL ev08)",
+         file=T, targets=TARGETS,
+         old="    rc1 = callEventHook(gd, ld, PLEV_THIS_THREAD_EXIT)      # `LD == ld`\n",
+         new="    rc1 = true\n"),
+    dict(id="TH1E-Q4 an engine does not raise thread_exit (KILL ev01, ev03, ev04, ev05, ev06, ev12, ev13)",
+         file=T, targets=TARGETS,
+         old="    rc2 = callEventHook(gd, ld, PLEV_THREAD_EXIT, info)\n",
+         new="    rc2 = true\n"),
+    dict(id="TH1E-Q5 the exit raises thread_start instead of thread_exit (KILL ev01, ev11)",
+         file=T, targets=TARGETS,
+         old="    rc2 = callEventHook(gd, ld, PLEV_THREAD_EXIT, info)\n",
+         new="    rc2 = callEventHook(gd, ld, PLEV_THREAD_START, info)\n"),
+    dict(id="TH1E-Q6 the exit raises thread_exit for this_thread_exit (a one-argument list called with none: KILL ev01, ev08)",
+         file=T, targets=TARGETS,
+         old="    rc1 = callEventHook(gd, ld, PLEV_THIS_THREAD_EXIT)      # `LD == ld`\n",
+         new="    rc1 = callEventHook(gd, ld, PLEV_THREAD_EXIT)\n"),
+    dict(id="TH1E-Q7 a hook's exception is reported only when BOTH hooks failed (KILL the white-box evs3b: the messages)",
+         file=T, targets=TARGETS,
+         old="    if (!rc1 || !rc2) && ld.exception_term != 0\n",
+         new="    if (!rc1 && !rc2) && ld.exception_term != 0\n"),
+    dict(id="TH1E-Q8 the exception left by a hook is not reported (KILL the white-box evs3b: the messages)",
+         file=T, targets=TARGETS,
+         old="        _qlf_Sdprintf!(ld, \"Event hook \\\"thread_finished\\\" left an exception\\n\")\n",
+         new="        nothing\n"),
+    dict(id="TH1E-Q9 the engine is not released through freePrologThread!: no exit events at all (KILL ev01, ev03, ev05, ev08)",
+         file=T, targets=TARGETS,
+         old="        freePrologThread!(gd, info.thread_data::PL_local_data{T}, info)\n",
+         new="        info.thread_data = nothing\n"),
+    dict(id="TH1E-Q10 a hook's exception is not cleared (KILL the white-box evs3b: eld.exception_term)",
+         file=T, targets=TARGETS,
+         old="        PL_clear_exception(ld)\n    end\n    info.thread_data = nothing",
+         new="    end\n    info.thread_data = nothing"),
 ]
+
