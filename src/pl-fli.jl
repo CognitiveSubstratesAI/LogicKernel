@@ -3094,3 +3094,210 @@ function PL_abort_process(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing 
     gd.halt_cleaning = CLN_NORMAL                       # the seam returned
     return nothing
 end
+
+# ── state, actions, queries, version (FLI-API16): SP_set_state, SP_get_state, PL_action, PL_query, PL_version_info (pl-fli.c) ──
+
+# PORT: pl-fli.c SP_set_state
+# (swipl-devel 18168e62, src/pl-fli.c:1115-1120)
+# DIVERGES: the local data is an argument (upstream's `GET_LD`).
+"Store the Quintus/SICStus state `state` in the engine `ld` (`LD->fli.SP_state`, pl-fli.c)."
+function SP_set_state(ld::PL_local_data, state::Int)::Nothing
+    ld.fli_SP_state = state                             # LD->fli.SP_state = state
+    return nothing
+end
+
+# PORT: pl-fli.c SP_get_state
+# (swipl-devel 18168e62, src/pl-fli.c:1123-1128)
+# DIVERGES: the local data is an argument (upstream's `GET_LD`).
+"The Quintus/SICStus state stored in the engine `ld` (0 until `SP_set_state`; pl-fli.c)."
+function SP_get_state(ld::PL_local_data)::Int
+    return ld.fli_SP_state                              # return LD->fli.SP_state
+end
+
+"`vsysError`'s `static int active`: a second system error while one is reported ends the process by `abort()` alone."
+const _FLI_SYS_ACTIVE = Ref(0)
+
+# ORIGINAL (FLI-API16): pl-init.c `vsysError` (:2241-2284), the function `sysError` (:2111-2121) calls and `PL_action`'s and
+# `PL_query`'s default arms use, written here with them; same cut as `_fli_vfatal_error`.
+# DIVERGES: (a) the message is the formatted text; (b) the report goes to `Suser_error` (upstream's `Serror`, unbuffered: flushed
+# here); (c) left out: the 30 s timer (`set_cleanup_timeout`), `save_backtrace`, `printCrashContext`, and the interactive branch
+# ("Action?" prompt, taken when `user_input` and `user_error` are terminals and the system is not booting): the process always
+# ends as the non-interactive branch ends it; (d) where the seam of `PL_abort_process` returns (`gd.halt_exit = false`) the
+# `active` count is reset, as the process upstream never returns from. Returns false, as `sysError`.
+function _fli_sys_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    active = _FLI_SYS_ACTIVE[]
+    _FLI_SYS_ACTIVE[] = active + 1                          # if ( active++ )
+    if active != 0
+        _halt_exit!(gd, 128 + 6)                            # abort()
+        _FLI_SYS_ACTIVE[] = 0
+        return false
+    end
+    s = Suser_error(ld)
+    _fli_stream_text(s, "\nERROR: system error: " * msg * "\n")    # Sfprintf(Serror, "\nERROR: %s error: ", errtype) ...
+    s === nothing || Sflush(s)
+    PL_abort_process(gd, ld)                                # non-interactive or booting
+    _FLI_SYS_ACTIVE[] = 0
+    return false
+end
+
+# ORIGINAL (FLI-API16): pl-stream.c `Sfputs` (:2395-2402), which `PL_action(PL_ACTION_WRITE, ...)` calls: every byte of the text up to
+# the first 0 is one code point (`*q&0xff`, so UTF-8 bytes are Latin-1 characters) written by `Sputcode`; 0, or -1 (`EOF`) on an
+# error. DIVERGES: `nothing` for a missing stream (upstream would dereference NULL) is -1.
+function _fli_sfputs(s::Union{Nothing, IOSTREAM}, text::AbstractString)::Int
+    s === nothing && return -1
+    for b in codeunits(text)
+        b == 0x00 && break                                  # for( ; *q; q++)
+        Sputcode(Int(b), s) < 0 && return -1                # if ( Sputcode(*q&0xff, s) < 0 ) return EOF
+    end
+    return 0
+end
+
+# PORT: pl-fli.c PL_action
+# (swipl-devel 18168e62, src/pl-fli.c:5934-6039)
+# DIVERGES: (a) the database, the local data and the varargs are arguments (`args...`: the one `int` or `char *` an action
+# takes); the text of WRITE is a `String`. (b) PL_ACTION_BACKTRACE: `gc_status.active` and `GD->initialised` have no field
+# (the collector never runs inside a foreign call, the database exists): the "initialising" message is `gd.bootsession`'s;
+# PL_backtrace is DBG1's: `NotPortedError`. (c) PL_ACTION_GUIAPP: `GD->os.gui_app` is Win32's and has no field: accepted, true.
+# (d) PL_ACTION_TRADITIONAL: `NotPortedError` (the kernel is SWI-7 only, owner R2 LB7, as the `--traditional` option,
+# src/pl-init.jl). (e) PL_GMP_SET_ALLOC_FUNCTIONS: `GD->gmp.initialised` is always true once a database exists (`initGMP` runs
+# in `setupProlog`, pl-setup.c:166): false, as upstream's else-branch. (f) PL_ACTION_ATTACH_CONSOLE is `attachConsole()`
+# (pl-thread.c:7027, the O_PLMT build the pin is) written in place. (g) The default arm is `_fli_sys_error`; where the seam
+# returns, the answer is false.
+"""
+    PL_action(gd, ld, action, args...) -> Bool
+
+Perform `action` (`PL_ACTION_*`, `PL_GMP_SET_ALLOC_FUNCTIONS`): TRACE and DEBUG switch the modes, BACKTRACE (`depth`), BREAK runs a nested
+toplevel, HALT (`status`) halts, ABORT raises `unwind(abort)`, WRITE (`text`) and FLUSH go to the current output, ATTACH_CONSOLE calls
+`user:attach_console/0`; any other action is a system error (pl-fli.c).
+"""
+function PL_action(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, action::Int, args...
+)::Bool where {T}
+    rval = true
+
+    if action == PL_ACTION_TRACE
+        rval = tracemode(ld, true, nothing)                 # rval = (bool)pl_trace()
+    elseif action == PL_ACTION_DEBUG
+        debugmode(ld, true, nothing, DBG_ALL)               # debugmode(NULL, true, NULL, DBG_ALL)
+    elseif action == PL_ACTION_BACKTRACE
+        depth = Int(args[1])                                # int a = va_arg(args, int)
+        if gd.bootsession                                   # GD->bootsession || !GD->initialised
+            _fli_stream_text(Suser_error(ld), "\n[Cannot print stack while initialising]\n")
+            rval = false
+        else
+            throw(
+                NotPortedError{Nothing}(
+                    nothing, "PL_action(PL_ACTION_BACKTRACE): PL_backtrace($depth, 0)", "DBG1"
+                )
+            )
+        end
+    elseif action == PL_ACTION_BREAK
+        rval = pl_break(gd, ld)                             # rval = (bool)pl_break()
+    elseif action == PL_ACTION_HALT
+        PL_halt(gd, ld, Int(args[1]))                       # PL_halt(a)
+        rval = false
+    elseif action == PL_ACTION_ABORT
+        rval = abortProlog(ld)                              # rval = abortProlog()
+    elseif action == PL_ACTION_GUIAPP
+        nothing                                             # GD->os.gui_app = guiapp (no field)
+    elseif action == PL_ACTION_TRADITIONAL
+        throw(
+            NotPortedError{Nothing}(
+                nothing,
+                "PL_action(PL_ACTION_TRADITIONAL): setTraditional, resetListAtoms: the kernel is SWI-7 only",
+                "R2 LB7"
+            )
+        )
+    elseif action == PL_ACTION_WRITE
+        rval = _fli_sfputs(Scurout(ld), args[1]) == 0       # rval = Sfputs(s, Scurout) == 0
+    elseif action == PL_ACTION_FLUSH
+        out = Scurout(ld)
+        rval = out !== nothing && Sflush(out) == 0          # rval = Sflush(Scurout) == 0
+    elseif action == PL_ACTION_ATTACH_CONSOLE
+        fid = PL_open_foreign_frame(ld)                     # attachConsole() (pl-thread.c:7027)
+        pred = PL_predicate(gd, ld, codeunits("attach_console"), 0, codeunits("user"))
+        rval = PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG, pred, 0)
+        PL_discard_foreign_frame(ld, fid)
+    elseif action == PL_GMP_SET_ALLOC_FUNCTIONS
+        rval = false                                        # GD->gmp.initialised is true: `else { rval = false; }`
+    else
+        _fli_sys_error(gd, ld, "PL_action(): Illegal action: $action")
+        rval = false
+    end
+
+    return rval
+end
+
+# PORT: pl-fli.c PL_query
+# (swipl-devel 18168e62, src/pl-fli.c:6045-6098)
+# DIVERGES: (a) the database and the local data are arguments. (b) PL_QUERY_ARGV is a `char **`: `NotPortedError` (owner FLI1;
+# the vector is `gd.cmdline.appl_argv`); PL_QUERY_ARGC is its length (`GD->cmdline.appl_argc`). (c) PL_QUERY_GETC: `PopTty`
+# (restoring the terminal mode from `ttytab`) has no counterpart: the character is `Sgetchar()`, `Sgetc(Sinput)`, -1 where
+# `user_input` is `nothing`. (d) PL_QUERY_ENCODING: `LD->encoding` is the flag `encoding`, `utf8` (src/os/pl-prologflag.jl:2182;
+# `setEncoding` is refused, :1375): `ENC_UTF8`. (e) The one-thread O_PLMT build: PL_QUERY_MAX_THREADS prints the message of the
+# O_PLMT branch (on `Suser_error`, flushed as `Sdprintf` does) and answers 100000. (f) The default arm is `_fli_sys_error`; where
+# the seam returns, 0.
+"""
+    PL_query(gd, ld, query) -> Int
+
+Information about the system: `PL_QUERY_ARGC`, `PL_QUERY_MAX_TAGGED_INT` and `_MIN_`, `PL_QUERY_GETC`, `PL_QUERY_VERSION`,
+`PL_QUERY_MAX_THREADS`, `PL_QUERY_ENCODING`, `PL_QUERY_USER_CPU` (milliseconds), `PL_QUERY_HALTING`; 0 for `_MAX_INTEGER` and
+`_MIN_INTEGER` (not representable); any other query is a system error (pl-fli.c).
+"""
+function PL_query(gd::PL_global_data{T}, ld::PL_local_data{T}, query::Int)::Int where {T}
+    if query == PL_QUERY_ARGC
+        return length(gd.cmdline.appl_argv)                 # (intptr_t) GD->cmdline.appl_argc
+    elseif query == PL_QUERY_ARGV
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_query(PL_QUERY_ARGV): a char** (gd.cmdline.appl_argv is the vector)", "FLI1"
+            )
+        )
+    elseif query == PL_QUERY_MAX_INTEGER || query == PL_QUERY_MIN_INTEGER
+        return 0                                            # return false; /* cannot represent (anymore) */
+    elseif query == PL_QUERY_MAX_TAGGED_INT
+        return PLMAXTAGGEDINT                               # (SIZEOF_WORD > SIZEOF_VOIDP is false)
+    elseif query == PL_QUERY_MIN_TAGGED_INT
+        return PLMINTAGGEDINT
+    elseif query == PL_QUERY_GETC
+        s = Suser_input(ld)                                 # (PopTty: no counterpart)
+        return s === nothing ? -1 : Sgetc(s)                # (intptr_t) Sgetchar()
+    elseif query == PL_QUERY_VERSION
+        return PLVERSION
+    elseif query == PL_QUERY_MAX_THREADS
+        s = Suser_error(ld)
+        _fli_stream_text(s, "PL_query(PL_QUERY_MAX_THREADS) is no longer supported\n")    # Sdprintf(...)
+        s === nothing || Sflush(s)
+        return 100000
+    elseif query == PL_QUERY_ENCODING
+        return Int(ENC_UTF8)                                # return LD->encoding
+    elseif query == PL_QUERY_USER_CPU
+        return trunc(Int, CpuTime(CPU_USER) * 1000.0)       # (intptr_t)(cpu*1000.0)
+    elseif query == PL_QUERY_HALTING
+        return gd.halt_cleaning != CLN_NORMAL ? 1 : 0       # (GD->halt.cleaning != CLN_NORMAL)
+    end
+
+    _fli_sys_error(gd, ld, "PL_query: Illegal query: $query")
+    return 0
+end
+
+# PORT: pl-fli.c PL_version_info
+# (swipl-devel 18168e62, src/pl-fli.c:6166-6178)
+# DIVERGES: PL_VERSION_VM (`VM_SIGNATURE`) and PL_VERSION_BUILT_IN (`GD->foreign.signature`) are hashes of upstream's instruction
+# table and built-in predicate table (the flag `abi_version`, src/os/pl-prologflag.jl): `NotPortedError` (owner FLI1).
+"The version number `which` (`PL_VERSION_*`): the system's, the FLI's, record's, QLF's, the oldest loadable QLF; 0 for any other (pl-fli.c)."
+function PL_version_info(which::Int)::UInt32
+    which == PL_VERSION_SYSTEM && return UInt32(PLVERSION)
+    which == PL_VERSION_FLI && return UInt32(PL_FLI_VERSION)
+    which == PL_VERSION_REC && return UInt32(PL_REC_VERSION)
+    which == PL_VERSION_QLF && return UInt32(PL_QLF_VERSION)
+    which == PL_VERSION_QLF_LOAD && return UInt32(PL_QLF_LOADVERSION)
+    if which == PL_VERSION_VM || which == PL_VERSION_BUILT_IN
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_version_info($which): the VM and built-in signatures (abi_version)", "FLI1"
+            )
+        )
+    end
+    return UInt32(0)
+end
