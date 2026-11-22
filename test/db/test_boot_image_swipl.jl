@@ -213,7 +213,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # INT-MERGE-17 (+ wip/dictset-replay): the branch registers six foreign rows of `system`: '$btree_find_node'/5 (pl-btree.c), '$needs_quotes'/1 (pl-write.c), b_set_dict/3, nb_set_dict/3, nb_link_dict/3
 # (pl-dict.c) and fast_term_serialized/2 (pl-rec.c). RE-COUNTED by the same script on the merged tree, not summed: 61 not registered (67 before this merge) - 4 (the calibration offset) = 57. DERIVED, NOT RUN:
 # the gate prints the PIN line (D-0083).
-const _BI_KERNEL_MISSING_FOREIGN = 57     # INT-MERGE-17: script count 61 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
+# COMP-EXT replay (wip/compext-int on wip/int-g1 37d561d1): the replay registers eight foreign rows of `system`: '$notrace'/1, '$vmi_property'/2, '$spy'/1, '$nospy'/1 (pl-pro.c, pl-comp.c, pl-trace.c),
+# '$fetch_vm'/4, '$break_pc'/3, '$break_at'/3, '$xr_member'/2 (pl-comp.c); all eight are rows of the oracle's list ('$predefine_foreign'/1 was registered at the tip already). RE-COUNTED by the same script (bifor.py)
+# on the replayed tree, not summed: 53 not registered (61 before the replay) - 4 (the calibration offset) = 49. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
+const _BI_KERNEL_MISSING_FOREIGN = 49     # COMP-EXT replay: script count 53 on the replayed tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave
