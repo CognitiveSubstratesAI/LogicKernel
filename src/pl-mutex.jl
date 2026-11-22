@@ -42,10 +42,10 @@ unify_mutex(ld::PL_local_data{T}, t::term_t, m::pl_mutex{T})::Bool where {T} =
     PL_unify_atom(ld, t, m.id)
 
 # PORT: pl-mutex.c unify_mutex_owner
-# DIVERGES: `unify_thread_id(t, GD->thread.threads[owner])` of the one thread, the main thread: its alias `main`.
-"Unify `t` with the thread that owns a mutex: `main`, or `[]` when `owner` is 0 (pl-mutex.c)."
+# DIVERGES: `unify_thread_id(t, GD->thread.threads[owner])` of the one thread, the main thread: its alias (`main_thread_alias`).
+"Unify `t` with the thread that owns a mutex: the main thread's alias, or `[]` when `owner` is 0 (pl-mutex.c)."
 function unify_mutex_owner(ld::PL_local_data{T}, t::term_t, owner::Int)::Bool where {T}
-    owner != 0 && return PL_unify_atom(ld, t, mk_sym(T, :main))
+    owner != 0 && return PL_unify_atom(ld, t, main_thread_alias(_query_gd(ld)))
     return PL_unify_nil(ld, t)
 end
 

@@ -199,15 +199,27 @@ function register_main_thread!(gd::PL_global_data{T})::Nothing where {T}
     return nothing
 end
 
+# ORIGINAL: the alias of the main thread, read where upstream reads `GD->thread.threads[1]` (`unify_thread_id`): the main thread has no
+# record here, so it is the alias of its handle (`handles[1]`), `main` from `register_main_thread!` on and `main` when no handle is registered.
+# `set_thread(E, alias(A))` aliases the CALLER (pl-thread.c `pl_set_thread`) and so renames the main thread when it is the caller
+# (swipl: `thread_self(X)` gives `A`, `thread_property(main, alias(A))`); `main` stays in `thread_table` (a NAME lookup is unchanged).
+"The alias of the main thread: its handle's alias, `main` when the handles are not registered yet."
+function main_thread_alias(gd::PL_global_data{T})::T where {T}
+    isempty(gd.thread.handles) && return mk_sym(T, :main)
+    a = gd.thread.handles[1].alias
+    return a === nothing ? mk_sym(T, :main) : a
+end
+
 # PORT: pl-thread.c unify_thread_id
-# DIVERGES: the database is an argument; `nothing` for the info is the main thread, which has no record here and answers its alias `main`.
+# DIVERGES: the database is an argument; `nothing` for the info is the main thread, which has no record here and answers its alias
+# (`main_thread_alias`: `main` unless `set_thread/2` renamed it).
 # The `PL_unify_integer(id, info->pl_tid)` branch ("during destruction") cannot be reached: `create_thread_handle` does not fail.
 "Unify `id` with the identifier of the thread `info`: its alias, else its blob (pl-thread.c)."
 function unify_thread_id(
     gd::PL_global_data{T}, ld::PL_local_data{T}, id::term_t,
     info::Union{Nothing, PL_thread_info{T}}
 )::Bool where {T}
-    info === nothing && return PL_unify_atom(ld, id, mk_sym(T, :main))
+    info === nothing && return PL_unify_atom(ld, id, main_thread_alias(gd))
     th = create_thread_handle(gd, info)
     name = th.alias !== nothing ? th.alias : th.symbol
     return PL_unify_atom(ld, id, name::T)
@@ -629,13 +641,13 @@ end
 const YIELD_ENGINE_YIELD = 256
 
 # PORT: pl-thread.c thread_symbol
-# DIVERGES: the database is an argument; the main thread has no record, so its symbol is its alias `main`.
+# DIVERGES: the database is an argument; the main thread has no record, so its symbol is its alias (`main_thread_alias`).
 "The symbol the posting thread of an engine call is known by: the engine's caller thread inside an engine, else its own (pl-thread.c)."
 function thread_symbol(
     gd::PL_global_data{T}, ld::PL_local_data{T}
 )::Union{Nothing, T} where {T}
     info = ld.thread_info
-    info === nothing && return mk_sym(T, :main)
+    info === nothing && return main_thread_alias(gd)
     if info.is_engine
         th = symbol_thread_handle(gd, info.symbol)::thread_handle{T}
         return th.interactor_thread
@@ -917,7 +929,7 @@ end
 
 # PORT: pl-thread.c PL_get_thread_alias
 # DIVERGES: the alias is the result (`nothing`: false); the database and the local data are arguments; the main thread has no record
-# and no handle here, its alias is `main` (upstream registers it with `aliasThread` at start).
+# and no record here, its alias is that of its handle, `main_thread_alias` (upstream registers it with `aliasThread` at start).
 "The alias atom of the thread `tid` (0: the calling thread), or `nothing` when it has none (pl-thread.c)."
 function PL_get_thread_alias(
     gd::PL_global_data{T}, ld::PL_local_data{T}, tid::Int
@@ -926,7 +938,7 @@ function PL_get_thread_alias(
     if tid < 1 || tid > gd.thread.highest_id
         return nothing
     end
-    tid == 1 && return mk_sym(T, :main)
+    tid == 1 && return main_thread_alias(gd)
     info = gd.thread.infos[tid]
     info === nothing && return nothing
     return symbol_alias(gd, info.symbol)
@@ -995,13 +1007,13 @@ function thread_id_property(
 end
 
 # PORT: pl-thread.c thread_alias_property
-# DIVERGES: the alias of the main thread is `main` (it has no record here).
+# DIVERGES: the alias of the main thread is that of its handle, `main_thread_alias` (it has no record here).
 "`alias(Alias)`: the alias of the thread, when it has one (pl-thread.c)."
 function thread_alias_property(
     gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
     prop::term_t
 )::Bool where {T}
-    info === nothing && return PL_unify_atom(ld, prop, mk_sym(T, :main))
+    info === nothing && return PL_unify_atom(ld, prop, main_thread_alias(gd))
     alias = symbol_alias(gd, info.symbol)
     alias === nothing && return false
     return PL_unify_atom(ld, prop, alias)
