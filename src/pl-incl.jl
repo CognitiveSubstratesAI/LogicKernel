@@ -1944,6 +1944,21 @@ const ALERT_DEPTHLIMIT = Int32(0x010)
 "Alert bit: an inference limit is set (pl-incl.h `ALERT_INFERENCELIMIT`; P3, `call_with_inference_limit/3`)."
 const ALERT_INFERENCELIMIT = Int32(0x020)
 
+# PORT: pl-incl.h ALERT_COVERAGE
+# (COV1: set by `updateAlerted` while `ld.coverage.active != 0`; the VM's hooks that read it are piece B of the step.)
+"Alert bit: the coverage collection is active (pl-incl.h `ALERT_COVERAGE`; COV1)."
+const ALERT_COVERAGE = Int32(0x400)
+
+# PORT: pl-incl.h CALL_PORT
+"Port mask: the call port (pl-incl.h `CALL_PORT`; `Coverage()` and the debugger)."
+const CALL_PORT = 0x001
+# PORT: pl-incl.h EXIT_PORT
+"Port mask: the exit port (pl-incl.h `EXIT_PORT`)."
+const EXIT_PORT = 0x002
+# PORT: pl-incl.h UNIFY_PORT
+"Port mask: the unify port, after the head unification (pl-incl.h `UNIFY_PORT`)."
+const UNIFY_PORT = 0x010
+
 # PORT: pl-incl.h DEPTH_NO_LIMIT
 # DIVERGES: upstream's is `(size_t)-1`; the kernel's depth fields are `Int` (a frame's level is far below `typemax(Int)`), so
 # the highest value is `typemax(Int)`. `$depth_limit/3` reads its limit through `PL_get_size_ex`, which refuses a size beyond

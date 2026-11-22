@@ -4442,6 +4442,12 @@ _manifest_coverage(T) = begin
         (LK.free_state, Tuple{ST}, false),
         (LK.is_candidate, Tuple{ST, OBJ}, false),
         (LK.free_coverage_data, Tuple{LD}, false),
+        # COV1 piece A: the VM's coverage hooks (nothing in the run loop calls them before piece B)
+        (LK.running_static_predicate, Tuple{LK.localFrame{T}}, false),
+        (LK.call_site, Tuple{GD, LD, LK.localFrame{T}}, false),
+        (LK.clref_site, Tuple{GD, LD, LK.ClauseRef{T}}, false),
+        (LK.record_coverage, Tuple{GD, LD, Int, Int}, false),
+        (LK.Coverage, Tuple{GD, LD, Int, Int}, false),
         (LK.cov_obj{T}, Tuple{Int, T, Int, Int, Int, Int}, false),
         (LK.coverage{T}, Tuple{LK.CovTable, Vector{OBJ}, Int, Int}, false),
         (LK.cov_data_state{T}, Tuple{}, false),
@@ -4457,7 +4463,8 @@ _manifest_coverage(T) = begin
 end
 _manifest_coverage_plain() = (
     (LK.free_cov_symbol, Tuple{UInt64, UInt64}, false),
-    (LK._cov_key, Tuple{Int, Int}, false)
+    (LK._cov_key, Tuple{Int, Int}, false),
+    (LK.bump, Tuple{Union{Nothing, LK.cov_obj}, Int}, false)
 )
 
 # LANE F — pl-prof.c (src/pl-prof.jl): the profiler's call tree, its readers and the '$prof_*' predicates (the structs are in

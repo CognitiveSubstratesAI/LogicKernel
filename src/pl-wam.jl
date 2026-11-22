@@ -204,7 +204,8 @@ end
 # no compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
 # Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245); since P3 the depth and inference limit bits.
-# NOT PORTED: the other masks (signals, profiling, exit requests, the debugger, string buffers, coverage).
+# Since COV1 `ALERT_COVERAGE` while the coverage collection is active (pl-wam.c:246).
+# NOT PORTED: the other masks (signals, profiling, exit requests, the debugger, string buffers).
 "Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
@@ -213,6 +214,7 @@ function updateAlerted(ld::PL_local_data)::Nothing
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
     (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
     UNDO_SCHEDULED(ld) && (mask |= ALERT_UNDO)      # if ( UNDO_SCHEDULED(ld) ) mask |= ALERT_UNDO
+    ld.coverage.active != 0 && (mask |= ALERT_COVERAGE)     # if ( ld->coverage.active ) mask |= ALERT_COVERAGE (COV1)
     ld.alerted = mask
     return nothing
 end
