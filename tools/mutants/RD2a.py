@@ -8,13 +8,18 @@
 # TARGETS (audit D-0238): every test file that runs the mutated code: the comments file (the kill rows), test_read_term_swipl.jl (read_term/2,3 options),
 # test_read_stream_swipl.jl (the stream reads and eof_action), test_read_positions_swipl.jl (term_position / subterm_positions through the same reads) and
 # test_canonical_readatom_swipl.jl (term_to_atom and read_term_from_atom, which run raw_read2 on a string stream).
+# Added at B6b: test_read_dict_swipl.jl (dict reads through the same frames), test_read_swipl.jl, test_read.jl and test_syntax.jl (whole terms through raw_read2).
 # Every `old` is counted exactly once by `python3 -I ~/code/lk-t27-scratch/oldscan.py RD2a` (from the repository root). RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 RC = "test/core_text/test_read_comments_swipl.jl"
 RT = "test/core_text/test_read_term_swipl.jl"
 RS = "test/core_text/test_read_stream_swipl.jl"
 RP = "test/core_text/test_read_positions_swipl.jl"
 CR = "test/core_text/test_canonical_readatom_swipl.jl"
-ALL = [RC, RT, RS, RP, CR]
+RD = "test/core_lang/test_read_dict_swipl.jl"
+RW = "test/core_lang/test_read_swipl.jl"
+RU = "test/core_text/test_read.jl"
+SY = "test/core_text/test_syntax.jl"
+ALL = [RC, RT, RS, RP, CR, RD, RW, RU, SY]
 TARGETS = ALL                                # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 R = "src/pl-read.jl"
 

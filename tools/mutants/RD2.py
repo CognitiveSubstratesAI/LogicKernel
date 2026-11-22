@@ -14,6 +14,10 @@
 # own files: test_read_term_swipl.jl (read_term/2,3 options and their errors), test_read_stream_swipl.jl (the stream reads), test_read_positions_swipl.jl
 # (subterm_positions through the same frames) and test_canonical_readatom_swipl.jl (term_to_atom and read_term_from_atom, which run the tokeniser);
 # every mutant therefore names all six, the kill rows being the new files' (a survivor of a narrow list proves nothing about dead code).
+# Added at B6b: the other files that run the tokeniser and the read_term frames of the same code: test_read_comments_swipl.jl (RD2a: comments(C), the
+# hook and read_clause/3 run through raw_read2 and the frames), test_read_dict_swipl.jl (the dict frames read_dict_* share the frame stack and
+# the token reads), test_read_swipl.jl (R1c's scanner), test_read.jl and test_syntax.jl (upstream's reader units: whole terms through the tokeniser
+# whose `{|` and `<` tests are mutated). The list is every mutant's: `ALL` below is TARGETS.
 # EQUIVALENT mutants: none declared. Left out as not killable by a pinned row (drafted, then dropped): the `}` test of get_quasi_quotation (no row has a `}`
 # inside a body), the ambiguity return of lookupLiveBlob (no two live blobs write the same text), the address read of `blob_address` (the type scan
 # finds the same stream, bl70/bl75), `bt !== unavailable_blob` of scanLiveBlobs (a dead blob writes as `<unavailable>(...)`, never as the text read).
@@ -25,12 +29,17 @@ RT = "test/core_text/test_read_term_swipl.jl"
 RS = "test/core_text/test_read_stream_swipl.jl"
 RP = "test/core_text/test_read_positions_swipl.jl"
 CR = "test/core_text/test_canonical_readatom_swipl.jl"
-TARGETS = [QA, BL, RT, RS, RP, CR]           # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
+RC = "test/core_text/test_read_comments_swipl.jl"
+RD = "test/core_lang/test_read_dict_swipl.jl"
+RW = "test/core_lang/test_read_swipl.jl"
+RU = "test/core_text/test_read.jl"
+SY = "test/core_text/test_syntax.jl"
+TARGETS = [QA, BL, RT, RS, RP, CR, RC, RD, RW, RU, SY]   # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 R = "src/pl-read.jl"
 A = "src/pl-atom.jl"
 W = "src/pl-write.jl"
 FLI = "src/pl-fli.jl"
-ALL = [QA, BL, RT, RS, RP, CR]
+ALL = TARGETS
 # every mutant names ALL six files (audit D-0238: the narrow list of an early battery proves nothing about dead code); the names below stay for the reader of a row
 QQ = BLOB = BLONLY = ALL
 
