@@ -5290,6 +5290,54 @@ function atom_to_term(
     return rval
 end
 
+# PORT: pl-read.c PL_put_term_from_chars
+# DIVERGES: `s` is a byte vector and `len` the number of its bytes to read (upstream: a `char *` and a length,
+# `(size_t)-1` meaning `strlen`); `flags` reads `REP_UTF8` and `CVT_EXCEPTION` only (`REP_MB`, ENC_ANSI, has no
+# constant here, so the encoding is UTF-8 or ISO Latin-1); no `LD->read_source` to save and restore (see
+# `setCurrentSourceLocation`); no malloc failure (`PL_resource_error("memory")`); the 0-terminated copy of the
+# digits is a vector with a trailing 0. `str_number` returns the index after the number (1-based), so
+# `e == ns+len` is `e == len + 1`. UNMEASURED: the first branch and the "1." and "-" outcomes of the second were
+# written from the C text only.
+"""
+Put the term the first `len` bytes of `s` read as into `t` (pl-read.c): a number when the text is one
+(first character a digit or `-`, last a digit, all of it a number), else read as Prolog text. A syntax
+error is raised under `CVT_EXCEPTION`, else put into `t`.
+"""
+function PL_put_term_from_chars(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32, s::AbstractVector{UInt8}, len::Int
+)::Bool where {T}
+    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))
+        ns = Vector{UInt8}(s[1:len])
+        push!(ns, 0x00)                             # s[len] != EOS: a 0-terminated copy
+        n = number()
+        rc, e = str_number(ld, ns, 1, n, UInt32(0))
+        if rc == NUM_OK && e == len + 1
+            ok = _PL_put_number(ld, t, n)
+            clearNumber(n)
+            return ok
+        end
+    end
+
+    gd = _query_gd(ld)
+    enc = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1
+    txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, enc, enc === ENC_ISO_LATIN_1)
+    stream = Sopen_text(txt, "r")                   # Sopen_string(NULL, s, len, "r"), then its encoding
+    stream === nothing && error("PL_put_term_from_chars: Sopen_text")
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0
+            rval = PL_raise_exception(ld, rd.exception)
+        else
+            PL_put_term(ld, t, rd.exception)
+        end
+    end
+    Sclose(stream)                                  # free_read_data(): Julia's GC
+
+    return rval
+end
+
 # PORT: pl-read.c atom_to_term as pl_atom_to_term3_va
 # (PRED_IMPL("atom_to_term", 3, atom_to_term, 0))
 "`atom_to_term(+Text, -Term, -Bindings)` (pl-read.c)."

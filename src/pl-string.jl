@@ -835,6 +835,34 @@ function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool whe
     return PL_raise_exception(ld, ex)
 end
 
+# PORT: pl-error.c PL_syntax_error
+# (the form with a stream, pl-error.c:935-973)
+# DIVERGES: the terms are built bottom-up with `PL_cons_functor` (`_message_term`) where upstream unifies
+# `PL_unify_term`'s tree into an unbound `loc`; the same term `error(syntax_error(Msg), stream(S, Line, LinePos, CharNo))`,
+# or `stream(S)` when the stream has no position. UNMEASURED: the layout was written from the C text only.
+"Raise `error(syntax_error(Msg), stream(S, Line, LinePos, CharNo))` (pl-error.c `PL_syntax_error(msg, in)`, `strm`); false."
+function PL_syntax_error(ld::PL_local_data{T}, msg::String, strm::IOSTREAM)::Bool where {T}
+    formal = PL_new_term_ref(ld)
+    PL_cons_functor(
+        ld, formal, _err_functor(ld, :syntax_error, 1),
+        _err_atom(ld, mk_sym(T, Symbol(msg)))
+    )
+    s = PL_new_term_ref(ld)
+    PL_unify_stream_or_alias(ld, s, strm) || return false
+    pos = strm.position
+    loc = if pos === nothing
+        _message_term(ld, :stream, s)
+    else
+        _message_term(
+            ld, :stream, s, _err_int(ld, pos.lineno), _err_int(ld, pos.linepos),
+            _err_int(ld, Int(pos.charno))
+        )
+    end
+    ex = PL_new_term_ref(ld)
+    PL_cons_functor(ld, ex, _err_functor(ld, :error, 2), formal, loc)
+    return PL_raise_exception(ld, ex)
+end
+
 # PORT: pl-text.c text_error as string_bytes_text_error
 # (the two UTF-16 codes)
 "Raise the error for the code `rc` of `utf16_to_text` or of `PL_canonicalise_text`; false (pl-text.c)."
