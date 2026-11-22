@@ -1364,16 +1364,45 @@ function Srelease(s::IOSTREAM)::Bool
     return Sunreference(s) == 0 && s.erased
 end
 
+# PORT: pl-stream.c Scontrol_file as Scontrol_getsize (the `SIO_GETSIZE` action; and Scontrol_memfile's)
+# DIVERGES: the `control` function of the stream's set, called for `SIO_GETSIZE` alone: -1 where upstream's `control` is NULL
+# or fails. A file (`IOStream`) is `fstat`'s `st_size`; an `IOBuffer`, which stands in for a file, the size of its data;
+# a terminal or a pipe on stdio `fstat`'s 0. A memory file answers `mf->here`, as upstream's `Scontrol_memfile` does (not its
+# size). A `popen` pipe (`Spipefunctions`: `Scontrol_pipe` has no `SIO_GETSIZE`), a null stream and a string stream have none.
+"The size `SIO_GETSIZE` reports for `s`'s handle, or -1."
+function Scontrol_getsize(s::IOSTREAM)::Int64
+    h = s.handle
+    if s.functions == Smemfunctions && h isa memfile
+        return Int64(h.here)
+    elseif s.functions == Siofunctions && h isa Sjulia_io
+        h.proc !== nothing && return Int64(-1)                  # Scontrol_pipe
+        io = h.io
+        try
+            if io isa IOStream
+                return Int64(filesize(io))
+            elseif io isa IOBuffer
+                here = position(io)
+                seekend(io)
+                size = position(io)
+                seek(io, here)
+                return Int64(size)
+            end
+            return Int64(0)                                     # a terminal or a pipe
+        catch e
+            e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+            return Int64(-1)
+        end
+    end
+    return Int64(-1)
+end
+
 # PORT: pl-stream.c Ssize
-# DIVERGES: the function set's `control` `SIO_GETSIZE` is `filesize` of a file's Julia IO (`IOStream`); any other stream with a
-# seek function is measured by seeking to its end and back (upstream's second branch); one without sets `ESPIPE` as upstream.
+# DIVERGES: the `control` call is `Scontrol_getsize`; any other stream with a seek function is measured by seeking to its
+# end and back (upstream's second branch); one without sets `ESPIPE` as upstream.
 "The size of the data object `s` reads or writes, or -1 (pl-stream.c)."
 function Ssize(s::IOSTREAM)::Int64
-    h = s.handle
-    if s.functions == Siofunctions && h isa Sjulia_io
-        io = h.io
-        io isa IOStream && return Int64(filesize(io))
-    end
+    size = Scontrol_getsize(s)                                  # functions->control: SIO_GETSIZE
+    size >= 0 && return size
     if S_has_seek(s)
         here = Stell64(s)
         local enddata::Int64

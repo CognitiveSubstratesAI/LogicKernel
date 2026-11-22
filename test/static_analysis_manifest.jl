@@ -5125,7 +5125,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
-    (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    (LK.Scontrol_getsize, Tuple{LK.IOSTREAM}, false), (LK.Ssize, Tuple{LK.IOSTREAM}, false),
     # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, S__seek_update, Sseek64, Sseek, Stell64, Stell
     (LK.Sunit_size, Tuple{LK.IOSTREAM}, false), (LK.S_has_seek, Tuple{LK.IOSTREAM}, false),
     (LK.Sseek_julia_io, Tuple{LK.IOSTREAM, LK.Sjulia_io, Int64, Int}, false),
