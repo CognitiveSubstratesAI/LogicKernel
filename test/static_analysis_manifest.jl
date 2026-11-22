@@ -2509,6 +2509,23 @@ function _manifest_index(T)
         # BOOTPRED — '$garbage_collect'/1 (src/pl-gc.jl), thread_self/1 (src/pl-thread.jl), with_mutex/2 (src/pl-mutex.jl)
         (LK.pl_garbage_collect, Tuple{LD, Int}, false),
         (LK.pl_thread_self, Tuple{LD, Int}, false),
+        # TH1 engines — pl-thread.c: the thread blob, the handle, aliases, get_interactor, is_engine/1 (src/pl-thread.jl)
+        (LK.initThreads!, Tuple{LK.atoms_t}, false),
+        (LK.symbol_thread_handle, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
+        (LK.create_thread_handle, Tuple{LK.PL_global_data{T}, LK.PL_thread_info{T}}, false),
+        (
+            LK.unify_thread_id,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}},
+            false,
+        ),
+        (
+            LK.aliasThread!,
+            Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}, T, T},
+            false,
+        ),
+        (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.get_interactor, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
+        (LK.pl_is_engine, Tuple{LD, Int}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
