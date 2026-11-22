@@ -135,6 +135,12 @@ const REP_UTF8 = 0x00100000
 # PORT: SWI-Prolog.h REP_MB
 "Text conversion: the text is in the multibyte encoding of the locale (SWI-Prolog.h)."
 const REP_MB = 0x00200000
+# PORT: SWI-Prolog.h REP_ISO_LATIN_1
+"Text conversion: the text is ISO Latin-1, the default encoding (SWI-Prolog.h)."
+const REP_ISO_LATIN_1 = 0x00000000
+# PORT: SWI-Prolog.h PL_DIFF_LIST
+"Text type flag: the list is a difference list, its tail left in the next term reference (SWI-Prolog.h)."
+const PL_DIFF_LIST = 0x01000000
 # PORT: SWI-Prolog.h CVT_ATOM
 "Text conversion: an atom (SWI-Prolog.h)."
 const CVT_ATOM = 0x00000001

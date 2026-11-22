@@ -4,6 +4,10 @@
 # PL_unify_int64_ex, PL_unify_pointer (src/pl-fli.jl); group 2: PL_new_atom, PL_new_atom_mbchars, PL_new_functor_sz,
 # PL_new_functor, PL_functor_name, PL_functor_arity, PL_atom_chars, PL_atom_nchars, PL_atom_wchars, PL_atom_mbchars,
 # PL_get_atom_chars; group 3: PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info (resolveModule: skipped, wip/clib1 defines it).
+# group E1: PL_put_atom_chars, PL_put_atom_nchars, PL_put_string_chars, PL_put_string_nchars, PL_put_chars,
+# PL_put_list_ncodes, PL_put_list_codes, PL_put_list_nchars, PL_put_list_chars, PL_unify_atom_chars, PL_unify_atom_nchars,
+# PL_unify_string_chars, PL_unify_string_nchars, PL_unify_list_ncodes, PL_unify_list_codes, PL_unify_list_nchars,
+# PL_unify_list_chars (PL_unify_chars: skipped, wip/clib-uri and wip/clib1 define it).
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -353,6 +357,208 @@ end
     @test ok === true && lk_name(name) === :q && arity == 0 && m == LK.MODULE_user(gd).index
 end
 
+
+"The text the term reference `t` holds as an atom, a string or a code/character list, `nothing` for none."
+function _fa_text(ld, t)
+    x = LK.PL_get_text(ld, t, LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_LIST)
+    return x === nothing ? nothing : LK._text_string(x)
+end
+"The elements of the list term reference `t` holds, each read by `read1(ld, ref)`; `nothing` if it is no proper list."
+function _fa_list(ld, t, read1)
+    out = Any[]
+    h = LK.PL_new_term_ref(ld)
+    l = LK.PL_copy_term_ref(ld, t)
+    while LK.PL_get_list(ld, l, h, l)
+        push!(out, read1(ld, h))
+    end
+    return LK.PL_get_nil(ld, l) ? out : nothing
+end
+_fa_codes(ld, t) = _fa_list(ld, t, (ld, h) -> LK.PL_get_integer(ld, h))
+_fa_chars(ld, t) = _fa_list(ld, t, (ld, h) -> lk_name(LK.PL_get_atom(ld, h)))
+"The name of the atom term reference `t` holds."
+_fa_atom(ld, t) = lk_name(LK.PL_get_atom(ld, t))
+
+# LK-ONLY (pl-fli.c:3063-3088): PL_put_atom_chars puts the atom of the bytes before the first 0 (ISO Latin-1); PL_put_atom_nchars
+# the atom of `len` bytes. DIVERGES (forced): -1 is strlen; a 0 byte inside the text raises AtomNotRepresentableError.
+@testset "LK-ONLY: PL_put_atom_chars and PL_put_atom_nchars (pl-fli.c:3063, :3076)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5)])
+    @test LK.PL_put_atom_chars(ld, t, _fa_b("abc"))
+    @test LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === :abc
+    @test LK.PL_put_atom_chars(ld, t + 1, UInt8[0x61, 0x62, 0x00, 0x63])          # strlen: cut at the first 0
+    @test _fa_atom(ld, t + 1) === :ab
+    @test LK.PL_put_atom_chars(ld, t + 2, UInt8[0xe9])                            # Latin-1, not UTF-8
+    @test _fa_atom(ld, t + 2) === Symbol("é")
+    @test LK.PL_put_atom_nchars(ld, t + 3, 2, _fa_b("abcd"))
+    @test _fa_atom(ld, t + 3) === :ab
+    @test LK.PL_put_atom_nchars(ld, t + 4, 0, _fa_b("abcd"))
+    @test _fa_atom(ld, t + 4) === Symbol("")
+    @test LK.PL_put_atom_nchars(ld, t, -1, UInt8[0x61, 0x62, 0x00, 0x63])         # -1: strlen
+    @test _fa_atom(ld, t) === :ab
+    @test LK.PL_put_atom_nchars(ld, t, 3, _fa_b("€")) && _fa_atom(ld, t) === Symbol("â\u0082¬")
+    @test_throws LK.AtomNotRepresentableError LK.PL_put_atom_nchars(ld, t, 3, UInt8[0x61, 0x00, 0x63])
+end
+
+# LK-ONLY (pl-fli.c:3092-3118): PL_put_string_chars puts the string of the bytes before the first 0, PL_put_string_nchars
+# the string of `len` bytes (ISO Latin-1, globalString); a string is no atom.
+@testset "LK-ONLY: PL_put_string_chars and PL_put_string_nchars (pl-fli.c:3092, :3106)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4)])
+    @test LK.PL_put_string_chars(ld, t, _fa_b("abc"))
+    @test LK.PL_is_string(ld, t) && !LK.PL_is_atom(ld, t) && _fa_text(ld, t) == "abc"
+    @test LK.PL_put_string_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62])
+    @test _fa_text(ld, t + 1) == "a"
+    @test LK.PL_put_string_chars(ld, t + 2, UInt8[0xe9])
+    @test _fa_text(ld, t + 2) == "é"
+    @test LK.PL_put_string_nchars(ld, t + 3, 2, _fa_b("abcd"))
+    @test LK.PL_is_string(ld, t + 3) && _fa_text(ld, t + 3) == "ab"
+    @test LK.PL_put_string_nchars(ld, t, 3, UInt8[0x61, 0x00, 0x62, 0x63])        # the 0 byte is a character
+    @test _fa_text(ld, t) == "a\0b"
+    @test LK.PL_put_string_nchars(ld, t, 0, _fa_b("abcd"))
+    @test LK.PL_is_string(ld, t) && _fa_text(ld, t) == ""
+    @test LK.PL_put_string_nchars(ld, t, -1, UInt8[0x61, 0x00, 0x62])             # -1: strlen
+    @test _fa_text(ld, t) == "a"
+end
+
+# LK-ONLY (pl-fli.c:3122-3161): PL_put_chars puts the text as the type in the flags says (PL_ATOM, PL_STRING, PL_CODE_LIST,
+# PL_CHAR_LIST) read in the representation they say (ISO Latin-1, REP_UTF8); -1 is strlen (:3129); REP_MB is refused by name.
+@testset "LK-ONLY: PL_put_chars (pl-fli.c:3122)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4)])
+    euro = _fa_b("€")                                                             # e2 82 ac
+    @test LK.PL_put_chars(ld, t, LK.PL_ATOM, 3, _fa_b("abc"))
+    @test LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === :abc
+    @test LK.PL_put_chars(ld, t + 1, Int(LK.PL_ATOM | LK.REP_UTF8), 3, euro)
+    @test _fa_atom(ld, t + 1) === Symbol("€")
+    @test LK.PL_put_chars(ld, t + 1, LK.PL_ATOM, 3, euro)                         # Latin-1: three characters
+    @test _fa_atom(ld, t + 1) === Symbol("â\u0082¬")
+    @test LK.PL_put_chars(ld, t + 2, LK.PL_STRING, 3, _fa_b("abc"))
+    @test LK.PL_is_string(ld, t + 2) && !LK.PL_is_atom(ld, t + 2) && _fa_text(ld, t + 2) == "abc"
+    @test LK.PL_put_chars(ld, t + 2, Int(LK.PL_STRING | LK.REP_UTF8), 3, euro)
+    @test LK.PL_is_string(ld, t + 2) && _fa_text(ld, t + 2) == "€"
+    @test LK.PL_put_chars(ld, t + 3, LK.PL_CODE_LIST, 2, _fa_b("hi"))
+    @test _fa_codes(ld, t + 3) == [104, 105]
+    @test LK.PL_put_chars(ld, t + 3, LK.PL_CHAR_LIST, 2, _fa_b("hi"))
+    @test _fa_chars(ld, t + 3) == [:h, :i]
+    @test LK.PL_put_chars(ld, t + 3, Int(LK.PL_CODE_LIST | LK.REP_UTF8), 3, euro)
+    @test _fa_codes(ld, t + 3) == [0x20ac]
+    @test LK.PL_put_chars(ld, t + 3, LK.PL_CODE_LIST, 0, _fa_b("hi"))             # the empty text: []
+    @test LK.PL_get_nil(ld, t + 3)
+    @test LK.PL_put_chars(ld, t, LK.PL_ATOM, -1, UInt8[0x61, 0x62, 0x00, 0x63])   # -1: strlen
+    @test _fa_atom(ld, t) === :ab
+    @test LK.PL_put_chars(ld, t, LK.PL_STRING, -1, UInt8[0x61, 0x62, 0x00, 0x63])
+    @test _fa_text(ld, t) == "ab"
+    @test_throws LK.NotPortedError LK.PL_put_chars(ld, t, Int(LK.PL_ATOM | LK.REP_MB), 3, _fa_b("abc"))
+    @test _fa_msg(() -> LK.PL_put_chars(ld, t, 0, 3, _fa_b("abc"))) == "PL_put_chars: unknown type 0"
+end
+
+# LK-ONLY (pl-fli.c:3165-3189, :3193): PL_put_list_ncodes puts the list of the `len` bytes as integer codes, [] for 0; the
+# bytes are read unsigned (`& 0xff`); PL_put_list_codes is strlen of it. The last tail is [] (a proper list).
+@testset "LK-ONLY: PL_put_list_ncodes and PL_put_list_codes (pl-fli.c:3165, :3193)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4)])
+    @test LK.PL_put_list_ncodes(ld, t, 2, _fa_b("hi"))
+    @test LK.PL_is_pair(ld, t) && _fa_codes(ld, t) == [104, 105]
+    @test LK.PL_put_list_ncodes(ld, t + 1, 3, _fa_b("hello"))
+    @test _fa_codes(ld, t + 1) == [104, 101, 108] && LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
+    @test LK.PL_put_list_ncodes(ld, t + 2, 0, _fa_b("hello"))
+    @test LK.PL_get_nil(ld, t + 2)
+    @test LK.PL_put_list_ncodes(ld, t + 2, 3, UInt8[0x00, 0xe9, 0xff])            # unsigned bytes
+    @test _fa_codes(ld, t + 2) == [0, 233, 255]
+    @test LK.PL_put_list_codes(ld, t + 3, _fa_b("hello"))
+    @test _fa_codes(ld, t + 3) == [104, 101, 108, 108, 111]
+    @test LK.PL_put_list_codes(ld, t + 3, UInt8[0x61, 0x00, 0x62])                # strlen
+    @test _fa_codes(ld, t + 3) == [97]
+    @test LK.PL_put_list_codes(ld, t + 3, UInt8[])
+    @test LK.PL_get_nil(ld, t + 3)
+end
+
+# LK-ONLY (pl-fli.c:3199-3226, :3231): PL_put_list_nchars puts the list of the bytes as one-character atoms; PL_put_list_chars
+# is strlen of it.
+@testset "LK-ONLY: PL_put_list_nchars and PL_put_list_chars (pl-fli.c:3199)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3)])
+    @test LK.PL_put_list_nchars(ld, t, 2, _fa_b("hi"))
+    @test LK.PL_is_pair(ld, t) && _fa_chars(ld, t) == [:h, :i]
+    @test LK.PL_put_list_nchars(ld, t + 1, 3, _fa_b("hello"))
+    @test _fa_chars(ld, t + 1) == [:h, :e, :l] && LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
+    @test LK.PL_put_list_nchars(ld, t + 2, 0, _fa_b("hello"))
+    @test LK.PL_get_nil(ld, t + 2)
+    @test LK.PL_put_list_nchars(ld, t + 2, 1, UInt8[0xe9])                        # Latin-1
+    @test _fa_chars(ld, t + 2) == [Symbol("é")]
+    @test LK.PL_put_list_chars(ld, t + 2, UInt8[0x61, 0x62, 0x00, 0x63])          # strlen
+    @test _fa_chars(ld, t + 2) == [:a, :b]
+end
+
+# LK-ONLY (pl-fli.c:3506-3528): PL_unify_atom_chars and PL_unify_atom_nchars unify with the atom of the bytes: a variable
+# is bound, an atom must be the same one, anything else fails.
+@testset "LK-ONLY: PL_unify_atom_chars and PL_unify_atom_nchars (pl-fli.c:3506, :3519)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rs("abc"), _fa_k(5), _rg("abc")])
+    @test LK.PL_unify_atom_chars(ld, t, _fa_b("abc")) && _fa_atom(ld, t) === :abc
+    @test LK.PL_unify_atom_chars(ld, t + 3, _fa_b("abc"))
+    @test !LK.PL_unify_atom_chars(ld, t + 3, _fa_b("abd"))
+    @test !LK.PL_unify_atom_chars(ld, t + 4, _fa_b("abc"))                        # an integer
+    @test !LK.PL_unify_atom_chars(ld, t + 5, _fa_b("abc"))                        # a string is no atom
+    @test LK.PL_unify_atom_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) && _fa_atom(ld, t + 1) === :a   # strlen
+    @test LK.PL_unify_atom_nchars(ld, t + 2, 2, _fa_b("abc")) && _fa_atom(ld, t + 2) === :ab
+    @test LK.PL_unify_atom_nchars(ld, t + 3, 3, _fa_b("abcd"))
+    @test !LK.PL_unify_atom_nchars(ld, t + 3, 2, _fa_b("abcd"))
+    @test LK.PL_unify_atom_nchars(ld, t + 3, -1, _fa_b("abc"))                    # -1: strlen
+end
+
+# LK-ONLY (pl-fli.c:3003-3024): PL_unify_string_chars and PL_unify_string_nchars unify with the string of the bytes: a
+# variable is bound, a string must be equal, an atom of the same text is no string.
+@testset "LK-ONLY: PL_unify_string_chars and PL_unify_string_nchars (pl-fli.c:3003, :3015)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rg("abc"), _rs("abc")])
+    @test LK.PL_unify_string_chars(ld, t, _fa_b("abc"))
+    @test LK.PL_is_string(ld, t) && _fa_text(ld, t) == "abc"
+    @test LK.PL_unify_string_chars(ld, t + 3, _fa_b("abc"))
+    @test !LK.PL_unify_string_chars(ld, t + 3, _fa_b("abd"))
+    @test !LK.PL_unify_string_chars(ld, t + 4, _fa_b("abc"))                      # an atom
+    @test LK.PL_unify_string_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) && _fa_text(ld, t + 1) == "a"   # strlen
+    @test LK.PL_unify_string_nchars(ld, t + 2, 2, _fa_b("abc"))
+    @test LK.PL_is_string(ld, t + 2) && _fa_text(ld, t + 2) == "ab"
+    @test LK.PL_unify_string_nchars(ld, t + 3, 3, _fa_b("abcd"))
+    @test !LK.PL_unify_string_nchars(ld, t + 3, 2, _fa_b("abcd"))
+end
+
+# LK-ONLY (pl-fli.c:3599-3629): PL_unify_list_ncodes unifies with the list of the bytes as codes: a variable is bound to it
+# (put + unify, :3602-3606), a partial or a proper list is unified cell by cell (:3608-3621); PL_unify_list_codes is strlen.
+@testset "LK-ONLY: PL_unify_list_ncodes and PL_unify_list_codes (pl-fli.c:3599, :3627)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5)])
+    @test LK.PL_unify_list_ncodes(ld, t, 2, _fa_b("hi"))                          # a variable
+    @test _fa_codes(ld, t) == [104, 105]
+    @test LK.PL_unify_list_ncodes(ld, t, 2, _fa_b("hi"))                          # the same list
+    @test !LK.PL_unify_list_ncodes(ld, t, 2, _fa_b("ho"))                         # another element
+    @test !LK.PL_unify_list_ncodes(ld, t, 1, _fa_b("hi"))                         # a shorter list
+    @test !LK.PL_unify_list_ncodes(ld, t, 3, _fa_b("hij"))                        # a longer list
+    h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_list(ld, t + 1, h, tl)                                      # t+1 is now [A|B], A, B variables
+    @test LK.PL_unify_list_ncodes(ld, t + 1, 2, _fa_b("hi"))                      # a partial list
+    @test _fa_codes(ld, t + 1) == [104, 105]
+    @test LK.PL_put_nil(ld, t + 4)
+    @test LK.PL_unify_list_ncodes(ld, t + 4, 0, _fa_b("hi"))                      # [] with the empty text
+    @test !LK.PL_unify_list_ncodes(ld, t + 4, 1, _fa_b("hi"))
+    @test LK.PL_unify_list_ncodes(ld, t + 2, 0, _fa_b("hi")) && LK.PL_get_nil(ld, t + 2)   # a variable: []
+    @test LK.PL_put_list_codes(ld, t + 3, _fa_b("ab"))
+    @test LK.PL_unify_list_codes(ld, t + 3, _fa_b("ab")) && !LK.PL_unify_list_codes(ld, t + 3, _fa_b("abc"))
+    @test LK.PL_unify_list_codes(ld, t + 3, UInt8[0x61, 0x62, 0x00, 0x63])        # strlen
+end
+
+# LK-ONLY (pl-fli.c:3633-3663): PL_unify_list_nchars unifies with the list of the bytes as one-character atoms, as
+# PL_unify_list_ncodes does with codes; PL_unify_list_chars is strlen.
+@testset "LK-ONLY: PL_unify_list_nchars and PL_unify_list_chars (pl-fli.c:3633, :3661)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4)])
+    @test LK.PL_unify_list_nchars(ld, t, 2, _fa_b("hi"))
+    @test _fa_chars(ld, t) == [:h, :i]
+    @test LK.PL_unify_list_nchars(ld, t, 2, _fa_b("hi"))
+    @test !LK.PL_unify_list_nchars(ld, t, 2, _fa_b("ho"))
+    @test !LK.PL_unify_list_nchars(ld, t, 1, _fa_b("hi"))
+    @test !LK.PL_unify_list_nchars(ld, t, 3, _fa_b("hij"))
+    h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
+    @test LK.PL_unify_list(ld, t + 1, h, tl)
+    @test LK.PL_unify_list_nchars(ld, t + 1, 2, _fa_b("hi"))
+    @test _fa_chars(ld, t + 1) == [:h, :i]
+    @test LK.PL_unify_list_chars(ld, t + 2, _fa_b("ab"))
+    @test _fa_chars(ld, t + 2) == [:a, :b]
+    @test LK.PL_unify_list_chars(ld, t + 2, UInt8[0x61, 0x62, 0x00, 0x63])        # strlen
+    @test !LK.PL_unify_list_chars(ld, t + 2, _fa_b("abc"))
+end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
     ld, t = _fa_engine(_R[_rf("f", _rs("a"), _rv(1)), _rv(2), _rv(3), _rv(4), _fa_k(77)])

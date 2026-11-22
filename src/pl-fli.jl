@@ -1859,6 +1859,257 @@ function PL_atom_mbchars(
     return (text.text, text.length)
 end
 
+# ── FLI-API group E1 (pl-fli.c): putting and unifying text — atoms, strings, code and character lists ──────────────
+
+# ORIGINAL (FLI-API): the `PL_chars_t` of `len` bytes of `s` that `PL_put_chars` makes from its
+# `flags` (pl-fli.c: the `text.encoding = REP_UTF8 ? ENC_UTF8 : REP_MB ? ENC_ANSI : ENC_ISO_LATIN_1` lines), and the
+# `flags` left once the representation bits are cleared. `len` -1 is `strlen`; `REP_MB` (`ENC_ANSI`) is refused by name.
+"The not yet canonical text of `len` bytes of `s` as `flags` name its encoding, and the type bits of `flags` (pl-fli.c)."
+function _fli_chars_text(
+    flags::Int, len::Int, s::AbstractVector{UInt8}, who::String
+)::Tuple{PL_chars_t, Int}
+    if len == -1                                            # if ( len == (size_t)-1 )
+        len = _c_strlen(s)                                  #   len = strlen(s)
+    end
+    if (flags & REP_MB) != 0 && (flags & REP_UTF8) == 0
+        throw(NotPortedError{Nothing}(nothing, "$who with REP_MB", "ENC_ANSI is unwritten"))
+    end
+    enc = (flags & REP_UTF8) == 0 ? ENC_ISO_LATIN_1 : ENC_UTF8
+    text = PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, enc, false)
+    return (text, flags & ~(REP_UTF8 | REP_MB | REP_ISO_LATIN_1))  # flags &= ~(REP_UTF8|REP_MB|REP_ISO_LATIN_1)
+end
+
+# ORIGINAL (FLI-API): the string of `len` ISO Latin-1 bytes of `s` (upstream's `globalString(len, s)`); `len` -1 is
+# `strlen`, as in `PL_new_atom_mbchars`.
+"The `String` of `len` ISO Latin-1 bytes of `s`, `len` -1 for the bytes before the first 0 (pl-fli.c `globalString`)."
+function _latin1_string(len::Int, s::AbstractVector{UInt8})::String
+    if len == -1
+        len = _c_strlen(s)
+    end
+    return _text_string(PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, ENC_ISO_LATIN_1, true))
+end
+
+# PORT: pl-fli.c PL_put_atom_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0 (`PL_new_atom`); no
+# `PL_unregister_atom` (no atom GC).
+"Make term reference `t` hold the atom of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+function PL_put_atom_chars(
+    ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}
+)::Bool where {T}
+    PL_put_atom(ld, t, PL_new_atom(ld, s))                  # a = lookupAtom(s, strlen(s)); setHandle(t, a)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_atom_nchars
+# DIVERGES (forced): `len` -1 is `strlen` (upstream passes the -1 to `lookupAtom`, then fixes `len` after the
+# fact); a 0 byte inside the text raises `AtomNotRepresentableError` (a symbol cannot hold it, `PL_new_atom_mbchars`);
+# no `PL_unregister_atom`.
+"Make term reference `t` hold the atom of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+function PL_put_atom_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    a = PL_new_atom_mbchars(ld, 0, len, s)                  # a = lookupAtom(s, len)
+    a === nothing && return false
+    return PL_put_atom(ld, t, a)                            # setHandle(t, a)
+end
+
+# PORT: pl-fli.c PL_put_string_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0; the string is a grounded
+# value of the term type, stored as `PL_put_float` stores one (`setSlotValue!`); it cannot fail (no `globalString`
+# allocation to refuse).
+"Make term reference `t` hold the string of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+function PL_put_string_chars(
+    ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}
+)::Bool where {T}
+    setSlotValue!(ld, t + 1, mk_gnd(T, _latin1_string(-1, s)))     # w = globalString(strlen(s), s); setHandle(t, w)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_string_nchars
+# DIVERGES: as `PL_put_string_chars`; `len` -1 is `strlen`.
+"Make term reference `t` hold the string of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+function PL_put_string_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    setSlotValue!(ld, t + 1, mk_gnd(T, _latin1_string(len, s)))    # w = globalString(len, s); setHandle(t, w)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_chars
+# DIVERGES: the local data is an argument; the text is a byte vector, `len` -1 for `strlen`; `REP_MB` (`ENC_ANSI`) is
+# refused by name (`NotPortedError`); an atom is the term type's symbol of the text (`_atom_from_text`, so a text
+# holding the character 0 is refused as in every atom), a string its grounded value (`setSlotValue!`); the error of a
+# text that cannot be canonicalised is raised for a string as `PL_unify_text` raises it; an unknown type is `error`
+# (upstream's `assert(0)`); no `PL_free_text`.
+"Make term reference `t` hold the text of `len` bytes of `s` as `flags` say: a type (`PL_ATOM`, `PL_STRING`, `PL_CODE_LIST`, `PL_CHAR_LIST`) and a representation (pl-fli.c)."
+function PL_put_chars(
+    ld::PL_local_data{T}, t::term_t, flags::Int, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    text, flags = _fli_chars_text(flags, len, s, "PL_put_chars")
+    if flags == PL_ATOM
+        PL_canonicalise_text(text) == 1 || return false     # w = textToAtom(&text): 0
+        return PL_put_atom(ld, t, _atom_from_text(T, _text_string(text)))
+    elseif flags == PL_STRING
+        rc = PL_canonicalise_text(text)                     # w = textToString(&text)
+        rc == 1 || return text_error(ld, rc)
+        setSlotValue!(ld, t + 1, mk_gnd(T, _text_string(text)))
+        return true
+    elseif flags == PL_CODE_LIST || flags == PL_CHAR_LIST
+        PL_put_variable(ld, t)
+        return PL_unify_text(ld, t, 0, text, flags)         # rc = PL_unify_text(t, 0, &text, flags)
+    else
+        error("PL_put_chars: unknown type $flags")          # assert(0)
+    end
+end
+
+# PORT: pl-fli.c PL_put_list_ncodes
+# DIVERGES: the local data is an argument; the codes are the bytes of a vector (`*chars & 0xff`); no global space to
+# ensure, so it cannot fail; the cells are laid out as `PL_cons_list_v` lays them.
+"Make term reference `t` hold the list of the `len` bytes of `chars`, as integer codes (pl-fli.c)."
+function PL_put_list_ncodes(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if len == 0
+        ld.slots[t + 1] = ld.atom_nil_w                     # setHandle(t, ATOM_nil)
+    else
+        p = allocGlobalCells!(ld, 3 * len)                  # p = allocGlobal(len*3)
+        ld.slots[t + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)    # setHandle(t, consCompound(p))
+        for i in 0:(len - 1)
+            q = p + 3 * i
+            ld.gstack[q] = ld.functor_dot2                  # *p++ = FUNCTOR_dot2
+            ld.gstack[q + 1] = consInt(Int64(chars[i + 1])) # *p++ = consInt(*chars & 0xff)
+            ld.gstack[q + 2] =
+                i + 1 < len ? consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL) : ld.atom_nil_w    # *p = consCompound(p+1); p[-1] = ATOM_nil
+        end
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list_codes
+"Make term reference `t` hold the list of the bytes of `chars` before the first 0, as integer codes (pl-fli.c)."
+PL_put_list_codes(ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_put_list_ncodes(ld, t, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_put_list_nchars
+# DIVERGES: as `PL_put_list_ncodes`; each head is the one-character atom of the byte (`codeToAtom`, which refuses
+# the byte 0 by name).
+"Make term reference `t` hold the list of the `len` bytes of `chars`, as one-character atoms (pl-fli.c)."
+function PL_put_list_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if len == 0
+        ld.slots[t + 1] = ld.atom_nil_w                     # setHandle(t, ATOM_nil)
+    else
+        p = allocGlobalCells!(ld, 3 * len)                  # p = allocGlobal(len*3)
+        ld.slots[t + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)    # setHandle(t, consCompound(p))
+        for i in 0:(len - 1)
+            q = p + 3 * i
+            ld.gstack[q] = ld.functor_dot2                  # *p++ = FUNCTOR_dot2
+            ld.gstack[q + 1] = _atom_word!(ld, codeToAtom(T, Int(chars[i + 1])))   # *p++ = codeToAtom(*chars & 0xff)
+            ld.gstack[q + 2] =
+                i + 1 < len ? consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL) : ld.atom_nil_w
+        end
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list_chars
+"Make term reference `t` hold the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
+PL_put_list_chars(ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_put_list_nchars(ld, t, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_unify_atom_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0 (`PL_new_atom`); no
+# `PL_unregister_atom`.
+"Unify the term `t` references with the atom of the ISO Latin-1 bytes of `chars` before the first 0 (pl-fli.c)."
+PL_unify_atom_chars(
+    ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}
+) where {T} = PL_unify_atom(ld, t, PL_new_atom(ld, chars))
+
+# PORT: pl-fli.c PL_unify_atom_nchars
+# DIVERGES: as `PL_put_atom_nchars` (`len` -1 is `strlen`; a 0 byte inside the text raises
+# `AtomNotRepresentableError`).
+"Unify the term `t` references with the atom of `len` ISO Latin-1 bytes of `chars` (pl-fli.c)."
+function PL_unify_atom_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    a = PL_new_atom_mbchars(ld, 0, len, chars)              # a = lookupAtom(chars, len)
+    a === nothing && return false
+    return PL_unify_atom(ld, t, a)
+end
+
+# PORT: pl-fli.c PL_unify_string_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0; the string is a grounded
+# value of the term type (`PL_unify_atomic`); no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Unify the term `t` references with the string of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+PL_unify_string_chars(ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}) where {T} =
+    PL_unify_atomic(ld, t, mk_gnd(T, _latin1_string(-1, s)))
+
+# PORT: pl-fli.c PL_unify_string_nchars
+# DIVERGES: as `PL_unify_string_chars`; `len` -1 is `strlen`.
+"Unify the term `t` references with the string of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+PL_unify_string_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+) where {T} = PL_unify_atomic(ld, t, mk_gnd(T, _latin1_string(len, s)))
+
+# PORT: pl-fli.c PL_unify_list_ncodes
+# DIVERGES: the local data is an argument; the codes are the bytes of a vector (`*chars & 0xff`); the early `false`
+# leaves the term references it made, as upstream does.
+"Unify the term `l` references with the list of the `len` bytes of `chars`, as integer codes (pl-fli.c)."
+function PL_unify_list_ncodes(
+    ld::PL_local_data{T}, l::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if PL_is_variable(ld, l)
+        tmp = PL_new_term_ref(ld)
+        return PL_put_list_ncodes(ld, tmp, len, chars) && PL_unify(ld, l, tmp)
+    else
+        head = PL_new_term_ref(ld)
+        t = PL_copy_term_ref(ld, l)
+        for i in 1:len
+            (PL_unify_list(ld, t, head, t) && PL_unify_integer(ld, head, Int(chars[i]))) ||
+                return false
+        end
+        rval = PL_unify_nil(ld, t)
+        PL_reset_term_refs(ld, head)
+        return rval
+    end
+end
+
+# PORT: pl-fli.c PL_unify_list_codes
+"Unify the term `l` references with the list of the bytes of `chars` before the first 0, as integer codes (pl-fli.c)."
+PL_unify_list_codes(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_unify_list_ncodes(ld, l, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_unify_list_nchars
+# DIVERGES: as `PL_unify_list_ncodes`; each element is the one-character atom of the byte (`codeToAtom`, which
+# refuses the byte 0 by name).
+"Unify the term `l` references with the list of the `len` bytes of `chars`, as one-character atoms (pl-fli.c)."
+function PL_unify_list_nchars(
+    ld::PL_local_data{T}, l::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if PL_is_variable(ld, l)
+        tmp = PL_new_term_ref(ld)
+        return PL_put_list_nchars(ld, tmp, len, chars) && PL_unify(ld, l, tmp)
+    else
+        head = PL_new_term_ref(ld)
+        t = PL_copy_term_ref(ld, l)
+        for i in 1:len
+            (
+                PL_unify_list(ld, t, head, t) &&
+                PL_unify_atom(ld, head, codeToAtom(T, Int(chars[i])))
+            ) || return false
+        end
+        rval = PL_unify_nil(ld, t)
+        PL_reset_term_refs(ld, head)
+        return rval
+    end
+end
+
+# PORT: pl-fli.c PL_unify_list_chars
+"Unify the term `l` references with the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
+PL_unify_list_chars(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_unify_list_nchars(ld, l, _c_strlen(chars), chars)
+
 # ── modules and predicates (FLI-API group H): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info
 # (pl-fli.c; resolveModule is wip/clib1's) ───────────────────────────────────────────────────────────────────────────
 
