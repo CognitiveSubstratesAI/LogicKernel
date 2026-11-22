@@ -20,8 +20,8 @@
 # the function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`; the open set (`Sfilterfunctions`, STREAMX) takes its callbacks from an `AbstractSfilter` in `filter`, and
 # `Sset_filter` links a filter to the stream it filters (`upstream`, `downstream`). NOT PORTED: locks and threads,
-# timeouts, `tee`, locales, ENC_ANSI, ENC_UTF16* and ENC_WCHAR (refused where a stream would use
-# them), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
+# timeouts, `tee`, locales, ENC_ANSI and ENC_UTF16* (refused where a stream would use
+# them; ENC_WCHAR is read and written by Sgetcode/Sputcode, not opened by open/4), the pending exception (`Sset_exception`), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
 # database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
@@ -1056,7 +1056,8 @@ function reperror(c::Int, s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c put_code
-# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported).
+# DIVERGES: ENC_ANSI and ENC_UTF16* are refused (not ported); ENC_WCHAR is the 4-byte `wchar_t` of this platform
+# (SIZEOF_WCHAR_T == 4, in the machine's byte order).
 "Write character `c` to `s` in its encoding: `c`, or -1 on error (pl-stream.c)."
 function put_code(c::Int, s::IOSTREAM)::Int
     IS_UTF16_SURROGATE(c) && return reperror(c, s)
@@ -1082,6 +1083,12 @@ function put_code(c::Int, s::IOSTREAM)::Int
             for b in buf
                 put_byte(Int(b), s) < 0 && return -1
             end
+        end
+    elseif enc == ENC_WCHAR
+        w = UInt32(c & 0xffffffff)              # `pl_wchar_t chr = c`
+        for k in 0:3                            # its bytes, in memory order
+            sh = ENDIAN_BOM == 0x04030201 ? 8k : 8 * (3 - k)
+            put_byte(Int((w >> sh) & 0xff), s) < 0 && return -1
         end
     elseif enc == ENC_UNKNOWN
         return -1
@@ -1131,8 +1138,25 @@ function Scanrepresent(c::Int, s::IOSTREAM)::Int
     )
 end
 
+# PORT: pl-stream.c Sgetcode (the ENC_WCHAR case)
+# DIVERGES: the 4-byte `wchar_t` of this platform (SIZEOF_WCHAR_T == 4), in the machine's byte order, as a signed 32-bit value.
+"The next ENC_WCHAR code of `s`: -1 at end of file, the replacement character after a partial one (pl-stream.c)."
+function get_wchar(s::IOSTREAM)::Int
+    w = UInt32(0)
+    for n in 0:3
+        c1 = get_byte(s)
+        if c1 == EOF
+            n == 0 && return -1
+            Sseterr(s, SIO_WARN, "EOF in UCS character")
+            return UTF8_MALFORMED_REPLACEMENT
+        end
+        w |= UInt32(c1 & 0xff) << (ENDIAN_BOM == 0x04030201 ? 8n : 8 * (3 - n))
+    end
+    return Int(reinterpret(Int32, w))
+end
+
 # PORT: pl-stream.c Sgetcode
-# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported); no `tee`.
+# DIVERGES: ENC_ANSI and ENC_UTF16* are refused (not ported); no `tee`.
 "The next character of `s` in its encoding, or -1 at end of file (pl-stream.c)."
 function Sgetcode(s::IOSTREAM)::Int
     while true                                  # retry:
@@ -1174,6 +1198,8 @@ function Sgetcode(s::IOSTREAM)::Int
                     end
                 end
             end
+        elseif enc == ENC_WCHAR
+            c = get_wchar(s)
         else
             throw(
                 NotPortedError{Nothing}(

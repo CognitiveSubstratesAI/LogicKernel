@@ -5030,6 +5030,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
+    (LK.get_wchar, Tuple{LK.IOSTREAM}, false),
     (LK.SkipAtomIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),

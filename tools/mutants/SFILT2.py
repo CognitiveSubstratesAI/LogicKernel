@@ -12,7 +12,10 @@ TX = [
     "test/files/test_stream_filter_swipl.jl", "test/files/test_stream_swipl.jl", "test/files/test_open_close_swipl.jl",
     "test/core_lang/test_top1b_wrap_swipl.jl", "test/core_lang/test_with_output_to_swipl.jl", "test/core_lang/test_s2a_swipl.jl",
 ]
-TARGETS = TP + TX
+TF = ["test/files/test_stream_filter_swipl.jl"]
+TW = ["test/files/test_stream_wchar_swipl.jl"]
+# The ENC_WCHAR branches (b) run only in TW; S__fileno runs at every filter stream's Snew (TF), the constructor default at every stream.
+TARGETS = TP + TW + TX
 S = "src/os/pl-stream.jl"
 
 MUTANTS = [
@@ -96,18 +99,64 @@ MUTANTS = [
          old="        S_control(s, SIO_GETFILENO, n) == 0 && return n[]\n",
          new="        S_control(s, SIO_GETFILENO, n) != 0 && return n[]\n"),
     dict(id="SFILT2-C4 Snew of a filter does not cache the file number (KILL p07)",
-         file=S, targets=TP,
+         file=S, targets=TP + TF,
          old="    s.fileno = S__fileno(s)\n",
          new="    nothing\n"),
     dict(id="SFILT2-C5 S__fileno asks the control function of a closed stream (KILL p07)",
-         file=S, targets=TP,
+         file=S, targets=TP + TF,
          old="    if s.magic == SIO_MAGIC\n        n = Ref(0)\n",
          new="    if true\n        n = Ref(0)\n"),
     dict(id="SFILT2-C6 a stream starts with file number 0, not none (KILL p07)",
-         file=S, targets=TP,
+         file=S, targets=TARGETS,
          old="        nothing, nothing, nothing, -1\n    )\n",
          new="        nothing, nothing, nothing, 0\n    )\n"),
-    # (b) rows below: ENC_WCHAR; (c) rows below: Sset_exception
+    # ── (b) ENC_WCHAR: put_code ──
+    dict(id="SFILT2-W1 put_code writes an ENC_WCHAR code big-endian (KILL w01)",
+         file=S, targets=TW,
+         old="            sh = ENDIAN_BOM == 0x04030201 ? 8k : 8 * (3 - k)\n",
+         new="            sh = 8 * (3 - k)\n"),
+    dict(id="SFILT2-W2 put_code writes 3 bytes of an ENC_WCHAR code (KILL w01)",
+         file=S, targets=TW,
+         old="        for k in 0:3                            # its bytes, in memory order\n",
+         new="        for k in 0:2                            # its bytes, in memory order\n"),
+    dict(id="SFILT2-W3 put_code truncates an ENC_WCHAR code to 16 bits (KILL w01: 128512, 0x10ffff)",
+         file=S, targets=TW,
+         old="        w = UInt32(c & 0xffffffff)              # `pl_wchar_t chr = c`\n",
+         new="        w = UInt32(c & 0xffff)                  # `pl_wchar_t chr = c`\n"),
+    dict(id="SFILT2-W4 put_code does not know ENC_WCHAR: the not-ported error (KILL w01)",
+         file=S, targets=TW,
+         old="    elseif enc == ENC_WCHAR\n        w = UInt32(c & 0xffffffff)",
+         new="    elseif false\n        w = UInt32(c & 0xffffffff)"),
+    # ── (b) ENC_WCHAR: get_wchar, Sgetcode ──
+    dict(id="SFILT2-W5 get_wchar answers the replacement character at a clean end of file (KILL w03, w04)",
+         file=S, targets=TW,
+         old="            n == 0 && return -1\n            Sseterr(s, SIO_WARN, \"EOF in UCS character\")\n",
+         new="            n == 0 && return UTF8_MALFORMED_REPLACEMENT\n            Sseterr(s, SIO_WARN, \"EOF in UCS character\")\n"),
+    dict(id="SFILT2-W6 get_wchar does not warn about a partial code (KILL w03)",
+         file=S, targets=TW,
+         old="            Sseterr(s, SIO_WARN, \"EOF in UCS character\")\n            return UTF8_MALFORMED_REPLACEMENT\n",
+         new="            return UTF8_MALFORMED_REPLACEMENT\n"),
+    dict(id="SFILT2-W7 get_wchar answers -1 for a partial code, not the replacement character (KILL w03)",
+         file=S, targets=TW,
+         old="            Sseterr(s, SIO_WARN, \"EOF in UCS character\")\n            return UTF8_MALFORMED_REPLACEMENT\n",
+         new="            Sseterr(s, SIO_WARN, \"EOF in UCS character\")\n            return -1\n"),
+    dict(id="SFILT2-W8 get_wchar reads a code big-endian (KILL w03, w04)",
+         file=S, targets=TW,
+         old="        w |= UInt32(c1 & 0xff) << (ENDIAN_BOM == 0x04030201 ? 8n : 8 * (3 - n))\n",
+         new="        w |= UInt32(c1 & 0xff) << (8 * (3 - n))\n"),
+    dict(id="SFILT2-W9 get_wchar reads 3 bytes of a code (KILL w03, w04)",
+         file=S, targets=TW,
+         old="    for n in 0:3\n        c1 = get_byte(s)\n",
+         new="    for n in 0:2\n        c1 = get_byte(s)\n"),
+    dict(id="SFILT2-W10 get_wchar is unsigned: 0x80000000 is 2147483648, not negative (KILL w04)",
+         file=S, targets=TW,
+         old="    return Int(reinterpret(Int32, w))\n",
+         new="    return Int(w)\n"),
+    dict(id="SFILT2-W11 Sgetcode does not know ENC_WCHAR: the not-ported error (KILL w03, w05)",
+         file=S, targets=TW,
+         old="        elseif enc == ENC_WCHAR\n            c = get_wchar(s)\n",
+         new="        elseif false\n            c = get_wchar(s)\n"),
+    # (c) rows below: Sset_exception
 ]
 
 if __name__ == "__main__":     # the text check: every `old` once, new != old
