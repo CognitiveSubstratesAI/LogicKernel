@@ -394,7 +394,7 @@ end
 # `set_flag_value` succeeds).
 const _PF_REFUSED = [
     ("encoding", "utf8"),
-    ("agc_margin", "100"), ("var_tag", "dict"), ("heartbeat", "0")
+    ("agc_margin", "100"), ("heartbeat", "0")      # `var_tag` is set since REC-FLAGS (setVarTagFlag)
 ]
 
 @testset "push_prolog_flag of a flag refused by name raises NotPortedError (design D4)" begin
@@ -422,5 +422,5 @@ const _PF_REFUSED = [
             line
         )
     end
-    @test length(_PF_REFUSED) >= 4
+    @test length(_PF_REFUSED) >= 3
 end

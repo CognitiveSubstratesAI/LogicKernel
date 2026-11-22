@@ -574,7 +574,7 @@ end
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
-    ("debug_on_interrupt", "true"), ("var_tag", "dict"),
+    ("debug_on_interrupt", "true"),
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("theme", "dark"), ("agc_margin", "100"),
     ("heartbeat", "0"),
@@ -595,7 +595,7 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 9                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); - 1 (REC-FLAGS: tty_control); RT: 9 entries, the run on RT passes
+    @test length(_SF_REFUSED) >= 8                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); - 2 (REC-FLAGS: tty_control, var_tag); RT: 8 entries, the run on RT passes
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
@@ -716,4 +716,31 @@ end
         @test sym_text(err.culprit) == "PopTty"
         @test err.step == "TOP1b" && occursin("pl-os.c:2354-2379", err.what)
     end
+end
+
+# REC-FLAGS: `var_tag` is set since the arm calls `setVarTagFlag` on the module's flags (pl-prologflag.c:1383); the value is read back by
+# `current_prolog_flag` from the module (`getVarTagFlag`); an unknown value is domain_error(var_tag, V) (setVarTagFlag, pl-prologflag.c:534-557).
+# HAND-WRITTEN like the testset above (MEASURE ON THE LANE: the same three goals under swipl 10.1.20, to turn them into pinned rows).
+@testset "var_tag: set error, read back, refuse an unknown value (hand-written)" begin
+    gd = LK.PL_global_data{_SF}()
+    ld = LK.PL_local_data{_SF}(gd)
+    path = joinpath(mktempdir(), "vartag.pl")
+    write(
+        path,
+        "t_vt(R) :- set_prolog_flag(var_tag, error), current_prolog_flag(var_tag, A), set_prolog_flag(var_tag, dict), " *
+        "current_prolog_flag(var_tag, B), R = r(A, B).\n" *
+        "t_vtbad(R) :- catch(set_prolog_flag(var_tag, nonsense), error(E, _), true), R = E.\n"
+    )
+    LK.load_file!(gd, ld, path)
+    line = _sf_query(gd, ld, "t_vt")
+    @test occursin(
+        "c" * _sf_codes("r") * "/2(a" * _sf_codes("error") * ",a" * _sf_codes("dict") * ")",
+        line
+    )
+    line = _sf_query(gd, ld, "t_vtbad")
+    @test occursin(
+        "c" * _sf_codes("domain_error") * "/2(a" * _sf_codes("var_tag") * ",a" *
+        _sf_codes("nonsense") * ")",
+        line
+    )
 end

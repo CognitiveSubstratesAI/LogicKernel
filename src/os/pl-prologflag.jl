@@ -56,7 +56,7 @@
 # (`module_t.var_prefix`, MOD1: the character, 0 for none), as upstream's `m->var_prefix`; the write side
 # (`setVarPrefix`, `set_prolog_flag(var_prefix, V)`) is F1b's. `var_tag` is the module's too, as upstream's: the
 # VARTAG_* bits of `module_t.flags` (`setVarTagFlag`, `getVarTagFlag`; the reader's `build_dict` takes them from
-# the read data's flags); its `set_prolog_flag/2` arm (:1383) is F1b's, with the rest of the write side.
+# the read data's flags); its `set_prolog_flag/2` arm (`set_flag_value`, pl-prologflag.c:1383) calls `setVarTagFlag` since REC-FLAGS.
 # The flags whose value upstream reads from the debugger (`debug`, `debugger_show_context`), the toplevel
 # (`break_level`) or the local data (`access_level`) read what the kernel has: the debugger's status fields of the local data
 # (since R2 F1c; the tracer itself is DBG1's) and the toplevel's level (since R2 TOP1b: `currentBreakLevel`, -1 outside one),
@@ -742,8 +742,7 @@ end
 # no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c; `tty_control` since REC-FLAGS up to the terminal itself, `PushTty` in src/os/pl-os.jl): `debug_on_interrupt`,
 # `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
-# `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
-# (the VARTAG_* bits of `m->flags`, which the kernel's `module_t` has not), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
+# `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), the ci_* and tabling restraint flags (pseudo-flags of pl-index.c and pl-tabling.c, whose state is
 # constants here), the arithmetic flags (`set_arith_flag`, pl-arith.c) and `file_name_case_handling`.
 # `on_error`/`on_warning` are checked and stored (the `halt`/`status` actions belong to the toplevel).
 "Refuse setting the flag `key`: its upstream side effect `effect` is not ported (design D4; R2 F1b)."
@@ -1268,7 +1267,7 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has none for are refused by name (design D4): `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
+# effects the kernel has none for are refused by name (design D4): `debug_on_interrupt`, `incomparable`, `encoding`,
 # `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `string_stack_tripwire` and `heartbeat`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
@@ -1367,7 +1366,9 @@ function set_flag_value(
             nf === nothing && return false
             m.flags = nf
         elseif name == "var_tag"
-            _flag_not_ported(k, "setVarTagFlag (the VARTAG_* bits of the module's flags)")
+            nf = setVarTagFlag(ld, a, m.flags)
+            nf === nothing && return false
+            m.flags = nf
         elseif name == "var_prefix"
             na = setVarPrefix(ld, value, m)
             na === nothing && return false
