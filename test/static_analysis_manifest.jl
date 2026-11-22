@@ -6478,6 +6478,17 @@ const SPAN_CALLEE_EXEMPT = [
         "`GD->procedures.drun_undo1` (made at the first call, as `_PL_predicate` does; the later calls build no atom)"
     ),
     (
+        LK.handleSignals,
+        :cold,
+        "G1-C (audit D-0971 (1)): the is_signalled arm of I_ENTER and I_FREDO (pl-vmi.c:1947-2055 and :4765-4773 at the pin 18168e62, " *
+        "pl-wam.jl), taken only when a signal is pending: handleSignals serves SIG_GC (pl-setup.c gc_handler -> garbageCollect, the whole " *
+        "stack collector) and SIG_TUNE_GC (gc_tune_handler -> call_tune_gc_hook -> PL_call_predicate of prolog:tune_gc/3, a whole query), " *
+        "upstream's own cold path; it can never be allocation-free, so a @noinline barrier does not help. Precedent: run_undo_hooks (TX1e, " *
+        "depart_alerted, only when ALERT_UNDO is set). Proof the arm's own non-signal path stays checked: tools/mutants/ALLOC1.py (an " *
+        "allocation planted at the is_signalled test fails this shard); the zero-bytes pins of test_zero_exports.jl (poly_10, nreverse, " *
+        "qsort, findall/bagof) are unchanged"
+    ),
+    (
         LK.raiseInferenceLimitException,
         :error,
         "ENGINE (depart_alerted, pl-vmi.c O_INFERENCE_LIMIT block): reached only when an inference limit is set (ALERT_INFERENCELIMIT) and the count is at it; " *
