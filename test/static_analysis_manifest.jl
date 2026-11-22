@@ -1789,6 +1789,17 @@ function _manifest_index(T)
         (LK.PL_exception, Tuple{LD, Int}, false), (LK.PL_current_query, Tuple{LD}, true),
         (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
         (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
+        # the instruction bodies outlined from the run loop (LAT3b): each called by its label of PL_next_solution_guarded
+        (
+            LK._vmi_s_undef!,
+            Tuple{GD, LD, D, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_s_incr_dynamic!,
+            Tuple{LD, D, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
         (LK._abandon_query, Tuple{LD, Int}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
@@ -3919,6 +3930,17 @@ _manifest_tr4(T) = begin
         (LK._trie_try!, Tuple{LD, Int, Int}, false),
         # the T_* bodies outlined from the run loop (T27): each called by its label of PL_next_solution_guarded
         (LK._vmi_t_try!, Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int}, false),
+        # the trie exits outlined from the run loop (LAT3b)
+        (
+            LK._vmi_trie_gen_type_error!,
+            Tuple{LD, DEF, Int, Int, ARGP, Vector{C}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_trie_gen_single!,
+            Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, TR, Int},
+            false
+        ),
         (
             LK._vmi_t_trie_gen!,
             Tuple{LD, Int, Int, ARGP, Vector{C}, Vector{T}, Int, Int, Int, W},

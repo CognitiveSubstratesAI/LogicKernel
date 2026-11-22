@@ -2294,6 +2294,152 @@ end
     return _TS_UNIFY_BACKTRACK                      # CLAUSE_FAILED
 end
 
+# ── the remaining instruction bodies, outlined from the run loop (LAT3b) ─────────────────────────
+# ORIGINAL (LAT3b): as the T_* bodies above (T27): each body below is the text of its label in `PL_next_solution_guarded`, moved as it
+# was into a `@noinline` function the label calls; its statements, variable names and `@SAVE_REGISTERS`/`@LOAD_REGISTERS` stay (the
+# registers are the function's arguments, see the T27 note on `LOAD_REGISTERS`); only a `@goto` to one of the loop's exits becomes
+# `return` of the status the loop's `vs_status` label dispatches on: `_VS_NEXT` (the label's own successor, or next_instruction),
+# `_VS_THROW` (THROW_EXCEPTION, `@goto b_throw`), `_VS_FRAME_FAILED` (FRAME_FAILED, `@goto deep_backtrack`), `_VS_BODY_FAILED`
+# (BODY_FAILED, `@goto shallow_backtrack`). Only a body that WRITES NO REGISTER of the loop except through `@LOAD_REGISTERS` is moved so
+# (evidence/R2/lat3b_design.md); a body that writes `FR`, `ARGP`, `PC`... first needs the registers handed back.
+const _VS_NEXT = 0
+const _VS_THROW = 2
+const _VS_FRAME_FAILED = 3
+const _VS_BODY_FAILED = 4
+
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c S_UNDEF, outlined; its notes are at the label S_UNDEF. `DEF` is the loop's.
+"The body of S_UNDEF (pl-vmi.c): the unknown-procedure action for `DEF`: a `_VS_*` status (`_VS_THROW` or `_VS_FRAME_FAILED`)."
+@noinline Base.@constprop :none function _vmi_s_undef!(
+    gd::PL_global_data{T},
+    ld::PL_local_data{T},
+    DEF::Definition{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    su_unknown = getUnknownModule(gd, gd.modules[DEF.module_])   # getUnknownModule(DEF->module)
+    if su_unknown == UNKNOWN_ERROR
+        su_caller =
+            ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+        newChoice(ld, CHP_DEBUG, FR)
+        @SAVE_REGISTERS(QID)
+        su_fid = PL_open_foreign_frame(ld)
+        if su_fid != 0
+            PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
+            PL_close_foreign_frame(ld, su_fid)
+        end
+        @LOAD_REGISTERS(QID)
+        # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
+        return _VS_THROW                               # THROW_EXCEPTION
+    elseif su_unknown == UNKNOWN_WARNING
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+        @SAVE_REGISTERS(QID)
+        su_fid = PL_open_foreign_frame(ld)
+        if su_fid != 0
+            su_pred = PL_new_term_ref(ld)
+            if unify_definition(gd, ld, MODULE_user(gd), su_pred, DEF, 0, GP_NAMEARITY)
+                # print_message/2 translates the message through dwim_predicates -> `$dwim_predicate/2` (pl-dwim.c:200, src/pl-dwim.jl);
+                # the call prints the warning and fails, as swipl's (test_set_flag_swipl.jl "unknown=warning" compares both messages).
+                printMessage(                       # PL_FUNCTOR, FUNCTOR_error2,
+                    ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_existence_error2,
+                    _message_term(                  #     PL_ATOM, ATOM_procedure, PL_TERM, pred,
+                        ld, :error,                 #   PL_VARIABLE
+                        _message_term(
+                            ld, :existence_error, _err_atom(ld, mk_sym(T, :procedure)),
+                            su_pred
+                        ),
+                        new_term_ref(ld)
+                    )
+                )
+            end
+            PL_close_foreign_frame(ld, su_fid)
+        end
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            return _VS_THROW                           # THROW_EXCEPTION
+        end
+    end
+    # UNKNOWN_FAIL, default (pl-vmi.c:3335-3339): FRAME_FAILED = GO(deep_backtrack, PL_TRACE_ACTION_NONE) (pl-wam.c:2465)
+    return _VS_FRAME_FAILED
+end
+
+# ORIGINAL (LAT3b): the body of the helper label trie_gen_type_error (S_TRIE_GEN's type error), outlined; its notes are at the label.
+"The body of trie_gen_type_error (pl-vmi.c S_TRIE_GEN): raise the type error on the key argument: `_VS_THROW`."
+@noinline Base.@constprop :none function _vmi_trie_gen_type_error!(
+    ld::PL_local_data{T},
+    DEF::Definition{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
+    @SAVE_REGISTERS(QID)
+    tge_fid = PL_open_foreign_frame(ld)
+    if tge_fid != 0
+        tge_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(FR, 0))
+        _slot_copy!(ld, tge_t + 1, argFrameP(ld.frames[FR].base, 0) + 1)
+        PL_type_error(ld, "trie_or_clause", tge_t)
+        PL_close_foreign_frame(ld, tge_fid)
+    end
+    @LOAD_REGISTERS(QID)
+    return _VS_THROW                                   # THROW_EXCEPTION
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c trie_gen_single (:5996-6013 at the pin), outlined; `tgs_tr` and `tgs_answer` are the helper's argument `answer`
+# (set by the jumping site). Its notes are at the label trie_gen_single.
+"The body of trie_gen_single (pl-vmi.c): unify the single answer `tgs_answer` of `tgs_tr` with the key: `_VS_NEXT` (exit_checking_wakeup), `_VS_THROW` or `_VS_FRAME_FAILED`."
+@noinline Base.@constprop :none function _vmi_trie_gen_single!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    tgs_tr::trie{T},
+    @nospecialize(tgs_answer::Int)
+)::Int where {T}
+    setLTop!(ld, argFrameP(ld.frames[FR].base, 2))  # lTop = (LocalFrame)argFrameP(FR, 2)
+    @SAVE_REGISTERS(QID)
+    tgs_rc, _ = unify_trie_term(ld, tgs_tr, tgs_answer, argFrameP(ld.frames[FR].base, 1))   # unify_trie_term(answer, NULL, key)
+    @LOAD_REGISTERS(QID)
+    if !tgs_rc
+        ld.exception_term != 0 && return _VS_THROW     # if ( exception_term ) THROW_EXCEPTION
+        return _VS_FRAME_FAILED                        # FRAME_FAILED
+    end
+    return _VS_NEXT                                    # exit_checking_wakeup
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c S_INCR_DYNAMIC (:3522-3553 at 18168e629eab) before its `VMI_GOTO(S_STATIC)`, outlined; its notes are at the label.
+"The body of S_INCR_DYNAMIC (pl-vmi.c) before `VMI_GOTO(S_STATIC)`: `_VS_THROW`, else `_VS_NEXT` (the label then continues at S_STATIC)."
+@noinline Base.@constprop :none function _vmi_s_incr_dynamic!(
+    ld::PL_local_data{T},
+    DEF::Definition{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    if (sid_ctrie = idg_current(ld)) !== nothing && sid_ctrie.IDG !== nothing
+        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = (LocalFrame)argFrameP(FR, DEF->functor->arity)
+        @SAVE_REGISTERS(QID)
+        incr_dynamic_call(ld, DEF, FR, sid_ctrie)
+        @LOAD_REGISTERS(QID)
+        ld.exception_term != 0 && return _VS_THROW     # THROW_EXCEPTION
+    end
+    return _VS_NEXT                                 # VMI_GOTO(S_STATIC)
+end
+
 # The run loop's dispatch (ORIGINAL), as a SORTED BRANCH TREE over the opcodes — decision 1's
 # fallback. MEASURED 2026-10-05: LLVM makes no single jump table of an if/elseif chain over them; it
 # makes four partial ones, broken wherever neighbouring arms share a target, so `S_LIST` was reached
@@ -2901,6 +3047,7 @@ function PL_next_solution_guarded(
     tz_table::Bool = false                          # t_attvarz's istable (TR4)
     tk_c::word = word(0)                            # t_const's constant word (TR4)
     ts_st::Int = _TS_NEXT                           # the status an outlined T_* body returned (T27)
+    vs_st::Int = _VS_NEXT                           # the status an outlined instruction body returned (LAT3b)
 
     if qid == 0                                    # PL_open_query() failed
         return 0
@@ -4065,17 +4212,8 @@ function PL_next_solution_guarded(
     # DIVERGES: the culprit is a new term reference in a foreign frame of its own holding the argument slot's word, as
     # `call_type_error`'s (upstream: `pushWordAsTermRef`); `lTop` is raised past the arguments first.
     @label trie_gen_type_error
-    setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
-    @SAVE_REGISTERS(QID)
-    tge_fid = PL_open_foreign_frame(ld)
-    if tge_fid != 0
-        tge_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(FR, 0))
-        _slot_copy!(ld, tge_t + 1, argFrameP(ld.frames[FR].base, 0) + 1)
-        PL_type_error(ld, "trie_or_clause", tge_t)
-        PL_close_foreign_frame(ld, tge_fid)
-    end
-    @LOAD_REGISTERS(QID)
-    @goto b_throw                                   # THROW_EXCEPTION
+    vs_st = _vmi_trie_gen_type_error!(ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c trie_gen_single
     # (pl-vmi.c:5996-6013 at the pin.) `trie_gen_compiled/2` for a table with a single answer that is not compiled
@@ -4083,15 +4221,9 @@ function PL_next_solution_guarded(
     # DIVERGES: the helper's argument `answer` is a node id `tgs_answer` of the trie `tgs_tr` (both set by the jumping site);
     # the key is the term reference of argument 2 of the frame (`consTermRef(argFrameP(FR, 1))`).
     @label trie_gen_single
-    setLTop!(ld, argFrameP(ld.frames[FR].base, 2))  # lTop = (LocalFrame)argFrameP(FR, 2)
-    @SAVE_REGISTERS(QID)
-    tgs_rc, _ = unify_trie_term(ld, tgs_tr, tgs_answer, argFrameP(ld.frames[FR].base, 1))   # unify_trie_term(answer, NULL, key)
-    @LOAD_REGISTERS(QID)
-    if !tgs_rc
-        ld.exception_term != 0 && @goto b_throw     # if ( exception_term ) THROW_EXCEPTION
-        @goto deep_backtrack                        # FRAME_FAILED
-    end
-    @goto exit_checking_wakeup
+    vs_st = _vmi_trie_gen_single!(ld, QID, FR, ARGP, PCc, PCl, PC, tgs_tr::trie{T}, tgs_answer)   # the body (LAT3b: outlined)
+    vs_st == _VS_NEXT && @goto exit_checking_wakeup
+    @goto vs_status
 
     # PORT: pl-vmi.c T_TRIE_GEN2
     # (pl-vmi.c:6134-6164 at the pin.) The first instruction of a compiled trie of `trie_gen_compiled/2`: the state words, the
@@ -4338,6 +4470,13 @@ function PL_next_solution_guarded(
     @label t_status
     ts_st == _TS_UNIFY_BACKTRACK && @goto unify_backtrack      # CLAUSE_FAILED
     ts_st == _TS_THROW && @goto b_throw                        # THROW_EXCEPTION
+    @goto next_instruction
+
+    # ORIGINAL (LAT3b): the exit an outlined instruction body took (`_VS_*`, see the block above `_vmi_s_undef!`), to the labels upstream names.
+    @label vs_status
+    vs_st == _VS_THROW && @goto b_throw                        # THROW_EXCEPTION
+    vs_st == _VS_FRAME_FAILED && @goto deep_backtrack          # FRAME_FAILED
+    vs_st == _VS_BODY_FAILED && @goto shallow_backtrack        # BODY_FAILED
     @goto next_instruction
 
     # ── single sided unification (pl-vmi.c), SSU2 ─────────────────────────────────────────────────
@@ -5804,51 +5943,8 @@ function PL_next_solution_guarded(
     # upstream's since V5c: src/pl-error.jl.) `UNKNOWN_FAIL`'s `debugstatus.debugging` choice point
     # is the debugger's (no debugger).
     @label S_UNDEF
-    su_unknown = getUnknownModule(gd, gd.modules[DEF.module_])   # getUnknownModule(DEF->module)
-    if su_unknown == UNKNOWN_ERROR
-        su_caller =
-            ld.frames[FR].parent != 0 ? ld.frames[ld.frames[FR].parent].predicate : nothing
-        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
-        newChoice(ld, CHP_DEBUG, FR)
-        @SAVE_REGISTERS(QID)
-        su_fid = PL_open_foreign_frame(ld)
-        if su_fid != 0
-            PL_error(ld, ERR_UNDEFINED_PROC, DEF, su_caller)
-            PL_close_foreign_frame(ld, su_fid)
-        end
-        @LOAD_REGISTERS(QID)
-        # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347) — "will be left in exception code"
-        @goto b_throw                               # THROW_EXCEPTION
-    elseif su_unknown == UNKNOWN_WARNING
-        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))
-        @SAVE_REGISTERS(QID)
-        su_fid = PL_open_foreign_frame(ld)
-        if su_fid != 0
-            su_pred = PL_new_term_ref(ld)
-            if unify_definition(gd, ld, MODULE_user(gd), su_pred, DEF, 0, GP_NAMEARITY)
-                # print_message/2 translates the message through dwim_predicates -> `$dwim_predicate/2` (pl-dwim.c:200, src/pl-dwim.jl);
-                # the call prints the warning and fails, as swipl's (test_set_flag_swipl.jl "unknown=warning" compares both messages).
-                printMessage(                       # PL_FUNCTOR, FUNCTOR_error2,
-                    ld, :warning,                   #   PL_FUNCTOR, FUNCTOR_existence_error2,
-                    _message_term(                  #     PL_ATOM, ATOM_procedure, PL_TERM, pred,
-                        ld, :error,                 #   PL_VARIABLE
-                        _message_term(
-                            ld, :existence_error, _err_atom(ld, mk_sym(T, :procedure)),
-                            su_pred
-                        ),
-                        new_term_ref(ld)
-                    )
-                )
-            end
-            PL_close_foreign_frame(ld, su_fid)
-        end
-        @LOAD_REGISTERS(QID)
-        if ld.exception_term != 0
-            @goto b_throw                           # THROW_EXCEPTION
-        end
-    end
-    # UNKNOWN_FAIL, default (pl-vmi.c:3335-3339): FRAME_FAILED = GO(deep_backtrack, PL_TRACE_ACTION_NONE) (pl-wam.c:2465)
-    @goto deep_backtrack
+    vs_st = _vmi_s_undef!(gd, ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c S_STATIC
     # QUIRK, as upstream (vmi:3441): `(LocalFrame)ARGP+DEF->functor->arity` casts first, so it adds
@@ -5903,13 +5999,8 @@ function PL_next_solution_guarded(
     # `S_TABLED` calls `tbl_complete_answer_clause`; `idg_current` is the read of `LD->tabling.idg_current` and `symbol_trie`.
     @label S_INCR_DYNAMIC
     # enterDefinition(DEF): (void)0 upstream (pl-incl.h:1347)
-    if (sid_ctrie = idg_current(ld)) !== nothing && sid_ctrie.IDG !== nothing
-        setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))   # lTop = (LocalFrame)argFrameP(FR, DEF->functor->arity)
-        @SAVE_REGISTERS(QID)
-        incr_dynamic_call(ld, DEF, FR, sid_ctrie)
-        @LOAD_REGISTERS(QID)
-        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
-    end
+    vs_st = _vmi_s_incr_dynamic!(ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    vs_st == _VS_NEXT || @goto vs_status
     @goto S_STATIC                                  # VMI_GOTO(S_STATIC)
 
     # PORT: pl-vmi.c S_MULTIFILE
