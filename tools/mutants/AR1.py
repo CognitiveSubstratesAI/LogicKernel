@@ -338,7 +338,7 @@ MUTANTS = [
     dict(id='AR1-D8 A_LT is numbered one up (KILL the opcode-order row: the tail is consecutive, in the order of the pin)', file="src/pl-vmi.jl", targets=["test/core_lang/test_cont_boot_swipl.jl"],
          old='const A_LT = code(183)',
          new='const A_LT = code(184)'),
-    dict(id='AR1-D9 A_FIRSTVAR_IS declares no operand (KILL the code-table rows and every clause that uses it)', file="src/pl-vmi.jl", targets=["test/core_lang/test_cont_boot_swipl.jl", "test/core_lang/test_arith_compile_swipl.jl"],
+    dict(id='AR1-D9 A_FIRSTVAR_IS declares no operand (KILL the code-table rows and every clause that uses it)', file="src/pl-vmi.jl", targets=["test/core_lang/test_cont_boot_swipl.jl", "test/compile/test_body_code_swipl.jl", "test/compile/test_decompile.jl", "test/core_lang/test_arith_vmi_swipl.jl", "test/core_lang/test_arith_roundopt_swipl.jl"],  # TARGETS fix (D-0979 (5)): test_arith_compile_swipl.jl is not in the replayed tree; the kill is the a_firstvar_is(N) rows of test_body_code_swipl.jl :1014-1061 (the operand kind/count of the row) and the decompile walk
          old='code_info(:A_FIRSTVAR_IS, VIF_BREAK, 1, (CA1_FVAR, 0x00, 0x00, 0x00))',
          new='code_info(:A_FIRSTVAR_IS, VIF_BREAK, 0, (0x00, 0x00, 0x00, 0x00))'),
     dict(id='AR1-E1 A_INTEGER pushes the operand plus one (KILL the A_INTEGER 7 row)', file='src/pl-wam.jl', targets=TV2,
