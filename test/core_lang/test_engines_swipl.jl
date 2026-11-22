@@ -129,6 +129,10 @@ const _EN_CASES = [
     ("en05g", "true", "engine_destroy(foo)", "raised(existence_error(engine,foo))", true),
     ("en05h", "true", "engine_destroy(1)", "raised(type_error(engine,1))", true),
     (
+        "en05i", "current_output(S)", "engine_next(S,_)", "raised(type_error(engine,S))",
+        true
+    ),
+    (
         "en06", "engine_create(X, member(X,[a,b,c]), E)", "engine_destroy(E), engine_destroy(E)",
         "raised(existence_error(engine,E))", true
     ),
@@ -170,6 +174,26 @@ const _EN_CASES = [
         "en15", "engine_create(X, true, E)",
         "engine_next(E,_), ( engine_post(E,t,_) -> R0 = yes ; R0 = no )", "no", true
     ),
+    (
+        "en16",
+        "engine_create(Y, (engine_fetch(A), catch(engine_fetch(_), error(Er,_), true), Y = A-Er), E)",
+        "engine_post(E,1,R0)", "1-existence_error(term,delivery,E)", true
+    ),
+    (
+        "en17", "engine_create(Y, (engine_fetch(X), Y = X), E)",
+        "engine_post(E,1), engine_post(E,2,_)", "raised(permission_error(post_to,engine,E))",
+        true
+    ),
+    (
+        "en18", "engine_create(X, member(X,[a,b,c]), E)",
+        "engine_next(E,_), engine_next(E,_), engine_next(E,_), ( is_engine(E) -> P1 = y ; P1 = n ), engine_destroy(E), ( is_engine(E) -> P2 = y ; P2 = n ), R0 = P1-P2",
+        "y-n", true
+    ),
+    (
+        "en19", "engine_create(x, true, enalias19)",
+        "engine_destroy(enalias19), engine_create(z, true, enalias19), engine_next(enalias19, A), R0 = A",
+        "z", true
+    ),
     # isolation: bindings do not leak, the answer is a copy, two engines interleave
     (
         "en20", "engine_create(X, X=1, E)", "engine_next(E,A), R0 = X-A", "_-1", true
@@ -186,6 +210,11 @@ const _EN_CASES = [
         "en23", "engine_create(X, member(X,[1,2]), E)",
         "engine_next(E,A), engine_destroy(E), engine_create(X2, member(X2,[3,4]), E2), engine_next(E2,B), R0 = A-B",
         "1-3", true
+    ),
+    (
+        "en24", "engine_create(X, member(X,[a,b,c]), E)",
+        raw"engine_next(E,_), engine_next(E,_), engine_next(E,_), \+ engine_next(E,_), ( is_engine(E) -> P = y ; P = n ), catch(engine_next(E,_), error(Err,_), true), R0 = P-Err",
+        "y-existence_error(engine,E)", true
     ),
     # exceptions and failure inside the engine
     (
@@ -246,6 +275,11 @@ const _EN_CASES = [
     (
         "dv2", "engine_create(X, (thread_self(Me), engine_post(Me, 1)), E)",
         "engine_next(E,_)", "raised(permission_error(post_to,engine,E))", false
+    ),
+    (
+        "dv3",
+        "engine_create(_, (thread_self(Me), engine_create(_, engine_destroy(Me), Y), engine_next(Y,_)), E)",
+        "engine_next(E,_)", "raised(permission_error(destroy,engine,E))", false
     )
 ]
 
@@ -364,6 +398,17 @@ end
     @test all(h -> h.info === nothing && !h.running, gd.thread.handles)
 end
 
+@testset "engines: white-box (an engine that fails or raises is finished)" begin
+    for id in ("en32", "en30")
+        f, names = _en_file(filter(c -> c[1] == id, _EN_CASES))
+        kl, gd, ld = _en_kernel(f, names)
+        @test kl == ["ok", _en_ok_line(id)]
+        @test gd.thread.engines_created == 1
+        @test gd.thread.engines_finished == 1
+        @test all(h -> h.info === nothing && h.interactor_query == 0, gd.thread.handles)
+    end
+end
+
 @testset "the engine rows are not vacuous" begin
     allc = vcat(_EN_CASES, _EN_YIELD_CASES)
     ids = [c[1] for c in allc]
@@ -374,7 +419,7 @@ end
     for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl")
         @test any(startswith(id, fam) for id in ids)
     end
-    @test count(c -> !c[5], _EN_CASES) == 2             # the two named divergences are the only kernel-only rows
+    @test count(c -> !c[5], _EN_CASES) == 3             # the three named divergences (dv1-dv3) are the only kernel-only rows
     @test _en_ok_line("en01") == "ck_en01 c[99,107,95,101,110,48,49]/1(a[111,107])"
 end
 
