@@ -2496,6 +2496,7 @@ function _manifest_index(T)
         (LK.pl_current_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._cur_enum_clean!, Tuple{GD, LD, Int}, false),
         (LK.pl_current_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_foreign_predicate_source2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # PR1
         (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),

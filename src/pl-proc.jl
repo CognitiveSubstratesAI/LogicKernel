@@ -3233,6 +3233,38 @@ function _predicate_number_of_clauses(
     return n
 end
 
+# PORT: pl-proc.c foreign_predicate_source as pl_foreign_predicate_source2_va
+# (PRED_IMPL("$foreign_predicate_source", 2, foreign_predicate_source, PL_FA_TRANSPARENT), pl-proc.c:4188 at the pin 18168e62;
+# unchanged at af9e2e7e)
+# DIVERGES: `addr2line(f, buf, sizeof(buf))` (pl-os / pl-fli: the `addr2line` description of the C function's address in the
+# foreign library's symbol table) has no counterpart: a built-in is a table entry, not an address (see `pl_prolog_current_frame`),
+# so for a foreign predicate the call fails as upstream's does "if there is no symbol table in the foreign library that holds the
+# function" (the predicate's own documentation); the `PL_unify_chars(A2, PL_STRING|REP_MB, ...)` arm is not reached. `A2` is not
+# read. The lookup (`PL_strip_module`, `PL_get_functor`, `visibleProcedure`) is upstream's, so a non-callable or unknown head fails the same.
+"`'\$foreign_predicate_source'(:Pred, -Description)`: the `addr2line` description of a foreign predicate's function; here always fails (pl-proc.c)."
+function pl_foreign_predicate_source2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred = PL__t0                                       # A1 (A2 = PL__t0 + 1: not read, see above)
+    head = PL_new_term_ref(ld)
+
+    ok, mi = PL_strip_module(gd, ld, pred, 0, head)     # PL_strip_module(pred, &module, head), module = NULL
+    ok || return FFALSE
+    module_ = gd.modules[mi]
+    fd = _cp_get_functor(ld, head)                      # PL_get_functor(head, &fd)
+    fd === nothing && return FFALSE
+    proc = visibleProcedure(gd, fd[1], fd[2], module_)  # visibleProcedure(fd, module)
+    proc === nothing && return FFALSE
+
+    def = proc.definition                               # getProcDefinition(proc)
+    if (def.flags & P_FOREIGN) != 0                     # ison(def, P_FOREIGN)
+        return FFALSE                                   # addr2line(f, buf, sizeof(buf)) fails: no address (DIVERGES above)
+    end
+
+    return FFALSE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -3258,5 +3290,9 @@ const PL_predicates_from_proc = (
     PL_extension(
         "current_predicate", 1, pl_current_predicate1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(                                   # (pl-proc.c:4423 at the pin, PR1; after copy_predicate_clauses/2 and $cgc_params/6)
+        "\$foreign_predicate_source", 2, pl_foreign_predicate_source2_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
     )
 )
