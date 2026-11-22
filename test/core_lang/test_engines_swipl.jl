@@ -684,6 +684,105 @@ end
     @test eld.exception_term == 0                                      # the exception was cleared
 end
 
+# PL_thread_at_exit and the C functions of an event list (pl-thread.c:3598-3620, pl-event.c register_event_function/call_event_list):
+# C-reachable only, so there is no swipl oracle: the expected values are READ from the C (blind: correct on the lane, never the kernel).
+const _EN_AE_PRELUDE = _EN_EV_PRELUDE * raw"""
+ck_ae_new(ok) :- engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)).
+ck_ae_destroy(ok) :- retract(ev_keep(E)), engine_destroy(E).
+ck_ae_listen(ok) :- prolog_listen(thread_exit, ev_hook, []).
+ck_ae_listen_fail(ok) :- prolog_listen(thread_exit, ev_hook_fail, []).
+ck_ae_log(N) :- findall(T, evlog(T), L), length(L, N).
+"""
+
+function _en_ae_load()
+    f = joinpath(mktempdir(), "ae.pl")
+    write(f, _EN_AE_PRELUDE)
+    gd, ld, st = _en_load(f)
+    @test st == "ok"
+    return gd, ld
+end
+_en_ae_nlog(n) = "ck_ae_log c$(_en_codes("ck_ae_log"))/1(i$n)"
+_en_ae_place(l) = l.thread_info === nothing ? :main : :engine
+_en_ae_eld(gd) = gd.thread.infos[findfirst(!isnothing, gd.thread.infos)].thread_data
+# a void function that logs `(tag, closure, where it ran)`
+_en_ae_fn(log, tag) = (g, l, c) -> (push!(log, (tag, c, _en_ae_place(l))); nothing)
+
+@testset "PL_thread_at_exit and the C functions of an event list (white-box, read from the C)" begin
+    # S1: a global function runs for every engine that is destroyed, in the engine, the last registered first (head of the list)
+    gd, ld = _en_ae_load()
+    log = Tuple{Symbol, Symbol, Symbol}[]
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :f1), :c1, true)
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :f2), :c2, true)
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    @test isempty(log)                                                  # nothing at creation
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test log == [(:f2, :c2, :engine), (:f1, :c1, :engine)]
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test length(log) == 4                                              # a second engine: the functions run again
+    @test log[3:4] == [(:f2, :c2, :engine), (:f1, :c1, :engine)]
+
+    # S2: a local function belongs to the thread that registered it: main's never runs for an engine's exit, an engine's runs once
+    gd, ld = _en_ae_load()
+    log = Tuple{Symbol, Symbol, Symbol}[]
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :m), :cm, false)
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    eld = _en_ae_eld(gd)
+    @test LK.PL_thread_at_exit(gd, eld, _en_ae_fn(log, :e), :ce, false)
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test log == [(:e, :ce, :engine)]
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :m2), :cm2, false)
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test log == [(:e, :ce, :engine)]                                   # still only the engine's own
+
+    # S3: a function is not gated by an earlier listener's failure (the list is [fail, function])
+    gd, ld = _en_ae_load()
+    log = Tuple{Symbol, Symbol, Symbol}[]
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :g), :cg, true)
+    @test _en_ask(gd, ld, "ck_ae_listen_fail") == _en_ok_line("ae_listen_fail")
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test log == [(:g, :cg, :engine)]
+
+    # S4: a void function that raises makes the rest of the list not run, and the exception is reported on the engine and cleared
+    gd, ld = _en_ae_load()
+    log = Tuple{Symbol, Symbol, Symbol}[]
+    @test LK.PL_thread_at_exit(gd, ld, _en_ae_fn(log, :after), :cafter, true)
+    raiser = (g, l, c) -> begin
+        push!(log, (:raiser, c, _en_ae_place(l)))
+        t = LK.PL_new_term_ref(l)
+        LK.PL_put_atom(l, t, _ens(:oops))
+        LK.PL_raise_exception(l, t)
+        return nothing
+    end
+    @test LK.PL_thread_at_exit(gd, ld, raiser, :craise, true)
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    eld = _en_ae_eld(gd)
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+    @test log == [(:raiser, :craise, :engine)]
+    @test any(
+        m -> m[1] === :error && kind(m[2]) === SYM && occursin("thread_finished", sym_text(m[2])),
+        eld.messages
+    )
+    @test eld.exception_term == 0
+
+    # S5: a BOOL function (registered directly: C has no registrar either) returns the listener's verdict, and the Prolog listener
+    # after it runs only on true
+    for want in (true, false)
+        gd, ld = _en_ae_load()
+        log = Tuple{Symbol, Bool, Symbol}[]
+        bf = (g, l, c, t) -> (push!(log, (c, t != 0, _en_ae_place(l))); want)
+        @test _en_ask(gd, ld, "ck_ae_listen") == _en_ok_line("ae_listen")
+        loc = LK.event_location{_EN}(LK.PLEV_THREAD_EXIT, nothing)
+        @test LK.register_event_function(gd, ld, loc, nothing, false, bf, :b, 1, LK.EV_CALLBACK_BOOL)
+        @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+        @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+        @test log == [(:b, true, :engine)]
+        @test _en_ask(gd, ld, "ck_ae_log") == _en_ae_nlog(want ? 1 : 0)
+    end
+end
+
 @testset "engine_yield/1 rows (need the VM yield: FAILS until the VM step lands)" begin
     # a loud failure, never a skip: the yield is the VM's (I_YIELD, pl-vmi.c:2410-2448; resume, pl-wam.c:3870-3910; PL_yielded, :3331)
     @test isdefined(LK, :PL_yielded)
