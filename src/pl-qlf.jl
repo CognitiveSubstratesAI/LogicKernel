@@ -582,16 +582,30 @@ const qlfMagic = "SWI-Prolog .qlf file\n"
 "The VM signature a QLF file must carry to be compatible, as an unsigned 32-bit integer (pin 18168e62: 0xe5ee110c)."
 const VM_SIGNATURE = 0xe5ee110c
 
+# PORT: pl-qlf.c qlf_state
+# DIVERGES: the directories and the translated paths are `String`s (upstream: `store_string` copies and a linked list of
+# `path_translated` holding atoms; the list is a `Vector` of (from, to) pairs, the newest last).
+"The path translation of one QLF file being read: where it was saved, where it is loaded from, the paths rewritten (pl-qlf.c)."
+mutable struct qlf_state
+    save_dir::String
+    load_dir::String
+    has_moved::Bool
+    translated::Vector{Tuple{String, String}}
+    previous::Union{Nothing, qlf_state}
+end
+
 # PORT: pl-qlf.c wic_state
-# DIVERGES: only the fields the header predicates read: the file name (`wicFile`), the stream (`wicFd`) and the version
-# the file was saved with (`saved_version`); the write side's fields are `ld.qlf_write_state`'s (always `nothing`, LD2).
+# DIVERGES: only the fields the info predicates read: the file name (`wicFile`), the stream (`wicFd`), the version
+# the file was saved with (`saved_version`) and the path translation (`load_state`); the write side's fields are
+# `ld.qlf_write_state`'s (always `nothing`, LD2).
 "The state `qlfInfo` and `qlfIsCompatible` carry while a QLF file is read (pl-qlf.c `wic_state`)."
 mutable struct wic_state
     wicFile::String
     wicFd::Union{Nothing, IOSTREAM}
     saved_version::Int
+    load_state::Union{Nothing, qlf_state}
 end
-wic_state(file::String) = wic_state(file, nothing, 0)
+wic_state(file::String) = wic_state(file, nothing, 0, nothing)
 
 # PORT: pl-qlf.c Qgetc
 # (pl-qlf.c:62-68; the non-O_DEBUG branch: `Snpgetc`, no position recording)
@@ -636,6 +650,37 @@ end
 # (pl-qlf.c:632-637)
 "`qlfGetInt64` as a C `int`: the low 32 bits, signed (pl-qlf.c)."
 qlfGetInt32(s::IOSTREAM)::Int32 = qlfGetInt64(s) % Int32
+
+# PORT: pl-qlf.c qlfGet4BytesInt
+# (pl-qlf.c:696-706)
+"A big-endian four byte integer, as C's `int` (the QLF file's index entries, written by `PutInt32()`) (pl-qlf.c)."
+function qlfGet4BytesInt(s::IOSTREAM)::Int32
+    v = (Sgetc(s) & 0xff) << 24
+    v |= (Sgetc(s) & 0xff) << 16
+    v |= (Sgetc(s) & 0xff) << 8
+    v |= (Sgetc(s) & 0xff)
+    return v % Int32                                        # `int v`: the low 32 bits
+end
+
+# PORT: pl-qlf.c qlfGetString
+# (pl-qlf.c:446-488)
+# DIVERGES: only the `length == NULL` form (a file name: at most `PATH_MAX` bytes), returned as a `String` of the bytes
+# (upstream: `LD->qlf.getstr_buffer`, and `NULL` when too long); the other form (a saved term's string, bounded by
+# `globalStackLimit()`) belongs to the XR reader, NOT PORTED. `fatalError` (an EOF inside the string) is a Julia `error`.
+"Read a length (`qlfGetInt64`) and that many bytes from `s`; `nothing` if the length is above `PATH_MAX` (pl-qlf.c)."
+function qlfGetString(s::IOSTREAM)::Union{Nothing, String}
+    len = qlfGetInt64(s)                                    # (size_t)qlfGetInt64(fd)
+    (len < 0 || len > PATH_MAX) && return nothing           # a negative length is huge as a size_t
+
+    buf = Vector{UInt8}(undef, len)
+    for i in 1:len
+        c = Qgetc(s)
+        c == EOF && error("Unexpected EOF on QLF file at offset $(Stell64(s))")     # fatalError
+        buf[i] = c % UInt8                                  # (char)c
+    end
+
+    return String(buf)
+end
 
 # PORT: pl-qlf.c getMagicString
 # (pl-qlf.c:573-588)
@@ -736,28 +781,257 @@ function open_qlf_file(ld::PL_local_data{T}, file::String)::Union{Nothing, IOSTR
     return nothing
 end
 
+# PORT: pl-qlf.c PATH_ISDIR
+# (pl-qlf.c:424)
+"`pushPathTranslation` flag: the load name is a directory, not a file."
+const PATH_ISDIR = 0x1
+
+# PORT: pl-qlf.c pushPathTranslation
+# (pl-qlf.c:3818-3869)
+# DIVERGES: the load name is never NULL (the one caller that passes NULL, the state loader's, is not ported); the strings
+# are `Vector{UInt8}`s cut at the end of the common tail as the C buffers are; `PL_representation_error("max_path_length")`
+# is `PL_error(ERR_REPRESENTATION, max_path_length)`; `store_string` is a plain copy.
+"Read the path the QLF file was saved from and push the translation to the directory it is loaded from, if it moved (pl-qlf.c)."
+function pushPathTranslation(
+    ld::PL_local_data{T}, state::wic_state, absloadname::String, flags::Int
+)::Bool where {T}
+    new = qlf_state("", "", false, Tuple{String, String}[], state.load_state)
+    state.load_state = new
+
+    abssavename = qlfGetString(state.wicFd::IOSTREAM)
+    abssavename === nothing && return qlfError(ld, state, "bad string")
+
+    if absloadname != abssavename
+        if ncodeunits(abssavename) + 1 > PATH_MAX || ncodeunits(absloadname) + 1 > PATH_MAX
+            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+        end
+
+        new.has_moved = true
+
+        if (flags & PATH_ISDIR) != 0
+            l = Vector{UInt8}(codeunits(absloadname))
+            s = Vector{UInt8}(codeunits(abssavename))
+        else
+            dl = DirName(absloadname)
+            ds = DirName(abssavename)
+            if dl === nothing || ds === nothing
+                return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_path_length))
+            end
+            l = Vector{UInt8}(codeunits(dl))
+            s = Vector{UInt8}(codeunits(ds))
+        end
+        le = length(l)
+        se = length(s)
+        while le > 0 && se > 0 && l[le] == s[se]            # le[-1] == se[-1]
+            if l[le] == UInt8('/')
+                resize!(l, le)                              # *le = EOS
+                resize!(s, se)                              # *se = EOS
+            end
+            le -= 1
+            se -= 1
+        end
+
+        new.load_dir = String(l)
+        new.save_dir = String(s)
+    end
+
+    return true
+end
+
+# PORT: pl-qlf.c popPathTranslation
+# (pl-qlf.c:3871-3912)
+# DIVERGES: `$translated_source/2` is looked up as `lookupProcedure` does (upstream: `_PL_predicate` with the cached
+# `GD->procedures.dtranslated_source2`); the atoms are not reference counted (`PL_unregister_atom` has nothing to do).
+"Pop the path translation; tell `'\$translated_source'/2` each path that was rewritten, newest first (pl-qlf.c)."
+function popPathTranslation(ld::PL_local_data{T}, state::wic_state)::Nothing where {T}
+    old = state.load_state
+    old === nothing && return nothing
+    state.load_state = old.previous
+
+    if old.has_moved && !isempty(old.translated)
+        gd = _query_gd(ld)
+        fid = PL_open_foreign_frame(ld)
+        av = PL_new_term_refs(ld, 2)
+        pred = lookupProcedure(
+            mk_sym(T, Symbol("\$translated_source")), 2, MODULE_system(gd)
+        )
+
+        for (from, to) in Iterators.reverse(old.translated)
+            PL_put_atom(ld, av, mk_sym(T, Symbol(from)))
+            PL_put_atom(ld, av + 1, mk_sym(T, Symbol(to)))
+
+            if !PL_call_predicate(gd, ld, nothing, PL_Q_NORMAL, pred, av)
+                _qlf_Sdprintf!(ld, "\$translated_source/2 failed~n")
+            end
+        end
+
+        PL_discard_foreign_frame(ld, fid)
+    end
+
+    return nothing
+end
+
+# PORT: pl-qlf.c qlfFixSourcePath
+# (pl-qlf.c:1782-1835)
+# DIVERGES: returns the canonical path as a `String` (upstream: its atom); `fatalError` is a Julia `error`.
+"The path `raw` as read from the QLF file, moved to where the file is loaded from and canonicalised; a rewrite is recorded (pl-qlf.c)."
+function qlfFixSourcePath(ld::PL_local_data{T}, state::wic_state, raw::String)::String where {T}
+    ls = state.load_state::qlf_state
+
+    if ls.has_moved && startswith(raw, ls.save_dir)
+        tail = String(Vector{UInt8}(codeunits(raw))[(ncodeunits(ls.save_dir) + 1):end])
+
+        if ncodeunits(ls.load_dir) + 1 + ncodeunits(tail) + 1 > PATH_MAX
+            error("Path name too long: $raw")               # fatalError
+        end
+        buf = ls.load_dir * tail
+    else
+        if ncodeunits(raw) + 1 > PATH_MAX
+            error("Path name too long: $raw")               # fatalError
+        end
+        buf = raw
+    end
+
+    canonical = canonicalisePath(ld, buf)
+    canonical === nothing && error("Path name too long: $buf")      # fatalError
+
+    if raw != canonical
+        push!(ls.translated, (raw, canonical))
+    end
+
+    return canonical
+end
+
+# PORT: pl-qlf.c loadFileName
+# (pl-qlf.c:1837-1853)
+# DIVERGES: returns the path as a `String`; `fatalError` is a Julia `error`; the debug output is dropped.
+"Read a source file name from the QLF file and translate it (pl-qlf.c)."
+function loadFileName(ld::PL_local_data{T}, state::wic_state)::String where {T}
+    str = qlfGetString(state.wicFd::IOSTREAM)
+    str === nothing && error("Invalid QLF: illegal string")        # fatalError
+    return qlfFixSourcePath(ld, state, str)
+end
+
+# PORT: pl-qlf.c qlfLoadFileHash
+# (pl-qlf.c:1927-1933)
+"The content hash of a source file, which follows its name in the QLF file since version 72; else 0 (pl-qlf.c)."
+function qlfLoadFileHash(state::wic_state)::UInt64
+    if state.saved_version >= 72
+        return reinterpret(UInt64, qlfGetInt64(state.wicFd::IOSTREAM))
+    end
+
+    return UInt64(0)
+end
+
+# PORT: pl-qlf.c qlfSourceInfo
+# (pl-qlf.c:3360-3395)
+# DIVERGES: the functor is made from its name (`_err_functor`); `OsError()` is `strerror` of the stream's `io_errno`.
+"Read the source entry at `offset` and add `source(File, Hash)`, `include(File, Hash)` or `dependency(File, Hash)` to the open list `list` (pl-qlf.c)."
+function qlfSourceInfo(
+    ld::PL_local_data{T}, state::wic_state, offset::Int, list::term_t
+)::Bool where {T}
+    s = state.wicFd::IOSTREAM
+    head = PL_new_term_ref(ld)
+    tmp = PL_new_term_ref(ld)
+
+    if Sseek64(s, Int64(offset), SIO_SEEK_SET) != 0
+        return qlfError(
+            ld, state, "seek to $offset failed: " * Base.Libc.strerror(s.io_errno)
+        )
+    end
+    c = Sgetc(s)
+    if c == Int('F')
+        type = :source
+    elseif c == Int('L')
+        type = :include
+    elseif c == Int('D')
+        type = :dependency
+    else
+        return qlfError(ld, state, "No file at offset $offset")
+    end
+    fname = loadFileName(ld, state)             # the hash follows the name in
+    hash = qlfLoadFileHash(state)               # every one of the three
+
+    av = PL_new_term_refs(ld, 2)
+    rc = (
+        PL_put_atom(ld, av, mk_sym(T, Symbol(fname))) &&
+        PL_put_uint64(ld, av + 1, hash) &&
+        PL_cons_functor_v(ld, tmp, _err_functor(ld, type, 2), av) &&
+        PL_unify_list(ld, list, head, list) &&
+        PL_unify(ld, head, tmp)
+    )
+    PL_reset_term_refs(ld, head)
+    return rc
+end
+
 # PORT: pl-qlf.c Q_VERSION
 # (pl-qlf.c:3532)
 "`qlfInfo` flag: unify the version information (`'\$qlf_versions'/6`) instead of checking compatibility."
 const Q_VERSION = 0x01
 
+# ORIGINAL: not upstream's (a flag for whether `files0` was passed): upstream tests the term reference for 0; a term
+# reference 0 is valid here, so the caller of `'\$qlf_sources'/2` sets this flag.
+"`qlfInfo` flag: unify the list of the source files recorded in the file (`'\$qlf_sources'/2`)."
+const Q_FILES = 0x02
+
+# PORT: pl-qlf.c qlfInfo
+# (the `files0` block of pl-qlf.c:3532-3631, 3587-3623)
+# DIVERGES: split out of `qlfInfo`; `Sseek` is `Sseek64`; the `qlfstart` array is a `Vector{Int}`; `(size_t)` of a negative
+# index entry and the `(long)` of it again give the same negative offset, which `Sseek64` refuses; the `-4 * (nqlf + 1)` is
+# `Int64` (a C `int` overflows). `OsError()` is `strerror` of the stream's `io_errno`.
+"The sources of the QLF file: read the index at its end and add each `source/2`, `include/2`, `dependency/2` to `files0`, a list (pl-qlf.c)."
+function qlfFilesInfo(
+    ld::PL_local_data{T}, state::wic_state, file::String, files0::term_t
+)::Bool where {T}
+    s = state.wicFd::IOSTREAM
+    pushPathTranslation(ld, state, file, 0) || return false
+
+    files = PL_copy_term_ref(ld, files0)
+
+    if Sseek64(s, Int64(-4), SIO_SEEK_END) < 0                  # 4 bytes of PutInt32()
+        return qlfError(
+            ld, state, "seek to index failed: " * Base.Libc.strerror(s.io_errno)
+        )
+    end
+    nqlf = qlfGet4BytesInt(s)
+    if nqlf < 0
+        return qlfError(ld, state, "invalid number of files ($nqlf)")
+    end
+    if Sseek64(s, Int64(-4) * (Int64(nqlf) + 1), SIO_SEEK_END) < 0
+        return qlfError(
+            ld, state, "seek to files failed: " * Base.Libc.strerror(s.io_errno)
+        )
+    end
+
+    qlfstart = Vector{Int}(undef, nqlf)
+    for i in 1:nqlf
+        qlfstart[i] = Int(qlfGet4BytesInt(s))
+    end
+
+    for i in 1:nqlf
+        qlfSourceInfo(ld, state, qlfstart[i], files) || return false
+    end
+
+    return PL_unify_nil(ld, files)
+end
+
 # PORT: pl-qlf.c qlfInfo
 # (pl-qlf.c:3532-3631)
-# DIVERGES: only the arguments `'\$qlf_versions'/6` and `'\$qlf_is_compatible'/1` pass (`cversion`, `minload`,
-# `fversion`, `csig`, `fsig`, `flags`; 0 for a term reference not used). The `minfo` branch (`'\$qlf_module'/2`:
-# `pushPathTranslation`, `qlfModuleInfo`) and the `files0` branch (`'\$qlf_sources'/2`: `Sseek` from the end, `qlfSourceInfo`)
-# are NOT PORTED, those two predicates stay refused by name (QLF1B).
-"Open the QLF file `file`; with `Q_VERSION` unify the version information, else check compatibility; close it (pl-qlf.c)."
+# DIVERGES: only the arguments `'\$qlf_versions'/6`, `'\$qlf_is_compatible'/1` and `'\$qlf_sources'/2` pass (`cversion`,
+# `minload`, `fversion`, `csig`, `fsig`, `files0`, then the flags `Q_VERSION`, `Q_FILES`; 0 for a term reference not used). The
+# `minfo` branch (`'\$qlf_module'/2`: `pushXrIdTable`, `qlfModuleInfo`, the XR reader) is NOT PORTED, that predicate stays
+# refused by name (QLF1B). The `files0` block is `qlfFilesInfo`.
+"Open the QLF file `file`; with `Q_VERSION` unify the version information, else check compatibility; with `Q_FILES` list its sources; close it (pl-qlf.c)."
 function qlfInfo(
     ld::PL_local_data{T}, file::String, cversion::term_t, minload::term_t, fversion::term_t,
-    csig::term_t, fsig::term_t, flags::Int
+    csig::term_t, fsig::term_t, files0::term_t, flags::Int
 )::Bool where {T}
     state = wic_state(file)
     s = open_qlf_file(ld, file)
     s === nothing && return false
     state.wicFd = s
 
-    rval = false
+    ok = false
     if (flags & Q_VERSION) != 0
         # Current system QLF versions
         if PL_unify_integer(ld, cversion, PL_QLF_VERSION) &&
@@ -766,13 +1040,19 @@ function qlfInfo(
             lversion = qlfVersion(ld, state, qlfMagic)
             if lversion !== nothing && PL_unify_integer(ld, fversion, lversion)
                 vm_signature = qlfGetInt32(s)
-                rval = PL_unify_int64(ld, fsig, Int(reinterpret(UInt32, vm_signature)))
+                ok = PL_unify_int64(ld, fsig, Int(reinterpret(UInt32, vm_signature)))
             end
         end
     else
-        rval = qlfIsCompatible(ld, state, qlfMagic)
+        ok = qlfIsCompatible(ld, state, qlfMagic)
     end
 
+    rval = false
+    if ok
+        rval = (flags & Q_FILES) != 0 ? qlfFilesInfo(ld, state, file, files0) : true
+    end
+
+    (flags & Q_FILES) != 0 && popPathTranslation(ld, state)         # if ( minfo || files0 )
     Sclose(s)
     return rval
 end
@@ -786,7 +1066,7 @@ function pl_qlf_versions6_va(
     name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
     name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
     return qlfInfo(
-        ld, name, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5, Int(Q_VERSION)
+        ld, name, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5, 0, Int(Q_VERSION)
     ) ? FTRUE : FFALSE
 end
 
@@ -798,15 +1078,18 @@ function pl_qlf_is_compatible1_va(
 )::foreign_t where {T}
     name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
     name === nothing && return FFALSE
-    return qlfInfo(ld, name, 0, 0, 0, 0, 0, 0) ? FTRUE : FFALSE
+    return qlfInfo(ld, name, 0, 0, 0, 0, 0, 0, 0) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c qlf_sources as pl_qlf_sources2_va
-# (PRED_IMPL("$qlf_sources", 2, qlf_sources, 0)) — refused by name
+# (PRED_IMPL("$qlf_sources", 2, qlf_sources, 0)) — pl-qlf.c:3686-3695
+"`'\$qlf_sources'(+File, -Files)` (pl-qlf.c): `Files` is a list of `source(File, Hash)`, `include(File, Hash)`, `dependency(File, Hash)` as the QLF file records them."
 function pl_qlf_sources2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _qlf_refused(T, "\$qlf_sources", 2)
+    name = PL_get_file_name(ld, PL__t0, Int(PL_FILE_ABSOLUTE))
+    name === nothing && return FFALSE                       # !PL_get_file_name(A1, &name, PL_FILE_ABSOLUTE)
+    return qlfInfo(ld, name, 0, 0, 0, 0, 0, PL__t0 + 1, Int(Q_FILES)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-qlf.c FNV1A_64_OFFSET, FNV1A_64_PRIME
@@ -957,8 +1240,8 @@ function pl_unmap_id1_va(
 end
 
 # PORT: pl-qlf.c BeginPredDefs as PL_predicates_from_wic
-# DIVERGES: all 22 entries of the table, in upstream's order (pl-qlf.c:4953-4976): seventeen take the NULL-state branch or run (QLF1, QLF1B: `$file_hash`, `$qlf_versions`, `$qlf_is_compatible`)
-# (`'\$add_directive_wic'/1` `PL_FA_TRANSPARENT`, as the table's flags), five are refused by name. `PRED_DEF` ors in
+# DIVERGES: all 22 entries of the table, in upstream's order (pl-qlf.c:4953-4976): eighteen take the NULL-state branch or run (QLF1, QLF1B, QLF2: `$file_hash`, `$qlf_versions`, `$qlf_is_compatible`, `$qlf_sources`)
+# (`'\$add_directive_wic'/1` `PL_FA_TRANSPARENT`, as the table's flags), four are refused by name. `PRED_DEF` ors in
 # `PL_FA_VARARGS`.
 "pl-qlf.c's registration table (`BeginPredDefs(wic)`): the shells and the refused predicates."
 const PL_predicates_from_wic = (
