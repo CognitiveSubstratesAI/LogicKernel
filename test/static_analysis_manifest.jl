@@ -1899,6 +1899,11 @@ function _manifest_index(T)
         (LK.put_frame_goal, Tuple{LD, Int, Int}, false),     # SSU2: the matching-rule error's goal
         (LK.pl_prolog_current_frame, Tuple{LD, Int}, false),
         (LK.pl_notrace, Tuple{LD}, false),                   # DBG1: notrace/0 (the tabling supervisor tests)
+        (LK.pl_trace, Tuple{LD}, false),                     # MISS1: trace/0, tracing/0, $leash/2, $visible/2 (pl-trace.c)
+        (LK.pl_tracing, Tuple{LD}, false),
+        (LK.pl_leash, Tuple{LD, Int, Int}, false),
+        (LK.pl_visible, Tuple{LD, Int, Int}, false),
+        (LK.setInteger, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_get_frame, Tuple{LD, Int}, false),            # DBG1: prolog_frame_attribute/3 and its helpers
         (LK.is_meta_call, Tuple{LD, Int}, false),
         (LK.isDebugFrame, Tuple{LD, Int, Int}, false),

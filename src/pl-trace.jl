@@ -120,6 +120,72 @@ function pl_notrace(ld::PL_local_data{T})::foreign_t where {T}
     return tracemode(ld, false, nothing) ? FTRUE : FFALSE
 end
 
+# PORT: pl-incl.h NO_PORT, CALL_PORT, EXIT_PORT, FAIL_PORT, REDO_PORT, UNIFY_PORT, CUT_CALL_PORT, CUT_EXIT_PORT, EXCEPTION_PORT, CUT_PORT, PORT_MASK
+# (pl-incl.h:2840-2850 at the pin 18168e62: the port masks `debugstatus.leashing` and `debugstatus.visible` hold)
+"The debugger's port masks (pl-incl.h): `NO_PORT` 0x0, `CALL_PORT` 0x1, `EXIT_PORT` 0x2, `FAIL_PORT` 0x4, `REDO_PORT` 0x8, `UNIFY_PORT` 0x10."
+const NO_PORT = 0x000
+const CALL_PORT = 0x001
+const EXIT_PORT = 0x002
+const FAIL_PORT = 0x004
+const REDO_PORT = 0x008
+const UNIFY_PORT = 0x010
+"`CUT_CALL_PORT` 0x40, `CUT_EXIT_PORT` 0x80, `EXCEPTION_PORT` 0x100, `CUT_PORT` (both cut ports), `PORT_MASK` 0x1ff (pl-incl.h)."
+const CUT_CALL_PORT = 0x040
+const CUT_EXIT_PORT = 0x080
+const EXCEPTION_PORT = 0x100
+const CUT_PORT = CUT_CALL_PORT | CUT_EXIT_PORT
+const PORT_MASK = 0x1ff
+
+# PORT: pl-util.c setInteger
+# DIVERGES: the C `int *flag` is the current value `cur` in and the new value out (`nothing` is false: the flag keeps its value, as
+# upstream's `fail` before `PL_get_integer_ex` stored anything); the local data is an argument.
+"Unify `old` with `cur`, then read the integer `new` holds: the new value, or `nothing` when either step failed (pl-util.c)."
+function setInteger(
+    ld::PL_local_data{T}, cur::Int, old::term_t, new::term_t
+)::Union{Nothing, Int} where {T}
+    PL_unify_integer(ld, old, cur) || return nothing
+    return PL_get_integer_ex(ld, new)
+end
+
+# PORT: pl-trace.c pl_trace
+# (FRG("trace", 0, pl_trace, NOTRACE), pl-ext.c:140 at the pin 18168e62; pl-trace.c:2287-2290: `return tracemode(true, NULL);`)
+# DIVERGES: the local data is an argument; as for `pl_notrace`.
+"`trace/0` (pl-trace.c): switch the trace mode on (`tracemode(true, NULL)`), which also switches the debug mode on."
+function pl_trace(ld::PL_local_data{T})::foreign_t where {T}
+    return tracemode(ld, true, nothing) ? FTRUE : FFALSE
+end
+
+# PORT: pl-trace.c pl_tracing
+# (FRG("tracing", 0, pl_tracing, NOTRACE), pl-ext.c:142; pl-trace.c:2297-2302: `return debugstatus.tracing;`)
+# DIVERGES: the local data is an argument.
+"`tracing/0` (pl-trace.c): true while the trace mode is on."
+function pl_tracing(ld::PL_local_data{T})::foreign_t where {T}
+    return ld.debugstatus_tracing ? FTRUE : FFALSE
+end
+
+# PORT: pl-trace.c pl_leash
+# (FRG("$leash", 2, pl_leash, NOTRACE), pl-ext.c:145; pl-trace.c:2383-2387: `return setInteger(&debugstatus.leashing, old, new);`)
+# DIVERGES: the local data is an argument; `debugstatus.leashing` is `ld.debugstatus_leashing` (src/pl-global.jl), set only when both
+# steps of `setInteger` succeeded. No range check of the mask (upstream has none: the new value is any C `int`).
+"`'\$leash'(-Old, +New)`: unify `Old` with the mask of the ports the tracer stops at and set it to `New` (pl-trace.c)."
+function pl_leash(ld::PL_local_data{T}, old::term_t, new::term_t)::foreign_t where {T}
+    v = setInteger(ld, ld.debugstatus_leashing, old, new)
+    v === nothing && return FFALSE
+    ld.debugstatus_leashing = v
+    return FTRUE
+end
+
+# PORT: pl-trace.c pl_visible
+# (FRG("$visible", 2, pl_visible, NOTRACE), pl-ext.c:146; pl-trace.c:2389-2393: `return setInteger(&debugstatus.visible, old, new);`)
+# DIVERGES: as `pl_leash`, over `ld.debugstatus_visible`.
+"`'\$visible'(-Old, +New)`: unify `Old` with the mask of the ports the tracer shows and set it to `New` (pl-trace.c)."
+function pl_visible(ld::PL_local_data{T}, old::term_t, new::term_t)::foreign_t where {T}
+    v = setInteger(ld, ld.debugstatus_visible, old, new)
+    v === nothing && return FFALSE
+    ld.debugstatus_visible = v
+    return FTRUE
+end
+
 # PORT: pl-trace.c prolog_current_choice as pl_prolog_current_choice1_va
 # (PRED_IMPL("prolog_current_choice", 1, prolog_current_choice, 0))
 "`prolog_current_choice/1` (pl-trace.c): the newest choice point's position (not the debugger's)."

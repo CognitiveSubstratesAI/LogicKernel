@@ -1,5 +1,5 @@
 # ORIGINAL: MISS1's gate — the predicates the missing-C-predicates list left open: the legacy character I/O put/1,2 and get/1,2 of pl-file.c
-# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450), '$unload_file'/1 (pl-srcfile.c:839-885) and '$sig_unblock'/0 (pl-thread.c:3897)
+# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450), '$unload_file'/1 (pl-srcfile.c:839-885), '$sig_unblock'/0 (pl-thread.c:3897), '$leash'/2, '$visible'/2, trace/0 and tracing/0 (pl-trace.c:2287-2393)
 # test/core_lang/test_miss_preds_swipl.jl — put/1,2 and get/1,2 over open_string/2 and with_output_to/2 streams, '$call_no_catch'/1:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the answer lines are the driver's `enc`oded form (test_s2a_swipl.jl's driver).
@@ -222,6 +222,37 @@ const _MG_CASES = [
     # '$sig_unblock'/0 (pl-thread.c:3897): unblock_signals(); return true — always true (no thread signal is queued here or in the program)
     ("sg01", raw"'$sig_unblock', R = ok", _mga("ok")),
     ("sg02", raw"'$sig_unblock', '$sig_unblock', R = ok", _mga("ok")),
+    # '$leash'/2, '$visible'/2 (pl-trace.c:2383-2393, setInteger pl-util.c:314-322): unify Old with the current port mask, then read New as a C int
+    # and store it; the masks start as initTracer sets them (pl-trace.c:2081-2083: CALL|FAIL|REDO|EXIT|CUT_CALL|EXCEPTION = 0x1+0x4+0x8+0x2+0x40+0x100 =
+    # 335). tracing/0 is false at start (debugstatus.tracing). The rows that SET a mask restore it. NOT a row: trace/0 (swipl would start the tracer
+    # and prompt on stdin): the direct testset below. MEASURE ON THE LANE: ld01/vs01 `swipl -g "'\$leash'(O,O),print(O),nl,'\$visible'(V,V),print(V),nl" -t halt`.
+    ("ld01", raw"'$leash'(O, O), R = O", _mgi(335)),
+    ("ld02", raw"'$leash'(O0, 3), '$leash'(O1, O0), R = O1", _mgi(3)),   # the second call returns what the first stored, and restores
+    ("ld03", raw"'$leash'(O0, 7), '$leash'(7, O0), R = ok", _mga("ok")),
+    (
+        "ld04",
+        raw"'$leash'(O0, O0), ( '$leash'(1000, 3) -> R = yes ; '$leash'(O1, O1), ( O1 == O0 -> R = unchanged ; R = changed ) )",
+        _mga("unchanged")
+    ),   # Old does not unify: false, the mask is not set
+    ("ld05", raw"'$leash'(_, _)", _mgraised(_mga("instantiation_error"))),   # PL_get_integer_ex(new)
+    (
+        "ld06",
+        raw"'$leash'(_, foo)",
+        _mgraised(_mgc("type_error", _mga("integer"), _mga("foo")))
+    ),
+    ("vs01", raw"'$visible'(O, O), R = O", _mgi(335)),
+    ("vs02", raw"'$visible'(O0, 5), '$visible'(O1, O0), R = O1", _mgi(5)),
+    (
+        "vs03",
+        raw"'$leash'(L0, L0), '$visible'(V0, 9), '$leash'(L1, L1), '$visible'(_, V0), ( L1 == L0 -> R = independent ; R = shared )",
+        _mga("independent")
+    ),   # the two masks are separate fields
+    (
+        "vs04",
+        raw"'$visible'(_, bar)",
+        _mgraised(_mgc("type_error", _mga("integer"), _mga("bar")))
+    ),
+    ("tg01", raw"( tracing -> R = on ; R = off )", _mga("off")),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -290,7 +321,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -300,7 +331,7 @@ end
         @test k == p
     end
     # not vacuous: the expectation holds raised errors, `ok` and answers, and one failing row (ge09)
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 9    # raised(…) (7 + ul04, ul05)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 12    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04)
     @test count(l -> occursin(r"^t_\w+ *$", l), ex) == 1                   # ge09 fails
     @test count(l -> occursin("i-1)", l), ex) == 5                         # -1 in an answer (pu04's character, the EOF answers)
 end
@@ -314,4 +345,26 @@ end
         f, names = _mg_file(mktempdir())
         @test _mg_swipl_lines(f, names) == _mg_expected()
     end
+end
+
+@testset "trace/0, notrace/0, tracing/0 and the initial port masks, called directly (the tracer is not started)" begin
+    gd = LK.PL_global_data{_MG}()
+    ld = LK.PL_local_data{_MG}(gd)
+    @test ld.debugstatus_leashing == 0x14f            # initTracer: CALL|FAIL|REDO|EXIT|CUT_CALL|EXCEPTION
+    @test ld.debugstatus_visible == 0x14f
+    @test LK.CALL_PORT | LK.FAIL_PORT | LK.REDO_PORT | LK.EXIT_PORT | LK.CUT_CALL_PORT | LK.EXCEPTION_PORT == 0x14f
+    @test LK.CUT_PORT == 0xc0 && LK.PORT_MASK == 0x1ff && LK.UNIFY_PORT == 0x10 && LK.NO_PORT == 0
+    @test LK.pl_tracing(ld) == LK.FFALSE
+    @test !ld.debugstatus_debugging
+    @test LK.pl_trace(ld) == LK.FTRUE                  # tracemode(true): the debug mode goes on with it
+    @test ld.debugstatus_tracing && ld.debugstatus_debugging
+    @test ld.debugstatus_skiplevel == LK.SKIP_VERY_DEEP
+    @test LK.pl_tracing(ld) == LK.FTRUE
+    @test LK.pl_trace(ld) == LK.FTRUE                  # trace again: still on, still true
+    @test LK.pl_tracing(ld) == LK.FTRUE
+    @test LK.pl_notrace(ld) == LK.FTRUE
+    @test LK.pl_tracing(ld) == LK.FFALSE
+    @test ld.debugstatus_debugging                     # notrace switches the trace mode off only
+    @test LK.debugmode(ld, false, nothing, UInt32(0))
+    @test !ld.debugstatus_debugging
 end

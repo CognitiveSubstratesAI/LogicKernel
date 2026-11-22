@@ -37,6 +37,7 @@
 # (pl-mutex.c), the last two at the end of the table (pl-ext.c:186-187). Since PR1 abolish/1,2 (pl-proc.c, before
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
+# Since MISS1 trace/0, tracing/0, `$leash/2` and `$visible/2` (pl-trace.c) around notrace/0, at upstream's places (pl-ext.c:140-146).
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
 # Since Q10 garbage_collect_atoms/0 (pl-atom.c) between `$garbage_collect/1` and garbage_collect_clauses/0, pl-ext.c:170.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
@@ -59,7 +60,11 @@ const foreigns = (
     PL_extension("fail", 0, pl_fail, PL_FA_ISO),
     PL_extension("true", 0, pl_true, PL_FA_ISO),
     PL_extension("\$fail", 0, pl_fail, PL_FA_NOTRACE),
+    PL_extension("trace", 0, pl_trace, PL_FA_NOTRACE),                         # MISS1 (pl-ext.c:140)
     PL_extension("notrace", 0, pl_notrace, PL_FA_NOTRACE),                     # DBG1 (pl-ext.c:141)
+    PL_extension("tracing", 0, pl_tracing, PL_FA_NOTRACE),                     # MISS1 (pl-ext.c:142)
+    PL_extension("\$leash", 2, pl_leash, PL_FA_NOTRACE),                       # MISS1 (pl-ext.c:145)
+    PL_extension("\$visible", 2, pl_visible, PL_FA_NOTRACE),                   # MISS1 (pl-ext.c:146)
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
     PL_extension("dwim_match", 3, pl_dwim_match, 0x00),                         # DWIM1 (pl-ext.c:155)
     PL_extension("\$dwim_predicate", 2, pl_dwim_predicate, PL_FA_NONDETERMINISTIC),   # DWIM1 (pl-ext.c:156)
