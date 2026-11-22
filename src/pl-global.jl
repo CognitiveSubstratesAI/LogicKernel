@@ -43,9 +43,10 @@ mutable struct event_hooks{T}
     onthreadstart::Union{Nothing, event_list{T, definition{T}}}     # thread start hook
     onthreadexit::Union{Nothing, event_list{T, definition{T}}}      # thread exit hook
     onuntable::Union{Nothing, event_list{T, definition{T}}}         # Untable after reload
+    const functions::Vector{event_function}                         # (the C functions the lists' callbacks name by index: `register_event_function`, TH1)
 end
 event_hooks{T}() where {T} =
-    event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+    event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing, event_function[])
 
 # PORT: pl-init.h pl_options_t
 # (swipl-devel cbf4e189, src/pl-init.h:61-95; `GD->options`, filled by pl-init.c `initDefaultOptions` and
@@ -170,6 +171,94 @@ end
 locale_state{T}() where {T} =
     locale_state{T}(PL_locale_rec{T}[], PL_locale_rec{T}[], nothing, nothing)
 
+# PORT: pl-thread.h thread_status as PL_THREAD_*
+# (swipl-devel 18168e62, src/pl-thread.h: the enum, in its order; the engines read `RUNNING` and the `THREAD_STATUS_INVALID` test)
+"The states of a thread slot (pl-thread.h `thread_status`)."
+const PL_THREAD_UNUSED = 0
+const PL_THREAD_RESERVED = 1
+const PL_THREAD_JOINED = 2
+const PL_THREAD_RUNNING = 3
+const PL_THREAD_EXITED = 4
+const PL_THREAD_SUCCEEDED = 5
+const PL_THREAD_FAILED = 6
+const PL_THREAD_EXCEPTION = 7
+const PL_THREAD_NOMEM = 8
+const PL_THREAD_CREATED = 9
+
+# PORT: pl-thread.h THREAD_STATUS_INVALID
+"Whether the thread status `s` is invalid, that is below `PL_THREAD_RUNNING` (pl-thread.h)."
+THREAD_STATUS_INVALID(s::Int)::Bool = s < PL_THREAD_RUNNING
+
+# PORT: pl-thread.h TH_IS_INTERACTOR
+# (the three flags of `thread_handle.flags`: interactor, no more answers, answered last)
+const TH_IS_INTERACTOR = UInt32(0x0001)
+const TH_INTERACTOR_NOMORE = UInt32(0x0002)
+const TH_INTERACTOR_DONE = UInt32(0x0004)
+
+# PORT: pl-thread.h PL_thread_info_t as PL_thread_info
+# DIVERGES: only the members the engines read: `pl_tid`, `open_count`, `detached`, `debug`, `has_tid`, `is_engine`, `stack_limit`,
+# `status`, `thread_data` (the local data, an `AbstractLocalData`: the type is defined later), `symbol` (the handle blob, `nothing`
+# = 0), `class` and `return_value` (read by thread_property's `status`; no engine sets it); no pthread, no c_stack, no `module`/`goal`, no lock-free `access`, no free list (the kernel runs
+# one OS thread: owner TH1-threads). `class` is the atom's name (`user`, as `PL_thread_attach_engine` sets it).
+"The record of one thread or engine (pl-thread.h `PL_thread_info_t`)."
+mutable struct PL_thread_info{T}
+    pl_tid::Int                                 # pl_tid: Prolog thread id
+    open_count::Int                             # open_count: for PL_thread_detach_engine()
+    detached::Bool                              # detached
+    debug::Bool                                 # debug: thread can be debugged
+    has_tid::Bool                               # has_tid: true while the engine is entered by a caller
+    is_engine::Bool                             # is_engine: created as engine
+    stack_limit::Int                            # stack_limit: in positions (words; upstream bytes)
+    status::Int                                 # status: PL_THREAD_*
+    thread_data::Union{Nothing, AbstractLocalData}    # thread_data: the local data of the engine
+    symbol::Union{Nothing, T}                   # symbol: the thread_handle blob (nothing: 0)
+    class::Symbol                               # class: `user` or `system`
+    return_value::Union{Nothing, record{T}}     # return_value: the recorded result of a thread that ended (`nothing` for an engine)
+end
+
+# PORT: pl-thread.h thread_handle
+# DIVERGES: `interactor` is flattened (`interactor_query` ...); `symbol` and `alias` are atoms (`nothing` = NULL_ATOM); `serial` has no
+# upstream twin: the number of the handle in `gd.thread.handles`, the 8 payload bytes of its blob (upstream: the pointer); `package` is a
+# record; no `mutex` (no OS thread: `running` is the kernel's answer to a re-entrant call, DIVERGES (TH1) in `interactor_post_answer`),
+# no `next_free` (no atom GC).
+"The handle of a thread or engine: what its blob names (pl-thread.h `thread_handle`)."
+mutable struct thread_handle{T}
+    info::Union{Nothing, PL_thread_info{T}}     # info: represented engine
+    symbol::Union{Nothing, T}                   # symbol: associated symbol
+    alias::Union{Nothing, T}                    # alias: alias name of the thread
+    engine_id::Int                              # engine_id: numeric engine id
+    flags::UInt32                               # flags: TH_*
+    serial::Int                                 # (the number in gd.thread.handles, the blob's payload)
+    interactor_query::Int                       # interactor.query: query handle in the engine's local data (0: none)
+    interactor_argv::Int                        # interactor.argv: the 2 argument references, in the engine's local data
+    interactor_package::Union{Nothing, record{T}}    # interactor.package: exchanged term
+    interactor_thread::Union{Nothing, T}        # interactor.thread: associated thread
+    running::Bool                               # (the engine's query is running: engine_next re-entered it)
+end
+
+# PORT: pl-global.h thread as thread_state
+# DIVERGES: the members of `GD->thread` the engines read, plus `GD->statistics.engines_created/finished`: `handles` (every handle, by
+# `thread_handle.serial`), `infos` (`GD->thread.threads`, by `pl_tid`; 0: the main thread is not kept, its slot 1 stays `nothing`),
+# `thread_table` (`threadTable`: the alias atom's `sym_key` --> the handle's serial; upstream: alias --> symbol), `highest_id`, and the three
+# members of the main thread's record that `thread_detach/1`, `set_thread/2` and `thread_property/2` read and write (`main_detached`,
+# `main_debug`, `main_class`: initially not detached, debuggable, no class).
+"The thread state of the database: the handles, the thread records, the alias table and the engine counters (pl-global.h)."
+mutable struct thread_state{T}
+    const handles::Vector{thread_handle{T}}     # (the handles a thread blob names)
+    const infos::Vector{Union{Nothing, PL_thread_info{T}}}    # thread.threads: by pl_tid
+    const thread_table::Dict{UInt64, Int}       # threadTable: alias --> handle serial
+    highest_id::Int                             # thread.highest_id
+    engines_created::Int                        # statistics.engines_created
+    engines_finished::Int                       # statistics.engines_finished
+    main_detached::Bool                         # (the main thread's `info->detached`: it has no record)
+    main_debug::Bool                            # (the main thread's `info->debug`)
+    main_class::Union{Nothing, Symbol}          # (the main thread's `info->class`; `nothing` = none)
+end
+thread_state{T}() where {T} = thread_state{T}(
+    thread_handle{T}[], Union{Nothing, PL_thread_info{T}}[nothing],
+    Dict{UInt64, Int}(), 1, 0, 0, false, true, nothing
+)
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -257,6 +346,9 @@ mutable struct PL_global_data{T}
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
     char_conversion_table::Vector{Int}                          # (pl-read.c static `char_table[257]`: the entry of code c is at c + 2, EOF at 1; RD2b)
+    const thread::thread_state{T}                               # thread: the handles, the thread records, the alias table, the engine counters (pl-thread.c; TH1 engines)
+    const mutexes::Dict{UInt64, pl_mutex{T}}                    # thread.mutexTable: the user mutexes by the `sym_key` of their id (pl-mutex.c; MUTEX)
+    mutex_serial::Int                                           # the last creation number handed out to a mutex (MUTEX; the payload of an anonymous mutex's blob)
     const flags_table::Dict{word, flag{T}}                      # flags.table: the key's word -> its `flag` (pl-flag.c get_flag/2, set_flag/2; FL1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
@@ -316,6 +408,11 @@ end
 # Since RD2b: `char_conversion_table`, DIVERGES (representation): upstream's `char_table[257]` is a static of pl-read.c shared by the process,
 # here a field of the database (the entry of code `c` at index `c + 2`, EOF at 1), filled by `initCharConversion` (src/pl-read.jl) when the
 # database is made; `char_conversion/2` writes it, a read holds it while the Prolog flag `char_conversion` is set.
+# Since TH1 engines: `thread`, `GD->thread` and the engine counters `GD->statistics.engines_created/finished` (`thread_state`), appended LAST; the
+# local data gets `thread_info`, `LD->thread.info`, appended LAST (`nothing`: the main thread). `GD_COPY_POLICY`: `:reset` (a copy has no engine).
+# Since MUTEX: `mutexes` and `mutex_serial` (the user mutexes of pl-mutex.c). `mutexes` is `GD->thread.mutexTable`, keyed by the `sym_key` of the
+# mutex's id (a name, or the `mutex` blob of an anonymous one); `mutex_serial` is the last creation number handed out (the payload of an anonymous
+# mutex's blob, and the order `mutex_property/2` enumerates in); the local data holds `mutex_enums`, the pool of its REDO_PTR states.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -946,6 +1043,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
     cur_pred_enums::foreign_state_pool{cur_pred_enum}           # ('$c_current_predicate'/2's REDO_PTR states, R2 PR1)
     cur_enums::foreign_state_pool{cur_enum{T}}                  # (current_predicate/1's REDO_PTR states, R2 PR1)
+    mutex_enums::foreign_state_pool{mutex_prop_enum{T}}         # (mutex_property/2's REDO_PTR states, MUTEX)
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
     IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
@@ -985,6 +1083,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     encoding::IOENC                                             # encoding: the default text encoding, flag `encoding` (pl-global.h; ENC1 flags)
     unicode_atoms::Sunicode_atoms_t                             # unicode_atoms: the default atom-content policy, flag `unicode_atoms` (ENC1 flags)
     read_contexts::Vector{Any}                                  # ORIGINAL: the `read_data` a quasi-quotation's `'\$quasi_quotation'(Ptr, …)` may name, while its read runs (RD2)
+    thread_info::Union{Nothing, PL_thread_info{T}}              # thread.info: the thread record (nothing: the main thread, the kernel's single-thread view; TH1 engines)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -1084,6 +1183,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
         foreign_state_pool{cur_pred_enum}(),    # '$c_current_predicate'/2's states: none
         foreign_state_pool{cur_enum{T}}(),      # current_predicate/1's states: none
+        foreign_state_pool{mutex_prop_enum{T}}(),  # mutex_property/2's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
         nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
         IOSTREAM[],                             # output_stack: no redirect (R2 O1B)
@@ -1121,7 +1221,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # trail_size: set by allocStacks! (G1, D-0966)
         ENC_UTF8,                               # encoding: DIVERGES, upstream's initEncoding (init_locale) is lazy; the kernel's text is UTF-8 (pl-ctype.jl)
         S_UATOMS_ACCEPT,                        # unicode_atoms: the flag's default `accept` (pl-prologflag.c:2684)
-        Any[]                                   # read_contexts: none (RD2)
+        Any[],                                  # read_contexts: none (RD2)
+        nothing                                 # thread_info: the main thread (an engine's is set by `_create_engine`; TH1 engines)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

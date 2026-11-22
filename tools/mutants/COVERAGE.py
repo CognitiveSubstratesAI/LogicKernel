@@ -118,7 +118,7 @@ MUTANTS = [
          new='    if ld.coverage.active == 0\n        ex = PL_new_term_ref(ld)\n'),
     dict(id="COVERAGE-27 the permission error of the reset names another thread (KILL w5)",
          file=C, targets=TARGETS,
-         old='PL_unify_atom(ld, ex, mk_sym(T, :main))',
+         old='PL_unify_atom(ld, ex, main_thread_alias(_query_gd(ld)))',
          new='PL_unify_atom(ld, ex, mk_sym(T, :other))'),
     dict(id="COVERAGE-28 the permission error of the reset names another action (KILL w5)",
          file=C, targets=TARGETS,

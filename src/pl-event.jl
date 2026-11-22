@@ -182,6 +182,21 @@ function add_event_hook(
     return link_event(list, cb, last)
 end
 
+# PORT: pl-event.c register_event_function
+# DIVERGES: the list is an `event_location` (see `event_list_at`) and the database and local data are arguments; `func` is a Julia
+# callable and `closure` any value (`event_function`), kept in `gd.event_hook.functions` for the database's life (upstream's `PL_malloc`ed
+# callback holds the pointers: `free_event_callback` frees the callback only); the callback's module and procedure are NULL (0, `nothing`).
+"Register the C function `func` with `closure` as a listener at `loc`, first or `last`, taking `argc` event arguments (pl-event.c)."
+function register_event_function(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T},
+    name::Union{Nothing, T}, last::Bool, func, closure, argc::Int, flags::UInt32
+)::Bool where {T}
+    fns = gd.event_hook.functions
+    push!(fns, event_function(func, closure))
+    cb = event_callback{T, definition{T}}(name, 0, nothing, length(fns), nothing, argc, flags)
+    return link_event(get_event_list!(gd, ld, loc), cb, last)
+end
+
 # PORT: pl-event.c get_event_list
 # DIVERGES: the list's place is an `event_location`; no `L_EVHOOK` lock (no threads).
 "The event list at `loc`, made empty when it is NULL (pl-event.c)."
@@ -434,9 +449,10 @@ function cleanupEvents(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing whe
 end
 
 # PORT: pl-event.c call_event_list
-# DIVERGES: the callbacks are a SNAPSHOT of the vector (a listener may call `prolog_unlisten/2`); the C-function branch
-# (`function_ != 0`, registered by `register_event_function` for `PL_thread_at_exit`: TH1) has no function pointer to call
-# and counts as a failure; a callback's module is its index.
+# DIVERGES: the callbacks are a SNAPSHOT of the vector (a listener may call `prolog_unlisten/2`); a C function (`function_ != 0`,
+# registered by `register_event_function`, `PL_thread_at_exit`'s) is the Julia callable of `gd.event_hook.functions[function_]`, called
+# with `(gd, ld, closure[, argv+1[, argv+2]])` (see `event_function`); upstream's `assert(0)` for an unsupported `argc` is `@assert`;
+# a callback's module is its index.
 "Call the listeners of `list` with the event's arguments `argv+1…`, `argv` the closure's slot (pl-event.c)."
 function call_event_list(
     gd::PL_global_data{T}, ld::PL_local_data{T},
@@ -448,7 +464,34 @@ function call_event_list(
     if list !== nothing
         for ev in copy(list.callbacks)
             if ev.function_ != 0
-                rc = false                                  # a C function: TH1's
+                f = gd.event_hook.functions[ev.function_]
+                if (ev.flags & EV_CALLBACK_VOID) != 0
+                    @assert argc >= ev.argc
+                    if ev.argc == 0
+                        f.fn(gd, ld, f.closure)
+                    elseif ev.argc == 1
+                        f.fn(gd, ld, f.closure, argv + 1)
+                    elseif ev.argc == 2
+                        f.fn(gd, ld, f.closure, argv + 1, argv + 2)
+                    else
+                        rc = false
+                        @assert false "call_event_list(): a void callback of argc $(ev.argc)"
+                    end
+                    if PL_exception(ld, 0) != 0
+                        rc = false
+                    end
+                else
+                    if argc == 0
+                        rc = f.fn(gd, ld, f.closure)::Bool
+                    elseif argc == 1
+                        rc = f.fn(gd, ld, f.closure, argv + 1)::Bool
+                    elseif argc == 2
+                        rc = f.fn(gd, ld, f.closure, argv + 1, argv + 2)::Bool
+                    else
+                        rc = false
+                        @assert false "call_event_list(): a callback of argc $argc"
+                    end
+                end
             elseif (clo = ev.closure) !== nothing
                 rc =
                     rc && (
@@ -590,8 +633,12 @@ function PL_call_event_hook(
 end
 
 # PORT: pl-event.c PL_call_event_hook_va
-# DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
-# thread table); an unknown event is `false` (upstream warns).
+# DIVERGES: `args` are the event's values (the thread events' value is the thread record `info`, `unify_thread_id` puts its
+# id: the alias, else the handle's blob); an unknown event is `false` (upstream warns). The twelve-row table is the build with
+# engines (`O_ENGINES`) and no OS threads (the `threads` flag is false, as upstream's `!O_PLMT && O_ENGINES` build sets it): the
+# only thread that has a record here is an engine, and an engine runs `thread_exit` and `this_thread_exit` when it is
+# destroyed (`freePrologThread`, src/pl-thread.jl `_destroy_engine!`); `thread_start` is raised by `start_thread` (pl-thread.c)
+# alone, which an engine never goes through, so no event of this name is raised here (the function does put its value).
 "Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
 function PL_call_event_hook_va(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
@@ -640,11 +687,8 @@ function PL_call_event_hook_va(
     elseif ev == PLEV_FRAMEFINISHED
         rc = PL_put_frame(ld, av + 1, event_arg(Int, args, 1))
     elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"
-            )
-        )
+        info = event_arg(PL_thread_info{T}, args, 1)
+        rc = unify_thread_id(gd, ld, av + 1, info)
     elseif ev == PLEV_THIS_THREAD_EXIT
         # nothing to put
     elseif ev == PLEV_UNTABLE

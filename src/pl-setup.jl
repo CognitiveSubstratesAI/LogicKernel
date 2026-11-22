@@ -618,6 +618,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     initTries!(atoms)                          # initTries (setup:149): the trie blob type (TAB1 TR1)
     initUndo!(atoms)                           # initUndo (setup:151): the undo blob type (TX1e)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
+    initThreads!(atoms)                        # initThreads (setup): the thread blob type (TH1 engines)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
@@ -700,6 +701,9 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         locale_state{T}(),                      # locale: empty until initLocale! (below)
         dc_proc,                                # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
         initCharConversion(),                   # char_conversion_table: pl-setup.c:174 (RD2b)
+        thread_state{T}(),                      # thread: no engine yet (TH1 engines)
+        Dict{UInt64, pl_mutex{T}}(),            # mutexes: no user mutex (initMutexes: newHTableWP(16); MUTEX)
+        0,                                      # mutex_serial: none handed out
         Dict{word, flag{T}}()                   # flags_table: initFlags's newHTableWP, empty (pl-flag.c; FL1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
@@ -707,6 +711,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     initBuildIns!(gd)                           # setup:158 (src/pl-ext.jl)
     initOperators!(gd)                          # setup:164 (src/pl-op.jl)
     initLocale!(gd)                             # setup:176 (src/os/pl-locale.jl): after initIO, the locale blob type and the default locale
+    register_main_thread!(gd)                   # pl-init.c:1606 aliasThread(PL_thread_self(), ATOM_thread, ATOM_main) (src/pl-thread.jl; TH1 engines)
     return gd
 end
 

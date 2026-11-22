@@ -6,7 +6,6 @@
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
-pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
 pred:$gc_stop/0	TH1	seed: missing_c_preds.tsv
 pred:$gc_wait/1	TH1	seed: missing_c_preds.tsv
@@ -14,18 +13,13 @@ pred:$leash/2	DBG1	seed: missing_c_preds.tsv
 pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
-pred:engine_next/2	TH1	seed: missing_c_preds.tsv
-pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
-pred:set_thread/2	TH1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
-pred:thread_join/2	TH1	seed: missing_c_preds.tsv
-pred:thread_property/2	TH1	seed: missing_c_preds.tsv
 pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
@@ -44,6 +38,11 @@ cfile:pl-thread.c	TH1	PIN1 step C (D-0447 item 3): every pl-thread.c row without
 kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables (wip/tb9 ports the transaction tables and the eight sites call `tt_*`: the three refusal sites of TB9 are gone; the one refusal that still names TB9 is the tracked branch of `reset_answer_table`, whose callers `destroy_answer_trie`, `abolish_table` and `reset_table_bulk` run `reset_answer_table_tracked` first), TH1 shared tables, which stay named)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
+refusal:src/pl-thread.jl::interactor_post_answer_nolock::PL_yielded (pl-wam.c:3331), the VM yield	TH1	the named refusal of the branch `rc == YIELD_ENGINE_YIELD` of engine_next/2 and engine_post/3 (its body is the VM yield, its own engine-core step)
+refusal:src/pl-thread.jl::pl_thread_join::thread_join/2: joining the main thread from an engine	TH1	thread_join/2 of the main thread, joined from an engine (pthread_join, pl-thread.c:2913): the kernel runs no OS thread; a thread that is the caller or detached raises upstream's permission error
+refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: debug_mode(Bool) of the main thread from an engine	TH1	set_thread/2 debug_mode(Bool) of the main thread, called from an engine (pl-thread.c:3049): the main thread's local data is not kept in the database
+refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: class(Class) of the main thread from an engine	TH1	set_thread/2 class(Class) of the main thread when the class changes, called from an engine (pl-thread.c:3049, update_debug_mode_from_class on the main thread's local data)
+refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: class(Class) with a blob atom	TH1	set_thread/2 class(Class) with a blob atom (pl-thread.c:3049): the kernel keeps the class as a Symbol
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
@@ -53,7 +52,6 @@ refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-arith.jl::set_arith_flag::LD->arith.rat / LD->gmp.max_integer_size: a limit on the num	AR1	a size for max_rational_size / max_integer_size (pl-arith.c set_arith_flag 5183-5194, set_restraint 5110-5124): the numbers are unbounded; `infinite` (the boot state) is the no-op
 refusal:src/pl-arith.jl::set_arith_flag::LD->arith.rat.max_rational_size_action: float	AR1	max_rational_size_action = float (pl-arith.c set_restraint_action 5128-5140): no rational-to-float fallback in the number layer; `error` (the boot state) is the no-op
-refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
 refusal:src/pl-load.jl::pl_activate_static_extension1_va::activate_static_extension/1: no static extensions in the ker	LB5-LB7	O_STATIC_EXTENSIONS only (pl-load.c:450-540): the pin's own swipl has no such predicate; refused by name, the kernel links no static extension
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7

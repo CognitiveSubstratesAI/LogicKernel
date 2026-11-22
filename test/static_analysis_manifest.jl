@@ -1228,6 +1228,11 @@ function _manifest_index(T)
             Tuple{LD, Int64, Int64, String, typeof(LK.read_term_options)},
             false
         ),
+        (
+            LK.PL_scan_options,
+            Tuple{LD, Int64, Int64, String, typeof(LK.make_engine_options)},
+            false
+        ),
         (LK.get_optval, Tuple{LD, LK.PL_option_t, Int64}, false),
         (LK.setBackQuotes, Tuple{LD, T, UInt32}, false),
         # R2 F1a — the Prolog flags (src/os/pl-prologflag.jl, the table's types in src/pl-incl.jl)
@@ -2654,7 +2659,134 @@ function _manifest_index(T)
         # BOOTPRED — '$garbage_collect'/1 (src/pl-gc.jl), thread_self/1 (src/pl-thread.jl), with_mutex/2 (src/pl-mutex.jl)
         (LK.pl_garbage_collect, Tuple{LD, Int}, false),
         (LK.pl_thread_self, Tuple{LD, Int}, false),
+        # TH1 engines — pl-thread.c: the thread blob, the handle, aliases, get_interactor, is_engine/1 (src/pl-thread.jl)
+        (LK.initThreads!, Tuple{LK.atoms_t}, false),
+        (LK.symbol_thread_handle, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
+        (LK.create_thread_handle, Tuple{LK.PL_global_data{T}, LK.PL_thread_info{T}}, false),
+        (LK._thread_handle_blob!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.register_main_thread!, Tuple{LK.PL_global_data{T}}, false),
+        (LK.main_thread_alias, Tuple{LK.PL_global_data{T}}, false),
+        (
+            LK.unify_thread_id,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}},
+            false,
+        ),
+        (
+            LK.aliasThread!,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, T, T},
+            false,
+        ),
+        (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.get_interactor, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
+        (LK.pl_is_engine, Tuple{LD, Int}, false),
+        (
+            LK.copy_local_data!,
+            Tuple{LD, LD, LK.PL_thread_info{T}},
+            false,
+        ),
+        (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
+        (LK.PL_thread_at_exit, Tuple{LK.PL_global_data{T}, LD, Any, Any, Bool}, false),
+        (LK.PL_thread_self, Tuple{LD}, false),
+        (LK.PL_unify_thread_id, Tuple{LK.PL_global_data{T}, LD, Int, Int}, false),
+        (LK.PL_get_thread_id_ex, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (LK.PL_get_thread_alias, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (
+            LK.freePrologThread!,
+            Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
+            false,
+        ),
+        (LK._destroy_engine!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (
+            LK.destroy_interactor!,
+            Tuple{LK.PL_global_data{T}, LK.thread_handle{T}, Bool},
+            false,
+        ),
+        (LK.done_interactor!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.copy_debug_mode, Tuple{LD, LD}, false),
+        (LK.pl_engine_create, Tuple{LD, Int, Int, Int}, false),
+        (LK.pl_engine_destroy, Tuple{LD, Int}, false),
+        (LK.pl_engine_post2, Tuple{LD, Int, Int}, false),
+        (LK.pl_engine_fetch, Tuple{LD, Int}, false),
+        (LK.thread_symbol, Tuple{LK.PL_global_data{T}, LD}, false),
+        (
+            LK.interactor_post_answer_nolock,
+            Tuple{
+                LK.PL_global_data{T}, LD, LK.thread_handle{T}, Int,
+                Union{Nothing, Int}, Int,
+            },
+            false,
+        ),
+        (
+            LK.interactor_post_answer,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, Int}, Int},
+            false,
+        ),
+        (LK.pl_engine_next, Tuple{LD, Int, Int}, false),
+        (LK.pl_engine_post3, Tuple{LD, Int, Int, Int}, false),
+        # TH1: thread_property/2 (pl-thread.c)
+        (LK.get_prop_def, Tuple{LD, Int, Symbol, NTuple{11, Symbol}}, false),
+        (LK.get_thread, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
+        (LK._thread_slot_valid, Tuple{LK.PL_global_data{T}, Int}, false),
+        (LK.symbol_alias, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
+        (LK.unify_thread_status, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_id_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_alias_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_status_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_detached_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_debug_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_debug_mode_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_engine_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_thread_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.system_thread_id, Tuple{}, false),
+        (LK.thread_tid_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.sizeof_thread, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
+        (LK.thread_size_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK.thread_class_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK._tprop_call, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (LK._tprop_pack, Tuple{Int, Int, Bool, Bool}, false),
+        (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
+        (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # TH1: is_thread/1, thread_join/2, thread_detach/1, set_thread/2, debug_reset_from_class/0 (pl-thread.c)
+        (LK._thr_is, Tuple{T, Symbol}, false),
+        (LK._thread_info_of, Tuple{LK.PL_global_data{T}, Int}, false),
+        (LK._thread_ld, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
+        (LK.debug_thread_class, Tuple{LK.PL_global_data{T}, Symbol}, false),
+        (LK.update_debug_mode_from_class!, Tuple{LD, Union{Nothing, Base.RefValue{Bool}}}, false),
+        (LK.pl_is_thread, Tuple{LD, Int}, false),
+        (LK.pl_thread_join, Tuple{LD, Int, Int}, false),
+        (LK.pl_thread_detach, Tuple{LD, Int}, false),
+        (LK.pl_set_thread, Tuple{LD, Int, Int}, false),
+        (LK.pl_debug_reset_from_class0, Tuple{LD}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
+        # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
+        (LK.mutex_prop_enum{T}, Tuple{}, false),
+        (LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}}, false),
+        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int}, false),
+        (LK._mutex_bytes, Tuple{Int}, false),
+        (LK.unify_mutex, Tuple{LD, Int, LK.pl_mutex{T}}, false),
+        (LK.unify_mutex_owner, Tuple{LD, Int, Int}, false),
+        (LK.mutexCreate, Tuple{LD, Union{Nothing, T}}, false),
+        (LK.unlocked_pl_mutex_create, Tuple{LD, Int}, false),
+        (LK.get_mutex, Tuple{LD, Int, Bool}, false),
+        (LK.try_really_destroy_mutex, Tuple{LD, LK.pl_mutex{T}}, false),
+        (LK.mutex_property_value, Tuple{LD, LK.pl_mutex{T}, Int, Int}, false),
+        (LK.advance_mstate!, Tuple{LK.mutex_prop_enum{T}}, false),
+        (LK.advance_mstate_table!, Tuple{LK.mutex_prop_enum{T}}, false),
+        (LK.free_mstate!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int}, false),
+        (LK.get_prop_def, Tuple{LD, Int, Symbol, typeof(LK._MUTEX_PROPERTIES)}, false),
+        [
+            (f, Tuple{LK.pl_mutex{T}}, false) for
+            f in (LK.PL_mutex_lock, LK.PL_mutex_trylock, LK.PL_mutex_unlock)
+        ]...,
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_mutex_create1_va, LK.pl_mutex_create2_va, LK.pl_mutex_destroy1_va,
+                LK.pl_mutex_lock1_va, LK.pl_mutex_trylock1_va, LK.pl_mutex_unlock1_va,
+                LK.pl_mutex_unlock_all0_va, LK.pl_mutex_property2_va
+            )
+        ]...,
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
         (LK.is_dict_functor, Tuple{LD, UInt64}, false),
@@ -2915,6 +3047,11 @@ function _manifest_index(T)
         (
             LK.register_event_hook,
             Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Int, Int},
+            false
+        ),
+        (
+            LK.register_event_function,
+            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32},
             false
         ),
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
@@ -6466,6 +6603,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_bisim)}, false),
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_mutex)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10

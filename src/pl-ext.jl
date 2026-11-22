@@ -80,6 +80,19 @@ const foreigns = (
     PL_extension("print", 2, pl_print2, 0x00),
     PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO),
     PL_extension("thread_self", 1, pl_thread_self, PL_FA_ISO),      # BOOTPRED (pl-ext.c:186)
+    PL_extension("thread_property", 2, pl_thread_property, PL_FA_NONDETERMINISTIC | PL_FA_ISO),   # TH1 (pl-thread.c:3404; NDET|ISO :8849)
+    PL_extension("is_thread", 1, pl_is_thread, 0x00),               # TH1 (pl-thread.c:3514; :8849)
+    PL_extension("thread_join", 2, pl_thread_join, 0x00),           # TH1 (pl-thread.c:2913)
+    PL_extension("thread_detach", 1, pl_thread_detach, PL_FA_ISO),  # TH1 (pl-thread.c:2989; ISO)
+    PL_extension("set_thread", 2, pl_set_thread, 0x00),             # TH1 (pl-thread.c:3049)
+    PL_extension("debug_reset_from_class", 0, pl_debug_reset_from_class0, 0x00),   # TH1 (pl-thread.c:3145)
+    PL_extension("is_engine", 1, pl_is_engine, 0x00),               # TH1 engines (pl-thread.c:4504; O_ENGINES: BeginPredDefs :8849)
+    PL_extension("\$engine_create", 3, pl_engine_create, 0x00),       # TH1 engines (pl-thread.c:4098)
+    PL_extension("engine_destroy", 1, pl_engine_destroy, 0x00),     # TH1 engines (pl-thread.c:4233)
+    PL_extension("engine_post", 2, pl_engine_post2, 0x00),          # TH1 engines (pl-thread.c:4438)
+    PL_extension("engine_fetch", 1, pl_engine_fetch, 0x00),         # TH1 engines (pl-thread.c:4474)
+    PL_extension("engine_next", 2, pl_engine_next, 0x00),           # TH1 engines (pl-thread.c:4429)
+    PL_extension("engine_post", 3, pl_engine_post3, 0x00),          # TH1 engines (pl-thread.c:4466)
     PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)   # META|ISO (pl-ext.c:187)
 )
 
@@ -87,6 +100,7 @@ const foreigns = (
 # copyterm, prologflag, trace, pro, read, wic (LB3), file (S1), files, glob (LB2b), ctype (CT1a: setlocale/3), setup (pl-setup.c: $set_prolog_stack/4, trim_stacks/0, $on_signal/4, prolog_alert_signal/2; TRIMST and R2), proc, srcfile (LB2), write, system, op, rec (D1: erase/1; D2: the recorded database), attvar — AV2, Y1; gvar — G1; dict — BOOTPRED (pl-ext.c:536-574: locale and debug, between gvar and dict, are left out); term,
 # termhash and bisim (lane F), between op and attvar upstream, sit after error/event here; strings (T2), tabling and wrap, then ctype_pred (CT1b: char_type/2, code_type/2, in src/os/pl-ctype-pred.jl), then tai (TAI1: stamp_date_time/3, date_time_stamp/2, format_time/3,4, in src/os/pl-tai.jl), then locale (CT1 LOCALE: locale_property/2, locale_create/3, locale_destroy/1, set_locale/1, current_locale/1, in src/os/pl-locale.jl) then coverage (lane F: the $cov_* predicates, in src/pl-coverage.jl), then profile (lane F: pl-prof.c, in src/pl-prof.jl) then zip (ZIP1: the zip predicates, in src/pl-zip.jl), gc, then flag (FL1: get_flag/2, set_flag/2, in src/pl-flag.jl; upstream's place is between comp and init) are appended last); and the two dispatch tables. A comment, not a docstring,
 # as for every module-level constant the global-state lint reads.
+# MUTEX: `PL_predicates_from_mutex` (pl-mutex.c) sits between tabling and wrap, as REG_PLIST(mutex) does (pl-ext.c:561).
 const _PRED_TABLES = (
     PL_predicates_from_atom, PL_predicates_from_arith, PL_predicates_from_bag,
     PL_predicates_from_comp, PL_predicates_from_init, PL_predicates_from_list,
@@ -106,6 +120,7 @@ const _PRED_TABLES = (
     PL_predicates_from_error, PL_predicates_from_event,
     PL_predicates_from_termhash, PL_predicates_from_bisim, PL_predicates_from_trie,
     PL_predicates_from_tabling,
+    PL_predicates_from_mutex,
     PL_predicates_from_wrap, PL_predicates_from_transaction, PL_predicates_from_undo,
     PL_predicates_from_alloc,
     PL_predicates_from_ctype_pred,
@@ -136,6 +151,7 @@ const _FOREIGN_VA = (
     PL_predicates_from_error..., PL_predicates_from_event...,
     PL_predicates_from_termhash..., PL_predicates_from_bisim..., PL_predicates_from_trie...,
     PL_predicates_from_tabling...,
+    PL_predicates_from_mutex...,
     PL_predicates_from_wrap..., PL_predicates_from_transaction...,
     PL_predicates_from_undo..., PL_predicates_from_alloc...,
     PL_predicates_from_ctype_pred...,

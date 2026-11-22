@@ -471,7 +471,7 @@ end
 
 # PORT: pl-coverage.c cov_reset as pl_cov_reset0_va
 # (PRED_IMPL("$cov_reset", 0, cov_reset, 0))
-# DIVERGES: `PL_unify_thread_id(ex, PL_thread_self())` is the one thread's id `main` (src/pl-thread.jl `pl_thread_self`).
+# DIVERGES: `PL_unify_thread_id(ex, PL_thread_self())` is the one thread's id, its alias (src/pl-thread.jl `main_thread_alias`, `main` unless renamed).
 "`'\$cov_reset'`: reclaim the collected coverage data; a permission error while the collection is active (pl-coverage.c)."
 function pl_cov_reset0_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -479,7 +479,7 @@ function pl_cov_reset0_va(
     if ld.coverage.active != 0
         ex = PL_new_term_ref(ld)
         return if (
-            PL_unify_atom(ld, ex, mk_sym(T, :main)) &&
+            PL_unify_atom(ld, ex, main_thread_alias(_query_gd(ld))) &&
             PL_error(
                 ld,
                 "",

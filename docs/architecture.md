@@ -820,7 +820,7 @@ fixed it or a public issue exists.
 | `src/pl-attvar.jl` | `saveWakeup`, `restoreWakeup`, `restore_exception` — the pending exception set aside while `findCatcher` unifies the ball with the catchers (since V9f); `varBindConst` (L1c: the VM's `bindConst` of a global cell); `bindConst` (AV1: its attributed-variable branch is refused, a `NotPortedError` naming AV3, until AV3); since AV2 the attribute STORE — `PL_get_attr`, `link_attvar`, `make_new_attvar`, `put_new_attvar`, `find_attr`, `put_att_value`, `put_attr`, `get_attr`, `del_attr` and attvar/1, put_attr/3, get_attr/3, del_attr/2, del_attrs/1, get_attrs/2, put_attrs/2, `$attv_unify/2` (`PL_predicates_from_attvar`; `PL_is_attvar` in src/pl-fli.jl); binding and waking them is AV3's — AV1 ported their word layer (`DU_ATTVAR`/`DREF_ATTVAR`, `linkValI` by `needsRef`, the index key, the chain: `register_attvar` in src/pl-inline.jl, `reclaim_attvars` in src/pl-wam.jl) | `src/pl-attvar.c`, `src/pl-attvar.h` |
 | `src/pl-string.jl` | the string predicates (since T2, R2): atom_string/2, string_codes/2, string_chars/2, text_to_string/2, string_length/2, string_concat/3, sub_string/5 (`sub_text`, shared with sub_atom/5), string_code/3, get_string_code/3, split_string/4, string_bytes/3, read_string/3,5, open_string/2 (`PL_predicates_from_strings`, src/pl-ext.jl); the UTF-16 decode and `PL_text_recode` of string_bytes/3 are local to this file | `src/pl-string.c`, `src/pl-prims.c`, `src/pl-privitf.c`, `src/pl-error.c`, `src/os/pl-text.c`, `src/os/pl-text.h`, `src/os/pl-utf8.h`, `src/os/pl-file.c` |
 | `src/pl-pro.jl` | `callProlog` — a goal called from foreign code, in a query of its own — and `sig_atomic/1`, through which the cleanup family runs its Setup goal (since V9g); since HALT1 also `raise_halt_exception` (the `unwind(halt(Status))` ball) and the other entries of the HALT1 block; since TOP1b also `prologToplevel`, `pl_break1`, `pl_break` (`break/0`), `currentBreakLevel` and `PL_toplevel` (`pl-fli.c`); the metacut is left out | `src/pl-pro.c`, `src/pl-fli.c` |
-| `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it); the mutex table and the `mutex_*` predicates are not ported | `src/pl-mutex.c` |
+| `src/pl-mutex.jl` | since BOOTPRED, `with_mutex/2` (`pl_with_mutex`) in the form pl-mutex.c has for a build without threads: `once/1` through `callProlog`, the mutex argument not examined (swipl 10.1.19 examines it; its `O_PLMT` branch is a follow-up step); since MUTEX, the mutex table (`gd.mutexes`) and the eight `mutex_*` predicates (§MUTEX); upstream only: `release_mutexref`, `save_mutexref`, `load_mutexref`, `destroy_mutex`, `unalloc_mutex`, `initMutexRef` | `src/pl-mutex.c` |
 | `src/pl-init.jl` | since HALT1, `PL_cleanup`, the clean-up `halt/1` ends with, in a reduced form (`exit_status` flag, `'$run_at_halt'/0` as one query, flush of the standard streams; the command line, the saved states and the foreign hook lists are left out), `_query_run_at_halt`, `MAX_HALT_CANCELLED`; `PL_halt`, `haltProlog` and `PL_abort_process` stay in `src/pl-fli.jl` (pl-fli.c), `signal_index` and `PL_get_signum_ex` in `src/pl-setup.jl`, `halt/1` in `src/pl-prims.jl`; see the HALT1 block | `src/pl-init.c` |
 | `src/pl-qlf.jl` | since LB3 (R2), the boot loop of pl-qlf.c with no state file (LD2): `compileFile` (see the file, read terms, `:- if`/`else`/`endif`, directives, clauses), `compileFileList`, `boot_from_source!` (pl-init.c's `bootsession` branch), `directiveClause`, `update_conditional_compilation`, the 8 write-side shells and the 14 predicates refused by name (`PL_predicates_from_wic`, src/pl-ext.jl) | `src/pl-qlf.c` |
 | `src/pl-dict.jl` | since BOOTPRED, dicts as pl-dict.c lays them out (`dict`/(2N+1), tag then value/key pairs sorted by the key word): `is_dict/1,2`, `dict_create/3`, `put_dict/3,4`, `select_dict/3`, `get_dict/3,5`, `dict_pairs/3`, `del_dict/4`, `:</2`, `>:</2`, `dict_same_keys/2`, `$get_dict_ex/3`, `$get_dict_kv/4,6,8` (`PL_predicates_from_dict`) with `dict_lookup_ptr`, `dict_order`, `dict_order_term_refs`, `PL_get_dict_ex`, `pl_for_dict` and their helpers; the reader reads dict syntax since RDDICT (src/pl-read.jl), the writer's dict arm, `is_most_general_dict/1`, the public `PL_for_dict`, `b_set_dict/3`, `nb_set_dict/3`, `nb_link_dict/3` and the functional notation's `./3` wait for their steps | `src/pl-dict.c`, `src/pl-dict.h`, `src/SWI-Prolog.h` |
@@ -6684,7 +6684,8 @@ What BOOTPRED adds (written edit-only; nothing was compiled or run when this was
   looks at nothing (no stack GC in the kernel; upstream reads its argument only under `O_DEBUG`). `thread_self/1` (pl-thread.c `pl_thread_self`) unifies `main`.
   `with_mutex/2` (pl-mutex.c:758, NEW src/pl-mutex.jl) takes upstream's own non-`O_PLMT` branch, `once(Goal)` through `callProlog` with `PL_Q_PASS_EXCEPTION`;
   KNOWN DIFFERENCE: swipl 10.1.19 examines the mutex (`with_mutex(_, true)` raises `instantiation_error`), the kernel does not (pinned in
-  test/core_lang/test_bootpred_swipl.jl with swipl's answers in comments).
+  test/core_lang/test_bootpred_swipl.jl with swipl's answers in comments). Since MUTEX the mutex table and the other eight pl-mutex.c predicates exist
+  (§MUTEX below); `with_mutex/2` still does not use them: porting its `O_PLMT` branch (pl-mutex.c:763-770) flips this pin and is the next small step.
 - **pl-dict.c, NEW src/pl-dict.jl** (`PL_predicates_from_dict`, six entries in upstream's order, appended to `_PRED_TABLES` and `_FOREIGN_VA` after attvar as pl-ext.c:536-574
   has it; gvar, locale and debug, between the two, are left out of the kernel): `is_dict/1,2`, `dict_create/3`, `put_dict/3`, `get_dict/3` (non-deterministic, the redo
   context is the pair index), `select_dict/3`. Representation as upstream: a compound `dict`/(2N+1) whose child 1 after the functor is the tag, then value and key
@@ -7506,7 +7507,7 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
   garbage collector: `unallocDefinition`'s call, pl-proc.c:269). A listener's exception breaks the loop and propagates (`WAKEUP_KEEP_URGENT_EXCEPTION`).
 - **Raise sites DEFERRED** (no Julia function yet; each step that ports the function raises the event): break events and `$break_at` (pl-comp.c:9084-9173, DBG1; `frameFinished`'s raise is
   wired but unreachable until DBG1, nothing sets `FR_NOTIFY`), `abort` (pl-pro.c:105, DBG1), `untable` (pl-tabling.c:11317) and `table_answer_event`'s caller (pl-tabling.c:10156, TAB1; boot/tabling.pl's
-  `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; the thread events throw `NotPortedError`, a C-function listener counts as a failure),
+  `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; an engine raises `this_thread_exit` and `thread_exit` when it is destroyed, `thread_start` has no raise site without OS threads, `PL_thread_at_exit` registers a Julia callable, called `func(gd, ld, closure)`, on the `thread_exit` list (global) or the thread's `this_thread_exit` list),
   `delayEvents` in `unloadFile`/`endReconsult` and `reconsultFinalizePredicate` (pl-srcfile.c, pl-proc.c:1937: the reload step), transactions (pl-transaction.c), `cleanupEvents` (`PL_cleanup`, pl-init.c:2037),
   `freePrologLocalData` (pl-setup.c:1796), and `unallocDefinition` (no such function).
 - **DIVERGES (representation only, each needs the audit's D-entry):** a list is a Vector (no head/tail chain, no lock; `call_event_list` walks a SNAPSHOT); a closure is the term's record
@@ -8977,3 +8978,43 @@ evaluation (`A_ENTER`) and restores the entry mode at every end, so it answers 0
 evaluations, which the model of src/pl-arith.jl's header excludes. Pinned both ways by rows k0/k1 of test/core_lang/test_arith_roundopt_swipl.jl
 (swipl's lines re-run live); the DIVERGES comment is at `ar_throw` in src/pl-wam.jl. A single roundtoward, or an error before the inner one ran,
 leaks nothing on the pin, and those rows (t15..t19) agree.
+
+## MUTEX — the user mutexes of pl-mutex.c: `mutex_create/1,2`, `mutex_destroy/1`, `mutex_lock/1`, `mutex_trylock/1`, `mutex_unlock/1`, `mutex_unlock_all/0`, `mutex_property/2` (swipl-devel 18168e62; edit-only, the gate decides)
+
+Ported from pl-mutex.c at 18168e62 in the single-thread form (src/pl-mutex.jl; a sequencing step: threads are Phase 1, D-0784, and every DIVERGES below names owner TH1).
+The eight predicates of `BeginPredDefs(mutex)` (pl-mutex.c:785-796), registered as `PL_predicates_from_mutex` between tabling and wrap (pl-ext.c order):
+
+| Predicate | pl-mutex.c | Kernel function |
+|---|---|---|
+| `mutex_create/1` | :257 `mutex_create1` (over `unlocked_pl_mutex_create` :225, `mutexCreate` :193) | `pl_mutex_create1_va` |
+| `mutex_create/2` | :275 `mutex_create2` (option `alias(Name)`) | `pl_mutex_create2_va` |
+| `mutex_destroy/1` | :516 `mutex_destroy` (over `try_really_destroy_mutex` :493) | `pl_mutex_destroy1_va` |
+| `mutex_lock/1` | :382 `mutex_lock` (over `get_mutex` :298, `PL_mutex_lock` :347) | `pl_mutex_lock1_va` |
+| `mutex_trylock/1` | :412 `mutex_trylock` (over `PL_mutex_trylock` :393) | `pl_mutex_trylock1_va` |
+| `mutex_unlock/1` | :448 `mutex_unlock` (over `PL_mutex_unlock` :423) | `pl_mutex_unlock1_va` |
+| `mutex_unlock_all/0` | :472 `mutex_unlock_all` | `pl_mutex_unlock_all0_va` |
+| `mutex_property/2` | :622 `mutex_property`, nondeterministic (over `mutex_alias_property` :539, `mutex_status_property` :553, `advance_mstate` :589, `free_mstate` :613) | `pl_mutex_property2_va` |
+
+`get_prop_def` (pl-thread.c:8375, the property-name check `thread_property/2` shares) is rec-th1's (src/pl-thread.jl, returning `(rc, index)`); `mutex_property/2` calls it with `_MUTEX_PROPERTIES`.
+State: `pl_mutex{T}` and the pool record `mutex_prop_enum{T}` (src/pl-incl.jl), `gd.mutexes` (the table, keyed by the `sym_key` of the id) and `gd.mutex_serial`
+(src/pl-global.jl), `ld.mutex_enums` (the `foreign_state_pool` of the `mutex_property/2` states; `live_states` counts it).
+`with_mutex/2` keeps the single-thread branch of BOOTPRED (it does not touch the table); its `O_PLMT` branch (pl-mutex.c:763-770) is the next small step and flips the pinned
+known-difference rows of test_bootpred_swipl.jl.
+
+DIVERGES (owner TH1; each at its definition in src/pl-mutex.jl, the whole set in the file header):
+- One thread, `main` (id 1): a mutex's lock is the pair `owner`/`count` (owner 0 free, 1 main) with no `pthread_mutex_t`; there is no `pthread_mutex_timedlock` loop and no
+  `PL_handle_signals`; the `EBUSY` branch of `PL_mutex_trylock` and the "not owner" message of `mutex_unlock/1` (another thread's lock) are reached by no row: the message is always "not locked".
+- An anonymous mutex is a blob of type `mutex` (`PL_BLOB_UNIQUE`) whose payload is its creation number (upstream: the pointer); the kernel has no atom GC, so it is reclaimed by
+  `mutex_destroy/1` only (upstream `PL_unregister_atom` and `release_mutexref`). The blob prints as every blob does (`PL_blob_t` has no `write` slot).
+- `mutex_property/2` enumerates the mutexes in creation order (upstream: hash order, so rows sort their answers); its state is a pool record from the first call on (upstream copies
+  `statebuf` on the first redo) and the property functions are one function of the property's number.
+- `unlocked_pl_mutex_create` takes a failed final unify's entry out of the table (a path no row reaches); `L_UMUTEX` is dropped.
+- Upstream only, left out of the kernel: `release_mutexref`, `save_mutexref`, `load_mutexref` (no GC finalizer, no saved states), `destroy_mutex`, `unalloc_mutex` (nothing is allocated by hand), `initMutexRef`.
+
+Rows: test/core_lang/test_mutex_swipl.jl (m01-m56 on all three term types: m01-m10 create, m11-m21 lock/unlock/trylock/destroy and the status, m22-m28 type, instantiation and domain
+errors, m29-m32 and m38 `mutex_property/2` enumeration, m33-m34 and m56 `mutex_unlock_all/0`, m35-m37 and m39-m55 recreation, destroyed mutexes and the error contexts; pins from swipl 10.1.20,
+two identical runs; evidence/MUTEX/gen_rows.py `--fill`; a non-vacuity testset, the live check when `swipl` is on PATH, and `live_states == 0` after the rows).
+Mutants: tools/mutants/MUTEX.py (53, each id "aimed by <rows>"; four are candidate equivalents named in comments (no mutant is declared equivalent from reading; the battery and the audit rule): `unlock_all` leaving a count on a free mutex, the never-read `destroyed` flag,
+the enumeration order, `mutex_trylock/1` registered with `mutex_lock/1`'s function). TARGETS follow D-0238: the blob-making mutants add test_blob.jl and test_compare_swipl.jl (both call
+`mutex_create(M)`), the registration mutants add test_builtins_swipl.jl.
+Mutants without a row to aim at (a row of its own is the next step's, not written here): the property index reset in `advance_mstate!` (needs `mutex_property(M, P)` over two mutexes) and a constant `mutex_serial`.

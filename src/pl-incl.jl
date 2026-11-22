@@ -894,8 +894,9 @@ end
 # PORT: pl-event.h event_callback
 # DIVERGES: D is the predicate's type, `definition{T}` (a parameter only to break the struct cycle, as `procedure`'s);
 # `name` is `nothing` for NULL_ATOM; `module_` is the module's INDEX (0: NULL), `procedure` is `nothing` for NULL;
-# `function_` (a C function, `PL_thread_at_exit`'s) is an index (0: none: the C pointer is TH1's) and `closure.pointer` is
-# not kept; `closure` is `closure.term`; `next` is the position in the list's vector.
+# `function_` (a C function, `PL_thread_at_exit`'s) is an index (1-based) into the database's `event_hook.functions`, which
+# holds the Julia function and the closure value (`closure.pointer`) (0: none); `closure` is `closure.term`; `next` is the
+# position in the list's vector.
 "A listener of an event (pl-event.h `struct event_callback`)."
 mutable struct event_callback{T, D}
     name::Union{Nothing, T}                             # Name of the callback
@@ -905,6 +906,16 @@ mutable struct event_callback{T, D}
     closure::Union{Nothing, fastheap_term{T}}           # closure
     argc::Int                                           # #context args
     flags::UInt32                                       # EV_CALLBACK_*
+end
+
+# PORT: pl-event.h event_callback (`function` and `closure.pointer`)
+# DIVERGES: the C function pointer is a Julia callable and the `void *` closure any value; the function takes the database and
+# the local data as its first two arguments (upstream reads them from the thread's `LD`: there is no thread-local here), then the
+# closure, then the event's term references (`argv+1`, `argv+2`) for a callback of `argc` 1 or 2.
+"The C function of an event listener and its closure (pl-event.h `event_callback.function`, `closure.pointer`)."
+struct event_function
+    fn::Any                                             # the function (void (*)(void *) etc.)
+    closure::Any                                        # closure.pointer
 end
 
 # PORT: pl-event.h event_list
@@ -2861,6 +2872,39 @@ mutable struct gvar_enum
     next::Int                                       # the next name to look at
 end
 gvar_enum() = gvar_enum(UInt64[], 1)
+
+# PORT: pl-thread.h pl_mutex
+# DIVERGES: the kernel runs one thread, so no `pthread_mutex_t` (`mutex`, `initialized`) is kept: a lock is the pair
+# `owner`/`count` alone, `owner` 0 for none and 1 for the main thread (the one thread's id, `PL_thread_self()`). `id`
+# is the atom (a term of type `T`) the mutex is known by: a name, or the `mutex` blob of an anonymous one; `serial`
+# numbers the mutexes in creation order (upstream enumerates its hash table in hash order, the kernel in this one).
+"A user mutex (pl-thread.h `struct pl_mutex`): its lock count and owner, its identifier and its flags."
+mutable struct pl_mutex{T}
+    count::Int                                      # lock count
+    owner::Int                                      # integer id of the owner (0: none)
+    id::T                                           # id of the mutex
+    serial::Int                                     # the creation number (see above)
+    anonymous::Bool                                 # <mutex>(0x...)
+    destroyed::Bool                                 # mutex is destroyed
+    auto_destroy::Bool                              # asked to destroy
+end
+
+# PORT: pl-mutex.c mprop_enum
+# DIVERGES: a record of the local data's pool (`ld.mutex_enums`, a `foreign_state_pool`), its index the `REDO_PTR`
+# context, where upstream keeps `statebuf` on the C stack until the first redo. `mutexes` are the mutexes of the table
+# at the first call, in creation order, `next` the one `advanceTableEnum` hands out next (`enumerating`: `e` is not NULL);
+# `p` is the property being tried, an index (from 1) into `mprop_list`. A pool record is REUSED: every field is set again
+# by the first call.
+"The state of `mutex_property/2` between answers (pl-mutex.c `mprop_enum`)."
+mutable struct mutex_prop_enum{T}
+    mutexes::Vector{pl_mutex{T}}                    # e: the mutexes the enumeration walks
+    next::Int                                       # e: the next one to hand out
+    m::Union{Nothing, pl_mutex{T}}                  # m: the current mutex (nothing: NULL)
+    p::Int                                          # p: the property in `mprop_list` (an index)
+    enum_properties::Bool                           # enumerate the properties
+    enumerating::Bool                               # e != NULL: enumerating the mutexes
+end
+mutex_prop_enum{T}() where {T} = mutex_prop_enum{T}(pl_mutex{T}[], 1, nothing, 1, false, false)
 
 # ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
 
