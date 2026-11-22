@@ -6962,8 +6962,8 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
   `matchPattern`, `wildcard_match/2,3` (option `case_sensitive`), `expand`, `sort_expand`, `expand_file_name/2`, `directory_files/2`.
 - **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
   caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
-- **Refused by name:** `tmp_file/2` and `$tmp_file_stream/4` (NotPortedError, step "LB2b audit": `GD->os.tmp_files` has no field and the stream layer has no `Sfdopen`);
-  an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
+- **Ported since W12-TMPFILES:** `tmp_file/2` and `$tmp_file_stream/4` (`TemporaryFile`, `DeleteTemporaryFile`, `RemoveTemporaryFiles` of pl-os.c; the registry is `os_tmp_files`, the name counter `os_temp_counter`; `Sfdopen`).
+- **Refused by name:** an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.
 
 Tests: test/files/test_lb2b_swipl.jl (the .pl and .out beside it), the mutant list tools/mutants/LB2B.py (47, two declared equivalent).
@@ -7283,7 +7283,8 @@ names `halt/1` accepts: `halt(term)`, `halt('SIGusr1')`, status `128 + signal`);
   RETURNS false, where upstream never returns; a test that embeds the kernel sets `gd.halt_exit = false` and can halt again (`PL_halt` returns
   `halt_cleaning` to `CLN_NORMAL`). A `Bool` and a vector, not a function field: an abstractly typed field fails test_type_discipline.jl.
 - **`PL_cleanup` is reduced (b).** No foreign hook lists (`run_on_halt`: the kernel has none), no `exitPrologThreads`, no `qlfCleanup`,
-  no `unload_all_foreign_libraries`, no `RemoveTemporaryFiles`, no `cleanupSignals`, no memory reclaim, no debug-mode switch, no `emptyStacks`;
+  no `unload_all_foreign_libraries`, no `cleanupSignals`, no memory reclaim, no debug-mode switch, no `emptyStacks`; `RemoveTemporaryFiles` runs
+  after `CLN_DATA` (W12-TMPFILES);
   `dieIO` is the flush of `user_output` and `user_error`. `query_loop(ATOM_dollar_run_at_halt, false)` is the query
   `system:'$run_at_halt'/0` (`PL_Q_NORMAL|PL_Q_EXCEPT_HALT`), once, run only where the loader defined it; an exception from it counts as
   "did not cancel". The `CLN_*` stages are `Int` constants (d), passed in upstream's order; the state stays `CLN_DATA` on return, as upstream.

@@ -660,7 +660,7 @@ function Sset_ttymode(s::IOSTREAM, mode::Int)::Nothing
 end
 
 # ── the temporary-file registry (pl-os.c: TemporaryFile, DeleteTemporaryFile, RemoveTemporaryFiles), W12-TMPFILES ──
-# PORT: pl-os.c TemporaryFile, tmp_dir, verify_tmp_dir, free_tmp_name, DeleteTemporaryFile, RemoveTemporaryFiles
+# Ported here (each has its own PORT marker below): TemporaryFile, tmp_dir, verify_tmp_dir, free_tmp_name, DeleteTemporaryFile, RemoveTemporaryFiles
 # (swipl-devel 18168e62, src/os/pl-os.c:585-846; the pin). Callers: tmp_file/2 and `$tmp_file_stream`/4 (src/os/pl-files.jl),
 # delete_file/1 (`DeleteTemporaryFile`) and the halt (`PL_cleanup`: `RemoveTemporaryFiles`, src/pl-init.jl).
 # DIVERGES (representation, W12-TMPFILES): `GD->os.tmp_files`, upstream's table of the atoms handed out, is
