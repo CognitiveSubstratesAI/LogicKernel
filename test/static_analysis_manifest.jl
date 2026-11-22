@@ -1837,6 +1837,13 @@ function _manifest_index(T)
         (LK.PL_term_type, Tuple{LD, Int}, false),
         (LK.PL_unify_output, Tuple{LD, Int, Int}, false),
         (LK.PL_unify_termv, Tuple{GD, LD, Int, Vector{Any}}, false),
+        # FLI-API group G (pl-fli.c): blobs
+        (LK._fli_blob_check, Tuple{LK.PL_blob_t, Vector{UInt8}, Int}, false),
+        (LK._fli_blob_symbol!, Tuple{LD, UInt64}, false),
+        (LK.PL_unify_blob, Tuple{LD, Int, Vector{UInt8}, Int, LK.PL_blob_t}, false),
+        (LK.PL_put_blob, Tuple{LD, Int, Vector{UInt8}, Int, LK.PL_blob_t}, false),
+        (LK.PL_get_blob, Tuple{LD, Int}, false),
+        (LK.PL_blob_data, Tuple{LD, T}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (

@@ -15,6 +15,7 @@
 # blob_write_usc_atom, is_text_value, get_value_text, PL_get_text_as_atom.
 # group F: PL_get_module, _PL_get_atomic, _PL_put_atomic, put_xpce_ref_arg, PL_term_type, PL_unify_output, PL_unify_termv,
 # PL_unify_term (their text tags call PL_unify_chars and PL_unify_wchars of wip/clib-uri / wip/clib1: rows on those tags need that merge).
+# group G: PL_unify_blob, PL_put_blob, PL_get_blob, PL_blob_data.
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -1102,6 +1103,151 @@ end
     gd, ld, t = _fa_gengine(_R[_rv(1), _rv(2)])
     @test LK.PL_unify_termv(gd, ld, t, Any[LK.PL_ATOM, _rs("v")]) && _fa_atom(ld, t) === :v
     @test LK.PL_unify_termv(gd, ld, t + 1, [LK.PL_INT, 9]) && LK.PL_get_integer(ld, t + 1) == 9
+end
+
+# PL_unify_blob, PL_put_blob, PL_get_blob, PL_blob_data (group G) ──────────────────────────────────────────────────
+
+"A unique non-text blob type."
+_fa_ut() = LK.PL_blob_t(LK.PL_BLOB_UNIQUE, "fa_blob")
+"A non-unique non-text blob type."
+_fa_pt() = LK.PL_blob_t(UInt32(0), "fa_plain")
+"`(payload, length, type)` of the blob `t` holds (the payload cut to its length), `nothing` for a term that is no atom."
+function _fa_blob(ld, t)
+    r = LK.PL_get_blob(ld, t)
+    r === nothing && return nothing
+    return (r[1][1:r[2]], r[2], r[3])
+end
+
+# LK-ONLY (pl-fli.c:4389-4400, :4403-4420): PL_put_blob is lookupBlob and puts the atom, answering whether the blob was NEW;
+# a unique type gives one atom to one payload and `len` bytes; PL_get_blob reads the payload, its length and its type back,
+# the atom's own name vector (so two puts of one payload read one vector). The blob is an atom of its type's name.
+@testset "LK-ONLY: PL_put_blob and PL_get_blob (pl-fli.c:4389, :4403)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4)])
+    ty = _fa_ut()
+    @test LK.PL_put_blob(ld, t, UInt8[1, 2, 3], 3, ty) === true
+    @test _fa_blob(ld, t) == (UInt8[1, 2, 3], 3, ty)
+    @test LK.PL_put_blob(ld, t + 1, UInt8[1, 2, 3], 3, ty) === false                 # the same atom: not new
+    @test LK.PL_get_blob(ld, t + 1)[1] === LK.PL_get_blob(ld, t)[1]
+    @test LK.PL_put_blob(ld, t + 2, UInt8[1, 2, 4], 3, ty) === true                  # another payload: another atom
+    @test LK.PL_get_blob(ld, t + 2)[1] !== LK.PL_get_blob(ld, t)[1]
+    @test LK.PL_put_blob(ld, t + 3, UInt8[1, 2, 3, 9], 3, ty) === false              # `len` cuts the payload
+    a = LK.PL_get_atom(ld, t)
+    @test LK.is_blob(a) && LK.blob_type(a) === :fa_blob
+    @test LK.blob_handle(LK.PL_get_atom(ld, t + 1)) == LK.blob_handle(a)
+    @test LK.blob_handle(LK.PL_get_atom(ld, t + 2)) != LK.blob_handle(a)
+    @test LK.PL_is_blob(ld, t) == "fa_blob"
+end
+
+# LK-ONLY (pl-fli.c:4375-4386, lookupBlob without PL_BLOB_UNIQUE): a type without the unique flag gives a new atom for
+# every put, even for one payload.
+@testset "LK-ONLY: PL_put_blob, a non-unique type (pl-fli.c:4389)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2)])
+    ty = _fa_pt()
+    @test LK.PL_put_blob(ld, t, UInt8[7], 1, ty) === true
+    @test LK.PL_put_blob(ld, t + 1, UInt8[7], 1, ty) === true
+    @test LK.PL_get_blob(ld, t)[1] !== LK.PL_get_blob(ld, t + 1)[1]
+    @test LK.blob_handle(LK.PL_get_atom(ld, t)) != LK.blob_handle(LK.PL_get_atom(ld, t + 1))
+    @test _fa_blob(ld, t + 1) == (UInt8[7], 1, ty)
+end
+
+# LK-ONLY (pl-fli.c:4375-4386): PL_unify_blob unifies the term with the blob's atom (PL_unify_atom): a variable is bound, a
+# bound equal blob succeeds, another payload, another type, an atom and an integer fail; the atom it made is the one a put finds.
+@testset "LK-ONLY: PL_unify_blob (pl-fli.c:4375)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rs("abc"), _fa_k(5)])
+    ty = _fa_ut()
+    @test LK.PL_unify_blob(ld, t, UInt8[1, 2, 3], 3, ty)
+    @test _fa_blob(ld, t) == (UInt8[1, 2, 3], 3, ty)
+    @test LK.PL_unify_blob(ld, t, UInt8[1, 2, 3], 3, ty)                             # bound, the same blob
+    @test !LK.PL_unify_blob(ld, t, UInt8[1, 2, 4], 3, ty)                            # another payload
+    @test !LK.PL_unify_blob(ld, t, UInt8[1, 2, 3], 3, LK.PL_blob_t(LK.PL_BLOB_UNIQUE, "fa_other"))  # another type
+    @test LK.PL_put_blob(ld, t + 1, UInt8[1, 2, 3], 3, ty) === false                 # the atom unify made
+    @test LK.PL_get_blob(ld, t + 1)[1] === LK.PL_get_blob(ld, t)[1]
+    @test LK.PL_unify_atom(ld, t + 2, LK.PL_get_atom(ld, t))                         # a blob's symbol unifies as an atom
+    @test LK.PL_get_blob(ld, t + 2)[1] === LK.PL_get_blob(ld, t)[1]
+    @test !LK.PL_unify_blob(ld, t + 3, UInt8[1, 2, 3], 3, ty)                        # the text atom abc
+    @test !LK.PL_unify_blob(ld, t + 4, UInt8[1, 2, 3], 3, ty)                        # the integer 5
+end
+
+# LK-ONLY (pl-fli.c:4403-4417): PL_get_blob is false for a term that is no atom — an integer, a variable, a compound, a
+# string — and for a text atom answers its bytes, its length and the text blob type.
+@testset "LK-ONLY: PL_get_blob of non-blobs and text atoms (pl-fli.c:4403)" begin
+    ld, t = _fa_engine(_R[_fa_k(5), _rv(1), _rf("f", _rs("a")), _rg("abc"), _rs("abc")])
+    @test LK.PL_get_blob(ld, t) === nothing
+    @test LK.PL_get_blob(ld, t + 1) === nothing
+    @test LK.PL_get_blob(ld, t + 2) === nothing
+    @test LK.PL_get_blob(ld, t + 3) === nothing
+    @test _fa_blob(ld, t + 4) == (UInt8[0x61, 0x62, 0x63], 3, LK.text_atom)
+end
+
+# LK-ONLY (pl-fli.c:4375-4400 with text_atom): a text atom is an atom of the text blob type, so a blob of that type is a plain
+# text atom (ISO Latin-1 bytes, `len` of them); a payload with a 0 byte raises, as every text atom with the character 0 does.
+@testset "LK-ONLY: PL_put_blob and PL_unify_blob of the text blob type (pl-fli.c:4375, :4389)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5)])
+    @test LK.PL_unify_blob(ld, t, _fa_b("abc"), 3, LK.text_atom) && _fa_atom(ld, t) === :abc
+    LK.PL_new_atom(ld, _fa_b("xyz"))
+    @test LK.PL_put_blob(ld, t + 1, _fa_b("xyz"), 3, LK.text_atom) === false         # the atom exists
+    @test _fa_atom(ld, t + 1) === :xyz
+    @test LK.PL_put_blob(ld, t + 2, _fa_b("abcd"), 3, LK.text_atom) === false        # `len`: abc again
+    @test _fa_atom(ld, t + 2) === :abc
+    LK.PL_put_blob(ld, t + 3, UInt8[0xe9], 1, LK.text_atom)
+    @test _fa_atom(ld, t + 3) === Symbol("é")
+    @test_throws LK.AtomNotRepresentableError LK.PL_put_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom)
+    @test_throws LK.AtomNotRepresentableError LK.PL_unify_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom)
+    LK.PL_put_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 1, LK.text_atom)                 # the 0 is past `len`
+    @test _fa_atom(ld, t + 4) === :a
+end
+
+# LK-ONLY: the blob types the interface cannot give a symbol are refused by name before lookupBlob (owner FLI1): a text type
+# of its own, the wide text type, reserved_symbol; no atom is made.
+@testset "LK-ONLY: PL_put_blob and PL_unify_blob refusals (pl-fli.c:4375, :4389)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    h = ld.atoms.highest
+    own = LK.PL_blob_t(LK.PL_BLOB_UNIQUE | LK.PL_BLOB_TEXT, "fa_text")
+    e = try
+        LK.PL_put_blob(ld, t, UInt8[0x61], 1, own)
+        nothing
+    catch err
+        err
+    end
+    @test e isa LK.NotPortedError && occursin("FLI1", e.step) && occursin("fa_text", e.what)
+    @test ld.atoms.highest == h
+    e = try
+        LK.PL_unify_blob(ld, t, UInt8[0x61, 0, 0, 0], 4, LK.ucs_atom)
+        nothing
+    catch err
+        err
+    end
+    @test e isa LK.NotPortedError && occursin("FLI1", e.step) && occursin("ucs_text", e.what)
+    @test ld.atoms.highest == h
+    e = try
+        LK.PL_put_blob(ld, t, UInt8[0x5b, 0x5d], 2, LK.reserved_symbol)
+        nothing
+    catch err
+        err
+    end
+    @test e isa LK.NotPortedError && occursin("FLI1", e.step) && occursin("reserved_symbol", e.what)
+    @test ld.atoms.highest == h
+end
+
+# LK-ONLY (pl-fli.c:4430-4446): PL_blob_data of an atom answers the payload (the atom's own vector), its length and its type;
+# a text atom is of the text blob type; a slot that holds no atom (ATOM_TYPE_INVALID, :4436) answers a NULL payload and
+# type with the slot's length.
+@testset "LK-ONLY: PL_blob_data (pl-fli.c:4430)" begin
+    ld, t = _fa_engine(_R[_rv(1), _rs("abc")])
+    ty = _fa_ut()
+    @test LK.PL_put_blob(ld, t, UInt8[1, 2, 3], 3, ty) === true
+    d, n, tp = LK.PL_blob_data(ld, LK.PL_get_atom(ld, t))
+    @test d[1:3] == UInt8[1, 2, 3] && n == 3 && tp === ty
+    @test d === LK.PL_get_blob(ld, t)[1]
+    d, n, tp = LK.PL_blob_data(ld, LK.PL_get_atom(ld, t + 1))
+    @test String(copy(d[1:n])) == "abc" && n == 3 && tp === LK.text_atom
+    gd2, ld2 = _fa_db()                                                              # a throwaway engine: the symbol is recorded
+    at = ld2.atoms
+    LK.allocateAtomBlock(at, LK.MSB(at.highest))
+    w = (UInt64(at.highest) << LK.LMASK_BITS) | LK.TAG_ATOM
+    @test LK.atomValue(at, w).type === LK.ATOM_TYPE_INVALID
+    LK.atomValue(at, w).length = 5                                                   # the slot's own length
+    @test LK.PL_blob_data(ld2, LK.mk_blob(_R, w, :fa_invalid, -1)) == (nothing, 5, nothing)
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
