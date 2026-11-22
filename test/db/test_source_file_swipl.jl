@@ -5,10 +5,10 @@
 #     are compared. EVERY expected value is swipl's own answer (the driver runs live). `@FILE@` in a goal is the program's path
 #     (the source file's name in both systems), so the two systems ask about the same file;
 #   * WHITE-BOX: what swipl cannot be asked — the module
-#     list of a source file, the refusal of a reconsult (LB6), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
+#     list of a source file, the start and end of a reload by hand (LB6b), and system mode (H5: `access_level`, the P_LOCKED / HIDE_CHILDS
 #     bits of a predicate defined in system mode, `isStaticSystemProcedure`).
 # NOT HERE: `nth_clause/3` and `'$get_clause_attribute'/3` rows (test/db/test_nth_clause_swipl.jl), the module sites
-# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (LB6).
+# (`exportProcedureSource`, `setMetapredicateSource`: after MOD4, loader_boot.md §3.4 L3/L4), a reconsult (test/db/test_reload_swipl.jl).
 using Test, LogicKernel
 
 const LK = LogicKernel
@@ -597,15 +597,25 @@ end
     @test st === :false
 end
 
-@testset "'\$start_consult'/2 refuses a reconsult by name (LB6)" begin
+# swipl 10.1.20 (pinned 18168e62, live): after `consult` of a file with `foo(1).`, `'$start_consult'(F, 1.0)` gives load_count 2 at once and
+# starts a reload; `'$fixup_reconsult'(F)` succeeds and ends it: load_count stays 2, number_of_clauses 0, foo/1 is not defined any more.
+@testset "'\$start_consult'/2 on a loaded file starts a reload, '\$fixup_reconsult'/1 ends it (LB6b)" begin
     gd, ld, f = _loaded("foo(1).\n")
-    e = try
-        kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 0)])
-        nothing
-    catch ex
-        ex
-    end
-    @test e isa LK.NotPortedError && e.step == "LB6"
+    sf = LK.lookupSourceFile(gd, _tls(f), false)
+    pf = LK.isCurrentProcedure(sym_key(_tls("foo")), 1, LK.MODULE_user(gd))
+    @test LK.hasClausesDefinition(gd, pf.definition) !== nothing
+    st, _ = kcall(gd, ld, "\$start_consult", _TL[_tls(f), lk_gnd(_TL, 1.0)])
+    @test st === :true
+    @test sf.count == 2 && sf.reload !== nothing && gd.reload_generation == LK.GEN_RELOAD
+    st, _ = kcall(gd, ld, "\$fixup_reconsult", _TL[_tls(f)])
+    @test st === :true
+    @test sf.count == 2 && sf.reload === nothing && sf.number_of_clauses == 0
+    @test gd.reload_generation == LK.GEN_INVALID && ld.reload_nesting == 0
+    @test LK.hasClausesDefinition(gd, pf.definition) === nothing           # the reload did not define foo/1 again: its clause is gone
+    st, ans = kcall(
+        gd, ld, "\$source_file_property", _TL[_tls(f), _tls("load_count"), _v()]
+    )
+    @test st === :true && lk_value(ans[3]) == 2
 end
 
 @testset "system mode (H5): access_level, the lock of a predicate defined in it, isStaticSystemProcedure" begin
