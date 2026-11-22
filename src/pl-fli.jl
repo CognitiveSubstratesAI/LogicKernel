@@ -2609,8 +2609,8 @@ end
 # `PL_NWSTRING`) call `PL_unify_wchars` (wip/clib-uri, whose code points are `Int`s: converted here): NEITHER is
 # in this branch (duplicates of those branches), so this function only checks, runs or passes JET once a clib
 # branch is merged under it; the agenda
-# is a vector of `_unify_work`; the warning of an unknown tag ("Format error in PL_unify_term()", `PL_warning`, a
-# later group of this file) is left to that function and the call fails; a `PL_LIST` whose `PL_unify_list` fails
+# is a vector of `_unify_work`; the warning of an unknown tag ("Format error in PL_unify_term()") goes through
+# `PL_warning` (group I) and the call fails; a `PL_LIST` whose `PL_unify_list` fails
 # with elements left fails the call (forced: repeating the same call cannot end).
 "Unify the term `t` references with the term the tagged `args` describe (`PL_unify_term`'s variadic list) (pl-fli.c)."
 function PL_unify_termv(
@@ -2692,7 +2692,8 @@ function PL_unify_termv(
                 gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_HIDESYSTEM | GP_NAMEARITY
             )
         else                                                # default: PL_warning("Format error in PL_unify_term()")
-            rval = false
+            PL_warning(gd, ld, "Format error in PL_unify_term()")
+            rval = false                                    # goto failout
         end
         if !rval
             ok = false                                      # failout
@@ -2836,6 +2837,136 @@ function PL_blob_data(
     x.type === ATOM_TYPE_INVALID && return (nothing, x.length, nothing)   # ATOM_TYPE_IS_INVALID(x->type)
     return (x.name, x.length, x.type)
 end
+
+# ── FLI-API group I (pl-fli.c): throwing, warnings and fatal errors ─────────────────────────────────────────────
+
+# PORT: pl-fli.c PL_throw
+# DIVERGES (forced, decision 1 of docs/architecture.md, "Exceptions crossing Julia"): the exception is raised and the call
+# returns false; upstream's `longjmp` to the `setjmp` in `PL_next_solution` (`LD->exception.throw_environment`) is the false
+# return, which the running foreign predicate hands to the VM with the exception pending. The local data is an argument.
+"Raise the exception the term `exception` references; false, the exception pending (pl-fli.c)."
+function PL_throw(ld::PL_local_data{T}, exception::term_t)::Bool where {T}
+    PL_raise_exception(ld, exception)                       # PL_raise_exception(exception)
+    return false                                            # no throw_environment: `return false`
+end
+
+# PORT: pl-fli.c PL_rethrow
+# DIVERGES (forced): as `PL_throw`: the pending exception stays and the call returns false.
+"Deliver the exception already pending again; false (pl-fli.c)."
+PL_rethrow(ld::PL_local_data{T}) where {T} = false           # no throw_environment: `return false`
+
+# ORIGINAL (FLI-API15): upstream's `Sfprintf(Suser_error, "%s", text)`: the code points of `text` on `s` (nothing: no stream).
+function _fli_stream_text(s::Union{Nothing, IOSTREAM}, text::AbstractString)::Nothing
+    s === nothing && return nothing
+    for c in text
+        Sputcode(Int(c), s)
+    end
+    return nothing
+end
+
+# ORIGINAL (FLI-API15): the print_message/2 branch of `vwarning` (pl-init.c:2358-2394): the message split at each newline into
+# a list of strings, `error` and `message_lines(Lines)` as the arguments. False where upstream takes `goto nospace`.
+function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    cid = PL_open_foreign_frame(ld)
+    cid == 0 && return false                                # if ( !(cid = PL_open_foreign_frame()) ) goto nospace
+    av = PL_new_term_refs(ld, 2)
+    tail = PL_copy_term_ref(ld, av + 1)
+    head = PL_new_term_ref(ld)
+    bytes = codeunits(msg)
+    pos = 1
+    while true
+        eol = findnext(==(0x0a), bytes, pos)                # strchr(s, '\n')
+        if eol !== nothing
+            if !PL_unify_list(ld, tail, head, tail) ||
+               !PL_unify_string_nchars(ld, head, eol - pos, view(bytes, pos:(eol - 1)))
+                PL_discard_foreign_frame(ld, cid)           # nospace: if ( cid ) PL_discard_foreign_frame(cid)
+                return false
+            end
+            pos = eol + 1
+        else
+            if pos <= length(bytes)                         # if ( *s )
+                if !PL_unify_list(ld, tail, head, tail) ||
+                   !PL_unify_string_chars(ld, head, view(bytes, pos:length(bytes)))
+                    PL_discard_foreign_frame(ld, cid)
+                    return false
+                end
+            end
+            if !PL_unify_nil(ld, tail)
+                PL_discard_foreign_frame(ld, cid)
+                return false
+            end
+            break
+        end
+    end
+    if !PL_cons_functor(ld, av + 1, PL_new_functor(ld, mk_sym(T, :message_lines), 1), av + 1)
+        PL_discard_foreign_frame(ld, cid)
+        return false
+    end
+    PL_put_atom(ld, av, mk_sym(T, :error))                  # PL_put_atom(av, ATOM_error)
+    PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG, gd.procedures_print_message2, av)
+    PL_discard_foreign_frame(ld, cid)
+    return true
+end
+
+# ORIGINAL (FLI-API15): pl-init.c `vwarning` (:2348), the function `PL_warning` calls, written here with it.
+# DIVERGES: (a) the message is the formatted text (`Svsnprintf(message, LINESIZ, fm, args)` is the caller's, not cut at
+# LINESIZ), and the `fm[0] != '$'` test reads the text; (b) `GD->initialised` is a field this kernel lacks: `print_message/2`
+# being defined (`isDefinedProcedure`) stands for it, as `printMessage` does; (c) the `pl_trace()` that `debug_on_error` asks for
+# after the message (the interactive debugger) is left to DBG1; (d) `Suser_error` is `nothing` where the host set no stream:
+# then the fallback text has nowhere to go and is dropped.
+# (e) when building the line list fails midway the fallback prints the whole text, upstream's the text from the line it
+# stopped at (`s` is advanced as the lines are taken); the case needs a full global stack and is not distinguished here.
+function _fli_vwarning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    toldString(ld)                                          # play safe
+    if truePrologFlag(ld, PLFLAG_REPORT_ERROR)
+        done = false
+        if !gd.bootsession && isDefinedProcedure(gd, gd.procedures_print_message2) &&
+           !ld.outofstack && !startswith(msg, "\$")
+            done = _fli_warning_message(gd, ld, msg)
+        end
+        if !done                                            # nospace:
+            _fli_stream_text(Suser_error(ld), "ERROR: " * msg * "\n")
+            Pause(0.2)
+        end
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_warning
+# DIVERGES: the message is the formatted text, not a format and its arguments (see `_fli_vwarning`); the database and the local
+# data are arguments.
+"Print the warning `msg` through print_message/2 (to `user_error` where that cannot be called); false (pl-fli.c)."
+PL_warning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} = _fli_vwarning(gd, ld, msg)
+
+"`vfatalError`'s `static int active`: a second fatal error while one is reported ends the process by `abort()` alone."
+const _FLI_FATAL_ACTIVE = Ref(0)
+
+# ORIGINAL (FLI-API15): pl-init.c `vfatalError` (:2305), the function `PL_fatal_error` calls, written here with it.
+# DIVERGES: (a) the message is the formatted text; (b) the report goes to `Suser_error` (upstream's `Serror`, the same stream
+# until the host redirects it); (c) where the seam of `PL_abort_process` returns (a test that embeds the kernel:
+# `gd.halt_exit = false`) the `active` count is reset, as the process upstream never returns from.
+function _fli_vfatal_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Nothing where {T}
+    active = _FLI_FATAL_ACTIVE[]
+    _FLI_FATAL_ACTIVE[] = active + 1                        # if ( active++ )
+    if active != 0
+        _halt_exit!(gd, 128 + 6)                            # abort()
+        _FLI_FATAL_ACTIVE[] = 0
+        return nothing
+    end
+    tbuf = Libc.strftime("%a %b %e %H:%M:%S %Y", time())    # ctime_r(), without its newline
+    s = Suser_error(ld)
+    _fli_stream_text(s, "[FATAL ERROR: at " * tbuf * "\n\t" * msg * "]\n")
+    s === nothing || Sflush(s)
+    PL_abort_process(gd, ld)
+    _FLI_FATAL_ACTIVE[] = 0
+    return nothing
+end
+
+# PORT: pl-fli.c PL_fatal_error
+# DIVERGES: the message is the formatted text (see `_fli_vfatal_error`); the database and the local data are arguments.
+"Report the fatal error `msg` on `user_error` and end the process as `abort()` does (pl-fli.c)."
+PL_fatal_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} =
+    _fli_vfatal_error(gd, ld, msg)
 
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
