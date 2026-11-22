@@ -107,10 +107,9 @@ runner=()'''),
     echo "pkgtest_way: FAILED''',
          new=r'''if false; then
     echo "pkgtest_way: FAILED'''),
-    dict(id="TM25 the lock file descriptor reaches the test process", file=P, targets=T,
+    dict(id="TM25 the lock file descriptor reaches the test process (KILL test_gate_split.jl: the `leak` stub row, flock -n on the lock after the run)", file=P, targets=T,
          old=r'''< /dev/null 2>&1 >&3 3>&- 9>&- | tee "$base.err"''',
-         new=r'''< /dev/null 2>&1 >&3 3>&- | tee "$base.err"''',
-         equivalent="tools/pkgtest_way.sh (the run line, the child's `9>&-`): the flock is on fd 9's open file description, released when every holder has closed it. The test process is the scope's only child and ends before the script's own exit; the descriptor outlives the run only in a grandchild the test process leaks, which neither the stub nor Julia does."),
+         new=r'''< /dev/null 2>&1 >&3 3>&- | tee "$base.err"'''),
     # ── tools/warm.sh: the lane's slice, and the step ──
     dict(id="TM26 the second daemon's lane names the first one's slice", file=W, targets=T,
          old=r'''    elif [ -f "$DIR/second" ]; then _lane_slice_name second''',
