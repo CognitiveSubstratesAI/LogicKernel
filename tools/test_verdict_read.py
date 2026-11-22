@@ -595,6 +595,46 @@ class Units(unittest.TestCase):
         self.assertEqual(len(gs), 26)
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{8}|", c) for _, c in gs))
 
+    def test_load_equivalents_refuses_a_row_without_a_d_entry(self):
+        # D-0992: both tables non-empty, read through the ONE extractor (load_equivalents); only the D-entry of one row differs
+        import verdict_read as vr
+        d = tempfile.mkdtemp(prefix="verdict_read_eq.")
+        self.addCleanup(shutil.rmtree, d, True)
+
+        def table(entry):
+            p = os.path.join(d, "eq_%s.tsv" % re.sub(r"\W", "_", entry or "empty"))
+            with open(p, "w") as f:
+                f.write("# c\nmutant\td_entry\tcase_analysis\nX-1\tD-0903\tsrc/pl-a.jl:1\nLD6-9\t%s\tsrc/os/pl-stream.jl Ssize\n" % entry)
+            return p
+
+        with self.assertRaises(ValueError) as cm:                        # (a) a `pending` row is refused, the message names it
+            vr.load_equivalents(table("pending"))
+        self.assertIn("LD6-9", str(cm.exception))
+        self.assertIn("pending", str(cm.exception))
+        for bad in ("", "D-12", "see D-0992", "d-0992"):                 # empty, short, free text, lower case: refused too
+            with self.assertRaises(ValueError, msg=bad):
+                vr.load_equivalents(table(bad))
+        ok = vr.load_equivalents(table("D-0992"))                        # (b) the same table, ratified: accepted, both rows
+        self.assertEqual(sorted(ok), ["LD6-9", "X-1"])
+        self.assertEqual(ok["LD6-9"]["d_entry"], "D-0992")
+        shipped = vr.load_equivalents(os.path.join(REAL, "evidence", "equivalents.tsv"))   # (c) the shipped file loads, non-empty,
+        self.assertGreaterEqual(len(shipped), 20)                                         # and holds the two ratified rows
+        self.assertEqual({k: shipped[k]["d_entry"] for k in ("LD6-2", "LD6-3")}, {"LD6-2": "D-0992", "LD6-3": "D-0992"})
+
+    def test_the_entry_point_refuses_an_unratified_equivalents_row(self):
+        # the verdict level: tools/verdict_read.py itself exits 2 naming the row; the ratified table passes the same gate
+        w = World(self)
+        w.commit("tools/t.txt", "x\n", "tools only")
+        w.battery("B3", [("B3-E", "EQUIVALENT (declared)", "src/pl-x.jl:12-14")])
+        equivalents(w, [("B3-E", "pending", "src/pl-x.jl:12-14")])
+        rc, out = w.run("--no-landing")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("equivalents row B3-E", out)
+        equivalents(w, [("B3-E", "D-0992", "src/pl-x.jl:12-14")])
+        rc, out = w.run("--no-landing")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("B3-E D-0992 src/pl-x.jl:12-14", out)
+
     def test_ci_annotations_seam(self):
         w = World(self)
         w.put("77/ann_5.json", [{"title": "t"}])
