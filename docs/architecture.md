@@ -7389,7 +7389,7 @@ What EV1 adds (pin `cbf4e1896275`, oracle swipl 10.1.19; written edit-only over 
   garbage collector: `unallocDefinition`'s call, pl-proc.c:269). A listener's exception breaks the loop and propagates (`WAKEUP_KEEP_URGENT_EXCEPTION`).
 - **Raise sites DEFERRED** (no Julia function yet; each step that ports the function raises the event): break events and `$break_at` (pl-comp.c:9084-9173, DBG1; `frameFinished`'s raise is
   wired but unreachable until DBG1, nothing sets `FR_NOTIFY`), `abort` (pl-pro.c:105, DBG1), `untable` (pl-tabling.c:11317) and `table_answer_event`'s caller (pl-tabling.c:10156, TAB1; boot/tabling.pl's
-  `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; the thread events throw `NotPortedError`, a C-function listener counts as a failure),
+  `prolog_listen(untable, untable_reconsult)` registers), thread start/exit and `PL_thread_at_exit` (pl-thread.c, TH1; an engine raises `this_thread_exit` and `thread_exit` when it is destroyed, `thread_start` has no raise site without OS threads, a C-function listener counts as a failure),
   `delayEvents` in `unloadFile`/`endReconsult` and `reconsultFinalizePredicate` (pl-srcfile.c, pl-proc.c:1937: the reload step), transactions (pl-transaction.c), `cleanupEvents` (`PL_cleanup`, pl-init.c:2037),
   `freePrologLocalData` (pl-setup.c:1796), and `unallocDefinition` (no such function).
 - **DIVERGES (representation only, each needs the audit's D-entry):** a list is a Vector (no head/tail chain, no lock; `call_event_list` walks a SNAPSHOT); a closure is the term's record

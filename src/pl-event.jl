@@ -590,8 +590,12 @@ function PL_call_event_hook(
 end
 
 # PORT: pl-event.c PL_call_event_hook_va
-# DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
-# thread table); an unknown event is `false` (upstream warns).
+# DIVERGES: `args` are the event's values (the thread events' value is the thread record `info`, `unify_thread_id` puts its
+# id: the alias, else the handle's blob); an unknown event is `false` (upstream warns). The twelve-row table is the build with
+# engines (`O_ENGINES`) and no OS threads (the `threads` flag is false, as upstream's `!O_PLMT && O_ENGINES` build sets it): the
+# only thread that has a record here is an engine, and an engine runs `thread_exit` and `this_thread_exit` when it is
+# destroyed (`freePrologThread`, src/pl-thread.jl `_destroy_engine!`); `thread_start` is raised by `start_thread` (pl-thread.c)
+# alone, which an engine never goes through, so no event of this name is raised here (the function does put its value).
 "Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
 function PL_call_event_hook_va(
     gd::PL_global_data{T}, ld::PL_local_data{T}, ev::Int, args...
@@ -640,11 +644,8 @@ function PL_call_event_hook_va(
     elseif ev == PLEV_FRAMEFINISHED
         rc = PL_put_frame(ld, av + 1, event_arg(Int, args, 1))
     elseif ev == PLEV_THREAD_START || ev == PLEV_THREAD_EXIT
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :prolog_listen), "the thread events (`unify_thread_id`)", "TH1"
-            )
-        )
+        info = event_arg(PL_thread_info{T}, args, 1)
+        rc = unify_thread_id(gd, ld, av + 1, info)
     elseif ev == PLEV_THIS_THREAD_EXIT
         # nothing to put
     elseif ev == PLEV_UNTABLE

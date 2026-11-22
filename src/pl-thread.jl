@@ -355,19 +355,42 @@ function _create_engine(
     return eld
 end
 
+# PORT: pl-thread.c freePrologThread (the exit hooks and the release of the thread record; `after_fork` is false)
+# DIVERGES: the engine's local data is dropped by the garbage collector (`freeStacks`, `freePrologLocalData`, `cleanupLocalDefinitions`,
+# the message queue and the thread's statistics are not kept: no pool); `startCritical`/`endCritical` block signals (none here) and
+# the test `ld->stacks.argument.base` (stacks initialised) is always true: `_bare_local_data` makes them; `info->in_exit_hooks` has no field
+# (nothing reads it). What upstream writes to
+# `Serror` is collected on the local data's `messages` (`_qlf_Sdprintf!`, `_qlf_pl_write!`: the term unquoted, no newline flag).
+# The thread is an engine: `ld` is `LD` at the call (`PL_destroy_engine` sets the engine), so `this_thread_exit` is raised.
+"Run the exit events of the engine `ld` (`this_thread_exit`, `thread_exit`) and release its thread record (pl-thread.c `freePrologThread`)."
+function freePrologThread!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, info::PL_thread_info{T}
+)::Nothing where {T}
+    if info.status == PL_THREAD_RUNNING
+        info.status = PL_THREAD_EXITED                      # foreign pthread_exit()
+    end
+    rc1 = callEventHook(gd, ld, PLEV_THIS_THREAD_EXIT)      # `LD == ld`
+    rc2 = callEventHook(gd, ld, PLEV_THREAD_EXIT, info)
+    if (!rc1 || !rc2) && ld.exception_term != 0
+        _qlf_Sdprintf!(ld, "Event hook \"thread_finished\" left an exception\n")
+        _qlf_pl_write!(ld, ld.exception_term)               # PL_write_term(Serror, exception_term, 1200, PL_WRT_QUOTED|PL_WRT_NEWLINE)
+        PL_clear_exception(ld)
+    end
+    info.thread_data = nothing                              # avoid a loop
+    info.has_tid = false                                    # needed?
+    return nothing
+end
+
 # PORT: pl-thread.c PL_thread_destroy_engine as _destroy_engine!
 # DIVERGES: the engine is the handle's (`PL_destroy_engine(th->info->thread_data)` and `PL_thread_destroy_engine()` of the current
-# engine are one function here: there is no current engine to compare with); `free_prolog_thread` is the status `EXITED`, the thread
-# record dropped from `gd.thread.infos` and from the handle. NOT PORTED: the `thread_exit`/`this_thread_exit` events and the
-# `at_thread_exit` goals it runs (owner TH1: the event table).
+# engine are one function here: there is no current engine to compare with); `free_prolog_thread` is `freePrologThread!` (the
+# exit events), then the thread record dropped from `gd.thread.infos` and from the handle.
 "Leave the engine of the handle `th`: the last user ends it (pl-thread.c)."
 function _destroy_engine!(gd::PL_global_data{T}, th::thread_handle{T})::Nothing where {T}
     info = th.info::PL_thread_info{T}
     info.open_count -= 1
     if info.open_count == 0
-        info.status = PL_THREAD_EXITED
-        info.thread_data = nothing
-        info.has_tid = false
+        freePrologThread!(gd, info.thread_data::PL_local_data{T}, info)
         gd.thread.infos[info.pl_tid] = nothing
         th.info = nothing
     end
