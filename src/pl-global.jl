@@ -337,6 +337,8 @@ mutable struct PL_global_data{T}
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     const thread::thread_state{T}                               # thread: the handles, the thread records, the alias table, the engine counters (pl-thread.c; TH1 engines)
+    const mutexes::Dict{UInt64, pl_mutex{T}}                    # thread.mutexTable: the user mutexes by the `sym_key` of their id (pl-mutex.c; MUTEX)
+    mutex_serial::Int                                           # the last creation number handed out to a mutex (MUTEX; the payload of an anonymous mutex's blob)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -861,6 +863,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     recorded_states::foreign_state_pool{recorded_state{T}}      # (recorded/2,3's REDO_PTR states, R2 D2)
     cur_pred_enums::foreign_state_pool{cur_pred_enum}           # ('$c_current_predicate'/2's REDO_PTR states, R2 PR1)
     cur_enums::foreign_state_pool{cur_enum{T}}                  # (current_predicate/1's REDO_PTR states, R2 PR1)
+    mutex_enums::foreign_state_pool{mutex_prop_enum{T}}         # (mutex_property/2's REDO_PTR states, MUTEX)
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
     IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
@@ -991,6 +994,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         foreign_state_pool{recorded_state{T}}(), # recorded/2,3's states: none
         foreign_state_pool{cur_pred_enum}(),    # '$c_current_predicate'/2's states: none
         foreign_state_pool{cur_enum{T}}(),      # current_predicate/1's states: none
+        foreign_state_pool{mutex_prop_enum{T}}(),  # mutex_property/2's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
         nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
         IOSTREAM[],                             # output_stack: no redirect (R2 O1B)

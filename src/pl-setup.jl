@@ -594,7 +594,9 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
         locale_state{T}(),                      # locale: empty until initLocale! (below)
-        thread_state{T}()                       # thread: no engine yet (TH1 engines)
+        thread_state{T}(),                      # thread: no engine yet (TH1 engines)
+        Dict{UInt64, pl_mutex{T}}(),            # mutexes: no user mutex (initMutexes: newHTableWP(16); MUTEX)
+        0                                       # mutex_serial: none handed out
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

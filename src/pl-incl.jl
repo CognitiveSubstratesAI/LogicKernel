@@ -2779,6 +2779,39 @@ mutable struct gvar_enum
 end
 gvar_enum() = gvar_enum(UInt64[], 1)
 
+# PORT: pl-thread.h pl_mutex
+# DIVERGES: the kernel runs one thread, so no `pthread_mutex_t` (`mutex`, `initialized`) is kept: a lock is the pair
+# `owner`/`count` alone, `owner` 0 for none and 1 for the main thread (the one thread's id, `PL_thread_self()`). `id`
+# is the atom (a term of type `T`) the mutex is known by: a name, or the `mutex` blob of an anonymous one; `serial`
+# numbers the mutexes in creation order (upstream enumerates its hash table in hash order, the kernel in this one).
+"A user mutex (pl-thread.h `struct pl_mutex`): its lock count and owner, its identifier and its flags."
+mutable struct pl_mutex{T}
+    count::Int                                      # lock count
+    owner::Int                                      # integer id of the owner (0: none)
+    id::T                                           # id of the mutex
+    serial::Int                                     # the creation number (see above)
+    anonymous::Bool                                 # <mutex>(0x...)
+    destroyed::Bool                                 # mutex is destroyed
+    auto_destroy::Bool                              # asked to destroy
+end
+
+# PORT: pl-mutex.c mprop_enum
+# DIVERGES: a record of the local data's pool (`ld.mutex_enums`, a `foreign_state_pool`), its index the `REDO_PTR`
+# context, where upstream keeps `statebuf` on the C stack until the first redo. `mutexes` are the mutexes of the table
+# at the first call, in creation order, `next` the one `advanceTableEnum` hands out next (`enumerating`: `e` is not NULL);
+# `p` is the property being tried, an index (from 1) into `mprop_list`. A pool record is REUSED: every field is set again
+# by the first call.
+"The state of `mutex_property/2` between answers (pl-mutex.c `mprop_enum`)."
+mutable struct mutex_prop_enum{T}
+    mutexes::Vector{pl_mutex{T}}                    # e: the mutexes the enumeration walks
+    next::Int                                       # e: the next one to hand out
+    m::Union{Nothing, pl_mutex{T}}                  # m: the current mutex (nothing: NULL)
+    p::Int                                          # p: the property in `mprop_list` (an index)
+    enum_properties::Bool                           # enumerate the properties
+    enumerating::Bool                               # e != NULL: enumerating the mutexes
+end
+mutex_prop_enum{T}() where {T} = mutex_prop_enum{T}(pl_mutex{T}[], 1, nothing, 1, false, false)
+
 # ── pl-table.h's structs (moved here from src/os/pl-table.jl: `ld_coverage` holds a `Table`) ─────────────────────────────
 
 # PORT: pl-table.h symbol
