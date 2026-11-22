@@ -6713,10 +6713,13 @@ What G1 ports (pl-gvar.c at the pin cbf4e189; edit-only so far, nothing compiled
   `PL_local_data` gains `gvar_nb_vars::Dict{UInt64,UInt64}` (an EMPTY table stands for upstream's NULL), `gvar_grefs::Int` and
   `gvar_enums`; `live_states` counts the new pool. `duplicate_term(ld, in, copy)` (pl-copyterm.jl) is the C function, called by
   `duplicate_term/2` and by `setval_duplicate`.
-- **D7:** `_release_frozen!` (src/pl-inline.jl), while `ld.gvar_grefs > 0`, scans the global variables' values (`_gvar_reach`, ENG2a) and
-  returns, keeping the frozen region, only when a value reaches above the reset target or above an open foreign frame's mark
-  (frame 1 excluded); with every value at or below both it releases the region as without global variables (a global variable's
-  value lives on the global stack and the end-of-query reset must not free it; upstream keeps `frozen_bar` for the thread's life).
+- **D7 (G1-E, audit D-0979 (2): the e5 release is RETIRED):** a global variable's value lives on the global stack below `frozen_bar`
+  (`freezeGlobal!`), and the bar is never lowered by the kernel: upstream keeps it for the thread's life (pl-gvar.c `destroyGlobalVars`, :62-70) and the
+  outermost query's close leaves `gTop = max(frozen_bar, mark.globaltop)` (`Undo!`; pl-incl.h:2253, pl-wam.c:1632). A throw's ball, and the garbage below
+  the bar, stay until the collector frees them (it saves and relocates the bar: `gvars_to_term_refs`, `sweep_frozen_bar`, pl-gc.c:1135-1159, :5082).
+  Until G1-E the stand-in `_release_frozen!` (with the scan `_gvar_reach`, ENG2a) lowered the bar and `gTop` at the outermost close when no value lay
+  above the reset target; it and its mutant catalogues (ENG2A, ENG2) went in one commit. The behaviour is pinned by test_ball_cells.jl (the bar does
+  not move at the close; a collection reclaims the ball) and mutated by tools/mutants/E1R.py.
 - **D8:** `setBuiltinPredicateProperties!` makes `user:exception/3` dynamic (boot/init.pl:945 before init.pl is loaded), so
   `auto_define_gvar`'s `PL_call_predicate` finds a predicate without clauses; the later declaration is harmless.
 - **Divergences:** (a) `duplicate_term` copies the whole term: upstream's `nshare`/`share` are a later port; (b) a float, string

@@ -116,7 +116,7 @@ function lk_bound_count(ld)::Int
 end
 lk_no_bindings(ld)::Bool = lk_bound_count(ld) == 0
 # The same, OUTSIDE the frozen region (L1e e5a; audit D-0036): a ball raised outside any query keeps its
-# cells below `frozen_bar` until the outermost query's close (upstream: until GC — pl-gvar.c resets the bar
+# cells below `frozen_bar` until a collection frees them (G1-E: the close does not release; pl-gvar.c resets the bar
 # only at the thread's end). Those cells are the ball, not a leak; a binding above the bar is.
 function lk_bound_count_unfrozen(ld)::Int
     base = lk_base_cells(ld)
