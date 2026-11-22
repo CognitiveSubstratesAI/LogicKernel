@@ -112,8 +112,8 @@ MUTANTS = [
     # ── tellString, toldString (format/2's column handling; ~@) ──
     dict(id="O1B-D1 toldString does not pop the output context of a memory stream (KILL O1-A's column / ~@ rows in test_format_swipl.jl: after the first the current output is a closed stream)",
          file=R, targets=TF + TS,
-         old="    if s.functions == Smemfunctions\n",
-         new="    if s.functions != Smemfunctions\n"),
+         old="    s === nothing && return true\n\n    if s.functions == Smemfunctions\n",
+         new="    s === nothing && return true\n\n    if s.functions != Smemfunctions\n"),
     dict(id="O1B-D2 tellString leaves the stream's encoding at its default: the enc argument is dropped (KILL O1-A's wide-character ~@/column rows in test_format_swipl.jl)",
          file=R, targets=TF + TS,
          old="    stream.encoding = enc\n",

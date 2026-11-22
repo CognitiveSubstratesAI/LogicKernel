@@ -5400,7 +5400,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sread_null, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.Sseek_null, Tuple{Int, Int}, false),
     (LK.Sclose_null, Tuple{}, false),
-    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
+    # (Sread_pending: listed once, with the STREAMX rows below: INT-3 dropped lane D's copy of the entry, the function is the filter copy)
     (LK.re_buffer, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, false),
     (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
     (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),

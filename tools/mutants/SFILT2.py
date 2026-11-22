@@ -112,8 +112,8 @@ MUTANTS = [
          new="    if true\n        n = Ref(0)\n"),
     dict(id="SFILT2-C6 a stream starts with file number 0, not none (KILL p07)",
          file=S, targets=TARGETS,
-         old="        nothing, nothing, nothing, nothing, -1, nothing\n    )\n",
-         new="        nothing, nothing, nothing, nothing, 0, nothing\n    )\n"),
+         old="        nothing, nothing, nothing, nothing, -1, nothing, nothing\n    )\n",
+         new="        nothing, nothing, nothing, nothing, 0, nothing, nothing\n    )\n"),
     # ── (b) ENC_WCHAR: put_code ──
     dict(id="SFILT2-W1 put_code writes an ENC_WCHAR code big-endian (KILL w01)",
          file=S, targets=TW,

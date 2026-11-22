@@ -6,7 +6,8 @@
 # TARGETS (D-0238): the test files that open a UTF-16 or wchar_t stream or run put_code/Sgetcode over one: lane D's rows, the open/4 file rows.
 TL = ["test/core_lang/test_lane_d_swipl.jl", "test/files/test_open_close_swipl.jl"]
 TA = TL + ["test/core_lang/test_enc_ansi_swipl.jl"]
-TARGETS = TA
+TLW = TL + ["test/files/test_stream_wchar_swipl.jl"]
+TARGETS = TA + ["test/files/test_stream_wchar_swipl.jl"]   # INT-3: stream-filter's wchar rows reach the same code
 G = "src/os/pl-stream.jl"
 MUTANTS = [
     dict(id="LD8-1 put_usc2: big endian writes the low byte first (KILL: d351 vs d352)", file=G, targets=TL,
@@ -24,9 +25,11 @@ MUTANTS = [
     dict(id="LD8-5 put_code: UTF16BE writes little endian (KILL: d351)", file=G, targets=TL,
          old='        put_utf16(c, s, true) < 0 && return -1\n    elseif enc == ENC_UTF16LE',
          new='        put_utf16(c, s, false) < 0 && return -1\n    elseif enc == ENC_UTF16LE'),
-    dict(id="LD8-6 put_code: wchar_t writes two bytes (KILL: d353, d358)", file=G, targets=TL,
-         old='        for b in reinterpret(UInt8, [UInt32(c)])        # the native bytes of a `pl_wchar_t`\n',
-         new='        for b in reinterpret(UInt8, [UInt32(c)])[1:2]   # the native bytes of a `pl_wchar_t`\n'),
+    # INT-3: LD8-6, LD8-14 and LD8-15 were written against lane D's inline wchar_t bodies; the integration took stream-filter's put_code arm and
+    # `get_wchar` instead (same intent, refitted `old`), and test_stream_wchar_swipl.jl (stream-filter's rows) exercises them too (D-0238: TLW).
+    dict(id="LD8-6 put_code: wchar_t writes two bytes (KILL: d353, d358)", file=G, targets=TLW,
+         old='        for k in 0:3                            # its bytes, in memory order\n',
+         new='        for k in 0:1                            # its bytes, in memory order\n'),
     dict(id="LD8-7 get_ucs2: big endian reads the low byte first (KILL: d356, d362)", file=G, targets=TL,
          old='    return be ? (c1 << 8) + c2 : (c2 << 8) + c1\n',
          new='    return be ? (c2 << 8) + c1 : (c1 << 8) + c2\n'),
@@ -48,12 +51,12 @@ MUTANTS = [
     dict(id="LD8-13 Sgetcode: UTF16LE reads big endian (KILL: d355, d357)", file=G, targets=TL,
          old='            c = get_utf16(s, false)\n        elseif enc == ENC_WCHAR',
          new='            c = get_utf16(s, true)\n        elseif enc == ENC_WCHAR'),
-    dict(id="LD8-14 Sgetcode: a wchar_t cut short is end of file (KILL: d369: 0xFFFD)", file=G, targets=TL,
-         old='                        Sseterr(s, SIO_WARN, "EOF in UCS character")\n                        c = UTF8_MALFORMED_REPLACEMENT\n',
-         new='                        c = -1\n'),
-    dict(id="LD8-15 Sgetcode: wchar_t reads the high byte first (KILL: d358)", file=G, targets=TL,
-         old='            c == 0 && (c = Int(reinterpret(Int32, wb)[1]))  # `chr`: the native `pl_wchar_t`\n',
-         new='            c == 0 && (c = Int(reinterpret(Int32, reverse(wb))[1]))\n'),
+    dict(id="LD8-14 Sgetcode: a wchar_t cut short is end of file (KILL: d369: 0xFFFD)", file=G, targets=TLW,
+         old='            Sseterr(s, SIO_WARN, "EOF in UCS character")\n            return UTF8_MALFORMED_REPLACEMENT\n',
+         new='            return -1\n'),
+    dict(id="LD8-15 Sgetcode: wchar_t reads the high byte first (KILL: d358)", file=G, targets=TLW,
+         old='        w |= UInt32(c1 & 0xff) << (ENDIAN_BOM == 0x04030201 ? 8n : 8 * (3 - n))\n',
+         new='        w |= UInt32(c1 & 0xff) << (ENDIAN_BOM == 0x04030201 ? 8 * (3 - n) : 8n)\n'),
     dict(id="LD8-16 encoding table: `text` names ENC_UTF8 (KILL: the ENC_ANSI stream_property row u03, the C-locale rows c01-c12)", file="src/os/pl-file.jl", targets=TA,
          old='    (:text, ENC_ANSI), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n',
          new='    (:text, ENC_UTF8), (:utf8, ENC_UTF8), (:utf16be, ENC_UTF16BE),\n'),

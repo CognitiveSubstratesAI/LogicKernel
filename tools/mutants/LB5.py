@@ -87,8 +87,8 @@ MUTANTS = [
          new="    n = (s.position::IOPOS).lineno\n"),
     dict(id="LB5-C3 getStreamWithPosition takes SH_ALIAS (PL_get_stream passes flags 0): a non-atom is domain_error(stream_or_alias, X) (KILL lb109, lb110)",
          file=F, targets=POS,
-         old="stream, SH_ERRORS)\n    s === nothing && return nothing\n    if s.position",
-         new="stream, SH_ERRORS | SH_ALIAS)\n    s === nothing && return nothing\n    if s.position"),
+         old="stream, SH_ERRORS | SH_NOPAIR)\n    s === nothing && return nothing\n    if s.position",
+         new="stream, SH_ERRORS | SH_NOPAIR | SH_ALIAS)\n    s === nothing && return nothing\n    if s.position"),
     # ── pl-file.c tab ──
     dict(id="LB5-D1 tab writes one space too many: `count >= 0` (KILL lb022-lb024, lb029, lb030, lb032, lb035)",
          file=F, targets=PF,
@@ -102,8 +102,8 @@ MUTANTS = [
     # ── pl-file.c get_code2, put_code ──
     dict(id="LB5-F1 get_code(S, end_of_file) raises the type error: the end_of_file test is dropped (KILL lb050)",
          file=F, targets=PF,
-         old="        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n",
-         new="        false &&\n"),
+         old="        PL_unify_integer(ld, chr, c) && return true\n\n        i = PL_get_integer(ld, chr)\n        a = PL_get_atom(ld, chr)\n        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n",
+         new="        PL_unify_integer(ld, chr, c) && return true\n\n        i = PL_get_integer(ld, chr)\n        a = PL_get_atom(ld, chr)\n        false &&\n"),
     dict(id="LB5-F2 put_code writes nothing (KILL lb057, lb064, lb065, lb067, lb071, lb073)", file=F, targets=PUT,
          old="    Sputcode(c, s)\n",
          new="    nothing\n"),
