@@ -15,7 +15,8 @@
 # (pl-prologflag.c set_flag_value), over the debugger-status fields of the local data (`ld.debugstatus_*`, src/pl-global.jl).
 # Since R2 TOP1: `resetTracer` and `enable_debug_on_interrupt`, which `resetProlog` and `query_loop` (src/pl-pro.jl) call.
 # Since DBG1's first piece: `prolog_frame_attribute/3` and its helpers (`PL_get_frame`, `isDebugFrame`, `alternativeFrame`, …), over the
-# kernel's frame, choice-point and query pools.
+# kernel's frame, choice-point and query pools. Since DBG1's second piece: `prolog_choice_attribute/3` (`PL_get_choice`, `in_clause_jump`,
+# `choice_type_atom`).
 
 # PORT: pl-trace.c PL_unify_frame
 "Unify `t` with frame `fr`'s position, or `none` for no frame (pl-trace.c)."
@@ -641,6 +642,112 @@ function pl_prolog_frame_attribute3_va(
     return prolog_frame_attribute(ld, A1, A2, A3) ? FTRUE : FFALSE
 end
 
+# PORT: pl-trace.c PL_get_choice
+# (pl-trace.c:175 at the pin 18168e62; `valid_choice` :165)
+# DIVERGES: returns the pool INDEX of the choice point at the position `r` holds (`existingChoice`, src/pl-wam.jl, which walks the
+# chain from `BFR` and so also stands for `ch >= lBase && ch < lTop` and `valid_choice`: stricter than upstream's test, which accepts
+# any position holding a record), 0 for upstream's false (the error is raised: `existence_error(choice, R)`, or `type_error(choice, R)`
+# for a non-integer); `PL_get_intptr` is `PL_get_long`.
+"The choice point the term reference `r` holds the position of, as its pool index, or 0 with an error raised (pl-trace.c)."
+function PL_get_choice(ld::PL_local_data{T}, r::term_t)::Int where {T}
+    i = PL_get_long(ld, r)                              # PL_get_intptr(r, &i)
+    if i !== nothing
+        ch = existingChoice(ld, i)                      # ch = (Choice)((Word)lBase + i); !valid_choice(ch)
+        if ch == 0
+            PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), r)
+            return 0
+        end
+        return ch                                       # *chp = ch
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :choice), r)
+    return 0
+end
+
+# PORT: pl-trace.c in_clause_jump
+# DIVERGES: `ch` is a pool index; `ch->value.pc` is `value_pc`, an index into the frame's clause code (1-based), so the offset
+# `pc - cl->codes` is `value_pc - 1`; upstream's `(size_t)-1` is -1.
+"The offset in its clause of the jump choice point `ch`'s code position, or -1 when it is not a jump inside a clause (pl-trace.c)."
+function in_clause_jump(ld::PL_local_data{T}, ch::Int)::Int where {T}
+    c = ld.choices[ch]
+    if c.type == CHP_JUMP && c.frame != 0
+        f = ld.frames[c.frame]
+        if ((f.predicate::Definition{T}).flags & P_FOREIGN) == 0
+            cref = f.clause
+            cl = cref === nothing ? nothing : cref.clause
+            if cl !== nothing && c.value_pc >= 1 && c.value_pc <= length(cl.codes)
+                return c.value_pc - 1                   # ch->value.pc - cl->codes
+            end
+        end
+    end
+    return -1
+end
+
+# PORT: pl-trace.c choice_type_atom
+# DIVERGES: a CHP_JUMP outside any clause is a foreign frame's redo (`I_FREDO` at `value_pc` of the innermost supervisor, src/pl-wrap.jl)
+# and gives `foreign`; upstream's other case, `ch->value.pc == SUPERVISOR(next_clause)` (`clause`), is a `CHP_CLAUSE` choice point in the
+# kernel, so a CHP_JUMP that is neither is answered `clause` where upstream asserts.
+"The atom naming what choice point `ch` resumes: `jump`, `clause`, `top`, `catch`, `debug` or `foreign` (pl-trace.c)."
+function choice_type_atom(ld::PL_local_data{T}, ch::Int)::T where {T}
+    c = ld.choices[ch]
+    if c.type == CHP_JUMP && in_clause_jump(ld, ch) == -1
+        f = c.frame != 0 ? ld.frames[c.frame] : nothing
+        if f !== nothing
+            def = f.predicate::Definition{T}
+            if (def.flags & P_FOREIGN) != 0
+                sup = innermost_supervisor(_query_gd(ld), def)[1]
+                if c.value_pc >= 1 && c.value_pc <= length(sup) && sup[c.value_pc] == I_FREDO    # decode(ch->value.pc[0]) == I_FREDO
+                    return mk_sym(T, :foreign)
+                end
+            end
+        end
+        return mk_sym(T, :clause)                       # SUPERVISOR(next_clause)
+    end
+    ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :
+        c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :catch : :debug     # types[ch->type]
+    return mk_sym(T, ty)
+end
+
+# PORT: pl-trace.c prolog_choice_attribute as pl_prolog_choice_attribute3_va
+# (PRED_IMPL("prolog_choice_attribute", 3, prolog_choice_attribute, 0), pl-trace.c:2755 at the pin 18168e62)
+# DIVERGES: `ch` is a pool index; `ch->parent`, `ch->frame` are indices (`PL_unify_choice`/`PL_unify_frame` give their positions);
+# `ch->value.clause.cref->value.clause` is `value_clause.cref.clause`, and the `assert(ch->type == CHP_CLAUSE)` is kept as an `@assert`.
+"`prolog_choice_attribute(+Choice, +Key, -Value)` (pl-trace.c): `parent`, `frame`, `type`, `pc` or `clause` of a choice point."
+function pl_prolog_choice_attribute3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    ch = PL_get_choice(ld, A1)
+    ch == 0 && return FFALSE                            # !PL_get_choice(A1, &ch)
+    key = PL_get_atom_ex(ld, A2)
+    key === nothing && return FFALSE                    # !PL_get_atom_ex(A2, &key)
+
+    kk = sym_key(key)
+    if kk == sym_key(mk_sym(T, :parent))
+        p = ld.choices[ch].parent
+        while p != 0 && ld.choices[p].type == CHP_DEBUG     # do { ch = ch->parent } while(ch && ch->type == CHP_DEBUG)
+            p = ld.choices[p].parent
+        end
+        p != 0 && return PL_unify_choice(ld, A3, p) ? FTRUE : FFALSE
+        return FFALSE
+    elseif kk == sym_key(mk_sym(T, :frame))
+        return PL_unify_frame(ld, A3, ld.choices[ch].frame) ? FTRUE : FFALSE
+    elseif kk == sym_key(mk_sym(T, :type))
+        return PL_unify_atom(ld, A3, choice_type_atom(ld, ch)) ? FTRUE : FFALSE
+    elseif kk == sym_key(mk_sym(T, :pc))
+        offset = in_clause_jump(ld, ch)
+        offset != -1 && return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE
+        return FFALSE
+    elseif kk == sym_key(mk_sym(T, :clause))
+        c = ld.choices[ch]
+        @assert c.type == CHP_CLAUSE
+        cr = c.value_clause.cref::ClauseRef{T}
+        return PL_unify_clref(_query_gd(ld), ld, A3, cr.clause::Clause{T}) ? FTRUE : FFALSE
+    end
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :key), A2) ? FTRUE : FFALSE
+end
+
 # PORT: pl-trace.c BeginPredDefs as PL_predicates_from_trace
 # DIVERGES: the ported entries only (upstream's table also has the other debugger predicates, pl-trace.c:2830-2840).
 "pl-trace.c's registration table (`BeginPredDefs(trace)`): the ported entries."
@@ -650,6 +757,7 @@ const PL_predicates_from_trace = (
         "prolog_frame_attribute", 3, pl_prolog_frame_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension("prolog_choice_attribute", 3, pl_prolog_choice_attribute3_va, PL_FA_VARARGS),    # (pl-trace.c:2755)
 )
 
 # PORT: pl-trace.h DBG_ALL

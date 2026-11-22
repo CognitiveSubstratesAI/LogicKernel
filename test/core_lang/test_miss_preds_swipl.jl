@@ -100,6 +100,10 @@ end
 
 const _MG_PROGRAM = raw"""
 mg_p(1).
+mg_c2(1).
+mg_c2(2).
+mg_or(R) :- ( prolog_current_choice(C), prolog_choice_attribute(C, type, T), ( prolog_choice_attribute(C, pc, P), integer(P) -> R = T-pc ; R = T-nopc ) ; R = none ).
+mg_cc(R) :- mg_c2(_), prolog_current_choice(C), prolog_choice_attribute(C, type, T), prolog_choice_attribute(C, clause, Cl), ( clause(mg_c2(X), true, Cl) -> R = T-X ; R = T-noclause ).
 """
 
 # (id, goal, expected `enc` of R or `nothing` for "the goal failed"), run IN ORDER. Every expected value is derived from the C named in the header.
@@ -253,6 +257,56 @@ const _MG_CASES = [
         _mgraised(_mgc("type_error", _mga("integer"), _mga("bar")))
     ),
     ("tg01", raw"( tracing -> R = on ; R = off )", _mga("off")),
+    # prolog_choice_attribute/3 (pl-trace.c:2718-2762, PL_get_choice :175-190, the pin 18168e62): PL_get_choice(A1) (an integer position of a live
+    # choice point, else existence_error(choice, A1); a non-integer: type_error(choice, A1), an unbound one the instantiation_error PL_error makes of
+    # a type error on a variable), PL_get_atom_ex(A2), then the key: parent (skipping CHP_DEBUG; fails without one), frame, type (choice_type_atom),
+    # pc (in_clause_jump's offset, else fail), clause (CHP_CLAUSE only), else domain_error(key, A2). The CURRENT choice's type depends on the surrounding
+    # query, so the rows pin what holds for any answer (a type atom of the five, an integer frame, an older parent) and two exact ones
+    # (mg_or: the `;`'s CHP_JUMP inside the clause, `jump` with an integer pc; mg_cc: the clause choice's NEXT clause, `clause-2`).
+    # MEASURE ON THE LANE (the live test compares every line with swipl): ca09 (`jump-pc`), ca10 (`clause-2`), ca08 (instantiation_error).
+    (
+        "ca01",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), memberchk(T, [jump, clause, top, catch, debug, foreign]), R = ok",
+        _mga("ok")
+    ),
+    ("ca02", raw"prolog_current_choice(C), prolog_choice_attribute(C, frame, F), integer(F), R = ok", _mga("ok")),
+    (
+        "ca03",
+        raw"prolog_current_choice(C), ( prolog_choice_attribute(C, parent, P) -> ( integer(P), P < C -> R = older ; R = other ) ; R = noparent )",
+        _mga("older")
+    ),
+    (
+        "ca04",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, foo, _)",
+        _mgraised(_mgc("domain_error", _mga("key"), _mga("foo")))
+    ),
+    (
+        "ca05",
+        raw"prolog_choice_attribute(foo, type, _)",
+        _mgraised(_mgc("type_error", _mga("choice"), _mga("foo")))
+    ),
+    (
+        "ca06",
+        raw"prolog_choice_attribute(123456789, type, _)",
+        _mgraised(_mgc("existence_error", _mga("choice"), _mgi(123456789)))
+    ),
+    (
+        "ca07",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, 1, _)",
+        _mgraised(_mgc("type_error", _mga("atom"), _mgi(1)))
+    ),
+    ("ca08", raw"prolog_choice_attribute(_, type, _)", _mgraised(_mga("instantiation_error"))),
+    ("ca09", raw"mg_or(R)", _mgc("-", _mga("jump"), _mga("pc"))),
+    ("ca10", raw"mg_cc(R)", _mgc("-", _mga("clause"), _mgi(2))),
+    (
+        "ca11",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, frame, F), prolog_frame_attribute(F, level, L), integer(L), R = ok",
+        _mga("ok")
+    ),
+    # a non-deterministic foreign call's choice point is a CHP_JUMP whose code is I_FREDO (`foreign`); the row's own catch/3 choice is the
+    # current one before any call (`catch`). MEASURE ON THE LANE: ca12 `swipl -g "between(1,3,_), prolog_current_choice(C), prolog_choice_attribute(C,type,T), print(T), nl" -t halt`
+    ("ca12", raw"between(1, 3, _), prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("foreign")),
+    ("ca13", raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("catch")),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -321,7 +375,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca13)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -331,7 +385,7 @@ end
         @test k == p
     end
     # not vacuous: the expectation holds raised errors, `ok` and answers, and one failing row (ge09)
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 12    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 17    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04 + ca04-ca08)
     @test count(l -> occursin(r"^t_\w+ *$", l), ex) == 1                   # ge09 fails
     @test count(l -> occursin("i-1)", l), ex) == 5                         # -1 in an answer (pu04's character, the EOF answers)
 end

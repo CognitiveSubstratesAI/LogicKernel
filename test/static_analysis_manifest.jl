@@ -1913,6 +1913,9 @@ function _manifest_index(T)
         (LK.clear_frame_vars, Tuple{LD, Int}, false),
         (LK.prolog_frame_attribute, Tuple{LD, Int, Int, Int}, false),
         (LK._frame_attribute_unknown, Tuple{LD, Int}, false),
+        (LK.PL_get_choice, Tuple{LD, Int}, false),           # DBG1: prolog_choice_attribute/3
+        (LK.in_clause_jump, Tuple{LD, Int}, false),
+        (LK.choice_type_atom, Tuple{LD, Int}, false),
         (LK.can_unify_cells, Tuple{LD, Int, Int, Int}, false),   # L1e e4 (\\=)
         (LK.unifiable_occurs_check_cells, Tuple{LD, Int, Int}, false),   # L1e e4 (unifiable/3)
         (LK.unify_all_trail_ptrs_cells, Tuple{LD, Int, Int}, false),
@@ -1928,6 +1931,7 @@ function _manifest_index(T)
                 LK.pl_unifiable3_va, LK.pl_throw1_va,
                 LK.pl_variant2_va, LK.pl_not_variant2_va, LK.pl_prolog_current_choice1_va,
                 LK.pl_prolog_frame_attribute3_va,                                    # DBG1
+                LK.pl_prolog_choice_attribute3_va,                                   # DBG1
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
