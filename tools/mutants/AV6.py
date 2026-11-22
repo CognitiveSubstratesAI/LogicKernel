@@ -28,11 +28,11 @@ A = "src/pl-attvar.jl"
 MUTANTS = [
     # ── pl-copyterm.c: can_share / must_copy_attvar / unshare_attvar ──
     dict(id="AV6-C1 can_share shares an attributed variable's compound as ground (KILL ct05f)", file=C, targets=TA,
-         old="    (isVar(c) || isAttVar(c)) && return false               # TAG_VAR, TAG_ATTVAR: no COPY_MARKED\n",
-         new="    isVar(c) && return false                                # TAG_VAR, TAG_ATTVAR: no COPY_MARKED\n"),
+         old="        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 && (flags & COPYING_ATTVAR) == 0\n",
+         new="        return true\n"),   # INT-MERGE-15 refit: the tip's can_share_cells (flags form); UNRUN
     dict(id="AV6-C2 must_copy_attvar never walks the attributes (KILL ct05v: a variable in an attribute and outside it)", file=C, targets=TA,
-         old="@inline must_copy_attvar(flags::Int)::Bool = (flags & COPY_ATTRS) != 0\n",
-         new="@inline must_copy_attvar(flags::Int)::Bool = false\n"),
+         old="@inline function must_copy_attvar(w::word, flags::Int, mode::Int)::Bool\n    if (flags & (COPY_ATTRS | COPY_MARKED)) != 0\n",
+         new="@inline function must_copy_attvar(w::word, flags::Int, mode::Int)::Bool\n    if false\n"),   # INT-MERGE-15 refit: PRIMS-B's three-argument form; UNRUN
     dict(id="AV6-C3 mark_for_copy's pop does not unshare_attvar (the attribute cells are shared ground; KILL ct05u)", file=C, targets=TA,
          old="                unshare_attvar_cells(ld, valPtr(pw & ~BOTH_MASK))\n",
          new="                nothing\n"),
@@ -73,8 +73,8 @@ MUTANTS = [
          old="                    t = attr + 1\n",
          new="                    t = attr\n"),
     dict(id="AV6-T4 copy_term does not TrailCyclic(from) (the original word is not restored; KILL ct05o)", file=C, targets=TA,
-         old="                    push!(ld.cp_lstack, f)                  # TrailCyclic(from)\n                    ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)\n",
-         new="                    ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)\n"),
+         old="                        push!(ld.cp_lstack, f)              # TrailCyclic(from)\n                        ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)\n",
+         new="                        ld.gstack[f] = consPtr(attr, STG_GLOBAL | TAG_ATTVAR)\n"),   # INT-MERGE-15 refit: the tip's indentation; UNRUN
     dict(id="AV6-T5 copy_term_nat: the shared attvar branch never recognises the copy (VAR_MARK; KILL ct06s)", file=C, targets=TA,
          old="                    if isVar(ld.gstack[p]) && (_cp_vm(ld, p) & _CPV_VARMARK) != 0   # *p == VAR_MARK\n",
          new="                    if false                                # *p == VAR_MARK\n"),

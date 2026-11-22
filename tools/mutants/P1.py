@@ -60,8 +60,8 @@ MUTANTS = [
          old="    if !(k == DU_CELL || k == DU_ATTVAR)                # !canBind(*p)\n        return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), A1) ? FTRUE : FFALSE\n",
          new="    if false\n        return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), A1) ? FTRUE : FFALSE\n"),
     dict(id="P1-A9 compound_name_arity/3 builds the compound one argument short (KILL p030, p047)", file=P, targets=TP,
-         old="    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)\n",
-         new="    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity == 0 ? 0 : arity - 1)\n"),
+         old="    ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :compound_name_arity3) || return FFALSE   # G1-GC safe point: compound_name_arity3\n    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)\n",
+         new="    ensureGlobalSpace(ld, 1 + arity, ALLOW_GC, :compound_name_arity3) || return FFALSE   # G1-GC safe point: compound_name_arity3\n    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity == 0 ? 0 : arity - 1)\n"),
     # ── compound_name_arguments/3 (pl-prims.c:3161) ──
     dict(id="P1-N1 compound_name_arguments/3 answers an improper list as an instantiation error (KILL p067)", file=P, targets=TP,
          old="            len == -1 &&\n                return PL_error(ld, ERR_TYPE, mk_sym(T, :list), list) ? FTRUE : FFALSE\n",

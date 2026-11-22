@@ -314,7 +314,7 @@ end'''),
          old='''                if isVar(ld.gstack[p2]) && (_cp_vm(ld, p2) & _CPV_VARMARK) != 0''',
          new='''                if false'''),
     dict(id="CT4 a compound with a variable below is shared (`same` never cleared)", file=CP, targets=T_COPY,
-         old='''        can_share_cells(ld, a) || return nothing''',
+         old='''        can_share_cells(ld, a, flags) || return nothing''',   # INT-MERGE-15 refit (PRIMS-B's flags argument); UNRUN
          new='''        nothing'''),
     # CT5 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
     # CT6 removed with the code it mutated (59a05eed); ledger: evidence/MUTREFIT/deleted_mutants.tsv
