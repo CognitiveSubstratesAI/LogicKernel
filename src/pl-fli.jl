@@ -1904,7 +1904,8 @@ function get_value_text(
     text = PL_get_text(ld, tmp, flags)
     text === nothing && return nothing
     PL_mb_text(text, flags) || return nothing
-    return (Vector{UInt8}(text.text), length(text.text))
+    bytes = Vector{UInt8}(text.text)
+    return (bytes, length(bytes))
 end
 
 # ORIGINAL (FLI-API): the code points of the canonical text `text`, in order.

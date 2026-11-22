@@ -11,6 +11,8 @@
 # PL_cvt_i_uchar, _PL_cvt_i_short, PL_cvt_i_int64, PL_cvt_i_uint64, PL_get_list_nchars, PL_get_nchars, PL_get_chars,
 # PL_cvt_encoding, uncachedCodeToAtom, cleanupCodeToAtom (PL_get_wchars, PL_unify_wchars, PL_unify_wchars_diff: skipped,
 # wip/clib-uri defines them).
+# group D: initUCSAtoms, isUCSAtom, get_atom_ptr_text, get_atom_text, get_string_text, compareUCSAtom, saveUCSAtom, loadUCSAtom,
+# blob_write_usc_atom, is_text_value, get_value_text, PL_get_text_as_atom.
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -728,6 +730,170 @@ end
     @test lk_name(LK.codeToAtom(_R, -1)) === :end_of_file
     @test LK.cleanupCodeToAtom() === nothing
     @test lk_name(LK.codeToAtom(_R, 98)) === :b                                   # still the same atom after the cleanup
+end
+
+"The atom value (`atom`) of the symbol `s` on `ld`."
+_fa_av(ld, s) = LK.atomValue(ld.atoms, LK._atom_word!(ld, _rs(s)))
+
+# LK-ONLY (pl-fli.c:832-840, :877-901): initUCSAtoms registers the blob type of wide text atoms (once, whatever the number of
+# calls); isUCSAtom tells a wide atom from a narrow or a reserved one; get_atom_ptr_text and get_atom_text give the canonical text
+# of a text atom — a wide one ENC_WCHAR with its length in code points, any other ISO Latin-1 — and nothing for a non-text atom.
+@testset "LK-ONLY: initUCSAtoms, isUCSAtom, get_atom_ptr_text and get_atom_text (pl-fli.c:832, :838, :877, :897)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    @test LK.initUCSAtoms(ld.atoms) === nothing
+    @test LK.initUCSAtoms(ld.atoms) === nothing                              # registering again adds nothing
+    reg = LK._blob_registration(ld.atoms, LK.ucs_atom)
+    @test reg !== nothing && reg.type === LK.ucs_atom && reg.padding == 4
+    @test count(r -> r.type === LK.ucs_atom, ld.atoms.types) == 1
+    wide, narrow, e = _fa_av(ld, "€"), _fa_av(ld, "abc"), _fa_av(ld, "é")
+    nilw = LK._atom_word!(ld, _rnil())
+    @test LK.isUCSAtom(wide) && !LK.isUCSAtom(narrow) && !LK.isUCSAtom(e)
+    @test !LK.isUCSAtom(LK.atomValue(ld.atoms, nilw))                        # the reserved [] is no wide atom
+    tx = LK.get_atom_ptr_text(wide)
+    @test tx.encoding === LK.ENC_WCHAR && tx.length == 1 && tx.canonical && collect(reinterpret(UInt32, tx.text)) == UInt32[0x20ac]
+    tx = LK.get_atom_ptr_text(narrow)
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical && tx.text == Vector{UInt8}("abc")
+    tx = LK.get_atom_text(ld.atoms, LK._atom_word!(ld, _rs("é")))
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 1 && tx.text == UInt8[0xe9]
+    tx = LK.get_atom_text(ld.atoms, LK._atom_word!(ld, _rs("")))
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 0
+    @test LK.get_atom_ptr_text(LK.atomValue(ld.atoms, nilw)) === nothing     # not PL_BLOB_TEXT
+    @test LK.get_atom_text(ld.atoms, nilw) === nothing
+end
+
+# LK-ONLY (pl-fli.c:905-917): get_string_text is the canonical text of a string: ISO Latin-1 where every character is below
+# 0x100 (isBString), else ENC_WCHAR; the length is in characters (swipl: string_length("a€", 2)).
+@testset "LK-ONLY: get_string_text (pl-fli.c:905)" begin
+    tx = LK.get_string_text(_rg("abc"))
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical && tx.text == Vector{UInt8}("abc")
+    tx = LK.get_string_text(_rg("é"))
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 1 && tx.text == UInt8[0xe9]
+    tx = LK.get_string_text(_rg("a€"))
+    @test tx.encoding === LK.ENC_WCHAR && tx.length == 2 && tx.canonical
+    @test collect(reinterpret(UInt32, tx.text)) == UInt32[0x61, 0x20ac]
+    tx = LK.get_string_text(_rg(""))
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 0
+    @test_throws ErrorException LK.get_string_text(_rs("abc"))               # no string: an error (DIVERGES, forced)
+end
+
+# LK-ONLY (pl-fli.c:921-947): compareUCSAtom orders two wide atoms by code point, then by length. Each expected sign is
+# swipl's compare/3 (10.1.20) on the same atoms; the last row is decided by the first code point, not by the lengths.
+@testset "LK-ONLY: compareUCSAtom (pl-fli.c:921)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    @test LK.compareUCSAtom(_fa_av(ld, "€a"), _fa_av(ld, "€b")) == -1
+    @test LK.compareUCSAtom(_fa_av(ld, "€b"), _fa_av(ld, "€a")) == 1
+    @test LK.compareUCSAtom(_fa_av(ld, "€a"), _fa_av(ld, "€a")) == 0
+    @test LK.compareUCSAtom(_fa_av(ld, "€"), _fa_av(ld, "€a")) == -1         # a prefix is the smaller
+    @test LK.compareUCSAtom(_fa_av(ld, "€a"), _fa_av(ld, "€")) == 1
+    @test LK.compareUCSAtom(_fa_av(ld, "Ā"), _fa_av(ld, "€")) == -1          # U+0100 < U+20AC
+    @test LK.compareUCSAtom(_fa_av(ld, "😀"), _fa_av(ld, "€")) == 1          # U+1F600 > U+20AC
+    @test LK.compareUCSAtom(_fa_av(ld, "€z"), _fa_av(ld, "😀")) == -1        # the first code point, not the length
+end
+
+# LK-ONLY (pl-fli.c:951-974): saveUCSAtom and loadUCSAtom write and read the .qlf form of a wide atom; the QLF reader and writer
+# are refused by name (owner LD2), so each raises NotPortedError naming it.
+@testset "LK-ONLY: saveUCSAtom and loadUCSAtom are refused by name (pl-fli.c:951, :963)" begin
+    ld, t = _fa_engine(_R[_rv(1)])
+    @test_throws LK.NotPortedError LK.saveUCSAtom(_fa_av(ld, "€"), nothing)
+    @test_throws LK.NotPortedError LK.loadUCSAtom(nothing)
+    e1 = try
+        LK.saveUCSAtom(_fa_av(ld, "€"), nothing)
+    catch e
+        e
+    end
+    e2 = try
+        LK.loadUCSAtom(nothing)
+    catch e
+        e
+    end
+    @test e1 isa LK.NotPortedError && occursin("LD2", e1.step) && occursin("saveUCSAtom", e1.what)
+    @test e2 isa LK.NotPortedError && occursin("LD2", e2.step) && occursin("loadUCSAtom", e2.what)
+end
+
+"`(rc, text)` of `blob_write_usc_atom(name, options)` with write `flags` on a memory stream (`rc`, the bytes written)."
+function _fa_ucs_out(gd, ld, name::String, flags::Int)
+    buf = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+    sz = Ref(0)
+    s = LK.Sopenmem(buf, sz, "w")
+    s.encoding = LK.ENC_UTF8
+    opts = LK.write_options(gd, ld, s)
+    opts.flags = flags
+    rc = LK.blob_write_usc_atom(name, opts)
+    LK.Sclose(s)
+    return rc, String(copy(buf[][1:sz[]]))
+end
+
+# LK-ONLY (pl-fli.c:809-814): blob_write_usc_atom is writeUCSAtom with 1 for success and -1 for failure. The texts are those of
+# swipl 10.1.20: write/1 gives a€, writeq/1 gives 'a€', '€a' and 'ab c€'; a stream that cannot be written to is the failure.
+@testset "LK-ONLY: blob_write_usc_atom (pl-fli.c:809)" begin
+    gd, ld = _fa_db()
+    @test _fa_ucs_out(gd, ld, "a€", 0) == (1, "a€")
+    @test _fa_ucs_out(gd, ld, "a€", LK.PL_WRT_QUOTED) == (1, "'a€'")
+    @test _fa_ucs_out(gd, ld, "€a", LK.PL_WRT_QUOTED) == (1, "'€a'")
+    @test _fa_ucs_out(gd, ld, "ab c€", LK.PL_WRT_QUOTED) == (1, "'ab c€'")
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(UInt8[0x61]), Ref(1), "r")     # an input stream
+    s.encoding = LK.ENC_UTF8
+    @test LK.blob_write_usc_atom("a€", LK.write_options(gd, ld, s)) == -1
+end
+
+# LK-ONLY (pl-fli.c:1721-1733): is_text_value is true for a string, for an atom where CVT_ATOM is set, and for an integer or a
+# rational where CVT_FLOAT is not set; false for any other type (a float is 5, a variable 1).
+@testset "LK-ONLY: is_text_value (pl-fli.c:1721)" begin
+    f0, fa, ff = UInt32(0), LK.CVT_ATOM, LK.CVT_FLOAT
+    @test LK.is_text_value(LK.PL_STRING, f0) && LK.is_text_value(LK.PL_STRING, ff)
+    @test !LK.is_text_value(LK.PL_ATOM, f0) && LK.is_text_value(LK.PL_ATOM, fa) && !LK.is_text_value(LK.PL_ATOM, ff)
+    @test LK.is_text_value(LK.PL_INTEGER, f0) && LK.is_text_value(LK.PL_INTEGER, fa) && !LK.is_text_value(LK.PL_INTEGER, ff)
+    @test LK.is_text_value(LK.PL_RATIONAL, f0) && !LK.is_text_value(LK.PL_RATIONAL, ff | fa)
+    @test !LK.is_text_value(5, f0 | fa) && !LK.is_text_value(1, fa | LK.CVT_INTEGER)   # PL_FLOAT, PL_VARIABLE
+    @test !LK.is_text_value(7, f0)                                           # PL_TERM
+end
+
+# LK-ONLY (pl-fli.c:1739-1753): get_value_text converts the term reference as the flags with the CVT bits REPLACED by `cvt` say
+# (`(flags & ~CVT_MASK) | cvt`): the CVT bits the caller's flags carry are dropped, REP_UTF8 stays. The answer is the UTF-8 bytes
+# and their count; nothing where the type is not among `cvt`.
+@testset "LK-ONLY: get_value_text (pl-fli.c:1739)" begin
+    ld, t = _fa_engine(_R[_rs("abc"), _rg("héllo"), _fa_k(42), _rf("f", _rs("a")), _rs("é")])
+    u8 = LK.REP_UTF8
+    both = LK.CVT_ATOM | LK.CVT_STRING | u8
+    @test LK.get_value_text(ld, t, LK.CVT_ATOM, u8) == (Vector{UInt8}("abc"), 3)
+    @test LK.get_value_text(ld, t, LK.CVT_STRING, both) === nothing          # the caller's CVT_ATOM is dropped
+    @test LK.get_value_text(ld, t + 1, LK.CVT_STRING, u8) == (Vector{UInt8}("héllo"), 6)   # the length is in bytes
+    @test LK.get_value_text(ld, t + 1, LK.CVT_ATOM, both) === nothing        # a string is no atom
+    @test LK.get_value_text(ld, t + 2, LK.CVT_INTEGER, u8) == (Vector{UInt8}("42"), 2)
+    @test LK.get_value_text(ld, t + 2, LK.CVT_ATOM, both) === nothing
+    @test LK.get_value_text(ld, t + 3, LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_INTEGER, u8) === nothing   # a compound
+    @test LK.get_value_text(ld, t + 4, LK.CVT_ATOM, u8) == (UInt8[0xc3, 0xa9], 2)
+    @test_throws LK.NotPortedError LK.get_value_text(ld, t, LK.CVT_ATOM, UInt32(0))   # PL_mb_text: only REP_UTF8
+end
+
+# LK-ONLY (pl-fli.c:2213-2236): PL_get_text_as_atom is the atom itself for an atom (whatever the flags), else the atom of the
+# text the flags allow — one text, one atom, a wide one above 0xff — and nothing for a variable, a compound or a type the
+# flags do not allow. DIVERGES (forced): a text with the character 0 raises AtomNotRepresentableError.
+@testset "LK-ONLY: PL_get_text_as_atom (pl-fli.c:2213)" begin
+    ld, t = _fa_engine(_R[_rs("abc"), _rg("xyz"), _fa_k(42), _rv(1), _rf("f", _rs("a")), _rg("a€"), _rnil(), _rv(2), _rv(3)])
+    @test LK.PL_put_list_codes(ld, t + 7, _fa_b("hi"))
+    @test LK.PL_put_string_nchars(ld, t + 8, 3, UInt8[0x61, 0x00, 0x62])
+    f0 = UInt32(0)
+    @test lk_name(LK.PL_get_text_as_atom(ld, t, f0)) === :abc                # an atom: itself, no flag needed
+    @test LK.PL_get_text_as_atom(ld, t + 6, f0) == LK.PL_get_atom(ld, t + 6)  # [] too
+    @test lk_name(LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_STRING)) === :xyz
+    @test LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_ATOM) === nothing         # a string, CVT_STRING not set
+    @test lk_name(LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_STRING)) === lk_name(LK.PL_new_atom(ld, _fa_b("xyz")))   # one text, one atom
+    @test lk_name(LK.PL_get_text_as_atom(ld, t + 2, LK.CVT_INTEGER)) === Symbol("42")
+    @test LK.PL_get_text_as_atom(ld, t + 2, LK.CVT_ATOM | LK.CVT_STRING) === nothing
+    @test LK.PL_get_text_as_atom(ld, t + 3, LK.CVT_ALL) === nothing          # a variable
+    @test LK.PL_get_text_as_atom(ld, t + 4, LK.CVT_ALL) === nothing          # a compound
+    w = LK.PL_get_text_as_atom(ld, t + 5, LK.CVT_STRING)
+    @test lk_name(w) === Symbol("a€") && LK.isUCSAtom(LK.atomValue(ld.atoms, LK._atom_word!(ld, w)))
+    @test lk_name(LK.PL_get_text_as_atom(ld, t + 7, LK.CVT_LIST)) === :hi    # a code list
+    @test LK.PL_get_text_as_atom(ld, t + 7, LK.CVT_STRING) === nothing
+    @test_throws LK.AtomNotRepresentableError LK.PL_get_text_as_atom(ld, t + 8, LK.CVT_STRING)   # a\0b
+    ex = try
+        LK.PL_get_text_as_atom(ld, t + 8, LK.CVT_STRING)
+    catch e
+        e
+    end
+    @test ex isa LK.AtomNotRepresentableError && ex.codes == UInt32[0x61, 0x00, 0x62]
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin

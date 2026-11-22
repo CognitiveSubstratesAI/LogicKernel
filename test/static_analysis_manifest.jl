@@ -1814,6 +1814,21 @@ function _manifest_index(T)
         (LK.PL_predicate, Tuple{GD, LD, Vector{UInt8}, Int, Nothing}, false),
         (LK.PL_predicate, Tuple{GD, LD, Vector{UInt8}, Int, Vector{UInt8}}, false),
         (LK.PL_predicate_info, Tuple{LK.Procedure{T}}, false),
+        # FLI-API group D (pl-fli.c): the wide-atom blob type's hooks, the text of atoms, strings and values
+        (LK.blob_write_usc_atom, Tuple{String, LK.write_options{T}}, false),
+        (LK.initUCSAtoms, Tuple{LK.atoms_t}, false),
+        (LK.isUCSAtom, Tuple{LK.atom}, false),
+        (LK.get_atom_ptr_text, Tuple{LK.atom}, false),
+        (LK.get_atom_text, Tuple{LK.atoms_t, UInt64}, false),
+        (LK.get_string_text, Tuple{T}, false),
+        (LK.compareUCSAtom, Tuple{LK.atom, LK.atom}, false),
+        (LK.saveUCSAtom, Tuple{LK.atom, Nothing}, false),
+        (LK.loadUCSAtom, Tuple{Nothing}, false),
+        (LK.is_text_value, Tuple{Int, UInt32}, false),
+        (LK.get_value_text, Tuple{LD, Int, UInt32, UInt32}, false),
+        (LK._fli_text_codes, Tuple{LK.PL_chars_t}, false),
+        (LK._fli_text_has_nul, Tuple{LK.PL_chars_t}, false),
+        (LK.PL_get_text_as_atom, Tuple{LD, Int, UInt32}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
