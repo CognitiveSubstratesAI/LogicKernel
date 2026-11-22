@@ -1102,13 +1102,17 @@ end
 
 # ORIGINAL (e5; audit D-0029 option (b)): the frozen region released when the OUTERMOST query ends.
 # DIVERGES: upstream keeps `frozen_bar` for the thread's life (pl-gvar.c `destroyGlobalVars`) and its
-# garbage collector frees a frozen ball once nothing references it; the kernel's collector (G1) keeps the frozen
-# region (`ld.frozen_bar` is a root it saves and relocates, `gvars_to_term_refs`, src/pl-gcmark.jl) and frees no ball,
-# so without this every throw would pin the global stack below its ball for the engine's life
-# (evidence/A-0029 in the audit channel). When the outermost query has ended (`ld.query == 0`) with no
+# garbage collector frees a frozen ball once nothing references it. The kernel's collector (G1, wired at chunk 8) does the
+# same: `ld.frozen_bar` is a root it saves and relocates (`gvars_to_term_refs`, `sweep_frozen_bar`), and the cells below the
+# bar that nothing references are freed and the bar moves down (test_ball_cells.jl's collector-on row; the loader's dead cells,
+# gTop 1270 -> 20 at the first collection). A throw therefore no longer pins the stack for the engine's life
+# (the reason for this function, evidence/A-0029 in the audit channel); what it still does is the D-0029 (b) behaviour the rows of test_ball_cells.jl,
+# test_attvar_words.jl and test_gvar_swipl.jl pin: at the outermost query's end the bar is 0 and `gTop` at the query's own
+# mark, without waiting for a collection. Retiring it (G1-open item E) is an open question, not decided here. When the
+# outermost query has ended (`ld.query == 0`) with no
 # exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
 # CLOSE, `gTop` to the query's own mark `target` — but first every live term reference and every open
-# foreign frame's mark is checked to point at or below `target` (raises otherwise). GOES with the collector.
+# foreign frame's mark is checked to point at or below `target` (raises otherwise).
 # ENG2 (audit D-0435 option (a)): the live term references are what upstream's collector marks as roots
 # from foreign code, pl-gc.c `mark_term_refs` (:1016-1055): the `size` references above each frame of the
 # `fli_context` chain. With no query open nothing else on the local stack is live; a frame's header and a
