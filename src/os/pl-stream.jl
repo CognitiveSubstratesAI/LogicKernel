@@ -391,6 +391,7 @@ function S_read_wrapped(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::
         return Sread_memfile(h, mem, from, size)
     s.functions == Siofunctions && h isa Sjulia_io &&
         return Sread_julia_io(h, mem, from, size)
+    s.functions == Sfilterfunctions && return Sread_filter(s, mem, from, size)
     return Sread_string(s, mem, from, size)
 end
 
@@ -403,6 +404,7 @@ function S_write(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
         return Swrite_julia_io(h, mem, from, size)
     s.functions == Sstderrfunctions && h isa IOSTREAM &&
         return Swrite_stderr(h, mem, from, size)
+    s.functions == Sfilterfunctions && return Swrite_filter(s, mem, from, size)
     return Swrite_string(s, mem, from, size)
 end
 
@@ -419,8 +421,45 @@ function S_close_wrapped(s::IOSTREAM)::Int
     s.functions == Smemfunctions && h isa memfile && return Sclose_memfile(h)
     s.functions == Siofunctions && h isa Sjulia_io && return Sclose_julia_io(h)
     s.functions == Sstderrfunctions && return 0                 # (`close` is NULL)
+    s.functions == Sfilterfunctions && return Sclose_filter(s)
     h isa IOSTREAM && return Sclose_string(h)
     return -1
+end
+
+# ORIGINAL (STREAMX): the three barrier functions below are where the open set's indirect call is, the kernel's counterpart of
+# `(*s->functions->read)(s->handle, ...)`; the call is one runtime dispatch on the `AbstractSfilter` in `s.filter` (the JET
+# gate's `JET_DISPATCH_ALLOWED`, test/static_analysis_manifest.jl).
+"Read through the filter functions of `s` (`Sfilterfunctions`): the count, 0 at end of file, -1 on error."
+function Sread_filter(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    f = s.filter
+    f === nothing && return -1
+    return Sfilter_read(f[], mem, from, size)::Int
+end
+
+"Write through the filter functions of `s` (`Sfilterfunctions`): the count, -1 on error."
+function Swrite_filter(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    f = s.filter
+    f === nothing && return -1
+    return Sfilter_write(f[], mem, from, size)::Int
+end
+
+"Close the filter functions of `s` (`Sfilterfunctions`): 0, or -1 on error."
+function Sclose_filter(s::IOSTREAM)::Int
+    f = s.filter
+    f === nothing && return 0
+    return Sfilter_close(f[])::Int
+end
+
+# PORT: SWI-Stream.h Scontrol_function as S_control
+# DIVERGES: upstream tests the function pointer at each call (`if (s->functions->control)`) and calls it with `s->handle`;
+# here one function does both: `SCONTROL_NONE` says there is no control function (every set but a filter that defines one).
+"Call the control function of `s`'s function set with `op` (an `SIO_*` action) and `arg`: its result, or `SCONTROL_NONE`."
+function S_control(s::IOSTREAM, op::Int, arg::Any)::Int
+    if s.functions == Sfilterfunctions
+        f = s.filter
+        f === nothing || return Sfilter_control(f[], op, arg)::Int
+    end
+    return SCONTROL_NONE
 end
 
 # ── buffers ─────────────────────────────────────────────────────────────────────────────────────
@@ -476,11 +515,15 @@ function Ssetbuffer(s::IOSTREAM, buffer::Union{Nothing, Vector{UInt8}}, size::In
 end
 
 # PORT: pl-stream.c Ssetenc
-# DIVERGES: the stream functions have no `control` function (upstream's SIO_SETENCODING call is
-# absent) and the old encoding is not returned (`old` is NULL at the one caller).
+# DIVERGES: only a filter's function set has a `control` function (SIO_SETENCODING, `S_control`) and the old encoding is
+# not returned (`old` is NULL at the one caller).
 "Set the encoding of `s`; ENC_OCTET clears SIO_TEXT, any other sets it; 0 (pl-stream.c)."
 function Ssetenc(s::IOSTREAM, enc::IOENC)::Int
     enc == s.encoding && return 0
+    if s.functions == Sfilterfunctions
+        rc = S_control(s, SIO_SETENCODING, Ref(enc))
+        rc != SCONTROL_NONE && rc != 0 && return -1
+    end
     s.encoding = enc
     if enc == ENC_OCTET
         s.flags &= ~SIO_TEXT
@@ -1073,10 +1116,18 @@ function Sfeof(s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c S__seterror
-# DIVERGES: no `SIO_LASTERROR` control (none of the function sets has a message of its own).
+# DIVERGES: only a filter's function set can have a message of its own (`SIO_LASTERROR`, `S_control`); `io_errno` is not
+# kept (no errno).
 "Mark `s` as in error, unless it is already (pl-stream.c)."
 function S__seterror(s::IOSTREAM)::Int
     (s.flags & SIO_FERR) != 0 && return 0       # error already set
+    if (s.flags & SIO_CLOSING) == 0 && s.functions == Sfilterfunctions   # s->handle is not already invalid
+        msg = Ref{Union{Nothing, String}}(nothing)
+        if S_control(s, SIO_LASTERROR, msg) == 0
+            Sseterr(s, SIO_FERR, msg[])
+            return 0
+        end
+    end
     Sseterr(s, SIO_FERR, nothing)
     return 0
 end
@@ -1101,28 +1152,31 @@ end
 const SIO_ERROR_FLAGS = SIO_FEOF | SIO_WARN | SIO_FERR | SIO_FEOF2 | SIO_TIMEOUT
 
 # PORT: pl-stream.c Sclearerr
-# DIVERGES: no filter streams (`downstream`), no pending exception.
-"Clear `s`'s error state (pl-stream.c)."
+# DIVERGES: no pending exception (`Sset_exception`).
+"Clear `s`'s error state, and that of every stream it filters (`downstream`) (pl-stream.c)."
 function Sclearerr(s::IOSTREAM)::Nothing
-    if s.magic == SIO_MAGIC
-        s.flags &= ~SIO_ERROR_FLAGS
-        s.io_errno = 0
-        Sseterr(s, UInt32(0), nothing)
+    us::Union{Nothing, IOSTREAM} = s
+    while us !== nothing && us.magic == SIO_MAGIC
+        us.flags &= ~SIO_ERROR_FLAGS
+        us.io_errno = 0
+        Sseterr(us, UInt32(0), nothing)
+        us = us.downstream
     end
     return nothing
 end
 
 # PORT: pl-stream.c Sseterr
-# DIVERGES: no filter streams (`upstream`).
-"Set `s`'s error flags (`SIO_WARN`, `SIO_FERR`) and message (pl-stream.c)."
+"Set the error flags (`SIO_WARN`, `SIO_FERR`) and message of `s` and of every filter on it (`upstream`) (pl-stream.c)."
 function Sseterr(s::IOSTREAM, flags::UInt32, message::Union{Nothing, String})::Int
-    if s.magic == SIO_MAGIC
-        s.flags = (s.flags & ~(SIO_WARN | SIO_FERR)) | flags
-        s.message = message
-        (s.flags & SIO_WARN) != 0 && @assert s.message !== nothing
-        return 0
+    us::Union{Nothing, IOSTREAM} = s
+    while us !== nothing && us.magic == SIO_MAGIC
+        us.flags = (us.flags & ~(SIO_WARN | SIO_FERR)) | flags
+        us.message = message
+        (us.flags & SIO_WARN) != 0 && @assert us.message !== nothing
+        us = us.upstream
     end
-    return -1
+    us === nothing && return 0
+    return -1                                   # errno = EINVAL
 end
 
 # PORT: pl-stream.c Sflush
@@ -1130,6 +1184,10 @@ end
 function Sflush(s::IOSTREAM)::Int
     if s.buffer != 0 && (s.flags & SIO_OUTPUT) != 0
         S__flushbuf(s) < 0 && return -1
+        if s.functions == Sfilterfunctions
+            rc = S_control(s, SIO_FLUSHOUTPUT, nothing)
+            rc != SCONTROL_NONE && rc < 0 && return -1
+        end
     end
     return 0
 end
@@ -1175,15 +1233,61 @@ function Snew(
     return s
 end
 
+# PORT: pl-stream.c Snew
+# DIVERGES: the functions are the `AbstractSfilter` `impl` (the context and the callbacks together, where upstream gives a context
+# and a table), `functions` must be `Sfilterfunctions`; the stream has no `handle`.
+"A new stream over the filter functions `impl` (a `Snew(ctx, flags, &myfunctions)` of a package such as zlib4pl.c) (pl-stream.c)."
+function Snew(impl::AbstractSfilter, flags::UInt32, functions::IOFUNCTIONS)::IOSTREAM
+    @assert functions == Sfilterfunctions
+    s = Snew(nothing, flags, functions)
+    s.filter = Ref{AbstractSfilter}(impl)
+    return s
+end
+
+# PORT: pl-stream.c Sset_filter
+# DIVERGES: `filter->timeout = parent->timeout` is absent (the kernel has no timeouts); `unallocStream` frees nothing (Julia's
+# GC owns the stream), `Srelease` only says whether it would have.
+"""
+Link `filter` to `parent` in a pipeline, or unlink the one on `parent` if `filter` is `nothing`: 0, or -1 (pl-stream.c).
+If `parent` is an output stream: application -> filter -> parent; if it is an input stream: parent -> filter -> application.
+The filter is referenced, so it is not freed, even if it is closed.
+"""
+function Sset_filter(parent::IOSTREAM, filter::Union{Nothing, IOSTREAM})::Int
+    parent.magic != SIO_MAGIC && return -1                      # errno = EINVAL
+    if filter !== nothing                                       # set filter
+        filter.magic != SIO_MAGIC && return -1                  # errno = EINVAL
+        Sreference(filter)
+        Sreference(parent)
+        @assert parent.upstream === nothing && filter.downstream === nothing
+        parent.upstream = filter
+        filter.downstream = parent
+    else                                                        # clear filter
+        f = parent.upstream
+        if f !== nothing
+            @assert f.downstream === parent
+            f.downstream = nothing
+            parent.upstream = nothing
+            Srelease(f)                                         # unallocStream() if erased and unreferenced
+            Srelease(parent)
+        end
+    end
+    return 0
+end
+
 # PORT: pl-stream.c S__close
-# DIVERGES: no locks, no filter streams, no close hooks (the closers call pl-file.c's `freeStream`,
-# src/os/pl-file.jl), no `reportStreamError` on a failed close (the closers do); the stream is
+# DIVERGES: no locks, no close hooks (the closers call pl-file.c's `freeStream`,
+# src/os/pl-file.jl), no `reportStreamError` on a failed close or on the lock of an upstream filter (the closers do); the stream is
 # marked closed, and `erased` when a reference is held.
 "Close `s`: 0, or -1 on error (pl-stream.c)."
 function S__close(s::IOSTREAM)::Int
     rval = 0
     s.magic != SIO_MAGIC && return -1           # already closed!?
     (s.flags & SIO_CLOSING) != 0 && return rval # recursive
+    if s.upstream !== nothing                   # a filter sits on this stream: it closes it
+        Sseterr(s, SIO_FERR, "Locked by upstream filter")
+        Sunlock(s)
+        return -1
+    end
     s.flags |= SIO_CLOSING
     rval = S__removebuf(s)
     if S_close(s) < 0
@@ -1224,10 +1328,14 @@ function Srelease(s::IOSTREAM)::Bool
 end
 
 # PORT: pl-stream.c Ssize
-# DIVERGES: the size of a file stream's Julia IO only (upstream asks the function set's `control`
-# `SIO_GETSIZE`, else seeks to the end); -1 for any other stream.
+# DIVERGES: the size of a file stream's Julia IO, or what a filter's `control` answers to `SIO_GETSIZE` (upstream asks every function
+# set's `control`, else seeks to the end); -1 for any other stream.
 "The size of the data object `s` reads or writes, or -1 (pl-stream.c)."
 function Ssize(s::IOSTREAM)::Int64
+    if s.functions == Sfilterfunctions
+        size = Ref(Int64(0))
+        S_control(s, SIO_GETSIZE, size) == 0 && return size[]
+    end
     h = s.handle
     if s.functions == Siofunctions && h isa Sjulia_io
         io = h.io

@@ -2064,15 +2064,18 @@ function _unify_sym(ld::PL_local_data{T}, t::term_t, name::Symbol)::Bool where {
 end
 
 # PORT: pl-file.c stream_file_name_propery
-# DIVERGES: no `downstream` chain (the kernel has no filter or pair streams): only `s`; the name is the
-# database's `stream_filenames` (see `fileNameStream`).
-"`file_name(Name)` of `s` (pl-file.c)."
+# DIVERGES: the name is the database's `stream_filenames` (see `fileNameStream`).
+"`file_name(Name)` of `s`, or of the first stream it filters (`downstream`) that has one (pl-file.c)."
 function stream_file_name_propery(
     ld::PL_local_data{T}, s::IOSTREAM, prop::term_t
 )::Bool where {T}
-    if s.magic == SIO_MAGIC && s.context != 0
-        name = fileNameStream(_query_gd(ld), s)
-        name === nothing || return PL_unify_atom(ld, prop, name)
+    us::Union{Nothing, IOSTREAM} = s
+    while us !== nothing && us.magic == SIO_MAGIC
+        if us.context != 0
+            name = fileNameStream(_query_gd(ld), us)
+            name === nothing || return PL_unify_atom(ld, prop, name)
+        end
+        us = us.downstream
     end
     return false
 end
