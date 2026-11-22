@@ -5549,6 +5549,27 @@ _manifest_json_plain() = (
     (LK.json_put_code, Tuple{LK.IOSTREAM, Int, Int}, false)
 )
 
+# PKG2 pieces — packages/yaml/yaml4pl.c's scalar classifier (src/pl-yaml.jl) and packages/pcre/pcre4pl.c's subject UTF-8 offset helpers
+# (src/pl-pcre.jl): plain functions on bytes and integers, no term type, checked once.
+_manifest_pkg2_plain() = (
+    (LK._yaml_byte, Tuple{Vector{UInt8}, Int}, false),
+    (LK._yaml_is_digit, Tuple{Int}, false),
+    (LK._yaml_is_nonzero_digit, Tuple{Int}, false),
+    (LK._yaml_is_odigit, Tuple{Int}, false),
+    (LK._yaml_is_xdigit, Tuple{Int}, false),
+    (LK.yaml_is_number, Tuple{Vector{UInt8}}, false),
+    (LK.yaml_is_null, Tuple{Vector{UInt8}}, false),
+    (LK.yaml_is_true, Tuple{Vector{UInt8}}, false),
+    (LK.yaml_is_false, Tuple{Vector{UInt8}}, false),
+    (LK.yaml_is_special_float, Tuple{Vector{UInt8}}, false),
+    (LK.yaml_implicit_tag, Tuple{Vector{UInt8}}, false),
+    (LK.re_utf8_skip_char, Tuple{Vector{UInt8}, Int}, false),
+    (LK.re_utf8_seek, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.re_char_offset, Tuple{Vector{UInt8}, Int, Int}, false),
+    (LK.re_bytep_to_charp, Tuple{LK.re_subject, Int}, false),
+    (LK.init_subject!, Tuple{LK.re_subject}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -6443,6 +6464,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_json(_M2)...,
     _manifest_json(_M3)...,
     _manifest_json_plain()...,
+    _manifest_pkg2_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,

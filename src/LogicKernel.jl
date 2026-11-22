@@ -118,6 +118,7 @@ include("pl-hashstream.jl")    # swipl-devel packages/clib/hash_stream.c — ope
 include("pl-zlib.jl")          # packages/zlib/zlib4pl.c — the carrier binding: the typed ccall wrappers of libz (Zlib_jll), the z_stream/gz_header records (ZLIB1 piece Z1), the filter stream (Z2), zopen/3 and zdebug/1 (Z3); reusable by the zip port; no UPSTREAM header: packages/zlib is a gitlink
 include("pl-json.jl")          # packages/json/json.c — json_read_number/3, json_skip_ws/3, json_write_string/2, json_write_indent/3 (JSON1; no UPSTREAM header: packages/json is a gitlink at the pin)
 include("pl-yaml.jl")          # packages/yaml/yaml4pl.c — the scalar classifier: is_number, is_null, is_true, is_false, is_special_float, implicit_tag (YAML1 piece 1; pure functions, no UPSTREAM header: packages/yaml is a gitlink)
+include("pl-pcre.jl")          # packages/pcre/pcre4pl.c — the subject UTF-8 offset helpers: re_subject, init_subject, utf8_seek, char_offset, bytep_to_charp (PCRE1 piece 1; pure functions, no UPSTREAM header: packages/pcre is a gitlink)
 include("pl-load.jl")          # swipl-devel src/pl-load.c — $activate_static_extension/1, the static-extension form (JSON1; the table of install functions)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
