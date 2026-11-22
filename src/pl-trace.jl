@@ -150,9 +150,19 @@ end
 
 # PORT: pl-trace.c pl_trace
 # (FRG("trace", 0, pl_trace, NOTRACE), pl-ext.c:140 at the pin 18168e62; pl-trace.c:2287-2290: `return tracemode(true, NULL);`)
-# DIVERGES: the local data is an argument; as for `pl_notrace`.
-"`trace/0` (pl-trace.c): switch the trace mode on (`tracemode(true, NULL)`), which also switches the debug mode on."
+# DIVERGES: the local data is an argument; as for `pl_notrace`. The kernel has no tracer (`tracePort` and the interactive prompt are DBG2's): upstream's
+# `trace/0` turns the trace mode on and its next visible port stops in the tracer. With no port visible (`'$visible'/2` & PORT_MASK == 0) the tracer
+# cannot stop and the call is upstream's `tracemode(true, NULL)`; with one visible it is refused by name BEFORE any state changes (audit D-0768 (2)), so a
+# program never runs believing it is traced. The refusal stays until DBG2 lands the tracer (docs/r2_owners.tsv).
+"`trace/0` (pl-trace.c): switch the trace mode on (`tracemode(true, NULL)`), which also switches the debug mode on; refused (`NotPortedError`, DBG2) while a port is visible."
 function pl_trace(ld::PL_local_data{T})::foreign_t where {T}
+    if (ld.debugstatus_visible & PORT_MASK) != 0
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :trace), "trace/0 with a visible port: the tracer (pl-trace.c tracePort)", "DBG2"
+            )
+        )
+    end
     return tracemode(ld, true, nothing) ? FTRUE : FFALSE
 end
 

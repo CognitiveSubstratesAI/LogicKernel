@@ -2500,10 +2500,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 384 | 0 | 38 | 3 | 1 |
-| refusal sites | 0 | 84 | 0 | 0 | 5 |
+| refusal sites | 0 | 85 | 0 | 0 | 5 |
 | Prolog flags | 66 | 13 | 20 | 0 | 33 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 649 | 97 | 92 | 3 | 39 |
+| **total** | 649 | 98 | 92 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2562,6 +2562,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | ATOM1 | 1 | 0 | 1 | `refusal an atom containing the character 0 (a Sy…` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | COV1 | 1 | 0 | 1 | `refusal coverage collection ('record_coverage': …` |
+| DBG2 | 1 | 0 | 1 | `refusal trace/0 with a visible port: the tracer …` |
 | LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
@@ -2581,7 +2582,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [38, 0, 20, 34]
-    line [0, 84, 13, 0]
+    line [0, 85, 13, 0]
 ```
 
 <!-- END GENERATED R2 status -->
