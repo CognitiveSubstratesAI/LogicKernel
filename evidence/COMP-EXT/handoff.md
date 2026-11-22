@@ -1,4 +1,64 @@
-# COMPEXT3 STATE (read first; the COMP-EXT2 text below is historic)
+# COMPEXT4 STATE (read first; COMPEXT3 and COMP-EXT2 below are history)
+Commit 2 (54381a53, `TEST: COMP-EXT rows and mutants`) DONE, no julia run, nothing pushed, `test_type_discipline.jl` and `warm.sh check` NOT run:
+- test/core_lang/test_compext_swipl.jl: rows cx01-cx64 (cx01-13 `$notrace/1`, cx14-21 `$predefine_foreign/1`, cx22-50 `$vmi_property/2`,
+  cx51-64 `$spy/1` + `$nospy/1`); `_CX_PINNED` = 65 lines (ok + 64) from swipl 10.1.20, TWO runs of the explicit pin binary (capped scope),
+  compared identical, by evidence/COMP-EXT/gen_rows.py (rewrites the test file in place; the program/wrapper/cases are parsed from it). cx40 and
+  cx58 fail on swipl (a bare line). The messages: the program's own `message_hook/3` clause records `got(Term)` (informational only) on BOTH sides and the
+  rows read it back; the kernel is observed a second time by `lk_install_message_collector!(kinds=(:informational,))` + `lk_take_messages!` in
+  the white-box testset (`spy(spw(_))`, `nospy(spw(_))`, once each, none for an idle `$nospy`). White-box: the debugger bits, SPY_ME cleared, P_FOREIGN set.
+  LK-ONLY testset: `thread_create/3` throws NotPortedError (step "TH1", what names `thread_create/3 (a second thread)`), a comment names TH1 as Phase 1
+  and the refusal as a sequencing step (D-0784). Every row is UNVERIFIED on the kernel (no julia): the gate decides.
+- Findings the pins show, to check on the kernel at the gate (each a likely mismatch, not yet seen): cx07/cx12: inside `$notrace/1` the debugging bit is off
+  (swipl reads 13 = 15 less 2) and after it the debugging bit is restored (cx07 reads 0); `$vmi_property` with an unbound property is an
+  instantiation_error (cx44) where the kernel's `PL_error(ERR_TYPE, ..., A2)` must turn a variable culprit into one; cx49/cx50: h_integer and i_usercall0 are
+  NOT instructions in swipl (existence_error); the kernel's table declares neither (grep of src/pl-vmi.jl code_info rows), so these two should agree.
+- Not in cost tables (test/pkgtest_costs.tsv, test/unit_costs.tsv): a new line `core_lang/test_compext_swipl.jl` is the landing's.
+- tools/mutants/COMPEXT.py: 30 mutants (NP-N1..N5 `$notrace/1`, PF-1/2, VM-1..9, SP-1..10, GF-1/2, TC-1/2), each "aimed by <rows>", `old` occurs
+  EXACTLY once (python3 -I count over MUTANTS), TARGETS = the new file + test_notrace_swipl.jl + test_bootpred3_swipl.jl + test_debug_flag_swipl.jl +
+  test/db/test_nth_clause_swipl.jl. Not run (CI runs the battery once).
+- Left: `warm.sh fmt` (the case tuples are written as the formatter writes them, not run), `warm.sh check`, the three-type run of the new file,
+  `tools/pkgtest_way.sh test/core_lang/test_compext_swipl.jl`, test_type_discipline.jl, then push `mutants/COMP-EXT` and `gate/comp-ext` at one SHA.
+
+## PLAN (separate steps, NOT started): `$fetch_vm/4`, `$xr_member/2`, B_THROW
+Upstream: swipl-devel 18168e62, copies in the scratchpad `compext/` (pl-comp.c, pl-vmi.c). Both predicates need ONE shared piece first: an OPERAND DECODER
+for a clause's code (the kernel's operands are table INDEXES, src/pl-vmi.jl header "OPERANDS"; upstream's are pointers/words), and a walk by `stepPC`
+(src/pl-comp.jl:5613-5616, already ported: `Code{T}(codes, literals, pc)`, `pc + 1 + codeTable(op).arguments`).
+1. STEP DEC1 (the decoder, ~1 piece): `unify_vmi(ld, t, bp)` = pl-comp.c:7889-8068 at the pin (`D_BREAK` -> `break(Instr)` with `replacedBreak`; zero-argument
+   instruction -> the name atom, LOWER-CASE as `lookup_vmi`; else `Name(Arg1..3)` with `PL_FUNCTOR_CHARS, ci->name`). Per operand kind (`ca1_name` order, the
+   kernel's `_CA1_NAMES` in src/pl-comp.jl):
+   - CA1_VAR/FVAR/CHP: `VARNUM(*bp++)` as an integer (kernel: `VARNUM`, src/pl-incl.jl:1602);
+   - CA1_INTEGER/JUMP: the signed word as int64; CA1_WORD: `code_get_word` (the kernel has no 2-word operand: a divergence to name, int64 from the one word);
+   - CA1_FLOAT: kernel operand = literal index -> the literal's float (DIVERGES: upstream reads CODES_PER_DOUBLE words);
+   - CA1_DATA: kernel operand = literal index -> `PL_unify_atomic` of the literal term (upstream: the word); CA1_STRING/MPZ/MPQ likewise (upstream
+     `globalIndirectFromCode`, c:8040-8043: kernel literal index);
+   - CA1_FUNC: kernel operand = `functor_operand` word (src/pl-comp.jl:1467; literal index | arity | functor index; the `$expr/n` case is literal 0) ->
+     `Name/Arity` (`unify_functor(.., GP_NAMEARITY)`: the kernel's `unify_functor` src/pl-comp.jl:3474 takes a `Definition`, so a functor variant is to add);
+   - CA1_MODULE: module INDEX -> `gd.modules[i].atom`; a 0 index (the clause's module, upstream NULL for I_DEPARTAM) leaves the cell unbound, as c:8000-8006;
+   - CA1_LPROC / CA1_PROC: index into the clause's procedure table (`clause.procedures[i].definition`) -> `Name/Arity` (LPROC, `functor` only) or the qualified
+     `unify_definition(MODULE_user, .., GP_QUALIFY|GP_NAMEARITY)` (PROC; src/pl-comp.jl:3497 takes a `head` and `thehead`, check its how-flags);
+   - CA1_CLAUSEREF: index into `codes_crefs` -> `clause(Ptr)` (`PL_POINTER`: the kernel's clause reference is a dbref: use the dbref constructor of src/pl-dbref.jl);
+   - CA1_FOREIGN: `dladdr` has no kernel counterpart: DIVERGES, `PL_put_pointer` fallback of c:8021-8024 (name the reason); CA1_AFUNC: the arithmetic function table
+     (`functorArithFunction`) is the kernel's `ar_*` table: look it up first.
+   Row source: `'$fetch_vm'` answers from swipl 10.1.20 for a small clause set (a fact, a rule with a call, a cut, an `is`), pinned twice as COMP-EXT.
+2. STEP FETCHVM (`$fetch_vm/4`, pl-comp.c:8151-8206, PL_FA_TRANSPARENT; registration c:9276): `PL_is_dbref(from)` (src/pl-dbref.jl:207) with `PL_get_clref` (:246) ->
+   `clause.codes`, `code_size`; else `get_functor(from, GF_PROCEDURE)` (src/pl-proc.jl:2065) + `resolveProcedure` (:271) -> `definition.codes` (the SUPERVISOR code,
+   null -> fail) and `supervisorLength(base)`, which the kernel LACKS (add, upstream pl-supervisor.c `supervisorLength`: the walk to the supervisor's last instruction; read it
+   there first). Errors: `PL_get_intptr_ex(offset)`, `domain_error(program_counter, Offset)` for offset <0 or >len, false at == len, `PL_unify_int64(NextPC, next-base)`.
+   Needs DEC1. Rows: `'$fetch_vm'(Clause, 0, N, I)` over an instruction stream of a pinned program; the error forms.
+3. STEP XRMEMBER (`$xr_member/2`, pl-comp.c:7697-7849, PL_FA_NONDETERMINISTIC; registration c:9282): enumerates (unbound Term; redo state `i = (pc<<3)+an`,
+   ForeignRedoInt) or tests (bound Term: atomic -> CA1_DATA/MODULE; functor -> CA1_FUNC with `fd != FUNCTOR_colon2`; else `get_procedure(.., GP_FINDHERE|GP_TYPE_QUIET)`
+   against CA1_PROC/LPROC via `wouldBindToDefinition`, c:7664-7693 at the pin, a walk up `module->supers` with `isCurrentProcedure`, `getUnknownModule`).
+   Every kind is the DEC1 operand, read per kind (kernel: literal index / functor_operand / module index / procedure index). The nondeterminism rides the kernel's NF1
+   foreign redo (`ForeignRedoInt`); `getUnknownModule(def->module) == UNKNOWN_FAIL`, `PROC_DEFINED` and `impl.any.defined` must be found in the kernel first
+   (CODEMAP; none were searched). Needs DEC1 for the enumeration order (an order a row can pin: `findall(X, '$xr_member'(Ref, X), L)`).
+4. B_THROW (pl-vmi.c:4955-4959 `VMI(B_THROW, 0, 0, ())`: `PL_raise_exception(consTermRef(argFrameP(lTop, 0)))` then `THROW_EXCEPTION`; the `b_throw` helper follows at
+   :4961-, with findCatcher/rewrite) is NOT declared in the kernel's code table (no `B_THROW` in src/pl-vmi.jl, none in src/pl-wam.jl) and `throw/1`'s path in the kernel
+   was NOT read by this step. First read: how the kernel's `throw/1` (and `I_CALLCLEANUP`'s) raise, then decide whether B_THROW is a table entry plus a run-loop case
+   (read pl-comp.c's emitter of it at the pin first) or stays refused by name. No outcome here.
+   Then `$vmi_property(b_throw, break(B))` / `argv([])` rows become possible (swipl: pin them first).
+Order: DEC1 -> FETCHVM -> XRMEMBER; B_THROW independent and last.
+
+# COMPEXT3 STATE (history; COMP-EXT2 text below it is older)
 Commit 1 (6468eeb7) DONE: thread_create/3 refusal, FRG entries $spy/$nospy/thread_create, meta list, manifest, owner row.
 NOT yet written: item 2 (rows file test/core_lang/test_compext_swipl.jl + tools/mutants/COMPEXT.py) and item 3 (the $fetch_vm/$xr_member/B_THROW plan).
 FOUND, FIXED (uncommitted at this line, folded into the rows commit): lookup_vmi (src/pl-comp.jl) matched the kernel's UPPER-CASE
