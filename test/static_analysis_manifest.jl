@@ -2313,6 +2313,8 @@ function _manifest_index(T)
         (LK.pl_start_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_end_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_compile_predicates1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_redefine_system_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # WRAPPERS-2
+        (LK.pl_predefine_foreign1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.mustBeVar, Tuple{LD, Int}, false),
         # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
         (LK.acquire_clause_blob, Tuple{GD, T}, false),

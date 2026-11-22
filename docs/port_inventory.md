@@ -120,7 +120,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-bisim.h` | code | `18168e629eab` | `src/pl-bisim.jl` | 0 | 0 |
 | swipl-devel `src/pl-builtin.h` | code | `18168e629eab` | `src/pl-incl.jl` | 10 | 1 |
 | swipl-devel `src/pl-codetable.c` | code | `18168e629eab` | `src/pl-vmi.jl` | 1 | 1 |
-| swipl-devel `src/pl-comp.c` | code | `18168e629eab` | `src/pl-comp.jl` | 160 | 82 |
+| swipl-devel `src/pl-comp.c` | code | `18168e629eab` | `src/pl-comp.jl` | 162 | 83 |
 | swipl-devel `src/pl-comp.h` | code | `18168e629eab` | `src/pl-comp.jl` | 1 | 0 |
 | swipl-devel `src/pl-cont.c` | code | `18168e629eab` | `src/pl-cont.jl` | 11 | 9 |
 | swipl-devel `src/pl-copyterm.c` | code | `18168e629eab` | `src/pl-copyterm.jl` | 25 | 16 |
@@ -339,7 +339,7 @@ checkout is pulled.
 | swipl-devel `src/pl-bisim.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-bisim.jl |
 | swipl-devel `src/pl-builtin.h` | `18168e629eab` | 0 | 3 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-codetable.c` | `18168e629eab` | 0 | 0 | 0 | src/pl-vmi.jl |
-| swipl-devel `src/pl-comp.c` | `18168e629eab` | 95 | 167 | 65 | src/pl-comp.jl |
+| swipl-devel `src/pl-comp.c` | `18168e629eab` | 96 | 167 | 66 | src/pl-comp.jl |
 | swipl-devel `src/pl-comp.h` | `18168e629eab` | 1 | 6 | 0 | src/pl-comp.jl |
 | swipl-devel `src/pl-cont.c` | `18168e629eab` | 9 | 11 | 9 | src/pl-cont.jl |
 | swipl-devel `src/pl-copyterm.c` | `18168e629eab` | 18 | 29 | 15 | src/pl-copyterm.jl |
@@ -438,7 +438,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **2907** | **5771** | **1698** | |
+| **total** | | **2908** | **5771** | **1699** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream

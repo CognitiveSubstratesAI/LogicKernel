@@ -4340,6 +4340,40 @@ function pl_end_aux2_va(
     return rc ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c redefine_system_predicate as pl_redefine_system_predicate1_va
+# (PRED_IMPL("redefine_system_predicate", 1, redefine_system_predicate, PL_FA_TRANSPARENT)) — pl-comp.c:5244-5265
+# DIVERGES: `lookupProcedure` always finds or makes the procedure, so upstream's failing `else` is not reachable here.
+"`redefine_system_predicate(:Head)` (pl-comp.c): abolish the (system) predicate of `Head` in the module and flag it redefined."
+function pl_redefine_system_predicate1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred = PL__t0
+    head = PL_new_term_ref(ld)
+    ok, mi = PL_strip_module(gd, ld, pred, 0, head)
+    ok || return FFALSE
+    nf = PL_get_functor(ld, head)
+    nf === nothing && return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), pred) ? FTRUE : FFALSE
+    m = gd.modules[mi]
+    proc = lookupProcedure(nf[1], nf[2], m)
+    abolishProcedure!(gd, ld, proc, m)
+    proc.definition.flags |= P_REDEFINED                # flag as redefined
+    return FTRUE
+end
+
+# PORT: pl-comp.c predefine_foreign as pl_predefine_foreign1_va
+# (PRED_IMPL("$predefine_foreign", 1, predefine_foreign, PL_FA_TRANSPARENT)) — pl-comp.c:5277-5286
+"`'\$predefine_foreign'(+PI)` (pl-comp.c): register `PI` as a foreign predicate without a function for it."
+function pl_predefine_foreign1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    proc = get_procedure(gd, ld, PL__t0, GP_NAMEARITY | GP_DEFINE)
+    proc === nothing && return FFALSE
+    proc.definition.flags |= P_FOREIGN
+    return FTRUE
+end
+
 # PORT: pl-comp.c compile_predicates as pl_compile_predicates1_va
 # (PRED_IMPL("compile_predicates", 1, compile_predicates, PL_FA_TRANSPARENT)) — pl-comp.c:5289-5316
 # DIVERGES: the unqualified context module (`PL_strip_module_ex(A1, &m, tail)` with `m` NULL: `contextModule`) is `user`, the
@@ -4389,10 +4423,17 @@ const PL_predicates_from_comp = (
     PL_extension("assertz", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("asserta", 2, pl_asserta2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension(
+        "redefine_system_predicate", 1, pl_redefine_system_predicate1_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
         "compile_predicates",
         1,
         pl_compile_predicates1_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "\$predefine_foreign", 1, pl_predefine_foreign1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,
