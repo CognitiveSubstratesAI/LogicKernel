@@ -2789,6 +2789,55 @@ function pl_atom_number2_va(
     return FFALSE
 end
 
+# PORT: pl-prims.c collation_key as pl_collation_key2_va
+# (PRED_IMPL("collation_key", 2, collation_key, 0))
+# DIVERGES: the locale is libc's current `LC_COLLATE` (`setlocale/3` sets it; the kernel's locale handling is owner CT1);
+# the text is `PL_get_text`'s code points in a NUL-ended `Vector{Cwchar_t}` (`PL_get_wchars`), and a NUL in it ends the
+# string for `wcsxfrm` as in C; the key is built as UTF-8 bytes (`PL_unify_wchars(A2, PL_STRING, …)`); a `wcsxfrm` return
+# of `(size_t)-1` (a text the locale cannot transform) fails where upstream's loop would grow its buffer without end; a key
+# character that is no code point (`VALID_CODE_POINT`: a weight of a locale's collation table) is refused by name,
+# `NotPortedError`, owner CT1. The buffer grows as upstream's: 256, then n+1, then doubled (see (*) in pl-prims.c).
+"`collation_key(+Atom, -Key)` (pl-prims.c): `Key` is a string that sorts as `Atom` does in the collation locale (`wcsxfrm`)."
+function pl_collation_key2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    t = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)
+    t === nothing && return FFALSE
+    s = Cwchar_t[Cwchar_t.(_text_code_points(t)); Cwchar_t(0)]      # wchar_t *s, NUL-ended
+    buflen = 256                                        # sizeof(buf)/sizeof(wchar_t) - WCSXFRM_BUFFER_OVERRUN (0 here)
+    inbuf = true                                        # o == buf
+    while true
+        o = Vector{Cwchar_t}(undef, buflen)
+        nraw = ccall(
+            (:wcsxfrm, LIBC), Csize_t, (Ptr{Cwchar_t}, Ptr{Cwchar_t}, Csize_t), o, s, buflen
+        )
+        nraw == typemax(Csize_t) && return FFALSE       # (size_t)-1: see DIVERGES
+        n = Int(nraw)
+        if n < buflen
+            b = UInt8[]
+            for i in 1:n
+                c = Int(o[i])
+                VALID_CODE_POINT(c) || throw(
+                    NotPortedError{Nothing}(
+                        nothing, "collation_key/2 with a key that is no code point",
+                        "owner CT1: the locale step"
+                    )
+                )
+                utf8_put_char(b, c)
+            end
+            key = PL_chars_t(b, n, ENC_UTF8, false)
+            return PL_unify_text(ld, A2, 0, key, PL_STRING) ? FTRUE : FFALSE
+        end
+        if inbuf                                        # o == buf: see (*)
+            buflen = n + 1
+            inbuf = false
+        else
+            buflen *= 2                                 # we get a nonsense return, so double
+        end
+    end
+end
+
 # PORT: pl-prims.c concat
 # DIVERGES: the texts are `PL_get_text`'s (UTF-8, not canonical for an atom or a string), so each is canonicalised
 # after it is got (upstream's are canonical already); the three lengths are field reads (`PL_text_length`), taken when
