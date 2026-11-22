@@ -88,17 +88,19 @@ end
 
 # PORT: pl-flag.c set_flag as _set_flag_number
 # DIVERGES: the `else if ( PL_get_number(value, &n) )` and the `type_error:` arms of upstream's `set_flag`, over the pooled number
-# `n` of the caller. `V_INTEGER` is the `Int64` range (src/pl-gmp.jl), the C `V_INTEGER`'s own.
+# `n` of the caller. The kernel's `V_INTEGER` holds every `Int64` (src/pl-gmp.jl) where the C `V_INTEGER` is the tagged range
+# (`PLMINTAGGEDINT..PLMAXTAGGEDINT`, +-2^56), the rest being `V_MPZ`: an `Int64` outside the tagged range takes the `V_MPZ` arm
+# (`representation_error(int64_t)`, the pin's answer at 2^56, -2^56-1 and the `Int64` limits).
 "The number and error arms of `set_flag/2` on the flag `f` and the pooled number `n` (pl-flag.c)."
 function _set_flag_number(
     ld::PL_local_data{T}, f::flag{T}, value::term_t, n::number
 )::Bool where {T}
     if PL_get_number(ld, value, n)                      # else if ( PL_get_number(value, &n) )
-        if n.type === V_INTEGER                         # case V_INTEGER:
+        if n.type === V_INTEGER && PLMINTAGGEDINT <= n.i <= PLMAXTAGGEDINT  # case V_INTEGER: (the tagged range)
             f.type = FLG_INTEGER                        # f->type = FLG_INTEGER
             f.i = n.i                                   # f->value.i = n.value.i
             return true
-        elseif n.type === V_MPZ                         # case V_MPZ:
+        elseif n.type === V_MPZ || n.type === V_INTEGER  # case V_MPZ: (an Int64 beyond the tagged range is V_MPZ upstream)
             return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))
         elseif n.type === V_FLOAT                       # case V_FLOAT:
             f.type = FLG_FLOAT                          # f->type = FLG_FLOAT
