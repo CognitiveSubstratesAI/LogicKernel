@@ -485,3 +485,10 @@ const PL_CREATE_THREAD_LOCAL = 0x0010
 # PORT: SWI-Prolog.h PL_CREATE_INCREMENTAL
 "`PL_assert()` flag: create the predicate incremental, for incremental tabling (SWI-Prolog.h:499 at 18168e629eab)."
 const PL_CREATE_INCREMENTAL = 0x0020
+
+# PORT: SWI-Prolog.h PL_BT_SAFE
+"`PL_backtrace` flag: do not try to print goals (SWI-Prolog.h)."
+const PL_BT_SAFE = 1
+# PORT: SWI-Prolog.h PL_BT_USER
+"`PL_backtrace` flag: only show user goals (SWI-Prolog.h)."
+const PL_BT_USER = 2

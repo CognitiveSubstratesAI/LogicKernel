@@ -2021,9 +2021,22 @@ function _manifest_index(T)
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,
                 LK.pl_atomic1_va, LK.pl_compound1_va, LK.pl_callable1_va,
                 LK.pl_nonequal2_va,
-                LK.pl_blob2_va
+                LK.pl_blob2_va,
+                # ATOM-API — pl-atom.c's blob_type_property/2, set_blob_type/2, current_atom/1,
+                # blob_released/1, '$complete_atom'/3 (src/pl-fli.jl)
+                LK.pl_blob_type_property2_va, LK.pl_set_blob_type2_va,
+                LK.pl_current_atom1_va,
+                LK.pl_blob_released1_va, LK.pl_complete_atom3_va
             )
         ]...,
+        # ATOM-API — the workers of those predicates and the refusals of the atom reference API (src/pl-fli.jl)
+        (LK.current_blob, Tuple{LD, Int64, Nothing, Int64, Int64}, false),
+        (LK.blob_type_from_name, Tuple{LD, Int64}, false),
+        (LK.unify_blob_property, Tuple{LD, Int64, LK.blob_registration, Int64}, false),
+        (LK.PL_register_atom, Tuple{LD, T}, false),
+        (LK.PL_unregister_atom, Tuple{LD, T}, false),
+        (LK._PL_debug_register_atom, Tuple{LD, T, String, Int64, String}, false),
+        (LK._PL_debug_unregister_atom, Tuple{LD, T, String, Int64, String}, false),
         # (L1c: they may reach the cold export on a compound — words at L1e, the FLI over cells)
         # (PL_is_blob is new with BLOB and allocates its String result: marked allocating, but NOT in
         # L1C_ALLOC_EXEMPT — that ratchet lists only what was allocation-free before L1c)
@@ -3126,6 +3139,26 @@ function _manifest_index(T)
         (LK.put_fastheap, Tuple{LD, LK.fastheap_term{T}, Int}, false),
         (LK.PL_put_frame, Tuple{LD, Int, Int}, false),
         (LK.get_procedure_resolve_namearity, Tuple{GD, LD, Int}, false),
+        (LK.get_procedure_create_namearity, Tuple{GD, LD, Int}, false),   # PROC-TRACE
+        (LK.pl_cgc_params6_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_default_predicate2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_copy_predicate_clauses2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.remoduleClause, Tuple{GD, C, MOD, MOD}, false),
+        # PROC-TRACE — pl-trace.c's context API, the backtrace and the refusals (src/pl-trace.jl), clauseNo (prevPC, is_meta_call, isDebugFrame: DBG1's rows above)
+        (LK.PL_get_context, Tuple{LD, Int}, false),
+        (LK.PL_step_context, Tuple{LK.pl_context_t{T}}, false),
+        (LK.PL_describe_context, Tuple{LK.pl_context_t{T}, Int}, false),
+        (LK._describe_context, Tuple{GD, LD, LK.pl_context_t{T}}, false),
+        (LK._context_copy, Tuple{LK.pl_context_t{T}}, false),
+        (LK._onStackLocal, Tuple{LD, Int}, false),
+        (LK.clauseNo, Tuple{GD, C, LK.gen_t}, false),
+        (LK._show_frame, Tuple{LD, Int, Int}, false),
+        (LK.writeContextFrame, Tuple{LD, LK.IOSTREAM, LK.pl_context_t{T}, Int}, false),
+        (LK._PL_backtrace, Tuple{LD, LK.IOSTREAM, Int, Int}, false),
+        (LK.PL_backtrace, Tuple{LD, Int, Int}, false),
+        (LK._debugger_refused, Tuple{LD, String}, false),
+        (LK.PL_interrupt, Tuple{LD, Int}, false),
+        (LK.pl_prolog_interrupt0_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._assertDefinition!, Tuple{GD, LD, D, C, Int}, false),
         (LK._assertDefinition!, Tuple{GD, LD, D, C, CR}, false),
         (LK.retractClauseDefinition!, Tuple{GD, LD, D, C, Bool}, false),
@@ -6521,6 +6554,12 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._blob_registration, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
     (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t}, false),
     (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t, UInt64}, false),
+    (LK.blob_registration, Tuple{LK.PL_blob_t, Int, Int, UInt64}, false),   # ATOM-API
+    (LK.PL_find_blob_type, Tuple{LK.atoms_t, String}, false),               # ATOM-API (pl-atom.c:624)
+    (LK.add_type_live, Tuple{LK.blob_registration, LK.atom}, false),        # ATOM-API (pl-atom.c:258)
+    (LK.global_atom, Tuple{LK.atoms_t, LK.atom}, false),                    # ATOM-API ($complete_atom/3)
+    (LK.extendAtom, Tuple{LK.atoms_t, Vector{UInt8}}, false),               # ATOM-API ($complete_atom/3)
+    (LK.ATOM_REF_COUNT, Tuple{UInt32}, true),                               # ATOM-API
     (LK.initDBRef!, Tuple{LK.atoms_t}, false),                          # R2 D1 (pl-dbref.c)
     (LK._clref_bytes, Tuple{Int}, false),
     (LK.allocateAtomBlock, Tuple{LK.atoms_t, Int}, false),

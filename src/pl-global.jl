@@ -350,6 +350,9 @@ mutable struct PL_global_data{T}
     const mutexes::Dict{UInt64, pl_mutex{T}}                    # thread.mutexTable: the user mutexes by the `sym_key` of their id (pl-mutex.c; MUTEX)
     mutex_serial::Int                                           # the last creation number handed out to a mutex (MUTEX; the payload of an anonymous mutex's blob)
     const flags_table::Dict{word, flag{T}}                      # flags.table: the key's word -> its `flag` (pl-flag.c get_flag/2, set_flag/2; FL1)
+    clauses_cgc_space_factor::Int                               # clauses.cgc_space_factor: clause GC space factor, `\$cgc_params/6` (pl-setup.c:180; default 8)
+    clauses_cgc_stack_factor::Float64                           # clauses.cgc_stack_factor: clause GC stack factor (pl-setup.c:181; default 0.03)
+    clauses_cgc_clause_factor::Float64                          # clauses.cgc_clause_factor: clause GC clause factor (pl-setup.c:182; default 1.0)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with

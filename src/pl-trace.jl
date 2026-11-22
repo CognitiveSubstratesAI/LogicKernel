@@ -17,6 +17,8 @@
 # Since DBG1's first piece: `prolog_frame_attribute/3` and its helpers (`PL_get_frame`, `isDebugFrame`, `alternativeFrame`, …), over the
 # kernel's frame, choice-point and query pools. Since DBG1's second piece: `prolog_choice_attribute/3` (`PL_get_choice`, `in_clause_jump`,
 # `choice_type_atom`).
+# Since PROC-TRACE: the C API's view of the stack, `PL_get_context`, `PL_step_context`, `PL_describe_context` and `PL_backtrace` (the
+# `PL_BT_SAFE` branch; `PL_BT_USER` through `isDebugFrame`), with `clauseNo`; `PL_interrupt` and `prolog_interrupt/0` are refused by name (DBG2).
 
 # PORT: pl-trace.c PL_unify_frame
 "Unify `t` with frame `fr`'s position, or `none` for no frame (pl-trace.c)."
@@ -210,6 +212,143 @@ function pl_prolog_current_choice1_va(
         return PL_unify_choice(ld, A1, ch) ? FTRUE : FFALSE
     end
     return FFALSE
+end
+
+# ── the C API's view of the stack: contexts, their description, the backtrace (pl-trace.c:1337-1769) ──────────────────────────
+# ORIGINAL (PROC-TRACE): upstream's `pl_context_t` (SWI-Prolog.h:1563; SWI-Prolog.h is not among this file's UPSTREAM headers, and
+# src/SWI-Prolog.jl comes before the local data, whose type the struct holds): the engine, the query frame, the local frame
+# and the continuation point `PL_get_context` and `PL_step_context` walk. `qf` and `fr` are indexes (0 = NULL), `pc` is `nothing`
+# for NULL.
+"A position in the stack `PL_get_context` hands out and `PL_step_context` walks: engine, query, frame, program counter (SWI-Prolog.h `pl_context_t`)."
+mutable struct pl_context_t{T}
+    ld::PL_local_data{T}
+    qf::Int                             # query frame (an index; 0 = NULL)
+    fr::Int                             # local frame (an index; 0 = NULL)
+    pc::Union{Nothing, Code{T}}         # the continuation point in `fr`'s caller's clause (nothing = NULL)
+end
+
+# ORIGINAL (PROC-TRACE): a copy of the struct (C assigns `pl_context_t` by value: `from = ctx`).
+"A copy of the context `c`."
+_context_copy(c::pl_context_t{T}) where {T} = pl_context_t{T}(c.ld, c.qf, c.fr, c.pc)
+
+# ORIGINAL (PROC-TRACE): upstream's `onStack(local, fr)` (pl-incl.h), as `PL_unify_frame` tests it: `fr` is a live frame record, its
+# position below `lTop`.
+"True when the frame index `fr` is a frame on the local stack."
+_onStackLocal(ld::PL_local_data{T}, fr::Int)::Bool where {T} =
+    1 <= fr <= length(ld.frames) && 0 <= ld.frames[fr].base < ld.lTop
+
+# PORT: pl-trace.c PL_get_context
+# DIVERGES: the context is returned (upstream fills `*c` and returns `HAS_LD`, which is always true here: the engine is `ld`);
+# `thread_id` is ignored as upstream's (only the calling thread's stack can be taken).
+"The context of the innermost frame of `ld`: its query, the query's saved frame (else the environment frame) and program counter (pl-trace.c)."
+function PL_get_context(ld::PL_local_data{T}, thread_id::Int)::pl_context_t{T} where {T}
+    qf = ld.query
+    fr = ld.environment_frame
+    pc = nothing
+    if qf != 0
+        q = ld.queries[qf]
+        q.registers_fr != 0 && (fr = q.registers_fr)
+        q.registers_pc.pc != 0 && (pc = q.registers_pc)
+    end
+    return pl_context_t{T}(ld, qf, fr, pc)
+end
+
+# PORT: pl-trace.c PL_step_context
+"Step the context `c` to the frame that called its frame (to the query's parent frame from a top frame); false at the end (pl-trace.c)."
+function PL_step_context(c::pl_context_t{T})::Bool where {T}
+    if c.fr != 0
+        ld = c.ld
+        _onStackLocal(ld, c.fr) || return false
+        f = ld.frames[c.fr]
+        if f.parent != 0
+            pc = f.programPointer
+            c.pc = pc.pc == 0 ? nothing : pc
+            c.fr = f.parent
+        else
+            c.pc = nothing
+            c.qf = queryOfFrame(ld, c.fr)
+            c.fr = parentFrame(ld, c.fr)
+        end
+    end
+    return c.fr != 0
+end
+
+# ORIGINAL (PROC-TRACE): upstream's `clauseNo(cl, gen)` (pl-util.c:262; pl-util.c is not among this file's UPSTREAM headers): the
+# index of `cl` in its predicate's clause chain at generation `gen` (0: the current one), -1 when it is not visible. As upstream, the
+# count `i` advances for every clause of the chain, visible or not. `gd` is an argument (upstream: GD); no `acquire_def`.
+"The position of `cl` in its predicate's clause chain at generation `gen` (0: now), or -1 (pl-util.c)."
+function clauseNo(gd::PL_global_data{T}, cl::Clause{T}, gen::gen_t)::Int where {T}
+    def = cl.predicate
+    if gen == 0
+        gen = global_generation(gd)
+    end
+    i = 1
+    cref = def.impl_clauses.first_clause
+    while cref !== nothing
+        c = cref.clause::Clause{T}
+        if visibleClause(c, gen, gd.reload_generation) && c === cl
+            return i
+        end
+        i += 1
+        cref = cref.next
+    end
+    return -1
+end
+
+# ORIGINAL (PROC-TRACE): the text `PL_describe_context` formats, as a String (see `PL_describe_context`).
+"The description of the context `c`'s frame: `[Level] Predicate [PC=n in ...]`, or the empty text for no frame."
+function _describe_context(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, c::pl_context_t{T}
+)::String where {T}
+    fr = c.fr
+    fr == 0 && return ""
+    if !_onStackLocal(ld, fr)
+        return string("<invalid frame reference ", fr, ">")
+    end
+    f = ld.frames[fr]
+    level = Int(levelFrame(f))
+    def = f.predicate
+    def === nothing && return string("[", level, "] <no predicate>")
+    head = string("[", level, "] ", _autoload_predicate_name(gd, def), " ")
+    pc = c.pc
+    if pc !== nothing && pc.codes === def.codes && 1 <= pc.pc <= length(def.codes)
+        return string(head, "[PC=", pc.pc - 1, " in supervisor]")
+    end
+    if (def.flags & P_FOREIGN) == 0
+        if f.clause !== nothing
+            cl = f.clause.clause::Clause{T}
+            pcn = -1
+            if pc !== nothing && pc.codes === cl.codes && 1 <= pc.pc <= length(cl.codes)
+                pcn = pc.pc - 1
+            end
+            if def === gd.procedures_dc_call_prolog0.definition
+                return string(head, "[PC=", pcn, " in top query clause]")
+            end
+            return string(head, "[PC=", pcn, " in clause ", clauseNo(gd, cl, gen_t(0)), "]")
+        end
+        return string(head, "<no clause>")
+    end
+    return string(head, "<foreign>")
+end
+
+# PORT: pl-trace.c PL_describe_context
+# DIVERGES: the text and the byte count are returned (upstream fills `buf` and returns the count: the bytes `snprintf` would have
+# written, the text itself cut to `len-1` bytes; upstream's `len -= printed` wraps for a name longer than the buffer, here the whole text
+# is cut once); the program counter offsets are the kernel's 0-based `pc - 1`, so they differ from swipl's wherever the compiler's code
+# does; an invalid frame is named by its pool index, not an address. `predicateName` is `_autoload_predicate_name`.
+"""
+    PL_describe_context(c, len) -> (text, n)
+
+Describe the frame of context `c` as `[Level] Name/Arity [PC=n in supervisor | in top query clause | in clause k]`,
+`<no clause>` or `<foreign>`: `text` cut to `len-1` bytes, `n` the byte count of the whole description (pl-trace.c).
+"""
+function PL_describe_context(c::pl_context_t{T}, len::Int)::Tuple{String, Int} where {T}
+    ld = c.ld
+    full = _describe_context(_query_gd(ld), ld, c)
+    n = ncodeunits(full)
+    len <= 0 && return ("", n)
+    n < len && return (full, n)
+    return (String(codeunits(full)[1:(len - 1)]), n)
 end
 
 # PORT: pl-trace.c PL_get_frame
@@ -756,8 +895,132 @@ function pl_prolog_choice_attribute3_va(
     return PL_error(ld, ERR_DOMAIN, mk_sym(T, :key), A2) ? FTRUE : FFALSE
 end
 
+# ORIGINAL (PROC-TRACE): the named refusal of the interactive debugger's entries, owner DBG2: `interruptHandler` (pl-trace.c:1928-2059:
+# reads a key from the terminal, `break`, `trace`, `exitFromDebugger`, and the toplevel unwinding) behind `PL_interrupt` and `prolog_interrupt/0`,
+# and `writeFrameGoal` (the tracer's goal writer) behind the non-`PL_BT_SAFE` branch of `PL_backtrace`.
+function _debugger_refused(ld::PL_local_data{T}, what::String) where {T}
+    throw(NotPortedError{T}(mk_sym(T, :debugger), what, "DBG2"))
+end
+
+# PORT: pl-trace.c writeContextFrame
+# DIVERGES: the `PL_BT_SAFE` branch writes the description (`PutString`, pl-write.c: each byte a character); the other branch
+# (`writeFrameGoal`) is refused by name, owner DBG2.
+"Write the frame of context `ctx` to `out`: its description under `PL_BT_SAFE` (pl-trace.c)."
+function writeContextFrame(
+    ld::PL_local_data{T}, out::IOSTREAM, ctx::pl_context_t{T}, flags::Int
+)::Nothing where {T}
+    if (flags & PL_BT_SAFE) != 0
+        buf, _ = PL_describe_context(ctx, 256)
+        PutString(string("  ", buf, "\n"), out)
+    else
+        _debugger_refused(
+            ld, "PL_backtrace without PL_BT_SAFE: the frame goal writer writeFrameGoal (pl-trace.c:1353)"
+        )
+    end
+    return nothing
+end
+
+# ORIGINAL (PROC-TRACE): upstream's `SHOW_FRAME(fr)` macro of `_PL_backtrace` (pl-trace.c:1366).
+"True when the backtrace shows frame `fr`: a debug frame, or any frame unless `PL_BT_USER` is in `flags`."
+_show_frame(ld::PL_local_data{T}, fr::Int, flags::Int)::Bool where {T} =
+    isDebugFrame(ld, fr, 0) || (flags & PL_BT_USER) == 0
+
+# PORT: pl-trace.c _PL_backtrace
+# DIVERGES: `gc_status.active` is not kept (no collection runs while a backtrace is taken, so the flags stay as given), and
+# `startCritical`/`endCritical` (no signals defer here) are left out; `PL_get_context` always succeeds, so upstream's `No stack??`
+# branch cannot arise; `gd` is `_query_gd(ld)`.
+"Write a backtrace of `depth` frames (negative: the `-depth` outermost) of the stack of `ld` to `out`; `flags` is `PL_BT_SAFE` and/or `PL_BT_USER` (pl-trace.c)."
+function _PL_backtrace(
+    ld::PL_local_data{T}, out::IOSTREAM, depth::Int, flags::Int
+)::Nothing where {T}
+    ctx = PL_get_context(ld, 0)
+    def = nothing
+    same_proc = 0
+    rctx = _context_copy(ctx)                       # recursive context
+
+    if SYSTEM_MODE(ld)
+        flags &= ~PL_BT_USER
+    end
+
+    if depth < 0                                    # depth < 0: top depth frames
+        from = _context_copy(ctx)
+        depth = -depth
+        skip = depth
+        while PL_step_context(ctx)
+            if _show_frame(ld, ctx.fr, flags) && (skip -= 1) <= 0
+                break
+            end
+        end
+        while PL_step_context(ctx)
+            if _show_frame(ld, ctx.fr, flags)
+                while true                          # do { PL_step_context(&from) } while( !SHOW_FRAME(from.fr) )
+                    PL_step_context(from)
+                    _show_frame(ld, from.fr, flags) && break
+                end
+            end
+        end
+        ctx = from
+    end
+
+    while depth > 0 && ctx.fr != 0
+        frame = ld.frames[ctx.fr]
+        if frame.predicate === def
+            same_proc += 1
+            if same_proc >= 10
+                if same_proc == 10
+                    PutString("    ...\n    ...\n", out)
+                end
+                rctx = _context_copy(ctx)
+                PL_step_context(ctx)                # the for-loop's step, on `continue` too
+                continue
+            end
+        else
+            if same_proc >= 10
+                if isDebugFrame(ld, rctx.fr, 0) || (flags & PL_BT_USER) == 0
+                    writeContextFrame(ld, out, rctx, flags)
+                    depth -= 1
+                end
+                same_proc = 0
+            end
+            def = frame.predicate
+        end
+
+        if _show_frame(ld, ctx.fr, flags)
+            writeContextFrame(ld, out, ctx, flags)
+            depth -= 1
+        end
+        PL_step_context(ctx)
+    end
+    return nothing
+end
+
+# PORT: pl-trace.c PL_backtrace
+# DIVERGES: `ld` is an argument; the stream is `Suser_error(ld)`.
+"Write a backtrace of `depth` frames to `user_error` (pl-trace.c); see `_PL_backtrace`."
+PL_backtrace(ld::PL_local_data{T}, depth::Int, flags::Int) where {T} =
+    _PL_backtrace(ld, Suser_error(ld)::IOSTREAM, depth, flags)
+
+# PORT: pl-trace.c PL_interrupt
+# DIVERGES: refused by name, owner DBG2 (see `_debugger_refused`): the body is `interruptHandler`, the interactive debugger.
+"`PL_interrupt(sig)`: refused by name, the interactive `interruptHandler` is left to DBG2 (pl-trace.c)."
+function PL_interrupt(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
+    _debugger_refused(ld, "PL_interrupt: the interactive interruptHandler (pl-trace.c:1928-2059)")
+end
+
+# PORT: pl-trace.c prolog_interrupt as pl_prolog_interrupt0_va
+# (PRED_IMPL("prolog_interrupt", 0, prolog_interrupt, PL_FA_NOTRACE))
+# DIVERGES: refused by name, owner DBG2 (see `PL_interrupt`).
+"`prolog_interrupt/0`: refused by name, the interactive `interruptHandler` is left to DBG2 (pl-trace.c)."
+function pl_prolog_interrupt0_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    PL_interrupt(ld, 2)
+    return FFALSE
+end
+
 # PORT: pl-trace.c BeginPredDefs as PL_predicates_from_trace
-# DIVERGES: the ported entries only (upstream's table also has the other debugger predicates, pl-trace.c:2830-2840).
+# DIVERGES: the ported entries only (upstream's table also has the other debugger predicates, pl-trace.c:2830-2840); `prolog_interrupt/0`
+# is refused by name (PROC-TRACE).
 "pl-trace.c's registration table (`BeginPredDefs(trace)`): the ported entries."
 const PL_predicates_from_trace = (
     PL_extension("prolog_current_choice", 1, pl_prolog_current_choice1_va, PL_FA_VARARGS),
@@ -766,6 +1029,9 @@ const PL_predicates_from_trace = (
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension("prolog_choice_attribute", 3, pl_prolog_choice_attribute3_va, PL_FA_VARARGS),    # (pl-trace.c:2755)
+    PL_extension(
+        "prolog_interrupt", 0, pl_prolog_interrupt0_va, PL_FA_NOTRACE | PL_FA_VARARGS
+    )                                               # (pl-trace.c:2839, refused by name)
 )
 
 # PORT: pl-trace.h DBG_ALL

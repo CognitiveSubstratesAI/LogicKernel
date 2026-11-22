@@ -14,6 +14,7 @@ core_lang/test_acyclic_cells.jl	5.9
 core_lang/test_arith_cells.jl	105.2
 core_lang/test_arith_swipl.jl	194.0
 core_lang/test_assert_cells.jl	97.1
+core_lang/test_atom_api_swipl.jl	3.0
 core_lang/test_atom_table.jl	3.0
 core_lang/test_atom_words.jl	0.7
 core_lang/test_bagof_swipl.jl	10.4

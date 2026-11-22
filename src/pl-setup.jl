@@ -704,7 +704,10 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         thread_state{T}(),                      # thread: no engine yet (TH1 engines)
         Dict{UInt64, pl_mutex{T}}(),            # mutexes: no user mutex (initMutexes: newHTableWP(16); MUTEX)
         0,                                      # mutex_serial: none handed out
-        Dict{word, flag{T}}()                   # flags_table: initFlags's newHTableWP, empty (pl-flag.c; FL1)
+        Dict{word, flag{T}}(),                  # flags_table: initFlags's newHTableWP, empty (pl-flag.c; FL1)
+        8,                                      # clauses_cgc_space_factor: pl-setup.c:180
+        0.03,                                   # clauses_cgc_stack_factor: pl-setup.c:181
+        1.0                                     # clauses_cgc_clause_factor: pl-setup.c:182
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

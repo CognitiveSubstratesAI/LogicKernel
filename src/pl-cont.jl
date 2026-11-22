@@ -106,8 +106,8 @@ end
 # choice-point slot already holds `consInt` of the choice's position (C_IFTHENELSE, C_SOFTIF, …), so
 # `consInt(argFrame(fr, i))` is that word. The clause blob is not unregistered (no atom GC);
 # `ensureGlobalSpace` is a call to the stack's growth. `Sdprintf` is `_qlf_Sdprintf!` (the text is
-# collected on `ld.messages`); `clauseNo(cl, 0)` and `PL_backtrace(10,1)` are left to DBG1, so the
-# `shift_check` text names no clause number and prints no stack.
+# collected on `ld.messages`); `clauseNo(cl, 0)` and `PL_backtrace(10,1)` are ported since PROC-TRACE (`clauseNo`, `PL_backtrace`, src/pl-trace.jl) and not
+# called here: the `shift_check` text names no clause number and prints no stack, as the text is collected, not written to `user_error`.
 """
     put_environment(gd, ld, env, fr, pc, for_copy) -> Bool
 

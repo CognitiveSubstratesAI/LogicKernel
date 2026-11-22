@@ -1078,7 +1078,8 @@ const OK_RECURSIVE = 10
 # severity is the atom of the Symbol. `fatalError` (upstream ends the process) is a Julia `error` naming
 # upstream's message. `Sdprintf` to `Serror` and `PL_write_term(Serror, …)` in the fallback branches are
 # COLLECTED on the local data's `messages` (`_qlf_Sdprintf!`, `_qlf_pl_write!`, src/pl-qlf.jl: the text,
-# then the message term), as the boot loop's diagnostics are; `PL_backtrace(5, 1)` is left to DBG1.
+# then the message term), as the boot loop's diagnostics are; `PL_backtrace(5, 1)` is ported since PROC-TRACE (src/pl-trace.jl) and not
+# called here (the text above is collected, the backtrace would be written to `user_error`).
 # `PL_thread_self()` is 1, the main thread (one thread: `threads` false, pl-prologflag.c:2620-2622).
 """
 Print the message term reference `msg` holds, of severity `severity` (`:warning`, `:error`, …), by calling
@@ -1119,7 +1120,7 @@ function printMessage(ld::PL_local_data{T}, severity::Symbol, msg::term_t)::Bool
                     end
                     rc = _qlf_pl_write!(ld, av + 1)          # PL_write_term(Serror, av+1, 1200, 0)
                     _qlf_Sdprintf!(ld, "\n")
-                    # PL_backtrace(5, 1): left to DBG1
+                    # PL_backtrace(5, 1): not called (see above; PL_backtrace is ported, src/pl-trace.jl)
                 else                                # in_print_message == 2
                     _qlf_Sdprintf!(ld, "printMessage(): recursive call\n")
                 end
