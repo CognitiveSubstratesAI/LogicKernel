@@ -2519,6 +2519,8 @@ function _manifest_index(T)
         (LK.initThreads!, Tuple{LK.atoms_t}, false),
         (LK.symbol_thread_handle, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
         (LK.create_thread_handle, Tuple{LK.PL_global_data{T}, LK.PL_thread_info{T}}, false),
+        (LK._thread_handle_blob!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.register_main_thread!, Tuple{LK.PL_global_data{T}}, false),
         (
             LK.unify_thread_id,
             Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}},

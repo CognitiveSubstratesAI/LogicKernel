@@ -167,11 +167,36 @@ function create_thread_handle(
         0, 0, nothing, nothing, false
     )
     push!(gd.thread.handles, th)
-    bytes = _thread_bytes(th.serial)
-    w, _ = lookupBlob(gd.atoms, bytes, length(bytes), thread_blob)    # lookupBlob((char*)&ref, sizeof(ref), &thread_blob, &new)
-    th.symbol = _blob_term!(gd.atoms, gd.atom_symbols, T, w)
+    th.symbol = _thread_handle_blob!(gd, th)
     info.symbol = th.symbol
     return th
+end
+
+# ORIGINAL: the blob a handle's symbol is, shared by `create_thread_handle` and `register_main_thread!` (upstream makes it inline).
+"The thread blob of the handle `th` (its number is the payload), made on first use."
+function _thread_handle_blob!(gd::PL_global_data{T}, th::thread_handle{T})::T where {T}
+    bytes = _thread_bytes(th.serial)
+    w, _ = lookupBlob(gd.atoms, bytes, length(bytes), thread_blob)    # lookupBlob((char*)&ref, sizeof(ref), &thread_blob, &new)
+    return _blob_term!(gd.atoms, gd.atom_symbols, T, w)
+end
+
+# PORT: pl-init.c PL_initialise (aliasThread(PL_thread_self(), ATOM_thread, ATOM_main), pl-init.c:1606 at the pin)
+# DIVERGES: the main thread has no record here (`info === nothing`, engine id 1, `ld.thread_info === nothing`), so its handle is made with no
+# `info` and `alias` `main` and is entered in `thread_table` directly (`aliasThread!` takes a thread record). It is the FIRST handle of the
+# database (`handles[1]`): called when a database is made (`setupProlog`) and when one is copied from the template (`copy_global_data`: the
+# copy starts with a fresh `thread_state`). A handle that is no engine (no `TH_IS_INTERACTOR`, no record) is no interactor: `get_interactor`
+# raises `type_error(engine, main)` for it, as upstream does. Idempotent.
+"Register the main thread: its handle (id 1, alias `main`) is the first of `gd.thread.handles` and `main` is in the thread table."
+function register_main_thread!(gd::PL_global_data{T})::Nothing where {T}
+    isempty(gd.thread.handles) || return nothing
+    th = thread_handle{T}(
+        nothing, nothing, nothing, 1, UInt32(0), 1, 0, 0, nothing, nothing, false
+    )
+    push!(gd.thread.handles, th)
+    th.symbol = _thread_handle_blob!(gd, th)
+    th.alias = mk_sym(T, :main)
+    gd.thread.thread_table[sym_key(th.alias::T)] = th.serial
+    return nothing
 end
 
 # PORT: pl-thread.c unify_thread_id
@@ -781,7 +806,8 @@ end
 # PORT: pl-thread.c get_thread
 # (pl-thread.c:2580-2628 at the pin)
 # DIVERGES: returns the thread id `pl_tid` (0: false, the error raised when `warn`), as the record is read again from the id by the caller;
-# the main thread (id 1, no record) is its text alias `main` (upstream: `main` is in `threadTable`) or the integer 1.
+# the main thread (id 1, no record) is its handle (`register_main_thread!`: the text alias `main` is in `thread_table`, as upstream's
+# `threadTable`) or the integer 1.
 "The thread id of the thread `t` names (an integer, an alias or a handle), 0 when there is none (pl-thread.c)."
 function get_thread(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, warn::Bool
@@ -798,6 +824,10 @@ function get_thread(
                     i = th.engine_id
                     break
                 end
+                if thinfo === nothing && th.engine_id == 1    # the main thread's handle: no record (`_thread_slot_valid` accepts slot 1)
+                    i = 1
+                    break
+                end
                 warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)    # no_thread
                 return 0
             elseif !is_blob(symbol)                         # isTextAtom(symbol)
@@ -805,10 +835,6 @@ function get_thread(
                 if serial != 0
                     symbol = gd.thread.handles[serial].symbol::T    # symbol = word2atom(w)
                     continue
-                end
-                if sym_key(symbol) == sym_key(mk_sym(T, :main))
-                    i = 1
-                    break
                 end
                 warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :thread), t)    # no_thread
                 return 0

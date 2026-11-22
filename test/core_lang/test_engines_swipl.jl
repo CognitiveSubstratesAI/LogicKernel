@@ -10,8 +10,8 @@
 #     exactly as `_en_swipl_lines` does (write the program with `_en_program(_EN_CASES)`); every line must read `ck_<id> c[..]/1(a[111,107])`.
 #     Rows I am least sure of (they read pl-error.c / pl-option.c from memory, not from this file's range): en05d (an unbound Engine is an
 #     instantiation_error: PL_error ERR_TYPE on a variable), en53/en54/en56 (the option type errors of PL_scan_options/PL_get_size_ex).
-#     Not a row, a known difference to check on the lane: `engine_next(main, _)` (upstream finds the alias `main` in threadTable and raises
-#     type_error(engine, main); the kernel has no table entry for the main thread: existence_error(engine, main)).
+#     `engine_next(main, _)`: upstream finds the alias `main` in threadTable and raises type_error(engine, main); the kernel's database
+#     registers the main thread's handle at its creation (`register_main_thread!`), so it answers the same: rows mn1-mn7, MEASURED on the pin.
 #   * The tp rows (thread_property/2, pl-thread.c:3404-3512, tprop_list :3355-3367) are read from the C the same way; least sure: tp05 (main's
 #     properties), tp22 (debug_mode false), tp23 (main has no class: upstream's info->class of the main thread is NULL, read, not measured),
 #     tp10 (findnsols over the enumeration). tp26-tp34 (system_thread_id, size, the property enumerations) are MEASURED on the pin build
@@ -419,6 +419,31 @@ const _EN_CASES = [
     (
         "tp34", "engine_create(X, ( thread_self(S), findall(N, ( thread_property(S, P), functor(P, N, _) ), X) ), E)",
         "engine_next(E, R0)", "[id,status,detached,debug,debug_mode,engine,thread,system_thread_id,size,class]", true
+    ),
+    # the `main` entry of the thread table (pl-init.c:1606 aliasThread(PL_thread_self(), ATOM_thread, ATOM_main); TH1 piece b), measured on the
+    # pin build 2026-11-22: main's handle is in threadTable but is no interactor (its blob is no text atom): every engine predicate raises
+    # type_error(engine, main); the name is taken, so an engine cannot be called main.
+    (
+        "mn1", "true", "engine_next(main,_)", "raised(type_error(engine,main))", true
+    ),
+    (
+        "mn2", "true", "engine_destroy(main)", "raised(type_error(engine,main))", true
+    ),
+    (
+        "mn3", "true", "engine_post(main,x)", "raised(type_error(engine,main))", true
+    ),
+    (
+        "mn4", "true", "engine_post(main,x,_)", "raised(type_error(engine,main))", true
+    ),
+    (
+        "mn5", "true", "( is_engine(main) -> R0 = y ; R0 = n )", "n", true
+    ),
+    (
+        "mn6", "true", "engine_create(x,true,_,[alias(main)])", "raised(permission_error(create,engine,main))", true
+    ),
+    (
+        "mn7", "true",
+        "catch(engine_create(x,true,_,[alias(main)]), _, true), thread_property(T, alias(main)), R0 = T", "main", true
     ),
     # the named DIVERGES (TH1): upstream waits for the mutex of an engine that is running, on one thread: a hang. Kernel only.
     (
@@ -964,8 +989,38 @@ end
     @test ld.thread_info === nothing                    # the main thread: no record
     @test gd.thread.engines_created == 1
     @test gd.thread.engines_finished == 1               # the last answer finished it: a later destroy does not count twice
-    @test length(gd.thread.handles) == 1
+    @test length(gd.thread.handles) == 2                # the main thread's handle (1) and the engine's (2)
     @test all(h -> h.info === nothing && !h.running, gd.thread.handles)
+end
+
+@testset "engines: white-box (the main thread's handle, the first of the database; TH1 piece b)" begin
+    f, names = _en_file(filter(c -> c[1] == "mn1", _EN_CASES))
+    kl, gd, ld = _en_kernel(f, names)
+    @test kl == ["ok", _en_ok_line("mn1")]
+    @test length(gd.thread.handles) == 1                # no engine was made: the handle of the main thread alone
+    h = gd.thread.handles[1]
+    @test h.info === nothing && h.engine_id == 1 && h.serial == 1 && h.flags == 0 && !h.running
+    @test h.alias !== nothing && sym_key(h.alias) == sym_key(_ens(:main))
+    @test h.symbol !== nothing && is_blob(h.symbol)
+    @test gd.thread.thread_table[sym_key(_ens(:main))] == 1
+    @test gd.thread.engines_created == 0
+    # get_thread by the blob of the handle, by the text alias and by the integer 1: the main thread
+    t = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, t, h.symbol)
+    @test LK.PL_get_thread_id_ex(gd, ld, t) == 1
+    t2 = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, t2, _ens(:main))
+    @test LK.PL_get_thread_id_ex(gd, ld, t2) == 1
+    @test LK.PL_exception(ld, 0) == 0
+    # registering again changes nothing; a made-up database (no copy) and a copy each have the handle, not the template's object
+    LK.register_main_thread!(gd)
+    @test length(gd.thread.handles) == 1 && gd.thread.handles[1] === h
+    g2 = LK.PL_global_data{_EN}()
+    @test length(g2.thread.handles) == 1 && g2.thread.handles[1] !== h
+    @test g2.thread.handles[1].engine_id == 1 && g2.thread.thread_table[sym_key(_ens(:main))] == 1
+    g3 = LK.setupProlog(_EN)
+    @test length(g3.thread.handles) == 1 && g3.thread.thread_table[sym_key(_ens(:main))] == 1
+    @test g3.thread.handles[1].engine_id == 1 && g3.thread.handles[1].info === nothing
 end
 
 @testset "engines: white-box (an engine that fails or raises is finished)" begin
