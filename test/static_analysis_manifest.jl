@@ -5567,8 +5567,21 @@ _manifest_pkg2_plain() = (
     (LK.re_utf8_seek, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.re_char_offset, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.re_bytep_to_charp, Tuple{LK.re_subject, Int}, false),
-    (LK.init_subject!, Tuple{LK.re_subject}, false)
+    (LK.init_subject!, Tuple{LK.re_subject}, false),
+    (LK._yaml_cstring, Tuple{String}, false)
 )
+# YAML1 piece 2 — the event-term decoding of yaml4pl.c (src/pl-yaml.jl): checked for every payload type.
+_manifest_yaml_events(T) = begin
+    LD = LK.PL_local_data{T}
+    (
+        (LK.yaml_get_string_arg, Tuple{LD, Int, Int, Int}, false),
+        (LK.yaml_get_value, Tuple{LD, Int, Nothing}, false),
+        (LK.yaml_get_value, Tuple{LD, Int, String}, false),
+        (LK.yaml_get_bool_arg, Tuple{LD, Int, Int, Int}, false),
+        (LK.yaml_decode_event, Tuple{LD, Int}, false),
+        (LK.yaml_emit_error, Tuple{LD, Int, String}, false)
+    )
+end
 
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
@@ -6465,6 +6478,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_json(_M3)...,
     _manifest_json_plain()...,
     _manifest_pkg2_plain()...,
+    _manifest_yaml_events(_M1)...,
+    _manifest_yaml_events(_M2)...,
+    _manifest_yaml_events(_M3)...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,
