@@ -5,6 +5,8 @@
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
 pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
+pred:$atom_completions/2	REFUSED	D-0634 D5 (atom GC refused by name): walks GD->atoms.array.blocks and keeps an atom only when ATOM_IS_VALID(a->references) && global_atom(a); the kernel's atoms are Julia objects in hash buckets with no array, and its `references` is not counted (src/pl-atom.jl header); a library(console_input) completion aid
+pred:$atom_references/2	REFUSED	D-0634 D5 (atom GC refused by name): reads ATOM_REF_COUNT(av->references), and the kernel's `references` is set but never counted down (register_atom/unregister_atom/bump_atom_references are the atom-GC family, src/pl-atom.jl header); no other reader (library/obfuscate.pl, dialect/xsb.pl)
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
 pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
@@ -22,6 +24,7 @@ pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
+pred:malloc_property/1	REFUSED	registered only by initTCMalloc (pl-alloc.c:1782) when the process runs on tcmalloc (MallocExtension_GetNumericProperty); the kernel runs on Julia's allocator, so the predicate is never defined at the pin either; library/check_installation.pl calls it under a guard
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
@@ -41,6 +44,7 @@ pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
 pred:tracing/0	DBG1	seed: missing_c_preds.tsv
+pred:wait_for_input/3	REFUSED	pl-file.c:2752 polls the OS descriptors of the streams (Sfileno, Spending, poll(2)/select(2)); a kernel stream has no descriptor (src/os/pl-file.jl: `Sfileno(s) < 0` except the standard streams) and no poll; a branch of its own would need the stream layer's descriptors first
 vmi:A_ADD	AR1	seed: VM-instruction family
 vmi:A_DOUBLE	AR1	seed: VM-instruction family
 vmi:A_ENTER	AR1	seed: VM-instruction family
