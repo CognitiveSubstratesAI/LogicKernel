@@ -2710,6 +2710,7 @@ function PL_open_query(
     q.aSave = ld.aTop
     q.solutions = 0
     q.exception = 0
+    q.yield_term = 0                            # qf->yield.term = 0
     q.registers_fr = 0                          # invalid
     q.next_environment = 0                      # see D_BREAK
     # fill frame arguments
