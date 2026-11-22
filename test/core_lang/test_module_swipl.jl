@@ -383,15 +383,20 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
 
 @testset "the table: creation order, a name index, the record of a created module" begin
     gd, ld = _db0()
-    @test gd.modules isa LK.module_table && length(gd.modules) == 2
-    @test [m.index for m in gd.modules] == [1, 2]                  # gd.modules[i].index == i (design H3)
+    # D-0083 disclosure (internal identity: the table's size and the later indexes): since ALLOC-FIX f (375d2227)
+    # initBuildIns! makes PROCEDURE_tune_gc3 = PL_predicate("tune_gc", 3, "prolog") (pl-ext.c:385-386 at 18168e62),
+    # and PL_predicate creates the module `prolog` there as upstream's initBuildIns does (pl-ext.c:381-386
+    # PL_new_module(ATOM_prolog) for heartbeat0): the table is system, user, prolog (3), not 2; no behaviour moved.
+    @test gd.modules isa LK.module_table && length(gd.modules) == 3
+    @test [m.index for m in gd.modules] == [1, 2, 3]               # gd.modules[i].index == i (design H3)
+    @test lk_name(gd.modules[3].atom) === :prolog && gd.modules[3].index == 3
     @test LK.isCurrentModule(gd.modules, _tls(:wb_none)) === nothing &&
-        length(gd.modules) == 2
-    sys, user = gd.modules
+        length(gd.modules) == 3
+    sys, user = gd.modules[1], gd.modules[2]
     a = LK.lookupModule(gd, _tls(:wb_a))
-    @test length(gd.modules) == 3 && a.index == 3 && gd.modules[3] === a
-    @test LK.lookupModule(gd, _tls(:wb_a)) === a && length(gd.modules) == 3
-    @test LK.isCurrentModule(gd.modules, _tls(:wb_a)) === a && gd.modules.names[a.name] == 3
+    @test length(gd.modules) == 4 && a.index == 4 && gd.modules[4] === a
+    @test LK.lookupModule(gd, _tls(:wb_a)) === a && length(gd.modules) == 4
+    @test LK.isCurrentModule(gd.modules, _tls(:wb_a)) === a && gd.modules.names[a.name] == 4
     # pl-modul.c:108-120: `user`'s super is system; system has none and is class system with `unknown` = error; a name
     # starting with `$` is a system-class module under system; any other a user-class module under user. The record's
     # flags, level and counters are not answerable by swipl (class and supers are: the program's last lines).
@@ -417,7 +422,7 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
     # a name's identity is its sym_key: `[]` (reserved) and '[]' (text) are two modules, as swipl's s09/s10 rows show
     nilm = LK.lookupModule(gd, LK.mk_nil(_TL))
     txtm = LK.lookupModule(gd, _tls("[]"))
-    @test nilm !== txtm && length(gd.modules) == 6          # system, user, wb_a, \$wb_d, [], '[]'
+    @test nilm !== txtm && length(gd.modules) == 7          # system, user, prolog, wb_a, \$wb_d, [], '[]'
     # a module is never removed from the vector, and a definition holds its index
     @test LK.lookupProcedure(_tls(:p), 1, a).definition.module_ == a.index
     @test LK.M_DESTROYED == UInt32(0x00010000)                     # pl-incl.h
