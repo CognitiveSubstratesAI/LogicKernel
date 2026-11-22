@@ -5603,6 +5603,9 @@ _manifest_yaml_events(T) = begin
         (LK.re_set_flag, Tuple{LD, Int, LK.re_options_flags, UInt32, UInt32, Bool}, false),
         (LK.re_lookup_and_apply_optdef, Tuple{LD, Vector{LK.re_optdef}, String, Int, Int, UInt32, LK.re_options_flags}, false),
         (LK.re_lookup_and_apply_optdef_arg, Tuple{LD, Vector{LK.re_optdef}, Int, Int, Int, UInt32, LK.re_options_flags}, false),
+        # PCRE1 piece 6 — the option-list reader
+        (LK.re_get_options, Tuple{LD, Int, LK.re_data}, false),
+        (LK.re_get_arg_1_if_any, Tuple{LD, Int}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),

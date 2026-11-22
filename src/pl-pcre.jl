@@ -472,3 +472,88 @@ function re_compare(a::re_data, b::re_data)::Int
     # No need to compare capture_names: they are derived from the patterns. Equal so far: the serial (the C: the address) breaks the tie.
     return a.serial > b.serial ? 1 : a.serial < b.serial ? -1 : 0
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# PCRE1 piece 6 (packages/pcre/pcre4pl.c lines 724-860, packages-pcre a5e4c885): `get_arg_1_if_any` and `re_get_options`, the option-list reader.
+# It needs `PL_get_uint64_ex` (the `start(N)` option), which the kernel gained in the commit before this one. NOT PORTED: `ensure_compile_context`
+# (a pcre2_compile_context, libpcre2). DIVERGES (11): the bare atom `start` (no argument: the C's `arg` is the term reference 0, which
+# `PL_get_uint64_ex` reads as whatever cell 0 holds) raises `type_error(integer, start)` here; MEASURE on the oracle what swipl answers.
+
+# PORT: packages/pcre/pcre4pl.c get_arg_1_if_any
+# DIVERGES: returns `(name, arity, arg)` (the name an atom term, `arg` 0 when the option has no argument), or `nothing` after
+# `type_error(option, Head)`, where the C returns the Bool and writes the three through pointers.
+"The name, arity (0 or 1) and argument term reference (0 for none) of the option `head`, or `nothing` after raising `type_error(option, Head)` (pcre4pl.c)."
+function re_get_arg_1_if_any(ld::PL_local_data{T}, head::term_t)::Union{Nothing, Tuple{T, Int, term_t}} where {T}
+    na = PL_get_name_arity(ld, head)
+    if na !== nothing && na[2] <= 1
+        arg = term_t(0)
+        if na[2] == 1
+            argt = PL_new_term_ref(ld)
+            _PL_get_arg(ld, 1, head, argt)
+            arg = argt
+        end
+        return (na[1], na[2], arg)
+    end
+    PL_type_error(ld, "option", head)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c re_get_options
+# DIVERGES: 11 (above); the option table is looked up by the name's text (piece 2, 5). `re` is as `re_init_data` leaves it (or a regex
+# with its match flags reset). Options can appear in several modes, so the `if`s are not `elseif`s, as the C.
+"Read the option list `options` into `re`'s flag groups (pcre4pl.c `re_get_options`): an unknown option is ignored; false with the error raised on a bad list or option."
+function re_get_options(ld::PL_local_data{T}, options::term_t, re::re_data)::Bool where {T}
+    tail = PL_copy_term_ref(ld, options)
+    head = PL_new_term_ref(ld)
+    while PL_get_list_ex(ld, tail, head, tail)
+        r = re_get_arg_1_if_any(ld, head)
+        r === nothing && return false
+        name, _, arg = r
+        def = re_lookup_optdef(re_optdefs, sym_text(name))
+        if def !== nothing
+            neg = (def.mode & RE_NEG) != 0
+            if (def.mode & RE_COMP_BOOL) != 0
+                re_set_flag(ld, arg, re.compile_options_flags, def.flag, def.flag, neg) || return false
+            end
+            if (def.mode & RE_MATCH_BOOL) != 0
+                re_set_flag(ld, arg, re.match_options_flags, def.flag, def.flag, neg) || return false
+            end
+            if (def.mode & RE_COMP_BSR) != 0
+                re_lookup_and_apply_optdef_arg(ld, re_optbsrs, arg, head, term_t(0), OPTBSR_MASK, re.compile_bsr_flags) || return false
+            end
+            if (def.mode & RE_COMP_NEWLINE) != 0
+                re_lookup_and_apply_optdef_arg(ld, re_optnewlines, arg, head, term_t(0), OPTNEWLINE_MASK, re.compile_newline_flags) || return false
+            end
+            if (def.mode & RE_COMP_COMPAT) != 0
+                re_lookup_and_apply_optdef_arg(ld, re_optcompats, arg, head, term_t(0), OPTCOMPAT_MASK, re.compile_options_flags) || return false
+            end
+            if (def.mode & RE_COMP_CAPTURE) != 0
+                re_lookup_and_apply_optdef_arg(ld, re_optcaptures, arg, head, term_t(0), OPTCAPTURE_MASK, re.capture_type) || return false
+            end
+            if (def.mode & RE_COMP_OPTIMISE) != 0
+                re_set_flag(ld, arg, re.optimise_flags, RE_OPTIMISE, RE_OPTIMISE, neg) || return false
+            end
+            if (def.mode & RE_COMPCTX_BOOL) != 0
+                re_set_flag(ld, arg, re.compile_ctx_flags, def.flag, def.flag, neg) || return false
+            end
+            if (def.mode & RE_COMPJIT_BOOL) != 0
+                re_set_flag(ld, arg, re.jit_options_flags, def.flag, def.flag, neg) || return false
+            end
+            if (def.mode & RE_MATCH_START) != 0
+                if arg == 0                                     # DIVERGES 11
+                    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), head)
+                    return false
+                end
+                start_value = PL_get_uint64_ex(ld, arg)
+                start_value === nothing && return false
+                start_value > UInt64(OPTSTART_MASK) && return PL_domain_error(ld, "int32", arg)
+                # TODO (upstream): use set_flags() style of checking "seen"; allow 64-bit sizes
+                if re.start_flags.seen == 0
+                    re.start_flags.seen = UInt32(1)
+                    re.start_flags.flags = UInt32(start_value)
+                end
+            end
+        end                                                     # else: ignore unknown option
+    end
+    return PL_get_nil_ex(ld, tail)
+end
