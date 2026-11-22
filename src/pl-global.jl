@@ -168,6 +168,88 @@ end
 locale_state{T}() where {T} =
     locale_state{T}(PL_locale_rec{T}[], PL_locale_rec{T}[], nothing, nothing)
 
+# PORT: pl-thread.h thread_status as PL_THREAD_*
+# (swipl-devel 18168e62, src/pl-thread.h: the enum, in its order; the engines read `RUNNING` and the `THREAD_STATUS_INVALID` test)
+"The states of a thread slot (pl-thread.h `thread_status`)."
+const PL_THREAD_UNUSED = 0
+const PL_THREAD_RESERVED = 1
+const PL_THREAD_JOINED = 2
+const PL_THREAD_RUNNING = 3
+const PL_THREAD_EXITED = 4
+const PL_THREAD_SUCCEEDED = 5
+const PL_THREAD_FAILED = 6
+const PL_THREAD_EXCEPTION = 7
+const PL_THREAD_NOMEM = 8
+const PL_THREAD_CREATED = 9
+
+# PORT: pl-thread.h THREAD_STATUS_INVALID
+"Whether the thread status `s` is invalid, that is below `PL_THREAD_RUNNING` (pl-thread.h)."
+THREAD_STATUS_INVALID(s::Int)::Bool = s < PL_THREAD_RUNNING
+
+# PORT: pl-thread.h TH_IS_INTERACTOR
+# (the three flags of `thread_handle.flags`: interactor, no more answers, answered last)
+const TH_IS_INTERACTOR = UInt32(0x0001)
+const TH_INTERACTOR_NOMORE = UInt32(0x0002)
+const TH_INTERACTOR_DONE = UInt32(0x0004)
+
+# PORT: pl-thread.h PL_thread_info_t as PL_thread_info
+# DIVERGES: only the members the engines read: `pl_tid`, `open_count`, `detached`, `debug`, `has_tid`, `is_engine`, `stack_limit`,
+# `status`, `thread_data` (the local data, an `AbstractLocalData`: the type is defined later), `symbol` (the handle blob, `nothing`
+# = 0) and `class`; no pthread, no c_stack, no `module`/`goal`/`return_value`, no lock-free `access`, no free list (the kernel runs
+# one OS thread: owner TH1-threads). `class` is the atom's name (`user`, as `PL_thread_attach_engine` sets it).
+"The record of one thread or engine (pl-thread.h `PL_thread_info_t`)."
+mutable struct PL_thread_info{T}
+    pl_tid::Int                                 # pl_tid: Prolog thread id
+    open_count::Int                             # open_count: for PL_thread_detach_engine()
+    detached::Bool                              # detached
+    debug::Bool                                 # debug: thread can be debugged
+    has_tid::Bool                               # has_tid: true while the engine is entered by a caller
+    is_engine::Bool                             # is_engine: created as engine
+    stack_limit::Int                            # stack_limit: in positions (words; upstream bytes)
+    status::Int                                 # status: PL_THREAD_*
+    thread_data::Union{Nothing, AbstractLocalData}    # thread_data: the local data of the engine
+    symbol::Union{Nothing, T}                   # symbol: the thread_handle blob (nothing: 0)
+    class::Symbol                               # class: `user` or `system`
+end
+
+# PORT: pl-thread.h thread_handle
+# DIVERGES: `interactor` is flattened (`interactor_query` ...); `symbol` and `alias` are atoms (`nothing` = NULL_ATOM); `serial` has no
+# upstream twin: the number of the handle in `gd.thread.handles`, the 8 payload bytes of its blob (upstream: the pointer); `package` is a
+# record; no `mutex` (no OS thread: `running` is the kernel's answer to a re-entrant call, DIVERGES (TH1) in `interactor_post_answer`),
+# no `next_free` (no atom GC).
+"The handle of a thread or engine: what its blob names (pl-thread.h `thread_handle`)."
+mutable struct thread_handle{T}
+    info::Union{Nothing, PL_thread_info{T}}     # info: represented engine
+    symbol::Union{Nothing, T}                   # symbol: associated symbol
+    alias::Union{Nothing, T}                    # alias: alias name of the thread
+    engine_id::Int                              # engine_id: numeric engine id
+    flags::UInt32                               # flags: TH_*
+    serial::Int                                 # (the number in gd.thread.handles, the blob's payload)
+    interactor_query::Int                       # interactor.query: query handle in the engine's local data (0: none)
+    interactor_argv::Int                        # interactor.argv: the 2 argument references, in the engine's local data
+    interactor_package::Union{Nothing, record{T}}    # interactor.package: exchanged term
+    interactor_thread::Union{Nothing, T}        # interactor.thread: associated thread
+    running::Bool                               # (the engine's query is running: engine_next re-entered it)
+end
+
+# PORT: pl-global.h thread as thread_state
+# DIVERGES: the members of `GD->thread` the engines read, plus `GD->statistics.engines_created/finished`: `handles` (every handle, by
+# `thread_handle.serial`), `infos` (`GD->thread.threads`, by `pl_tid`; 0: the main thread is not kept, its slot 1 stays `nothing`),
+# `thread_table` (`threadTable`: the alias atom's `sym_key` --> the handle's serial; upstream: alias --> symbol), `highest_id`.
+"The thread state of the database: the handles, the thread records, the alias table and the engine counters (pl-global.h)."
+mutable struct thread_state{T}
+    const handles::Vector{thread_handle{T}}     # (the handles a thread blob names)
+    const infos::Vector{Union{Nothing, PL_thread_info{T}}}    # thread.threads: by pl_tid
+    const thread_table::Dict{UInt64, Int}       # threadTable: alias --> handle serial
+    highest_id::Int                             # thread.highest_id
+    engines_created::Int                        # statistics.engines_created
+    engines_finished::Int                       # statistics.engines_finished
+end
+thread_state{T}() where {T} = thread_state{T}(
+    thread_handle{T}[], Union{Nothing, PL_thread_info{T}}[nothing],
+    Dict{UInt64, Int}(), 1, 0, 0
+)
+
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -252,6 +334,7 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    const thread::thread_state{T}                               # thread: the handles, the thread records, the alias table, the engine counters (pl-thread.c; TH1 engines)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -306,6 +389,8 @@ end
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
 # Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
+# Since TH1 engines: `thread`, `GD->thread` and the engine counters `GD->statistics.engines_created/finished` (`thread_state`), appended LAST; the
+# local data gets `thread_info`, `LD->thread.info`, appended LAST (`nothing`: the main thread). `GD_COPY_POLICY`: `:reset` (a copy has no engine).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -805,6 +890,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
     undo_running::Int                                           # undo.running: undo goals are running (TX1e)
     coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
+    thread_info::Union{Nothing, PL_thread_info{T}}              # thread.info: the thread record (nothing: the main thread, the kernel's single-thread view; TH1 engines)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -932,7 +1018,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
         UInt64[],                               # undo.scheduled: none (TX1e)
         0,                                      # undo.running: no undo goal runs (TX1e)
-        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
+        ld_coverage{T}(),                       # coverage: no data, not active (pl-global.c: zero)
+        nothing                                 # thread_info: the main thread (an engine's is set by `_create_engine`; TH1 engines)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

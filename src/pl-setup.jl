@@ -514,6 +514,7 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
     initTries!(atoms)                          # initTries (setup:149): the trie blob type (TAB1 TR1)
     initUndo!(atoms)                           # initUndo (setup:151): the undo blob type (TX1e)
     initWrap!(atoms)                           # initWrap (setup:152): the closure blob type (TAB1-min)
+    initThreads!(atoms)                        # initThreads (setup): the thread blob type (TH1 engines)
     dexpr = first(lookupBlob(atoms, Vector{UInt8}(codeunits("\$expr")), 5, reserved_symbol))
     dot2 = lookupFunctorDef(functors, _atom_word!(atoms, syms, mk_sym(T, Symbol("[|]"))), 2)
     nilw = _atom_word!(atoms, syms, mk_nil(T))  # ATOM_nil's word, once (L1c-6)
@@ -592,7 +593,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Tuple{Int, Procedure{T}}[],             # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
-        locale_state{T}()                       # locale: empty until initLocale! (below)
+        locale_state{T}(),                      # locale: empty until initLocale! (below)
+        thread_state{T}()                       # thread: no engine yet (TH1 engines)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

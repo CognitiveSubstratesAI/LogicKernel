@@ -36,11 +36,14 @@ const GD_COPY_POLICY = (
     stream_aliases=:streams,
     stream_table=:streams,
     ld_table=:streams,
-    paths_CWDdir=:reset              # pl-os.c:989, :1864-1866 at cbf4e189
+    paths_CWDdir=:reset,             # pl-os.c:989, :1864-1866 at cbf4e189
+    thread=:reset                    # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines)
 )
 
 "The start-up value of each `:reset` field of `GD_COPY_POLICY`, as `setupProlog` (src/pl-setup.jl) passes it to the constructor."
-const GD_COPY_RESET = (paths_CWDdir="",)   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
+# `thread` is an Expr, evaluated in the body of `copy_global_data` (`T` is its type parameter): a fresh `thread_state{T}()`, as the
+# constructor gives it (a mutable value must not be one literal shared by every copy).
+const GD_COPY_RESET = (paths_CWDdir="", thread=:(thread_state{T}()))   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
 
 # The copy of one stream table: empty, and the same shape. `x` is the template's field.
 function _copy_stream_free(x::AbstractVector)
