@@ -1866,8 +1866,8 @@ function pl_fill_buffer1_va(
     s = getInputStream(ld, stream, S_DONTCARE)
     if s !== nothing
         if (s.flags & SIO_NBUF) != 0
-            _PL_permission_error(ld, :fill_buffer, :stream, stream)
-            return FFALSE
+            streamStatus(ld, s) || return FFALSE                  # PL_release_stream(s) &&
+            return _PL_permission_error(ld, :fill_buffer, :stream, stream) ? FTRUE : FFALSE
         end
 
         if (s.flags & SIO_FEOF) == 0
