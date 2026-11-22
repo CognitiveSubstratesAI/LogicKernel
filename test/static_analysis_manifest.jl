@@ -2597,6 +2597,17 @@ function _manifest_index(T)
         (LK._tprop_pack, Tuple{Int, Int, Bool, Bool}, false),
         (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
         (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        # TH1: is_thread/1, thread_join/2, thread_detach/1, set_thread/2, debug_reset_from_class/0 (pl-thread.c)
+        (LK._thr_is, Tuple{T, Symbol}, false),
+        (LK._thread_info_of, Tuple{LK.PL_global_data{T}, Int}, false),
+        (LK._thread_ld, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
+        (LK.debug_thread_class, Tuple{LK.PL_global_data{T}, Symbol}, false),
+        (LK.update_debug_mode_from_class!, Tuple{LD, Union{Nothing, Base.RefValue{Bool}}}, false),
+        (LK.pl_is_thread, Tuple{LD, Int}, false),
+        (LK.pl_thread_join, Tuple{LD, Int, Int}, false),
+        (LK.pl_thread_detach, Tuple{LD, Int}, false),
+        (LK.pl_set_thread, Tuple{LD, Int, Int}, false),
+        (LK.pl_debug_reset_from_class0, Tuple{LD}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
         (LK.mutex_prop_enum{T}, Tuple{}, false),

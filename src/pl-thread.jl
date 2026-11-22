@@ -1267,3 +1267,199 @@ function pl_thread_property(
         more || return FFALSE
     end
 end
+
+# ---- THREAD OPERATIONS: is_thread/1, thread_join/2, thread_detach/1, set_thread/2, debug_reset_from_class/0 (TH1, pl-thread.c at 18168e62) ----
+# The threads are the main thread (id 1, a record `nothing`: its detached, debug and class are `main_detached`, `main_debug` and
+# `main_class` of `gd.thread`) and the engines (`gd.thread.infos`); `get_thread` gives the id, `_thread_info_of` the record.
+
+# ORIGINAL: the test of an atom against a name, `name == ATOM_xxx`.
+"Whether the atom `a` is the text atom `s`."
+@inline _thr_is(a::T, s::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, s))
+
+# ORIGINAL: `GD->thread.threads[tid]`, on the kernel's table: the main thread (id 1) has no record.
+"The record of the thread `tid` (a valid id), `nothing` for the main thread."
+function _thread_info_of(
+    gd::PL_global_data{T}, tid::Int
+)::Union{Nothing, PL_thread_info{T}} where {T}
+    return tid == 1 ? nothing : gd.thread.infos[tid]
+end
+
+# ORIGINAL: `info->thread_data`, which the main thread has upstream and the kernel does not keep (only the calling main thread's own `ld`).
+"The local data of the thread `info` (`nothing` = the main thread), `nothing` when the kernel cannot reach it (the main thread, from an engine)."
+function _thread_ld(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}
+)::Union{Nothing, PL_local_data{T}} where {T}
+    if info === nothing
+        return ld.thread_info === nothing ? ld : nothing
+    end
+    tld = info.thread_data
+    return tld === nothing ? nothing : tld::PL_local_data{T}
+end
+
+# PORT: pl-thread.c debug_thread_class
+# DIVERGES: `$debug_thread_class/4`, the only writer of `GD->thread.debug_classes`, is not ported, so the table is always empty and no
+# class is a debug class.
+"Whether the thread class `class` is a debug class (pl-thread.c)."
+debug_thread_class(::PL_global_data{T}, ::Symbol)::Bool where {T} = false
+
+# PORT: pl-thread.c update_debug_mode_from_class
+# DIVERGES: the local data's thread is read from `ld.thread_info` (`nothing`: the main thread, whose class is `main_class`).
+"Set the debug mode of the engine `ld` from the debug class of its thread, when it has a class (pl-thread.c)."
+function update_debug_mode_from_class!(
+    ld::PL_local_data{T}, old::Union{Nothing, Base.RefValue{Bool}}
+)::Bool where {T}
+    gd = _query_gd(ld)
+    info = ld.thread_info
+    class = info === nothing ? gd.thread.main_class : info.class
+    class === nothing && return false
+    return debugmode(ld, debug_thread_class(gd, class), old, UInt32(0))
+end
+
+# PORT: pl-thread.c is_thread
+# (PRED_IMPL("is_thread", 1, is_thread, 0), pl-thread.c:3514 at the pin)
+"`is_thread(@Thread)`: whether `Thread` names a thread: an alias, a handle or a number (pl-thread.c)."
+function pl_is_thread(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    return get_thread(_query_gd(ld), ld, A1, false) != 0 ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c thread_join
+# (PRED_IMPL("thread_join", 2, thread_join, 0), pl-thread.c:2913-2987 at the pin)
+# DIVERGES: the kernel runs no OS thread, so a thread that can be joined (`pthread_join`) does not exist but for the main thread, joined from
+# an engine: that is refused by name, owner TH1. `joining_by` (a thread being joined) has no twin, the message "Already being joined" cannot
+# occur. A detached thread (every engine is, as is the main thread after `thread_detach/1`) and the thread itself raise upstream's error.
+"`thread_join(+Thread, -Status)`: the permission errors of a thread that cannot be joined; joining the main thread from an engine is refused (pl-thread.c)."
+function pl_thread_join(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tid = get_thread(gd, ld, A1, true)
+    tid == 0 && return FFALSE
+    info = _thread_info_of(gd, tid)
+    detached = info === nothing ? gd.thread.main_detached : info.detached
+    if info === ld.thread_info || detached
+        return PL_error(
+            ld, "thread_join", 2,
+            detached ? "Cannot join detached thread" : "Cannot join self",
+            ERR_PERMISSION, mk_sym(T, :join), mk_sym(T, :thread), A1
+        ) ? FTRUE : FFALSE
+    end
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :thread_join), "thread_join/2: joining the main thread from an engine",
+            "TH1"
+        )
+    )
+end
+
+# PORT: pl-thread.c thread_detach
+# (PRED_IMPL("thread_detach", 1, thread_detach, 0), pl-thread.c:2989-3026 at the pin; PRED_DEF flags ISO)
+# DIVERGES: no `joining_by` (nothing joins a thread here, "Thread is being joined" cannot occur) and no `pthread_detach`, which cannot fail:
+# the flag is set (the main thread's is `main_detached`).
+"`thread_detach(+Thread)`: mark the thread detached; the errors of `get_thread` (pl-thread.c)."
+function pl_thread_detach(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tid = get_thread(gd, ld, A1, true)
+    tid == 0 && return FFALSE
+    info = _thread_info_of(gd, tid)
+    if info === nothing
+        gd.thread.main_detached = true
+    else
+        info.detached = true
+    end
+    return FTRUE
+end
+
+# PORT: pl-thread.c set_thread
+# (PRED_IMPL("set_thread", 2, set_thread, 0), pl-thread.c:3049-3103 at the pin)
+# DIVERGES: the main thread is a record `nothing` (its debug and class are `main_debug`, `main_class`); its local data is reachable only from
+# the main thread itself, so `class(C)` (when the class changes) and `debug_mode(B)` of the main thread from an engine are refused by name,
+# owner TH1, as is a class that is a blob atom (`info.class` is a `Symbol`). `alias(A)` calls `aliasThread` on the CALLING thread, as upstream does.
+"`set_thread(+Thread, +Property)`: set `alias(A)`, `debug(B)`, `debug_mode(B)` or `class(C)` of the thread (pl-thread.c)."
+function pl_set_thread(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    info::Union{Nothing, PL_thread_info{T}} = nothing
+    a = PL_get_atom(ld, A1)
+    if a !== nothing && _thr_is(a, :self)
+        info = ld.thread_info
+    else
+        tid = get_thread(gd, ld, A1, true)
+        tid == 0 && return FFALSE
+        info = _thread_info_of(gd, tid)
+    end
+
+    na = PL_get_name_arity(ld, A2)
+    if na !== nothing && na[2] == 1
+        name = na[1]
+        arg = PL_new_term_ref(ld)
+        _PL_get_arg(ld, 1, A2, arg)
+
+        if _thr_is(name, :alias)
+            alias = PL_get_atom_ex(ld, arg)
+            alias === nothing && return FFALSE
+            cur = info === nothing ? gd.thread.handles[1].alias : symbol_alias(gd, info.symbol)
+            if cur !== nothing                              # info->symbol && symbol_alias(info->symbol)
+                return PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, Symbol("re-alias")),
+                    mk_sym(T, :thread), A1
+                ) ? FTRUE : FFALSE
+            end
+            return aliasThread!(gd, ld, ld.thread_info, mk_sym(T, :thread), alias) ? FTRUE :
+                   FFALSE
+        elseif _thr_is(name, :debug)
+            val = PL_get_bool_ex(ld, arg)
+            val === nothing && return FFALSE
+            if info === nothing
+                gd.thread.main_debug = val
+            else
+                info.debug = val
+            end
+            return FTRUE
+        elseif _thr_is(name, :debug_mode)
+            val = PL_get_stdbool_ex(ld, arg)
+            val === nothing && return FFALSE
+            tld = _thread_ld(ld, info)
+            tld === nothing && throw(
+                NotPortedError{T}(
+                    mk_sym(T, :set_thread), "set_thread/2: debug_mode(Bool) of the main thread from an engine",
+                    "TH1"
+                )
+            )
+            return debugmode(tld, val, nothing, UInt32(0)) ? FTRUE : FFALSE
+        elseif _thr_is(name, :class)
+            c = PL_get_atom_ex(ld, arg)
+            c === nothing && return FFALSE
+            is_blob(c) && throw(
+                NotPortedError{T}(
+                    mk_sym(T, :set_thread), "set_thread/2: class(Class) with a blob atom", "TH1"
+                )
+            )
+            cls = Symbol(sym_text(c))
+            cur = info === nothing ? gd.thread.main_class : info.class
+            if cur !== cls                                  # set_thread_class
+                tld = _thread_ld(ld, info)
+                tld === nothing && throw(
+                    NotPortedError{T}(
+                        mk_sym(T, :set_thread), "set_thread/2: class(Class) of the main thread from an engine",
+                        "TH1"
+                    )
+                )
+                if info === nothing
+                    gd.thread.main_class = cls
+                else
+                    info.class = cls
+                end
+                update_debug_mode_from_class!(tld, nothing)
+            end
+            return FTRUE
+        else
+            return PL_domain_error(ld, "thread_property", A2) ? FTRUE : FFALSE
+        end
+    end
+    return PL_type_error(ld, "property", A2) ? FTRUE : FFALSE
+end
+
+# PORT: pl-thread.c debug_reset_from_class
+# (PRED_IMPL("debug_reset_from_class", 0, debug_reset_from_class, 0), pl-thread.c:3145-3150 at the pin)
+"`debug_reset_from_class`: set the debug mode of the calling thread from its class (pl-thread.c)."
+function pl_debug_reset_from_class0(ld::PL_local_data{T})::foreign_t where {T}
+    update_debug_mode_from_class!(ld, nothing)
+    return FTRUE
+end
