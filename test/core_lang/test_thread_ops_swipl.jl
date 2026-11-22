@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of the THREAD OPERATIONS of pl-thread.c against swipl at the pin (swipl-devel 18168e62; swipl 10.1.20):
 # is_thread/1, thread_join/2, thread_detach/1, set_thread/2 and debug_reset_from_class/0, on the main thread (rows tp51-tp102, ids kept from
-# the THREADPROP rows) and on engines (rows te01-te30), with the state-changing rows of the main thread (sc01-sc21, aq01-aq07) LAST.
+# the THREADPROP rows) and on engines (rows te01-te31), with the state-changing rows of the main thread (sc01-sc21, aq01-aq07) LAST.
 #   * A PROGRAM-less file of cases `t_<id>(R)` run in order in one database, each wrapped in `catch(Goal, error(E, _), R = raised(E))`;
 #     the driver is test_mutex_swipl.jl's (`enc`oded answers). An engine handle is never printed (a blob): rows compare `C == E` and print `same`.
 #   * Every swipl answer line is swipl's, PINNED (swipl 10.1.20, the pin binary, two runs byte-identical, evidence/THREADOPS/gen_rows.py
@@ -97,7 +97,7 @@ function _to_swipl_lines(path::String, names::Vector{String})::Vector{String}
 end
 
 # tp51-tp62 is_thread/1, tp63-tp70 thread_join/2, tp71-tp74 thread_detach/1, tp75-tp99 set_thread/2, tp100-tp102 debug_reset_from_class/0
-# (main thread, state-neutral); te01-te30 engines (neutral for the main thread); kd01-kd02 the known difference (main's class);
+# (main thread, state-neutral); te01-te31 engines (neutral for the main thread); kd01-kd02 the known difference (main's class);
 # sc01-sc21 and aq01-aq07 change the main thread's class, debug flag, detach state and alias: LAST.
 const _TO_CASES = [
     ("tp51", raw"is_thread(main), R = yes"),
@@ -183,6 +183,8 @@ const _TO_CASES = [
     ("te28", raw"catch(thread_join(1, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"),
     ("te29", raw"catch(thread_detach(nosuch), error(E, context(Cx, _)), true), R = E-Cx"),
     ("te30", raw"catch(set_thread(main, alias(foo)), error(E, context(Cx, _)), true), R = E-Cx"),
+    # the thread an engine is called from (thread_symbol of the main thread): main here, its new alias after aq01 (aq14)
+    ("te31", raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"),
     # the known difference: main's class
     ("kd01", raw"thread_property(main, class(R))"),
     ("kd02", raw"findall(C, thread_property(main, class(C)), R)"),
@@ -222,6 +224,7 @@ const _TO_CASES = [
     ("aq11", raw"catch(set_thread(zz, alias(other)), error(E, _), true), R = E"),
     ("aq12", raw"set_thread(self, alias(other))"),
     ("aq13", raw"engine_create(R0, (thread_self(Me), ( Me == zz -> R0 = same ; R0 = other )), E), engine_next(E, R)"),
+    ("aq14", raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"),
     # debug_mode(true): the VM in debug mode, LAST
     ("dm01", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), thread_property(E, debug_mode(R))"),
     ("dm02", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, debug_mode(false)), thread_property(E, debug_mode(R))")
@@ -311,6 +314,7 @@ const _TO_PINNED = [
     "t_te28 c[116,95,116,101,50,56]/1(c[45]/2(c[45]/2(c[45]/2(c[45]/2(a[106,111,105,110],a[116,104,114,101,97,100]),i1),c[47]/2(a[116,104,114,101,97,100,95,106,111,105,110],i2)),a[67,97,110,110,111,116,32,106,111,105,110,32,115,101,108,102]))",
     "t_te29 c[116,95,116,101,50,57]/1(c[45]/2(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[116,104,114,101,97,100],a[110,111,115,117,99,104]),c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[116,104,114,101,97,100,95,100,101,116,97,99,104],i1))))",
     "t_te30 c[116,95,116,101,51,48]/1(c[45]/2(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,45,97,108,105,97,115],a[116,104,114,101,97,100],a[109,97,105,110]),c[58]/2(a[115,121,115,116,101,109],c[47]/2(a[115,101,116,95,116,104,114,101,97,100],i2))))",
+    "t_te31 c[116,95,116,101,51,49]/1(a[109,97,105,110])",
     "t_kd01 c[116,95,107,100,48,49]/1(a[99,111,110,115,111,108,101])",
     "t_kd02 c[116,95,107,100,48,50]/1(c[91,124,93]/2(a[99,111,110,115,111,108,101],nil))",
     "t_sc01 c[116,95,115,99,48,49]/1(a[111,107])",
@@ -347,6 +351,7 @@ const _TO_PINNED = [
     "t_aq11 c[116,95,97,113,49,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,45,97,108,105,97,115],a[116,104,114,101,97,100],a[122,122]))",
     "t_aq12 c[116,95,97,113,49,50]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,45,97,108,105,97,115],a[116,104,114,101,97,100],a[115,101,108,102])))",
     "t_aq13 c[116,95,97,113,49,51]/1(a[111,116,104,101,114])",
+    "t_aq14 c[116,95,97,113,49,52]/1(a[122,122])",
     "t_dm01 c[116,95,100,109,48,49]/1(a[116,114,117,101])",
     "t_dm02 c[116,95,100,109,48,50]/1(a[102,97,108,115,101])"
 ]
@@ -429,9 +434,9 @@ function _to_kernel(path::String, names::Vector{String})
     return out, gd, ld, nothing
 end
 
-@testset "thread operations as swipl's (tp51-tp102, te01-te30, sc01-sc21, aq01-aq13, dm01-dm02)" begin
+@testset "thread operations as swipl's (tp51-tp102, te01-te31, sc01-sc21, aq01-aq14, dm01-dm02)" begin
     f, names = _to_file()
-    kl, _, _, e = _to_kernel(f, names)
+    kl, gd, ld, e = _to_kernel(f, names)
     @test e === nothing
     @test kl[1] == "ok"
     @test length(kl) == length(names) + 1
@@ -439,6 +444,11 @@ end
         want = get(_TO_KD, id, _TO_PIN[id])
         k == want || println(stderr, "  ours  ", k, "\n  want  ", want)
         @test k == want
+    end
+    # after aq01 the main thread's alias is zz, whoever asks (PL_get_thread_alias: tid 0 is the calling thread)
+    for tid in (0, 1)
+        a = LK.PL_get_thread_alias(gd, ld, tid)
+        @test a !== nothing && sym_text(a) == "zz"
     end
 end
 
