@@ -101,6 +101,9 @@ include("os/pl-ctype-pred.jl") # swipl-devel src/os/pl-ctype.c — char_type/2, 
 include("os/pl-libtai.jl")    # swipl-devel src/libtai/ — the calendar-time and leap-second pieces pl-tai.c uses (TAI1)
 include("os/pl-tai.jl")       # swipl-devel src/os/pl-tai.c — stamp_date_time/3, date_time_stamp/2 (TAI1; needs the FLI, so loaded after the kernel)
 include("os/pl-locale.jl")    # swipl-devel src/os/pl-locale.c — locale_create/3, locale_property/2, set_locale/1 (CT1 LOCALE; needs the FLI, so loaded after the kernel)
+include("pl-md5.jl")           # swipl-devel packages/clib/md5.c md54pl.c — the MD5 core and md5_hash/3 (CLIB1; needs the text, option and read pieces)
+include("pl-sha.jl")           # swipl-devel packages/clib/sha1/sha2.c sha4pl.c — the SHA-2 core, sha_hash/3, hmac (CLIB5; SHA-1 is pl-termhash.jl's)
+include("pl-hashstream.jl")    # swipl-devel packages/clib/hash_stream.c — open_hash_stream/3, stream_hash/2 over the stream filter (HASH1)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)
