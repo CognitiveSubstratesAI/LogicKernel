@@ -454,7 +454,7 @@ end
 # DIVERGES: upstream tests the function pointer at each call (`if (s->functions->control)`) and calls it with `s->handle`;
 # here one function does both: `SCONTROL_NONE` says there is no control function (every set but a filter that defines one).
 "Call the control function of `s`'s function set with `op` (an `SIO_*` action) and `arg`: its result, or `SCONTROL_NONE`."
-function S_control(s::IOSTREAM, op::Int, arg::Any)::Int
+function S_control(s::IOSTREAM, op::Int, @nospecialize(arg))::Int
     if s.functions == Sfilterfunctions
         f = s.filter
         f === nothing || return Sfilter_control(f[], op, arg)::Int

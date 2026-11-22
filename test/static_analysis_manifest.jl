@@ -5819,17 +5819,52 @@ const JET_DISPATCH_ALLOWED = [
         Int, Int
     },
     reason="pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
+),
+    # STREAMX (pending Shivaji's word, Q2): the filter streams' callbacks are the open set's indirect call, upstream's
+    # `(*s->functions->read)(s->handle, ...)` of pl-stream.c (S_read/S_write/S_close and the control calls); each barrier
+    # function holds exactly one such call.
+    (
+    caller=LK.Sread_filter,
+    callee=LK.Sfilter_read,
+    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+    reason="pl-stream.c S__fillbuf: (*s->functions->read)(s->handle, ...), an indirect call per buffer fill of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.Swrite_filter,
+    callee=LK.Sfilter_write,
+    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+    reason="pl-stream.c S__flushbuf: (*s->functions->write)(s->handle, ...), an indirect call per buffer flush of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.Sclose_filter,
+    callee=LK.Sfilter_close,
+    argtypes=Tuple{LK.AbstractSfilter},
+    reason="pl-stream.c S__close: (*s->functions->close)(s->handle), one indirect call per close of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.S_control,
+    callee=LK.Sfilter_control,
+    argtypes=Tuple{LK.AbstractSfilter, Int, Any},
+    reason="pl-stream.c Ssetenc, Sflush, S__seterror, Ssize: (*s->functions->control)(s->handle, op, arg), an indirect call per control action of a filter stream, same as upstream (STREAMX)"
 )
 ]
 
 "The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one."
 const JET_DISPATCH_FAMILY = [
-    (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
-    (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 0),
-    (LK.S_close, Tuple{LK.IOSTREAM}, 0),
-    (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
-    (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
-    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0)
+    (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 2),
+    (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.S_close, Tuple{LK.IOSTREAM}, 1),
+    (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 1),
+    (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 1),
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
+    # STREAMX (pending Shivaji's word, Q2): the barrier functions hold one allowed dispatch each, and the callers reach it:
+    # the counts below are what the structure predicts (MEASURE ON THE LANE with `_sa_opt_reports`; `S_read` has its own
+    # Sread_user and, through S_read_wrapped, the Sread_filter one; a JET analysis sees the dispatch only while the
+    # `Sfilter_*` function has more than its default method, so the lane run decides these numbers).
+    (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.Swrite_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.Sclose_filter, Tuple{LK.IOSTREAM}, 1),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Nothing}, 1)
 ]
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
