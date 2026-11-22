@@ -295,7 +295,13 @@ def write_tsv(path, head, rows, comment):
 
 
 def load_equivalents(path):
-    return {r["mutant"]: r for r in read_tsv(path, EQ_HEAD)}
+    """The declared equivalents by mutant id. A row whose D-entry column is not a `D-NNNN` id (`pending`, empty, free text) is
+    refused with ValueError naming the row: an unratified row would turn a declared equivalent into an accepted one (D-0992)."""
+    rows = read_tsv(path, EQ_HEAD)
+    for r in rows:
+        if not re.fullmatch(r"D-\d{4,}", r["d_entry"]):
+            raise ValueError("equivalents row %s: the D-entry column is %r, not a D-NNNN id (%s)" % (r["mutant"], r["d_entry"], path))
+    return {r["mutant"]: r for r in rows}
 
 
 def load_ledger(path):
@@ -581,7 +587,11 @@ def main(argv):
     if a.gate_set and gate_set is None:
         print("verdict_read: the gate set file %s cannot be read" % a.gate_set)
         return 2
-    eqs = load_equivalents(eq_file)
+    try:
+        eqs = load_equivalents(eq_file)
+    except ValueError as e:
+        print("verdict_read: %s" % e)
+        return 2
     ledger = load_ledger(surv_path)
     api = Api(root, a.cache, a.budget)
     res = build(api, full, a.base, gate_set, eqs, ledger, root)
