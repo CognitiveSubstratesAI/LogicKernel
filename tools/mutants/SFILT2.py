@@ -16,7 +16,11 @@ TF = ["test/files/test_stream_filter_swipl.jl"]
 TW = ["test/files/test_stream_wchar_swipl.jl"]
 # The ENC_WCHAR branches (b) run only in TW; S__fileno runs at every filter stream's Snew (TF), the constructor default at every stream.
 TARGETS = TP + TW + TX
+TE = ["test/core_lang/test_stream_exception_swipl.jl"]
 S = "src/os/pl-stream.jl"
+# (c) Sset_exception: the new file, then the files that reach Sclearerr/reportStreamError (the filter walks, the stream predicates, the io_warning row).
+TEX = TE + ["test/files/test_stream_filter_swipl.jl", "test/files/test_stream_swipl.jl", "test/core_lang/test_s2a_swipl.jl", "test/foreign/test_exceptions_swipl.jl"]
+F = "src/os/pl-file.jl"
 
 MUTANTS = [
     # ── (a) Sread_pending ──
@@ -108,8 +112,8 @@ MUTANTS = [
          new="    if true\n        n = Ref(0)\n"),
     dict(id="SFILT2-C6 a stream starts with file number 0, not none (KILL p07)",
          file=S, targets=TARGETS,
-         old="        nothing, nothing, nothing, -1\n    )\n",
-         new="        nothing, nothing, nothing, 0\n    )\n"),
+         old="        nothing, nothing, nothing, -1, nothing\n    )\n",
+         new="        nothing, nothing, nothing, 0, nothing\n    )\n"),
     # ── (b) ENC_WCHAR: put_code ──
     dict(id="SFILT2-W1 put_code writes an ENC_WCHAR code big-endian (KILL w01)",
          file=S, targets=TW,
@@ -156,7 +160,78 @@ MUTANTS = [
          file=S, targets=TW,
          old="        elseif enc == ENC_WCHAR\n            c = get_wchar(s)\n",
          new="        elseif false\n            c = get_wchar(s)\n"),
-    # (c) rows below: Sset_exception
+    # ── (c) Sset_exception (pl-stream.jl core, pl-file.jl wrapper and reportStreamError) ──
+    dict(id="SFILT2-X1 Sset_exception keeps SIO_WARN when it sets SIO_FERR (KILL e01)",
+         file=S, targets=TEX,
+         old="((s.flags & ~SIO_WARN) | SIO_FERR)",
+         new="(s.flags | SIO_FERR)"),
+    dict(id="SFILT2-X2 Sset_exception(s, nothing) keeps SIO_FERR (KILL e02)",
+         file=S, targets=TEX,
+         old="(s.flags & ~(SIO_FERR | SIO_WARN))\n    s.exception",
+         new="(s.flags & ~SIO_WARN)\n    s.exception"),
+    dict(id="SFILT2-X3 Sset_exception does not set SIO_FERR (KILL e01, e06)",
+         file=S, targets=TEX,
+         old="((s.flags & ~SIO_WARN) | SIO_FERR)",
+         new="(s.flags & ~SIO_WARN)"),
+    dict(id="SFILT2-X4 Sset_exception does not check the magic (KILL e03, e08)",
+         file=S, targets=TEX,
+         old="    s.magic == SIO_MAGIC || return -1\n    nflags = ex",
+         new="    nflags = ex"),
+    dict(id="SFILT2-X5 Sset_exception does not keep the record (KILL e01, e06, e07)",
+         file=S, targets=TEX,
+         old="    s.exception = ex === nothing ? nothing : Ref{AbstractStreamException}(ex)\n",
+         new="    s.exception = nothing\n"),
+    dict(id="SFILT2-X6 Sset_exception(s, nothing) keeps the old record (KILL e02, e05, e08)",
+         file=S, targets=TEX,
+         old="    s.exception = ex === nothing ? nothing : Ref{AbstractStreamException}(ex)\n",
+         new="    s.exception = ex === nothing ? s.exception : Ref{AbstractStreamException}(ex)\n"),
+    dict(id="SFILT2-X7 Sset_exception follows upstream (KILL e04)",
+         file=S, targets=TEX,
+         old="    s.flags = nflags\n    return 0\nend\n",
+         new="    s.flags = nflags\n    s.upstream !== nothing && Sset_exception(s.upstream, ex)\n    return 0\nend\n"),
+    dict(id="SFILT2-X8 Sclearerr does not drop the record (KILL e05)",
+         file=S, targets=TEX,
+         old="        Sset_exception(us, nothing)\n        us = us.downstream\n",
+         new="        us = us.downstream\n"),
+    dict(id="SFILT2-X9 the wrapper clears a pending exception that is NOT equal (KILL e07)",
+         file=F, targets=TEX,
+         old="-(pending + 1), true) == CMPEX_EQUAL",
+         new="-(pending + 1), true) != CMPEX_EQUAL"),
+    dict(id="SFILT2-X10 the wrapper never clears the equal pending exception (KILL e07)",
+         file=F, targets=TEX,
+         old="        PL_clear_exception(ld)\n    end\n    return Sset_exception(s, StreamException{T}(r))",
+         new="        nothing\n    end\n    return Sset_exception(s, StreamException{T}(r))"),
+    dict(id="SFILT2-X11 the wrapper records a zero ex instead of dropping the record (KILL e08)",
+         file=F, targets=TEX,
+         old="    (s.magic == SIO_MAGIC && ex != 0) || return Sset_exception(s, nothing)\n",
+         new="    s.magic == SIO_MAGIC || return Sset_exception(s, nothing)\n"),
+    dict(id="SFILT2-X12 the wrapper compares with eq = false: the same answer on equal terms (EQUIVALENT)",
+         file=F, targets=TEX,
+         equivalent="src/os/pl-file.jl, Sset_exception wrapper: compareStandard_cells answers CMP_EQUAL for equal terms with eq true or false (eq only skips the ordering work), and the only use is `== CMPEX_EQUAL`. Read, not run.",
+         old="compareStandard_cells(ld, -(ex + 1), -(pending + 1), true)",
+         new="compareStandard_cells(ld, -(ex + 1), -(pending + 1), false)"),
+    dict(id="SFILT2-X13 reportStreamError does not look at the recorded exception (KILL e06, e07)",
+         file=F, targets=TEX,
+         old="            if exr !== nothing\n",
+         new="            if false\n"),
+    dict(id="SFILT2-X14 reportStreamError does not raise the recorded exception (KILL e06)",
+         file=F, targets=TEX,
+         old="                rc && (rc = PL_raise_exception(ld, ex))\n",
+         new=""),
+    dict(id="SFILT2-X15 reportStreamError does not Sclearerr after the recorded exception (KILL e06)",
+         file=F, targets=TEX,
+         old="                rc && (rc = PL_raise_exception(ld, ex))\n                Sclearerr(s)\n",
+         new="                rc && (rc = PL_raise_exception(ld, ex))\n"),
+    dict(id="SFILT2-X16 reportStreamError does not drop the record itself (EQUIVALENT)",
+         file=F, targets=TEX,
+         equivalent="src/os/pl-file.jl, reportStreamError: the Sclearerr(s) that follows calls Sset_exception(us, nothing), which drops the record. Read, not run.",
+         old="                s.exception = nothing               # PL_erase(s->exception): the record is Julia's GC's\n",
+         new=""),
+    dict(id="SFILT2-X17 reportStreamError raises the recorded exception over a pending one (KILL e07)",
+         file=F, targets=TEX,
+         old="            ld.exception_term != 0 && return false\n\n            exr",
+         new="            exr"),
+    # NOT a row: `ld.exception_processing = true` before the foreign frame (the spare stack for PL_recorded's overflow): no test overflows there. NOT COVERED.
 ]
 
 if __name__ == "__main__":     # the text check: every `old` once, new != old
