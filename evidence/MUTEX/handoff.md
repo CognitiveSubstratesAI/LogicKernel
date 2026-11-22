@@ -1,9 +1,16 @@
-# MUTEX handoff (pl-mutex.c: the mutex_* predicates, single-thread form) -- written at the 150k cap
+# MUTEX handoff (pl-mutex.c: the mutex_* predicates, single-thread form)
 
-Worktree /home/shivaji1012/code/lk-mutex, branch wip/mutex, base 281ca507. NOTHING COMMITTED YET (the cap hook blocked
-`git commit`); the dispatcher commits the WIP as is, or the next agent does after reading this.
-Scratch (upstream copies, grep results): /tmp/claude-1000/-home-shivaji1012-code-CognitiveSubstratesAI/b1bc52d9-44dc-428a-a9bb-10bf805f9033/scratchpad/mutex/
- (pl-mutex.c, pl-thread.c = upstream 18168e62; pl-ext.c).
+Worktree /home/shivaji1012/code/lk-mutex, branch wip/mutex. Scratch (upstream copies):
+/tmp/claude-1000/-home-shivaji1012-code-CognitiveSubstratesAI/b1bc52d9-44dc-428a-a9bb-10bf805f9033/scratchpad/mutex/
+
+## STATE (Sonnet writer, step MUTEX2; updated after each commit)
+* COMMITTED: merge of wip/thread-prop (get_prop_def exists in src/pl-thread.jl with the signature
+  `(ld, t, expected::Symbol, list::NTuple{N,Symbol})::Tuple{Int,Int}`; the `Tuple{Symbol,Int}` text below is superseded).
+* piece 1 (src/pl-mutex.jl, registration in src/pl-ext.jl, manifest entries, pl-global.jl header comment): written, see the
+  last commit; NEVER RUN (no julia in this step). with_mutex/2 UNCHANGED (D-0783 (4): its own follow-up step).
+* NOT YET WRITTEN: (2) test/core_lang/test_mutex_swipl.jl + pins, tools/test_warm_shards.tsv entry; (3) tools/mutants/MUTEX.py;
+  (4) docs/architecture.md MUTEX section (and the :813/:6319 refused-functions lines).
+* Pins come from `~/.local/bin/swipl` (10.1.20, the pin binary), NOT the 10.1.19 path in the test plan below.
 
 ## Scope
 Upstream's 8 predicates (BeginPredDefs(mutex), pl-mutex.c:785-796): mutex_create/1,2, mutex_destroy/1, mutex_lock/1,

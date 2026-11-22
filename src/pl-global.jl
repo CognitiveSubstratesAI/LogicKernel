@@ -395,6 +395,9 @@ end
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
 # Since TH1 engines: `thread`, `GD->thread` and the engine counters `GD->statistics.engines_created/finished` (`thread_state`), appended LAST; the
 # local data gets `thread_info`, `LD->thread.info`, appended LAST (`nothing`: the main thread). `GD_COPY_POLICY`: `:reset` (a copy has no engine).
+# Since MUTEX: `mutexes` and `mutex_serial` (the user mutexes of pl-mutex.c). `mutexes` is `GD->thread.mutexTable`, keyed by the `sym_key` of the
+# mutex's id (a name, or the `mutex` blob of an anonymous one); `mutex_serial` is the last creation number handed out (the payload of an anonymous
+# mutex's blob, and the order `mutex_property/2` enumerates in); the local data holds `mutex_enums`, the pool of its REDO_PTR states.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.

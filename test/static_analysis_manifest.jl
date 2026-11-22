@@ -2598,6 +2598,34 @@ function _manifest_index(T)
         (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
         (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
+        # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
+        (LK.mutex_prop_enum{T}, Tuple{}, false),
+        (LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}}, false),
+        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int}, false),
+        (LK._mutex_bytes, Tuple{Int}, false),
+        (LK.unify_mutex, Tuple{LD, Int, LK.pl_mutex{T}}, false),
+        (LK.unify_mutex_owner, Tuple{LD, Int, Int}, false),
+        (LK.mutexCreate, Tuple{LD, Union{Nothing, T}}, false),
+        (LK.unlocked_pl_mutex_create, Tuple{LD, Int}, false),
+        (LK.get_mutex, Tuple{LD, Int, Bool}, false),
+        (LK.try_really_destroy_mutex, Tuple{LD, LK.pl_mutex{T}}, false),
+        (LK.mutex_property_value, Tuple{LD, LK.pl_mutex{T}, Int, Int}, false),
+        (LK.advance_mstate!, Tuple{LK.mutex_prop_enum{T}}, false),
+        (LK.advance_mstate_table!, Tuple{LK.mutex_prop_enum{T}}, false),
+        (LK.free_mstate!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int}, false),
+        (LK.get_prop_def, Tuple{LD, Int, Symbol, typeof(LK._MUTEX_PROPERTIES)}, false),
+        [
+            (f, Tuple{LK.pl_mutex{T}}, false) for
+            f in (LK.PL_mutex_lock, LK.PL_mutex_trylock, LK.PL_mutex_unlock)
+        ]...,
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_mutex_create1_va, LK.pl_mutex_create2_va, LK.pl_mutex_destroy1_va,
+                LK.pl_mutex_lock1_va, LK.pl_mutex_trylock1_va, LK.pl_mutex_unlock1_va,
+                LK.pl_mutex_unlock_all0_va, LK.pl_mutex_property2_va
+            )
+        ]...,
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
         (LK.is_dict_functor, Tuple{LD, UInt64}, false),
@@ -5679,6 +5707,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_bisim)}, false),
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_mutex)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
