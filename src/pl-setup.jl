@@ -698,7 +698,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
         locale_state{T}(),                      # locale: empty until initLocale! (below)
-        dc_proc                                 # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
+        dc_proc,                                # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
+        initCharConversion()                    # char_conversion_table: pl-setup.c:174 (RD2b)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

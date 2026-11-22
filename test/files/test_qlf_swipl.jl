@@ -154,6 +154,32 @@ const _QL_AUTOLOAD_PINNED = [
     "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[97,117,116,111,108,111,97,100,95,111,102,102],nil))"
 ]
 
+# EQ2 (LB3-D4, audit D-0472 item 4): the conditional directives qualified with a module (`:- user:if(G)`, `:- user:else`, `:- system:endif`).
+# pl-qlf.c's update_conditional_compilation reads the qualified directive's argument 2, so the boot compile treats them as conditionals;
+# swipl's CONSULT does not (its Prolog loader runs `user:if(fail)` as a goal and raises), so the oracle is swipl's own BOOT compile of the
+# file, not the consult driver: with the pin's boot/ sources in a directory `boot/` (`git show 18168e62:boot/<f>` for every file of boot/)
+# `swipl -o x.prc -b boot/init.pl prog.pl` then `swipl -x x.prc -g "findall(X,r(X),L),print(L),nl,halt"` printed
+# [else_arm,end,if_true,sys_else] (swipl 10.1.20, 2026-11-10). Without the qualification handling (mutant: `if false`) the
+# directives run as goals, no part is skipped and `skipped`, `sys_hidden` are compiled. No live check: the boot sources are not on PATH.
+const _QL_QUAL_PROGRAM = raw"""
+:- user:if(fail).
+r(skipped).
+:- user:else.
+r(else_arm).
+:- user:endif.
+r(end).
+:- if(true).
+r(if_true).
+:- system:if(fail).
+r(sys_hidden).
+:- system:else.
+r(sys_else).
+:- system:endif.
+:- endif.
+t_q01(L) :- findall(X, r(X), L).
+"""
+const _QL_QUAL_PINNED = "t_q01 c[116,95,113,48,49]/1(c[91,124,93]/2(a[101,108,115,101,95,97,114,109],c[91,124,93]/2(a[101,110,100],c[91,124,93]/2(a[105,102,95,116,114,117,101],c[91,124,93]/2(a[115,121,115,95,101,108,115,101],nil)))))"
+
 "A fresh database and the file `text` written to a temporary directory."
 function _ql_db(text::String; name::String="prog.pl")
     gd = LK.PL_global_data{_QL}()
@@ -390,6 +416,17 @@ end
     @test isempty(_ql_messages(ld))
 end
 
+@testset "a module-qualified if/else/endif is a conditional (LB3-D4; swipl pin: its boot compile)" begin
+    gd, ld, f = _ql_db(_QL_QUAL_PROGRAM; name="qual.pl")
+    @test LK.compileFile(gd, ld, nothing, f)
+    kl = _ql_query_lines(gd, ld, ["t_q01"])
+    @test _ql_list_atoms(kl[1]) == _ql_list_atoms(_QL_QUAL_PINNED) ==
+        ["else_arm", "end", "if_true", "sys_else"]
+    @test kl[1] == _QL_QUAL_PINNED
+    @test !any(in(_ql_list_atoms(kl[1])), ["skipped", "sys_hidden"])
+    @test isempty(_ql_messages(ld))                      # no directive ran as a goal (that would leave `if/1` undefined)
+end
+
 @testset "R-B: closing a query after an exception on the unbooted database (owner ENG2, audit D-0377 item 3)" begin
     # findall/3 is undefined on setupProlog's database (boot/bags.pl not loaded): the query raises, and PL_close_query
     # then raised `_release_frozen!: slot 27 references global position 31 above the reset target 19`
@@ -541,6 +578,31 @@ end
     nofile = joinpath(mktempdir(), "no_such.pl")
     @test !LK.compileFile(gd, ld, nothing, nofile)
     @test any(m -> startswith(m, "Failed to open $nofile"), _ql_messages(ld))
+end
+
+# LB3-F5 (EQ2, audit D-0472 item 4): read_clause answers false, WITHOUT a syntax error, when print_message/2 raises while the singleton warning
+# is printed (check_singletons -> printMessage -> false with the exception kept); the loop prints "Syntax error" and goes on with the
+# next clause (pl-qlf.c `continue`). swipl 10.1.20, 2026-11-10, its own boot compile (`swipl -o y.prc -b boot/init.pl f5.pl`, boot/ = the pin's
+# sources, then `swipl -x y.prc` asking current_predicate/1) of this very program: `f5.pl:2: Syntax error`, p undefined, q defined, r defined.
+# Mutant `break`: the compile stops at p, q and r stay undefined.
+const _QL_F5_PROGRAM = """
+user:message_hook(singletons(_, _), _, _) :- throw(x).
+p(X) :- true.
+q(a).
+r(b).
+"""
+const _QL_F5_PINNED = ["p undefined", "q defined", "r defined"]
+
+@testset "a read_clause that fails without a syntax error (print_message/2 raises) is skipped, the file goes on (LB3-F5; swipl pin: its boot compile)" begin
+    # UNTESTED: nothing was run when this row was written. The kernel keeps the exception printMessage raised pending, as upstream does
+    # (PL_Q_PASS_EXCEPTION); the row clears it before it queries. If the loop does not reach q and r on the kernel, read pl-qlf.jl's loop first.
+    gd, ld, f = _ql_db(_QL_F5_PROGRAM; name="f5.pl")
+    LK.compileFile(gd, ld, nothing, f)
+    LK.PL_clear_exception(ld)
+    kl = _ql_query_lines(gd, ld, ["p", "q", "r"])
+    got = [startswith(l, n * " undefined") ? n * " undefined" : n * " defined" for (l, n) in zip(kl, ["p", "q", "r"])]
+    @test got == _QL_F5_PINNED
+    @test count(m -> occursin(r":[0-9]+: Syntax error\n$", m), _ql_messages(ld)) == 1
 end
 
 @testset "a term that cannot be asserted is reported as Failed to compile and the loop goes on" begin

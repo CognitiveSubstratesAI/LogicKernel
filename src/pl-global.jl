@@ -256,6 +256,7 @@ mutable struct PL_global_data{T}
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
+    char_conversion_table::Vector{Int}                          # (pl-read.c static `char_table[257]`: the entry of code c is at c + 2, EOF at 1; RD2b)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -311,6 +312,9 @@ end
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
 # Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
+# Since RD2b: `char_conversion_table`, DIVERGES (representation): upstream's `char_table[257]` is a static of pl-read.c shared by the process,
+# here a field of the database (the entry of code `c` at index `c + 2`, EOF at 1), filled by `initCharConversion` (src/pl-read.jl) when the
+# database is made; `char_conversion/2` writes it, a read holds it while the Prolog flag `char_conversion` is set.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -790,6 +794,9 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # site names at which it fired while forced; docs/g1gc_safe_points.md), appended last.
 # Since G1-GC G1-1: `gc` (`LD->gc`: `ld_gc`, the statistics, the stacks' policies, the pending-signal bits) and `shift_status` (`LD->shift_status`,
 # `pl_shift_status_t`, pl-incl.jl), appended after G1-2's two.
+# Since RD2: `read_contexts`, appended last: the reads whose quasi-quotations the library may open (`'$qq_open'/2`; src/pl-read.jl). Upstream's
+# `'$quasi_quotation'(Ptr, Start, Len)` holds a pointer to the read data; Julia keeps no object in a word, so the pointer is `objectid(rd)` and
+# this vector is where `$qq_open` finds the data again, only while `parse_quasi_quotations` runs the library.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -975,6 +982,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     trail_size::Int                                             # ORIGINAL stacks.trail's size in entries, MODELLED: the trail vector has no capacity; only `_growTrail!`'s shift count reads it (G1, D-0966)
     encoding::IOENC                                             # encoding: the default text encoding, flag `encoding` (pl-global.h; ENC1 flags)
     unicode_atoms::Sunicode_atoms_t                             # unicode_atoms: the default atom-content policy, flag `unicode_atoms` (ENC1 flags)
+    read_contexts::Vector{Any}                                  # ORIGINAL: the `read_data` a quasi-quotation's `'\$quasi_quotation'(Ptr, …)` may name, while its read runs (RD2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -1109,7 +1117,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         pl_shift_status_t(),                    # shift_status: nothing shifted (G1-1)
         0,                                      # trail_size: set by allocStacks! (G1, D-0966)
         ENC_UTF8,                               # encoding: DIVERGES, upstream's initEncoding (init_locale) is lazy; the kernel's text is UTF-8 (pl-ctype.jl)
-        S_UATOMS_ACCEPT                         # unicode_atoms: the flag's default `accept` (pl-prologflag.c:2684)
+        S_UATOMS_ACCEPT,                        # unicode_atoms: the flag's default `accept` (pl-prologflag.c:2684)
+        Any[]                                   # read_contexts: none (RD2)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

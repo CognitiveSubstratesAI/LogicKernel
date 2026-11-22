@@ -77,11 +77,12 @@ MUTANTS = [
     dict(id="MOD5a-F1 fixExportModule does not re-point the sharing procedure (KILL i15, sh)", file=M, targets=TS,
          old="            proc.definition = new\n",
          new="            nothing\n"),
-    dict(id="MOD5a-F2 fixExport also visits a destroyed module (EQUIVALENT: no module is destroyed yet)", file=M, targets=TS,
+    # EQ2 (D-0472 item 4): NOT equivalent since '$destroy_module'/1 exists (MOD5b): a destroyed module keeps its record in gd.modules, so without the
+    # skip fixExport re-points its procedures (upstream's table no longer holds it, pl-modul.c:438, :1655-1658). Killed by the white-box
+    # testset F2 of test_export_import_swipl.jl (kernel-only: the Prolog-level answer is the same in swipl).
+    dict(id="MOD5a-F2 fixExport also visits a destroyed module (KILL testset F2)", file=M, targets=TS,
          old="(m.flags & M_DESTROYED) != 0 && continue",
-         new="false && continue",
-         equivalent="M_DESTROYED is set by '$destroy_module'/1 (MOD5b), which the kernel does not have: no module of a row is "
-                    "destroyed, so the skipped branch never runs (src/pl-modul.jl fixExport)"),
+         new="false && continue"),
     # ── atomToImportStrength, import/1, '$import'/2 ──
     dict(id="MOD5a-S1 atomToImportStrength maps weak to strong (KILL w02, F5)", file=M, targets=TS,
          old="sym_key(a) == sym_key(mk_sym(T, :weak)) && return Int(PROC_WEAK)",
@@ -153,11 +154,12 @@ MUTANTS = [
     dict(id="MOD5a-D8 '$def_modules' starts at user, not the source module (KILL d13)", file=M, targets=TS,
          old="m = gd.modules[ld.modules_source]",
          new="m = MODULE_user(gd)"),
-    dict(id="MOD5a-D9 the loop guard counts up (EQUIVALENT: `l` is only read by `l < 0`)", file=M, targets=TS,
+    # EQ2 (D-0472 item 4): NOT equivalent: setSuperModule has no cycle check for a single super (as upstream, pl-modul.c:645-652), so a loop of
+    # default modules is reachable and `l < 0` is what stops it. Upstream sysErrors there (pl-modul.c:1180): the row is kernel-only,
+    # the testset "a loop of default modules" of test_export_import_swipl.jl (the mutant overflows the stack instead of raising).
+    dict(id="MOD5a-D9 the loop guard counts up (KILL testset D9)", file=M, targets=TS,
          old="find_modules_with_defs(gd, ld, s, targets, tmp, mlist, l - 1)",
-         new="find_modules_with_defs(gd, ld, s, targets, tmp, mlist, l + 1)",
-         equivalent="`l` starts at 100 and is read only by the `l < 0` guard of a loop in the default modules; no row builds a "
-                    "chain of 100 default modules or a loop (src/pl-modul.jl find_modules_with_defs)"),
+         new="find_modules_with_defs(gd, ld, s, targets, tmp, mlist, l + 1)"),
     # ── registration flags (PL_FA_TRANSPARENT: the destination / source module is the context module) ──
     dict(id="MOD5a-R1 import/1 is not transparent: ma:import(...) imports into user (KILL i01, i03)", file=M, targets=TS,
          old="PL_extension(\"import\", 1, pl_import1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)",
@@ -168,12 +170,12 @@ MUTANTS = [
     dict(id="MOD5a-R3 export/1 is not transparent: ma:export(pb/2) exports from user (KILL e02)", file=M, targets=TS,
          old="PL_extension(\"export\", 1, pl_export1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)",
          new="PL_extension(\"export\", 1, pl_export1_va, PL_FA_VARARGS)"),
-    dict(id="MOD5a-R4 '$def_modules'/2 is not transparent (EQUIVALENT: it reads the source module, not the context)", file=M,
+    # EQ2 (D-0472 item 4): NOT equivalent: the flag sets P_TRANSPARENT on the definition, which '$get_predicate_attribute'/3 (and so
+    # predicate_property/2) shows; killed by the row d21 of test_export_import_swipl.jl (swipl-pinned: the attribute answers 1).
+    dict(id="MOD5a-R4 '$def_modules'/2 is not transparent (KILL d21)", file=M,
          targets=TS,
          old="\"\\$def_modules\", 2, pl_def_modules2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS",
-         new="\"\\$def_modules\", 2, pl_def_modules2_va, PL_FA_VARARGS",
-         equivalent="pl_def_modules2_va starts at `ld.modules_source` and never calls contextModule; PL_FA_TRANSPARENT changes only "
-                    "the context module of the call (src/pl-modul.jl pl_def_modules2_va)"),
+         new="\"\\$def_modules\", 2, pl_def_modules2_va, PL_FA_VARARGS"),
     # ── pl-proc.c get_functor, shareDefinition, unshareDefinition, autoImport ──
     dict(id="MOD5a-G1 get_functor strips the module of a GP_NOT_QUALIFIED element (KILL d20)", file=P, targets=TS,
          old="    if (how & GP_NOT_QUALIFIED) == 0\n",

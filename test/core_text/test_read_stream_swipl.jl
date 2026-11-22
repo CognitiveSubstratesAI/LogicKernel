@@ -6,8 +6,8 @@
 #     A syntax error's location is read through `rt_serr/2`: the file name and the stream blob are dropped, the numbers kept.
 #   * Every answer line is swipl's, PINNED (swipl 10.1.19-1-gcbf4e189, LC_ALL=C, two byte-identical runs, evidence/RD1/gen_rows.py of the
 #     RD1 branch); with `swipl` on PATH the live answers are compared with the pins too.
-#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): the options the kernel refuses pin the kernel's exact current answer (a `NotPortedError`)
-#     beside swipl's (the pin of the same row). The syntax errors over an `open_string/2` stream are cases again (LB7: `unify_location`).
+#   * KNOWN DIFFERENCE rows (`_RT_KNOWN`): none now (every read option and the blob read are honoured: RD2, ENC1); the list stays, empty and
+#     typed, for the next refusal (it would pin the kernel's exact answer beside swipl's). The syntax errors over an `open_string/2` stream are cases again (LB7: `unify_location`).
 #   * Rows that read the process's standard input (rt21-rt26, rt170, rt171) are UNVERIFIED on the kernel: gate decides (stdin is /dev/null in
 #     tools/run_tests.sh and in the driver run).
 using Test, LogicKernel
@@ -537,41 +537,35 @@ const _RT_CASES = [
     (
         "rt304",
         raw"""rt_str('f(X).', S), read_term(S,T,[unicode_atoms(accept)]), R = T"""
+    ),
+    (
+        "rt300",
+        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C"""
+    ),
+    (
+        "rt301",
+        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T"""
+    ),
+    # read_term's quasi_quotations(Q) option (pl-read.c read_term_from_stream, QQ_ARG) and the blob(dead|resolve) read of `<type>(…)`
+    # (read_blob_start/resume/end, newDeadBlob: the type recorded in the text is blob/2's answer): honoured since RD2
+    (
+        "rt302",
+        raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q"""
+    ),
+    (
+        "rt320",
+        raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty"""
+    ),
+    (
+        "rt321",
+        raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty"""
     )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
-#   rt300-rt302: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
-#   swipl answers the term (and for comments/quasi_quotations the collected lists). rt320, rt321: a blob `<type>(...)`, below.
-const _RT_KNOWN = [
-    (
-        "rt300",
-        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""",
-        "t_rt300 jlerr NotPortedError read_term's comments option"
-    ),
-    (
-        "rt301",
-        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""",
-        "t_rt301 jlerr NotPortedError read_term's var_prefix option"
-    ),
-    (
-        "rt302",
-        raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""",
-        "t_rt302 jlerr NotPortedError read_term's quasi_quotations option"
-    ),
-    # blob(dead|resolve) on `<type>(…)`: swipl reads a dead blob (its type is the answer); the kernel has no blob object: refused when read
-    # (DIVERGES in src/pl-read.jl `atom_to_blob_mode_ex`; owner: the blob step). UNVERIFIED on the kernel: gate decides.
-    (
-        "rt320",
-        raw"""rt_str('<a-b>(x, "y").', S), read_term(S,T,[blob(dead)]), blob(T, Ty), R = Ty""",
-        "t_rt320 jlerr NotPortedError read: a blob <type>(…)"
-    ),
-    (
-        "rt321",
-        raw"""rt_str('<a-b>(x).', S), read_term(S,T,[blob(resolve)]), blob(T, Ty), R = Ty""",
-        "t_rt321 jlerr NotPortedError read: a blob <type>(…)"
-    )
-]
+#   none: every read_term/3 option and the blob `<type>(...)` read is honoured now (comments, var_prefix, quasi_quotations, blob(dead|resolve):
+#   RD2; unicode_atoms: ENC1), so every former row is a case above and the list is empty (typed: the loops destructure 3-tuples).
+const _RT_KNOWN = Tuple{String, String, String}[]
 
 const _RT_PINNED = [
     "ok",

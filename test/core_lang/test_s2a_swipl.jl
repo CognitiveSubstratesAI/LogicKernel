@@ -374,7 +374,18 @@ const _S2_CASES = [
         "s136",
         raw"ro(S), set_stream(S, timeout(infinite)), sp(S, timeout(_), R0), close(S), R = R0"
     ),
-    ("s137", raw"ro(S), cerr(set_stream(S, timeout(foo)), R0), close(S), R = R0")
+    ("s137", raw"ro(S), cerr(set_stream(S, timeout(foo)), R0), close(S), R = R0"),
+    # s138-s139 (EQ2, audit D-0472 item 4; answers pinned from swipl 10.1.20-18168e62): the rows S1's mutants S1-8 and S1-31 were missing
+    # s138: a SECOND stream takes a non-standard alias a first stream holds (set_stream/2 alias branch, pl-file.c aliasStream -> unaliasStream of the
+    #   previous holder); closing the first must leave the alias with the second. KILLS S1-8 (aliasStream keeps the previous holder's alias: close(S1)
+    #   then deletes the alias that now belongs to S2, so `has` answers no and is_stream(zz6) fails)
+    (
+        "s138",
+        raw"ro(S1), ro(S2), set_stream(S1, alias(zz6)), set_stream(S2, alias(zz6)), close(S1), has(S2, alias(zz6), R0), ( is_stream(zz6) -> A = yes ; A = no ), close(S2), R = R0-A"
+    ),
+    # s139: set_stream(S, buffer(false)) flushes what is pending (set_buffering, pl-file.c): the 3 bytes are in the file before any close.
+    #   KILLS S1-31 (set_buffering(false) without Sflush: the size is 0)
+    ("s139", raw"wo(S), write(S, abc), set_stream(S, buffer(false)), outfile(F), size_file(F, N), close(S), R = N")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/S2A/s2a_rows.out)
@@ -516,7 +527,9 @@ const _S2_PINNED = [
     "t_s134 c[116,95,115,49,51,52]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[110,111,115,117,99,104])))",
     "t_s135 c[116,95,115,49,51,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
     "t_s136 c[116,95,115,49,51,54]/1(c[116,105,109,101,111,117,116]/1(a[105,110,102,105,110,105,116,101]))",
-    "t_s137 c[116,95,115,49,51,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[102,108,111,97,116],a[102,111,111])))"
+    "t_s137 c[116,95,115,49,51,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[102,108,111,97,116],a[102,111,111])))",
+    "t_s138 c[116,95,115,49,51,56]/1(c[45]/2(a[121,101,115],a[121,101,115]))",
+    "t_s139 c[116,95,115,49,51,57]/1(i3)"
 ]
 
 const _S2_DATA = "abc\nxyz\nlast line\n"
@@ -582,7 +595,7 @@ function _s2_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "prompt, input context, flush_output, is_stream, get_char/peek_char/skip, stream properties and set_stream as swipl's (s001-s137)" begin
+@testset "prompt, input context, flush_output, is_stream, get_char/peek_char/skip, stream properties and set_stream as swipl's (s001-s139)" begin
     f, names = _s2_file(mktempdir())
     kl = _s2_kernel(f, names)
     @test length(kl) == length(_S2_PINNED)
