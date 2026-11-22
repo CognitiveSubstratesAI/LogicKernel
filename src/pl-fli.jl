@@ -282,6 +282,50 @@ function PL_put_term(ld::PL_local_data{T}, t1::Int, t2::Int)::Bool where {T}
     return true
 end
 
+# PORT: pl-fli.c PL_put_dict
+# DIVERGES: the tag and the keys are atoms (`tag === nothing` for upstream's 0; upstream also accepts a tagged integer
+# key, which no caller of the kernel passes); no `valid_*` checks (`O_DEBUG`) and no `globalizeTermRef` (as
+# `PL_put_term`): a value is linked from its slot (`_dict_link!`, as `PL_get_dict_ex`); `gTop -= size` is the `Undo!`
+# of the mark taken before the allocation (as `PL_get_dict_ex`); `values` is the first of `len` consecutive term references.
+"Make term reference `t` hold the dict tagged `tag` of the `len` keys `keys` and the terms the `len` references from `values` hold; false with the error raised (pl-fli.c)."
+function PL_put_dict(
+    ld::PL_local_data{T}, t::term_t, tag::Union{Nothing, T}, len::Int,
+    keys::AbstractVector{T}, values::term_t
+)::Bool where {T}
+    size = len * 2 + 2                                      # size_t size = len*2+2;
+    ensureGlobalSpace(ld, size) || return false             # allocGlobal(size) fails: false
+    m = Mark(ld)
+    p0 = allocGlobalCells!(ld, size)                        # p0 = p = allocGlobal(size)
+    p = p0
+    ld.gstack[p] = dict_functor(ld, len)                    # *p++ = dict_functor(len)
+    p += 1
+    if tag !== nothing
+        ld.gstack[p] = _atom_word!(ld, tag)                 # *p++ = tag
+    else
+        ld.gstack[p] = word(0)                              # setVar(*p++)
+    end
+    p += 1
+
+    for i in 0:(len - 1)                                    # for(; len-- > 0; keys++, values++)
+        _dict_link!(ld, p, -(values + i + 1))               # *p++ = linkValI(valTermRef(values))
+        ld.gstack[p + 1] = _atom_word!(ld, keys[firstindex(keys) + i])     # *p++ = *keys
+        p += 2
+    end
+
+    rc, dupl = dict_order(ld, p0)                           # dict_order(p0, &dupl)
+    if rc == PL_DICT_TRUE
+        DiscardMark(ld, m)
+        ld.slots[t + 1] = consPtr(p0, TAG_COMPOUND | STG_GLOBAL)   # setHandle(t, consCompound(p0))
+        return true
+    end
+
+    Undo!(ld, m)                                            # gTop -= size
+    DiscardMark(ld, m)
+    ex = PL_new_term_ref(ld)                                # throw error(duplicate_key(Key), _)
+    ld.slots[ex + 1] = dupl                                 # *valTermRef(t) = dupl
+    return PL_duplicate_key_error(ld, ex)                   # PL_error(NULL, 0, NULL, ERR_DUPLICATE_KEY, t)
+end
+
 # PORT: pl-fli.h PL_put_variable
 # DIVERGES: a slot holds no unbound word, so its fresh variable is a global cell (as `new_term_ref`'s).
 "Make term reference `t` hold a fresh variable (pl-fli.h)."

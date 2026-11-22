@@ -2520,6 +2520,7 @@ function _manifest_index(T)
         (LK.get_name_value, Tuple{LD, Int, Int, LK.mark}, false),
         (LK.PL_is_dict, Tuple{LD, Int}, false),
         (LK.PL_get_dict_ex, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.PL_put_dict, Tuple{LD, Int, Union{Nothing, T}, Int, Vector{T}, Int}, false),
         (LK.get_create_dict_ex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: put_dict/3, select_dict/3, get_dict/3
         (LK.assign_in_dict, Tuple{LD, Int, Int}, false),
