@@ -105,6 +105,13 @@ mg_c2(2).
 mg_or(R) :- ( prolog_current_choice(C), prolog_choice_attribute(C, type, T), ( prolog_choice_attribute(C, pc, P), integer(P) -> R = T-pc ; R = T-nopc ) ; R = none ).
 mg_cc(R) :- mg_c2(_), prolog_current_choice(C), prolog_choice_attribute(C, type, T), prolog_choice_attribute(C, clause, Cl), ( clause(mg_c2(X), true, Cl) -> R = T-X ; R = T-noclause ).
 mg_pc(P) :- ( prolog_current_choice(C), prolog_choice_attribute(C, pc, P) ; P = none ).
+mg_ct(R) :- mg_c2(X), X == 1, prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T.
+mg_cf(R) :- mg_c2(X), X == 1, prolog_current_choice(C), prolog_choice_attribute(C, frame, Fr), prolog_frame_attribute(Fr, predicate_indicator, PI), R = PI.
+mg_cl(R) :- mg_c2(X), X == 1, prolog_current_choice(C), prolog_choice_attribute(C, clause, Cl), clause(H, _, Cl), R = H.
+mg_cn(R) :- mg_c2(X), X == 1, prolog_current_choice(C), ( prolog_choice_attribute(C, pc, PC) -> R = PC ; R = nopc ).
+mg_cp(R) :- mg_c2(X), X == 1, prolog_current_choice(C), ( prolog_choice_attribute(C, parent, P) -> ( prolog_choice_attribute(P, type, T), atom(T) -> R = parent ; R = P ) ; R = noparent ).
+mg_jt(R) :- ( X = 1 ; X = 2 ), X == 1, prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T.
+mg_jp(R) :- ( X = 1 ; X = 2 ), X == 1, prolog_current_choice(C), ( prolog_choice_attribute(C, pc, PC), integer(PC) -> R = pc ; R = nopc ).
 :- dynamic mg_seen/1.
 :- multifile user:message_hook/3.
 :- dynamic user:message_hook/3.
@@ -332,6 +339,19 @@ const _MG_CASES = [
     # (in_clause_jump) equals it only while the kernel compiles to swipl's word layout: a kernel answer other than 15 is a layout difference
     # to be reported, not a test fault.
     ("ca14", raw"mg_pc(R)", _mgi(15)),
+    # The old DBG1 line's rows t49-t57 (the C31 reconcile; each answer re-run by hand on the pinned swipl 18168e62, `swipl -q` on the program: clause,
+    # mg_c2/1, mg_c2(2), nopc, parent, jump, pc, and the unbound key's instantiation_error). The clause choice point of `mg_c2(X), X == 1` is the current
+    # one: its type is `clause` (ca15), its frame is mg_c2/1's (ca16), its next clause is mg_c2(2) (ca17), it has no pc (ca18) and a parent (ca19); the
+    # `;` of a clause body is a jump choice point (ca20) with an integer pc (ca21); an unbound key raises (ca22). The old t56 list of errors is ca04-ca08
+    # one by one, the old t57 is ca01.
+    ("ca15", raw"mg_ct(R)", _mga("clause")),
+    ("ca16", raw"mg_cf(R)", _mgc("/", _mga("mg_c2"), _mgi(1))),
+    ("ca17", raw"mg_cl(R)", _mgc("mg_c2", _mgi(2))),
+    ("ca18", raw"mg_cn(R)", _mga("nopc")),
+    ("ca19", raw"mg_cp(R)", _mga("parent")),
+    ("ca20", raw"mg_jt(R)", _mga("jump")),
+    ("ca21", raw"mg_jp(R)", _mga("pc")),
+    ("ca22", raw"prolog_current_choice(C), prolog_choice_attribute(C, _, _)", _mgraised(_mga("instantiation_error"))),
     # trace/0 where the kernel does NOT refuse (audit D-0768 (2): no port of PORT_MASK is visible, so the tracer cannot stop): swipl answers as the
     # kernel does, MEASURED with the pin: `'$visible'(V0, 0), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off )`
     # gives on-off (a mask of 0 and one outside PORT_MASK, 512, alike). The rows restore the mask and the debug mode (`nodebug`: trace/0 switches the
@@ -414,7 +434,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge16, cn01-cn07, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca14, tr01-tr02)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge16, cn01-cn07, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca22, tr01-tr02)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -424,7 +444,7 @@ end
         @test k == p
     end
     # not vacuous: the expectation holds raised errors, `ok` and answers, and one failing row (ge09)
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 17    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04 + ca04-ca08)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 18    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04 + ca04-ca08 + ca22)
     @test count(l -> occursin(r"^t_\w+ *$", l), ex) == 1                   # ge09 fails
     @test count(l -> occursin("i-1)", l), ex) == 6                         # -1 in an answer (pu04's character, the EOF answers, ge16)
 end

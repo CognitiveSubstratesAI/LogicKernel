@@ -11,6 +11,7 @@
 # needs an erroring stream: no row), `'$sig_unblock'` always true (not killable: nothing to observe).
 # C23: TR3-TR8 (trace/0's refusal while a port is visible, audit D-0768 (2); kill: MG tr01-tr02 and the direct testset, written blind: nothing ran).
 # C29: SRC2-1..SRC2-17 ('$unload_file'/1's helpers; the old line's SMALLREF.py group, each `old` refit and counted once), MISS1-UL2 is declared equivalent.
+# C32 (C31): CA11-CA17, the old DBG1 line's b6, b7, b8, b20-b23 refit (rows ca15-ca22 = its t49-t57); CA14 is NOT equivalent to CA6 (it drops every real choice point, CA6 only the CHP_DEBUG skip).
 # Every `old` was counted EXACTLY once in its file (python3, src.count(old) == 1) at the tip of wip/miss-preds when this file was written (no Julia ran);
 # `new` != `old`. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 MG = "test/core_lang/test_miss_preds_swipl.jl"
@@ -68,6 +69,28 @@ MUTANTS = [
     # choice_type_atom: a catch choice named `debug` (kill: MG ca13)
     m("MISS1-CA10", "c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :catch : :debug",
       "c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :debug : :debug", TARGETS_CA),
+    # C31 (the old DBG1 line's b6, b7, b8, b20-b23, refit to the Nov-22 text; rows ca15-ca22 are its t49-t57 re-run on the pinned swipl)
+    # choice_type_atom: a jump choice point is named `clause` (kill: MG ca20, ca09)
+    m("MISS1-CA11", "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :",
+      "ty = c.type == CHP_JUMP ? :clause : c.type == CHP_CLAUSE ? :clause :", TARGETS_CA),
+    # choice_type_atom: a clause choice point is named `jump` (kill: MG ca15, ca10)
+    m("MISS1-CA12", "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :",
+      "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :jump :", TARGETS_CA),
+    # PL_get_choice: a position no choice point holds is a type error, not an existence error (kill: MG ca06)
+    m("MISS1-CA13", "PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), r)",
+      "PL_error(ld, ERR_TYPE, mk_sym(T, :choice), r)", TARGETS_CA),
+    # parent: the walk skips every real choice point and stops only at a CHP_DEBUG one: no parent (kill: MG ca03, ca19)
+    m("MISS1-CA14", "        while p != 0 && ld.choices[p].type == CHP_DEBUG",
+      "        while p != 0 && ld.choices[p].type != CHP_DEBUG", TARGETS_CA),
+    # pc: answered only for what is NOT an in-clause jump (kill: MG ca09 reads `jump-nopc`, ca18 reads -1 for a clause choice point, ca21)
+    m("MISS1-CA15", "        offset != -1 && return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE",
+      "        offset == -1 && return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE", TARGETS_CA),
+    # frame: a choice point's frame is its parent choice point (kill: MG ca16 reads mg_c2/1 off the frame, ca11)
+    m("MISS1-CA16", "PL_unify_frame(ld, A3, ld.choices[ch].frame)",
+      "PL_unify_frame(ld, A3, ld.choices[ch].parent)", TARGETS_CA),
+    # in_clause_jump: a clause choice point is read as an in-clause jump (kill: MG ca18 reads a pc where a clause choice point has none, ca09)
+    m("MISS1-CA17", "    if c.type == CHP_JUMP && c.frame != 0\n        f = ld.frames[c.frame]",
+      "    if c.type == CHP_CLAUSE && c.frame != 0\n        f = ld.frames[c.frame]", TARGETS_CA),
     # '$leash'/2 stores into the visible mask (kill: MG ld02, vs03)
     m("MISS1-LV1", "    ld.debugstatus_leashing = v\n", "    ld.debugstatus_visible = v\n", [MG]),
     # '$visible'/2 stores into the leash mask (kill: MG vs02)
