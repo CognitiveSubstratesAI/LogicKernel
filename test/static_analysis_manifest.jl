@@ -1400,6 +1400,7 @@ function _manifest_index(T)
         (LK.do_close, Tuple{LD, LK.IOSTREAM, Bool}, false),
         (LK.pl_close, Tuple{LD, Int64, Bool}, false),
         (LK.reportStreamError, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.Sset_exception, Tuple{LD, LK.IOSTREAM, Int64}, false),
         (LK.streamStatus, Tuple{LD, LK.IOSTREAM}, false),
         (LK.releaseStream, Tuple{LK.IOSTREAM}, false),
         # R1e — write_canonical/1,2 (pl-prims.c numberVars) and read_term_from_atom/3
@@ -5562,6 +5563,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sfpasteof, Tuple{LK.IOSTREAM}, true),
     (LK.Sgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sgetcode, Tuple{LK.IOSTREAM}, false),
+    (LK.get_wchar, Tuple{LK.IOSTREAM}, false),
     (LK.SkipAtomIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),
@@ -5576,6 +5578,20 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    # STREAMX: the filter streams (pl-stream.c Sset_filter, the open function set); the callbacks' defaults are exempt
+    (LK.Sfread, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
+    (LK.Sfwrite, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
+    (LK.Sread_pending, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
+    (LK.Spending, Tuple{LK.IOSTREAM}, false), (LK.S__fileno, Tuple{LK.IOSTREAM}, false),
+    (LK.Sfileno, Tuple{LK.IOSTREAM}, false),
+    (LK.Sset_exception, Tuple{LK.IOSTREAM, Nothing}, false),
+    (LK.Sset_filter, Tuple{LK.IOSTREAM, LK.IOSTREAM}, false),
+    (LK.Sset_filter, Tuple{LK.IOSTREAM, Nothing}, false),
+    (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
+    (LK.Swrite_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, false),
+    (LK.Sclose_filter, Tuple{LK.IOSTREAM}, false),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Nothing}, false),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Base.RefValue{Int64}}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),
@@ -6370,17 +6386,52 @@ const JET_DISPATCH_ALLOWED = [
         Int, Int
     },
     reason="pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
+),
+    # STREAMX (pending Shivaji's word, Q2): the filter streams' callbacks are the open set's indirect call, upstream's
+    # `(*s->functions->read)(s->handle, ...)` of pl-stream.c (S_read/S_write/S_close and the control calls); each barrier
+    # function holds exactly one such call.
+    (
+    caller=LK.Sread_filter,
+    callee=LK.Sfilter_read,
+    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+    reason="pl-stream.c S__fillbuf: (*s->functions->read)(s->handle, ...), an indirect call per buffer fill of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.Swrite_filter,
+    callee=LK.Sfilter_write,
+    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+    reason="pl-stream.c S__flushbuf: (*s->functions->write)(s->handle, ...), an indirect call per buffer flush of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.Sclose_filter,
+    callee=LK.Sfilter_close,
+    argtypes=Tuple{LK.AbstractSfilter},
+    reason="pl-stream.c S__close: (*s->functions->close)(s->handle), one indirect call per close of a filter stream, same as upstream (STREAMX)"
+),
+    (
+    caller=LK.S_control,
+    callee=LK.Sfilter_control,
+    argtypes=Tuple{LK.AbstractSfilter, Int, Any},
+    reason="pl-stream.c Ssetenc, Sflush, S__seterror, Ssize: (*s->functions->control)(s->handle, op, arg), an indirect call per control action of a filter stream, same as upstream (STREAMX)"
 )
 ]
 
 "The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one."
 const JET_DISPATCH_FAMILY = [
-    (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
-    (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 0),
-    (LK.S_close, Tuple{LK.IOSTREAM}, 0),
-    (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
-    (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 0),
-    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0)
+    (LK.S_read, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 2),
+    (LK.S_write, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.S_close, Tuple{LK.IOSTREAM}, 1),
+    (LK.S_read_wrapped, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 1),
+    (LK.S_close_wrapped, Tuple{LK.IOSTREAM}, 1),
+    (LK.Swrite_stderr, Tuple{LK.IOSTREAM, Vector{UInt8}, Int, Int}, 0),
+    # STREAMX (pending Shivaji's word, Q2): the barrier functions hold one allowed dispatch each, and the callers reach it:
+    # the counts below are what the structure predicts (MEASURE ON THE LANE with `_sa_opt_reports`; `S_read` has its own
+    # Sread_user and, through S_read_wrapped, the Sread_filter one; a JET analysis sees the dispatch only while the
+    # `Sfilter_*` function has more than its default method, so the lane run decides these numbers).
+    (LK.Sread_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.Swrite_filter, Tuple{LK.IOSTREAM, Vector{UInt8}, Int64, Int64}, 1),
+    (LK.Sclose_filter, Tuple{LK.IOSTREAM}, 1),
+    (LK.S_control, Tuple{LK.IOSTREAM, Int64, Nothing}, 1)
 ]
 
 # `is_ground(t)` with an untyped argument is the interface's FALLBACK for implementations without a
@@ -6531,6 +6582,21 @@ const SPAN_CALLEE_EXEMPT = [
 ]
 
 const DISPATCH_EXEMPT = (
+    (
+        (LK.Snew, Tuple{LK.AbstractSfilter, UInt32, LK.IOFUNCTIONS}) => "STREAMX: the filter stream's constructor; the record is a package's own subtype of the abstract type (an open set), the abstract argument has no concrete reference type; its body is Snew over `nothing`, which is checked"
+    ),
+    (
+        (LK.Sfilter_read, Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int}) => "STREAMX: the default of a filter's read callback (the record's methods are a package's, an open set); the dispatch to them is Sread_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_write, Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int}) => "STREAMX: the default of a filter's write callback (the record's methods are a package's, an open set); the dispatch to them is Swrite_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_close, Tuple{LK.AbstractSfilter}) => "STREAMX: the default of a filter's close callback (the record's methods are a package's, an open set); the dispatch to them is Sclose_filter, which is checked"
+    ),
+    (
+        (LK.Sfilter_control, Tuple{LK.AbstractSfilter, Int, Any}) => "STREAMX: the default of a filter's control callback (the record's methods are a package's, an open set); the dispatch to them is S_control, which is checked"
+    ),
     (
         (is_ground, Tuple{Int}) => "interface fallback; Term overrides it, and its body is_ground_walk is checked"
     ),

@@ -429,8 +429,17 @@ end
     # neighbours none, so a second dispatch in the family (a second call of Sread_user included) fails here.
     _sa_part("jet_allowlist") &&
         @testset "JET allowlist: one site, S_read -> Sread_user; S_write, S_close, S_read_wrapped, S_close_wrapped, Swrite_stderr at 0" begin
-            @test length(JET_DISPATCH_ALLOWED) == 1
-            for a in JET_DISPATCH_ALLOWED
+            # STREAMX (pending Shivaji's word, Q2): the first entry is S_read -> Sread_user, the four after it are the filter
+            # streams' callbacks, each in its own barrier function
+            @test length(JET_DISPATCH_ALLOWED) == 5
+            @test [(a.caller, a.callee) for a in JET_DISPATCH_ALLOWED[2:end]] == [
+                (LK.Sread_filter, LK.Sfilter_read), (LK.Swrite_filter, LK.Sfilter_write),
+                (LK.Sclose_filter, LK.Sfilter_close), (LK.S_control, LK.Sfilter_control)
+            ]
+            for a in JET_DISPATCH_ALLOWED[2:end]
+                @test occursin("same as upstream", a.reason) && occursin("STREAMX", a.reason)
+            end
+            for a in JET_DISPATCH_ALLOWED[1:1]
                 @test a.caller === LK.S_read && a.callee === LK.Sread_user
                 @test a.argtypes.parameters[1] == Union{Nothing, LK.AbstractLocalData}
                 @test occursin("pl-file.c:5987-5997", a.reason) &&
@@ -443,7 +452,11 @@ end
                 LK.S_close,
                 LK.S_read_wrapped,
                 LK.S_close_wrapped,
-                LK.Swrite_stderr
+                LK.Swrite_stderr,
+                LK.Sread_filter,
+                LK.Swrite_filter,
+                LK.Sclose_filter,
+                LK.S_control
             ]
             )
             for (f, tt, expected) in JET_DISPATCH_FAMILY
@@ -459,11 +472,13 @@ end
             (f, tt, _) = first(JET_DISPATCH_FAMILY)
             rs = _sa_opt_reports(f, tt)
             a = first(JET_DISPATCH_ALLOWED)
-            @test length(rs) == 1 && _sa_dispatch_allowed(only(rs))
-            @test !_sa_dispatch_allowed(only(rs), [merge(a, (; caller=LK.S_write))])
-            @test !_sa_dispatch_allowed(only(rs), [merge(a, (; callee=LK.S_read_wrapped))])
+            # S_read holds the Sread_user report and, through S_read_wrapped, the Sread_filter one (STREAMX): `r1` is the first
+            @test length(rs) == 2 && all(_sa_dispatch_allowed, rs)
+            r1 = only(filter(r -> _sa_dispatch_allowed(r, [a]), rs))
+            @test !_sa_dispatch_allowed(r1, [merge(a, (; caller=LK.S_write))])
+            @test !_sa_dispatch_allowed(r1, [merge(a, (; callee=LK.S_read_wrapped))])
             @test !_sa_dispatch_allowed(
-                only(rs),
+                r1,
                 [
                     merge(
                         a,
@@ -487,11 +502,11 @@ end
             # default skips the frames that cannot be compiled but not the inlineable ones (WR2's tree: 44 reports under
             # `query_answers`, all in that subtree); with the skip off, `S_read`'s analysis still holds the one allowed report.
             rs = _sa_opt_reports(f, tt; skip_noncompileable_calls=false)
-            length(rs) == 1 ||
+            length(rs) == 2 ||
                 foreach(
                     r -> println(stderr, "  S_read, every frame: ", _sa_describe(r)), rs
                 )
-            @test length(rs) == 1 && _sa_dispatch_allowed(only(rs))
+            @test length(rs) == 2 && all(_sa_dispatch_allowed, rs)
             # what the barrier hides is checked on each concrete term type: `Sread_user` is a dispatch entry per type
             for T in (_M1, _M2, _M3)
                 tt_T = Tuple{
