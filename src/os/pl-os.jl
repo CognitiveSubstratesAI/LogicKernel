@@ -18,8 +18,8 @@
 # Since R2 LB2b: the file-name functions at the end of the file (`canonicaliseFileName`, `AbsoluteFile`, `PL_cwd`, `ChDir`, …).
 # Since R2 TOP1b: the terminal mode a stream records (`TTY_COOKED`, `TTY_RAW`, `TTY_SAVE`, `Sttymode`, `Sset_ttymode`); the kernel
 # has no ttys, so only the `SIO_RAW` flag moves (`PushTty`/`PopTty` stay out, see src/pl-read.jl's note).
-# Unwritten: the rest of pl-os.c (the signals, the tmp-file
-# registry `DeleteTemporaryFile` needs: no tmp_file/2 yet), the Windows and HAVE_TIMES branches, the
+# Since W12-TMPFILES: the temporary-file registry at the end of the file (`TemporaryFile`, `DeleteTemporaryFile`, `RemoveTemporaryFiles`).
+# Unwritten: the rest of pl-os.c (the signals), the Windows and HAVE_TIMES branches, the
 # `mitigate_spectre` flag's `clock_jitter` (the flag table, F1).
 
 # ORIGINAL (Y1): the C library the clocks and the environment call (glibc's soname), as `LIBM` is libm's.
@@ -656,5 +656,119 @@ function Sset_ttymode(s::IOSTREAM, mode::Int)::Nothing
         s.flags &= ~SIO_RAW
     end
 
+    return nothing
+end
+
+# ── the temporary-file registry (pl-os.c: TemporaryFile, DeleteTemporaryFile, RemoveTemporaryFiles), W12-TMPFILES ──
+# PORT: pl-os.c TemporaryFile, tmp_dir, verify_tmp_dir, free_tmp_name, DeleteTemporaryFile, RemoveTemporaryFiles
+# (swipl-devel 18168e62, src/os/pl-os.c:585-846; the pin). Callers: tmp_file/2 and `$tmp_file_stream`/4 (src/os/pl-files.jl),
+# delete_file/1 (`DeleteTemporaryFile`) and the halt (`PL_cleanup`: `RemoveTemporaryFiles`, src/pl-init.jl).
+# DIVERGES (representation, W12-TMPFILES): `GD->os.tmp_files`, upstream's table of the atoms handed out, is
+# `gd.os_tmp_files::Set{String}`, keyed by the file name's text (an atom's identity is its text); the order the halt
+# removes the names in is the set's, as upstream's table order is unspecified. `static int temp_counter` is
+# `gd.os_temp_counter` (one counter per database: upstream's is one per process; the kernel allows no module-level
+# mutable state, tools/lint_globals.jl: two databases of one process can hand out the same `tmp_file/2` name, a file
+# made by `$tmp_file_stream/4` retries on EEXIST as upstream). Names and file descriptors are Julia values: a failure
+# is the `errno` (an `Int`) where upstream returns NULL_ATOM and leaves `errno`; the descriptor of a created file is
+# the `Base.Filesystem.File` that `open(2)` made, which `$tmp_file_stream`/4 hands to `Sfdopen`. The Windows branch
+# (`O_XOS`, `_wtempnam`) stays unwritten (Linux kernel). No PL_LOCK(L_OS): one thread.
+
+# ORIGINAL (W12-TMPFILES): Linux's EEXIST (errno.h), as src/pl-error.jl's constants.
+const EEXIST = 17
+
+# PORT: pl-os.c SWIPL_TMP_DIR
+"The directory temporary files are made in when the flag `tmp_dir` holds no text atom (pl-os.c)."
+const SWIPL_TMP_DIR = "/tmp"
+
+# PORT: pl-os.c tmp_dir
+# DIVERGES: no cache of the flag's atom and its converted text (`tmp_aname`, `tmp_name`, `clean_tmp_dir`): the text of
+# the atom is the `String` itself.
+"The directory for temporary files: the atom of the flag `tmp_dir`, else `SWIPL_TMP_DIR` (pl-os.c)."
+function tmp_dir(ld::PL_local_data{T})::String where {T}
+    a = current_prolog_flag_atom(_query_gd(ld), mk_sym(T, :tmp_dir))
+    (a === nothing || kind(a) !== SYM || is_reserved_symbol(a) || is_blob(a)) &&
+        return SWIPL_TMP_DIR
+    return sym_text(a)
+end
+
+# PORT: pl-os.c verify_tmp_dir
+"Is `tmpdir` an existing directory; if not, print the warning `invalid_tmp_dir(Dir, Reason)` and answer false (pl-os.c)."
+function verify_tmp_dir(ld::PL_local_data{T}, tmpdir::String)::Bool where {T}
+    ExistsDirectory(tmpdir) && return true
+    msg = _message_term(
+        ld, :invalid_tmp_dir, _err_atom(ld, mk_sym(T, Symbol(tmpdir))),
+        _err_atom(ld, mk_sym(T, Symbol("no such directory")))
+    )
+    printMessage(ld, :warning, msg)                 # (to prevent ignoring return value warning)
+    return false
+end
+
+# PORT: pl-os.c TemporaryFile
+# DIVERGES: see the section's comment: the result is `(name, file)` — `file` the `Base.Filesystem.File` opened
+# with O_CREAT|O_EXCL|O_WRONLY, mode 0600, when `with_file` (upstream's `fdp != NULL`), else `nothing` — or the errno
+# that upstream leaves where it returns NULL_ATOM (`ENAMETOOLONG` for a name of PATH_MAX bytes or more; `ENOENT` after
+# the warning of an invalid `tmp_dir`: the failed `stat(2)` of `ExistsDirectory` is the last errno upstream reads).
+"""
+    TemporaryFile(ld, id, ext, with_file) -> (name, file) or errno
+
+Make the name of a unique temporary file `<tmp_dir>/swipl_<id>_<pid>_<n>.<ext>` and enter it in the registry the halt
+and delete_file/1 read; with `with_file`, also create the file (pl-os.c).
+"""
+function TemporaryFile(
+    ld::PL_local_data{T}, id::String, ext::String, with_file::Bool
+)::Union{Tuple{String, Union{Nothing, Base.Filesystem.File}}, Int} where {T}
+    gd = _query_gd(ld)
+    tmpdir = tmp_dir(ld)
+    verify_tmp_dir(ld, tmpdir) || return ENOENT
+    while true
+        gd.os_temp_counter += 1                     # ATOMIC_INC(&temp_counter)
+        tmpid = gd.os_temp_counter
+        sep = isempty(id) ? "" : "_"
+        esep = isempty(ext) ? "" : "."
+        temp = string(tmpdir, "/swipl_", id, sep, Libc.getpid(), "_", tmpid, esep, ext)
+        ncodeunits(temp) >= PATH_MAX && return ENAMETOOLONG
+        file = nothing
+        if with_file
+            file = try
+                Base.Filesystem.open(
+                    temp,
+                    Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_EXCL |
+                        Base.Filesystem.JL_O_WRONLY,
+                    0o600
+                )
+            catch e
+                e isa Base.IOError || rethrow()
+                -e.code == EEXIST && continue       # goto retry
+                return -e.code
+            end
+        end
+        push!(gd.os_tmp_files, temp)                # addNewHTable(GD->os.tmp_files, tname, true)
+        return (temp, file)
+    end
+end
+
+# PORT: pl-os.c free_tmp_name
+# DIVERGES: the name is a `String` (no atom to unregister); the result is whether the file was removed.
+"Remove the file `name` of the registry (pl-os.c)."
+free_tmp_name(name::String)::Bool = RemoveFile(name) == 0
+
+# PORT: pl-os.c DeleteTemporaryFile
+# DIVERGES: `name` is the atom's text; the database is an argument.
+"Delete `name` if it is a temporary file of the registry and forget it; false if it is none or the deletion failed (pl-os.c)."
+function DeleteTemporaryFile(gd::PL_global_data, name::String)::Bool
+    name in gd.os_tmp_files || return false
+    delete!(gd.os_tmp_files, name)
+    return free_tmp_name(name)
+end
+
+# PORT: pl-os.c RemoveTemporaryFiles
+# DIVERGES: the database is an argument.
+"Remove every file of the registry (a name of a file that was never created, or already deleted, is skipped) and empty it (pl-os.c)."
+function RemoveTemporaryFiles(gd::PL_global_data)::Nothing
+    t = copy(gd.os_tmp_files)
+    empty!(gd.os_tmp_files)
+    for name in t
+        free_tmp_name(name)
+    end
     return nothing
 end

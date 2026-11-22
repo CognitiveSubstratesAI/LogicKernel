@@ -592,7 +592,9 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Tuple{Int, Procedure{T}}[],             # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
-        locale_state{T}()                       # locale: empty until initLocale! (below)
+        locale_state{T}(),                      # locale: empty until initLocale! (below)
+        Set{String}(),                          # os_tmp_files: no temporary file yet (pl-os.c TemporaryFile; W12-TMPFILES)
+        0                                       # os_temp_counter: no temporary name made (pl-os.c `temp_counter`; W12-TMPFILES)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

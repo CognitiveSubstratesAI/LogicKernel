@@ -252,6 +252,8 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    const os_tmp_files::Set{String}                                   # os.tmp_files: the temporary files handed out, by name (pl-os.c TemporaryFile; W12-TMPFILES)
+    os_temp_counter::Int                                        # (pl-os.c static `temp_counter`: the last number in a temporary name; W12-TMPFILES)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -306,6 +308,9 @@ end
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
 # Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
+# Since W12-TMPFILES: `os_tmp_files` (`GD->os.tmp_files`, the names `TemporaryFile` handed out; `DeleteTemporaryFile`, `RemoveTemporaryFiles`,
+# src/os/pl-os.jl; its callers tmp_file/2, `$tmp_file_stream`/4) and `os_temp_counter`, pl-os.c's `static int temp_counter`
+# (one per database here: the kernel keeps no module-level mutable state).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
