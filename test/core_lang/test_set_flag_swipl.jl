@@ -568,14 +568,14 @@ end
     end
 end
 
-# the flags refused BY NAME (design D4; `table_monotonic`, `table_space`, `table_compile_threshold` and `table_drop_intermediate` are set since TAB1 TB0: test_tabling_state_swipl.jl; `max_answers_for_subgoal`, `max_table_subgoal_size`, `max_incomplete_subgoals` and `max_scc_subgoals` are set since TAB1 TB8: test_tabling_sdg_swipl.jl; `stack_limit` is set since R2 F1b: test_q10_swipl.jl sl01-sl19; `debug` and `debugger_show_context` are accepted since R2 F1c: test_debug_flag_swipl.jl): the flag is DEFINED at upstream's default and setting it raises `NotPortedError` naming the
+# the flags refused BY NAME (design D4; `encoding` and `unicode_atoms` are set since ENC1: the testset below; `table_monotonic`, `table_space`, `table_compile_threshold` and `table_drop_intermediate` are set since TAB1 TB0: test_tabling_state_swipl.jl; `max_answers_for_subgoal`, `max_table_subgoal_size`, `max_incomplete_subgoals` and `max_scc_subgoals` are set since TAB1 TB8: test_tabling_sdg_swipl.jl; `stack_limit` is set since R2 F1b: test_q10_swipl.jl sl01-sl19; `debug` and `debugger_show_context` are accepted since R2 F1c: test_debug_flag_swipl.jl): the flag is DEFINED at upstream's default and setting it raises `NotPortedError` naming the
 # side effect that lives in a file not yet ported; a value the flag accepts is given, so the refusal is the answer, not a type error
 # Values swipl 10.1.19 accepts for the flag (probed); the kernel checks oneof and read-only BEFORE it refuses, so a
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
     ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
-    ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
+    ("incomparable", "error"),
     ("theme", "dark"), ("agc_margin", "100"),
     ("heartbeat", "0"),
     ("float_overflow", "infinity")
@@ -595,7 +595,62 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 10                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); RT: 10 entries, the run on RT passes
+    @test length(_SF_REFUSED) >= 8                 # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit) - 2 (ENC1: encoding, unicode_atoms)
+    @test !any(f in ("encoding", "unicode_atoms") for (f, _) in _SF_REFUSED)       # ENC1: both are set now (the testset below)
+end
+
+# ENC1 flag setters (pl-prologflag.c setEncoding :768-781, setUnicodeAtoms :891-901; LD->encoding read by pl-file.c:4173 `stream_encoding_options`
+# type(text) and :2303 `set_stream` type(text); pl-stream.c:3544-3545 `Snew`'s initEncoding()/initUnicodeAtoms() and :4441 `Sopen_string`'s
+# initUnicodeAtoms(), which `term_to_atom/2` reads through `Sopen_text`). Each row restores the flags it sets. With `swipl` on PATH the kernel's
+# lines are compared with swipl's (the oracle's lines are the expected values: MEASURE ON THE LANE the rows enc07 (a non-atom value), uni04 and
+# uni05 (the syntax_error term of an unquoted non-ASCII atom under reject/error), whose kernel answers are not pinned here); uni06 (nfc) is the
+# kernel alone (swipl loads library(unicode) for it).
+function _sf_enc1_program(dir::String)::String
+    f = joinpath(dir, "enc1.out")
+    return """
+t_enc01(R) :- set_prolog_flag(encoding, text), current_prolog_flag(encoding, E), set_prolog_flag(encoding, utf8), R = E.
+t_enc02(R) :- catch(set_prolog_flag(encoding, foo), error(E, _), true), R = E.
+t_enc03(R) :- set_prolog_flag(encoding, iso_latin_1), open('$f', write, S), stream_property(S, encoding(E)), close(S), set_prolog_flag(encoding, utf8), R = E.
+t_enc04(R) :- set_prolog_flag(encoding, iso_latin_1), char_code(C, 233), open('$f', write, S), put_char(S, C), close(S), set_prolog_flag(encoding, utf8), size_file('$f', R).
+t_enc05(R) :- set_prolog_flag(encoding, utf8), char_code(C, 233), open('$f', write, S), put_char(S, C), close(S), size_file('$f', R).
+t_enc06(R) :- set_prolog_flag(encoding, iso_latin_1), open('$f', write, S, [type(binary)]), set_stream(S, type(text)), stream_property(S, encoding(E)), close(S), set_prolog_flag(encoding, utf8), R = E.
+t_enc07(R) :- catch(set_prolog_flag(encoding, 1), error(E, _), true), R = E.
+t_uni01(R) :- set_prolog_flag(unicode_atoms, reject), current_prolog_flag(unicode_atoms, E), set_prolog_flag(unicode_atoms, accept), R = E.
+t_uni02(R) :- catch(set_prolog_flag(unicode_atoms, foo), error(E, _), true), R = E.
+t_uni03(R) :- atom_codes(A, [99, 97, 102, 233]), term_to_atom(T, A), atom_codes(T, [_, _, _, R]).
+t_uni04(R) :- atom_codes(A, [99, 97, 102, 233]), set_prolog_flag(unicode_atoms, reject), catch(term_to_atom(T, A), error(syntax_error(S), _), true), set_prolog_flag(unicode_atoms, accept), ( var(S) -> R = ok(T) ; R = S ).
+t_uni05(R) :- atom_codes(A, [99, 97, 102, 233]), set_prolog_flag(unicode_atoms, error), catch(term_to_atom(T, A), error(syntax_error(S), _), true), set_prolog_flag(unicode_atoms, accept), ( var(S) -> R = ok(T) ; R = S ).
+t_uni06(R) :- set_prolog_flag(unicode_atoms, nfc), current_prolog_flag(unicode_atoms, E), set_prolog_flag(unicode_atoms, accept), R = E.
+"""
+end
+
+@testset "encoding and unicode_atoms are set (ENC1: setEncoding, setUnicodeAtoms; enc01-enc07, uni01-uni06)" begin
+    dir = mktempdir()
+    path = joinpath(dir, "enc1.pl")
+    write(path, _sf_enc1_program(dir))
+    live = ["t_enc01", "t_enc02", "t_enc03", "t_enc04", "t_enc05", "t_enc06", "t_enc07", "t_uni01", "t_uni02", "t_uni03", "t_uni04", "t_uni05"]
+    names = [live; "t_uni06"]
+    kl, _, _ = _sf_kernel(path, names)
+    @test kl[1] == "ok"
+    row(n, args...) = "$n " * _sf_c(n, collect(String, args))
+    # the values the C source gives (setEncoding, setUnicodeAtoms; stream_encoding_options, set_stream, Snew)
+    @test kl[2] == row("t_enc01", _sf_a("text"))
+    @test kl[3] == row("t_enc02", _sf_c("domain_error", [_sf_a("encoding"), _sf_a("foo")]))
+    @test kl[4] == row("t_enc03", _sf_a("iso_latin_1"))
+    @test kl[5] == row("t_enc04", "i1")             # é is one byte in ISO Latin-1 ...
+    @test kl[6] == row("t_enc05", "i2")             # ... two in UTF-8
+    @test kl[7] == row("t_enc06", _sf_a("iso_latin_1"))
+    @test kl[9] == row("t_uni01", _sf_a("reject"))
+    @test kl[10] == row("t_uni02", _sf_c("domain_error", [_sf_a("unicode_atoms"), _sf_a("foo")]))
+    @test kl[11] == row("t_uni03", "i233")          # accept: the unquoted atom café reads
+    @test kl[14] == row("t_uni06", _sf_a("nfc"))
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    if swipl !== nothing
+        sl = _sf_swipl_lines(path, live)
+        @test sl[1] == "ok"
+        @test length(sl) == length(live) + 1
+        @test kl[1:(length(live) + 1)] == sl
+    end
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
