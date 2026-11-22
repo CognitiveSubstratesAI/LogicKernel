@@ -745,18 +745,51 @@ end
     return nothing
 end
 
+# PORT: pl-read.c add_comment
+# (18168e62 src/pl-read.c:1626-1661)
+# DIVERGES: the text is a byte vector (UTF-8), made a string term as `PL_unify_chars(PL_STRING|REP_UTF8)`
+# does; the comment's position and the `-` head are laid out by `_unify_position!` (`PL_unify_term` is not ported).
+"Append the comment `b` (UTF-8 text) that began at `pos` (`nothing`: unknown) as `Pos-String` to the list `rd.comments` (pl-read.c)."
+function add_comment(
+    b::Vector{UInt8}, pos::Union{Nothing, IOPOS}, rd::read_data{T}
+)::Bool where {T}
+    ld = rd.ld
+    head = PL_new_term_ref(ld)
+    str = PL_new_term_ref(ld)
+    (head == 0 || str == 0) && return false
+    PL_unify_atomic(ld, str, mk_gnd(T, String(copy(b)))) || return false
+
+    @assert rd.comments != 0
+    PL_unify_list(ld, rd.comments, head, rd.comments) || return false
+    if pos !== nothing
+        sp = PL_new_term_ref(ld)
+        _unify_position!(                           # PL_FUNCTOR, FUNCTOR_dstream_position4,
+            ld, sp, Symbol("\$stream_position"),    #   PL_INT64 charno, PL_INT lineno, PL_INT linepos, PL_INT 0
+            (Int64(pos.charno), Int64(pos.lineno), Int64(pos.linepos), Int64(0)), ()
+        ) || return false
+        _unify_position!(ld, head, :-, (), (sp, str)) || return false   # PL_FUNCTOR, FUNCTOR_minus2, …, PL_TERM, str
+    else
+        m = PL_new_term_ref(ld)
+        PL_put_atom(ld, m, mk_sym(T, :-))           # PL_ATOM, ATOM_minus
+        _unify_position!(ld, head, :-, (), (m, str)) || return false
+    end
+
+    PL_reset_term_refs(ld, head)
+    return true
+end
+
 # PORT: pl-read.c raw_read2
-# DIVERGES: no `comments(C)` read option (`_PL_rd->comments`: refused, NOT PORTED until a step
-# needs it); reading past the end of a stream that raises it (`Sfpasteof`) is refused: its error
-# names the stream, and there is no stream table. The `quasi_quotations` flag is ON (SWI-7's
-# default, as swipl 10.1.16's), so `||` reads a quasi-quotation's raw text, which the parser then
-# refuses (R1's decision).
+# (18168e62 src/pl-read.c:1664; EOF 1679-1708, `/*` 1709-1805, `%` 1806-1864)
+# DIVERGES: the comments of a `comments(C)` read are collected in a byte vector, where upstream
+# uses a `tmp_buffer` and `addUTF8Buffer`; the discards of it are the garbage collector's. The
+# `quasi_quotations` flag is ON (SWI-7's default, as swipl 10.1.16's), so `||` reads a
+# quasi-quotation's raw text, which the parser then refuses (R1's decision).
 """
 Read the text of one term from the stream into the buffer (pl-read.c): layout and comments
 dropped (inside the term replaced by blanks, so positions stay right), quoted items kept as written,
 up to the full stop. At end of file before a term the text is `end_of_file. `. False on an error.
 """
-function raw_read2(rd::read_data)::Bool
+function raw_read2(rd::read_data{T})::Bool where {T}
     something_read = false
     clearBuffer(rd)                                 # clear input buffer
     rd.strictness = truePrologFlag(rd.ld, PLFLAG_ISO) ? 1 : 0   # _PL_rd->strictness = truePrologFlag(PLFLAG_ISO)
@@ -766,14 +799,17 @@ function raw_read2(rd::read_data)::Bool
         # handle_c:
         if c == EOF
             Sferror(s) != 0 && return false
-            Sfpasteof(s) == 1 &&
-                throw(
-                    NotPortedError{Nothing}(
-                        nothing,
-                        "raw_read2: reading past the end of a stream (its error names the stream)",
-                        "the stream table (R2)"
-                    )
+            if Sfpasteof(s) != 0
+                ld = rd.ld
+                ld.exception_processing = true      # LD->exception.processing = true
+                stream = PL_new_term_ref(ld)
+                PL_unify_stream_or_alias(ld, stream, s)
+                PL_error(
+                    ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :input),
+                    mk_sym(T, :past_end_of_stream), stream
                 )
+                return false
+            end
             if something_read
                 if isStringStream(s)
                     ensure_space(Int(' '), rd, something_read)
@@ -805,14 +841,12 @@ function raw_read2(rd::read_data)::Bool
             c = getchr__(rd)
             if c == Int('*')
                 start = rd._rb.here - 1             # size_t start = rb.here - rb.base
-                rd.comments != 0 &&
-                    throw(
-                        NotPortedError{Nothing}(
-                            nothing,
-                            "raw_read2: the comments(C) read option",
-                            "read_term options beyond R1d's"
-                        )
-                    )
+                cbuf = UInt8[]                      # the comment's text (UTF-8), if comments are asked for
+                collecting = rd.comments != 0          # cbuf != NULL
+                if collecting
+                    utf8_put_char(cbuf, Int('/'))
+                    utf8_put_char(cbuf, Int('*'))
+                end
                 last = getchr__(rd)
                 if last == EOF
                     start = setErrorLocation(pos, start, rd)
@@ -821,6 +855,7 @@ function raw_read2(rd::read_data)::Bool
                         "end_of_file_in_block_comment", nothing, start, rd
                     )
                 end
+                collecting && utf8_put_char(cbuf, last)
                 if something_read
                     addToBuffer(Int(' '), rd)       # positions
                     addToBuffer(Int(' '), rd)
@@ -829,6 +864,7 @@ function raw_read2(rd::read_data)::Bool
                 level = 1
                 while true
                     c = getchr__(rd)
+                    collecting && c != EOF && utf8_put_char(cbuf, c)   # (EOF: the buffer is discarded)
                     is_bidi_override(c) && return bidi_override_error(c, rd)
                     if c == EOF
                         start = setErrorLocation(pos, start, rd)
@@ -842,6 +878,7 @@ function raw_read2(rd::read_data)::Bool
                         if last == Int('*')
                             level -= 1
                             if level == 0 || rd.strictness != 0
+                                collecting && (add_comment(cbuf, pos, rd) || return false)
                                 break
                             end
                         end
@@ -865,19 +902,47 @@ function raw_read2(rd::read_data)::Bool
             end
         elseif c == Int('%')
             something_read && addToBuffer(Int(' '), rd)
-            rd.comments != 0 &&
-                throw(
-                    NotPortedError{Nothing}(
-                        nothing,
-                        "raw_read2: the comments(C) read option",
-                        "read_term options beyond R1d's"
-                    )
-                )
-            c = getchr__(rd)
-            while c != EOF && !is_eol_char(c)
-                is_bidi_override(c) && return bidi_override_error(c, rd)
-                something_read && addToBuffer(Int(' '), rd)     # record positions
+            if rd.comments != 0
+                p = s.position
+                pos = if p !== nothing
+                    IOPOS(p.byteno, p.charno - 1, p.lineno, p.linepos - 1, 0)
+                else
+                    nothing
+                end
+                cbuf = UInt8[]
+                utf8_put_char(cbuf, Int('%'))
+                while true
+                    c = getchr__(rd)
+                    while c != EOF && !is_eol_char(c)
+                        is_bidi_override(c) && return bidi_override_error(c, rd)
+                        utf8_put_char(cbuf, c)
+                        something_read && addToBuffer(Int(' '), rd)     # record positions
+                        c = getchr__(rd)
+                    end
+                    if is_eol_char(c)
+                        c2 = Speekcode(s)
+                        if c2 == Int('%')           # a run of %-lines is one comment
+                            if something_read
+                                addToBuffer(c, rd)
+                                addToBuffer(Int(' '), rd)
+                            end
+                            utf8_put_char(cbuf, c)
+                            c = Sgetcode(s)
+                            @assert c == c2
+                            utf8_put_char(cbuf, c)
+                            continue
+                        end
+                    end
+                    break
+                end
+                add_comment(cbuf, pos, rd) || return false
+            else
                 c = getchr__(rd)
+                while c != EOF && !is_eol_char(c)
+                    is_bidi_override(c) && return bidi_override_error(c, rd)
+                    something_read && addToBuffer(Int(' '), rd)     # record positions
+                    c = getchr__(rd)
+                end
             end
             continue                                # goto handle_c: is the newline
         elseif c == Int('\'')
@@ -4540,12 +4605,54 @@ const read_clause_options = (
     PL_option_t(:var_prefix, OPT_TERM)
 )
 
+# PORT: pl-read.c callCommentHook
+# (18168e62 src/pl-read.c:6828-6862)
+# DIVERGES: the hook is the procedure itself (looked up by `read_clause`), the database and the local data are arguments; the foreign
+# frame is discarded also when the term references could not be made, where upstream leaves it open.
+"""
+Call `prolog:comment_hook(Comments, TermPos, Term, VarNames)` (pl-read.c); `varnames` (0: not asked for) is
+`[]` for the hook then. False when the hook raised an exception, which stays pending (`PL_Q_PASS_EXCEPTION`).
+"""
+function callCommentHook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, comment_hook::Procedure{T},
+    comments::term_t, tpos::term_t, term::term_t, varnames::term_t
+)::Bool where {T}
+    rc = true
+    fid = PL_open_foreign_frame(ld)
+    av = fid == 0 ? 0 : PL_new_term_refs(ld, 4)
+    if fid != 0 && av != 0
+        PL_put_term(ld, av + 0, comments)
+        PL_put_term(ld, av + 1, tpos)
+        PL_put_term(ld, av + 2, term)
+        if varnames != 0
+            PL_put_term(ld, av + 3, varnames)
+        else
+            PL_put_nil(ld, av + 3)
+        end
+
+        qid = PL_open_query(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, comment_hook, av)
+        if qid != 0
+            if PL_next_solution(gd, ld, qid) == 0 && PL_exception(ld, qid) != 0
+                rc = false
+            end
+            PL_close_query(ld, qid)
+        end
+
+        PL_discard_foreign_frame(ld, fid)
+    else
+        fid != 0 && PL_discard_foreign_frame(ld, fid)
+        rc = false
+    end
+
+    return rc
+end
+
 # PORT: pl-read.c read_clause
+# (18168e62 src/pl-read.c:6871-6954)
 # DIVERGES: of the read options (`PL_scan_options`), `variable_names` and `syntax_errors` are
-# honoured (since R1g), `term_position` and `subterm_positions` since LB1; the others the kernel
-# cannot honour are REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `comments`,
-# `process_comment(true)` (the comment hook: R2 — `prolog:comment_hook/4` is not defined, so
-# `process_comment` is false), `var_prefix` (the module flag, R2), `unicode_atoms` (the NFC hook);
+# honoured (since R1g), `term_position` and `subterm_positions` since LB1, `comments`, `var_prefix` and
+# `process_comment` (the hook `prolog:comment_hook/4`, looked up at each call: upstream caches the procedure, and boot/init.pl declares it multifile, which `read_clause` does here) since RD2a; the
+# one the kernel cannot honour is REFUSED (`NotPortedError`), as `read_term_from_stream`'s: `unicode_atoms` (the NFC hook, ENC1);
 # `blob(Mode)` is accepted as read_term's (`atom_to_blob_mode_ex`); a stream whose unquoted atoms must be NFC is refused
 # (`ensure_unicode_normalize_hook`: no normalizer). The foreign frame is closed before returning,
 # where upstream leaves it to its caller's.
@@ -4556,6 +4663,12 @@ source module, its singletons reported, a syntax error reported and the next cla
 function read_clause(
     gd::PL_global_data{T}, ld::PL_local_data{T}, s::IOSTREAM, term::term_t, options::term_t
 )::Bool where {T}
+    comment_hook = lookupProcedure(                 # _PL_predicate("comment_hook", 4, "prolog", …)
+        mk_sym(T, :comment_hook), 4, lookupModule(gd, mk_sym(T, :prolog))
+    )
+    comment_hook.definition.flags |= P_MULTIFILE   # boot/init.pl: `:- multifile prolog:comment_hook/4` (no boot file here)
+    process_comment = _impl_any_defined(comment_hook.definition)
+
     fid = PL_open_foreign_frame(ld)
     fid == 0 && return false
 
@@ -4563,6 +4676,8 @@ function read_clause(
         rd = init_read_data(gd, ld, s)
         syntax_errors = :dec10                      # ATOM_dec10
         tpos = 0
+        opt_comments = 0
+        varprefix = 0
 
         if options != 0
             vals = PL_scan_options(ld, options, 0, "read_option", read_clause_options)
@@ -4573,38 +4688,25 @@ function read_clause(
             rd.varnames = something(vals[1], 0)::Int
             tpos = something(vals[2], 0)::Int
             rd.subtpos = something(vals[3], 0)::Int
-            process_comment = vals[4] === nothing ? false : vals[4]::Bool
+            vals[4] === nothing || (process_comment = vals[4]::Bool)
             opt_comments = something(vals[5], 0)::Int
             vals[6] === nothing || (syntax_errors = Symbol(sym_text(vals[6]::T)))
             opt_unicode_atoms = vals[7]
             opt_blobs = vals[8]
             varprefix = something(vals[9], 0)::Int
 
-            for (v, what) in ((opt_comments, "comments"), (varprefix, "var_prefix"))
-                if v != 0                           # (the culprit leaves the engine: exported once)
-                    c = export_cells(ld, cell_export{T}(), -(v + 1))
-                    PL_close_foreign_frame(ld, fid)
-                    throw(
-                        NotPortedError{T}(
-                            c, "read_clause's $what option",
-                            "R2 (the comments collector, the var_prefix module flag)"
-                        )
-                    )
-                end
-            end
-            if process_comment || opt_unicode_atoms !== nothing
-                PL_close_foreign_frame(ld, fid)
-                throw(
-                    NotPortedError{T}(
-                        mk_sym(T, :read_clause),
-                        "read_clause's process_comment(true) or unicode_atoms option",
-                        "R2 (the comment hook, the NFC hook)"
-                    )
-                )
-            end
             if opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T)
                 PL_close_foreign_frame(ld, fid)
                 return false
+            end
+            if opt_unicode_atoms !== nothing
+                PL_close_foreign_frame(ld, fid)
+                throw(
+                    NotPortedError{T}(
+                        mk_sym(T, :read_clause), "read_clause's unicode_atoms option",
+                        "ENC1 (the NFC hook)"
+                    )
+                )
             end
         end
 
@@ -4617,12 +4719,42 @@ function read_clause(
             )
         end
 
+        comments = 0
+        if opt_comments != 0
+            comments = PL_new_term_ref(ld)
+        elseif process_comment
+            tpos == 0 && (tpos = PL_new_term_ref(ld))
+            comments = PL_new_term_ref(ld)
+        end
+
         set_module_read_data(rd, ld.modules_source)
+        if varprefix != 0
+            c = get_var_prefix_ex(ld, varprefix)    # !get_var_prefix_ex(varprefix, &rd.var_prefix)
+            if c === nothing
+                PL_close_foreign_frame(ld, fid)
+                return false
+            end
+            rd.var_prefix = c
+        end
+        comments != 0 && (rd.comments = PL_copy_term_ref(ld, comments))
         rd.on_error = syntax_errors
         rd.singles = (rd.styleCheck & SINGLETON_CHECK) != 0 ? _SINGLES_REPORT : 0
         rval = read_term(term, rd)
         rval && tpos != 0 && (rval = unify_read_term_position(ld, tpos))
-        if !rval && rd.has_exception && reportReadError(rd)
+        if rval
+            if rd.comments != 0
+                rval = PL_unify_nil(ld, rd.comments)
+                if rval
+                    if opt_comments != 0
+                        rval = PL_unify(ld, opt_comments, comments)
+                    elseif !PL_get_nil(ld, comments)
+                        rval = callCommentHook(
+                            gd, ld, comment_hook, comments, tpos, term, rd.varnames
+                        )
+                    end
+                end
+            end
+        elseif rd.has_exception && reportReadError(rd)
             ld.exception_processing = false
             PL_rewind_foreign_frame(ld, fid)
             continue                                # goto retry (free_read_data: GC)
@@ -4790,11 +4922,10 @@ end
 
 # PORT: pl-read.c read_term_from_stream
 # DIVERGES: the options the kernel cannot honour are REFUSED (`NotPortedError`) where upstream
-# honours them: `comments` (the comments collector, R2), `var_prefix` (the module flag, R2),
-# `unicode_atoms` (the NFC hook), `quasi_quotations` (none are read); `blob(dead|resolve)` is
+# honours them: `unicode_atoms` (the NFC hook), `quasi_quotations` (none are read); `blob(dead|resolve)` is
 # accepted but `<type>(…)` is then refused when read (`atom_to_blob_mode_ex`; owner: the blob step);
-# `term_position` and `subterm_positions` are honoured since LB1. The module is the kernel's
-# table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
+# `term_position` and `subterm_positions` are honoured since LB1, `comments` and `var_prefix` since RD2a.
+# The module is the kernel's table's; a syntax error is reported through `printMessage` (`reportReadError`); the retry on a
 # `dec10` error re-reads from the same stream, as upstream. No `free_read_data` (Julia's GC).
 "Read a term from `s` into term reference `term` with the read options list `options` holds (pl-read.c)."
 function read_term_from_stream(
@@ -4826,17 +4957,13 @@ function read_term_from_stream(
     opt_unicode_atoms = vals[16]
     opt_blobs = vals[17]
 
-    for (v, what) in
-        ((tcomments, "comments"), (varprefix, "var_prefix"), (qq, "quasi_quotations"))
-        v != 0 && throw(                            # (the culprit leaves the engine: exported once)
-            NotPortedError{T}(
-                export_cells(ld, cell_export{T}(), -(v + 1)),
-                "read_term's $what option",
-                "R2 (the comments collector, the var_prefix module flag); " *
-                "no quasi-quotations"
-            )
+    qq != 0 && throw(                               # (the culprit leaves the engine: exported once)
+        NotPortedError{T}(
+            export_cells(ld, cell_export{T}(), -(qq + 1)),
+            "read_term's quasi_quotations option",
+            "none: quasi-quotations are refused (R1's decision)"
         )
-    end
+    )
     opt_blobs !== nothing && !atom_to_blob_mode_ex(ld, rd, opt_blobs::T) && return false
     opt_unicode_atoms === nothing || throw(
         NotPortedError{T}(
@@ -4858,6 +4985,11 @@ function read_term_from_stream(
             rd.flags &= ~M_CHARESCAPE
         end
     end
+    if varprefix != 0
+        c = get_var_prefix_ex(ld, varprefix)        # !get_var_prefix_ex(varprefix, &rd.var_prefix)
+        c === nothing && return false
+        rd.var_prefix = c
+    end
     if dq !== nothing
         f = setDoubleQuotes(ld, dq::T, rd.flags)
         f === nothing && return false
@@ -4875,6 +5007,7 @@ function read_term_from_stream(
         end
     end
 
+    tcomments != 0 && (rd.comments = PL_copy_term_ref(ld, tcomments))
     rd.subtpos != 0 && (s.position = s.posbuf)     # s->position = &s->posbuf
 
     rval = read_term(term, rd)
@@ -4882,6 +5015,9 @@ function read_term_from_stream(
 
     if rval
         tpos != 0 && (rval = unify_read_term_position(ld, tpos))
+        if rval && tcomments != 0
+            PL_unify_nil(ld, rd.comments) || (rval = false)
+        end
     else
         if rd.has_exception && reportReadError(rd)
             PL_rewind_foreign_frame(ld, fid)

@@ -532,23 +532,21 @@ const _RT_CASES = [
     (
         "rt187",
         raw"""rt_serr((rt_file('/* abc', S), '$raw_read'(S, _)), R)"""
+    ),
+    (
+        "rt300",
+        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C"""
+    ),
+    (
+        "rt301",
+        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T"""
     )
 ]
 
 # KNOWN DIFFERENCE rows: (id, goal, the kernel's exact answer). swipl's answer is in `_RT_PINNED` (the rows after the cases), compared live too.
-#   rt300-rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision);
-#   swipl answers the term (and for comments/quasi_quotations the collected lists). rt320, rt321: a blob `<type>(...)`, below.
+#   rt302, rt304: read_term/3 options the kernel REFUSES with a `NotPortedError` (src/pl-read.jl `read_term_from_stream`, R1's decision;
+#   rt300 comments(C) and rt301 var_prefix(true) are honoured since RD2a: cases above); swipl answers the term (and for quasi_quotations the list). rt320, rt321: a blob `<type>(...)`, below.
 const _RT_KNOWN = [
-    (
-        "rt300",
-        raw"""rt_str('f(X).', S), read_term(S,T,[comments(C)]), R = T-C""",
-        "t_rt300 jlerr NotPortedError read_term's comments option"
-    ),
-    (
-        "rt301",
-        raw"""rt_str('f(X).', S), read_term(S,T,[var_prefix(true)]), R = T""",
-        "t_rt301 jlerr NotPortedError read_term's var_prefix option"
-    ),
     (
         "rt302",
         raw"""rt_str('f(X).', S), read_term(S,T,[quasi_quotations(Q)]), R = T-Q""",

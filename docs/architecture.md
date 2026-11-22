@@ -3758,8 +3758,8 @@ constructs an explicit error.
   the term interface's atoms are Julia Symbols; the `swi_backslash_newline` warning is not printed
   (no message system); `nan15()` is a constant.
 * **NOT PORTED (explicit errors where reachable):** ENC_ANSI, UTF-16 and wchar encodings (UTF-8
-  only); `read_term`'s `comments(C)` option; reading past the end of a stream that raises it and a
-  non-file, non-string stream's error location (both name a stream: the stream table, R2); blobs,
+  only); a non-file, non-string stream's error location (it names a stream: the stream table, R2;
+  `comments(C)` and reading past the end of a stream that raises it are RD2a's); blobs,
   the NFC and non-ASCII atom policies, `dot_in_atom`, `char_conversion/2` (SWI-7's defaults: off);
   the case tables of pl-umap.c; the parser (R1d). CORRECTED in R1d: R1c listed quasi-quotations
   here as off by default — swipl's `quasi_quotations` flag is ON, and R1d detects them (`||`, `{|`).
@@ -7264,6 +7264,21 @@ stream, over the reader R1 built (`read_term_from_stream`); the pin tree is swip
   toplevel's `blob(resolve)` reads), rows rt303 and rt305-rt319 pin this; rt320 and rt321 are the KNOWN rows of the refusal.
 * **Tier 3:** no Tier-1 file changed and no enum, so no `_enum_hash` entry and no allocation pins (RD1b adds the field `blobs` to
   `read_data`); the manifest gets eleven entries (test/static_analysis_manifest.jl). No battery.
+* **RD2a, the comments collector, `eof_action(error)`, `var_prefix` and the comment hook (pl-read.c at 18168e62: `add_comment` 1626-1661,
+  `raw_read2` 1664-1864, `callCommentHook` 6827-6862, `read_clause` 6871-6954, `read_term_from_stream` 7017-7120; edit-only, the gate
+  decides):** `comments(C)` of `read_term/2,3` and `read_clause/3` collects each block comment and each run of `%` lines as one
+  `Pos-String` (`-`-String without a position); reading past the end of a stream whose `eof_action` is `error` raises
+  `permission_error(input, past_end_of_stream, Stream)`; `var_prefix(P)` is honoured (after the module, as upstream);
+  `read_clause/3` calls `prolog:comment_hook(Comments, TermPos, Term, VarNames)` when it has clauses (`process_comment`, default true then).
+  **DIVERGES:** the comment text is a byte vector where upstream uses a `tmp_buffer`; the hook procedure is looked up at each `read_clause`
+  call (upstream caches it) and given `P_MULTIFILE` there, which boot/init.pl does (`:- multifile prolog:comment_hook/4`; no boot file here);
+  `callCommentHook` discards its foreign frame also when the term references could not be made; a syntax error retried by `read_clause`
+  with a hook defined: swipl 10.1.20 FAILS the read (observed on `% c\nf(a b).\n% d\ng(_).`, cause not traced), the kernel resets
+  `tpos` at each retry and goes on. **Still refused, owners unchanged:** a blob `<type>(...)` (PF_BLOB), quasi-quotations, read_term's
+  `quasi_quotations` option (RD2), `unicode_atoms` of `read_clause`/`read_term` (ENC1). New helpers `add_comment`, `callCommentHook`
+  (manifest entries added). Rows: test/core_text/test_read_comments_swipl.jl (new, pinned from swipl 10.1.20); rt300 and rt301 of
+  test_read_stream_swipl.jl moved from the known rows to the cases. The generated R2 status block (the RD2 row, line ~2103) is
+  regenerated with `tools/r2_status.jl` at the gate, never by hand.
 
 ## HALT1 — `halt/1`, `abort/0`, `PL_halt`, `PL_cleanup` (R2, pl-fli.c, pl-init.c, pl-setup.c, pl-pro.c, pl-wam.c at swipl-devel cbf4e189; edit-only: nothing was compiled when this was written, the gate decides)
 
