@@ -38,6 +38,7 @@
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
+# Since TH1 `$gc_wait/1`, `$gc_clear/1` and `$gc_stop/0` (pl-thread.c:8899-8901, the GC thread's predicates) after engine_post/3, in the engine group (upstream's table is pl-thread.c's own).
 # Since Q10 garbage_collect_atoms/0 (pl-atom.c) between `$garbage_collect/1` and garbage_collect_clauses/0, pl-ext.c:170.
 "pl-ext.c's own registration table of FRG built-ins (`foreigns[]`): the ported entries."
 const foreigns = (
@@ -80,6 +81,9 @@ const foreigns = (
     PL_extension("engine_fetch", 1, pl_engine_fetch, 0x00),         # TH1 engines (pl-thread.c:4474)
     PL_extension("engine_next", 2, pl_engine_next, 0x00),           # TH1 engines (pl-thread.c:4429)
     PL_extension("engine_post", 3, pl_engine_post3, 0x00),          # TH1 engines (pl-thread.c:4466)
+    PL_extension("\$gc_wait", 1, pl_gc_wait, 0x00),                  # TH1 GC thread (pl-thread.c:8899; O_PLMT)
+    PL_extension("\$gc_clear", 1, pl_gc_clear, 0x00),                # TH1 GC thread (pl-thread.c:8900)
+    PL_extension("\$gc_stop", 0, pl_gc_stop, 0x00),                  # TH1 GC thread (pl-thread.c:8901)
     PL_extension("with_mutex", 2, pl_with_mutex, PL_FA_TRANSPARENT | PL_FA_ISO)   # META|ISO (pl-ext.c:187)
 )
 

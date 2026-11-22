@@ -2562,6 +2562,9 @@ function _manifest_index(T)
         ),
         (LK.pl_engine_next, Tuple{LD, Int, Int}, false),
         (LK.pl_engine_post3, Tuple{LD, Int, Int, Int}, false),
+        (LK.pl_gc_wait, Tuple{LD, Int}, false),
+        (LK.pl_gc_clear, Tuple{LD, Int}, false),
+        (LK.pl_gc_stop, Tuple{LD}, true),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
