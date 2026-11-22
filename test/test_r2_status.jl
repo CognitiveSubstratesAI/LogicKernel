@@ -289,7 +289,11 @@ end
     @test length(reg) > 100 && "op/3" in reg && "between/3" in reg
     @test r2_pin(root) !== nothing
     rr = r2_refusal_rows(r2_kernel_texts(root))
-    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 14       # the throw sites and the 14 QLF names
+    # QLF2/QLF3 ported nine of the fourteen named QLF refusals (counted 2026-11-22 on wip/qlf3-replay2 by reading the throw sites and
+    # the names passed to the helper: 5 rows in src/pl-qlf.jl: getBlobType, loadInclude, `$qlf_load`, `$qlf_open`, `$open_wic`): the
+    # floor follows the work (stamp ratchet: count, move with a dated note; D-0083 disclosure)
+    # allow-docstring-interp: the lines the hook lists are existing fixture text of this file (raw-string templates), not docstrings
+    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 5        # the throw sites and the 5 QLF names left
     @test length(unique(r.key for r in rr)) == length(rr)
 end
 
@@ -521,7 +525,12 @@ end
     # pl-coverage.jl pc_call_site (REFUSED), pl_cov_start1_va (COV1), pl-prof.jl _prof_refuse (PROF1). MEASURED with the generator's own r2_collect on the tree: 841 rows, 151 owned, 38 NO OWNER.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 151
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 142
+    # 151 -> 142 (QLF replay, 2026-11-22, D-0083 disclosure): COUNTED BY READING, not by the generator (no Julia was run): the nine
+    # `kfile:pl-qlf.jl` (owner LB3) refusal rows the QLF work closed, 14 -> 5 (before: 14 `_qlf_refused` names; after: getBlobType and
+    # loadInclude throw sites and the names `$qlf_load/2`, `$qlf_open/1`, `$open_wic/2`); no other owned row changes. The first lane
+    # run measures it: a count above 142 means the floor is to move to that count (the ratchet sits AT the measured count).
+    # allow-docstring-interp: existing fixture text of this file, not a docstring
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
