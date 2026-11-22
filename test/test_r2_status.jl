@@ -551,8 +551,10 @@ end
     # 148 -> 155 (INT-MERGE-17, wip/int-g1 + wip/dictset-replay), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: +7 owner lines (the branch's DOC rows: `pred:$atom_references/2`, `pred:$atom_completions/2`,
     # `pred:malloc_property/1`, `pred:wait_for_input/3` REFUSED, and the three FAST-2 refusals of src/pl-rec.jl (copy_external_record x2, fetchAtomW)); none removed. A LOWER BOUND like the figures above: the lane's r2_collect
     # measures the real count; if the floor test fails, lower it to the measured figure.
+    # 145 -> 144 (LB4-1, PL_FILE_SEARCH), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: -1 refusal row with an owner (`PL_get_file_name flag PL_FILE_SEARCH`, src/os/pl-files.jl get_file_name), none added.
+    # A LOWER BOUND as above; the lane measures.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 145
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 144
     # 155 -> 146 (INT-MERGE-17, wip/int-g1 + wip/qlf3-replay2), D-0083 disclosure: DERIVED, NOT RUN: the branch's own count is 151 -> 142, i.e. -9: the nine `kfile:pl-qlf.jl` (owner LB3) refusal rows the QLF work closed
     # (14 -> 5: 14 `_qlf_refused` names before; after: the getBlobType and loadInclude throw sites and the names `$qlf_load/2`, `$qlf_open/1`, `$open_wic/2`); the tsv delta is one line (the kfile note), no row count changes.
     # The figure is a LOWER BOUND, counted by reading (no Julia was run); the first lane run measures it: a count above 146 means the floor moves to that count, a failure means it moves down to the measured figure.

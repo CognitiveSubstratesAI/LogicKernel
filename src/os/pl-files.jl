@@ -12,8 +12,8 @@
 # SameFile, RenameFile, MarkExecutable) and, as the groups land, the predicates of upstream's table.
 #
 # LB2b: `PL_get_file_name` honours `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_EXIST`, `PL_FILE_READ`,
-# `PL_FILE_WRITE`, `PL_FILE_EXECUTE` and the `file_name_variables` flag; `PL_FILE_SEARCH`, which calls
-# `system:absolute_file_name/3` of init.pl, is refused by name (left to LB4); since W12-TMPFILES delete_file/1 first tries the
+# `PL_FILE_WRITE`, `PL_FILE_EXECUTE` and the `file_name_variables` flag; since LB4 `PL_FILE_SEARCH` too, which calls
+# `system:absolute_file_name/3` (`add_option`, `get_file_name`); since W12-TMPFILES delete_file/1 first tries the
 # registry of the temporary names (`DeleteTemporaryFile`, src/os/pl-os.jl), which tmp_file/2 and `$tmp_file_stream`/4 fill.
 
 # ORIGINAL (Y1): `PATH_MAX` (<limits.h>) on Linux.
@@ -231,10 +231,31 @@ _ascii_lower(s::AbstractVector{UInt8})::Vector{UInt8} =
     [(UInt8('A') <= c <= UInt8('Z')) ? c + 0x20 : c for c in s]
 _ascii_lower(s::String)::Vector{UInt8} = _ascii_lower(codeunits(s))
 
+# PORT: pl-files.c add_option
+# DIVERGES: the local data is an argument; the functor is always `access/1` (`FUNCTOR_access1`, the only caller's), so only the value
+# (an atom) is passed.
+"Append `access(Val)` to the open list `options`, advancing `options` to its tail (pl-files.c)."
+function add_option(ld::PL_local_data{T}, options::term_t, val::T)::Bool where {T}
+    head = PL_new_term_ref(ld)
+    head == 0 && return false
+    arg = PL_new_term_ref(ld)                                   # PL_unify_term(head, PL_FUNCTOR, f, PL_ATOM, val), written out
+    if arg != 0 && PL_unify_list(ld, options, head, options) &&
+        PL_unify_functor(ld, head, mk_sym(T, :access), 1) &&
+        _PL_get_arg(ld, 1, head, arg) && PL_unify_atom(ld, arg, val)
+        PL_reset_term_refs(ld, head)
+        return true
+    end
+    return false
+end
+
 # PORT: pl-files.c get_file_name
 # DIVERGES: the name is a `String` (UTF-8, which is `REP_FN` in a UTF-8 locale) or `nothing` where upstream
-# writes `char *` and returns a Bool; `PL_FILE_SEARCH` raises `NotPortedError` (left to LB4). `OsPath` is the
-# identity on Unix.
+# writes `char *` and returns a Bool. `OsPath` is the identity on Unix. `PL_FILE_SEARCH`: the database is `ld.GD`;
+# `GD->procedures.absolute_file_name3` is a field that is not in the struct, so `system:absolute_file_name/3` is
+# looked up on each call (`PL_predicate("absolute_file_name", 3, "system")` is `lookupProcedure` in `lookupModule`'s
+# module, as `call_iri_hook`); the answer is read as text (`CVT_ATOMIC`, no `CVT_EXCEPTION`: as upstream) before the
+# foreign frame is discarded, so the `String` outlives it; the frame of the `goto code0` path is not discarded, as
+# upstream's (the caller's frame reclaims it).
 """
     get_file_name(ld, n, flags) -> String or nothing
 
@@ -245,13 +266,46 @@ NUL, or `representation_error(max_path_length)` (pl-files.c).
 function get_file_name(
     ld::PL_local_data{T}, n::term_t, flags::Int
 )::Union{Nothing, String} where {T}
-    (flags & PL_FILE_SEARCH) == 0 || throw(
-        NotPortedError{T}(
-            mk_sym(T, :file_name),
-            "PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_name/3 of init.pl)",
-            "LB4"
+    if (flags & PL_FILE_SEARCH) != 0
+        gd = ld.GD::PL_global_data{T}
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return nothing
+        pred = lookupProcedure(
+            mk_sym(T, :absolute_file_name), 3, lookupModule(gd, mk_sym(T, :system))
         )
-    )
+        av = PL_new_term_refs(ld, 3)
+        options = PL_copy_term_ref(ld, av + 2)
+        rc = true
+        cflags =
+            (flags & PL_FILE_NOERRORS) != 0 ? PL_Q_CATCH_EXCEPTION : PL_Q_PASS_EXCEPTION
+
+        PL_put_term(ld, av, n)
+
+        rc && (flags & PL_FILE_EXIST) != 0 && (rc = add_option(ld, options, mk_sym(T, :exist)))
+        rc && (flags & PL_FILE_READ) != 0 && (rc = add_option(ld, options, mk_sym(T, :read)))
+        rc && (flags & PL_FILE_WRITE) != 0 && (rc = add_option(ld, options, mk_sym(T, :write)))
+        rc && (flags & PL_FILE_EXECUTE) != 0 &&
+            (rc = add_option(ld, options, mk_sym(T, :execute)))
+
+        rc && (rc = PL_unify_nil(ld, options))
+        rc && (rc = PL_call_predicate(gd, ld, nothing, cflags, pred, av))
+        found = ""
+        if rc
+            txt = PL_get_text(ld, av + 1, CVT_ATOMIC)           # PL_get_nchars(av+1, &len, namep, CVT_ATOMIC|BUF_STACK|REP_FN)
+            rc = txt !== nothing
+            rc && (found = text_string(txt))
+        end
+        if rc && 0x00 in codeunits(found)                       # strlen(*namep) != len
+            PL_error(
+                ld, "", 0, "file name contains a 0-code", ERR_DOMAIN, mk_sym(T, :file_name),
+                av + 1
+            )
+            return nothing
+        end
+
+        PL_discard_foreign_frame(ld, fid)
+        return rc ? found : nothing
+    end
     chflags = CVT_ATOM | CVT_STRING | CVT_LIST                  # CVT_FILENAME
     (flags & PL_FILE_NOERRORS) == 0 && (chflags |= CVT_EXCEPTION)
     txt = PL_get_text(ld, n, chflags)                           # PL_get_nchars(n, &len, &name, …)

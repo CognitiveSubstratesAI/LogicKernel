@@ -2564,7 +2564,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | COV1 | 1 | 0 | 1 | `refusal coverage collection ('record_coverage': …` |
 | DBG2 | 1 | 0 | 1 | `refusal trace/0 with a visible port: the tracer …` |
-| LB4 | 1 | 0 | 1 | `refusal PL_get_file_name flag PL_FILE_SEARCH (sy…` |
 | PR1 | 1 | 1 | 0 | `$foreign_predicate_source/2` |
 | PR1b | 1 | 0 | 1 | `refusal indexed(L): the Prolog dict of an index …` |
 | PROF1 | 1 | 0 | 1 | `refusal what` |
@@ -7103,7 +7102,7 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
 - **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
   caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
 - **Ported since W12-TMPFILES:** `tmp_file/2` and `$tmp_file_stream/4` (`TemporaryFile`, `DeleteTemporaryFile`, `RemoveTemporaryFiles` of pl-os.c; the registry is `os_tmp_files`, the name counter `os_temp_counter`; `Sfdopen`).
-- **Refused by name:** `PL_FILE_SEARCH` (LB4). An IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory is no refusal any more: it goes to `iri_hook`
+- **Ported since LB4-1:** `PL_FILE_SEARCH` (`add_option`, and the search branch of `get_file_name`: pl-files.c:446-480 at swipl-devel 18168e62; the answer of `system:absolute_file_name/3` as text, see the section "LB4-1 PL_FILE_SEARCH"). An IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory is no refusal any more: it goes to `iri_hook`
   (pl-file.c `call_iri_hook`, `iri_hook_va`, `iri_hook`: `'$iri':iri_hook/4`; test/files/test_iri_hook_swipl.jl, tools/mutants/LBB.py); `IRI_OPEN` (pl-file.c:4355, pl-stream.c:3778) is another site, not served.
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.
 
@@ -8635,6 +8634,17 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
 - **Owner rows removed:** `open/4's locale(Locale) option` and `set_stream/2's locale(Locale)` (CT1); the r2 floor of test/test_r2_status.jl 147 -> 145 (derived, not run).
 - **Rows:** test/core_text/test_stream_locale_swipl.jl (t0-t5 through test_stream_locale_swipl.pl/.out, swipl 10.1.20's answers, identical in two runs, plus two white-box
   testsets: the reference count and `stream_locale_prop` of a stream without a locale). Mutants: tools/mutants/CT1LOC.py (19 rows).
+
+## LB4-1 PL_FILE_SEARCH — `PL_get_file_name` with the flag (R2, pl-files.c at swipl-devel 18168e62; edit-only: nothing was compiled or run)
+
+- **Code (src/os/pl-files.jl):** `get_file_name`'s search branch is pl-files.c:446-480: a foreign frame, three term references, the name put as the term itself (`PL_put_term`, not
+  converted to text first), the options list `access(exist|read|write|execute)` built by `add_option` in that order from the flags, `system:absolute_file_name/3` called with
+  `PL_Q_PASS_EXCEPTION` (`PL_Q_CATCH_EXCEPTION` under `PL_FILE_NOERRORS`), the answer read as text (`CVT_ATOMIC`, no `CVT_EXCEPTION`), `domain_error(file_name, Answer)` for a 0-code, the
+  frame discarded (except on the 0-code path, as upstream). DIVERGES: the procedure is looked up on each call (no `GD->procedures.absolute_file_name3` field); the name is a `String`.
+- **Owner row removed:** `PL_get_file_name flag PL_FILE_SEARCH` (LB4: its stated reason, that init.pl's `absolute_file_name/3` runs through the flag, was wrong: that is Prolog; the flag's C callers
+  are packages/libedit and packages/cpp). r2 floor 145 -> 144 (derived, not run).
+- **Rows:** test/files/test_open_close_swipl.jl "PL_get_file_name with PL_FILE_SEARCH": WHITE-BOX (the oracle cannot reach the C path from Prolog); the answers of `absolute_file_name/3` are the pinned
+  oracle's, the order of the options is pinned by absolute_file_name/3 taking the FIRST `access(Mode)`. The 0-code branch is unreachable with the real predicate (equivalent mutants, tools/mutants/LB4FS.py).
 
 ## CONT1 — continuations at run time: `reset/3`, `shift/1`, `shift_for_copy/1`, `call_continuation/1` (R2, audit D-0402 item 2d; pl-cont.c, pl-vmi.c, pl-gc.c at swipl-devel cbf4e1896275)
 

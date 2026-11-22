@@ -2547,6 +2547,7 @@ function _manifest_index(T)
         (LK.System, Tuple{LD, String}, false), (LK.prog_shell, Tuple{LD}, false),      # (Q10) shell/2
         (LK.PL_shell_signalled_error, Tuple{LD, String, Int}, false),
         (LK.Unsetenv, Tuple{LD, String}, false),
+        (LK.add_option, Tuple{LD, Int, T}, false),                                  # LB4-1
         (LK.get_file_name, Tuple{LD, Int, Int}, false),
         (LK.PL_get_file_name, Tuple{LD, Int, Int}, false),
         (LK.get_float, Tuple{LD, Int, Bool}, false),

@@ -883,14 +883,116 @@ end
         )
         @test chomp(sw) == "instantiation_error"
     end
-    # the one flag LB2b still refuses by name: PL_FILE_SEARCH (0x04) calls system:absolute_file_name/3 (pl-files.c:446);
-    # OWNER LB4 (src/os/pl-files.jl get_file_name). PL_FILE_EXIST/READ/WRITE/EXECUTE/OSPATH/ABSOLUTE/NOERRORS are ported.
-    fid = LK.PL_open_foreign_frame(ld)
-    @test_throws LK.NotPortedError LK.PL_get_file_name(
-        ld, LK.PL_new_term_ref(ld), Int(LK.PL_FILE_SEARCH)
-    )
-    ld.exception_term != 0 && LK.PL_clear_exception(ld)
-    LK.PL_close_foreign_frame(ld, fid)
+    # PL_FILE_SEARCH (0x04) calls system:absolute_file_name/3 since LB4 (this row pinned a NotPortedError before): see the next testset
+end
+
+# PL_FILE_SEARCH (pl-files.c get_file_name, :446-480 at the pin; LB4). The ORACLE CANNOT REACH THE C PATH: swipl's boot files and tests
+# never call PL_get_file_name with the flag (its C callers are packages/libedit and packages/cpp), so the rows are WHITE-BOX on the
+# kernel's PL_get_file_name, their expected shape read from the C: the options list is built from the flags in the order EXIST, READ,
+# WRITE, EXECUTE (`access(Mode)` each), the call is `system:absolute_file_name/3` with PL_Q_PASS_EXCEPTION (PL_Q_CATCH_EXCEPTION under
+# PL_FILE_NOERRORS), the name argument is the term itself (put, not converted to text first), the answer is read as text. The ANSWERS of
+# absolute_file_name/3 itself are the oracle's (swipl 10.1.20, `~/.local/swipl-pin1-18168e62/bin/swipl`, one run of the calls with the
+# same options): `absolute_file_name(F, O, [])` canonicalises (D/sub/../f.txt -> D/f.txt), a missing file raises
+# existence_error(source_sink, Abs) only under an access option, an unbound name is instantiation_error, f(x) is
+# existence_error(source_sink, f(x)), 42 is type_error(string, 42), and absolute_file_name/3 takes the FIRST access(Mode) of its options:
+# [exist, execute] and [write, execute] on a non-executable file succeed, [execute] and [execute, write] raise existence_error.
+# The branch "an answer with a 0-code" is unreachable here: the real absolute_file_name/3 never answers one (the oracle raises
+# domain_error(file_name, 'a\\0b') for a name with a NUL, and for a search path with one, before it answers).
+@testset "PL_get_file_name with PL_FILE_SEARCH: the options list, the answer, failure and exceptions (LB4)" begin
+    dir = mktempdir()
+    try
+        f = joinpath(dir, "f.txt")
+        write(f, "hi\n")
+        chmod(f, 0o644)                                         # not executable
+        mkdir(joinpath(dir, "sub"))
+        gone = joinpath(dir, "gone")
+        gd = LK.PL_global_data{_TL}()
+        ld = LK.PL_local_data{_TL}(gd)
+        ld.GD = gd
+        S = Int(LK.PL_FILE_SEARCH)
+        EX = Int(LK.PL_FILE_EXIST)
+        RD = Int(LK.PL_FILE_READ)
+        WR = Int(LK.PL_FILE_WRITE)
+        XE = Int(LK.PL_FILE_EXECUTE)
+        NE = Int(LK.PL_FILE_NOERRORS)
+        function search(x::_TL, flags::Int)
+            l0 = ld.lTop
+            fid = LK.PL_open_foreign_frame(ld)
+            t = LK.PL_new_term_refs(ld, 1)
+            LK.putSlotValue!(ld, t + 1, x, LK.PutVarMap())
+            r = LK.PL_get_file_name(ld, t, flags)
+            ball = ld.exception_term != 0 ? enc(lk_answer(ld, LK.PL_exception(ld, 0))) : nothing
+            ld.exception_term != 0 && LK.PL_clear_exception(ld)
+            LK.PL_close_foreign_frame(ld, fid)
+            return r, ball, ld.lTop == l0
+        end
+        search(name::String, flags::Int) = search(_tls(name), flags)
+        # the answer is what absolute_file_name/3 answers: the canonical absolute name, an atom's text
+        @test search(f, S) == (f, nothing, true)
+        @test search(f, S | Int(LK.PL_FILE_OSPATH)) == (f, nothing, true)
+        @test search(joinpath(dir, "sub", "..", "f.txt"), S) == (f, nothing, true)
+        @test search(lk_gnd(_TL, f), S) == (f, nothing, true)               # a string name
+        @test search(gone, S) == (gone, nothing, true)                # no access flag: no existence check
+        # a missing file under an access flag: existence_error(source_sink, Abs), passed on; caught under NOERRORS
+        for fl in (EX, RD, WR)
+            r, ball, _ = search(gone, S | fl)
+            @test r === nothing
+            @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes("source_sink"), ball) &&
+                  occursin(_codes(gone), ball)
+            @test search(gone, S | fl | NE) == (nothing, nothing, true)
+        end
+        # the options list is built in the order EXIST, READ, WRITE, EXECUTE; absolute_file_name/3 takes the first access option
+        @test search(f, S | EX) == (f, nothing, true)
+        @test search(f, S | RD) == (f, nothing, true)
+        @test search(f, S | WR) == (f, nothing, true)
+        @test search(f, S | EX | XE) == (f, nothing, true)
+        @test search(f, S | RD | XE) == (f, nothing, true)
+        @test search(f, S | WR | XE) == (f, nothing, true)
+        @test search(f, S | EX | RD | WR | XE) == (f, nothing, true)
+        r, ball, _ = search(f, S | XE)                                  # the execute option reaches it: the file is not executable
+        @test r === nothing
+        @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes(f), ball)
+        @test search(f, S | XE | NE) == (nothing, nothing, true)
+        chmod(f, 0o755)
+        @test search(f, S | XE) == (f, nothing, true)
+        # EXIST, READ and WRITE are three different checks (a file that exists but cannot be read or written; not for root, who can)
+        if Libc.getuid() != 0
+            g = joinpath(dir, "g.txt")                              # mode 000: exists, not readable, not writable
+            write(g, "x")
+            chmod(g, 0o000)
+            h = joinpath(dir, "h.txt")                              # mode 444: readable, not writable
+            write(h, "x")
+            chmod(h, 0o444)
+            @test search(g, S | EX) == (g, nothing, true)
+            @test search(h, S | EX) == (h, nothing, true)
+            @test search(h, S | RD) == (h, nothing, true)
+            @test search(h, S | EX | XE | RD) == (h, nothing, true)       # EXIST first: the first access option decides
+            for (x, fl) in ((g, RD), (g, WR), (h, WR))
+                r, ball, _ = search(x, S | fl)
+                @test r === nothing
+                @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes(x), ball)
+            end
+            chmod(g, 0o644)
+            chmod(h, 0o644)
+        end
+        # the name argument goes in as the term it is, not converted to text first (a non-SEARCH call raises type_error(string, f(x)))
+        r, ball, _ = search(mk_expr(_TL, _TL[_tls("f"), _tls("x")]), S)
+        @test r === nothing
+        @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin("c" * _codes("f") * "/1(a" * _codes("x") * ")", ball)
+        r, ball, _ = search(lk_gnd(_TL, 42), S)
+        @test r === nothing
+        @test ball !== nothing && occursin(_codes("type_error"), ball) && occursin("i42", ball)
+        # an unbound name: instantiation_error
+        fid = LK.PL_open_foreign_frame(ld)
+        r = LK.PL_get_file_name(ld, LK.PL_new_term_ref(ld), S)
+        ball = ld.exception_term != 0 ? enc(lk_answer(ld, LK.PL_exception(ld, 0))) : nothing
+        ld.exception_term != 0 && LK.PL_clear_exception(ld)
+        LK.PL_close_foreign_frame(ld, fid)
+        @test r === nothing
+        @test ball !== nothing && occursin(_codes("instantiation_error"), ball)
+    finally
+        rm(dir; recursive=true, force=true)
+    end
 end
 
 @testset "Sopen_file's how string: the letters it knows, EINVAL for the rest" begin
