@@ -298,6 +298,24 @@ function dict_order_term_refs(
     return 0
 end
 
+# PORT: pl-dict.c resortDictsInTerm (resort_dicts_in_term)
+# DIVERGES: `dicts` are the positions of the functor cells of the dict compounds the external record's copy met
+# (`copy_external_record`; upstream counts them and walks the whole term from `t`, which may not be cyclic): each is
+# checked as upstream checks a compound it reaches (the name `dict`, an odd arity above 1, `dict_ordered` FALSE) and
+# re-sorted by `dict_order`. A key is an atom or a tagged integer, which no sort moves: the order of the positions does not matter.
+"Re-sort the dicts at the functor cells `dicts` whose keys are not in order (pl-dict.c)."
+function resortDictsInTerm(ld::PL_local_data{T}, dicts::Vector{Int})::Nothing where {T}
+    for c in dicts
+        fd = ld.gstack[c]
+        arity = arityFunctor(ld.functors, fd)
+        if nameFunctor(ld.functors, fd) == ATOM_dict && arity > 1 && arity % 2 == 1 &&
+           dict_ordered(ld, c + 2, arity ÷ 2, true)[1] == PL_DICT_FALSE
+            dict_order(ld, c)                               # the status is not used, as upstream's
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-dict.c get_name_ex
 # DIVERGES: the key's word is the result, `nothing` for upstream's false.
 "The dict key (an atom or a small integer word) the term reference `t` holds, else a type error (pl-dict.c)."

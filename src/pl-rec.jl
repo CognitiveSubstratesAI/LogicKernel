@@ -37,8 +37,9 @@
 # (`recorda/3`, `recordz/3`, `recorded/3`, `current_key/1`, `erase/1` and `instance/2` of a record, the keys
 # and their lists). Since FAST-1b the EXTERNAL encoder: `compile_external_record` (the `PL_TYPE_EXT_*`,
 # `PL_TYPE_INTEGER`, `PL_REC_MPZ`, `PL_REC_MPQ` opcodes, the header) and `fast_term_serialized/2`, the term to
-# the string. LATER STEPS and left out: the rest of pl-rec.c — the string to the term (`PL_recorded_external`,
-# `fast_term_serialized/2`'s other direction: refused, step FAST-2), `PL_record_external` (pl-rec.c:896, the C
+# the string; since FAST-2 the DECODER: `PL_recorded_external` over `copy_external_record` (the external cases of
+# `copy_record`), the string to the term, with `resortDictsInTerm` (src/pl-dict.jl). LATER STEPS and left out: the rest
+# of pl-rec.c — `PL_record_external` (pl-rec.c:896, the C
 # interface over `compile_external_record`: a later step), `fast_write/2`, `fast_read/2`, `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT` in an INTERNAL
 # record: its atom keeps its word), and `freeRecord` (a record is freed by Julia's GC).
@@ -652,11 +653,11 @@ end
 # (PRED_IMPL("fast_term_serialized", 2, fast_term_serialized, 0))
 # DIVERGES: the TERM TO STRING direction is upstream's: the text is the header and the code as ISO Latin-1
 # (`PL_unify_text` with `PL_STRING`: upstream `PL_unify_string_nchars` for a simple record, a `globalBlob`
-# string whose storage tag `B` precedes them otherwise: the same string). The STRING TO TERM direction checks the
-# text as upstream does (`PL_get_text` with `CVT_STRING|CVT_EXCEPTION`, `is_external`) and then refuses by name:
-# `NotPortedError` for `PL_recorded_external` (FAST-2); a string with a character above 0xFF too (upstream asks for
-# `REP_ISO_LATIN_1`). `PL_record_external` (pl-rec.c:896, the C interface) is a later step.
-"`fast_term_serialized(?Term, ?String)` (pl-rec.c): `String` is the external record of `Term`; the other direction is FAST-2."
+# string whose storage tag `B` precedes them otherwise: the same string). The STRING TO TERM direction is upstream's
+# order: the text (`PL_get_text` with `CVT_STRING|CVT_EXCEPTION`; a character above 0xFF is the encoding's representation
+# error, as upstream's `REP_ISO_LATIN_1`), `is_external`, `PL_recorded_external` into a new term reference, `PL_unify`.
+# `PL_record_external` (pl-rec.c:896, the C interface) is a later step.
+"`fast_term_serialized(?Term, ?String)` (pl-rec.c): `String` is the external record of `Term`, in both directions."
 function pl_fast_term_serialized2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
@@ -674,21 +675,15 @@ function pl_fast_term_serialized2_va(
     text === nothing && return FFALSE
     rc = PL_canonicalise_text(text)
     rc == 1 || (text_error(ld, rc); return FFALSE)
-    if text.encoding === ENC_WCHAR
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :fast_term_serialized),
-                "fast_term_serialized/2 string above 0xFF (REP_ISO_LATIN_1)", "step FAST-2"
-            )
-        )
+    if text.encoding === ENC_WCHAR                          # REP_ISO_LATIN_1
+        return text_representation_error(ld, ENC_ISO_LATIN_1) ? FTRUE : FFALSE
     end
-    is_external(text.text, length(text.text)) || return FFALSE
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :fast_term_serialized),
-            "fast_term_serialized/2 string -> term (PL_recorded_external)", "step FAST-2"
-        )
-    )
+    rec = text.text
+    is_external(rec, length(rec)) || return FFALSE
+    tmp = PL_new_term_ref(ld)
+    tmp == 0 && return FFALSE
+    PL_recorded_external(ld, rec, tmp) || return FFALSE
+    return PL_unify(ld, term, tmp) ? FTRUE : FFALSE
 end
 
 # PORT: pl-rec.c copy_info
