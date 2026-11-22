@@ -3573,6 +3573,7 @@ _index_entry_points(T) = (
     (LK.popXrIdTable, Tuple{LK.wic_state}, false),
     (LK.lookupXrId, Tuple{Type{T}, LK.wic_state, Int}, false),
     (LK.storeXrId, Tuple{LK.wic_state, Int, LK.xr_atom{T}}, false),
+    (LK.qlfLoadError_ctx, Tuple{LK.wic_state, String, Int}, false),
     (LK.qlfLoadError, Tuple{LK.wic_state}, false),
     (LK.qlfGetUInt32, Tuple{LK.IOSTREAM}, false),
     (LK.qlfGetDouble, Tuple{LK.IOSTREAM}, false),
