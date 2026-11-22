@@ -1,6 +1,6 @@
 # ORIGINAL: G1's mutant list — no swipl-devel counterpart.
 # tools/mutants/G1d.py — the mutation battery of G1 (global variables: pl-gvar.c setval, setval_duplicate, getval,
-# auto_define_gvar, is_gval, nb_delete/1, nb_current/2; the table entries; D7 `_release_frozen!` honouring `gvar_grefs`;
+# auto_define_gvar, is_gval, nb_delete/1, nb_current/2; the table entries; D7 (the e5 release honouring `gvar_grefs` is retired by G1-E: the bar stays; test_ball_cells.jl's ENG2a rows and E1R.py own it);
 # D8 `user:exception/3` dynamic from the start; pl-copyterm.c duplicate_term), run ONCE, in CI (.github/workflows/mutation.yml;
 # locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as MOD3b.py): `id`, `file`, `old` (must occur EXACTLY once),
 # `new`, optional `equivalent` and `targets`. Killed by test/core_lang/test_gvar_swipl.jl (rows g01-g59 and the h9 database named
@@ -17,8 +17,8 @@
 #     white-box row, not as equivalent.
 #   * the `ld.exception_term != 0` early return after a hook error in gvar_getval: no row has a hook that throws.
 # TARGETS (audit D-0238): each mutant lists every test file that exercises its mutated code: the step's own file first.
-# Global variables are named by test_gvar_swipl.jl alone; `_release_frozen!` runs at the end of every outermost query that
-# threw (test_exception.jl, test_catch_swipl.jl, test_cleanup_swipl.jl, test_findall_swipl.jl, test/foreign/test_query.jl);
+# Global variables are named by test_gvar_swipl.jl alone; the end of every outermost query that threw (no release since G1-E: tools/mutants/E1R.py's close-time mutants run on
+# these files) is exercised by (test_exception.jl, test_catch_swipl.jl, test_cleanup_swipl.jl, test_findall_swipl.jl, test/foreign/test_query.jl);
 # duplicate_term/2 is named by test_copyterm_swipl.jl and test_copyterm_cells.jl; the table and
 # `setBuiltinPredicateProperties!` are exercised by every database (the step's file and test_query.jl stand for them).
 TG = ["test/core_lang/test_gvar_swipl.jl"]
@@ -96,8 +96,9 @@ MUTANTS = [
          old="pl_nb_current2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS",
          new="pl_nb_current2_va, PL_FA_VARARGS"),
     # ── D7, D8, duplicate_term ──
-    # G1-R1 (the early return while `gvar_grefs > 0`) is gone: ENG2a replaced that return by a scan of the values;
-    # its mutants are ENG2A-M1 (the old early return) and ENG2A-M2 (the scan ignores the values), tools/mutants/ENG2A.py.
+    # G1-R1 (the early return while `gvar_grefs > 0`) is gone: ENG2a replaced that return by a scan of the values, and G1-E retired the release
+    # altogether (upstream keeps the bar to the thread's end): what those mutants meant -- a global variable's value survives the close -- is killed
+    # by tools/mutants/E1R.py (E1R-1/E1R-2: the close lowering the bar) on test_ball_cells.jl's ENG2a rows and test_gvar_swipl.jl g04.
     dict(id="G1-E1 user:exception/3 is not made dynamic before init.pl: the hook call raises an existence error (KILL h9)",
          file="src/pl-ext.jl", targets=TX,
          old="setDynamicDefinition!(exception3.definition, true)",
