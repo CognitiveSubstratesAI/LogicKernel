@@ -43,6 +43,13 @@ function _gs_fli_roots(ld)::Vector{UInt64}
         end
         fr = f.parent
     end
+    # the base prefix is a root class (`mark_base_cells`, audit D-0966 (1)): the cells 1..tmp_cells + TMP_PTR_SIZE - 1, among them the
+    # undo cell and the two cells of `init_delay_list`'s references that no slot names any more
+    if ld.tmp_cells != 0
+        for p in 1:min(ld.tmp_cells + LK.TMP_PTR_SIZE - 1, ld.gTop)
+            push!(out, UInt64(LK.makeRefG(p)))
+        end
+    end
     return out
 end
 

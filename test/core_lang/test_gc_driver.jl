@@ -71,7 +71,14 @@ _gd_snap(ld) = (
     nf=ld.nframes
 )
 
-"An engine with a DEAD term built first (its only root dropped) and the values of `vs` above it: `(ld, t, n0, dead_cells)`."
+"""
+An engine with a DEAD term built first (its only root dropped) and the values of `vs` above it: `(ld, t, n0, dead_cells)`.
+`dead_cells` are the cells no root reaches: td's own cell (`g0`: a kernel term reference owns a global cell, src/pl-fli.jl
+`PL_new_term_refs`), the dead term's (`g0 + 1 .. g1`) and the cells of the references `t + 1 .. t + n` (`g1 + 1 .. g1 + n`), which
+`putSlotValue!` leaves when it writes the value's word into the slot. (Until audit D-0966 (1) the model left out the three reference
+cells; the rows passed only because the collector also freed three unrooted cells of the base prefix below them, and moved the cells
+the engine caches by position: `mark_base_cells`, src/pl-gcmark.jl.)
+"""
 function _gd_engine(dead::_R, vs::Vector{_R})
     @assert !isempty(vs)
     db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
@@ -89,7 +96,8 @@ function _gd_engine(dead::_R, vs::Vector{_R})
     for (i, v) in enumerate(vs)
         LK.putSlotValue!(ld, t + i, v, pvm2)
     end
-    return ld, t, n0, (g0 + 1):g1
+    @assert all(i -> ld.slots[t + i] != LK.makeRefG(g1 + i), 1:length(vs))   # each reference's own cell is left behind
+    return ld, t, n0, g0:(g1 + length(vs))
 end
 
 "The standard heap of the rows: a dead term (a float, a string, nested compounds, a list) below two live roots sharing a variable."
@@ -236,6 +244,41 @@ end
     @test ld.mark_bar == ld.gTop - 1
     @test ld.mark_bar <= ld.gTop
     @test ld.gc.status.blocked == 0 && !ld.gc.status.active
+end
+
+# The base prefix of the global stack is a root class (audit D-0966 (1), `mark_base_cells`, src/pl-gcmark.jl; G1GC3-S5). The undo list's cell (global
+# cell 1) is named by NO slot, so only that rule keeps it; and every cell below it that a slot used to name and no longer names (the two cells of
+# `init_delay_list`'s references) too. Without the rule the first collection frees cells 1, 8 and 9, the bin slot is relocated to cell 1 (the engine
+# still caches `exception_cells` = 2), the tmp_h slot to 10 (cached `tmp_cells` = 13) and `gstack[undo_list]` is the bin cell's word, no longer `[]`.
+@testset "the base prefix is a root: the cells the engine caches by position do not move, the undo cell stays []" begin
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    ld = db.ld
+    ul, ec, tc = ld.undo_list, ld.exception_cells, ld.tmp_cells
+    @test ul == 1 && ec > ul && tc > ec                         # the layout of `emptyStacks!`: the undo cell first, then the exception's cells, then tmp's
+    @test ld.gstack[ul] == ld.atom_nil_w
+    @test LK.unRef(ld.slots[ld.exception_bin + 1]) == ec
+    @test LK.unRef(ld.slots[ld.tmp_h + 1]) == tc
+    @test ld.gTop >= tc + LK.TMP_PTR_SIZE - 1
+    # non-vacuity: no slot names the undo cell, so no reference keeps it (only the rule roots it) ...
+    @test !any(
+        i -> (w = ld.slots[i] & LK.VALUE_MASK; LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && LK.unRef(w) == ul),
+        1:(ld.lTop)
+    )
+    @test ld.lTop > 0
+    # ... and some prefix cell is named by no slot besides it (cells 8 and 9 of `init_delay_list`: slots there hold other words)
+    named = Set{Int}()
+    for i in 1:(ld.lTop)
+        w = ld.slots[i] & LK.VALUE_MASK
+        LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && push!(named, LK.unRef(w))
+    end
+    @test count(p -> !(p in named), 1:(tc + LK.TMP_PTR_SIZE - 1)) >= 3
+    @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
+    @test (ld.undo_list, ld.exception_cells, ld.tmp_cells) == (ul, ec, tc)
+    @test LK.unRef(ld.slots[ld.exception_bin + 1]) == ld.exception_cells     # the slots still name the cached positions
+    @test LK.unRef(ld.slots[ld.tmp_h + 1]) == ld.tmp_cells
+    @test ld.gstack[ld.undo_list] == ld.atom_nil_w
+    @test ld.gTop >= tc + LK.TMP_PTR_SIZE - 1
+    @test LK.check_stacks!(ld) > 0
 end
 
 @testset "signals and counters: SIG_GC is cleared, SIG_TUNE_GC kept, gc.inferences is the inference count" begin

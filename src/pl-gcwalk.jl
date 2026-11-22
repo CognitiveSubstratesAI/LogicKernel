@@ -617,12 +617,14 @@ end
 # DIVERGES: the statistics and the `CHK_SECURE` checks are not kept; `st` is passed where upstream has the
 # `total_marked` global; the roots that upstream's caller (`garbageCollect`) converts to term references
 # before the mark phase (`gvars_to_term_refs`, `argument_stack_to_term_refs`, `link_attvars`) are made by
-# the caller of this function, as upstream's.
+# the caller of this function, as upstream's. (G1, audit D-0966 (1)) The base prefix of the global stack is a root class of its
+# own, marked first (`mark_base_cells`, src/pl-gcmark.jl): upstream reaches those cells through its term references.
 "Mark phase: set the MARK bit of every cell of the global stack that is reachable (pl-gc.c); moves and frees nothing."
 function mark_phase(
     ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of=nothing
 )::Nothing where {T}
     st.total_marked = 0
+    mark_base_cells(ld, st)                             # DIVERGES (G1): the base prefix is a root (pl-gcmark.jl)
     mark_term_refs(ld, st)
     mark_stacks(ld, st, vm; vmi_state_of=vmi_state_of)
     return nothing

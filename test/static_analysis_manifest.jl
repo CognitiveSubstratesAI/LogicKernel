@@ -4789,7 +4789,8 @@ _manifest_g1gc3a(::Type{T}) where {T} = (
     (LK.count_need_protection_attvars, Tuple{LK.PL_local_data{T}}, false),
     (LK.link_attvars, Tuple{LK.PL_local_data{T}}, false),
     (LK.restore_attvars, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.gc_clear_marks!, Tuple{LK.PL_local_data{T}}, false)
+    (LK.gc_clear_marks!, Tuple{LK.PL_local_data{T}}, false),
+    (LK.mark_base_cells, Tuple{LK.PL_local_data{T}, LK.gc_mark_counts}, false)
 )
 
 # CONT1 (pl-cont.c, pl-gc.c's liveness walker, pl-fli.c): the continuation builders and readers that name a term type (the

@@ -33,9 +33,11 @@ GM = "test/core_lang/test_gc_mark.jl"
 GC = "test/core_lang/test_gc_compact.jl"            # D-0238: the collector's own tests (G1-6a/6b, 6c) run the whole mark/trail/sweep chain
 GD = "test/core_lang/test_gc_driver.jl"
 GV = "test/core_lang/test_gc_vmi_state.jl"          # D-0238: G1-2b's rows run whole collections (the safe points pass get_vmi_state)
+GS = "test/core_lang/test_gc_sweep.jl"              # D-0238 (E1, audit D-0966 (1)): its model runs mark_phase, so the base-prefix rule shows in its marks
+SP = "test/core_lang/test_g1gc_safe_points.jl"      # D-0238 (E1): G1-B runs garbageCollect over PushPtr!/PushVal! cells of the base prefix
 # D-0238 (chunk 10): the upstream GC programs run whole collections of the mutated code, so UP is a target; it only adds a test that can kill.
 UP = "test/core_lang/test_gc_upstream_swipl.jl"
-TARGETS = [GM, GC, GD, GV, UP]
+TARGETS = [GM, GC, GD, GV, GS, SP, UP]
 M = "src/pl-gcmark.jl"
 W = "src/pl-gcwalk.jl"
 
@@ -183,6 +185,9 @@ MUTANTS = [
       "            if false\n                trail[te] = word(0)                     # te->as_word = 0",
       file=W,
       eq="DEFERRED KILL: row KA trails one assignment, the duplicate arm needs two TrailAssignment! of one cell within one choicepoint's range"),
+    m("G1GC3-S5 mark_phase: the base prefix is not a root (KILL GD's base-prefix testset: the bin and tmp slots relocate below the cached exception_cells/tmp_cells, gstack[undo_list] is not []; GM, GC, GS: cells 1, 8, 9 are unmarked but the models root them)",
+      "    mark_base_cells(ld, st)                             # DIVERGES (G1): the base prefix is a root (pl-gcmark.jl)\n",
+      "", file=W),
     # ---- EQUIVALENT
     m("G1GC3-E1 mark_environments: a frame is not flagged FR_MARKED (EQUIVALENT: mark_choicepoints flags it before it reads the flag)",
       "            f.flags |= FR_MARKED\n            ws.flags = GCM_CLEAR",
