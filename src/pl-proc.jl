@@ -2290,6 +2290,19 @@ function get_procedure_resolve_namearity(
     return resolveProcedure(gd, name, arity, gd.modules[mi])            # case GP_RESOLVE
 end
 
+# PORT: pl-proc.c get_procedure as get_procedure_create_namearity
+# (`get_procedure(A2, &to, 0, GP_NAMEARITY|GP_CREATE)`, as `copy_predicate_clauses/2` asks it for the destination; pl-proc.c:748-773)
+# DIVERGES: as `get_procedure_resolve_namearity`: the procedure is returned, or `nothing` (a failure or an error raised in `ld`);
+# `h` is 0 and `get_functor`'s module rule is `PL_strip_module`'s.
+"The procedure `lookupBodyProcedure` yields for the `M:Name/Arity` (or head) in `descr`: the current one if it is defined, else created (pl-proc.c)."
+function get_procedure_create_namearity(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t
+)::Union{Nothing, Procedure{T}} where {T}
+    name, arity, mi = get_functor(gd, ld, descr, 0, 0, GF_PROCEDURE)    # get_functor(descr, &fdef, &m, h, GF_PROCEDURE)
+    arity < 0 && return nothing
+    return lookupBodyProcedure(gd, name, arity, gd.modules[mi])         # case GP_CREATE
+end
+
 # ── retract/1, a non-deterministic foreign predicate (pl-proc.c; NF2, docs/architecture.md) ─────────────
 # PORT: pl-proc.c alloc_retract_context as alloc_retract_context!
 # DIVERGES: the heap copy is a record of the local data's pool (`ld.retract_contexts`, design D3) and the
@@ -3233,6 +3246,150 @@ function _predicate_number_of_clauses(
     return n
 end
 
+# PORT: pl-proc.c cgc_params as pl_cgc_params6_va
+# (PRED_IMPL("$cgc_params", 6, cgc_params, 0); pl-proc.c:2333-2343)
+# DIVERGES: the three factors are `gd.clauses_cgc_space_factor` / `_stack_factor` / `_clause_factor` (upstream: `GD->clauses.cgc_*`, set by
+# pl-setup.c:180-182). Nothing reads them: the clause GC runs when `pl_garbage_collect_clauses!` is called (no `considerClauseGC` trigger).
+# As upstream the new values are set one by one as they are read: a type error in A5 leaves A4's value set. `PL_get_integer_ex` is
+# `int`-wide (representation_error(int) beyond 32 bits), as upstream's `int *`.
+"`'\$cgc_params'(-OldSpace, -OldStack, -OldClause, +NewSpace, +NewStack, +NewClause)` (pl-proc.c): query and set the clause GC parameters."
+function pl_cgc_params6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    PL_unify_integer(ld, PL__t0, gd.clauses_cgc_space_factor) || return FFALSE
+    PL_unify_float(ld, PL__t0 + 1, gd.clauses_cgc_stack_factor) || return FFALSE
+    PL_unify_float(ld, PL__t0 + 2, gd.clauses_cgc_clause_factor) || return FFALSE
+    v = PL_get_integer_ex(ld, PL__t0 + 3)
+    v === nothing && return FFALSE
+    gd.clauses_cgc_space_factor = v
+    f = PL_get_float_ex(ld, PL__t0 + 4)
+    f === nothing && return FFALSE
+    gd.clauses_cgc_stack_factor = f
+    f = PL_get_float_ex(ld, PL__t0 + 5)
+    f === nothing && return FFALSE
+    gd.clauses_cgc_clause_factor = f
+    return FTRUE
+end
+
+# PORT: pl-proc.c default_predicate as pl_default_predicate2_va
+# (PRED_IMPL("$default_predicate", 2, default_predicate, PL_FA_TRANSPARENT); pl-proc.c:3937-3948)
+# DIVERGES: `get_procedure(A, &p, 0, GP_FIND)` is `get_procedure_find` (the procedure, or `nothing`).
+"`'\$default_predicate'(:Pred1, :Pred2)` (pl-proc.c): true if both exist and `Pred1` runs `Pred2`'s definition or is not defined."
+function pl_default_predicate2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    p1 = get_procedure_find(gd, ld, PL__t0)
+    p1 === nothing && return FFALSE
+    p2 = get_procedure_find(gd, ld, PL__t0 + 1)
+    p2 === nothing && return FFALSE
+    if p1.definition === p2.definition || !isDefinedProcedure(gd, p1)
+        return FTRUE
+    end
+    return FFALSE
+end
+
+# PORT: pl-proc.c remoduleClause
+# DIVERGES: the code is the clause's `codes` vector and `pc` an index into it (1-based; `stepPC` is `pc += 1 + arguments`); `Module` is
+# `module_t` and `code2ptr`/`ptr2code` read and write the operand words as the kernel keeps them: a `CA1_PROC`/`CA1_LPROC` operand is an
+# index into `cl.procedures`, a `CA1_MODULE` operand a module INDEX (0, the clause's module, never equals `old`). `gd` is an argument
+# (upstream: `MODULE_system`, `lookupProcedure`). The clause is the copy `copy_predicate_clauses/2` made, so its procedure table is its own.
+"Re-point the body calls of `cl` (a copy) from module `old` to module `new`: the procedures that are not `system`'s and the module operands that name `old` (pl-proc.c)."
+function remoduleClause(
+    gd::PL_global_data{T}, cl::Clause{T}, old::module_t{T}, new::module_t{T}
+)::Nothing where {T}
+    in_body = false
+
+    (cl.flags & UNIT_CLAUSE) != 0 && return nothing
+    codes = cl.codes
+    pc = 1
+    while pc <= length(codes)
+        op = codes[pc]
+        info = codeTable(op)
+        if in_body
+            for an in 1:4
+                kind = info.argtype[an]
+                kind == 0x00 && break                           # for(an=0; ats[an]; an++)
+                if kind == CA1_PROC || kind == CA1_LPROC
+                    i = Int(codes[pc + an])                     # Procedure op = code2ptr(Procedure, PC[an+1])
+                    p = cl.procedures[i]
+                    if p.definition.module_ != MODULE_system(gd).index
+                        cl.procedures[i] = lookupProcedure(p.definition.name, p.definition.arity, new)
+                    end
+                elseif kind == CA1_MODULE
+                    if codes[pc + an] == code(old.index)
+                        codes[pc + an] = code(new.index)
+                    end
+                end
+            end
+        elseif op == I_ENTER
+            in_body = true
+        end
+        pc += 1 + info.arguments                                # stepPC(PC)
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c copy_predicate_clauses as pl_copy_predicate_clauses2_va
+# (PRED_IMPL("copy_predicate_clauses", 2, copy_predicate_clauses, PL_FA_TRANSPARENT); pl-proc.c:4125-4177)
+# DIVERGES: no `enterDefinition`/`acquire_def`/`release_def` (one thread). `PL_malloc_atomic` + `memcpy` is a field copy of the
+# clause with its own `codes`, `literals` and `procedures` vectors; `forAtomsInClause(register_atom_clause)` is skipped (the kernel has
+# no atom GC, as pl-trie.jl). The result of `assertProcedure!` is ignored, as upstream's. `trapUndefined`'s result is ignored and
+# `getProcDefinition(from)` is `from.definition`, as upstream.
+"`copy_predicate_clauses(:From, :To)` (pl-proc.c): copy the visible clauses of the predicate `From` onto the dynamic predicate `To`, re-pointing the body calls when the modules differ."
+function pl_copy_predicate_clauses2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    from = get_procedure_resolve_namearity(gd, ld, PL__t0)
+    from === nothing && return FFALSE
+    if !isDefinedProcedure(gd, from)
+        trapUndefined(gd, ld, from.definition)
+    end
+    def = from.definition
+    generation = global_generation(gd)                          # take a consistent snapshot
+
+    if (def.flags & P_FOREIGN) != 0
+        return PL_error(
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure), from
+        ) ? FTRUE : FFALSE
+    end
+
+    to = get_procedure_create_namearity(gd, ld, PL__t0 + 1)
+    to === nothing && return FFALSE
+
+    copy_def = to.definition
+    if (copy_def.flags & P_FOREIGN) != 0
+        return PL_error(ld, ERR_MODIFY_STATIC_PROC, to) ? FTRUE : FFALSE
+    end
+    if (copy_def.flags & P_DYNAMIC) == 0
+        if isDefinedProcedure(gd, to)
+            return PL_error(ld, ERR_MODIFY_STATIC_PROC, to) ? FTRUE : FFALSE
+        end
+        setDynamicDefinition!(gd, copy_def, true) || return FFALSE
+    end
+
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        cl = c.clause::Clause{T}
+        if visibleClause(ld, cl, generation)
+            ncl = Clause{T}(
+                copy_def, cl.generation_created, cl.generation_erased, cl.variables,
+                cl.prolog_vars, cl.flags, copy(cl.codes), copy(cl.literals),
+                copy(cl.procedures), cl.line_no, cl.source_no, cl.owner_no
+            )
+            if def.module_ != copy_def.module_
+                remoduleClause(gd, ncl, gd.modules[def.module_], gd.modules[copy_def.module_])
+            end
+            assertProcedure!(gd, ld, to, ncl, CL_END)
+        end
+        c = c.next
+    end
+
+    return FTRUE
+end
+
 # PORT: pl-proc.c BeginPredDefs as PL_predicates_from_proc
 # DIVERGES: the entries of the predicates the kernel has ported; `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-proc.c's registration table (`BeginPredDefs(proc)`): the ported entries."
@@ -3258,5 +3415,14 @@ const PL_predicates_from_proc = (
     PL_extension(
         "current_predicate", 1, pl_current_predicate1_va,
         PL_FA_TRANSPARENT | PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
-    )
+    ),
+    PL_extension(
+        "\$default_predicate", 2, pl_default_predicate2_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),                                              # (pl-proc.c:4413, since PROC-TRACE)
+    PL_extension(
+        "copy_predicate_clauses", 2, pl_copy_predicate_clauses2_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),                                              # (pl-proc.c:4421)
+    PL_extension("\$cgc_params", 6, pl_cgc_params6_va, PL_FA_VARARGS)    # (pl-proc.c:4422)
 )

@@ -2764,6 +2764,11 @@ function _manifest_index(T)
         (LK.put_fastheap, Tuple{LD, LK.fastheap_term{T}, Int}, false),
         (LK.PL_put_frame, Tuple{LD, Int, Int}, false),
         (LK.get_procedure_resolve_namearity, Tuple{GD, LD, Int}, false),
+        (LK.get_procedure_create_namearity, Tuple{GD, LD, Int}, false),   # PROC-TRACE
+        (LK.pl_cgc_params6_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_default_predicate2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_copy_predicate_clauses2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.remoduleClause, Tuple{GD, C, MOD, MOD}, false),
         (LK._assertDefinition!, Tuple{GD, LD, D, C, Int}, false),
         (LK._assertDefinition!, Tuple{GD, LD, D, C, CR}, false),
         (LK.retractClauseDefinition!, Tuple{GD, LD, D, C, Bool}, false),

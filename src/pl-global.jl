@@ -252,6 +252,9 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    clauses_cgc_space_factor::Int                               # clauses.cgc_space_factor: clause GC space factor, `\$cgc_params/6` (pl-setup.c:180; default 8)
+    clauses_cgc_stack_factor::Float64                           # clauses.cgc_stack_factor: clause GC stack factor (pl-setup.c:181; default 0.03)
+    clauses_cgc_clause_factor::Float64                          # clauses.cgc_clause_factor: clause GC clause factor (pl-setup.c:182; default 1.0)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with

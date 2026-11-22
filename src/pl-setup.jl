@@ -592,7 +592,10 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Tuple{Int, Procedure{T}}[],             # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
-        locale_state{T}()                       # locale: empty until initLocale! (below)
+        locale_state{T}(),                      # locale: empty until initLocale! (below)
+        8,                                      # clauses_cgc_space_factor: pl-setup.c:180
+        0.03,                                   # clauses_cgc_stack_factor: pl-setup.c:181
+        1.0                                     # clauses_cgc_clause_factor: pl-setup.c:182
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
