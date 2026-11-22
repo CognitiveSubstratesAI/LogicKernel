@@ -1,5 +1,5 @@
 # ORIGINAL: a LIVE differential of COMP-EXT's predicates against swipl at the pin: `'$notrace'/1` (pl-pro.c:392-410), `'$predefine_foreign'/1`
-# and `'$vmi_property'/2` (pl-comp.c:5277-5285, :8106-8148), `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx64:
+# `'$vmi_property'/2` and `'$fetch_vm'/4` (pl-comp.c:5277-5285, :8106-8206), `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx107:
 #   * A PROGRAM of cases `t_<id>(R)` consulted by the kernel's loader and run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`, then `set_prolog_flag(debug, false)` (a row that switched the debug mode on leaves it off);
 #     the driver is test_notrace_swipl.jl's (`enc`oded answers), whose state discipline the `'$notrace'/1` rows follow (save first, restore last).
@@ -12,6 +12,12 @@
 #     reads the attribute, `'$nospy'/1` clears it.
 #   * KNOWN DIFFERENCE (named): `'$predefine_foreign'/1` takes `Name/Arity` only in these rows; the kernel's `get_procedure` also takes a head
 #     (src/pl-comp.jl `pl_predefine_foreign1_va`, DIVERGES), swipl does not: the head form is not a row.
+#   * `'$fetch_vm'/4` rows (cx65-cx107): the clause references come from `clause/3` and `nth_clause/3`, the program's `vm_all/2` walks a clause
+#     by `NextPC` and lists the instructions, `vm_pc/3` lists `PC-Instruction`. KNOWN DIFFERENCE (named): `h_string` and `h_mpz` are inline blocks
+#     in swipl and one literal-table word in the kernel (src/pl-comp.jl `unify_vmi`, DIVERGES), so their offsets differ by design: those rows (cx70,
+#     cx71) compare the instruction LISTS only (`vm_of/2`), never `NextPC`; every row with offsets (cx78-cx83, cx86-cx87, cx95, cx100-cx101)
+#     is on a clause without those two instructions. The `s_trustme` operand is a clause pointer in swipl and a clause reference in the kernel:
+#     the rows with a called or dynamic predicate (cx104-cx105) read the instruction NAMES only.
 #   * NOT REPLAYED (COMPEXT-1): the LK-only row that `thread_create/3` is REFUSED by name (NotPortedError, step "TH1"): the integration tip has
 #     the TH1 engines and no thread_create/3, so the refusal does not exist there (only the meta-spec was replayed, src/pl-ext.jl).
 using Test, LogicKernel
@@ -96,6 +102,32 @@ spa(1).
 spb(1).
 spc(1).
 spe(1).
+vm_all(Ref, L) :- vm_all(Ref, 0, L).
+vm_all(Ref, PC, L) :- ( '$fetch_vm'(Ref, PC, N, I), N > PC -> L = [I|T], vm_all(Ref, N, T) ; L = [] ).
+vm_pc(Ref, PC, L) :- ( '$fetch_vm'(Ref, PC, N, I), N > PC -> L = [PC-I|T], vm_pc(Ref, N, T) ; L = [] ).
+vm_end(Ref, PC, End) :- ( '$fetch_vm'(Ref, PC, N, _), N > PC -> vm_end(Ref, N, End) ; End = PC ).
+vm_of(H, L) :- clause(H, _, Ref), vm_all(Ref, L).
+vm_pcs(H, L) :- clause(H, _, Ref), vm_pc(Ref, 0, L).
+vc(_).
+vf1(a).
+vf2(1).
+vf3([]).
+vf4(f(X, X)).
+vf5(2.5).
+vf6("s").
+vf7(100000000000000000000).
+vf8(1).
+vf8(2).
+vr1(X) :- vc(X).
+vr2(X) :- vc(X), !, vc(X).
+vr3(X) :- Y is X+1, vc(Y).
+vr4(X) :- X = foo(_, bar).
+vr5(X) :- lists:append(X, [], _).
+vr6(X) :- m1:vc(X), vc(X).
+vq1(1).
+vq2(1).
+:- dynamic vq3/1.
+vq3(1).
 """
 # one row: the case wrapped as described in the header (`@ID@`, `@GOAL@` replaced)
 const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(SsuE)) -> Ok = yes ; Ok = no ), set_prolog_flag(debug, false), Ok == yes." *
@@ -104,7 +136,11 @@ const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(S
 # cx01-cx13: `'$notrace'/1` (the goal's answer, failure and ball pass through; the tracing bit and the skip level are what they were before, the
 # debugging bit is restored too, cx07, and is off inside the goal, cx12: 13 = 15 less the debugging bit); cx14-cx21: `'$predefine_foreign'/1` (the foreign attribute, the four error forms, a qualified and a 0-arity
 # predicate); cx22-cx50: `'$vmi_property'/2` (`break/1`, `argv/1` of eleven instructions, the error forms, upper-case and unknown names);
-# cx51-cx64: `'$spy'/1` and `'$nospy'/1` (the attribute, the debug flag, the message on each side, the silent repeats, the errors).
+# cx51-cx64: `'$spy'/1` and `'$nospy'/1` (the attribute, the debug flag, the message on each side, the silent repeats, the errors);
+# cx65-cx107: `'$fetch_vm'/4` (cx65-cx77 the instruction list of a clause: atom, small int, nil, compound with a repeated variable, float, string, big
+# integer, calls, cut, `is`, head unification of a compound, `lists:`- and `m1:`-qualified calls; cx78-cx84 `PC-Instruction` pairs and `nth_clause/3`;
+# cx85-cx90 a bound `NextPC` or `Instruction`; cx91-cx98 the error forms and the end of the code; cx99-cx107 the supervisor of a predicate: the head
+# form, `Name/Arity`, a qualified indicator, never called, called once, dynamic, undefined).
 const _CX_CASES = [
     (
         "cx01",
@@ -361,6 +397,178 @@ const _CX_CASES = [
     (
         "cx64",
         raw"retractall(got(_)), '$spy'(spd(_)), '$get_predicate_attribute'(spd(_), spy, A), '$nospy'(spd(_)), findall(M, got(M), Ms), R = A-Ms"
+    ),
+    (
+        "cx65",
+        raw"vm_of(vf1(_), R)"
+    ),
+    (
+        "cx66",
+        raw"vm_of(vf2(_), R)"
+    ),
+    (
+        "cx67",
+        raw"vm_of(vf3(_), R)"
+    ),
+    (
+        "cx68",
+        raw"vm_of(vf4(_), R)"
+    ),
+    (
+        "cx69",
+        raw"vm_of(vf5(_), R)"
+    ),
+    (
+        "cx70",
+        raw"vm_of(vf6(_), R)"
+    ),
+    (
+        "cx71",
+        raw"vm_of(vf7(_), R)"
+    ),
+    (
+        "cx72",
+        raw"vm_of(vr1(_), R)"
+    ),
+    (
+        "cx73",
+        raw"vm_of(vr2(_), R)"
+    ),
+    (
+        "cx74",
+        raw"vm_of(vr3(_), R)"
+    ),
+    (
+        "cx75",
+        raw"vm_of(vr4(_), R)"
+    ),
+    (
+        "cx76",
+        raw"vm_of(vr5(_), R)"
+    ),
+    (
+        "cx77",
+        raw"vm_of(vr6(_), R)"
+    ),
+    (
+        "cx78",
+        raw"vm_pcs(vf1(_), R)"
+    ),
+    (
+        "cx79",
+        raw"vm_pcs(vf4(_), R)"
+    ),
+    (
+        "cx80",
+        raw"vm_pcs(vr1(_), R)"
+    ),
+    (
+        "cx81",
+        raw"vm_pcs(vr2(_), R)"
+    ),
+    (
+        "cx82",
+        raw"vm_pcs(vr3(_), R)"
+    ),
+    (
+        "cx83",
+        raw"vm_pcs(vr4(_), R)"
+    ),
+    (
+        "cx84",
+        raw"nth_clause(vf8(_), 2, Ref), vm_all(Ref, R)"
+    ),
+    (
+        "cx85",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, 0, _, h_atom(X)), R = X"
+    ),
+    (
+        "cx86",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, 0, N, I), R = N-I"
+    ),
+    (
+        "cx87",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, 0, 2, h_atom(a)), R = ok"
+    ),
+    (
+        "cx88",
+        raw"clause(vf1(_), _, Ref), ( '$fetch_vm'(Ref, 0, 99, _) -> R = yes ; R = no )"
+    ),
+    (
+        "cx89",
+        raw"clause(vf1(_), _, Ref), ( '$fetch_vm'(Ref, 0, _, b_void) -> R = yes ; R = no )"
+    ),
+    (
+        "cx90",
+        raw"clause(vf1(_), _, Ref), ( '$fetch_vm'(Ref, 0, _, h_atom(b)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx91",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, -1, _, _)"
+    ),
+    (
+        "cx92",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, 99, _, _)"
+    ),
+    (
+        "cx93",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, a, _, _)"
+    ),
+    (
+        "cx94",
+        raw"clause(vf1(_), _, Ref), '$fetch_vm'(Ref, _, _, _)"
+    ),
+    (
+        "cx95",
+        raw"clause(vf1(_), _, Ref), vm_end(Ref, 0, End), ( '$fetch_vm'(Ref, End, _, _) -> R = yes ; R = End-no )"
+    ),
+    (
+        "cx96",
+        raw"clause(vf1(_), _, Ref), vm_end(Ref, 0, End), E1 is End+1, '$fetch_vm'(Ref, E1, _, _)"
+    ),
+    (
+        "cx97",
+        raw"'$fetch_vm'(_, 0, _, _)"
+    ),
+    (
+        "cx98",
+        raw"'$fetch_vm'(1, 0, _, _)"
+    ),
+    (
+        "cx99",
+        raw"vm_all(vq1/1, R)"
+    ),
+    (
+        "cx100",
+        raw"'$fetch_vm'(vq1(_), 0, N, I), R = N-I"
+    ),
+    (
+        "cx101",
+        raw"vm_pc(vq1/1, 0, R)"
+    ),
+    (
+        "cx102",
+        raw"( '$fetch_vm'(vq1/1, 2, _, _) -> R = yes ; R = no )"
+    ),
+    (
+        "cx103",
+        raw"'$fetch_vm'(vq1/1, 3, _, _)"
+    ),
+    (
+        "cx104",
+        raw"vq2(1), vm_all(vq2/1, L), findall(N, (member(I, L), functor(I, N, _)), R)"
+    ),
+    (
+        "cx105",
+        raw"vm_all(vq3/1, L), findall(N, (member(I, L), functor(I, N, _)), R)"
+    ),
+    (
+        "cx106",
+        raw"vm_all(vq9/1, R)"
+    ),
+    (
+        "cx107",
+        raw"vm_all(user:vq1/1, R)"
     )
 ]
 
@@ -430,7 +638,50 @@ const _CX_PINNED = [
     "t_cx61 c[116,95,99,120,54,49]/1(a[110,111])",
     "t_cx62 c[116,95,99,120,54,50]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[99,97,108,108,97,98,108,101],i1)))",
     "t_cx63 c[116,95,99,120,54,51]/1(c[91,124,93]/2(c[115,112,121]/1(c[58]/2(a[117,115,101,114],c[115,112,101]/1(V0))),c[91,124,93]/2(c[110,111,115,112,121]/1(c[58]/2(a[117,115,101,114],c[115,112,101]/1(V1))),nil)))",
-    "t_cx64 c[116,95,99,120,54,52]/1(c[45]/2(i1,c[91,124,93]/2(c[115,112,121]/1(c[115,112,100]/1(V0)),c[91,124,93]/2(c[110,111,115,112,121]/1(c[115,112,100]/1(V1)),nil))))"
+    "t_cx64 c[116,95,99,120,54,52]/1(c[45]/2(i1,c[91,124,93]/2(c[115,112,121]/1(c[115,112,100]/1(V0)),c[91,124,93]/2(c[110,111,115,112,121]/1(c[115,112,100]/1(V1)),nil))))",
+    "t_cx65 c[116,95,99,120,54,53]/1(c[91,124,93]/2(c[104,95,97,116,111,109]/1(a[97]),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx66 c[116,95,99,120,54,54]/1(c[91,124,93]/2(c[104,95,115,109,97,108,108,105,110,116]/1(i1),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx67 c[116,95,99,120,54,55]/1(c[91,124,93]/2(a[104,95,110,105,108],c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx68 c[116,95,99,120,54,56]/1(c[91,124,93]/2(c[104,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102],i2)),c[91,124,93]/2(c[104,95,102,105,114,115,116,118,97,114]/1(i1),c[91,124,93]/2(c[104,95,118,97,114]/1(i1),c[91,124,93]/2(a[104,95,112,111,112],c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil))))))",
+    "t_cx69 c[116,95,99,120,54,57]/1(c[91,124,93]/2(c[104,95,102,108,111,97,116]/1(f2.5),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx70 c[116,95,99,120,55,48]/1(c[91,124,93]/2(c[104,95,115,116,114,105,110,103]/1(s[115]),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx71 c[116,95,99,120,55,49]/1(c[91,124,93]/2(c[104,95,109,112,122]/1(i100000000000000000000),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx72 c[116,95,99,120,55,50]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i2),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))",
+    "t_cx73 c[116,95,99,120,55,51]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,99,117,116],c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i2),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil))))))))))",
+    "t_cx74 c[116,95,99,120,55,52]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[97,95,97,100,100,95,102,99]/3(i1,i0,i1),c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i5),c[91,124,93]/2(c[108,95,118,97,114]/2(i0,i1),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,49],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))))",
+    "t_cx75 c[116,95,99,120,55,53]/1(c[91,124,93]/2(c[104,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102,111,111],i2)),c[91,124,93]/2(a[104,95,118,111,105,100],c[91,124,93]/2(c[104,95,97,116,111,109]/1(a[98,97,114]),c[91,124,93]/2(a[104,95,112,111,112],c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))",
+    "t_cx76 c[116,95,99,120,55,54]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(a[98,95,110,105,108],c[91,124,93]/2(a[98,95,118,111,105,100],c[91,124,93]/2(c[105,95,100,101,112,97,114,116,109]/2(a[108,105,115,116,115],c[58]/2(a[108,105,115,116,115],c[47]/2(a[97,112,112,101,110,100],i3))),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))",
+    "t_cx77 c[116,95,99,120,55,55]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,99,97,108,108,109]/2(a[109,49],c[58]/2(a[109,49],c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i2),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))))",
+    "t_cx78 c[116,95,99,120,55,56]/1(c[91,124,93]/2(c[45]/2(i0,c[104,95,97,116,111,109]/1(a[97])),c[91,124,93]/2(c[45]/2(i2,a[105,95,101,120,105,116,102,97,99,116]),nil)))",
+    "t_cx79 c[116,95,99,120,55,57]/1(c[91,124,93]/2(c[45]/2(i0,c[104,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102],i2))),c[91,124,93]/2(c[45]/2(i2,c[104,95,102,105,114,115,116,118,97,114]/1(i1)),c[91,124,93]/2(c[45]/2(i4,c[104,95,118,97,114]/1(i1)),c[91,124,93]/2(c[45]/2(i6,a[104,95,112,111,112]),c[91,124,93]/2(c[45]/2(i7,a[105,95,101,120,105,116,102,97,99,116]),nil))))))",
+    "t_cx80 c[116,95,99,120,56,48]/1(c[91,124,93]/2(c[45]/2(i0,a[105,95,101,110,116,101,114]),c[91,124,93]/2(c[45]/2(i1,c[108,95,110,111,108,99,111]/1(i2)),c[91,124,93]/2(c[45]/2(i3,c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i5,a[98,95,118,97,114,48]),c[91,124,93]/2(c[45]/2(i6,c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i8,a[105,95,101,120,105,116]),nil)))))))",
+    "t_cx81 c[116,95,99,120,56,49]/1(c[91,124,93]/2(c[45]/2(i0,a[105,95,101,110,116,101,114]),c[91,124,93]/2(c[45]/2(i1,a[98,95,118,97,114,48]),c[91,124,93]/2(c[45]/2(i2,c[105,95,99,97,108,108]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i4,a[105,95,99,117,116]),c[91,124,93]/2(c[45]/2(i5,c[108,95,110,111,108,99,111]/1(i2)),c[91,124,93]/2(c[45]/2(i7,c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i9,a[98,95,118,97,114,48]),c[91,124,93]/2(c[45]/2(i10,c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i12,a[105,95,101,120,105,116]),nil))))))))))",
+    "t_cx82 c[116,95,99,120,56,50]/1(c[91,124,93]/2(c[45]/2(i0,a[105,95,101,110,116,101,114]),c[91,124,93]/2(c[45]/2(i1,c[97,95,97,100,100,95,102,99]/3(i1,i0,i1)),c[91,124,93]/2(c[45]/2(i5,c[108,95,110,111,108,99,111]/1(i5)),c[91,124,93]/2(c[45]/2(i7,c[108,95,118,97,114]/2(i0,i1)),c[91,124,93]/2(c[45]/2(i10,c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i12,a[98,95,118,97,114,49]),c[91,124,93]/2(c[45]/2(i13,c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1))),c[91,124,93]/2(c[45]/2(i15,a[105,95,101,120,105,116]),nil)))))))))",
+    "t_cx83 c[116,95,99,120,56,51]/1(c[91,124,93]/2(c[45]/2(i0,c[104,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102,111,111],i2))),c[91,124,93]/2(c[45]/2(i2,a[104,95,118,111,105,100]),c[91,124,93]/2(c[45]/2(i3,c[104,95,97,116,111,109]/1(a[98,97,114])),c[91,124,93]/2(c[45]/2(i5,a[104,95,112,111,112]),c[91,124,93]/2(c[45]/2(i6,a[105,95,101,110,116,101,114]),c[91,124,93]/2(c[45]/2(i7,a[105,95,101,120,105,116]),nil)))))))",
+    "t_cx84 c[116,95,99,120,56,52]/1(c[91,124,93]/2(c[104,95,115,109,97,108,108,105,110,116]/1(i2),c[91,124,93]/2(a[105,95,101,120,105,116,102,97,99,116],nil)))",
+    "t_cx85 c[116,95,99,120,56,53]/1(a[97])",
+    "t_cx86 c[116,95,99,120,56,54]/1(c[45]/2(i2,c[104,95,97,116,111,109]/1(a[97])))",
+    "t_cx87 c[116,95,99,120,56,55]/1(a[111,107])",
+    "t_cx88 c[116,95,99,120,56,56]/1(a[110,111])",
+    "t_cx89 c[116,95,99,120,56,57]/1(a[110,111])",
+    "t_cx90 c[116,95,99,120,57,48]/1(a[110,111])",
+    "t_cx91 c[116,95,99,120,57,49]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,111,103,114,97,109,95,99,111,117,110,116,101,114],i-1)))",
+    "t_cx92 c[116,95,99,120,57,50]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,111,103,114,97,109,95,99,111,117,110,116,101,114],i99)))",
+    "t_cx93 c[116,95,99,120,57,51]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[97])))",
+    "t_cx94 c[116,95,99,120,57,52]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_cx95 c[116,95,99,120,57,53]/1(c[45]/2(i3,a[110,111]))",
+    "t_cx96 c[116,95,99,120,57,54]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,111,103,114,97,109,95,99,111,117,110,116,101,114],i4)))",
+    "t_cx97 c[116,95,99,120,57,55]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
+    "t_cx98 c[116,95,99,120,57,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[112,114,101,100,105,99,97,116,101,95,105,110,100,105,99,97,116,111,114],i1)))",
+    "t_cx99 c[116,95,99,120,57,57]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
+    "t_cx100 c[116,95,99,120,49,48,48]/1(c[45]/2(i1,a[115,95,118,105,114,103,105,110]))",
+    "t_cx101 c[116,95,99,120,49,48,49]/1(c[91,124,93]/2(c[45]/2(i0,a[115,95,118,105,114,103,105,110]),c[91,124,93]/2(c[45]/2(i1,a[105,95,101,120,105,116]),nil)))",
+    "t_cx102 c[116,95,99,120,49,48,50]/1(a[110,111])",
+    "t_cx103 c[116,95,99,120,49,48,51]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,111,103,114,97,109,95,99,111,117,110,116,101,114],i3)))",
+    "t_cx104 c[116,95,99,120,49,48,52]/1(c[91,124,93]/2(a[115,95,116,114,117,115,116,109,101],nil))",
+    "t_cx105 c[116,95,99,120,49,48,53]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
+    "t_cx106 c[116,95,99,120,49,48,54]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
+    "t_cx107 c[116,95,99,120,49,48,55]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))"
 ]
 
 function _cx_file()::Tuple{String, Vector{String}}
@@ -486,7 +737,7 @@ function _cx_kernel(::Type{T}, path::String, names::Vector{String}) where {T}
     return out, gd, ld
 end
 
-@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1 and '\$nospy'/1 as swipl's (cx01-cx64)" begin
+@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1 and '\$fetch_vm'/4 as swipl's (cx01-cx107)" begin
     f, names = _cx_file()
     kl, _, _ = _cx_kernel(_CX, f, names)
     @test length(kl) == length(_CX_PINNED)
@@ -568,10 +819,11 @@ end
 @testset "the CX rows are not vacuous" begin
     @test length(_CX_PINNED) == length(_CX_CASES) + 1
     @test _CX_PINNED[1] == "ok"
-    answered = [l for l in _CX_PINNED if occursin(r"^t_cx\d\d ", l)]
-    failed = [l for l in _CX_PINNED if occursin(r"^t_cx\d\d$", l)]
+    answered = [l for l in _CX_PINNED if occursin(r"^t_cx\d+ ", l)]
+    failed = [l for l in _CX_PINNED if occursin(r"^t_cx\d+$", l)]
     @test length(answered) >= 50                                         # most rows answer
     @test length(failed) >= 2                                            # cx40 and cx58 fail
+    @test length(answered) + length(failed) == length(_CX_CASES)         # every row has a line
     # the error forms are read back, not only the successes
     decoded = Dict(split(l, ' ')[1] => _cx_decode(l) for l in _CX_PINNED if startswith(l, "t_cx"))
     @test occursin("instantiation_error", decoded["t_cx16"])
@@ -584,6 +836,19 @@ end
     @test count("spy", decoded["t_cx52"]) == 2 && count("nospy", decoded["t_cx52"]) == 1   # `nospy` contains `spy`: the repeats are silent
     @test any(l -> startswith(l, "t_cx22 ") && occursin("a[116,114,117,101]", l), _CX_PINNED)   # break(true) is read back
     @test any(l -> startswith(l, "t_cx14 ") && occursin("i1,i1", l), _CX_PINNED)          # foreign 1, defined 1
+    # the `'$fetch_vm'/4` rows are read back: instructions, offsets, the error forms and the supervisor
+    @test occursin("h_atom", decoded["t_cx65"]) && occursin("i_exitfact", decoded["t_cx65"])
+    @test occursin("h_string", decoded["t_cx70"]) && occursin("h_mpz", decoded["t_cx71"])
+    @test occursin("i_depart", decoded["t_cx72"]) && occursin("i_cut", decoded["t_cx73"])
+    @test occursin("a_add_fc", decoded["t_cx74"]) && occursin("i_departm", decoded["t_cx76"])
+    @test any(l -> startswith(l, "t_cx78 ") && occursin("i0,c[104", l), _CX_PINNED)           # `0-h_atom(a)`: the offsets are read back
+    @test occursin("domain_error", decoded["t_cx91"]) && occursin("program_counter", decoded["t_cx91"])
+    @test occursin("domain_error", decoded["t_cx92"]) && occursin("program_counter", decoded["t_cx92"])
+    @test occursin("type_error", decoded["t_cx93"]) && occursin("instantiation_error", decoded["t_cx94"])
+    @test occursin("domain_error", decoded["t_cx96"]) && occursin("instantiation_error", decoded["t_cx97"])
+    @test occursin("s_virgin", decoded["t_cx99"]) && occursin("i_exit", decoded["t_cx99"])
+    @test occursin("s_trustme", decoded["t_cx104"])
+    @test any(l -> l == "t_cx90 c[116,95,99,120,57,48]/1(a[110,111])", _CX_PINNED)          # a bound instruction that does not match fails
     @test length(unique(_CX_PINNED)) == length(_CX_PINNED)               # the rows differ from one another
 end
 

@@ -11,8 +11,8 @@ src = tf.read_text()
 prog = re.search(r'const _CX_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
 drv = re.search(r'const _CX_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
 wrap = re.search(r'const _CX_WRAP = raw"(.*?)" \*\s*\n\s*"\\n"', src, re.S).group(1) + "\n"
-cases = re.findall(r'\(\s*"(cx\d\d)",\s*raw"(.*?)"\s*\),?\n', src, re.S)
-assert len(cases) == 64, len(cases)
+cases = re.findall(r'\(\s*"(cx\d+)",\s*raw"(.*?)"\s*\),?\n', src, re.S)
+assert len(cases) == 107, len(cases)
 text = prog + "".join(wrap.replace("@ID@", i).replace("@GOAL@", g) for i, g in cases)
 pathlib.Path("cx_rows.pl").write_text(text)
 names = ",".join(f"t_{i}" for i, _ in cases)
@@ -23,7 +23,7 @@ def run():
     r = subprocess.run(CAP + [SWIPL, "-q", "cx_driver.pl"], stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True)
     return [l for l in r.stdout.split("\n") if l]
 
-v = subprocess.run([SWIPL, "--version"], capture_output=True, text=True, check=True).stdout.strip()
+v = subprocess.run(CAP + [SWIPL, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True).stdout.strip()
 print(v)
 a = run()
 b = run()
