@@ -1846,6 +1846,61 @@ function pl_put_code1_va(
     return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE
 end
 
+# PORT: pl-file.c put2 as pl_put2_va
+# (PRED_IMPL("put", 2, put2, 0)) — pl-file.c:3505-3509; the legacy name of put_code/2 (same C function)
+"`put(+Stream, +Code)`: write the character `Code` to `Stream`, the legacy name of put_code/2 (pl-file.c)."
+function pl_put2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c put1 as pl_put1_va
+# (PRED_IMPL("put", 1, put1, 0)) — pl-file.c:3513-3517; the legacy name of put_code/1 (same C function)
+"`put(+Code)`: write the character `Code` to the current output, the legacy name of put_code/1 (pl-file.c)."
+function pl_put1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get_nonblank
+# DIVERGES: no lock (`releaseStream`); `TRY(PL_unify_integer(chr, -1))` is written as an early `return false`.
+"Read the next character code that is not blank (`isBlankW`) from the text input stream `in` names (0: the current input) and unify it with `chr`; -1 at the end of the stream (pl-file.c)."
+function get_nonblank(ld::PL_local_data, in::term_t, chr::term_t)::Bool
+    s = getTextInputStream(ld, in)
+    s === nothing && return false
+
+    while true
+        c = Sgetcode(s)
+
+        if c == EOF
+            PL_unify_integer(ld, chr, -1) || return false     # TRY()
+            return streamStatus(ld, s)
+        end
+
+        isBlankW(c) || return PL_unify_integer(ld, chr, c)
+    end
+end
+
+# PORT: pl-file.c get1 as pl_get1_va
+# (PRED_IMPL("get", 1, get1, 0)) — pl-file.c:3548-3552
+"`get(-Code)`: the next non-blank character code of the current input; -1 at its end (pl-file.c)."
+function pl_get1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, 0, PL__t0) ? FTRUE : FFALSE
+end
+
+# PORT: pl-file.c get2 as pl_get2_va
+# (PRED_IMPL("get", 2, get2, 0)) — pl-file.c:3556-3560
+"`get(+Stream, -Code)`: the next non-blank character code of `Stream`; -1 at its end (pl-file.c)."
+function pl_get2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return get_nonblank(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE
+end
+
 # ── character input (pl-file.c): get_char/2, peek_char/2, skip/2, get_single_char/1 ──────────────
 
 # PORT: pl-privitf.c PL_unify_char
@@ -2979,7 +3034,7 @@ end
 
 # PORT: pl-file.c BeginPredDefs as PL_predicates_from_file
 # DIVERGES: the entries of the predicates the kernel has ported (LB5: current_input/1, current_output/1, line_count/2,
-# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2; S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
+# line_position/2, tab/1,2, at_end_of_stream/0,1, get_code/1,2, put_code/1,2 and its alias put_char/1,2, put/1,2 and get/1,2 (MISS1); S1: open/3,4 and close/1,2; S2a: prompt/2, prompt1/1, get_char/2, peek_char/2, flush_output/1, skip/2, ttyflush/0, is_stream/1, get_single_char/1, '\$alias_stream'/2, the input context trio and '\$stream_property'/2, '\$stream_properties'/2, '\$streams_properties'/2 and set_stream/2; LB2:
 # source_location/2 and '$set_source_location'/2, upstream's order file:6396-6397); `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-file.c's registration table (`BeginPredDefs(file)`): the ported entries."
 const PL_predicates_from_file = (
@@ -3004,6 +3059,10 @@ const PL_predicates_from_file = (
     PL_extension("put_code", 1, pl_put_code1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("put_char", 2, pl_put_code2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("put_char", 1, pl_put_code1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("put", 2, pl_put2_va, PL_FA_VARARGS),
+    PL_extension("put", 1, pl_put1_va, PL_FA_VARARGS),
+    PL_extension("get", 1, pl_get1_va, PL_FA_VARARGS),
+    PL_extension("get", 2, pl_get2_va, PL_FA_VARARGS),
     PL_extension("skip", 2, pl_skip2_va, PL_FA_VARARGS),
     PL_extension("ttyflush", 0, pl_ttyflush0_va, PL_FA_VARARGS),
     PL_extension("prompt", 2, pl_prompt2_va, PL_FA_VARARGS),

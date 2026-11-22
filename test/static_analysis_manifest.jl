@@ -2904,6 +2904,12 @@ function _manifest_index(T)
         (LK.put_code, Tuple{LD, Int64, Int64}, false),
         (LK.pl_put_code2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_put_code1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # MISS1 — put/1,2 (the put_code function) and get/1,2 (pl-file.c)
+        (LK.pl_put2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_put1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.get_nonblank, Tuple{LD, Int64, Int64}, false),
+        (LK.pl_get1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_get2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.PL_eval_expression_to_int64_ex, Tuple{LD, Int64}, false),
         (LK.write_size, Tuple{LD, Int64, Int64, Int64, Int64}, false),
         (LK.pl_write_size4_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
