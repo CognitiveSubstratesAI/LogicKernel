@@ -747,7 +747,7 @@ end
 # (pl-qlf.c:446-488)
 # DIVERGES: only the `length == NULL` form (a file name: at most `PATH_MAX` bytes), returned as a `String` of the bytes
 # (upstream: `LD->qlf.getstr_buffer`, and `NULL` when too long); the other form (a saved term's string, bounded by
-# `globalStackLimit()`) belongs to the XR reader, NOT PORTED. `fatalError` (an EOF inside the string) is a Julia `error`.
+# `globalStackLimit()`) is the method taking `ld`, below. `fatalError` (an EOF inside the string) is a Julia `error`.
 "Read a length (`qlfGetInt64`) and that many bytes from `s`; `nothing` if the length is above `PATH_MAX` (pl-qlf.c)."
 function qlfGetString(s::IOSTREAM)::Union{Nothing, String}
     len = qlfGetInt64(s)                                    # (size_t)qlfGetInt64(fd)
@@ -1268,7 +1268,7 @@ function loadXRc(ld::PL_local_data{T}, state::wic_state, c::Int)::Union{Nothing,
     elseif c == XR_NIL
         return xr_atom{T}(mk_nil(T))
     elseif c == XR_CONS
-        return xr_atom{T}(mk_sym(T, Symbol("[|]")))             # ATOM_dot
+        return xr_atom{T}(mk_sym(T, LIST_CONS_NAME))               # ATOM_dot
     elseif c == XR_ATOM
         id = (t.id += 1)
         xr = xr_atom{T}(getAtom(T, fd, :text))
@@ -1311,7 +1311,7 @@ function loadXRc(ld::PL_local_data{T}, state::wic_state, c::Int)::Union{Nothing,
             raiseStackOverflow(ld, GLOBAL_OVERFLOW)
             return nothing
         end
-        return xr_string{T}(String(bytes))
+        return xr_string{T}(String(Char[Char(b) for b in bytes]))      # globalString: ISO Latin-1
     elseif c == XR_STRING_UTF8
         return xr_string{T}(qlfGetStringW(fd))
     elseif c == XR_FILE
