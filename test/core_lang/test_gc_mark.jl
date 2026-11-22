@@ -522,15 +522,18 @@ end
 end
 
 @testset "mark_alt_clauses marks only the arguments the alternative clauses read" begin
+    # G1-FIX-10 (D-0971 (6), G1GC3-A5): a void head argument BEFORE the last read one emits `H_VOID`; a trailing void does not (pl-comp.c
+    # initVMIMerge: a void before I_EXITFACT / I_ENTER disappears), so with `m(b, _)` the mutated H_VOID arm never ran. The alternative is
+    # `m(b, _, c)`: argument 1 and 3 are read (H_ATOM), argument 2 is the void in the middle.
     clauses = Tuple{_R, Union{Nothing, _R}}[
-        (_rf("m", _rs("a"), _rf("p", _rg(Int64(1)))), nothing),
-        (_rf("m", _rs("b"), _rv(1)), nothing)                  # reads argument 1, ignores argument 2 (a void)
+        (_rf("m", _rs("a"), _rf("p", _rg(Int64(1))), _rs("d")), nothing),
+        (_rf("m", _rs("b"), _rv(1), _rs("c")), nothing)        # reads arguments 1 and 3, ignores argument 2 (a void)
     ]
     db = _rdb(clauses)
     ld = db.ld
     ran = Ref(0)
     ans = _rcall(
-        db, _rf("m", _rv(90), _rv(91));
+        db, _rf("m", _rv(90), _rv(91), _rv(92));
         at=(qid, k) -> begin
             k == 1 || return nothing
             ran[] += 1
@@ -545,17 +548,23 @@ end
             c = ld.choices[cl]
             fi = c.frame
             f = ld.frames[fi]
-            @test f.predicate.arity == 2
+            @test f.predicate.arity == 3
             @test c.value_clause.cref !== nothing
+            # the alternative's code holds the void BETWEEN two reads: H_ATOM, H_VOID, H_ATOM (the kill of G1GC3-A5 needs the arm to run)
+            codes = c.value_clause.cref.clause.codes
+            @test LK.H_VOID in codes
             sp = LK.argFrameP(f.base, 0)
             w0 = ld.slots[sp + 1] & LK.VALUE_MASK
             w1 = ld.slots[sp + 2] & LK.VALUE_MASK
-            @test !LK.is_marked(ld.slots[sp + 1]) && !LK.is_marked(ld.slots[sp + 2])
+            w2 = ld.slots[sp + 3] & LK.VALUE_MASK
+            @test !LK.is_marked(ld.slots[sp + 1]) && !LK.is_marked(ld.slots[sp + 2]) &&
+                !LK.is_marked(ld.slots[sp + 3])
             st = LK.gc_mark_counts()
             LK.mark_alt_clauses(ld, st, fi, c.value_clause.cref)
-            @test LK.is_marked(ld.slots[sp + 1])                # argument 1 is read by the alternative `m(b, _)`
+            @test LK.is_marked(ld.slots[sp + 1])                # argument 1 is read by the alternative `m(b, _, c)`
             @test !LK.is_marked(ld.slots[sp + 2])               # argument 2 is a void there
-            model = _gm_reach(ld, UInt64[w0])
+            @test LK.is_marked(ld.slots[sp + 3])                # argument 3 is read by the alternative `m(b, _, c)`
+            model = _gm_reach(ld, UInt64[w0, w2])
             marked = _gm_marked(ld)
             @test !isempty(model) && marked == model
             @test st.total_marked == length(marked)

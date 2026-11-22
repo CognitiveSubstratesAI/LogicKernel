@@ -3,6 +3,10 @@
 # tools/mutants/BC1.py -- G1-FIX-9 (test_ball_cells.jl D-0029 condition 3 after chunk 8): run by hand with
 # `tools/mutate.sh run-in-tree tools/mutants/BC1.py test/core_lang/test_ball_cells.jl -- BC1-S1`.
 # BC1-S1: garbageCollect never collects (the entry always returns false). KILL: test_ball_cells.jl's collector-on row (`collections > c0`).
+# MEASURED in G1-FIX-10 (D-0971 (5), reference, test_ball_cells.jl alone, the whole failure list of the mutant run): THREE rows fail under BC1-S1:
+#   :133 the setup `garbageCollect(...) == BOOLEX_TRUE`, :158 the collector-on row `collections > c0` and :159 `during < 40000 ÷ 4`; the flag-off
+#   assertion `collections == c_off` (:150) PASSES under the mutant. So the collector-on row fails on its own account (with the mutant nothing ever
+#   collects, whatever the setup does), and the verdict does not rest on :133.
 # MEASURED in G1-FIX-9 (why this one and not a safe-point mutant): the loop's collections come from TWO redundant paths, the exception GC point after
 #   resumeAfterException (pl-wam.jl, pl-vmi.c:5312-5316) and ensureGlobalSpace's considerGC; killing either alone leaves 1 -> 10 collections (SURVIVED on
 #   this file, both verdicts in evidence). Likewise the flag `gc` is tested twice (considerGarbageCollect and garbageCollect): a mutant on garbageCollect's

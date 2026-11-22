@@ -19,14 +19,23 @@
 # VERDICTS: the CI battery runs one fresh process per mutant and its verdicts are authoritative. A mutant that corrupts the pointer
 #   reversal of mark_variable (G1GC3-V6, G1GC3-V7) may loop or fail with an error instead of a failed comparison: an error is a kill, a
 #   timeout is NO verdict (never caught).
-# DEFERRED KILLS (audit D-0374 item 2): a row declared `equivalent="DEFERRED KILL: ..."` has no killing assertion yet; it must SURVIVE the
-#   battery and the next piece of G1-3 adds the row named in its text:
-#   * G1GC3-D1, G1GC3-D2, G1GC3-D3: the live-query heap has one frame and an n/1 whose alternatives read the one argument, so
-#     mark_environments' mark_arguments and mark_choicepoints' mark_alt_clauses cover each other; a row with an alternative that does not read an
-#     argument (m(b, _)) driven through mark_phase on the live query kills the first two, a nested call (a frame with a parent, resumed at a
-#     pc) kills the third;
-#   * G1GC3-D5: mergeTrailedAssignments' duplicate arm needs a cell assigned twice within one trail range.
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): G1GC3-E1, G1GC3-E2, G1GC3-E3.
+# KILLED BY VALUE (audit D-0971 (6), run on the lane, G1-FIX-10; these were declared `DEFERRED KILL` before, they are kills now):
+#   * G1GC3-D1: test/core_lang/test_gc_driver.jl:454 (`on == off`, testset "gc_force at the audited safe points of a small program ...");
+#   * G1GC3-D2: test/core_lang/test_g1gc_safe_points.jl :341, :346 (twice), :352, :388;
+#   * G1GC3-D3: an ERROR-KILL BY CONSTRUCTION, like G1GC3-V6 and V7 (audit D-0979 (1)). The assert: src/pl-wam.jl:1551,
+#     `@assert ld.frames[fr].parent == 0` in queryOfFrame (the faithful port of pl-gc.c queryOfFrame). The mutated line: src/pl-gcwalk.jl:514
+#     in mark_environments, `if f.parent != 0` -> `if false`, so the ELSE arm (src/pl-gcwalk.jl:519-522, `qf = queryOfFrame(ld, fr)`) runs
+#     for every frame that HAS a parent. The reason no by-value row can exist: that arm reaches the assert inside mark_phase before any
+#     comparison row runs, so the kill is an error (test_gc_mark.jl:378, `AssertionError: (ld.frames[fr]).parent == 0`, testset "the
+#     argument stack and the choicepoints and frames of a live query are roots"), never a failed comparison; a start frame without a
+#     parent never enters the arm. The non-blocking by-value replacement (the mutant `pc = f.programPointer.pc` -> `pc = 0`) is the card
+#     G1GC3-D3-ROW (evidence/R2/g1_ci_fix_handoff.md): a nested-call program is needed to build its row.
+# G1GC3-A3, A4, A5: the row of testset AC is m(a, p(1), d) / m(b, _, c) (initVMIMerge drops a void head argument before I_EXITFACT,
+#   src/pl-comp.jl:98-118, so `m(b, _)` holds no H_VOID): A1-A4 fail test_gc_mark.jl :564 :566 :569; A5 fails :565 :569 :571.
+# DECLARED, NOT BLOCKING (audit D-0971 (6)): G1GC3-D5 is NOT equivalent in the strict sense: a row with two assignments of one cell within
+#   one trail range would kill it; the reason is a MISSING ROW (a TODO).
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): G1GC3-E2, G1GC3-E3. G1GC3-E1's declaration is
+#   WITHDRAWN: it was killed by an error (test_gc_driver.jl:365) and the exception was not read: TO READ ON THE LANE.
 # Every `old` is counted EXACTLY once in its file by `python3 -I ~/code/lk-t27-scratch/oldscan.py G1GC3` from the repository root;
 # `new` != `old`; no duplicate id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 GM = "test/core_lang/test_gc_mark.jl"
@@ -114,13 +123,13 @@ MUTANTS = [
     m("G1GC3-A2 mark_alt_clauses: `envtop` is the first argument, nothing is below it (KILL AC: `is_marked(ld.slots[sp + 1])`)",
       "    ws.envtop = sp + argc\n",
       "    ws.envtop = sp\n", file=W),
-    m("G1GC3-A3 mark_alt_clauses: only clauses NOT visible at the frame's generation are walked (KILL AC: the alternative `m(b, _)` is not walked)",
+    m("G1GC3-A3 mark_alt_clauses: only clauses NOT visible at the frame's generation are walked (KILL AC: the alternative `m(b, _, c)` is not walked)",
       "        if cl !== nothing && visibleClause(ld, cl, generationFrame(f))",
       "        if cl !== nothing && !visibleClause(ld, cl, generationFrame(f))", file=W),
-    m("G1GC3-A4 walk_and_mark_gc: a head atom marks no argument (KILL AC: argument 1 of `m(b, _)` is read by H_ATOM)",
+    m("G1GC3-A4 walk_and_mark_gc: a head atom marks no argument (KILL AC: argument 1 of `m(b, _, c)` is read by H_ATOM)",
       "        elseif op == H_ATOM || op == H_SMALLINT || op == H_NIL || op == H_FLOAT\n            mark_argp_gc(ld, st, ws)",
       "        elseif op == H_ATOM || op == H_SMALLINT || op == H_NIL || op == H_FLOAT\n            nothing", file=W),
-    m("G1GC3-A5 walk_and_mark_gc: a void head argument marks its argument (D4, wrong alternative marking; KILL AC: `!is_marked(ld.slots[sp + 2])`)",
+    m("G1GC3-A5 walk_and_mark_gc: a void head argument marks its argument (D4, wrong alternative marking; KILL AC: test_gc_mark.jl:565 `!is_marked(ld.slots[sp + 2])`, :569, :571)",
       "        elseif op == H_VOID\n            ws.adepth == 0 && (ws.ARGP += 1)",
       "        elseif op == H_VOID\n            mark_argp_gc(ld, st, ws)", file=W),
 
@@ -163,44 +172,40 @@ MUTANTS = [
     m("G1GC3-U2 unmark_environments: stops at a frame whose flag IS set (KILL LQ: nothing is unmarked)",
       "        (f.flags & mask) == 0 && return 0\n",
       "        (f.flags & mask) != 0 && return 0\n", file=W),
-    # ---- DEFERRED KILLS (the row to add is named in the header)
-    m("G1GC3-D1 mark_environments: the frame's arguments are not marked (DEFERRED KILL: the live-query row's alternatives read the one argument)",
+    # ---- killed by value on the lane (D1, D2), D3 killed by an error only, D5 declared (a missing row)
+    m("G1GC3-D1 mark_environments: the frame's arguments are not marked (KILLED BY VALUE at test/core_lang/test_gc_driver.jl:454 `on == off`, testset 'gc_force at the audited safe points of a small program ...')",
       "        if (pred.flags & P_FOREIGN) != 0 || pc == 0 || f.clause === nothing\n            mark_arguments(ld, st, fr)",
       "        if (pred.flags & P_FOREIGN) != 0 || pc == 0 || f.clause === nothing\n            nothing",
-      file=W,
-      eq="DEFERRED KILL: src/pl-gcwalk.jl mark_environments' first arm and mark_choicepoints' CHP_CLAUSE arm (mark_alt_clauses) mark the same argument of n/1 in the live-query row; the next piece adds a live-query row over m(b, _)"),
-    m("G1GC3-D2 mark_choicepoints: the alternative clauses of a CHP_CLAUSE are not walked (DEFERRED KILL: see G1GC3-D1)",
+      file=W),
+    m("G1GC3-D2 mark_choicepoints: the alternative clauses of a CHP_CLAUSE are not walked (KILLED BY VALUE at test/core_lang/test_g1gc_safe_points.jl :341, :346 (twice), :352, :388)",
       "            mark_alt_clauses(ld, st, fr, c.value_clause.cref)\n            f = ld.frames[fr]",
       "            nothing\n            f = ld.frames[fr]",
-      file=W,
-      eq="DEFERRED KILL: mark_environments (pc == 0) has marked every argument of the frame before mark_alt_clauses runs in the live-query row"),
-    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (DEFERRED KILL: the live-query row's frame has no parent)",
+      file=W),
+    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (ERROR-KILL BY CONSTRUCTION, audit D-0979 (1), like V6/V7: the mutated line src/pl-gcwalk.jl:514 `if f.parent != 0` -> `if false` sends every frame with a parent into the else arm, which calls queryOfFrame and trips its faithful-port assert `@assert ld.frames[fr].parent == 0` at src/pl-wam.jl:1551 inside mark_phase, before any comparison row runs: the by-value row cannot exist; killed by the AssertionError at test_gc_mark.jl:378; the non-blocking by-value row is the card G1GC3-D3-ROW)",
       "        if f.parent != 0\n            pc = f.programPointer.pc\n            fr = f.parent",
       "        if false\n            pc = f.programPointer.pc\n            fr = f.parent",
-      file=W,
-      eq="DEFERRED KILL: the frame of the live-query row is the query's top frame (`parent == 0`); a nested call resumed at a pc kills it"),
+      file=W),
 
-    m("G1GC3-D5 mergeTrailedAssignments: a later pair for the same cell is kept (DEFERRED KILL: no row assigns one cell twice within one range)",
+    m("G1GC3-D5 mergeTrailedAssignments: a later pair for the same cell is kept (declared, not blocking, D-0971 (6): not equivalent in the strict sense: a row with two assignments of one cell within one range would kill it; the reason is a MISSING ROW)",
       "            if is_first(ld.gstack[p])\n                trail[te] = word(0)                     # te->as_word = 0",
       "            if false\n                trail[te] = word(0)                     # te->as_word = 0",
       file=W,
-      eq="DEFERRED KILL: row KA trails one assignment, the duplicate arm needs two TrailAssignment! of one cell within one choicepoint's range"),
+      eq="NOT EQUIVALENT in the strict sense (D-0971 (6), declared and not blocking): a row with two assignments of one cell within one range would kill it; the reason is a MISSING ROW. TODO: add that row (row KA trails one assignment; src/pl-gcwalk.jl:277-280, the duplicate arm, is_first true)"),
     m("G1GC3-S5 mark_phase: the base prefix is not a root (KILL GD's base-prefix testset: the bin and tmp slots relocate below the cached exception_cells/tmp_cells, gstack[undo_list] is not []; GM, GC, GS: cells 1, 8, 9 are unmarked but the models root them)",
       "    mark_base_cells(ld, st)                             # DIVERGES (G1): the base prefix is a root (pl-gcmark.jl)\n",
       "", file=W),
     # ---- EQUIVALENT
-    m("G1GC3-E1 mark_environments: a frame is not flagged FR_MARKED (EQUIVALENT: mark_choicepoints flags it before it reads the flag)",
+    m("G1GC3-E1 mark_environments: a frame is not flagged FR_MARKED (TO READ ON THE LANE: the EQUIVALENT declaration is WITHDRAWN, D-0971 (6); the mutant was killed BY AN ERROR in test_gc_driver.jl:365 testset 'a live query: the decline without a callback...' and its exception was not read; a thrown error is not a verdict-level kill, so read it and name a comparison row that also fails, or add one)",
       "            f.flags |= FR_MARKED\n            ws.flags = GCM_CLEAR",
       "            ws.flags = GCM_CLEAR",
-      file=W,
-      eq="src/pl-gcwalk.jl mark_choicepoints, the CHP_CLAUSE arm, sets FR_MARKED itself before the (parent) walk; the live-query row's frame is flagged there"),
+      file=W),
     m("G1GC3-E2 mark_local_variable: the local-reference refusal is skipped (EQUIVALENT: the kernel stores no local-stack reference)",
       "    if isRef(w) && storage(w) == STG_LOCAL\n        throw(\n            NotPortedError(\n                ld.placeholder,\n                \"a local-stack reference in mark_local_variable",
       "    if false && isRef(w) && storage(w) == STG_LOCAL\n        throw(\n            NotPortedError(\n                ld.placeholder,\n                \"a local-stack reference in mark_local_variable",
-      eq="src/pl-gcmark.jl mark_local_variable: no word the kernel builds is a local-stack reference (the DIVERGES note), so the branch never fires"),
+      eq="src/pl-gcmark.jl:295 mark_local_variable (confirmed at the tip, G1-FIX-10): no word the kernel builds is a local-stack reference (the DIVERGES note), so the branch never fires"),
     m("G1GC3-E3 mark_stacks: the trail-cell counter is not reset (EQUIVALENT: every row passes a fresh gc_mark_counts)",
       "    ms.flictx = ld.fli_context\n    st.trailcells_deleted = 0\n",
       "    ms.flictx = ld.fli_context\n",
       file=W,
-      eq="src/pl-gcwalk.jl mark_stacks: st is a fresh gc_mark_counts() in every row of test_gc_mark.jl, its trailcells_deleted is 0 already"),
+      eq="src/pl-gcwalk.jl:580 mark_stacks (confirmed at the tip, G1-FIX-10; the one production caller, src/pl-gcdriver.jl:390, builds a fresh gc_mark_counts() per collection): st is a fresh gc_mark_counts() in every row of test_gc_mark.jl, its trailcells_deleted is 0 already"),
 ]
