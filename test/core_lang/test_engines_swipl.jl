@@ -12,6 +12,9 @@
 #     instantiation_error: PL_error ERR_TYPE on a variable), en53/en54/en56 (the option type errors of PL_scan_options/PL_get_size_ex).
 #     Not a row, a known difference to check on the lane: `engine_next(main, _)` (upstream finds the alias `main` in threadTable and raises
 #     type_error(engine, main); the kernel has no table entry for the main thread: existence_error(engine, main)).
+#   * The tp rows (thread_property/2, pl-thread.c:3404-3512, tprop_list :3355-3367) are read from the C the same way; least sure: tp05 (main's
+#     properties), tp22 (debug_mode false), tp23 (main has no class: upstream's info->class of the main thread is NULL, read, not measured),
+#     tp10 (findnsols over the enumeration). The properties system_thread_id and size are refused by name in the kernel: no row.
 #   * Rows `live = false` are the NAMED DIVERGES (TH1) of the kernel (upstream HANGS on the engine's mutex when an engine is resumed or
 #     posted to while it runs): they are never run in swipl.
 #   * THE YIELD ROWS (engine_yield/1, the I_YIELD instruction and its resume) need the VM step, which is its own engine-core step. Their testset
@@ -267,6 +270,102 @@ const _EN_CASES = [
         "en56", "true", "engine_create(x, true, _, [alias(1)])",
         "raised(type_error(atom,1))", true
     ),
+    # thread_property/2 (pl-thread.c:3404-3512, tprop_list :3355-3367): the properties of an engine, of main, the enumerations, the errors.
+    # Values read from the C: an engine is `detached` (attrs = {0}: PL_THREAD_NOT_DETACHED unset, :6967), class `user` (:6981), debug true
+    # (alloc_thread :1732), `suspended` while not entered (unify_engine_status :2694), `running` inside (activate_interactor :4272).
+    (
+        "tp01", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, engine(A)), thread_property(E, detached(B)), thread_property(E, debug(C)), thread_property(E, class(D)), thread_property(E, status(S)), R0 = [A,B,C,D,S]",
+        "[true,true,true,user,suspended]", true
+    ),
+    (
+        "tp02", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, id(I)), integer(I), I > 1, R0 = yes", "yes", true
+    ),
+    (
+        "tp03", "engine_create(x, member(x,[a]), E, [alias(tpalias03)])",
+        "thread_property(E, alias(A)), thread_property(tpalias03, engine(B)), thread_property(E, id(I)), thread_property(tpalias03, id(J)), I == J, R0 = A-B",
+        "tpalias03-true", true
+    ),
+    (
+        "tp04", "engine_create(X, member(X,[a,b]), E)", "( thread_property(E, alias(_)) -> R0 = y ; R0 = n )", "n", true
+    ),
+    (
+        "tp05", "true",
+        "thread_property(main, id(I)), thread_property(main, alias(A)), thread_property(main, status(S)), thread_property(main, engine(Eg)), thread_property(main, detached(D)), thread_property(main, debug(Db)), R0 = [I,A,S,Eg,D,Db]",
+        "[1,main,running,false,false,true]", true
+    ),
+    (
+        "tp06", "true",
+        "thread_property(1, id(I)), thread_property(1, alias(A)), R0 = I-A", "1-main", true
+    ),
+    (
+        "tp07", "engine_create(a, true, E1), engine_create(b, true, E2)",
+        "thread_property(E1, engine(true)), \\+ thread_property(E1, engine(false)), \\+ thread_property(main, engine(true)), findall(T, thread_property(T, engine(true)), L), memberchk(E1, L), memberchk(E2, L), \\+ memberchk(main, L), R0 = yes",
+        "yes", true
+    ),
+    (
+        "tp08", "true", "thread_property(T, alias(main)), R0 = T", "main", true
+    ),
+    (
+        "tp09", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, P), functor(P, N, 1), R0 = N", "id", true
+    ),
+    (
+        "tp10", "engine_create(X, member(X,[a,b]), E)",
+        "findnsols(4, N, (thread_property(E, P), functor(P, N, _)), L), R0 = L",
+        "[id,status,detached,debug]", true
+    ),
+    (
+        "tp11", "true", "thread_property(foo, id(_))", "raised(existence_error(thread,foo))", true
+    ),
+    ("tp12", "true", "thread_property(1.5, id(_))", "raised(type_error(thread,1.5))", true),
+    (
+        "tp13", "current_output(S)", "thread_property(S, id(_))",
+        "raised(type_error(thread,S))", true
+    ),
+    (
+        "tp14", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, foo(_))",
+        "raised(domain_error(thread_property,foo(_)))", true
+    ),
+    ("tp15", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, 1)", "raised(type_error(thread_property,1))", true),
+    ("tp16", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, id)", "raised(domain_error(thread_property,id))", true),
+    (
+        "tp17", "true", "thread_property(_, foo(_))",
+        "raised(domain_error(thread_property,foo(_)))", true
+    ),
+    (
+        "tp18", "engine_create(X, member(X,[a,b]), E)", "engine_destroy(E), thread_property(E, id(_))",
+        "raised(existence_error(thread,E))", true
+    ),
+    (
+        "tp19", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, detached(foo))", "raised(type_error(bool,foo))",
+        true
+    ),
+    (
+        "tp20", "engine_create(S, ( thread_self(Me), thread_property(Me, status(S)) ; true ), E)",
+        "engine_next(E, S0), thread_property(E, status(S1)), R0 = S0-S1", "running-suspended",
+        true
+    ),
+    (
+        "tp21", "engine_create(T, ( thread_self(Me), thread_property(Me, thread(T)) ; true ), E)",
+        "( thread_property(E, thread(_)) -> P = y ; P = n ), engine_next(E, T0), R0 = P-T0",
+        "n-main", true
+    ),
+    (
+        "tp22", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, debug_mode(M)), R0 = M", "false", true
+    ),
+    (
+        "tp23", "true", "( thread_property(main, class(_)) -> R0 = y ; R0 = n )", "n", true
+    ),
+    (
+        "tp24", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, id(I)), thread_property(I, engine(B)), R0 = B", "true", true
+    ),
+    (
+        "tp25", "true", "thread_property(999999, id(_))",
+        "raised(existence_error(thread,999999))", true
+    ),
     # the named DIVERGES (TH1): upstream waits for the mutex of an engine that is running, on one thread: a hang. Kernel only.
     (
         "dv1", "engine_create(X, (thread_self(Me), engine_next(Me, X)), E)",
@@ -416,7 +515,7 @@ end
     for c in allc
         @test !isempty(c[3]) && !isempty(c[4]) && c[4] != "_"    # a row whose expectation cannot fail
     end
-    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl")
+    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp")
         @test any(startswith(id, fam) for id in ids)
     end
     @test count(c -> !c[5], _EN_CASES) == 3             # the three named divergences (dv1-dv3) are the only kernel-only rows
