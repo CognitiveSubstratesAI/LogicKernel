@@ -381,7 +381,7 @@ end
 # counts as having none: `argument(N)` is then bounded by the predicate's arity, and `clause` fails. `pc`: upstream's
 # `fr->programPointer - clause->codes` is the 0-BASED offset; the kernel's `Code.pc` is 1-based, so it is `pc - 1`
 # (the value a Prolog-level `prolog_stack` reads is the same number as swipl's). `depth_limit_exceeded`: `O_LIMIT_DEPTH`'s
-# branch, over the query's `saved_depth_limit` (`DEPTH_NO_LIMIT` never exceeded). `parent_goal` falls out of its loop with
+# branch, over the query's `saved_depth_limit`, which only a `PL_Q_NODEBUG` query sets (to the then limit, `DEPTH_NO_LIMIT`: never exceeded); any other query reads its pool record's 0, so a frame above level 0 answers `true`, as the pinned swipl does. `parent_goal` falls out of its loop with
 # `fr` NULL to the final `PL_unify(value, result)` with `result` unbound, as upstream's structure does. Not ported: the
 # `set(fr, FR_NOTIFY)` debugger consumer (`FR_NOTIFY` is set on the frame; nothing reads it until DBG1 ports the tracer ports).
 # `DEBUG(CHK_SECURE, scan_global(0))` of the PRED_IMPL wrapper is dropped.
