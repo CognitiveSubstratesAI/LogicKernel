@@ -1,0 +1,8 @@
+*.csv
+*.svg
+port/programs/*
+*.xwam
+*.itf
+*.po
+*.qlf
+extra.pl
