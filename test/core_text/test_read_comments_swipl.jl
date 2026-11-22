@@ -7,8 +7,8 @@
 # their four arguments, and one that throws on `/* boom */`).
 #   * Every answer line is swipl's, PINNED (swipl 10.1.20, LC_ALL=C, from evidence/RD2/gen_comments.py of the audit channel); with `swipl` on PATH the live
 #     answers are compared with the pins too.
-#   * NOT here, still refused with their owners unchanged: a blob `<type>(...)` (PF_BLOB), quasi-quotations, read_term's quasi_quotations option,
-#     unicode_atoms (pinned in test_read_positions_swipl.jl and test_canonical_readatom_swipl.jl).
+#   * NOT here: a blob `<type>(...)` (test_read_blob_swipl.jl), quasi-quotations and read_term's quasi_quotations option (test_read_qq_swipl.jl), both read
+#     since RD2; unicode_atoms stays refused (pinned in test_read_positions_swipl.jl and test_canonical_readatom_swipl.jl).
 #   * UNVERIFIED on the kernel: written without running the kernel (edit-only step); the gate decides.
 #   * swipl 10.1.20 FAILS read_clause/3 when a hook is defined and a syntax error is retried (observed on `% c\nf(a b).\n% d\ng(_).`); the kernel retries
 #     cleanly (src/pl-read.jl read_clause DIVERGES): no row, the difference is recorded in docs/architecture.md.

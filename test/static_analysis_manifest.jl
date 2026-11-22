@@ -2680,6 +2680,42 @@ function _manifest_index(T)
         (LK.blob_name_char, Tuple{Int}, false),
         (LK.scan_blob_name, Tuple{Type{T}, Vector{UInt8}, Int}, false),
         (LK.atom_to_blob_mode_ex, Tuple{LD, LK.read_data{T}, T}, false),
+        # RD2 piece B: the quasi-quotation read (pl-read.c get_quasi_quotation, is_quasi_quotation_syntax, read_qq_*,
+        # parse_quasi_quotations; `'$qq_open'/2`) and errorWarningRef
+        (LK.errorWarningRef, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.get_quasi_quotation, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.is_quasi_quotation_syntax, Tuple{Int64, LK.read_data{T}}, false),
+        (LK.read_qq_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_qq_resume, Tuple{LK.pframe{T}, LK.read_data{T}}, false),
+        (LK.parse_quasi_quotations, Tuple{LK.read_data{T}}, false),
+        (LK.pl_qq_open2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # RD2 piece C: blobs (pl-read.c read_blob_*; pl-atom.c deadBlobType, blob_address, scanLiveBlobs, lookupLiveBlob,
+        # newDeadBlob, write_unavailable). `written` is the closure of `read_blob_end`, whose type has no name: the manifest
+        # analyses the same call through `Base.Fix1` of the writer it wraps.
+        (LK.read_blob_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_blob_resume, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.read_blob_end, Tuple{LK.pframe{T}, LK.token{T}, LK.read_data{T}}, false),
+        (LK.read_blob_arg, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
+        (LK.deadBlobType, Tuple{LK.atoms_t, UInt64}, false),
+        (LK.blob_address, Tuple{VIEW, Int}, false),
+        (
+            LK.scanLiveBlobs,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, Nothing, UInt64, Bool, VIEW, Int},
+            false
+        ),
+        (
+            LK.scanLiveBlobs,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, UInt64, Bool, VIEW, Int},
+            false
+        ),
+        (LK.lookupLiveBlob, Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int}, false),
+        (
+            LK.newDeadBlob,
+            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int, Bool},
+            false
+        ),
+        (LK.write_unavailable, Tuple{T, LK.write_options{T}}, false),
+        (LK.blob_written_text, Tuple{GD, UInt64}, false),
         # HALT1 — halt/1, abort/0 (pl-fli.c haltProlog/PL_halt/PL_abort_process, pl-init.c PL_cleanup,
         # pl-setup.c signal_index/PL_get_signum_ex, pl-pro.c abortProlog/raise_halt_exception, pl-wam.c handles_unwind)
         (LK.haltProlog, Tuple{GD, LD, Int}, false),

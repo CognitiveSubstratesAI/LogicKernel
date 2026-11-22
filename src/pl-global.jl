@@ -632,6 +632,9 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since RD2: `read_contexts`, appended last: the reads whose quasi-quotations the library may open (`'$qq_open'/2`; src/pl-read.jl). Upstream's
+# `'$quasi_quotation'(Ptr, Start, Len)` holds a pointer to the read data; Julia keeps no object in a word, so the pointer is `objectid(rd)` and
+# this vector is where `$qq_open` finds the data again, only while `parse_quasi_quotations` runs the library.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -809,6 +812,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
     undo_running::Int                                           # undo.running: undo goals are running (TX1e)
     coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
+    read_contexts::Vector{Any}                                  # ORIGINAL: the `read_data` a quasi-quotation's `'\$quasi_quotation'(Ptr, …)` may name, while its read runs (RD2)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -936,7 +940,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
         UInt64[],                               # undo.scheduled: none (TX1e)
         0,                                      # undo.running: no undo goal runs (TX1e)
-        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
+        ld_coverage{T}(),                       # coverage: no data, not active (pl-global.c: zero)
+        Any[]                                   # read_contexts: none (RD2)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
