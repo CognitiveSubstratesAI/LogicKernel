@@ -412,8 +412,9 @@ function restore_grefs(ld::PL_local_data{T}, fid::Int)::Nothing where {T}
 end
 
 # PORT: pl-gc.c gvars_to_term_refs
-# DIVERGES: (1) the table is `ld.gvar_nb_vars`; its keys are collected once in a fixed order (the Dict is
-# not modified between the two passes, so `term_refs_to_gvars` sees the same order); (2) the pass does
+# DIVERGES: (1) the table is `ld.gvar_nb_vars`; its keys are iterated in place, in the Dict's order (no key
+# is added or removed between the two passes, and `term_refs_to_gvars` writes the values of existing keys
+# only, so it sees the same order; iterating allocates nothing, ALLOC-FIX b); (2) the pass does
 # not wait for `gvar_grefs > 0` and does not assert `grefs == found`: the count is a hint of the kernel's
 # bookkeeping, a value on the global stack is a root whatever it says; (3) the saved `frozen_bar` is a
 # raw slot above `lTop` (not counted in the frame's `size`), holding a global reference word; its
@@ -423,10 +424,9 @@ function gvars_to_term_refs(ld::PL_local_data{T})::Tuple{Int, Int} where {T}
     fid = PL_open_foreign_frame(ld)
     fid == 0 && error("GC: no local space for gvars_to_term_refs")
     if !isempty(ld.gvar_nb_vars)
-        ks = collect(keys(ld.gvar_nb_vars))
-        ensureLocalSpace(ld, length(ks) + 2) ||
+        ensureLocalSpace(ld, length(ld.gvar_nb_vars) + 2) ||
             error("GC: no local space for the global variables")
-        for k in ks
+        for k in keys(ld.gvar_nb_vars)
             w = ld.gvar_nb_vars[k]
             _gc_is_global_ref(w) && gc_new_term_ref!(ld, w)
         end
@@ -455,7 +455,7 @@ function term_refs_to_gvars(ld::PL_local_data{T}, fid::Int, sb::Int)::Nothing wh
     if !isempty(ld.gvar_nb_vars)
         f = ld.fliframes[fliFrameOfFid(ld, fid)]
         found = 0
-        for k in collect(keys(ld.gvar_nb_vars))
+        for k in keys(ld.gvar_nb_vars)                  # in place: only existing keys' values are written
             if _gc_is_global_ref(ld.gvar_nb_vars[k])
                 ld.gvar_nb_vars[k] = gc_get_value(ld.slots[_gc_fli_slot(f, found)])
                 found += 1
