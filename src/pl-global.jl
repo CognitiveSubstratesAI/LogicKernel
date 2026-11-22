@@ -1020,6 +1020,10 @@ end
 "The positions of a new local stack (pl-setup.c `allocStacks`'s `minlocal`, in words)."
 const LOCAL_INITIAL = 4096
 
+# setup:1599/1605 `minglobal = 8*SIZEOF_WORD K`, `iglobal = nextStackSizeAbove(minglobal-1)`: 64 KB, here in words.
+"The words of a new global stack (pl-setup.c `allocStacks`'s `iglobal`): a growth past it is a shift (G1)."
+const GLOBAL_INITIAL = 8192
+
 # The `stack_limit` flag's default, 1 GiB (swipl 10.1.16: `1073741824`), here in positions.
 "The default `stacks_limit`, in positions: `stack_limit`'s default of 1 GiB, in words."
 const STACK_LIMIT_DEFAULT = (1 << 30) ÷ 8
