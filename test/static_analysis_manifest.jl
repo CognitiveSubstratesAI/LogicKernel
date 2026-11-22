@@ -2545,6 +2545,22 @@ function _manifest_index(T)
         (LK.pl_engine_destroy, Tuple{LD, Int}, false),
         (LK.pl_engine_post2, Tuple{LD, Int, Int}, false),
         (LK.pl_engine_fetch, Tuple{LD, Int}, false),
+        (LK.thread_symbol, Tuple{LK.PL_global_data{T}, LD}, false),
+        (
+            LK.interactor_post_answer_nolock,
+            Tuple{
+                LK.PL_global_data{T}, LD, LK.thread_handle{T}, Int,
+                Union{Nothing, Int}, Int,
+            },
+            false,
+        ),
+        (
+            LK.interactor_post_answer,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, Int}, Int},
+            false,
+        ),
+        (LK.pl_engine_next, Tuple{LD, Int, Int}, false),
+        (LK.pl_engine_post3, Tuple{LD, Int, Int, Int}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
