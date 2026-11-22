@@ -575,3 +575,83 @@ end
         @test r isa String && r2 isa String && r != r2          # the translation is what tells them apart
     end
 end
+
+# ── the XR_STRING / XR_STRING_UTF8 entries: nothing of `'$qlf_module'/2` shows them (a string is no atom: only an `S` super may hold one and
+# its value is dropped), so the XR reader is called directly (loadXR on a stream of the entry's bytes) ──
+# The bytes are the ones the pinned swipl (10.1.20, 18168e62) writes for the directive terms `seen("héllo")` and `seenw("λé")` of
+# a qcompile'd module (`82 08 8a 68 e9 6c 6c 6f`: a functor argument, XR_STRING, 5 bytes, the Latin-1 byte 0xE9; `82 0d 84 ce bb c3 a9`:
+# XR_STRING_UTF8, 2 characters); the second Latin-1 row is the same file with those five bytes replaced by `c3 a9 c3 a9 78`, loaded by the pinned
+# swipl as the codes [195,169,195,169,120] (each BYTE one character: the two bytes of a UTF-8 sequence stay two characters).
+const _QM_XRSTR = Tuple{String, String, String}[
+    ("latin1_e9", "088a68e96c6c6f", "[104,233,108,108,111]"),            # XR_STRING: swipl's globalString, ISO Latin-1
+    ("latin1_utf8_bytes", "088ac3a9c3a978", "[195,169,195,169,120]"),    # the bytes of two UTF-8 characters are four characters
+    ("latin1_ff", "0884ff80", "[255,128]"),                              # the top of Latin-1, one character per byte
+    ("latin1_empty", "0880", "[]"),
+    ("utf8_wide", "0d84cebbc3a9", "[955,233]"),                          # XR_STRING_UTF8: the characters of the UTF-8 text
+]
+
+"The string an XR entry of the bytes `hex` stands for: `loadXR` on a stream of them (`nothing` if the entry is no string)."
+function _qm_xr_string(dir::String, name::String, hex::String)::Union{Nothing, String}
+    path = joinpath(dir, name * ".xr")
+    write(path, hex2bytes(hex))
+    gd = LK.PL_global_data{_QM}()
+    ld = LK.PL_local_data{_QM}(gd)
+    state = LK.wic_state(path)
+    s = LK.open_qlf_file(ld, path)
+    s === nothing && return nothing
+    state.wicFd = s
+    LK.pushXrIdTable(state)
+    x = try
+        LK.loadXR(ld, state)
+    finally
+        LK.Sclose(s)
+    end
+    return x isa LK.xr_string{_QM} ? x.value : nothing
+end
+
+@testset "the XR string entries: XR_STRING is ISO Latin-1 (one character per byte), XR_STRING_UTF8 is UTF-8 (pl-qlf.c loadXRc)" begin
+    # UNVERIFIED on the kernel: gate decides
+    mktempdir() do d
+        got = String[]
+        for (name, hex, want) in _QM_XRSTR
+            v = _qm_xr_string(d, name, hex)
+            @test v isa String
+            v isa String || continue
+            @test _qm_codes(v) == want
+            push!(got, _qm_codes(v))
+        end
+        @test length(got) == 5 && length(unique(got)) == 5                  # not vacuous: five different answers
+        # the two decoders give different characters for the same bytes `c3 a9`: Latin-1 two characters, UTF-8 one
+        @test _qm_codes(something(_qm_xr_string(d, "pair_l", "0884c3a9"), "")) == "[195,169]"
+        @test _qm_codes(something(_qm_xr_string(d, "pair_u", "0d82c3a9"), "")) == "[233]"
+        # a string is no atom: the entry is read as a string, never an atom
+        @test _qm_xr_string(d, "notstr", "03844869") === nothing
+    end
+end
+
+@testset "the XR string bytes are the pinned swipl's (when swipl is on PATH): a qcompile'd module's directive strings, and the loaded codes" begin
+    if Sys.which("swipl") === nothing
+        @test length(_QM_XRSTR) == 5                                         # the no-swipl branch: the pins above are the evidence
+    else
+        mktempdir() do d
+            pl = joinpath(d, "s3.pl")
+            write(
+                pl,
+                ":- module(s3, [p/0]).\n:- assertz(seen(\"h\\u00e9llo\")).\n:- assertz(seenw(\"\\u03bb\\u00e9\")).\np.\n",
+            )
+            qgoal = "qcompile('$(pl)')"
+            run(pipeline(`swipl -q -g $qgoal -t halt`; stdin=devnull, stderr=devnull))
+            q = read(joinpath(d, "s3.qlf"))
+            hex = bytes2hex(q)
+            @test length(collect(eachmatch(r"82088a68e96c6c6f", hex))) == 1       # the Latin-1 entry as `_QM_XRSTR` has it (the arity byte before it)
+            @test length(collect(eachmatch(r"820d84cebbc3a9", hex))) == 1
+            # the patched file: the five bytes replaced by `c3 a9 c3 a9 78`, same length (the source is unchanged, so the file is not stale)
+            t2 = joinpath(d, "t2.qlf")
+            write(t2, hex2bytes(replace(hex, "82088a68e96c6c6f" => "82088ac3a9c3a978")))
+            goal = "load_files('$(t2)',[]),s3:seen(X),string_codes(X,C),print(C),nl,s3:seenw(W),string_codes(W,CW),print(CW),nl"
+            out = read(pipeline(`swipl -q -g $goal -t halt`; stdin=devnull, stderr=devnull), String)
+            @test split(chomp(out), '\n') == ["[195,169,195,169,120]", "[955,233]"]
+            @test _qm_codes(something(_qm_xr_string(d, "live_l", "088ac3a9c3a978"), "")) == "[195,169,195,169,120]"
+        end
+    end
+end
