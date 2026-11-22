@@ -14,6 +14,8 @@
 # stack). The debugger itself is deferred (DBG1). Since R2 F1c: `debugmode` and `tracemode`, the two functions the flag `debug` calls
 # (pl-prologflag.c set_flag_value), over the debugger-status fields of the local data (`ld.debugstatus_*`, src/pl-global.jl).
 # Since R2 TOP1: `resetTracer` and `enable_debug_on_interrupt`, which `resetProlog` and `query_loop` (src/pl-pro.jl) call.
+# Since DBG1's first piece: `prolog_frame_attribute/3` and its helpers (`PL_get_frame`, `isDebugFrame`, `alternativeFrame`, …), over the
+# kernel's frame, choice-point and query pools.
 
 # PORT: pl-trace.c PL_unify_frame
 "Unify `t` with frame `fr`'s position, or `none` for no frame (pl-trace.c)."
@@ -367,12 +369,221 @@ function clear_frame_vars(ld::PL_local_data{T}, target::Int)::Nothing where {T}
     end
 end
 
+# PORT: pl-trace.c prolog_frame_attribute
+# (pl-trace.c:2490 at the pin 18168e62: `static bool prolog_frame_attribute(term_t frame, term_t what, term_t value)`; the function
+# and every helper it calls are unchanged at af9e2e7e)
+# DIVERGES: frames are indices of the frame pool (`PL_get_frame`); the module is an index into `gd`'s table (`PL_strip_module`).
+# `fref` (upstream saves and restores `fr` as a term reference over possible stack shifts) is not needed: a pool index is stable.
+# `PL_get_arg_ex(1, what, arg)` is `_PL_get_arg`: the compound check is made already (`what` has arity 1 there). The
+# `ensureGlobalSpace(0, ALLOW_GC)` retry before `PL_unify` in `argument(N)` has no counterpart (docs/g1gc_safe_points.md, row
+# pl-trace.c:2534, NO-COUNTERPART): the global stack is a vector. `O_DEBUGLOCAL`'s assert and `checkData` are not ported.
+# `unknown_key:` (a `goto`) is `_frame_attribute_unknown`. A frame whose `ClauseRef` holds no clause (upstream would read a NULL)
+# counts as having none: `argument(N)` is then bounded by the predicate's arity, and `clause` fails. `pc`: upstream's
+# `fr->programPointer - clause->codes` is the 0-BASED offset; the kernel's `Code.pc` is 1-based, so it is `pc - 1`
+# (the value a Prolog-level `prolog_stack` reads is the same number as swipl's). `depth_limit_exceeded`: `O_LIMIT_DEPTH`'s
+# branch, over the query's `saved_depth_limit` (`DEPTH_NO_LIMIT` never exceeded). `parent_goal` falls out of its loop with
+# `fr` NULL to the final `PL_unify(value, result)` with `result` unbound, as upstream's structure does. Not ported: the
+# `set(fr, FR_NOTIFY)` debugger consumer (`FR_NOTIFY` is set on the frame; nothing reads it until DBG1 ports the tracer ports).
+# `DEBUG(CHK_SECURE, scan_global(0))` of the PRED_IMPL wrapper is dropped.
+"""
+    prolog_frame_attribute(ld, frame, what, value) -> Bool
+
+`prolog_frame_attribute(+Frame, +Key, -Value)` (pl-trace.c): the value of attribute `Key` (`level`, `parent`, `predicate_indicator`,
+`clause`, `pc`, `goal`, `hidden`, `context_module`, `depth_limit_exceeded`, `parent_goal`, `argument(N)`, `alternative`,
+`has_alternatives`, `skipped`, `top`) of the frame `frame` names.
+"""
+function prolog_frame_attribute(
+    ld::PL_local_data{T}, frame::term_t, what::term_t, value::term_t
+)::Bool where {T}
+    gd = _query_gd(ld)
+    result = PL_new_term_ref(ld)
+
+    ok, fr = PL_get_frame(ld, frame)
+    ok || return PL_error(ld, ERR_TYPE, mk_sym(T, :frame_reference), frame)
+    fr == 0 && return false                             # frame == 'none'
+    nm = PL_get_name_arity(ld, what)
+    nm === nothing && return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), what)
+    key, arity = nm
+    kk = sym_key(key)
+    ok, m = PL_strip_module(gd, ld, value, 0, value)    # PL_strip_module(value, &m, value)
+    ok || return false
+
+    ld.frames[fr].flags |= FR_NOTIFY                    # set(fr, FR_NOTIFY)
+
+    if kk == sym_key(mk_sym(T, :argument)) && arity == 1
+        arg = PL_new_term_ref(ld)
+
+        _PL_get_arg(ld, 1, what, arg)                   # PL_get_arg_ex(1, what, arg)
+        argn = PL_get_size_ex(ld, arg)
+        argn === nothing && return false
+        argn < 1 && return PL_error(ld, ERR_DOMAIN, mk_sym(T, :natural), arg)
+
+        f = ld.frames[fr]
+        def = f.predicate::Definition{T}
+        cr = f.clause
+        cl = cr === nothing ? nothing : cr.clause
+        if (def.flags & P_FOREIGN) != 0 || cl === nothing
+            argn > def.arity && return false
+        else
+            argn > cl.prolog_vars && return false
+        end
+
+        return PL_unify(ld, value, argFrameP(f.base, argn - 1)) # PL_unify(value, consTermRef(argFrameP(fr, argn-1)))
+    end
+
+    if !(arity == 0 || (arity == 1 && kk == sym_key(mk_sym(T, :parent_goal))))
+        return _frame_attribute_unknown(ld, what)       # unknown_key:
+    end
+
+    f = ld.frames[fr]
+    def = f.predicate::Definition{T}
+    if kk == sym_key(mk_sym(T, :level))
+        PL_put_integer(ld, result, Int(levelFrame(f)))
+    elseif kk == sym_key(mk_sym(T, :has_alternatives))
+        PL_put_atom(ld, result, mk_sym(T, hasAlternativesFrame(ld, fr) ? :true : :false))
+    elseif kk == sym_key(mk_sym(T, :skipped))
+        PL_put_atom(ld, result, mk_sym(T, (f.flags & FR_SKIPPED) != 0 ? :true : :false))
+    elseif kk == sym_key(mk_sym(T, :alternative))
+        alt = alternativeFrame(ld, fr)
+        alt != 0 || return false
+        PL_put_frame(ld, result, alt)
+    elseif kk == sym_key(mk_sym(T, :parent))
+        parent = parentFrame(ld, fr)
+        parent != 0 || return false
+        clear_frame_vars(ld, parent)
+        PL_put_frame(ld, result, parent)
+    elseif kk == sym_key(mk_sym(T, :top))
+        PL_put_atom(ld, result, mk_sym(T, f.parent != 0 ? :false : :true))
+    elseif kk == sym_key(mk_sym(T, :context_module))
+        PL_put_atom(ld, result, gd.modules[contextModule(gd, ld, fr)].atom)
+    elseif kk == sym_key(mk_sym(T, :clause))
+        cr = f.clause
+        cl = cr === nothing ? nothing : cr.clause
+        if (def.flags & P_FOREIGN) == 0 && cl !== nothing &&
+            def !== gd.procedures_dc_call_prolog0.definition &&
+            def !== gd.procedures_dcall1.definition
+            PL_unify_clref(gd, ld, result, cl) || return false
+        else
+            return false
+        end
+    elseif kk == sym_key(mk_sym(T, :goal))
+        put_frame_goal(ld, result, fr) || return false
+    elseif kk == sym_key(mk_sym(T, :predicate_indicator))
+        unify_definition(gd, ld, gd.modules[m], result, def, 0, GP_NAMEARITY) || return false
+    elseif kk == sym_key(mk_sym(T, :parent_goal))
+        head = PL_new_term_ref(ld)
+        a = PL_new_term_ref(ld)
+
+        proc = get_procedure(gd, ld, value, GP_FIND, head)
+        proc === nothing && return false
+
+        fid = PL_open_foreign_frame(ld)
+        cur = fr
+        while cur != 0
+            while cur != 0 && ld.frames[cur].predicate !== proc.definition
+                cur = parentFrame(ld, cur)
+            end
+
+            if cur != 0
+                garity = (ld.frames[cur].predicate::Definition{T}).arity
+                i = 0
+                while i < garity
+                    fa = argFrameP(ld.frames[cur].base, i)  # consTermRef(argFrameP(fr, i))
+                    _PL_get_arg(ld, i + 1, head, a)
+                    PL_unify(ld, a, fa) || break                # Argument does not unify
+                    i += 1
+                end
+                if i == garity                                  # All arguments unified: found a match
+                    if arity == 1                               # parent_frame(Next)
+                        arg = PL_new_term_ref(ld)
+
+                        _PL_get_arg(ld, 1, what, arg)
+                        parent = parentFrame(ld, cur)
+                        if parent != 0
+                            PL_unify_frame(ld, arg, parent) && return true
+                        else
+                            PL_unify_atom(ld, arg, mk_sym(T, :none)) && return true
+                        end
+                    else
+                        return true
+                    end
+                end
+
+                if PL_exception(ld, 0) != 0
+                    return false
+                else
+                    PL_rewind_foreign_frame(ld, fid)
+                    cur = parentFrame(ld, cur)
+                end
+            else
+                PL_close_foreign_frame(ld, fid)
+                return false                                    # No frame running this predicate
+            end
+        end
+    elseif kk == sym_key(mk_sym(T, :pc))
+        pp = f.programPointer
+        parent = f.parent
+        if pp.pc != 0 && parent != 0
+            pf = ld.frames[parent]
+            pcr = pf.clause
+            if ((pf.predicate::Definition{T}).flags & P_FOREIGN) == 0 && pcr !== nothing &&
+                pf.predicate !== gd.procedures_dcall1.definition
+                PL_put_intptr(ld, result, pp.pc - 1)    # fr->programPointer - clause->codes (0-based)
+            else
+                return false
+            end
+        else
+            return false
+        end
+    elseif kk == sym_key(mk_sym(T, :hidden))
+        hv = if SYSTEM_MODE(ld)
+            :true
+        else
+            isDebugFrame(ld, fr, 0) ? :false : :true
+        end
+        PL_put_atom(ld, result, mk_sym(T, hv))
+    elseif kk == sym_key(mk_sym(T, :depth_limit_exceeded))
+        qi = findQuery(ld, ld.environment_frame)        # get limit from saved query
+        dv = if qi != 0 && Int(levelFrame(f)) > ld.queries[qi].saved_depth_limit
+            :true
+        else
+            :false
+        end
+        PL_put_atom(ld, result, mk_sym(T, dv))
+    else
+        return _frame_attribute_unknown(ld, what)       # goto unknown_key
+    end
+
+    return PL_unify(ld, value, result)
+end
+
+# ORIGINAL (DBG1): the `unknown_key:` label of `prolog_frame_attribute` (pl-trace.c), which C reaches by `goto`.
+"Raise `domain_error(frame_attribute, What)` (the label `unknown_key` of `prolog_frame_attribute`, pl-trace.c)."
+function _frame_attribute_unknown(ld::PL_local_data{T}, what::term_t)::Bool where {T}
+    return PL_error(ld, ERR_DOMAIN, mk_sym(T, :frame_attribute), what)
+end
+
+# PORT: pl-trace.c prolog_frame_attribute as pl_prolog_frame_attribute3_va
+# (PRED_IMPL("prolog_frame_attribute", 3, prolog_frame_attribute, PL_FA_TRANSPARENT), pl-trace.c:2706 at the pin 18168e62)
+"`prolog_frame_attribute(+Frame, +Key, -Value)` (pl-trace.c): the registered entry of `prolog_frame_attribute/3`."
+function pl_prolog_frame_attribute3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    A2 = PL__t0 + 1
+    A3 = PL__t0 + 2
+    return prolog_frame_attribute(ld, A1, A2, A3) ? FTRUE : FFALSE
+end
+
 # PORT: pl-trace.c BeginPredDefs as PL_predicates_from_trace
-# DIVERGES: the ported entry only (upstream's table also has `prolog_frame_attribute/3` and the
-# other debugger predicates, pl-trace.c:2830-2840).
-"pl-trace.c's registration table (`BeginPredDefs(trace)`): the ported entry."
+# DIVERGES: the ported entries only (upstream's table also has the other debugger predicates, pl-trace.c:2830-2840).
+"pl-trace.c's registration table (`BeginPredDefs(trace)`): the ported entries."
 const PL_predicates_from_trace = (
     PL_extension("prolog_current_choice", 1, pl_prolog_current_choice1_va, PL_FA_VARARGS),
+    PL_extension(                                   # (pl-trace.c:2706 at the pin 18168e62, since DBG1's first piece)
+        "prolog_frame_attribute", 3, pl_prolog_frame_attribute3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
+    ),
 )
 
 # PORT: pl-trace.h DBG_ALL
