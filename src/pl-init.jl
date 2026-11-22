@@ -12,7 +12,7 @@
 # `PL_initialise` that runs `'$initialise'` (`PL_initialise!`; the database it starts is the booted template's copy).
 # LEFT OUT: `script_argv`, the saved states and the resource database, `findHome`/`initPaths` apart from the system
 # init file name, `giveVersionInfo`, `run_on_halt` and the foreign hook lists (`PL_on_halt`, `PL_exit_hook`: the
-# kernel has none), `qlfCleanup`, `RemoveTemporaryFiles`, `cleanupSignals` and the memory reclaim of
+# kernel has none), `qlfCleanup`, `cleanupSignals` and the memory reclaim of
 # `cleanupProlog` (the host process's memory is the host's).
 
 # PORT: pl-init.c MAX_HALT_CANCELLED
@@ -26,7 +26,7 @@ const MAX_HALT_CANCELLED = 10
 # does not cancel the halt (the hooks `'$call_at_halt'/2` runs catch their own). (2) Left out: the debug-mode
 # switch, `emptyStacks` on an overflow, the foreign hook list (`run_on_halt(&GD->os.on_halt_list)`: the kernel
 # has none), `exitPrologThreads` (one thread), `qlfCleanup`, `unload_all_foreign_libraries`,
-# `RemoveTemporaryFiles`, `cleanupSignals` and the reclaim of memory (`reclaim_memory`: `PL_halt` passes
+# `cleanupSignals` and the reclaim of memory (`reclaim_memory`: `PL_halt` passes
 # `PL_CLEANUP_NO_RECLAIM_MEMORY`). (3) `dieIO` is the flush of the standard output and error streams. (4) The
 # stages `CLN_PROLOG`, `CLN_FOREIGN`, `CLN_IO`, `CLN_SHARED` and `CLN_DATA` are passed in upstream's order and the
 # state stays `CLN_DATA` on return, as upstream (the process ends); `PL_halt` returns it to `CLN_NORMAL` where the
@@ -65,7 +65,9 @@ function PL_cleanup(gd::PL_global_data{T}, ld::PL_local_data{T}, status::Int)::I
     end
 
     gd.halt_cleaning = CLN_SHARED                       # (unload_all_foreign_libraries: none)
-    gd.halt_cleaning = CLN_DATA                         # (RemoveTemporaryFiles, cleanupSignals: none)
+    gd.halt_cleaning = CLN_DATA                         # (cleanupSignals: none)
+
+    RemoveTemporaryFiles(gd)                            # RemoveTemporaryFiles(): the files `tmp_file/2` and `\$tmp_file_stream/4` made
 
     return PL_CLEANUP_SUCCESS
 end

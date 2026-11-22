@@ -30,8 +30,8 @@ MUTANTS = [
          new='        0.05,                                   # clauses_cgc_stack_factor'),
     dict(id='PROCTRACE-S3 the clause factor default is 2.0 (aimed by t0, t1, t3, t4, t5, t6, t7, t8)',
          file=S, targets=TC,
-         old='        1.0                                     # clauses_cgc_clause_factor',
-         new='        2.0                                     # clauses_cgc_clause_factor'),
+         old='        1.0,                                    # clauses_cgc_clause_factor',
+         new='        2.0,                                    # clauses_cgc_clause_factor'),
     # ── $cgc_params/6 ──
     dict(id='PROCTRACE-C1 the first old value is not unified: it fails when A1 is bound to another (aimed by t7)',
          file=P, targets=TC,

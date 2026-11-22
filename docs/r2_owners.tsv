@@ -35,7 +35,6 @@ refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: class(Class) with a blob 
 refusal:src/pl-thread.jl::pl_gc_wait::gc_wait/1: blocks for the GC thread (none)	TH1	`$gc_wait/1` waits for a request of the GC thread (pl-thread.c:7299), which the kernel does not have: it would block for ever, so it is refused by name
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
-refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
 refusal:src/os/pl-apple.jl::pl_apple_current_locale_identifier1_va::apple_current_locale_identifier/1: macOS only, CoreFoundatio	APPLE1	platform: macOS only (pl-apple.c, CoreFoundation); refused by name, out of the Linux count; called under the apple flag by boot/toplevel.pl
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c

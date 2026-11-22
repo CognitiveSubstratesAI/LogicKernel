@@ -13,9 +13,8 @@
 #
 # LB2b: `PL_get_file_name` honours `PL_FILE_ABSOLUTE`, `PL_FILE_OSPATH`, `PL_FILE_EXIST`, `PL_FILE_READ`,
 # `PL_FILE_WRITE`, `PL_FILE_EXECUTE` and the `file_name_variables` flag; `PL_FILE_SEARCH`, which calls
-# `system:absolute_file_name/3` of init.pl, is refused by name (left to LB4); `DeleteTemporaryFile`
-# (delete_file/1 first tries the registry of `tmp_file/2`'s names, which is empty until tmp_file/2 lands,
-# so the call fails, as upstream's does with no registry).
+# `system:absolute_file_name/3` of init.pl, is refused by name (left to LB4); since W12-TMPFILES delete_file/1 first tries the
+# registry of the temporary names (`DeleteTemporaryFile`, src/os/pl-os.jl), which tmp_file/2 and `$tmp_file_stream`/4 fill.
 
 # ORIGINAL (Y1): `PATH_MAX` (<limits.h>) on Linux.
 "The longest file name `get_file_name` accepts, in bytes, the terminating NUL included (Linux)."
@@ -559,15 +558,18 @@ end
 
 # PORT: pl-files.c delete_file as pl_delete_file1_va
 # (PRED_IMPL("delete_file", 1, delete_file, 0))
-# DIVERGES: NOT PORTED: `DeleteTemporaryFile` (see the file's header).
 """
 `delete_file(+File)`: remove the file; `existence_error(file, File)` when it cannot be (`permission_error`
-for an access error; the context holds `strerror(errno)`) (pl-files.c).
+for an access error; the context holds `strerror(errno)`) (pl-files.c). A temporary name `tmp_file/2` made is deleted
+through the registry first (`DeleteTemporaryFile`).
 """
 function pl_delete_file1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1 = PL__t0
+    aname = PL_get_atom(ld, A1)                                     # PL_get_atom(A1, &aname)
+    aname !== nothing && kind(aname) === SYM && !is_reserved_symbol(aname) && !is_blob(aname) &&
+        DeleteTemporaryFile(_query_gd(ld), sym_text(aname)) && return FTRUE
     n = PL_get_file_name(ld, A1, 0)
     n === nothing && return FFALSE
     errno = RemoveFile(n)
@@ -579,36 +581,78 @@ function pl_delete_file1_va(
     return rc ? FTRUE : FFALSE
 end
 
-# ORIGINAL (LB2b): tmp_file/2 and `$tmp_file_stream`/4 are refused by name. `TemporaryFile` (pl-os.c) records
-# every name in the table `GD->os.tmp_files`, which `delete_file/1` (DeleteTemporaryFile) and the halt
-# (RemoveTemporaryFiles) read: PL_global_data has no field for it (a struct change, left to the audit,
-# proposal: `os_tmp_files::Set{...}`), and a module-level table would be shared by every database.
-# `$tmp_file_stream`/4 needs `Sfdopen` on the descriptor `open(2)` returns, which the stream layer
-# (pl-stream.jl) does not have.
-function _tmp_file_refused(ld::PL_local_data{T}, what::String) where {T}
-    throw(NotPortedError{T}(mk_sym(T, :tmp_file), what, "LB2b audit"))
-end
-
 # PORT: pl-files.c tmp_file as pl_tmp_file2_va
 # (PRED_IMPL("tmp_file", 2, tmp_file, 0))
-# DIVERGES: refused by name (see `_tmp_file_refused`).
-"`tmp_file(+Base, -Name)`: refused by name, the registry `GD->os.tmp_files` is not kept (pl-files.c)."
+# DIVERGES: the text of A1 is `text_string` (UTF-8): upstream's `PL_get_chars(.., CVT_ALL|CVT_EXCEPTION)` is ISO Latin-1
+# and raises `representation_error(encoding)` for a wider character; the failure's errno comes from `TemporaryFile`.
+"`tmp_file(+Base, -Name)`: a new temporary file name `<tmp_dir>/swipl_<Base>_<pid>_<n>`, registered for removal at halt (pl-files.c)."
 function pl_tmp_file2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)          # PL_get_chars(base, …)
+    base, name = PL__t0, PL__t0 + 1
+    txt = PL_get_text(ld, base, CVT_ALL | CVT_EXCEPTION)            # PL_get_chars(base, &n, CVT_ALL|CVT_EXCEPTION)
     txt === nothing && return FFALSE
-    _tmp_file_refused(ld, "tmp_file/2: TemporaryFile with the table GD->os.tmp_files")
+    r = TemporaryFile(ld, text_string(txt), "", false)
+    r isa Int || return _unify_atom_chars(ld, name, r[1]) ? FTRUE : FFALSE
+    rc = PL_error(
+        ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create),
+        mk_sym(T, :temporary_file), base, r
+    )
+    return rc ? FTRUE : FFALSE
 end
 
 # PORT: pl-files.c tmp_file_stream as pl_tmp_file_stream4_va
 # (PRED_IMPL("$tmp_file_stream", 4, tmp_file_stream, 0))
-# DIVERGES: refused by name (see `_tmp_file_refused`).
-"`'\$tmp_file_stream'(+Ext, +Encoding, -File, -Stream)`: refused by name, no `Sfdopen` (pl-files.c)."
+# DIVERGES: where `Sfdopen` fails upstream passes the NULL stream on (`Ssetenc(NULL, ..)`); here the file is closed and
+# `ERR_FILE_OPERATION` is raised with the errno of the failure.
+"`'\$tmp_file_stream'(+Ext, +Encoding, -File, -Stream)`: create a temporary file `<tmp_dir>/swipl_<pid>_<n>.<Ext>` and open it for writing (pl-files.c)."
 function pl_tmp_file_stream4_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    _tmp_file_refused(ld, "\$tmp_file_stream/4: Sfdopen and the table GD->os.tmp_files")
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    txt = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)    # PL_get_chars(A1, &ext, ..)
+    txt === nothing && return FFALSE
+    ext = text_string(txt)
+    encoding = PL_get_atom_ex(ld, A2)
+    encoding === nothing && return FFALSE
+    enc = PL_atom_to_encoding(encoding)
+    mode = "w"
+    if enc == ENC_UNKNOWN
+        if _is_atom_named(encoding, T, :binary)
+            enc = ENC_OCTET
+            mode = "wb"
+        else
+            PL_error(ld, "", 0, "", ERR_DOMAIN, mk_sym(T, :encoding), A2)
+            return FFALSE
+        end
+    end
+
+    r = TemporaryFile(ld, "", ext, true)
+    if r isa Int
+        rc = PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create),
+            mk_sym(T, :temporary_file), A1, r
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    fn, file = r
+    file = file::Base.Filesystem.File
+    if !_unify_atom_chars(ld, A3, fn)
+        close(file)                                                 # close(fd)
+        PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 3, A3)
+        return FFALSE
+    end
+    s, errno = Sfdopen(Int(Base.cconvert(Cint, file.handle)), mode)    # the RawFD's descriptor number
+    if s === nothing
+        close(file)
+        rc = PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :create),
+            mk_sym(T, :temporary_file), A1, errno
+        )
+        return rc ? FTRUE : FFALSE
+    end
+    Ssetenc(s, enc)
+    return PL_unify_stream(ld, A4, s) ? FTRUE : FFALSE
 end
 
 # ORIGINAL (LB2b): `rmdir(2)`.
@@ -869,7 +913,7 @@ function pl_my_file1_va(
 end
 
 # PORT: pl-files.c BeginPredDefs as PL_predicates_from_files
-# DIVERGES: all twenty-three entries of upstream's table; the two tmp_file entries raise `NotPortedError` (G8).
+# DIVERGES: all twenty-three entries of upstream's table (the two tmp_file entries are ported since W12-TMPFILES).
 "pl-files.c's registration table (`BeginPredDefs(files)`): the ported entries."
 const PL_predicates_from_files = (
     PL_extension("\$cwd", 1, pl_cwd1_va, PL_FA_VARARGS),

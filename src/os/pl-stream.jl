@@ -2450,3 +2450,29 @@ function Sopen_file(
     enc != ENC_UNKNOWN && (s.encoding = enc)
     return (s, 0)
 end
+
+# PORT: pl-stream.c Sfdopen
+# DIVERGES: returns `(stream, errno)` as `Sopen_file` does; the descriptor is the Julia IO's (`Base.fdio`, which owns it: the
+# stream closes it, as upstream's `Sclose` of a file stream does); the check `fcntl(fd, F_GETFL) == -1` is a `stat` of the
+# descriptor (EBADF for one that is not open); a text stream's encoding is `Snew`'s (UTF-8).
+"A stream on the open file descriptor `fd`, `type` `r` or `w` and `b` for a binary stream: the stream and 0, or `nothing` and the errno (pl-stream.c)."
+function Sfdopen(fd::Int, type::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+    flags = SIO_FILE | SIO_RECORDPOS | SIO_FBUF
+    fd < 0 && return (nothing, EINVAL)
+    try
+        stat(RawFD(fd))
+    catch e
+        e isa Base.IOError || rethrow()
+        return (nothing, -Int(e.code))
+    end
+    c = isempty(type) ? '\0' : type[1]
+    if c == 'r'
+        flags |= SIO_INPUT
+    elseif c == 'w'
+        flags |= SIO_OUTPUT
+    else
+        return (nothing, EINVAL)
+    end
+    (length(type) < 2 || type[2] != 'b') && (flags |= SIO_TEXT)
+    return (Snew(Sjulia_io(Base.fdio("<fd $fd>", fd, true), true), flags, Siofunctions), 0)
+end

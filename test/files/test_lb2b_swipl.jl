@@ -9,7 +9,8 @@
 # `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
 # The rows work on the files lk_lb2b_* the test makes in a fresh directory, and are independent of its absolute path
 # (an absolute answer is cut at the working directory); the mutating rows (mkdir, rmdir, rename, chmod) come last.
-# tmp_file/2, `$tmp_file_stream`/4 and the IRI arguments (`http://...`) are refused by name: checked as refusals below.
+# The IRI arguments (`http://...`) are refused by name: checked as refusals below. tmp_file/2 and `$tmp_file_stream`/4 are
+# pinned by SHAPE in test/files/test_tmp_files_swipl.jl (their names differ per run).
 # UNVERIFIED on the kernel: gate decides
 using Test, LogicKernel
 const LK = LogicKernel
@@ -246,7 +247,7 @@ end
 end
 
 # the refusals by name: not swipl's answers (the Julia kernel has no function behind them), an explicit NotPortedError
-@testset "LB2b: refused by name — tmp_file/2, \$tmp_file_stream/4, IRI arguments" begin
+@testset "LB2b: refused by name — IRI arguments" begin
     refusal(goal::String) = mktempdir() do d
         path = joinpath(d, "r.pl")
         write(path, "t0(R) :- $goal, R = ok.\n")
@@ -262,8 +263,6 @@ end
             e.step
         end
     end
-    @test refusal("tmp_file(lk_lb2b, _)") == "LB2b audit"
-    @test refusal("'\$tmp_file_stream'(txt, utf8, _, _)") == "LB2b audit"
     @test refusal("exists_file('http://example.org/x')") == "LB4"
     @test refusal("exists_directory('http://example.org/x')") == "LB4"
     @test refusal("time_file('http://example.org/x', _)") == "LB4"

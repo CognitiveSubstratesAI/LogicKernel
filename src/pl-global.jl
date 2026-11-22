@@ -353,6 +353,8 @@ mutable struct PL_global_data{T}
     clauses_cgc_space_factor::Int                               # clauses.cgc_space_factor: clause GC space factor, `\$cgc_params/6` (pl-setup.c:180; default 8)
     clauses_cgc_stack_factor::Float64                           # clauses.cgc_stack_factor: clause GC stack factor (pl-setup.c:181; default 0.03)
     clauses_cgc_clause_factor::Float64                          # clauses.cgc_clause_factor: clause GC clause factor (pl-setup.c:182; default 1.0)
+    const os_tmp_files::Set{String}                                   # os.tmp_files: the temporary files handed out, by name (pl-os.c TemporaryFile; W12-TMPFILES)
+    os_temp_counter::Int                                        # (pl-os.c static `temp_counter`: the last number in a temporary name; W12-TMPFILES)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -416,6 +418,9 @@ end
 # Since MUTEX: `mutexes` and `mutex_serial` (the user mutexes of pl-mutex.c). `mutexes` is `GD->thread.mutexTable`, keyed by the `sym_key` of the
 # mutex's id (a name, or the `mutex` blob of an anonymous one); `mutex_serial` is the last creation number handed out (the payload of an anonymous
 # mutex's blob, and the order `mutex_property/2` enumerates in); the local data holds `mutex_enums`, the pool of its REDO_PTR states.
+# Since W12-TMPFILES: `os_tmp_files` (`GD->os.tmp_files`, the names `TemporaryFile` handed out; `DeleteTemporaryFile`, `RemoveTemporaryFiles`,
+# src/os/pl-os.jl; its callers tmp_file/2, `$tmp_file_stream`/4) and `os_temp_counter`, pl-os.c's `static int temp_counter`
+# (one per database here: the kernel keeps no module-level mutable state).
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.

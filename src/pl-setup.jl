@@ -707,7 +707,9 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Dict{word, flag{T}}(),                  # flags_table: initFlags's newHTableWP, empty (pl-flag.c; FL1)
         8,                                      # clauses_cgc_space_factor: pl-setup.c:180
         0.03,                                   # clauses_cgc_stack_factor: pl-setup.c:181
-        1.0                                     # clauses_cgc_clause_factor: pl-setup.c:182
+        1.0,                                    # clauses_cgc_clause_factor: pl-setup.c:182
+        Set{String}(),                          # os_tmp_files: no temporary file yet (pl-os.c TemporaryFile; W12-TMPFILES)
+        0                                       # os_temp_counter: no temporary name made (pl-os.c `temp_counter`; W12-TMPFILES)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
