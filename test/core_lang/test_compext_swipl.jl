@@ -1,5 +1,5 @@
 # ORIGINAL: a LIVE differential of COMP-EXT's predicates against swipl at the pin: `'$notrace'/1` (pl-pro.c:392-410), `'$predefine_foreign'/1`
-# `'$vmi_property'/2` and `'$fetch_vm'/4` (pl-comp.c:5277-5285, :8106-8206), `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx107:
+# `'$vmi_property'/2` and `'$fetch_vm'/4` (pl-comp.c:5277-5285, :8106-8206), `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx115:
 #   * A PROGRAM of cases `t_<id>(R)` consulted by the kernel's loader and run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`, then `set_prolog_flag(debug, false)` (a row that switched the debug mode on leaves it off);
 #     the driver is test_notrace_swipl.jl's (`enc`oded answers), whose state discipline the `'$notrace'/1` rows follow (save first, restore last).
@@ -12,10 +12,10 @@
 #     reads the attribute, `'$nospy'/1` clears it.
 #   * KNOWN DIFFERENCE (named): `'$predefine_foreign'/1` takes `Name/Arity` only in these rows; the kernel's `get_procedure` also takes a head
 #     (src/pl-comp.jl `pl_predefine_foreign1_va`, DIVERGES), swipl does not: the head form is not a row.
-#   * `'$fetch_vm'/4` rows (cx65-cx107): the clause references come from `clause/3` and `nth_clause/3`, the program's `vm_all/2` walks a clause
+#   * `'$fetch_vm'/4` rows (cx65-cx115): the clause references come from `clause/3` and `nth_clause/3`, the program's `vm_all/2` walks a clause
 #     by `NextPC` and lists the instructions, `vm_pc/3` lists `PC-Instruction`. KNOWN DIFFERENCE (named): `h_string` and `h_mpz` are inline blocks
 #     in swipl and one literal-table word in the kernel (src/pl-comp.jl `unify_vmi`, DIVERGES), so their offsets differ by design: those rows (cx70,
-#     cx71) compare the instruction LISTS only (`vm_of/2`), never `NextPC`; every row with offsets (cx78-cx83, cx86-cx87, cx95, cx100-cx101)
+#     cx71) compare the instruction LISTS only (`vm_of/2`), never `NextPC`; every row with offsets (cx78-cx83, cx86-cx87, cx95, cx100-cx101, cx109)
 #     is on a clause without those two instructions. The `s_trustme` operand is a clause pointer in swipl and a clause reference in the kernel:
 #     the rows with a called or dynamic predicate (cx104-cx105) read the instruction NAMES only.
 #   * NOT REPLAYED (COMPEXT-1): the LK-only row that `thread_create/3` is REFUSED by name (NotPortedError, step "TH1"): the integration tip has
@@ -124,6 +124,8 @@ vr3(X) :- Y is X+1, vc(Y).
 vr4(X) :- X = foo(_, bar).
 vr5(X) :- lists:append(X, [], _).
 vr6(X) :- m1:vc(X), vc(X).
+vr7(X) :- Y = bar, vc(Y), Y == bar, X \== bar.
+vr8(X) :- vc(3), vc(X).
 vq1(1).
 vq2(1).
 :- dynamic vq3/1.
@@ -137,10 +139,11 @@ const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(S
 # debugging bit is restored too, cx07, and is off inside the goal, cx12: 13 = 15 less the debugging bit); cx14-cx21: `'$predefine_foreign'/1` (the foreign attribute, the four error forms, a qualified and a 0-arity
 # predicate); cx22-cx50: `'$vmi_property'/2` (`break/1`, `argv/1` of eleven instructions, the error forms, upper-case and unknown names);
 # cx51-cx64: `'$spy'/1` and `'$nospy'/1` (the attribute, the debug flag, the message on each side, the silent repeats, the errors);
-# cx65-cx107: `'$fetch_vm'/4` (cx65-cx77 the instruction list of a clause: atom, small int, nil, compound with a repeated variable, float, string, big
+# cx65-cx115: `'$fetch_vm'/4` (cx65-cx77 the instruction list of a clause: atom, small int, nil, compound with a repeated variable, float, string, big
 # integer, calls, cut, `is`, head unification of a compound, `lists:`- and `m1:`-qualified calls; cx78-cx84 `PC-Instruction` pairs and `nth_clause/3`;
 # cx85-cx90 a bound `NextPC` or `Instruction`; cx91-cx98 the error forms and the end of the code; cx99-cx107 the supervisor of a predicate: the head
-# form, `Name/Arity`, a qualified indicator, never called, called once, dynamic, undefined).
+# form, `Name/Arity`, a qualified indicator, never called, called once, dynamic, undefined); cx108-cx115 a bound zero-argument instruction (match and
+# mismatch), `s_trustme(clause(_))`, body unifications and comparisons with an atom (`vr7`), `b_smallint` (`vr8`), a bound `h_functor` (match, wrong arity, wrong name).
 const _CX_CASES = [
     (
         "cx01",
@@ -569,6 +572,38 @@ const _CX_CASES = [
     (
         "cx107",
         raw"vm_all(user:vq1/1, R)"
+    ),
+    (
+        "cx108",
+        raw"clause(vf3(_), _, Ref), ( '$fetch_vm'(Ref, 0, _, i_exitfact) -> R = yes ; R = no )"
+    ),
+    (
+        "cx109",
+        raw"clause(vf3(_), _, Ref), '$fetch_vm'(Ref, 0, N, h_nil), R = N"
+    ),
+    (
+        "cx110",
+        raw"vq2(1), '$fetch_vm'(vq2/1, 0, _, s_trustme(clause(_))), R = ok"
+    ),
+    (
+        "cx111",
+        raw"vm_of(vr7(_), R)"
+    ),
+    (
+        "cx112",
+        raw"vm_of(vr8(_), R)"
+    ),
+    (
+        "cx113",
+        raw"clause(vf4(_), _, Ref), ( '$fetch_vm'(Ref, 0, _, h_functor(f/3)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx114",
+        raw"clause(vf4(_), _, Ref), ( '$fetch_vm'(Ref, 0, _, h_functor(g/2)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx115",
+        raw"clause(vf4(_), _, Ref), '$fetch_vm'(Ref, 0, _, h_functor(f/2)), R = ok"
     )
 ]
 
@@ -681,7 +716,15 @@ const _CX_PINNED = [
     "t_cx104 c[116,95,99,120,49,48,52]/1(c[91,124,93]/2(a[115,95,116,114,117,115,116,109,101],nil))",
     "t_cx105 c[116,95,99,120,49,48,53]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
     "t_cx106 c[116,95,99,120,49,48,54]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
-    "t_cx107 c[116,95,99,120,49,48,55]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))"
+    "t_cx107 c[116,95,99,120,49,48,55]/1(c[91,124,93]/2(a[115,95,118,105,114,103,105,110],c[91,124,93]/2(a[105,95,101,120,105,116],nil)))",
+    "t_cx108 c[116,95,99,120,49,48,56]/1(a[110,111])",
+    "t_cx109 c[116,95,99,120,49,48,57]/1(i1)",
+    "t_cx110 c[116,95,99,120,49,49,48]/1(a[111,107])",
+    "t_cx111 c[116,95,99,120,49,49,49]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[98,95,117,110,105,102,121,95,102,99]/2(i1,a[98,97,114]),c[91,124,93]/2(a[98,95,118,97,114,49],c[91,124,93]/2(c[105,95,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(c[98,95,101,113,95,118,99]/2(i1,a[98,97,114]),c[91,124,93]/2(c[98,95,110,101,113,95,118,99]/2(i0,a[98,97,114]),c[91,124,93]/2(a[105,95,101,120,105,116],nil))))))))",
+    "t_cx112 c[116,95,99,120,49,49,50]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[98,95,115,109,97,108,108,105,110,116]/1(i3),c[91,124,93]/2(c[105,95,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i2),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,48],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))))",
+    "t_cx113 c[116,95,99,120,49,49,51]/1(a[110,111])",
+    "t_cx114 c[116,95,99,120,49,49,52]/1(a[110,111])",
+    "t_cx115 c[116,95,99,120,49,49,53]/1(a[111,107])"
 ]
 
 function _cx_file()::Tuple{String, Vector{String}}
@@ -737,7 +780,7 @@ function _cx_kernel(::Type{T}, path::String, names::Vector{String}) where {T}
     return out, gd, ld
 end
 
-@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1 and '\$fetch_vm'/4 as swipl's (cx01-cx107)" begin
+@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1 and '\$fetch_vm'/4 as swipl's (cx01-cx115)" begin
     f, names = _cx_file()
     kl, _, _ = _cx_kernel(_CX, f, names)
     @test length(kl) == length(_CX_PINNED)
@@ -848,6 +891,9 @@ end
     @test occursin("domain_error", decoded["t_cx96"]) && occursin("instantiation_error", decoded["t_cx97"])
     @test occursin("s_virgin", decoded["t_cx99"]) && occursin("i_exit", decoded["t_cx99"])
     @test occursin("s_trustme", decoded["t_cx104"])
+    @test occursin("b_unify_fc", decoded["t_cx111"]) && occursin("b_eq_vc", decoded["t_cx111"]) && occursin("b_neq_vc", decoded["t_cx111"])
+    @test occursin("b_smallint", decoded["t_cx112"])
+    @test count(l -> occursin(r"^t_cx11[345] ", l) && occursin("a[110,111])", l), _CX_PINNED) == 2   # cx113, cx114: a wrong arity or name does not match
     @test any(l -> l == "t_cx90 c[116,95,99,120,57,48]/1(a[110,111])", _CX_PINNED)          # a bound instruction that does not match fails
     @test length(unique(_CX_PINNED)) == length(_CX_PINNED)               # the rows differ from one another
 end

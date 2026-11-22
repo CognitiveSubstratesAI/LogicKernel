@@ -12,7 +12,7 @@ prog = re.search(r'const _CX_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
 drv = re.search(r'const _CX_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
 wrap = re.search(r'const _CX_WRAP = raw"(.*?)" \*\s*\n\s*"\\n"', src, re.S).group(1) + "\n"
 cases = re.findall(r'\(\s*"(cx\d+)",\s*raw"(.*?)"\s*\),?\n', src, re.S)
-assert len(cases) == 107, len(cases)
+assert len(cases) == 115, len(cases)
 text = prog + "".join(wrap.replace("@ID@", i).replace("@GOAL@", g) for i, g in cases)
 pathlib.Path("cx_rows.pl").write_text(text)
 names = ",".join(f"t_{i}" for i, _ in cases)
