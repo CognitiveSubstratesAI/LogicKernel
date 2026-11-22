@@ -1279,7 +1279,7 @@ function pl_complete_atom3_va(
     buf = vcat(p, cmm)                                      # strcat(buf, cmm)
     out = PL_chars_t(buf, length(buf), ENC_ISO_LATIN_1, true)
     return if PL_unify_text(ld, A2, 0, out, PL_CODE_LIST) &&
-              PL_unify_atom(ld, A3, mk_sym(T, u ? :unique : :not_unique))
+        PL_unify_atom(ld, A3, mk_sym(T, u ? :unique : :not_unique))
         FTRUE
     else
         FFALSE
