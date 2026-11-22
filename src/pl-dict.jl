@@ -249,6 +249,10 @@ function dict_ordered(
     return (ordered, word(0))
 end
 
+# DIVERGES (SYNC3): NEW upstream `resortDict(p)` (25ebf765): re-sorts the dict whose functor cell is at `p` when
+# `dict_ordered(&t->arguments[1], arity/2, &dupl) == PL_DICT_FALSE` (`dict_order`, then `gen_remember` of every moved
+# cell when `p < LD->gen_bar`), refactored out of `resortDictsInTerm` (callers: `loadQlfTerm`, `resortDictsInClause`).
+# Not ported: the kernel has no .qlf loader (no resortDictsInTerm/Clause caller) and no generational GC (gen_bar).
 # PORT: pl-dict.c dict_order
 # (`compare_dict_entry`, the comparison `sort_r` is given, is the order `sortperm` has on the key words.)
 # DIVERGES: the pairs are sorted by their key WORDS (`SCALAR_TO_CMP` on the dereferenced key cells) with Julia's
@@ -851,6 +855,9 @@ function pl_get_dict(
     end
 
     # search:
+    # DIVERGES (SYNC3): bc05e82f makes upstream's loop re-derive `p = valTermRef(A2); deRef(p); f = valueTerm(*p)` at the top of
+    # EVERY pair ("the stacks may have moved": unify_ptrs(ALLOW_GC|ALLOW_SHIFT) can shift the global stack). A position
+    # of the kernel's global stack never shifts, so `f` is read once, here, as before.
     f = valPtr(dict)
     arity = arityFunctor(ld.functors, ld.gstack[f])
 
@@ -1416,6 +1423,8 @@ end
 
 # PORT: pl-dict.c get_dict_kv
 # DIVERGES: `PL_is_functor(dict, f->definition)` (a functor WORD) is the dereferenced compound word's functor cell compared.
+# (SYNC3, bc05e82f: upstream now keeps `functor_t df = functorTerm(*p)` instead of `Functor f` so that the functor survives
+# a stack shift in `PL_is_functor(dict, df)`; `fw` below is that functor word already.)
 "The `Index`-th key and the values of the dicts at `t0+1…` for `\$get_dict_kv` of `arity` (pl-dict.c)."
 function get_dict_kv(ld::PL_local_data{T}, t0::term_t, arity::Int)::Bool where {T}
     i = PL_get_size_ex(ld, t0)
