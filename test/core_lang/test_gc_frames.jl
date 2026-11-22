@@ -208,17 +208,27 @@ function _gf_rows(db)
             rb === nothing && ld.lTop == newbase + 2 && lt < ld.lTop)
         LK.setLTopInBody(ld)
         chk!("setLTopInBody: twice, the same lTop", ld.lTop == newbase + 2)
-        q.registers_argp = slot(newbase + 3)
+        # pl-gc.c:3767-3772: `ap > argFrameP(qlTop, 0)` with `qlTop = lTop` (next_environment is NULL) and lTop ALREADY raised to newbase + 2 by the rows above, so the
+        # argument frame under construction now starts at argFrameP(newbase + 2, 0) = newbase + 2 + ARGOFFSET; an argument pointer one cell past THAT raises it further
+        # (`newbase + 3` is inside the header of that frame: nothing is raised, as at the pin).
+        newbase2 = LK.argFrameP(newbase + 2, 0)
+        q.registers_argp = slot(newbase2 + 1)
         LK.setLTopInBody(ld)
         chk!(
             "setLTopInBody: a higher argument pointer raises it further",
-            ld.lTop == newbase + 3
+            ld.lTop == newbase2 + 1 && newbase2 + 1 > newbase + 2
         )
         q.registers_argp = slot(newbase + 1)
         LK.setLTopInBody(ld)
         chk!(
             "setLTopInBody: a lower one never lowers it (restore_vmi_state is not called)",
-            ld.lTop == newbase + 3
+            ld.lTop == newbase2 + 1
+        )
+        q.registers_argp = slot(newbase + 3)
+        LK.setLTopInBody(ld)
+        chk!(
+            "setLTopInBody: an argument pointer inside the header of the frame under construction raises nothing",
+            ld.lTop == newbase2 + 1
         )
         LK.lowerLTop!(ld, lt)
         chk!("premise: lTop is back for the next row", ld.lTop == lt)
