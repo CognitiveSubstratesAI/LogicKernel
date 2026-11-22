@@ -1213,7 +1213,13 @@ function _manifest_index(T)
             Tuple{LD, Int64, Int64, String, typeof(LK.read_term_options)},
             false
         ),
+        (
+            LK.PL_scan_options,
+            Tuple{LD, Int64, Int64, String, typeof(LK.make_engine_options)},
+            false
+        ),
         (LK.get_optval, Tuple{LD, LK.PL_option_t, Int64}, false),
+        (LK.PL_is_inf, Tuple{LD, Int}, false),
         (LK.setBackQuotes, Tuple{LD, T, UInt32}, false),
         # R2 F1a — the Prolog flags (src/os/pl-prologflag.jl, the table's types in src/pl-incl.jl)
         (LK.truePrologFlag, Tuple{LD, Int}, true),     # in ar_divide/ar_pow and the reader's token loop
@@ -2526,6 +2532,24 @@ function _manifest_index(T)
         (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (LK.get_interactor, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
         (LK.pl_is_engine, Tuple{LD, Int}, false),
+        (
+            LK.copy_local_data!,
+            Tuple{LD, LD, LK.PL_thread_info{T}},
+            false,
+        ),
+        (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (LK._destroy_engine!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (
+            LK.destroy_interactor!,
+            Tuple{LK.PL_global_data{T}, LK.thread_handle{T}, Bool},
+            false,
+        ),
+        (LK.done_interactor!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
+        (LK.copy_debug_mode, Tuple{LD, LD}, false),
+        (LK.pl_engine_create, Tuple{LD, Int, Int, Int}, false),
+        (LK.pl_engine_destroy, Tuple{LD, Int}, false),
+        (LK.pl_engine_post2, Tuple{LD, Int, Int}, false),
+        (LK.pl_engine_fetch, Tuple{LD, Int}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
