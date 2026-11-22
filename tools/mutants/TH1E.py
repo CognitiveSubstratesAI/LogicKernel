@@ -25,6 +25,10 @@
 # AE1-AE9. NOT LISTED: the `ev.argc == 1`/`== 2` branches of the void call and the `argc == 2` branch of the bool call (no registrar
 # gives them an event: PL_thread_at_exit's argc is 0, the bool test's event has argc 1), the `@assert argc >= ev.argc` (the rows' events
 # always satisfy it), `argv + 1` -> `argv + 2` of the bool call (the row checks only that the term reference is nonzero).
+# THE THREAD IDENTIFIER API (ID1..ID7: src/pl-thread.jl `PL_thread_self`, `PL_unify_thread_id`, `PL_get_thread_id_ex`, `PL_get_thread_alias`;
+# pl-thread.c:1444, :1745-1780): TARGETS is the engines test alone (the white-box testset "the thread identifier API"; no other file calls them).
+# No equivalent among ID1-ID7. NOT LISTED: the error kinds of `PL_get_thread_id_ex` (the rows check only that an exception is raised: `get_thread`'s
+# own branches are killed by the Prolog rows of thread_property/engine_next), the `tid == 1` shortcut of `PL_get_thread_alias` vs the `main` alias.
 # NOT LISTED (with the reason; a survivor would prove nothing about dead code, D-0238):
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
@@ -389,4 +393,33 @@ MUTANTS = [
          file=EV, targets=TARGETS,
          old="push!(fns, event_function(func, closure))",
          new="push!(fns, event_function(func, nothing))"),
+    # ---- the thread identifier API
+    dict(id="TH1E-ID1 PL_thread_self answers 1 inside an engine (KILL the white-box thread identifier API: selfs, the engine's own id)",
+         file=T, targets=TARGETS,
+         old="    info === nothing && return 1\n    return info.pl_tid\n",
+         new="    return 1\n"),
+    dict(id="TH1E-ID2 PL_unify_thread_id accepts an id above the highest (KILL the API testset: the id 3 of one engine)",
+         file=T, targets=TARGETS,
+         old="    if i < 1 || i > gd.thread.highest_id\n        return -1\n    end\n    info = i == 1",
+         new="    if i < 1\n        return -1\n    end\n    info = i == 1"),
+    dict(id="TH1E-ID3 PL_unify_thread_id answers 1 for a failed unification (KILL the API testset: the other atom)",
+         file=T, targets=TARGETS,
+         old="    return unify_thread_id(gd, ld, t, info) ? 1 : 0\n",
+         new="    return unify_thread_id(gd, ld, t, info) ? 1 : 1\n"),
+    dict(id="TH1E-ID4 PL_unify_thread_id answers a destroyed engine's slot as a thread (KILL the API testset: -1 after the destroy)",
+         file=T, targets=TARGETS,
+         old="    if i != 1 && (info === nothing || info.status == PL_THREAD_UNUSED || info.status == PL_THREAD_RESERVED)\n        return -1\n",
+         new="    if i != 1 && (info === nothing && false)\n        return -1\n"),
+    dict(id="TH1E-ID5 PL_get_thread_id_ex answers an id for a thread that does not exist (KILL the API testset: nosuch is nothing)",
+         file=T, targets=TARGETS,
+         old="    return tid == 0 ? nothing : tid\n",
+         new="    return tid\n"),
+    dict(id="TH1E-ID6 PL_get_thread_alias(0) is the alias of thread 0, not the caller's (KILL the API testset: 0 is main)",
+         file=T, targets=TARGETS,
+         old="    tid == 0 && (tid = PL_thread_self(ld))\n",
+         new="    tid == 0 && (tid = 2)\n"),
+    dict(id="TH1E-ID7 PL_get_thread_alias gives an engine's handle, not its alias (KILL the API testset: nothing for an engine without alias)",
+         file=T, targets=TARGETS,
+         old="    return symbol_alias(gd, info.symbol)\n",
+         new="    return info.symbol\n"),
 ]

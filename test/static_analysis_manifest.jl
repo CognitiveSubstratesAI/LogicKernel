@@ -2535,6 +2535,10 @@ function _manifest_index(T)
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
         (LK.PL_thread_at_exit, Tuple{LK.PL_global_data{T}, LD, Any, Any, Bool}, false),
+        (LK.PL_thread_self, Tuple{LD}, false),
+        (LK.PL_unify_thread_id, Tuple{LK.PL_global_data{T}, LD, Int, Int}, false),
+        (LK.PL_get_thread_id_ex, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (LK.PL_get_thread_alias, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (
             LK.freePrologThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
