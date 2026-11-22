@@ -819,7 +819,7 @@ end
         ("message_queue_create", 1, false, false), ("message_queue_create", 2, false, false),
         ("message_queue_destroy", 1, true, false), ("message_queue_property", 2, true, true),
         ("message_queue_set", 2, false, false), ("is_message_queue", 1, false, false),
-        ("thread_send_message", 2, true, false), ("thread_send_message", 3, true, false),
+        ("thread_send_message", 2, true, false), ("thread_send_message", 3, false, false),
         ("thread_get_message", 1, true, false), ("thread_get_message", 2, true, false),
         ("thread_get_message", 3, true, false), ("thread_peek_message", 1, true, false),
         ("thread_peek_message", 2, true, false)

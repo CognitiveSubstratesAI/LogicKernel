@@ -519,9 +519,14 @@ end
     # in pl_set_prolog_stack4_va (src/pl-setup.jl, owner R2 F1b) went (184 -> 183); the Q10-42 port closed no owner row.
     # 146 -> 151 (R2-OWNERS2, audit D-0928 (3)): five refusal rows lane F (R2 stack 1) introduced had no owner: os/pl-cstack.jl sigCrashHandler and CStackSize,
     # pl-coverage.jl pc_call_site (REFUSED), pl_cov_start1_va (COV1), pl-prof.jl _prof_refuse (PROF1). MEASURED with the generator's own r2_collect on the tree: 841 rows, 151 owned, 38 NO OWNER.
+    # 151 -> 146 on the TH1 chain (wip/queues-1), D-0083 disclosure: DERIVED from the diff of docs/r2_owners.tsv against origin/main, NOT RUN (the gate's generator measures):
+    # 10 `pred:` owner lines went (the rows done: $engine_create/3, engine_next/2, is_engine/1, message_queue_create/1, message_queue_destroy/1, set_thread/2,
+    # thread_get_message/2, thread_join/2, thread_property/2, thread_send_message/2) and 1 refusal line (pl-event.jl the thread events), 6 refusal rows were added with
+    # an owner (PL_yielded of engine_next/post, the joining/debug_mode/class/class-blob refusals of thread_join/set_thread, the two blocking-wait refusals of
+    # src/pl-queue.jl): -10 -1 +6 = -5. The QUEUES part of it is -4 +2 = -2.
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 151
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 146
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

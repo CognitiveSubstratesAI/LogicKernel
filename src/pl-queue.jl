@@ -560,7 +560,7 @@ function pl_thread_send_message2_va(
 end
 
 # PORT: pl-thread.c thread_send_message
-# (PRED_IMPL("thread_send_message", 3, thread_send_message, 0); PRED_DEF flags `PL_FA_ISO`, pl-thread.c:8885)
+# (PRED_IMPL("thread_send_message", 3, thread_send_message, 0); PRED_DEF flags 0 too, pl-thread.c:8912; the boot image's foreign row has iso 0)
 "`thread_send_message(+QueueOrThreadId, +Term, +Options)`: as thread_send_message/2 with `timeout`, `deadline` and `signals` options (pl-thread.c)."
 function pl_thread_send_message3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -710,7 +710,7 @@ function pl_thread_peek_message2_va(
 end
 
 # PORT: pl-thread.c BeginPredDefs as PL_predicates_from_queue (the message queue entries of pl-thread.c's table, pl-thread.c:8870-8893)
-# (message_queue_create/1 and /2, message_queue_set/2 and is_message_queue/1 flags 0, message_queue_destroy/1 `PL_FA_ISO`, message_queue_property/2
+# (message_queue_create/1, message_queue_set/2, is_message_queue/1 and thread_send_message/3 flags 0, the others `PL_FA_ISO`, message_queue_property/2
 # `NDET|PL_FA_ISO`)
 # DIVERGES: the entries sit in a table of this file, between mutex and wrap, not in `PL_predicates_from_thread`.
 "The registration table of the message queue predicates."
@@ -725,7 +725,7 @@ const PL_predicates_from_queue = (
     PL_extension("message_queue_set", 2, pl_message_queue_set2_va, PL_FA_VARARGS),
     PL_extension("is_message_queue", 1, pl_is_message_queue1_va, PL_FA_VARARGS),
     PL_extension("thread_send_message", 2, pl_thread_send_message2_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("thread_send_message", 3, pl_thread_send_message3_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension("thread_send_message", 3, pl_thread_send_message3_va, PL_FA_VARARGS),
     PL_extension("thread_get_message", 1, pl_thread_get_message1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("thread_get_message", 2, pl_thread_get_message2_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("thread_get_message", 3, pl_thread_get_message3_va, PL_FA_ISO | PL_FA_VARARGS),
