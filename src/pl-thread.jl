@@ -368,6 +368,20 @@ function thread_init_goals!(gd::PL_global_data{T}, eld::PL_local_data{T})::Nothi
     return nothing
 end
 
+# PORT: pl-thread.c PL_thread_at_exit
+# DIVERGES: the database and the local data are arguments (`GET_LD`); `func` is a Julia callable called as `func(gd, ld, closure)` (upstream:
+# `void (*function)(void *)` called with the closure, `LD` implicit), kept for the database's life (see `register_event_function`). The
+# `global` flag is `is_global`. A global function is registered on the list of `thread_exit` (`GD->event.hook.onthreadexit`) and runs for
+# every engine that is destroyed, a local one on the list of `this_thread_exit` (`LD->event.hook.onthreadexit`: the list of `ld`, the
+# thread that registers), at the head of its list (`last` false, as upstream), before the Prolog listeners that are registered later.
+"Run `func(gd, ld, closure)` when this thread (`is_global` false) or any thread (true) exits, while Prolog queries still work (pl-thread.c)."
+function PL_thread_at_exit(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, func, closure, is_global::Bool
+)::Bool where {T}
+    loc = event_location{T}(is_global ? PLEV_THREAD_EXIT : PLEV_THIS_THREAD_EXIT, nothing)
+    return register_event_function(gd, ld, loc, nothing, false, func, closure, 0, EV_CALLBACK_VOID)
+end
+
 # PORT: pl-thread.c freePrologThread (the exit hooks and the release of the thread record; `after_fork` is false)
 # DIVERGES: the engine's local data is dropped by the garbage collector (`freeStacks`, `freePrologLocalData`, `cleanupLocalDefinitions`,
 # the message queue and the thread's statistics are not kept: no pool); `startCritical`/`endCritical` block signals (none here) and
