@@ -739,7 +739,7 @@ end
 # ── setting a flag: the value setters (pl-prologflag.c), R2 F1b ──────────────────────────────────
 # ORIGINAL (design D4): a flag whose upstream side effect the kernel has not is DEFINED at upstream's default
 # (`initPrologFlags!`) and SETTING it raises `NotPortedError` naming the side effect: loud and grep-able, and
-# no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c): `tty_control`, `debug_on_interrupt`,
+# no answer swipl gives is changed. The flags (`debug` and `debugger_show_context` are accepted since R2 F1c; `tty_control` since REC-FLAGS up to the terminal itself, `PushTty` in src/os/pl-os.jl): `debug_on_interrupt`,
 # `table_space`, `table_compile_threshold`, `table_drop_intermediate`,
 # `table_monotonic`, `agc_margin`, `string_stack_tripwire`, `heartbeat`, `encoding`, `unicode_atoms`,
 # `theme`, `incomparable` (`LD->prolog_flag.incomparable_error`), `var_tag`
@@ -1268,7 +1268,7 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
+# effects the kernel has none for are refused by name (design D4): `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
 # `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `string_stack_tripwire` and `heartbeat`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
@@ -1310,8 +1310,23 @@ function set_flag_value(
         elseif name == "debugger_show_context"
             ld.debugstatus_showContext = val
         elseif name == "tty_control"
-            val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true")))) &&
-                _flag_not_ported(k, "PushTty and PopTty (the terminal)")
+            if val != (sym_key(f.a) == sym_key(mk_sym(T, Symbol("true"))))
+                # DIVERGES: upstream's `ttytab` (the terminal state saved on entry) and `ttymodified` are process
+                # globals of pl-file.c/pl-os.c that only SetTtyState (never reached: PushTty refuses first) sets and the
+                # not yet ported callers of PopTty read (pl-read.c:2054, pl-fli.c:6068, closeStream): the state is a local
+                # here and `ttymodified` stays false. `Sinput` is the `user_input` standard stream (see `Suser_input`).
+                ttytab = ttybuf()
+                ttymodified = false
+                sin = Suser_input(ld)
+                if sin !== nothing
+                    if !val && ttymodified
+                        PopTty(ld, sin, ttytab, false)
+                    elseif val
+                        setPrologFlagMask!(ld, PLFLAG_TTY_CONTROL)
+                        PushTty(ld, sin, ttytab, TTY_SAVE)
+                    end
+                end
+            end
         elseif name == "debug_on_interrupt"
             _flag_not_ported(k, "enable_debug_on_interrupt (signals)")
         elseif name == "protect_static_code"

@@ -574,7 +574,7 @@ end
 # value outside the flag's domain would end in a different error. `file_name_case_handling` is READ-ONLY (swipl and the
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
-    ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
+    ("debug_on_interrupt", "true"), ("var_tag", "dict"),
     ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
     ("theme", "dark"), ("agc_margin", "100"),
     ("heartbeat", "0"),
@@ -592,10 +592,10 @@ const _SF_REFUSED = [
         ld = LK.PL_local_data{_SF}(gd)
         st, _ = LK.load_file!(gd, ld, path)
         @test st === :ok
-        # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
+        # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 10                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); RT: 10 entries, the run on RT passes
+    @test length(_SF_REFUSED) >= 9                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); - 1 (REC-FLAGS: tty_control); RT: 9 entries, the run on RT passes
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
@@ -638,4 +638,82 @@ end
         "c" * ek * "/2(a" * _sf_codes("prolog_flag") * ",a" * _sf_codes("zz_uf_new") * ")",
         line
     )
+end
+
+# REC-FLAGS: `tty_control` is set since PushTty/PopTty (pl-prologflag.c set_flag_value; pl-os.c): the mask bit and the table value follow the
+# value, and with `user_input` no terminal PushTty leaves at once (pl-os.c:2294-2346: `isoff(s, SIO_ISATTY)`). HAND-WRITTEN: the expected
+# values are the C at the pin, the swipl differential rows are a lane item (MEASURE ON THE LANE: `set_prolog_flag(tty_control, true),
+# current_prolog_flag(tty_control, A)` under swipl 10.1.20 with a non-terminal stdin).
+@testset "tty_control: set true and false with no terminal (hand-written)" begin
+    gd = LK.PL_global_data{_SF}()
+    ld = LK.PL_local_data{_SF}(gd)
+    sin = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
+    sin.flags &= ~LK.SIO_ISATTY
+    path = joinpath(mktempdir(), "tty.pl")
+    write(
+        path,
+        "t_tty(R) :- set_prolog_flag(tty_control, true), current_prolog_flag(tty_control, A), " *
+        "set_prolog_flag(tty_control, false), current_prolog_flag(tty_control, B), R = r(A, B).\n"
+    )
+    LK.clearPrologFlagMask!(ld, LK.PLFLAG_TTY_CONTROL)
+    LK.load_file!(gd, ld, path)
+    line = _sf_query(gd, ld, "t_tty")
+    @test occursin(
+        "c" * _sf_codes("r") * "/2(a" * _sf_codes("true") * ",a" * _sf_codes("false") * ")",
+        line
+    )
+    @test !LK.truePrologFlag(ld, LK.PLFLAG_TTY_CONTROL)
+end
+
+# PushTty and PopTty (pl-os.c:2294-2346, :2354-2379 at the pin): HAND-WRITTEN rows, swipl has no Prolog-visible PushTty and a test run has
+# no terminal, so the expected values are the C at the pin; each row names the exit it takes. The termios step is refused by name.
+@testset "PushTty and PopTty: upstream's exits, the terminal refused by name (hand-written)" begin
+    gd = LK.PL_global_data{_SF}()
+    ld = LK.PL_local_data{_SF}(gd)
+    s = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
+    s.flags &= ~LK.SIO_ISATTY
+    LK.clearPrologFlagMask!(ld, LK.PLFLAG_TTY_CONTROL)
+    # (a) no terminal: `buf->mode = Sttymode(s)`, `buf->state = NULL`, then `succeed` before the mode is recorded
+    buf = LK.ttybuf()
+    @test LK.PushTty(ld, s, buf, LK.TTY_RAW)
+    @test buf.mode == LK.TTY_COOKED && buf.state === nothing
+    @test LK.Sttymode(s) == LK.TTY_COOKED
+    # (b) a terminal, tty_control false: the same exit
+    s.flags |= LK.SIO_ISATTY
+    @test LK.PushTty(ld, s, buf, LK.TTY_RAW)
+    @test LK.Sttymode(s) == LK.TTY_COOKED
+    LK.Sset_ttymode(s, LK.TTY_RAW)                      # the stream's own mode is what `buf->mode` saves
+    @test LK.PushTty(ld, s, buf, LK.TTY_COOKED)
+    @test buf.mode == LK.TTY_RAW && LK.Sttymode(s) == LK.TTY_RAW
+    LK.Sset_ttymode(s, LK.TTY_COOKED)
+    # (c) a terminal, tty_control true: `Sset_ttymode(s, mode)` first, then the termios step, refused by name
+    LK.setPrologFlagMask!(ld, LK.PLFLAG_TTY_CONTROL)
+    err = try
+        LK.PushTty(ld, s, buf, LK.TTY_RAW)
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.NotPortedError
+    if err isa LK.NotPortedError
+        @test sym_text(err.culprit) == "PushTty"
+        @test err.step == "TOP1b" && occursin("pl-os.c:2294-2346", err.what)
+    end
+    @test LK.Sttymode(s) == LK.TTY_RAW                  # recorded before the refusal, as upstream's order
+    # (d) PopTty: the mode saved by PushTty comes back, no state saved: `true`
+    @test LK.PopTty(ld, s, buf, true)
+    @test LK.Sttymode(s) == LK.TTY_COOKED
+    # (e) a saved state is refused by name
+    buf.state = UInt8[0x01]
+    err = try
+        LK.PopTty(ld, s, buf, true)
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.NotPortedError
+    if err isa LK.NotPortedError
+        @test sym_text(err.culprit) == "PopTty"
+        @test err.step == "TOP1b" && occursin("pl-os.c:2354-2379", err.what)
+    end
 end

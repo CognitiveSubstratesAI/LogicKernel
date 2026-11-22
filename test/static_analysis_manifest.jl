@@ -4650,6 +4650,9 @@ _manifest_lb7(T) = begin
     GD = LK.PL_global_data{T}
     LD = LK.PL_local_data{T}
     (
+        # pl-os.c's PushTty and PopTty (src/os/pl-os.jl, the tty_control flag): the terminal is refused by name
+        (LK.PushTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Int}, false),
+        (LK.PopTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Bool}, false),
         (LK.memarea_limit, Tuple{LD, String}, false),
         (
             LK.parseCommandLineOptions,
@@ -5671,6 +5674,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TOP1b: the terminal mode a stream records (pl-os.c Sttymode, Sset_ttymode); no term type
     (LK.Sttymode, Tuple{LK.IOSTREAM}, true),
     (LK.Sset_ttymode, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.ttybuf, Tuple{}, false),                          # the constructor of pl-os.h's ttybuf (PushTty/PopTty)
     # TOP1b E: the wrapped stream's record and its functions (pl-file.c wrappedIO, Sread_user, closeWrappedIO); no term type
     (LK.wrappedIO, Tuple{LK.LDTable, Int, Bool, UInt32}, false),
     (LK.unregisterLocalData!, Tuple{LK.LDTable, Int}, false),
