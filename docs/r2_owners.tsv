@@ -132,7 +132,6 @@ refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read
 refusal:src/pl-read.jl::read_term_from_stream::read_term's unicode_atoms option	ENC1	read_term unicode_atoms option (pl-read.c pl_read_term); the NFC normalizer
 refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
 refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
-refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it
 refusal:src/pl-setup.jl::pl_on_signal4_va::a foreign handler function of the signal	TH1	a handler function pointer of C: the kernel's handler tokens are re-installed, any other pointer is refused by name

@@ -180,7 +180,7 @@ const CP_LD = PL_local_data{BT}(CP_GD)                             # the compile
 const CP_USER = MODULE_user(CP_GD)
 const CP_PROC = lookupProcedure(_a(:cp), 2, CP_USER)
 const CP_DEF = CP_PROC.definition
-setDynamicDefinition!(CP_DEF, true)                            # :- dynamic cp/2.
+setDynamicDefinition!(CP_GD, CP_DEF, true)                            # :- dynamic cp/2.
 _cp_compile(h::BT) = compileClause(CP_GD, CP_LD, h, nothing, CP_PROC, CP_USER)
 for i in 1:1000
     assertDefinition!(
@@ -944,7 +944,7 @@ t_load = @elapsed begin
     gd = LK.PL_global_data{T}(); ld = LK.PL_local_data{T}(gd)
     user = LK.MODULE_user(gd)
     proc = LK.lookupProcedure(sym_term(T, :p), 1, user)
-    LK.setDynamicDefinition!(proc.definition, true)
+    LK.setDynamicDefinition!(gd, proc.definition, true)
     LK.assertDefinition!(gd, proc.definition,
         LK.compileClause(gd, ld, mk_expr(T, T[sym_term(T, :p), sym_term(T, :a)]), nothing, proc, user), LK.CL_END)
 end

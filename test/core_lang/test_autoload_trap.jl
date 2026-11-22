@@ -42,7 +42,7 @@ _at_texts(ld, from::Int) = String[_at_text(m) for m in ld.messages[(from + 1):en
 "The BOOTED database whose `called/1` is dynamic (the hook's bodies record in it) and a foreign frame open."
 function _at_db()::_RDB
     db = _RDB()
-    LK.setDynamicDefinition!(_at_proc(db, :called, 1).definition, true)
+    LK.setDynamicDefinition!(db.gd, _at_proc(db, :called, 1).definition, true)
     LK.PL_open_foreign_frame(db.ld)
     return db
 end
@@ -344,7 +344,7 @@ end
     # reading `seen_frame/1` is a query that pushes: so the pool records and the hook's query record are COPIED inside the `at` callback
     # (no query there), and the position is read afterwards.
     db = _at_db()
-    LK.setDynamicDefinition!(_at_proc(db, :seen_frame, 1).definition, true)
+    LK.setDynamicDefinition!(db.gd, _at_proc(db, :seen_frame, 1).definition, true)
     _at_hook!(
         db,
         :foo,

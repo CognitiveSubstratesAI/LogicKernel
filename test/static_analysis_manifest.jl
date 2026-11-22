@@ -1427,7 +1427,6 @@ function _manifest_index(T)
         (LK.isDefinedOrAutoloadProcedure, Tuple{GD, PR}, true),
         (LK.visibleProcedure, Tuple{GD, T, Int, MOD}, false),
         (LK.resolveProcedure, Tuple{GD, T, Int, MOD}, false),
-        (LK.setDynamicDefinition!, Tuple{D, Bool}, true),
         (LK.newClauseRef, Tuple{C, UInt64}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, Int}, false),
         (LK.assertDefinition!, Tuple{GD, D, C, CR}, false),
@@ -1464,7 +1463,6 @@ function _manifest_index(T)
         (LK._code_smallint_key, Tuple{PCd}, true),
         (LK._shared_supervisor, Tuple{LK.PL_code_data, Vector{LK.code}}, true),
         (LK.freeSupervisor, Tuple{D, Vector{LK.code}, Bool}, true),
-        (LK.freeCodesDefinition!, Tuple{D, Bool}, true),
         (
             LK.equalSupervisors,
             Tuple{
@@ -2421,7 +2419,6 @@ function _manifest_index(T)
         # PR1 — abolish/1,2, garbage_collect_clauses/0 (pl-proc.jl, pl-index.jl), `$c_current_predicate`/2, current_predicate/1 and
         # `$get_predicate_attribute`/3 (pl-proc.jl); the two state records and their pools (pl-incl.jl, pl-global.jl)
         (LK.deleteIndexes!, Tuple{D, CL, Bool}, false),
-        (LK.resetProcedure!, Tuple{PR, Bool}, false),
         (LK.removeClausesPredicate!, Tuple{GD, D, Int, Bool}, false),
         (LK.abolishProcedure!, Tuple{GD, LD, PR, MOD}, false),
         (LK.get_arity, Tuple{LD, Int, Int, Int}, false),
@@ -3367,7 +3364,7 @@ function _manifest_index(T)
         # TAB1 TB5: the abolish and reclaim of the tables (src/pl-tabling.jl); the functions TB5 shares with batch 3's minimal ports
         # (`_wl_is`, `get_trie_from_node`, `destroy_answer_trie`, `delayed_destroy_table`, `orphan_dynamic_table`, `delete_dynamic_table`,
         # `delete_orphan_dynamic_tables`, `sweep_orphan_dynamic_tables`) have their entries in the TB4 block above; the
-        # database-carrying callers of freeCodesDefinition! (setDynamicDefinition!, resetProcedure!: src/pl-proc.jl) and their one body
+        # database-carrying callers of freeCodesDefinition! (setDynamicDefinition!, resetProcedure!: src/pl-proc.jl; WRAP1: their only methods)
         (LK.collect_dynamic_children, Tuple{LD, LK.trie{T}}, false),
         (LK.abolish_table, Tuple{LD, LK.trie{T}}, false),
         (LK.destroy_delay_info_table, Tuple{GD}, false),
@@ -3395,11 +3392,7 @@ function _manifest_index(T)
             f in (LK.pl_tbl_destroy_table1_va, LK.pl_tbl_abolish_local_tables0_va)
         ]...,
         (LK.setDynamicDefinition!, Tuple{GD, D, Bool}, false),
-        (LK._setDynamicDefinition!, Tuple{GD, D, Bool}, false),
-        (LK._setDynamicDefinition!, Tuple{Nothing, D, Bool}, false),
         (LK.resetProcedure!, Tuple{GD, PR, Bool}, false),
-        (LK._resetProcedure!, Tuple{GD, PR, Bool}, false),
-        (LK._resetProcedure!, Tuple{Nothing, PR, Bool}, false),
         # AUTOLOAD1 A4 — the autoload flag (pl-prologflag.c setAutoload, propagateAutoload; pl-fli.c PL_set_prolog_flag)
         (LK.setAutoload, Tuple{LD, T}, false),
         (LK.propagateAutoload, Tuple{GD, LD, Int}, false),

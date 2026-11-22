@@ -1,10 +1,10 @@
 # ORIGINAL: LIVE rows for a WRAPPED predicate that is made dynamic, made static and abolished (TAB1 TB5-WRAP, S3f; audit D-0884 (2)),
-# pinned on swipl at 18168e62 (10.1.20). `freeCodesDefinition!(gd, def, ...)` resets a wrapped predicate through its closure; the method
-# WITHOUT the database raises NotPortedError for one. The three TB5 mutants that take the 2-argument method (TB5-P1 in `_setDynamicDefinition!`,
-# TB5-P3 in `_resetProcedure!`, TB5-P7 in the abolish path) are reached only by a wrapped predicate, which the DYN files never build.
+# pinned on swipl at 18168e62 (10.1.20). `freeCodesDefinition!(gd, def, ...)` (the one method since WRAP1) resets a wrapped predicate through
+# its closure. The two TB5 mutants that invert its linger flag at the caller (TB5-P1 in `setDynamicDefinition!`, TB5-P3 in `resetProcedure!`)
+# are reached only by a wrapped predicate, which the DYN files never build.
 #   * a predicate wrapped with `'$wrap_predicate'/5` (the wrapper body logs `called`, then calls the wrapped predicate), then
 #     `dynamic/1` (P1), `'$set_predicate_attribute'(_, dynamic, false)` (P1, the other direction), `abolish/1` over a static, a dynamic and a
-#     clause-less wrapped predicate (P3 and P7: `resetProcedure!` runs in the abolish path).
+#     clause-less wrapped predicate (P3: `resetProcedure!` runs in the abolish path).
 #   * every answer is `~q` of `r(...)`: the wrapper count `'$wrapped_predicate'/2` before and after, the predicate's state, the
 #     answers and the log. Each pin is swipl's own (swipl 10.1.20, two identical runs, evidence/TAB1/s3f_handoff.md), compared with the
 #     kernel's and, with `swipl` on PATH, with a live run. The case ids name the mutants they kill.
@@ -130,23 +130,23 @@ const _TW_CASES = [
     (
         "abs1",
         raw"tw_wrap(wa1(_)), tw_wr(wa1(_), W0), abolish(wa1/1), tw_pd(wa1(_), P), tw_wr(wa1(_), W1), tw_log(L0), tw_all(wa1(_), Xs), tw_log(L), R = r(W0, L0, P, W1, Xs, L)"
-    ),   # TB5-P3, TB5-P7: abolish of a STATIC wrapped predicate with clauses (resetProcedure! over the wrapper): the wrapper stays, the predicate is undefined
+    ),   # TB5-P3: abolish of a STATIC wrapped predicate with clauses (resetProcedure! over the wrapper): the wrapper stays, the predicate is undefined
     (
         "abs2",
         raw"tw_wrap(wa2(_)), abolish(wa2/1), assertz(wa2(9)), tw_all(wa2(_), Xs), tw_log(L), tw_pd(wa2(_), P), tw_wr(wa2(_), W), R = r(Xs, L, P, W)"
-    ),   # TB5-P3, TB5-P7: the abolished wrapped predicate is dynamic again once a clause is added
+    ),   # TB5-P3: the abolished wrapped predicate is dynamic again once a clause is added
     (
         "abd1",
         raw"tw_wrap(wd1(_)), tw_wr(wd1(_), W0), dynamic(wd1/1), abolish(wd1/1), tw_pd(wd1(_), P), tw_wr(wd1(_), W1), tw_all(wd1(_), Xs), tw_log(L), R = r(W0, P, W1, Xs, L)"
-    ),   # TB5-P1, TB5-P3, TB5-P7: wrapped, made dynamic, abolished (setDynamicDefinition! false, then resetProcedure!)
+    ),   # TB5-P1, TB5-P3: wrapped, made dynamic, abolished (setDynamicDefinition! false, then resetProcedure!)
     (
         "abu1",
         raw"tw_wrap(wu1(_)), abolish(wu1/1), tw_pd(wu1(_), P), tw_wr(wu1(_), W1), assertz(wu1(5)), wu1(X), tw_log(L), R = r(P, W1, X, L)"
-    ),   # TB5-P3, TB5-P7: wrapped before any clause, abolished, then asserted
+    ),   # TB5-P3: wrapped before any clause, abolished, then asserted
     (
         "abd2",
         raw"tw_wrap(wd2(_)), dynamic(wd2/1), assertz(wd2(1)), abolish(wd2/1), tw_pd(wd2(_), P), tw_wr(wd2(_), W1), assertz(wd2(5)), wd2(X), tw_log(L), tw_pd(wd2(_), P2), R = r(P, W1, X, L, P2)"
-    ),   # TB5-P1, TB5-P3, TB5-P7: a dynamic wrapped predicate with a clause, abolished
+    ),   # TB5-P1, TB5-P3: a dynamic wrapped predicate with a clause, abolished
     (
         "ctl",
         raw"assertz(wc1(1)), abolish(wc1/1), tw_pd(wc1(_), P), tw_all(wc1(_), Xs), R = r(P, Xs)"

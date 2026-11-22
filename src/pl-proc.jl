@@ -488,31 +488,16 @@ end
 # PORT: pl-proc.c setDynamicDefinition
 # DIVERGES: no lock (no threads), and upstream's `setDynamicDefinition_unlocked` is inlined. The
 # `protect_static_code` flag is not ported — it is false by default, so making a static predicate
-# with clauses dynamic is allowed, as in a default swipl.
+# with clauses dynamic is allowed, as in a default swipl. The database is an argument (WRAP1, as `freeCodesDefinition!`): a wrapped
+# (tabled) predicate keeps its wrapper and resets the wrapped supervisor.
 """
-    setDynamicDefinition!(def, isdyn) -> Bool
+    setDynamicDefinition!(gd, def, isdyn) -> Bool
 
 Make `def` dynamic (`:- dynamic`) or static: set or clear `P_DYNAMIC` and `P_TRANSACT`
 (pl-proc.c). Returns true.
 """
-function setDynamicDefinition!(def::Definition, isdyn::Bool)::Bool
-    return _setDynamicDefinition!(nothing, def, isdyn)
-end
-
-# PORT: pl-proc.c setDynamicDefinition
-# DIVERGES: the method with the database (TAB1 TB5): a wrapped (tabled) predicate keeps its wrapper and resets the wrapped supervisor
-# (`freeCodesDefinition!` with `gd`); the method without it raises a named error for a wrapped predicate. The callers that have the
-# database use this one.
-"As `setDynamicDefinition!(def, isdyn)`, for a database: a wrapped predicate is reset by `freeCodesDefinition!(gd, ...)` (pl-proc.c)."
 function setDynamicDefinition!(
     gd::PL_global_data{T}, def::Definition{T}, isdyn::Bool
-)::Bool where {T}
-    return _setDynamicDefinition!(gd, def, isdyn)
-end
-
-# ORIGINAL (TAB1 TB5): the body of both `setDynamicDefinition!` methods; `gd === nothing` selects the 2-argument `freeCodesDefinition!`.
-function _setDynamicDefinition!(
-    gd::Union{Nothing, PL_global_data{T}}, def::Definition{T}, isdyn::Bool
 )::Bool where {T}
     if (isdyn && (def.flags & P_DYNAMIC) != 0) || (!isdyn && (def.flags & P_DYNAMIC) == 0)
         return true
@@ -522,11 +507,7 @@ function _setDynamicDefinition!(
     else                                                # dynamic --> static
         def.flags &= ~(P_DYNAMIC | P_TRANSACT)
     end
-    if gd === nothing
-        freeCodesDefinition!(def, true)                 # reset to S_VIRGIN
-    else
-        freeCodesDefinition!(gd, def, true)             # reset to S_VIRGIN
-    end
+    freeCodesDefinition!(gd, def, true)                 # reset to S_VIRGIN
     return true
 end
 
@@ -1166,25 +1147,11 @@ end
 # DIVERGES: no statistics (`GD->clauses.dirty`); the tabling attributes are cleared and the update listeners destroyed
 # (EV1); the debugger's `TRACE_ME` is not set for a user predicate (no debugger, as in `lookupProcedure`). Upstream's
 # `def->impl.any.defined` (the union member overlaying the first clause or the foreign function) is the first clause or
-# the foreign function index.
+# the foreign function index. The database is an argument (WRAP1, see `freeCodesDefinition!`): a wrapped (tabled) predicate
+# keeps its wrapper and resets the wrapped supervisor.
 "Reset `proc`'s definition to a pristine one but for `SPY_ME` and `P_DIRTYREG`; `isnew`: drop the indexes at once (pl-proc.c)."
-function resetProcedure!(proc::Procedure{T}, isnew::Bool)::Nothing where {T}
-    return _resetProcedure!(nothing, proc, isnew)
-end
-
-# PORT: pl-proc.c resetProcedure
-# DIVERGES: the method with the database (TAB1 TB5), see `setDynamicDefinition!`: a wrapped (tabled) predicate is reset by
-# `freeCodesDefinition!(gd, ...)`; the method without it raises a named error for one.
-"As `resetProcedure!(proc, isnew)`, for a database (pl-proc.c)."
 function resetProcedure!(
     gd::PL_global_data{T}, proc::Procedure{T}, isnew::Bool
-)::Nothing where {T}
-    return _resetProcedure!(gd, proc, isnew)
-end
-
-# ORIGINAL (TAB1 TB5): the body of both `resetProcedure!` methods; `gd === nothing` selects the 2-argument `freeCodesDefinition!`.
-function _resetProcedure!(
-    gd::Union{Nothing, PL_global_data{T}}, proc::Procedure{T}, isnew::Bool
 )::Nothing where {T}
     def = proc.definition
     defined = def.impl_clauses.first_clause !== nothing || def.impl_foreign_function != 0
@@ -1196,11 +1163,7 @@ function _resetProcedure!(
     destroy_event_list!(def)                            # if ( def->events ) destroy_event_list(&def->events) (EV1)
     def.tabling === nothing || tbl_reset_tabling_attributes!(def)   # if ( def->tabling ) tbl_reset_tabling_attributes(def)
     deleteIndexes!(def, def.impl_clauses, isnew)
-    if gd === nothing
-        freeCodesDefinition!(def, !isnew)
-    else
-        freeCodesDefinition!(gd, def, !isnew)
-    end
+    freeCodesDefinition!(gd, def, !isnew)
     return nothing
 end
 

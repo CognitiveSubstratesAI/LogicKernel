@@ -100,7 +100,7 @@ MUTANTS = [
     # its mutants are ENG2A-M1 (the old early return) and ENG2A-M2 (the scan ignores the values), tools/mutants/ENG2A.py.
     dict(id="G1-E1 user:exception/3 is not made dynamic before init.pl: the hook call raises an existence error (KILL h9)",
          file="src/pl-ext.jl", targets=TX,
-         old="setDynamicDefinition!(exception3.definition, true)",
+         old="setDynamicDefinition!(gd, exception3.definition, true)",
          new="nothing"),
     dict(id="G1-P1 duplicate_term copies an attributed variable as a plain variable (KILL g42)",
          file="src/pl-copyterm.jl", targets=TD,

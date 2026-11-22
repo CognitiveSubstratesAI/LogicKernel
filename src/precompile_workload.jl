@@ -53,7 +53,7 @@ function _precompile_workload()::Nothing
     user = MODULE_user(gd)
     proc = lookupProcedure(mk_sym(T, :p), 2, user)
     def = proc.definition
-    setDynamicDefinition!(def, true)
+    setDynamicDefinition!(gd, def, true)
     for i in 1:20
         h = mk_expr(T, T[mk_sym(T, :p), mk_gnd(T, i), i % 2 == 0 ? a : nil])
         assertDefinition!(                      # a fact into a fresh predicate: never refused

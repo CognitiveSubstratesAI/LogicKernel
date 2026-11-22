@@ -2400,10 +2400,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 384 | 0 | 38 | 3 | 1 |
-| refusal sites | 0 | 84 | 0 | 0 | 4 |
+| refusal sites | 0 | 83 | 0 | 0 | 4 |
 | Prolog flags | 66 | 13 | 20 | 0 | 33 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 649 | 97 | 92 | 3 | 38 |
+| **total** | 649 | 96 | 92 | 3 | 38 |
 
 #### The boot and library files
 
@@ -2471,7 +2471,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TAB1 | 1 | 0 | 1 | `refusal the VM instruction $(codeTable(thiscode)…` |
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
-| WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
 | NO OWNER | 38 | 21 | 17 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +30 |
 
 #### Missing and refused per category
@@ -7570,10 +7569,8 @@ every claim below is UNVERIFIED until the gate). The aim is that boot/tabling.pl
   1. `table_props` sizes (`abstract`, `subgoal_abstract`, `answer_abstract`, `max_answers`) are `Int` with -1 for `(size_t)-1` ("none", `infinite`); a size above `typemax(Int)` is
      refused by `PL_get_size_ex` with `representation_error(size_t)` where upstream accepts up to 2^64-1. Owner TAB1.
   2. `lazy_queue` (the `Buffer` of clauses monotonic tabling queues) is not a field of `table_props`: left to TAB1, its first user.
-  3. Q-A (dispatcher ruling, provisional, pending the audit): `freeCodesDefinition!` has no database where `setDynamicDefinition!`, `resetProcedure!` and
-     `setThreadLocalDefinition!` call it, and the closure of a wrapper is found through `gd.closure_refs`. The 2-argument method therefore REFUSES a wrapped predicate by
-     name (`NotPortedError` naming "freeCodesDefinition! of a wrapped predicate needs the database"): `dynamic/1` or `abolish/1` of a WRAPPED predicate raises until TAB1
-     threads the database through those callers. The 3-argument method (used by `_assertDefinition!` and the tabling attribute setter) is the whole function. Owner TAB1.
+  3. (CLOSED by WRAP1b, B5.) `freeCodesDefinition!` has the one method, with the database (the closure of a wrapper is found through `gd.closure_refs`); the
+     2-argument method that refused a wrapped predicate by name is gone, as are the 2-argument `setDynamicDefinition!` and `resetProcedure!` that called it: every caller passes `gd`.
   4. (CLOSED by WRAP1, see the WRAP1 section.) Printing a closure (`<closure>(m:p/1)`, pl-wrap.c `write_closure`) needed a blob write hook in the writer.
   5. The closure is a RECORD (`closure{T}` in `gd.closure_refs`; the blob's payload is its number), not a memcpy of `struct definition` in the blob; the blob type has no
      `release`/`write`/`acquire`/`save`/`load` slots; atoms keep no reference counts, so `unregisterWrappedSupervisor` is a no-op (audit D-0388 item 5, Q1 (a); owner WRAP1).
@@ -7768,9 +7765,8 @@ Written edit-only by two agents on branch wip/tb5 (TB5, TB5b): NOTHING was compi
      sites do not exist before LB6b:** upstream calls it from `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544, `delete_old_predicates`); the kernel has neither function
      yet, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until LB6b, which calls `untable_definition_clauses` (ORIGINAL: the loop of
      pl-srcfile.c:1460-1478) where upstream calls `untable_from_clause`. The row is in docs/r2_owners.tsv (the LB6 reconsult row).
-  8. `setDynamicDefinition!(gd, def, isdyn)` and `resetProcedure!(gd, proc, isnew)` carry the database (upstream's `freeCodesDefinition(def)` reaches `LD`/`GD` from globals): one shared
-     body each (`_setDynamicDefinition!`, `_resetProcedure!`, `gd::Union{Nothing,PL_global_data}`); the 2-argument methods stay for callers without a database (src/pl-ext.jl boot,
-     src/precompile_workload.jl, tests) and pass `nothing`, which selects the 2-argument `freeCodesDefinition!` (it still refuses a wrapped predicate by name, owner TAB1).
+  8. `setDynamicDefinition!(gd, def, isdyn)` and `resetProcedure!(gd, proc, isnew)` carry the database (upstream's `freeCodesDefinition(def)` reaches `LD`/`GD` from globals): one body each.
+     (Since WRAP1b the 2-argument methods and the shared `_setDynamicDefinition!`/`_resetProcedure!` helpers are gone: src/pl-ext.jl boot, src/precompile_workload.jl, the tests and tools/bench.jl pass `gd`.)
 - **MERGE HAZARDS (the stack of wip/tb1, wip/tb5, TB2-TB4):** (a) the tuple of `PL_predicates_from_tabling` gains lines in TB1 and TB5: keep both sets; (b) the manifest block of TB5
   sits before `# AUTOLOAD1 A4` and TB1's after `setMonotonicMode`: no overlap, but both edit the same tuple; (c) the foreign-row count pin of test/db/test_boot_image_swipl.jl is
   lowered by TB1 and by TB5 (the stack's value is the base minus both counts); (d) this section and TB1's are inserted at nearly the same place of docs/architecture.md; (e) the interfaces
@@ -7837,9 +7833,8 @@ run when this block was written; every claim is UNVERIFIED until the gate.
   4. `write_closure` (src/pl-wrap.jl, called from `writeAtom`, src/pl-write.jl:881-887) writes through `PutToken` (a token break, as the other blobs' hook) where upstream's `Sfprintf` writes raw; it closes TAB1-min DIVERGES item 4.
   5. `get_procedure_resolve_head` (src/pl-wrap.jl:341) is `get_procedure`'s `GP_RESOLVE` arm without `GP_NAMEARITY` (a head), which the kernel's `get_procedure` has only for `GP_DEFINE`. ORIGINAL.
   6. `$wrapped_predicate/2` builds `Name-ClauseRef` with `PL_unify_functor`/`PL_unify_arg` where upstream uses `PL_unify_term`; `$wrapped_implementation/3` builds the goal by `unify_wrapped`.
-- **NOT done (owner WRAP1b):** the 2-argument `freeCodesDefinition!` refusal (docs/r2_owners.tsv row 271; TAB1-min DIVERGES item 3): `setDynamicDefinition!` (~10 callers in four files),
-  `resetProcedure!` and `setThreadLocalDefinition!` lack `gd`. WRAP1b: thread `gd` through those callers, after TR1/TB0/def1 land. Until then `dynamic/1` or `abolish/1` of a wrapped predicate
-  raises by name.
+- **Done by WRAP1b (B5):** the 2-argument `freeCodesDefinition!` refusal (the owner row `refusal:src/pl-supervisor.jl::freeCodesDefinition!::...` is removed from docs/r2_owners.tsv): the 2-argument
+  `freeCodesDefinition!`, `setDynamicDefinition!` and `resetProcedure!` methods are removed and every caller passes `gd` (DIVERGES, representation: upstream reaches `GD` as a global). The mutants: tools/mutants/WRAP1B.py.
 - **Closes (when the gate is green):** docs/r2_owners.tsv rows 104 (`pred:$wrapped_implementation/3`), 145 (`pred:unwrap_predicate/2`), 218 and 219 (the `S_WRAP` and `S_CALLWRAPPER` refusals). The two predicates
   `$wrapped_predicate/2` and `$closure_predicate/2` had no row and are ported here, so need none.
 - **Left out (unchanged):** the closure blob's `release` (no atom GC: closures live in `gd.closure_refs` for ever), the GC walker's `setStartOfVMI` comment of `S_CALLWRAPPER` (no GC walker reads `DEF`).

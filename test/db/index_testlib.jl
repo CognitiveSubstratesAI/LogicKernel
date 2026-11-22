@@ -45,7 +45,7 @@ function ix_pred(
     ::Type{T}, name::Symbol, arity::Int; dynamic::Bool=false, db::IxDB{T}=IxDB{T}()
 )::IxPred{T} where {T}
     proc = LK.lookupProcedure(lk_sym(T, name), arity, LK.MODULE_user(db.gd))
-    dynamic && LK.setDynamicDefinition!(proc.definition, true)
+    dynamic && LK.setDynamicDefinition!(db.gd, proc.definition, true)
     return IxPred{T}(db, proc, proc.definition, true)
 end
 

@@ -71,13 +71,13 @@ end
 end
 
 @testset ":- dynamic is setDynamicDefinition!" begin
-    d =
-        LK.lookupProcedure(_ps(:d), 1, LK.MODULE_user(LK.PL_global_data{_P}())).definition
-    @test LK.setDynamicDefinition!(d, true)
+    gd = LK.PL_global_data{_P}()
+    d = LK.lookupProcedure(_ps(:d), 1, LK.MODULE_user(gd)).definition
+    @test LK.setDynamicDefinition!(gd, d, true)
     @test d.flags & (LK.P_DYNAMIC | LK.P_TRANSACT) == LK.P_DYNAMIC | LK.P_TRANSACT
-    @test LK.setDynamicDefinition!(d, true)                     # already dynamic: unchanged
+    @test LK.setDynamicDefinition!(gd, d, true)                 # already dynamic: unchanged
     @test d.flags & (LK.P_DYNAMIC | LK.P_TRANSACT) == LK.P_DYNAMIC | LK.P_TRANSACT
-    @test LK.setDynamicDefinition!(d, false)
+    @test LK.setDynamicDefinition!(gd, d, false)
     @test d.flags & (LK.P_DYNAMIC | LK.P_TRANSACT) == 0
 end
 

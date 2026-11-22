@@ -537,11 +537,13 @@ _tm_call_error(gd, ld, name::String) = _tm_call_result(gd, ld, name)[2]
         @test LK.find_wrapper(gd, d03, n3) === nothing
         @test LK.find_wrapper(gd, d03, n2)[1] === d03.codes       # the last wrapper is the outer one
         @test LK.find_wrapper(gd, d03, n1)[1] !== d03.codes       # the first sits in the closure of the outer one
-        # Q-A (audit ruling): without the database a wrapped predicate is refused by name; an unwrapped one is reset as before
-        @test_throws LK.NotPortedError LK.freeCodesDefinition!(d01c, true)
-        @test _tm_wrapped(d01c)                                   # the refusal changed nothing
-        LK.freeCodesDefinition!(gd, d01c, true)                   # with the database the wrapper stays
+        # WRAP1: `freeCodesDefinition!` has the one method, with the database (the refusal of the method without it is gone):
+        # a wrapped predicate keeps its wrapper and its wrapped supervisor is the virgin one again
+        LK.freeCodesDefinition!(gd, d01c, true)
         @test _tm_wrapped(d01c)
+        @test cc.supervisor === d01c.code_data.virgin
+        @test isempty(cc.supervisor_crefs)
+        @test !hasmethod(LK.freeCodesDefinition!, Tuple{typeof(d01c), Bool})
         # T5: a predicate that RAN before it was wrapped (tmc07) has its wrapped supervisor reset by the clause add
         d06 = _tm_def(gd, "tm_c06")
         c06 = LK.closure_of_word(

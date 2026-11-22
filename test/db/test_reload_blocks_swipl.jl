@@ -330,7 +330,7 @@ end
     db.gd.reload_generation = LK.GEN_INVALID
     # STATIC_RELOADING (pl-index.c:159-160): static and reloading only
     dyn = _rb_proc(db, :vd, 1)
-    LK.setDynamicDefinition!(dyn.definition, true)
+    LK.setDynamicDefinition!(db.gd, dyn.definition, true)
     @test LK.STATIC_RELOADING(R, proc.definition) && !LK.STATIC_RELOADING(R, dyn.definition)      # A9
     @test !LK.STATIC_RELOADING(LK.GEN_INVALID, proc.definition)
 end
