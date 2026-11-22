@@ -2597,6 +2597,7 @@ function _manifest_index(T)
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{CH}}, false),
         (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{CH}, Int}, false),
         (LK.get_procedure_find, Tuple{GD, LD, Int}, false),
+        (LK.get_procedure_find, Tuple{GD, LD, Int, Int}, false),
         (LK.get_procedure_resolve, Tuple{GD, LD, Int}, false),
         (LK.getDefinitionProc, Tuple{GD, D}, false),
         (LK.unify_atom_compound, Tuple{LD, Int, Int}, false),
@@ -2982,6 +2983,8 @@ function _manifest_index(T)
         (LK.pl_gc_clear, Tuple{LD, Int}, false),
         (LK.pl_gc_stop, Tuple{LD}, true),
         (LK.pl_sig_unblock0_va, Tuple{LD, Int64, Int64, LK.control_t{T}}, false),   # MISS1: '$sig_unblock'/0 (pl-thread.c)
+        (LK.pl_spy, Tuple{LD, Int}, false),
+        (LK.pl_nospy, Tuple{LD, Int}, false),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
         (LK.mutex_prop_enum{T}, Tuple{}, false),

@@ -38,6 +38,8 @@
 # repeat/0 as pl-ext.c:125-126), `$c_current_predicate`/2 (pl-ext.c:132, after them) and garbage_collect_clauses/0 (after `$garbage_collect/1` as pl-ext.c:171).
 # Since DWIM1 dwim_match/3 and `$dwim_predicate`/2 (pl-dwim.c) between prolog_current_frame/1 and context_module/1, pl-ext.c:155-156.
 # Since MISS1 trace/0, tracing/0, `$leash/2` and `$visible/2` (pl-trace.c) around notrace/0, at upstream's places (pl-ext.c:140-146).
+# Since COMPEXT3 `$spy/1` and `$nospy/1` (pl-trace.c) between tracing/0 and `$leash/2`, pl-ext.c:143-144, and thread_create/3's meta-spec only (pl-ext.c:183;
+# the predicate itself is TH1's: the spec applies when it is registered).
 # Since RD1 read/1 and `$raw_read/1,2` (pl-read.c) after print/1 and read/2 after `$garbage_collect/1`, at upstream's places (pl-ext.c:116-118, 175).
 # Since TH1 `$gc_wait/1`, `$gc_clear/1` and `$gc_stop/0` (pl-thread.c:8899-8901, the GC thread's predicates) after engine_post/3, in the engine group (upstream's table is pl-thread.c's own).
 # Since Q10 garbage_collect_atoms/0 (pl-atom.c) between `$garbage_collect/1` and garbage_collect_clauses/0, pl-ext.c:170.
@@ -70,6 +72,8 @@ const foreigns = (
     PL_extension("trace", 0, pl_trace, PL_FA_NOTRACE),                         # MISS1 (pl-ext.c:140)
     PL_extension("notrace", 0, pl_notrace, PL_FA_NOTRACE),                     # DBG1 (pl-ext.c:141)
     PL_extension("tracing", 0, pl_tracing, PL_FA_NOTRACE),                     # MISS1 (pl-ext.c:142)
+    PL_extension("\$spy", 1, pl_spy, PL_FA_TRANSPARENT),                        # META (COMPEXT3, pl-ext.c:143)
+    PL_extension("\$nospy", 1, pl_nospy, PL_FA_TRANSPARENT),                    # META (COMPEXT3, pl-ext.c:144)
     PL_extension("\$leash", 2, pl_leash, PL_FA_NOTRACE),                       # MISS1 (pl-ext.c:145)
     PL_extension("\$visible", 2, pl_visible, PL_FA_NOTRACE),                   # MISS1 (pl-ext.c:146)
     PL_extension("prolog_current_frame", 1, pl_prolog_current_frame, 0x00),
@@ -308,6 +312,7 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
         ("clause", 2, ":?"), ("format", 2, "+:"), ("format", 3, "++:"),
         ("format_predicate", 2, "+0"), ("notrace", 1, "0"), ("with_mutex", 2, "+0"),
         ("with_output_to", 2, "+0"), ("thread_idle", 2, "0+"),
+        ("thread_create", 3, "0?+"),
         ("prolog_frame_attribute", 3, "++:"), ("compile_predicates", 1, ":"),
         ("op", 3, "++:"),
         ("current_op", 3, "++:"), ("unwrap_predicate", 2, ":?"), ("prolog_listen", 2, "+:"),

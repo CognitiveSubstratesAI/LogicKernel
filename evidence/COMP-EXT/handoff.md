@@ -12,7 +12,9 @@ pl-ext.c, pl-pro.c, pl-vmi.c, pl-trace.c, pl-proc.c are in the scratchpad dir `.
 - src/pl-trace.jl: `pl_spy`, `pl_nospy` (pl-trace.c:2342-2379) before `resetTracer`.
 - test/static_analysis_manifest.jl: entries for pl_notrace1_va, pl_predefine_foreign1_va, pl_vmi_property2_va.
 
-## NOT yet written (the python edit of the last call did not run: hook cap)
+## COMPEXT3 commit 1 (committed): items 1-4 below are DONE (thread_create/3 refusal, FRG entries, manifest, owner row). Rows/mutants (item 5) and the $fetch_vm plan: not yet written.
+
+## (historic) NOT yet written
 1. src/pl-thread.jl: append `pl_thread_create(ld, goal, id, options)` throwing
    `NotPortedError{T}(mk_sym(T, :thread_create), "thread_create/3 (a second thread)", "TH1")` (`# PORT: pl-thread.c pl_thread_create`,
    `# DIVERGES: REFUSED BY NAME, owner TH1`).
