@@ -1,5 +1,5 @@
 # ORIGINAL: MISS1's gate — the predicates the missing-C-predicates list left open: the legacy character I/O put/1,2 and get/1,2 of pl-file.c
-# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450)
+# (swipl-devel 18168e62: put1/put2 :3505-3517 are put_code's function, get_nonblank :3520-3560) and '$call_no_catch'/1 (pl-pro.c:433-450) and '$unload_file'/1 (pl-srcfile.c:839-885)
 # test/core_lang/test_miss_preds_swipl.jl — put/1,2 and get/1,2 over open_string/2 and with_output_to/2 streams, '$call_no_catch'/1:
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the answer lines are the driver's `enc`oded form (test_s2a_swipl.jl's driver).
@@ -186,6 +186,39 @@ const _MG_CASES = [
     ("cn04", raw"'$call_no_catch'(true), R = ok", _mga("ok")),
     ("cn05", raw"'$call_no_catch'(_), R = ok", _mga("ok")),   # callProlog's own instantiation error, also swallowed
     ("cn06", raw"'$call_no_catch'(user:(Y = a)), R = Y", _mga("a")),
+    # '$unload_file'/1 (pl-srcfile.c:839-885, unloadFile :796-835, delAllModulesSourceFile__unlocked :492-530): PL_get_atom_ex(A1), then
+    # lookupSourceFile(name, false): an unknown name is `true` (nothing happens); a known one has its clauses removed (unloadFile) and its
+    # modules detached (m->file = NULL, public table cleared). `@DIR@` is the test's temp directory (miss_u.pl: mu_p/1 with 2 clauses and
+    # mu_q/1; miss_um.pl: module miss_um exporting mum_p/1). The predicate_property/module_property answers after an unload are DERIVED from the C
+    # (no clauses and not dynamic = not isDefinedProcedure; m->file NULL = no file(_) property; public table cleared = exports []) and are
+    # MEASURE ON THE LANE rows: `swipl` on the same program (the live test below compares every line).
+    (
+        "ul01",
+        raw"load_files('@DIR@/miss_u.pl', []), aggregate_all(count, mu_p(_), N0), ( predicate_property(mu_p(_), defined) -> D0 = yes ; D0 = no ), '$unload_file'('@DIR@/miss_u.pl'), ( predicate_property(mu_p(_), defined) -> D1 = yes ; D1 = no ), R = N0-D0-D1",
+        _mgc("-", _mgc("-", _mgi(2), _mga("yes")), _mga("no"))
+    ),   # MEASURE ON THE LANE: swipl -g "load_files('f.pl',[]), '$unload_file'('f.pl'), ( predicate_property(mu_p(_), defined) -> writeln(yes) ; writeln(no) )"
+    (
+        "ul02",
+        raw"load_files('@DIR@/miss_u.pl', []), '$unload_file'('@DIR@/miss_u.pl'), load_files('@DIR@/miss_u.pl', []), aggregate_all(count, mu_p(_), N), R = N",
+        _mgi(2)
+    ),   # an unloaded file loads again from scratch (the file is not up to date: its time and clause count are gone)
+    ("ul03", raw"'$unload_file'('@DIR@/nosuchfile.pl'), R = ok", _mga("ok")),   # an unknown file: `return true`
+    ("ul04", raw"'$unload_file'(_)", _mgraised(_mga("instantiation_error"))),   # PL_get_atom_ex
+    (
+        "ul05",
+        raw"'$unload_file'(1)",
+        _mgraised(_mgc("type_error", _mga("atom"), _mgi(1)))
+    ),   # PL_get_atom_ex
+    (
+        "ul06",
+        raw"load_files('@DIR@/miss_um.pl', []), '$unload_file'('@DIR@/miss_um.pl'), ( module_property(miss_um, file(_)) -> F = yes ; F = no ), module_property(miss_um, exports(E)), R = F-E",
+        _mgc("-", _mga("no"), "nil")
+    ),   # m->file = NULL, clearHTableWP(m->public): MEASURE ON THE LANE: the same two module_property/2 calls against swipl
+    (
+        "ul07",
+        raw"load_files('@DIR@/miss_u.pl', []), '$unload_file'('@DIR@/miss_u.pl'), '$unload_file'('@DIR@/miss_u.pl'), R = ok",
+        _mga("ok")
+    ),   # the second call finds the file (still in the table) with no procedures and no modules: unloadFile does nothing, true
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -200,10 +233,14 @@ function _mg_file(dir::String)::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _, _) in _MG_CASES]
     text =
         _MG_PROGRAM * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n"
+            "t_$(id)(R) :- catch(($(replace(g, "@DIR@" => dir))), error(SsuE, _), R = raised(SsuE)).\n"
             for (id, g, _) in _MG_CASES
         ])
     f = joinpath(dir, "miss_preds.pl")
+    write(joinpath(dir, "miss_u.pl"), "mu_p(1).\nmu_p(2).\nmu_q(x).\n")        # the files '\$unload_file' rows load and unload
+    write(
+        joinpath(dir, "miss_um.pl"), ":- module(miss_um, [mum_p/1]).\nmum_p(7).\n"
+    )
     write(f, text)
     return f, names
 end
@@ -250,7 +287,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2 and '\$call_no_catch'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -260,7 +297,7 @@ end
         @test k == p
     end
     # not vacuous: the expectation holds raised errors, `ok` and answers, and one failing row (ge09)
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 7    # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 9    # raised(…) (7 + ul04, ul05)
     @test count(l -> occursin(r"^t_\w+ *$", l), ex) == 1                   # ge09 fails
     @test count(l -> occursin("i-1)", l), ex) == 5                         # -1 in an answer (pu04's character, the EOF answers)
 end

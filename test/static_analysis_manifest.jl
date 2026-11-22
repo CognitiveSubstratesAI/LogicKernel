@@ -2446,6 +2446,9 @@ function _manifest_index(T)
         (LK.endConsult, Tuple{LK.SourceFile{T}}, false),
         (LK.highSourceFileIndex, Tuple{GD}, false),
         (LK.addModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.delModuleSourceFile, Tuple{LK.SourceFile{T}, MOD}, false),
+        (LK.delAllModulesSourceFile__unlocked, Tuple{LK.SourceFile{T}}, false),
+        (LK.unloadFile, Tuple{GD, LD, LK.SourceFile{T}}, false),
         (LK._atom_is, Tuple{LD, T, Symbol}, false),
         (LK.unify_src_file_time, Tuple{LD, Int, LK.SourceFile{T}}, false),
         (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD}, false),
@@ -2470,6 +2473,7 @@ function _manifest_index(T)
             false
         ),
         (LK.pl_set_source_file3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (LK.pl_unload_file1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),

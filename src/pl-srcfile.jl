@@ -665,6 +665,70 @@ function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-srcfile.c delModuleSourceFile
+# DIVERGES: `modules` is a vector; no lock, no `freeHeap`.
+"Remove module `m` from the modules of `sf`; whether it was there (pl-srcfile.c)."
+function delModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
+    i = findfirst(x -> x === m, sf.modules)
+    i === nothing && return false
+    deleteat!(sf.modules, i)
+    return true
+end
+
+# PORT: pl-srcfile.c delAllModulesSourceFile__unlocked
+# DIVERGES: `modules` is a vector; no lock (`PL_LOCK(L_MODULE)`), no `freeHeap`. `clearHTableWP(m->public)` is the module's public table and its
+# key order (src/pl-modul.jl clears both).
+"Detach every module of `sf`: those whose file is `sf` forget it and their exports (pl-srcfile.c)."
+function delAllModulesSourceFile__unlocked(sf::SourceFile{T})::Nothing where {T}
+    mods = copy(sf.modules)
+    empty!(sf.modules)
+
+    for m in mods
+        if m.file == sf.index                       # m->file == sf
+            m.file = 0                              # m->file = NULL
+            m.line_no = 0
+            empty!(m.public_)                       # clearHTableWP(m->public)
+            empty!(m.public_order)
+        end
+    end
+
+    return nothing
+end
+
+# PORT: pl-srcfile.c unloadFile
+# DIVERGES: the database and the local data are arguments (`delayEvents`, `sendDelayedEvents`); no lock; `DEBUG(MSG_UNLOAD, …)` is left out;
+# `removeClausesPredicate!` takes `gd` first (src/pl-proc.jl).
+"Remove all clauses `sf` defined and detach its procedures and modules (pl-srcfile.c); false when an event listener raised."
+function unloadFile(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
+)::Bool where {T}
+    deleted = 0
+
+    delayEvents(ld)
+    # remove the clauses
+    for proc in sf.procedures
+        def = proc.definition
+
+        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
+            deleted += removeClausesPredicate!(
+                gd, def, (def.flags & P_MULTIFILE) != 0 ? sf.index : 0, true
+            )
+        end
+
+        if (def.flags & P_MULTIFILE) == 0
+            def.flags &= ~FILE_ASSIGNED
+            clear_meta_declaration(def)
+        end
+    end
+    sf.number_of_clauses -= UInt32(deleted)
+
+    empty!(sf.procedures)                           # freeList(&sf->procedures)
+    delAllModulesSourceFile__unlocked(sf)
+    sf.isfile = false
+
+    return sendDelayedEvents(gd, ld, true) >= 0
+end
+
 # PORT: pl-srcfile.c unlinkSourceFileModule
 # DIVERGES: the test of upstream's loop, `lookupHTableWP(m->procedures, def->functor->functor) || PROCEDURE_dinit_goal->definition == def`,
 # is its first half: the `$init_goal/3` clauses belong to the loader (L6), which adds the second; no lock.
@@ -862,6 +926,47 @@ function pl_set_source_file3_va(
     return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :source_file), A1) ? FTRUE : FFALSE
 end
 
+# PORT: pl-srcfile.c unload_file as pl_unload_file1_va
+# (PRED_IMPL("$unload_file", 1, unload_file, 0)) — pl-srcfile.c:845-885
+# DIVERGES: `sf->modules` is already empty when the loop after `unloadFile` runs (`delAllModulesSourceFile__unlocked` cleared it), as in upstream:
+# the loop is ported as written and does nothing; no module lock. A file that is not known is not an error: true.
+"`'\$unload_file'(+Name)`: remove all traces of a loaded file; a system file is a permission error (pl-srcfile.c)."
+function pl_unload_file1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1 = PL__t0
+
+    name = PL_get_atom_ex(ld, A1)
+    name === nothing && return FFALSE
+
+    sf = lookupSourceFile(gd, name, false)
+    if sf !== nothing
+        if sf.system
+            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1)
+        else
+            if unloadFile(gd, ld, sf)
+                for m in copy(sf.modules)
+                    m.file = 0                      # m->file = NULL
+                    m.line_no = 0
+                    delModuleSourceFile(sf, m)
+                    empty!(m.public_)               # clearHTableWP(m->public)
+                    empty!(m.public_order)
+                    setSuperModule(gd.modules, ld, m, MODULE_user(gd))
+                end
+                rc = true
+            else
+                rc = false
+            end
+        end
+
+        releaseSourceFile(sf)
+        return rc ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
+
 # PORT: pl-srcfile.c start_consult as pl_start_consult2_va
 # (PRED_IMPL("$start_consult", 2, start_consult, 0)) — pl-srcfile.c:1726-1757
 "`'\$start_consult'(+Id, +Modified)` (pl-srcfile.c): start consulting `Id`; `Modified` is 0 or the file's time."
@@ -934,7 +1039,7 @@ end
 
 # PORT: pl-srcfile.c BeginPredDefs as PL_predicates_from_srcfile
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (pl-srcfile.c:1987-1999);
-# NOT HERE (LB6): `$clause_from_source`/4, `$unload_file`/1, `$set_source_files`/1, `$flush_predicate`/1,
+# NOT HERE (LB6): `$clause_from_source`/4, `$set_source_files`/1, `$flush_predicate`/1,
 # `$flushed_predicate`/1. `PRED_DEF` ors in `PL_FA_VARARGS`.
 "pl-srcfile.c's registration table (`BeginPredDefs(srcfile)`): the ported entries."
 const PL_predicates_from_srcfile = (
@@ -948,6 +1053,7 @@ const PL_predicates_from_srcfile = (
     ),
     PL_extension("\$source_file_property", 3, pl_source_file_property3_va, PL_FA_VARARGS),
     PL_extension("\$set_source_file", 3, pl_set_source_file3_va, PL_FA_VARARGS),
+    PL_extension("\$unload_file", 1, pl_unload_file1_va, PL_FA_VARARGS),
     PL_extension("\$start_consult", 2, pl_start_consult2_va, PL_FA_VARARGS),
     PL_extension("\$end_consult", 1, pl_end_consult1_va, PL_FA_VARARGS),
     PL_extension("\$fixup_reconsult", 1, pl_fixup_reconsult1_va, PL_FA_VARARGS)
