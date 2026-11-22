@@ -8,7 +8,7 @@
 # `nb_getval/2`, `nb_current/2` and `nb_delete/1`. A global variable is an entry of the thread's table
 # (`LD->gvar.nb_vars`, here `ld.gvar_nb_vars`: atom word -> the value's word). A value on the global
 # stack keeps the stack FROZEN below it (`freezeGlobal!`, src/pl-inline.jl) and is counted in
-# `gvar_grefs`, which `_release_frozen!` honours (design D7). `b_setval` moves the value into a cell of
+# `gvar_grefs` (the collector's `gcEnsureSpace` counts them; design D7). `b_setval` moves the value into a cell of
 # its own and trails the assignment to it. A name nobody set calls `user:exception/3`
 # (`auto_define_gvar`, design D8).
 #

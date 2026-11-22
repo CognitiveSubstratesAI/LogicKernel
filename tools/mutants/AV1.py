@@ -79,7 +79,7 @@ MUTANTS = [
     dict(id="AV1-X2 is_var does not take an attributed variable for a variable", file=X, targets=T,
          old='''    return k == DU_CELL || k == DU_ATTVAR                  # canBind(*p)''',
          new='''    return k == DU_CELL                                    # canBind(*p)'''),
-    # ---- the chain: register_attvar, reclaim_attvars, Undo!, the frozen release
+    # ---- the chain: register_attvar, reclaim_attvars, Undo!
     dict(id="AV1-C1 register_attvar does not link to the previous attvar", file=I, targets=T,
          old='''        ld.gstack[gp] = makeRefG(ld.attvar_attvars) # *gp = makeRefG(LD->attvar.attvars)''',
          new='''        ld.gstack[gp] = word(0)                     # *gp = makeRefG(LD->attvar.attvars)'''),
@@ -90,10 +90,8 @@ MUTANTS = [
     dict(id="AV1-C3 reclaim_attvars drops the link AT the new top too", file=W, targets=T,
          old='''    while ld.attvar_attvars > after                 # while ( LD->attvar.attvars >= after )''',
          new='''    while ld.attvar_attvars >= after && ld.attvar_attvars != 0   # while ( LD->attvar.attvars >= after )'''),
-    dict(id="AV1-C4 the frozen release keeps the chain's links above its target", file=I, targets=T,
-         old='''        reclaim_attvars(ld, target)                 # (the attvar chain with it, as Undo!: AV1)
-''',
-         new=''),
+    # AV1-C4 (the frozen release keeps the chain's links above its target) is gone with the release itself (G1-E, audit D-0979 (2)):
+    # upstream's Undo cuts the chain to max(frozen_bar, mark) (AV1-C2/C3 above); tools/mutants/E1R.py names what replaced it.
     # ---- bindConst and the canBind sites converted
     dict(id="AV1-B1 bindConst overwrites an attributed variable as varBindConst", file=A, targets=T,
          old='''    if isVar(ld.gstack[p])                          # if ( isVar(*p) )''',

@@ -9,7 +9,7 @@
 #   * `linkValI` links an attributed variable by REFERENCE (`_cell_link!`, `_slot_link!`, `_slot_link_loc!`,
 #     `=..`'s argument cells) — never a second copy of its word — and raises on a word of no known kind;
 #   * the index key of an attributed variable is 0 and `is_var` takes it for a variable (pl-index.c);
-#   * `register_attvar` chains the link cells newest first; `Undo!` and the frozen region's release cut the
+#   * `register_attvar` chains the link cells newest first; `Undo!` cuts the
 #     chain back to the new top (`reclaim_attvars`), a link AT the top kept;
 #   * `bindConst` binds an unbound cell as `varBindConst` and, since AV3, an attributed variable as
 #     `bind_attvar_const` (the cell assigned, a `wakeup/3` registered, `ALERT_WAKEUP` set), reached from the
@@ -223,18 +223,23 @@ end
 
 # A SEPARATE engine: were the Undo! phase's chain left dangling (a mutant), the cells it freed are reused here, an
 # attributed variable's link cell would be its own chain head and `reclaim_attvars` would loop (AV1-C2 timed out so).
-@testset "the attributed variables' chain: the frozen region's release cuts it back, as Undo!" begin
+@testset "the attributed variables' chain: a frozen region keeps its links across Undo! (G1-E: no release at a close)" begin
     ld = LK.PL_local_data{_R}(LK.PL_global_data{_R}())
     g1 = LK.allocGlobalCells!(ld, 1)
     LK.register_attvar(ld, g1)
-    # the frozen region's release lowers gTop as Undo! does, the chain with it
+    # upstream's Undo leaves gTop = max(frozen_bar, mark.globaltop) and cuts the chain back to THAT (pl-wam.c:1632-1633 at 18168e62:
+    # `ngtop = max(LD->frozen_bar, m->globaltop); reclaim_attvars(ngtop)`): with the region frozen nothing above the mark is cut, the link stays
+    # (the kernel's e5 release, which lowered gTop and cut the chain after the outermost close, is retired: audit D-0979 (2))
     m2 = LK.Mark(ld)
     c2 = LK.allocGlobalCells!(ld, 1)
     _aw_attvar!(ld, c2)
-    @test ld.attvar_attvars > m2.globaltop
+    link2 = ld.attvar_attvars
+    @test link2 > m2.globaltop
     LK.freezeGlobal!(ld)
-    LK._release_frozen!(ld, m2, true)
-    @test ld.gTop == m2.globaltop && ld.attvar_attvars == g1
+    bar2 = ld.frozen_bar
+    LK.Undo!(ld, m2)
+    @test ld.gTop == bar2 > m2.globaltop && ld.attvar_attvars == link2   # kept: the chain ends at the new link, not at g1
+    @test ld.frozen_bar == bar2                                        # and Undo! never lowers the bar
     # reclaim_attvars itself: an empty chain stays empty at any top, 0 included
     ld.attvar_attvars = 0
     LK.reclaim_attvars(ld, 0)

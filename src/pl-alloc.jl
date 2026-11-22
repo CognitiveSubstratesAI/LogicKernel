@@ -80,7 +80,7 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 #   * (f3b-1) The ball is laid as upstream lays it — five global cells at `gTop`,
 #     `error(resource_error(stack), Ctx)`, `exception_bin` its reference, then `freezeGlobal!` — where
 #     until f3b-1 it was a value in `exception_bin`'s side entry (`SLOT_VALUE`). The frozen region is
-#     released when the outermost query ends (`_release_frozen!`, audit D-0029 (b)), as for every ball.
+#     kept below `frozen_bar` until the collector frees it (upstream never lowers the bar before a thread's end), as for every ball.
 # NOT PORTED: the backtraces and the low-spare message (the kernel prints nothing, decision 1);
 # the "no room for
 # exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled

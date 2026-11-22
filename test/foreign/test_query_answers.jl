@@ -86,7 +86,7 @@ end
     # The BOOTED database (AUTOLOAD1 A5 part 1: the autoloader's hook guard is gone, so an undefined predicate on an UNBOOTED database
     # queries the missing `$undefined_procedure/4` and reports that instead of the predicate). On a booted copy the boot's message
     # machinery sets a global variable (nb_setval/2: measured, `gvar_grefs` is 1), and while `ld.gvar_grefs > 0` the first ball's global
-    # region is kept, as upstream keeps `frozen_bar` for the thread's life (`_release_frozen!`, src/pl-inline.jl: it returns at once):
+    # region is kept, as upstream keeps `frozen_bar` for the thread's life (since G1-E nothing releases it at a close, with or without a global variable):
     # the first throw below fixes that bar, and the baseline is read after it. The row's subject, the stacks back at their baseline
     # after the throw, is unchanged.
     db = _rdb(_qa_clauses())
@@ -107,7 +107,14 @@ end
     # the formal part — the context term is the caller's frame, as before L1c (not this helper's)
     @test _rcanonical(ex.ball) |>
         startswith("error(existence_error(procedure,/(qa_undefined,1)),")
-    @test (ld.gTop, length(ld.trail), ld.lTop) == base    # the frame discarded on this path too
+    # G1-E (the e5 release is retired; upstream keeps the bar): the trail and the local stack are back at the baseline, the frame discarded on
+    # this path too; the global stack is left at the bar, the second ball's cells (pl-incl.h:2253), and a collection takes it back
+    # (was `(gTop, trail, lTop) == base`, which the release made true). MEASURE ON THE LANE: gTop after the collection (derived: <= base[1],
+    # both balls are garbage).
+    @test (length(ld.trail), ld.lTop) == (base[2], base[3])
+    @test ld.gTop == ld.frozen_bar > base[1]
+    @test LK.garbageCollect(ld, Int(LK.GC_USER); vmi_state_of=LK.get_vmi_state) == LK.BOOLEX_TRUE
+    @test ld.gTop <= base[1]
 end
 
 @testset "query_answers: 10^4 queries leave the stacks at their baseline" begin

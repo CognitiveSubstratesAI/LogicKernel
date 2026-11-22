@@ -104,7 +104,7 @@ const _GV_CASES = [
     ("g02", raw"nb_setval(gv_b, f(X, _, X)), nb_getval(gv_b, R)"),
     # H6, query 1: the value is stored by this query
     ("g03", raw"nb_setval(gv_h6, f(_, _)), R = stored"),
-    # H6, query 2: the value outlives query 1 (D7: _release_frozen! keeps the region while gvar_grefs > 0)
+    # H6, query 2: the value outlives query 1 (D7: the bar is never lowered at a close, G1-E, so the value stays)
     ("g04", raw"nb_getval(gv_h6, R)"),
     # H6: a compound held by nb_setval across 10^4 throw/catch
     (

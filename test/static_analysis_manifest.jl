@@ -98,9 +98,6 @@ _manifest_per_type(T) = (
     (LK.Mark, Tuple{LK.PL_local_data{T}}, true),
     (LK.Undo!, Tuple{LK.PL_local_data{T}, LK.mark}, false),   # TX1e: push_undo pushes to a Vector (the undo schedule)
     (LK.freezeGlobal!, Tuple{LK.PL_local_data{T}}, false),   # e5
-    (LK._release_frozen!, Tuple{LK.PL_local_data{T}, LK.mark, Bool}, false),
-    (LK._global_pos, Tuple{LK.PL_local_data{T}, LK.word}, true),          # ENG2a: a read
-    (LK._gvar_reach, Tuple{LK.PL_local_data{T}}, true),                   # ENG2a: a scan of a Dict's values
     # the attributed variables' chain (AV1): a walk and a store, no growth
     (LK.register_attvar, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK.reclaim_attvars, Tuple{LK.PL_local_data{T}, Int}, true),
