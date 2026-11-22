@@ -48,6 +48,59 @@ end
 "`not_hashed(P) :- \\+ predicate_property(P, indexed(_)).`"
 not_hashed(p::IxPred)::Bool = LK.unify_index_pattern(p.def) === nothing
 
+# PORT: pl-index.c unify_index_pattern (the term-building port, PR1b)
+const _INDEX_DICT_KEYS =
+    (:arguments, :position, :buckets, :speedup, :list, :size, :realised, :collisions)
+
+"""
+`predicate_property(P, indexed(L))` as `'\$get_predicate_attribute'(P, indexed, L)` answers it, through `LK.unify_index_pattern(ld, proc,
+L)`: the dicts of `L`, each read key by key off the cells as the Prolog text of the value; `nothing` where the call fails.
+"""
+function indexed_dicts(p::IxPred{T})::Union{Nothing, Vector{Dict{Symbol, String}}} where {T}
+    ld = p.db.ld
+    fid = LK.PL_open_foreign_frame(ld)
+    value = LK.PL_new_term_ref(ld)
+    out = nothing
+    if LK.unify_index_pattern(ld, p.proc, value)
+        out = Dict{Symbol, String}[]
+        tail = LK.PL_copy_term_ref(ld, value)
+        head = LK.PL_new_term_ref(ld)
+        while LK.PL_get_list(ld, tail, head, tail)
+            dw = LK.get_dict_ex(ld, head, false)
+            dw === nothing && error("an element of indexed(L) is no dict")
+            d = Dict{Symbol, String}()
+            for key in _INDEX_DICT_KEYS
+                r = LK.dict_lookup_ptr(ld, dw, LK._atom_word!(ld, lk_sym(T, key)))
+                r === nothing && error("the dict of indexed(L) has no key $key")
+                d[key] = ix_text(LK.export_cells(ld, LK.cell_export{T}(), r[1]))
+            end
+            push!(out, d)
+        end
+        LK.PL_get_nil(ld, tail) || error("indexed(L) is no proper list")
+    end
+    LK.PL_close_foreign_frame(ld, fid)
+    return out
+end
+
+"The term-built dicts of `p` against the data accessor's `index_property`s: every key but `size` (bytes of the C structs)."
+function dicts_match(p::IxPred)::Bool
+    data = LK.unify_index_pattern(p.def)
+    dicts = indexed_dicts(p)
+    data === nothing && return dicts === nothing
+    dicts === nothing && return false
+    length(dicts) == length(data) || return false
+    for (dd, d) in zip(dicts, data)
+        dd[:arguments] == "[" * join(d.arguments, ",") * "]" || return false
+        dd[:position] == "[" * join(d.position, ",") * "]" || return false
+        dd[:buckets] == string(d.buckets) || return false
+        dd[:speedup] == repr(Float64(d.speedup)) || return false
+        dd[:list] == string(d.list) || return false
+        dd[:realised] == string(d.realised) || return false
+        dd[:collisions] == string(d.collisions) || return false
+    end
+    return true
+end
+
 # PORT: test_jit.pl mkbigint
 "`mkbigint(Shift, I, Big) :- Big is 1<<Shift+I.`"
 mkbigint(shift::Int, i::Int)::Integer =
@@ -147,12 +200,15 @@ const _JBig = lk_term_type(Union{Int64, BigInt, Float64, String})
             end
             @test !isempty(ix_call(d, _je(:d, _jv(), _jg(30))))    # d(_,30)
             @test has_hashes(d, [2])
+            @test dicts_match(d)                                   # indexed(L), as dicts
             for x in 51:125
                 ix_assertz!(d, _je(:d, _jg(x), _jg(x)))
             end
             @test not_hashed(ix_pred(_J, :p, 2))                   # not_hashed(p(_,_))
+            @test indexed_dicts(ix_pred(_J, :p, 2)) === nothing    # the dict port fails too: no index
             @test !isempty(ix_call(d, _je(:d, _jg(30), _jv())))    # d(30,_)
             @test has_hashes(d, [1])
+            @test dicts_match(d)
         end
     end
     # PORT: test_jit.pl remove
@@ -351,5 +407,37 @@ end
             d.arguments[1] for d in indexed if d.realised && length(d.arguments) == 1
         ]
         @test realised == [1]                       # Realised == [1]
+        @test dicts_match(bintree)                  # '$get_predicate_attribute'(…, indexed, L): the same, as dicts
+        dicts = indexed_dicts(bintree)
+        @test dicts !== nothing && !isempty(dicts)
+        # `size` is the bytes of the C structs (the kernel counts the same layout, computed): MEASURE ON THE LANE against swipl
+        # 10.1.20 `predicate_property(bintree(_,_), indexed(L)), member(D, L), get_dict(size, D, S)` before pinning the number.
+        @test all(d -> parse(Int, d[:size]) > 0, dicts)
     end
+end
+
+# PORT: pl-fli.c PL_put_dict
+@testset "PL_put_dict" begin
+    ld = ix_pred(_J, :pd, 1).db.ld
+    fid = LK.PL_open_foreign_frame(ld)
+    vals = LK.PL_new_term_refs(ld, 2)
+    @test LK.PL_unify_integer(ld, vals, 7) && LK.PL_unify_integer(ld, vals + 1, 8)
+    t = LK.PL_new_term_ref(ld)
+    @test LK.PL_put_dict(ld, t, _js(:tag), 2, _J[_js(:b), _js(:a)], vals)   # tag{b:7, a:8}
+    @test LK.PL_is_dict(ld, t)
+    dw = LK.get_dict_ex(ld, t, false)
+    @test dw !== nothing
+    @test ld.gstack[LK.valPtr(dw) + 1] == LK._atom_word!(ld, _js(:tag))
+    for (k, v) in ((:a, "8"), (:b, "7"))                                   # ordered by key: found by key
+        r = LK.dict_lookup_ptr(ld, dw, LK._atom_word!(ld, _js(k)))
+        @test r !== nothing && ix_text(LK.export_cells(ld, LK.cell_export{_J}(), r[1])) == v
+    end
+    t2 = LK.PL_new_term_ref(ld)                                            # no tag: a fresh variable in its place
+    @test LK.PL_put_dict(ld, t2, nothing, 1, _J[_js(:k)], vals)
+    @test LK.PL_is_dict(ld, t2)
+    t3 = LK.PL_new_term_ref(ld)                                            # a duplicate key: error(duplicate_key(a), _)
+    @test !LK.PL_put_dict(ld, t3, nothing, 2, _J[_js(:a), _js(:a)], vals)
+    @test LK.PL_exception(ld, 0) != 0
+    LK.PL_clear_exception(ld)
+    LK.PL_close_foreign_frame(ld, fid)
 end

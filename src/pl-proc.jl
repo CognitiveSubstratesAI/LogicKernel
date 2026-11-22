@@ -3075,8 +3075,7 @@ end
 
 # PORT: pl-proc.c get_predicate_attribute as pl_get_predicate_attribute3_va
 # (PRED_IMPL("$get_predicate_attribute", 3, get_predicate_attribute, PL_FA_TRANSPARENT))
-# DIVERGES: `indexed` is refused by name (`NotPortedError`: its value is a Prolog dict per index and dicts are NOT PORTED);
-# `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
+# DIVERGES: `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
 # field; pl-proc.c:3642-3645 reads `def->last_modified`); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
 # `erased_clause_space` is `sizeof_erased_clauses`, the kernel's own bytes (swipl: 112 a clause);
 # the tabling keys (`tbl_is_predicate_attribute`) are `tbl_get_predicate_attribute`'s (src/pl-tabling.jl), which fails for a
@@ -3113,9 +3112,7 @@ function pl_get_predicate_attribute3_va(
         module_.index == def.module_ && return FFALSE
         return PL_unify_atom(ld, value, gd.modules[def.module_].atom) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :indexed))
-        throw(
-            NotPortedError{T}(key, "indexed(L): the Prolog dict of an index property", "R3")
-        )
+        return unify_index_pattern(ld, proc, value) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :meta_predicate))
         (def.flags & P_META) == 0 && return FFALSE
         return unify_meta_pattern(ld, proc, value) ? FTRUE : FFALSE
