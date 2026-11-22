@@ -1,8 +1,8 @@
 # ORIGINAL: the kernel's home tree (R2 LB4 chunk a, design evidence/r2/design/loader_boot.md LD6) — no swipl-devel counterpart; the shape is cmake/InstallSource.cmake:8-25.
 # test/test_home_tree.jl — tools/build_home.jl builds the tree of relative links the `home` flag names: home/boot/<f>.pl and
 # home/library/<path> link each vendored file (vendor/swipl-devel), home/library/ext/plunit links packages/plunit, and
-# home/library/ext/<pkg>/... links each installed file of the vendored pure-Prolog packages (vendor/swipl-devel-extra: clpqr, paxos, chr,
-# cql, pldoc; the layout is the one each package's CMakeLists.txt `swipl_plugin` installs). Rows: every link
+# home/library/ext/<pkg>/... links each installed file of the vendored packages (vendor/swipl-devel-extra: clpqr, paxos, chr,
+# cql, pldoc, json; the layout is the one each package's CMakeLists.txt `swipl_plugin` installs). Rows: every link
 # is relative and resolves to its vendored file; the set of links is EXACTLY the vendored files plus ext/plunit plus the package files (one extractor for the
 # wanted set and the found set, both non-empty); a stale tree is repaired (a link with another target, a link nothing wants, a
 # missing link, an ext/plunit link with another target, an empty directory left behind) and a second build changes nothing; a real file in
@@ -29,6 +29,9 @@ const _HT_PKGS = [
     ("cql", "cql", "", "cql.pl sql_parser.pl sql_tokenizer.pl sql_write.pl sql_keywords.pl cql_database.pl cql_autoschema.pl cql_hooks.pl"),
     ("pldoc", "", "", "pldoc.pl doc_latex.pl doc_files.pl doc_markdown.pl doc_http.pl"),
     ("pldoc", "pldoc", "", "doc_html.pl doc_wiki.pl doc_modes.pl doc_register.pl doc_process.pl doc_index.pl doc_search.pl doc_man.pl doc_library.pl hooks.pl doc_htmlsrc.pl doc_colour.pl doc_util.pl doc_access.pl doc_pack.pl man_index.pl doc_words.pl pldoc.css pldoc.js pllisting.css pldoc.sty edit.png private.png public.png reload.png favicon.ico up.gif source.png h1-bg.png pub-bg.png multi-bg.png priv-bg.png h2-bg.png editpred.png"),
+    ("json", "", "", "json.pl json_convert.pl json_grammar.pl json_rpc_common.pl json_schema.pl json_rpc_server.pl json_rpc_client.pl"),
+    ("json", "http", "", "http_json.pl"),
+    ("json", "http", "compat", "json.pl json_convert.pl js_grammar.pl"),
 ]
 
 "The links of `_HT_PKGS` relative to `home`, `link path => (package, source path under packages/<pkg>)`."
@@ -81,9 +84,9 @@ mktempdir() do tmp
         @test build_home(home) == home
         links = _ht_links(home)
         pkgs = _ht_pkg_links()
-        # NON-VACUITY: 26 boot files + 210 library files + 5 INDEX.pl + ext/plunit + 89 package files
-        @test length(want) == 26 + 210 + 5 + 1 + 89
-        @test length(_ht_pkg_links()) == 89
+        # NON-VACUITY: 26 boot files + 210 library files + 5 INDEX.pl + ext/plunit + 100 package files
+        @test length(want) == 26 + 210 + 5 + 1 + 100
+        @test length(_ht_pkg_links()) == 100
         @test !isempty(links)
         @test sort!(collect(keys(links))) == want       # nothing missing, nothing extra
         for (rel, text) in links
@@ -115,6 +118,9 @@ mktempdir() do tmp
         @test isfile(joinpath(home, "library", "ext", "cql", "cql", "cql.pl"))
         @test isfile(joinpath(home, "library", "ext", "pldoc", "pldoc.pl"))
         @test isfile(joinpath(home, "library", "ext", "pldoc", "pldoc", "doc_html.pl"))
+        @test isfile(joinpath(home, "library", "ext", "json", "json.pl"))
+        @test isfile(joinpath(home, "library", "ext", "json", "http", "http_json.pl"))
+        @test isfile(joinpath(home, "library", "ext", "json", "http", "json.pl"))
         # chr's generated files are not vendored, so not linked (they come with the oracle bootstrap)
         @test !ispath(joinpath(home, "library", "ext", "chr", "chr", "chr_translate.pl"))
         # the content read through the tree is the vendored file's
@@ -139,7 +145,7 @@ mktempdir() do tmp
             @test isfile(joinpath(_HT_EXTRA, "packages", pkg, srcdir, src))
             sub == "" || @test occursin(sub, cmake)
         end
-        @test sort!(unique([r[1] for r in _HT_PKGS])) == ["chr", "clpqr", "cql", "paxos", "pldoc"]
+        @test sort!(unique([r[1] for r in _HT_PKGS])) == ["chr", "clpqr", "cql", "json", "paxos", "pldoc"]
     end
 
     @testset "a second build changes nothing" begin

@@ -7,8 +7,8 @@
 #     home/library/ext/plunit   -> packages/plunit                        (the directory itself: library(plunit) resolves through boot/init.pl's
 #                                                                          '$ext_library_directory', no file_search_path/2 clause of ours)
 #
-#     home/library/ext/<pkg>/<f> -> vendor/swipl-devel-extra/packages/<pkg>/<f>   (the vendored pure-Prolog packages clpqr, paxos, chr, cql,
-#     home/library/ext/<pkg>/<sub>/<f> -> .../packages/<pkg>/<srcdir>/<f>         pldoc: one link per file, as the package's CMakeLists.txt
+#     home/library/ext/<pkg>/<f> -> vendor/swipl-devel-extra/packages/<pkg>/<f>   (the vendored packages clpqr, paxos, chr, cql, pldoc, json:
+#     home/library/ext/<pkg>/<sub>/<f> -> .../packages/<pkg>/<srcdir>/<f>         one link per file, as the package's CMakeLists.txt
 #                                                                          `swipl_plugin(... PL_LIB_SUBDIR <sub> PL_LIBS <files>)` installs it)
 #
 # Directories are real and files are links, because `ext/plunit` must sit INSIDE library/ without writing into vendor/.
@@ -31,6 +31,9 @@ The library layout of each vendored pure-Prolog package, read from `packages/<pk
 NOT linked, on purpose: chr's two GENERATED files (`chr_translate.pl`, `guard_entailment.pl`: swipl bootstraps them from the .chr
 sources; they are not vendored), so `library(chr)` loads only once they exist; `chr.pl` is upstream's `chr_swi.pl` (CMake copies it);
 pldoc's `doc_changes.pl`/`git_extract_changes.pl` belong to the CHANGELOG option and `doc_csssrc.pl` is not installed.
+json's CMakeLists.txt makes three lists conditional (`HAVE_PCRE_PACKAGE`: json_schema.pl and json_rpc_server.pl; `MULTI_THREADED`:
+json_rpc_client.pl; `HAVE_HTTP_PACKAGE` and not EMSCRIPTEN: the `http` subdirectory with http_json.pl and the compat copies): the table is the
+full build's (pcre, clib, http present, threads on), as swipl-devel's own build is. json.plx (the LaTeX manual source) is not installed.
 """
 const _BH_PKG_LIBS = Tuple{String, String, String, Vector{Pair{String, String}}}[
     ("clpqr", "", "", _bh_same("clpr.pl", "clpq.pl")),
@@ -43,6 +46,9 @@ const _BH_PKG_LIBS = Tuple{String, String, String, Vector{Pair{String, String}}}
     ("cql", "cql", "", _bh_same("cql.pl", "sql_parser.pl", "sql_tokenizer.pl", "sql_write.pl", "sql_keywords.pl", "cql_database.pl", "cql_autoschema.pl", "cql_hooks.pl")),
     ("pldoc", "", "", _bh_same("pldoc.pl", "doc_latex.pl", "doc_files.pl", "doc_markdown.pl", "doc_http.pl")),
     ("pldoc", "pldoc", "", _bh_same("doc_html.pl", "doc_wiki.pl", "doc_modes.pl", "doc_register.pl", "doc_process.pl", "doc_index.pl", "doc_search.pl", "doc_man.pl", "doc_library.pl", "hooks.pl", "doc_htmlsrc.pl", "doc_colour.pl", "doc_util.pl", "doc_access.pl", "doc_pack.pl", "man_index.pl", "doc_words.pl", "pldoc.css", "pldoc.js", "pllisting.css", "pldoc.sty", "edit.png", "private.png", "public.png", "reload.png", "favicon.ico", "up.gif", "source.png", "h1-bg.png", "pub-bg.png", "multi-bg.png", "priv-bg.png", "h2-bg.png", "editpred.png")),
+    ("json", "", "", _bh_same("json.pl", "json_convert.pl", "json_grammar.pl", "json_rpc_common.pl", "json_schema.pl", "json_rpc_server.pl", "json_rpc_client.pl")),
+    ("json", "http", "", _bh_same("http_json.pl")),
+    ("json", "http", "compat", _bh_same("json.pl", "json_convert.pl", "js_grammar.pl")),
 ]
 
 "The home tree's default place: `home` in the package directory (src/os/pl-prologflag.jl's `home` flag names the same path)."
