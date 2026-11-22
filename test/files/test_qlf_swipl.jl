@@ -666,12 +666,41 @@ function _ql_call(gd, ld, name::String, args::Vector)::Symbol
     return r
 end
 
+# one goal on the `system` predicate `name/length(args)`: its status (:true, :false, :exception, :notported) and, for :true, the argument
+# terms as answered, for :exception the ball (the extractor is `lk_answers`, as test_open_close_swipl.jl's `_oc_call`)
+function _ql_goal(gd, ld, name::String, args::Vector)
+    proc = LK.isCurrentProcedure(sym_key(_qls(name)), length(args), LK.MODULE_system(gd))
+    proc === nothing && return (:undefined, _QL[])
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, max(length(args), 1))
+    for (i, v) in enumerate(args)
+        LK.putSlotValue!(ld, a + i, v, LK.PutVarMap())      # the slot of reference a + i - 1
+    end
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    status = :false
+    ans = _QL[]
+    rc = LK.PL_next_solution(gd, ld, qid)
+    if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+        status = :true
+        ans = [lk_answer(ld, a + i - 1) for i in 1:length(args)]
+        pushfirst!(ans, _qls("goal"))                       # so `ans[k + 1]` is argument k
+    elseif rc == LK.PL_S_EXCEPTION
+        status = :exception
+        ans = _QL[lk_answer(ld, LK.PL_exception(ld, qid))]
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return (status, ans)
+end
+
 # '$file_hash'(+File, -Hash) with Hash unbound: its value (a BigInt), or the Symbol of the failure
 function _ql_hash(gd, ld, path::String)
     proc = LK.isCurrentProcedure(sym_key(_qls("\$file_hash")), 2, LK.MODULE_system(gd))
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 2)
-    LK.putSlotValue!(ld, a, _qls(path), LK.PutVarMap())
+    LK.putSlotValue!(ld, a + 1, _qls(path), LK.PutVarMap())   # the slot of reference a
     qid = LK.PL_open_query(
         gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
     )
@@ -689,7 +718,7 @@ function _ql_hash(gd, ld, path::String)
     return r
 end
 
-@testset "the write-side predicates take the no-state branch, `$file_hash` runs; the 7 others are refused by name" begin
+@testset "the write-side predicates take the no-state branch, `$file_hash` runs; the 5 others are refused by name" begin
     # UNVERIFIED on the kernel: gate decides
     tbl = LK.PL_predicates_from_wic
     @test length(tbl) == 22
@@ -702,12 +731,11 @@ end
         # QLF1: their NULL-state branch is upstream's whole behaviour while no state can be opened (rows below)
         ("\$qlf_current_source", 1), ("\$qlf_dependency", 1), ("\$qlf_close", 0),
         ("\$close_wic", 0), ("\$map_id", 2), ("\$unmap_id", 1),
-        # QLF1B: a real predicate (the content hash needs no state)
-        ("\$file_hash", 2)
+        # QLF1B: real predicates (the content hash and the header need no state)
+        ("\$file_hash", 2), ("\$qlf_versions", 6), ("\$qlf_is_compatible", 1)
     ]
     refused = [
-        ("\$qlf_versions", 6), ("\$qlf_is_compatible", 1), ("\$qlf_sources", 2),
-        ("\$qlf_module", 2), ("\$qlf_load", 2),
+        ("\$qlf_sources", 2), ("\$qlf_module", 2), ("\$qlf_load", 2),
         ("\$qlf_open", 1), ("\$open_wic", 2)
     ]
     @test Set(names) == Set(vcat(shells, refused))
@@ -723,7 +751,8 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     # the six QLF1 rows have their own answers (below), not "true"
     qlf1 = Set(["\$qlf_current_source", "\$qlf_dependency", "\$qlf_close", "\$close_wic",
-                "\$map_id", "\$unmap_id", "\$file_hash"])
+                "\$map_id", "\$unmap_id", "\$file_hash",
+                "\$qlf_versions", "\$qlf_is_compatible"])
     for (n, ar) in shells
         (n == "\$qlf_include" || n in qlf1) && continue
         args = _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:ar]
@@ -775,6 +804,72 @@ end
             @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), foo]) === :fail
         end
         @test _ql_call(gd, ld, "\$file_hash", _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]) === :exception   # File unbound: instantiation_error
+    end
+    # QLF1B: '$qlf_versions'/6 and '$qlf_is_compatible'/1 on header bytes (pl-qlf.c:3498-3680, 3802-3932). `real.qlf` is the first 29
+    # bytes of a file swipl 10.1.20 18168e62's qcompile/1 wrote (magic, NUL, version 72, signature 0xe5ee110c: a header is all the
+    # predicates read); the others are hand-made variants. Expected values are the pinned swipl's own on the same bytes (2026-11-13).
+    mktempdir() do d
+        magic = "SWI-Prolog .qlf file\n\0"
+        sig = UInt8[0x18, 0x44, 0x70, 0x5e, 0x9c]
+        mk(name, bytes) = (f = joinpath(d, name); write(f, bytes); f)
+        real = mk("real.qlf", vcat(codeunits(magic), UInt8[0x10, 0x81], sig))
+        old = mk("old.qlf", vcat(codeunits(magic), UInt8[0x08, 0x81], sig))      # file version 68: the oldest loaded
+        tooold = mk("tooold.qlf", vcat(codeunits(magic), UInt8[0x06, 0x81], sig))  # 67
+        badsig = mk("badsig.qlf", vcat(codeunits(magic), UInt8[0x10, 0x81, 0x02, 0x00, 0x00, 0x00, 0x80]))
+        badmagic = mk("badmagic.qlf", vcat(codeunits("not a qlf file at all\n\0"), UInt8[0x10, 0x81]))
+        trunc = mk("trunc.qlf", vcat(codeunits(magic), UInt8[0x10]))         # EOF reads as byte 0xff...: -1 & 0x7f
+        empty = mk("empty.qlf", UInt8[])
+        nonul = mk("nonul.qlf", codeunits("SWI-Prolog .qlf file\n"))
+        missing = joinpath(d, "missing.qlf")
+        csig = "3857584396"
+        qfe(f, m) = _ql_enc(mk_expr(_QL, _QL[_qls("qlf_format_error"), _qls(f), _qls(m)]))
+        function versions(f)
+            st, ans = _ql_goal(gd, ld, "\$qlf_versions", _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])
+            return st, [_ql_enc(a) for a in ans]
+        end
+        i(x) = _ql_enc(lk_gnd(_QL, x))
+        # (file, '$qlf_versions' answers or nothing, '$qlf_is_compatible' formal message or nothing = true)
+        for (f, vs, cm) in (
+            (real, (72, 68, 72, 3857584396, 3857584396), nothing),
+            (old, (72, 68, 68, 3857584396, 3857584396), nothing),
+            (tooold, (72, 68, 67, 3857584396, 3857584396), "incompatible version (file: 67, Prolog: 72)"),
+            (badsig, (72, 68, 72, 3857584396, 1), "incompatible VM-signature (file: 0x1; Prolog: 0xe5ee110c)"),
+            (trunc, (72, 68, 8136, 3857584396, 4294967232), "incompatible VM-signature (file: 0xffffffc0; Prolog: 0xe5ee110c)")
+        )
+            st, ans = versions(f)
+            @test st === :true
+            @test ans[2:6] == [i(x) for x in vs]
+            if cm === nothing
+                @test _ql_call(gd, ld, "\$qlf_is_compatible", _QL[_qls(f)]) === :ok
+            else
+                cst, cans = _ql_goal(gd, ld, "\$qlf_is_compatible", _QL[_qls(f)])
+                @test cst === :exception
+                @test _ql_enc(child(cans[1], 2)) == qfe(f, cm)
+            end
+        end
+        for f in (badmagic, empty, nonul)                    # `Not a SWI-Prolog .qlf file\n`, from both predicates
+            for (n, args) in (
+                ("\$qlf_is_compatible", _QL[_qls(f)]),
+                ("\$qlf_versions", _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])
+            )
+                st, ans = _ql_goal(gd, ld, n, args)
+                @test st === :exception
+                @test _ql_enc(child(ans[1], 2)) == qfe(f, "Not a SWI-Prolog .qlf file\n")
+            end
+        end
+        # a missing file: existence_error(source_sink, File) from open_qlf_file; an unbound or a non-text File from PL_get_file_name
+        @test _ql_call(gd, ld, "\$qlf_is_compatible", _QL[_qls(missing)]) === :exception
+        @test _ql_goal(gd, ld, "\$qlf_versions", _QL[_qls(missing), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])[1] === :exception
+        @test _ql_call(gd, ld, "\$qlf_is_compatible", v1()) === :exception
+        @test _ql_call(gd, ld, "\$qlf_versions", _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:6]) === :exception
+        # a bound answer position is unified, not overwritten: the right values succeed, a wrong one fails
+        right = _QL[_qls(real), lk_gnd(_QL, 72), lk_gnd(_QL, 68), lk_gnd(_QL, 72), lk_gnd(_QL, 3857584396), lk_gnd(_QL, 3857584396)]
+        @test _ql_call(gd, ld, "\$qlf_versions", right) === :ok
+        for k in 2:6
+            wrong = copy(right)
+            wrong[k] = lk_gnd(_QL, 1)
+            @test _ql_call(gd, ld, "\$qlf_versions", wrong) === :fail
+        end
     end
     for (n, ar) in refused
         gd2 = LK.PL_global_data{_QL}()
