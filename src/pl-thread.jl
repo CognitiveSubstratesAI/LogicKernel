@@ -634,15 +634,7 @@ function interactor_post_answer_nolock(
         PL_erase(er)
         return ok
     elseif rc == YIELD_ENGINE_YIELD                 # engine_yield/1
-        # DIVERGES (TH1): `PL_yielded` (pl-wam.c:3331) and the resumable yield of the VM (I_YIELD, pl-vmi.c:2410-2448; resume,
-        # pl-wam.c:3870-3910) are the VM step's, an engine-core step of their own; until it lands `rc == 256` cannot occur and a
-        # query that returns it is refused by name.
-        info.has_tid = false
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :engine_yield), "PL_yielded (pl-wam.c:3331), the VM yield", "TH1"
-            )
-        )
+        r = PL_record(eld, PL_yielded(eld, q))      # the query stays open: the next call resumes after the yield
     else
         info.has_tid = false
         ex = PL_new_term_ref(ld)
