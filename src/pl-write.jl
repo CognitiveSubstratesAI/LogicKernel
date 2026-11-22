@@ -2653,9 +2653,21 @@ function pl_put_token2_va(
     return put_token(ld, A1, A2) ? FTRUE : FFALSE
 end
 
+# PORT: pl-write.c needs_quotes as pl_needs_quotes1_va
+# (PRED_IMPL("$needs_quotes", 1, needs_quotes, 0))
+# DIVERGES: the atom is the term's atom value (`PL_get_atom_ex`); `unquoted_atom` takes it as that value.
+"`'\$needs_quotes'(+Atom)`: true when `quoted(true)` would write `Atom` between single quotes (pl-write.c)."
+function pl_needs_quotes1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    a = PL_get_atom_ex(ld, PL__t0)
+    a === nothing && return FFALSE                          # if ( !PL_get_atom_ex(A1, &a) ) return false
+    return unquoted_atom(a) ? FFALSE : FTRUE                # return !unquoted_atom(a)
+end
+
 # PORT: pl-write.c BeginPredDefs as PL_predicates_from_write
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order
-# (write:3423-3432). Left to a later step: `$put_quoted/4`, `$needs_quotes/1`.
+# (write:3423-3432). Left to a later step: `$put_quoted/4`. `$needs_quotes/1` since DICT-REC.
 "pl-write.c's registration table (`BeginPredDefs(write)`): the ported entries."
 const PL_predicates_from_write = (
     PL_extension(
@@ -2667,5 +2679,6 @@ const PL_predicates_from_write = (
     PL_extension("nl", 0, pl_nl0_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("nl", 1, pl_nl1_va, PL_FA_ISO | PL_FA_VARARGS),
     PL_extension("\$put_token", 2, pl_put_token2_va, PL_FA_VARARGS),
+    PL_extension("\$needs_quotes", 1, pl_needs_quotes1_va, PL_FA_VARARGS),
     PL_extension("write_size", 4, pl_write_size4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS)
 )

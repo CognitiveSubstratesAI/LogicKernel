@@ -2855,6 +2855,7 @@ function _manifest_index(T)
             Tuple{LD, Int64, Int64, LK.foreign_context{T}},
             false
         ),
+        (LK.pl_needs_quotes1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # TAB1-min — '$tbl_trienode'/1, '$tbl_is_trienode'/1 (src/pl-tabling.jl) and '$c_wrap_predicate'/5 (src/pl-wrap.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
