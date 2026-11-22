@@ -2737,6 +2737,106 @@ end
 PL_unify_term(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, args...) where {T} =
     PL_unify_termv(gd, ld, t, Any[args...])
 
+# ── FLI-API group G (pl-fli.c): blobs ─────────────────────────────────────────────────────────────
+
+# ORIGINAL (FLI-API): what `PL_unify_blob` and `PL_put_blob` check before `lookupBlob`, for the blob types a
+# term of the interface can name. The text blob type `text_atom` (an ISO Latin-1 text atom) is a plain text atom:
+# its payload cannot hold the character 0 (a symbol cannot, as in `PL_new_atom_mbchars`). Any other type with
+# `PL_BLOB_TEXT` (a user type whose text is not the kernel's, `ucs_atom` included) and `reserved_symbol` (made by
+# its own constructor, `mk_reserved_symbol`) are refused by name, owner FLI1.
+"Refuse the blob types the interface cannot give a symbol; a 0 byte in a text atom's payload raises (ORIGINAL)."
+function _fli_blob_check(type::PL_blob_t, blob::AbstractVector{UInt8}, len::Int)::Nothing
+    if type === reserved_symbol
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "a blob of the type reserved_symbol",
+                "FLI1: a reserved symbol is made by mk_reserved_symbol"
+            )
+        )
+    end
+    if (type.flags & PL_BLOB_TEXT) != 0
+        if type !== text_atom
+            throw(
+                NotPortedError{Nothing}(
+                    nothing, "a blob of the text type $(type.name)",
+                    "FLI1: only the text atom of ISO Latin-1 has a symbol"
+                )
+            )
+        end
+        any(iszero, view(blob, 1:len)) &&
+            throw(AtomNotRepresentableError(UInt32[blob[j] for j in 1:len]))
+    end
+    return nothing
+end
+
+# ORIGINAL (FLI-API): the interface symbol of the blob atom `w`: the one the database's store holds, else a text
+# atom's symbol (made of its characters, as `_record_atom_symbol!` makes it), else the blob term of the atom
+# (`_blob_term!`: the handle is the word, the rank the type's registration rank).
+"The interface symbol of the atom word `w` of a blob type, recorded in `ld.atom_symbols` where it is new."
+function _fli_blob_symbol!(ld::PL_local_data{T}, w::word)::T where {T}
+    v = atomSymbol(ld.atom_symbols, indexAtom(w))
+    v === nothing || return v
+    x = atomValue(ld.atoms, w)
+    if (x.type.flags & PL_BLOB_TEXT) != 0
+        return _record_atom_symbol!(ld, w, get_atom_ptr_text(x)::PL_chars_t)
+    end
+    return _blob_term!(ld.atoms, ld.atom_symbols, T, w)
+end
+
+# PORT: pl-fli.c PL_unify_blob
+# DIVERGES: the local data is an argument; the payload is a byte vector and `len` its length (a `PL_BLOB_NOCOPY` type
+# keeps the vector itself); the blob's atom is its interface symbol (`_fli_blob_symbol!`). The blob types
+# `_fli_blob_check` names are refused or raise before `lookupBlob`. Left out: `PL_unregister_atom` (the kernel keeps its
+# atoms: owner D-0634 D5) and the `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Unify the term `t` references with the blob of `len` bytes of `blob` and the blob type `type`, made if new (pl-fli.c)."
+function PL_unify_blob(
+    ld::PL_local_data{T}, t::term_t, blob::AbstractVector{UInt8}, len::Int, type::PL_blob_t
+)::Bool where {T}
+    _fli_blob_check(type, blob, len)
+    w, _ = lookupBlob(ld.atoms, blob, len, type)            # atom_t a = lookupBlob(blob, len, type, &new)
+    return PL_unify_atom(ld, t, _fli_blob_symbol!(ld, w))   # rval = PL_unify_atom(t, a)
+end
+
+# PORT: pl-fli.c PL_put_blob
+# DIVERGES: as `PL_unify_blob`; the `valid_user_term_t` check is left out (`O_VALIDATE_API`, owner FLI1).
+"Make the term reference `t` hold the blob of `len` bytes of `blob` and the blob type `type`; true if it was made (pl-fli.c)."
+function PL_put_blob(
+    ld::PL_local_data{T}, t::term_t, blob::AbstractVector{UInt8}, len::Int, type::PL_blob_t
+)::Bool where {T}
+    _fli_blob_check(type, blob, len)
+    w, new = lookupBlob(ld.atoms, blob, len, type)          # atom_t a = lookupBlob(blob, len, type, &new)
+    PL_put_atom(ld, t, _fli_blob_symbol!(ld, w))            # setHandle(t, a)
+    return new
+end
+
+# PORT: pl-fli.c PL_get_blob
+# DIVERGES: `nothing` for upstream's false; else the triple `(blob, len, type)` upstream writes through its three
+# optional pointers: the atom's own name vector, its length in bytes and its blob type. The `valid_term_t` check of the
+# API_STUB is left out (`O_VALIDATE_API`, owner FLI1).
+"The atom `t` references as `(name, length, type)`, `nothing` where it holds no atom (pl-fli.c)."
+function PL_get_blob(
+    ld::PL_local_data, t::term_t
+)::Union{Nothing, Tuple{Vector{UInt8}, Int, PL_blob_t}}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    (k == DU_WORD && isAtomW(w)) || return nothing          # isAtom(w)
+    a = atomValue(ld.atoms, w)
+    return (a.name, a.length, a.type)
+end
+
+# PORT: pl-fli.c PL_blob_data
+# DIVERGES: the local data is an argument and the atom is its interface symbol; the answer is the triple
+# `(data, len, type)` upstream returns and writes through its two optional pointers: for a slot that holds no atom
+# (`ATOM_TYPE_IS_INVALID`) the data and the type are `nothing` and the length the slot's. No `valid_atom_t` check
+# (`O_VALIDATE_API`, owner FLI1).
+"The `(data, length, type)` of the blob atom `a` (pl-fli.c); `(nothing, length, nothing)` for an invalid atom."
+function PL_blob_data(
+    ld::PL_local_data{T}, a::T
+)::Tuple{Union{Nothing, Vector{UInt8}}, Int, Union{Nothing, PL_blob_t}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))             # Atom x = atomValue(a)
+    x.type === ATOM_TYPE_INVALID && return (nothing, x.length, nothing)   # ATOM_TYPE_IS_INVALID(x->type)
+    return (x.name, x.length, x.type)
+end
+
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
 # DIVERGES: left out: the `GC_DEBUG`/`O_DEBUG`/ASAN line that keeps the memory reclaim (a build option) and the
