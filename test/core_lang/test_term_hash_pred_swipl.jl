@@ -1,7 +1,7 @@
 # ORIGINAL: a LIVE differential of term_hash/2 (pl-termhash.c:306-319), term_hash/4 (pl-prims.c termHashValue4) and
 # variant_hash/2, variant_sha1/2 (pl-termhash.c:659-692) against swipl at the pin (18168e62, 10.1.20); audit D-0894. Rows:
 #   th01-th50 term_hash/2 (atoms, every number class, strings, compounds, non-ground: the key stays unbound), tq01-tq42
-#   term_hash/4 (depth, range, every error), vh01-vh24 variant_hash/2, vs01-vs26 variant_sha1/2; cy01-cy06 a CYCLIC argument.
+#   term_hash/4 (depth, range, every error), vh01-vh24 variant_hash/2, vs01-vs26 variant_sha1/2; cy01-cy19 a CYCLIC argument (cy02, cy03, cy06-cy19: variant_hash/2 and variant_sha1/2 hash its canonical form with the prefix `C`).
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_bootpred3_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pinned swipl, run twice, byte-identical output); with `swipl` on PATH the
@@ -9,9 +9,10 @@
 #     40 hex digits (src/pl-termhash.jl header, DIVERGES 1).
 #   * No row hashes a string with a code above 0xff by term_hash (swipl leaves that undefined, the kernel hashes its UTF-8
 #     bytes); variant_hash and variant_sha1 of one (rows vh20, vs04) are swipl's UCS-4 bytes.
-#   * KNOWN DIFFERENCES (`_TH_CY_KNOWN`): swipl answers a CYCLIC argument (rows cy01-cy04, cy06), the kernel refuses it by name
-#     (`NotPortedError`, owner R2: docs/r2_owners.tsv); each runs in a FRESH database and its pin is swipl's answer. Row cy05
-#     (term_hash/4 with depth 0 never descends) is the kernel's too. A known row stops being one when its kernel line equals swipl's.
+#   * KNOWN DIFFERENCES (`_TH_CY_KNOWN`): swipl answers term_hash/2 and term_hash/4 of a CYCLIC argument (rows cy01, cy04), the kernel
+#     refuses it by name (`NotPortedError`, owner R2: docs/r2_owners.tsv); each cyclic row runs in a FRESH database and its pin is
+#     swipl's answer. Row cy05 (term_hash/4 with depth 0 never descends) is the kernel's too. A known row stops being one when its
+#     kernel line equals swipl's. The variant digests of a cyclic argument (cy02, cy03, cy06-cy19) are swipl's.
 #   * Row vs16: a bare attributed variable to variant_sha1/2 is swipl's `instantiation_error` (type_error on an unbound term).
 using Test, LogicKernel
 const LK = LogicKernel
@@ -251,7 +252,20 @@ const _TH_CYCLIC = [
     ("cy03", raw"""X = [a|X], variant_sha1(X, R)"""),
     ("cy04", raw"""X = f(X), thx_h4(X, 3, 100000, R)"""),
     ("cy05", raw"""X = [a|X], thx_h4(X, 0, 100, R)"""),
-    ("cy06", raw"""X = [a|X], Y = [a,a|Y], variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)""")
+    ("cy06", raw"""X = [a|X], Y = [a,a|Y], variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""),
+    ("cy07", raw"""X = f(X,Y), variant_hash(X, R)"""),
+    ("cy08", raw"""X = f(X,Y), variant_sha1(X, R)"""),
+    ("cy09", raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_hash(F, H1), variant_hash(X, H2), thx_same(H1, H2, R)"""),
+    ("cy10", raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_sha1(F, H1), variant_sha1(X, H2), thx_same(H1, H2, R)"""),
+    ("cy11", raw"""put_attr(Z, m, 1), X = f(X,Z), variant_hash(X, R)"""),
+    ("cy12", raw"""put_attr(Z, m, 1), X = f(X,Z), catch(variant_sha1(X, _), error(type_error(T, _), _), true), R = T"""),
+    ("cy13", raw"""X = f(X), Y = f(f(Y)), variant_sha1(X, H1), variant_sha1(Y, H2), thx_same(H1, H2, R)"""),
+    ("cy14", raw"""X = [a,b|X], variant_sha1(X, R)"""),
+    ("cy15", raw"""X = [b,a|X], variant_sha1(X, R)"""),
+    ("cy16", raw"""X = [1,"s",2.5|X], variant_sha1(X, R)"""),
+    ("cy17", raw"""X = g(A,B,A,X), variant_hash(X, R)"""),
+    ("cy18", raw"""X = g(A,B,A,X), Y = g(C,D,D,Y), variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""),
+    ("cy19", raw"""X = [a|X], variant_sha1(X, foo), R = yes""")
 ]
 
 # the driver's whole output, one line per case after `ok`: the PINNED swipl at 18168e62, two runs, byte-identical
@@ -407,17 +421,27 @@ const _TH_CY_PINNED = [
     "t_cy03 c[116,95,99,121,48,51]/1(a[101,97,51,56,48,97,55,50,48,48,98,100,48,57,48,55,55,53,49,50,99,49,49,51,48,100,51,48,52,57,53,48,99,55,49,99,53,102,98,52])",
     "t_cy04 c[116,95,99,121,48,52]/1(i56512)",
     "t_cy05 c[116,95,99,121,48,53]/1(i26)",
-    "t_cy06 c[116,95,99,121,48,54]/1(a[115,97,109,101])"
+    "t_cy06 c[116,95,99,121,48,54]/1(a[115,97,109,101])",
+    "t_cy07 c[116,95,99,121,48,55]/1(i6143887)",
+    "t_cy08 c[116,95,99,121,48,56]/1(a[49,51,98,100,48,50,57,55,100,49,56,55,101,53,52,53,48,102,50,97,97,53,98,50,48,52,50,100,53,48,100,97,55,50,101,53,102,49,52,57])",
+    "t_cy09 c[116,95,99,121,48,57]/1(a[100,105,102,102])",
+    "t_cy10 c[116,95,99,121,49,48]/1(a[100,105,102,102])",
+    "t_cy11 c[116,95,99,121,49,49]/1(i6143887)",
+    "t_cy12 c[116,95,99,121,49,50]/1(a[102,114,101,101,95,111,102,95,97,116,116,118,97,114])",
+    "t_cy13 c[116,95,99,121,49,51]/1(a[115,97,109,101])",
+    "t_cy14 c[116,95,99,121,49,52]/1(a[97,98,57,102,50,52,55,50,99,99,52,54,48,51,53,57,100,100,51,52,54,53,97,53,99,57,97,56,102,51,57,98,54,56,50,53,50,48,99,102])",
+    "t_cy15 c[116,95,99,121,49,53]/1(a[99,53,48,57,49,51,99,53,49,51,100,98,100,48,54,48,55,50,55,51,48,99,101,99,55,102,101,102,54,52,49,101,55,50,50,48,102,97,57,57])",
+    "t_cy16 c[116,95,99,121,49,54]/1(a[102,50,97,101,56,48,97,54,97,53,54,55,55,99,102,51,54,102,98,56,102,53,49,101,57,101,102,97,50,51,51,57,54,48,54,100,56,99,97,100])",
+    "t_cy17 c[116,95,99,121,49,55]/1(i3394204)",
+    "t_cy18 c[116,95,99,121,49,56]/1(a[100,105,102,102])",
+    "t_cy19"
 ]
 
-# KNOWN DIFFERENCE rows: the id of the driver line -> the kernel's exact line (swipl's is the pin above): the cyclic argument is
-# refused by name (src/pl-termhash.jl `_term_hash_arg`, `_variant_arg`; docs/r2_owners.tsv), where swipl answers (pins above)
+# KNOWN DIFFERENCE rows: the id of the driver line -> the kernel's exact line (swipl's is the pin above): the cyclic argument of
+# term_hash/2 and term_hash/4 is refused by name (src/pl-termhash.jl `_term_hash_arg`; docs/r2_owners.tsv), where swipl answers
 const _TH_CY_KNOWN = Dict{String, String}(
     "t_cy01" => "t_cy01 notported",
-    "t_cy02" => "t_cy02 notported",
-    "t_cy03" => "t_cy03 notported",
-    "t_cy04" => "t_cy04 notported",
-    "t_cy06" => "t_cy06 notported"
+    "t_cy04" => "t_cy04 notported"
 )
 
 function _th_file(cs)::Tuple{String, Vector{String}}
@@ -492,6 +516,7 @@ function _th_atom(l::String)
     return m === nothing ? nothing : String(Char.(parse.(Int, split(m[1], ','))))
 end
 _th_pin(id::String) = only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", _TH_PINNED))
+_th_cypin(id::String) = only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", _TH_CY_PINNED))
 
 @testset "term_hash/2, term_hash/4, variant_hash/2, variant_sha1/2 as swipl's (th, tq, vh, vs)" begin
     f, names = _th_file(_TH_CASES)
@@ -503,7 +528,7 @@ _th_pin(id::String) = only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", 
     end
 end
 
-@testset "a CYCLIC argument: row cy05 is swipl's; the others are refused by name (known differences)" begin
+@testset "a CYCLIC argument: swipl's answer, except term_hash of one, refused by name (known differences cy01, cy04)" begin
     for (i, (id, g)) in enumerate(_TH_CYCLIC)
         f, names = _th_file([(id, g)])
         kl = _th_kernel(f, names)
@@ -516,7 +541,7 @@ end
 
 @testset "KNOWN DIFFERENCES: the kernel's pinned answer is not swipl's" begin
     @test length(_TH_CY_PINNED) == length(_TH_CYCLIC) + 1 && _TH_CY_PINNED[1] == "ok"
-    @test sort(collect(keys(_TH_CY_KNOWN))) == ["t_cy01", "t_cy02", "t_cy03", "t_cy04", "t_cy06"]
+    @test sort(collect(keys(_TH_CY_KNOWN))) == ["t_cy01", "t_cy04"]
     for (id, line) in _TH_CY_KNOWN
         pin = filter(l -> first(split(l, ' ')) == id, _TH_CY_PINNED)
         @test length(pin) == 1
@@ -591,9 +616,22 @@ end
     @test occursin(_th_codes("free_of_attvar"), _th_pin("vs17"))               # an attributed variable in the term
     @test occursin(_th_codes("instantiation_error"), _th_pin("vs16"))          # a bare one: type_error on an unbound term
     # the cyclic pins are answers: integers, a digest, `same`
-    @test all(i -> _th_int(_TH_CY_PINNED[i]) !== nothing, (2, 3, 5, 6))
+    @test all(i -> _th_int(_TH_CY_PINNED[i]) !== nothing, (2, 3, 5, 6, 8, 12, 18))
     @test length(_th_atom(_TH_CY_PINNED[4])) == 40
     @test _th_atom(_TH_CY_PINNED[7]) == "same"
+    # the digests of a cyclic term: 40 hex digits, a 24-bit hash; the prefix `C` makes it differ from the digest of its own
+    # canonical form (cy09, cy10); the same form, the same digest (cy13); the order and the sharing are read (cy14/cy15, cy18)
+    for id in ("cy08", "cy14", "cy15", "cy16")
+        a = _th_atom(_th_pin(id))
+        @test a !== nothing && length(a) == 40 && all(c -> c in "0123456789abcdef", a)
+    end
+    @test _th_int(_th_cypin("cy07")) == _th_int(_th_cypin("cy11")) && 0 <= _th_int(_th_cypin("cy07")) < 2^24   # an attvar is a variable
+    @test 0 <= _th_int(_th_cypin("cy17")) < 2^24 && _th_int(_th_cypin("cy17")) != _th_int(_th_cypin("cy07"))
+    @test _th_atom(_th_cypin("cy09")) == "diff" && _th_atom(_th_cypin("cy10")) == "diff" && _th_atom(_th_cypin("cy18")) == "diff"
+    @test _th_atom(_th_cypin("cy13")) == "same"
+    @test _th_atom(_th_cypin("cy14")) != _th_atom(_th_cypin("cy15"))
+    @test _th_atom(_th_cypin("cy12")) == "free_of_attvar"                         # variant_sha1 of an attributed variable in a cyclic term
+    @test _th_cypin("cy19") == "t_cy19"                                           # a bound wrong digest fails
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
