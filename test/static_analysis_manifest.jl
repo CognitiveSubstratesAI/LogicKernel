@@ -4851,6 +4851,9 @@ const _MANIFEST_G1GC1_FREE = (
     (LK.pl_gc_status_t, Tuple{}, false),
     (LK.pl_shift_status_t, Tuple{}, false),
     (LK.gc_stack_policy, Tuple{Bool}, false),
+    # wakeup_state.outofstack is a one-byte code (G1 alloc fix): the two converters of saveWakeup/restoreWakeup
+    (LK._stack_code, Tuple{Union{Nothing, Symbol}}, false),
+    (LK._stack_name, Tuple{UInt8}, false),
     (LK.ld_gc, Tuple{}, false),
     (LK.STAT_NEXT_INDEX, Tuple{Int}, true),
     (LK.STAT_PREV_INDEX, Tuple{Int}, true),
