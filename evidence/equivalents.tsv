@@ -32,5 +32,3 @@ CT1c-A7	D-0919	src/os/pl-ctype-pred.jl:568
 P3-5	D-0919	src/pl-prims.jl:4841
 CONT1-R3	D-0920	src/pl-wam.jl:3345-3351
 TB4-D6	D-0705	src/pl-tabling.jl
-LD6-2	pending	declared, acceptance pending (LANED6 LD6-2): src/os/pl-stream.jl Ssize: Scontrol_getsize answers every seekable function set (memory file: here; Julia IO that is not a popen pipe: its size), so the seek-to-end measure is reached only by a null stream, whose seek to the end fails; the skipped branch sets ESPIPE instead of EINVAL and the same S__seterror flag, and the one visible answer, io_error(write, S), does not carry errno
-LD6-3	pending	declared, acceptance pending (LANED6 LD6-3): src/os/pl-stream.jl Ssize: the seek-to-end block is reached only by a null stream (see LD6-2); its Sseek64(s, here, SIO_SEEK_SET) repositions to the position the stream already holds (here = Stell64: byteno), so skipping it changes nothing visible
