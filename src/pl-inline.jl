@@ -562,6 +562,32 @@ function _untrail!(ld::PL_local_data, e::word)::Nothing
     return nothing
 end
 
+# ORIGINAL: push entry `e` onto the trail (upstream's `(tTop++)->address = e`); every engine push goes through it, except the
+# collector's sentinel (src/pl-gctrail.jl), which upstream writes into room the trail already has.
+# DIVERGES (G1, audit D-0966 (2)): upstream's trail is a stack of fixed size that `grow_stacks` shifts when it is full, ticking
+# `shift_status.trail_shifts` (pl-gc.c:5467-5473 at 18168e62). Here the trail is a Julia vector with no capacity of its own, so its
+# size is MODELLED (`ld.trail_size`, TRAIL_INITIAL at `allocStacks!`): only so the counter ticks and the trail-growth loops that
+# wait for it (test_gc_frames' tshift rows) end. One compare on the binding path; the growth is out of line.
+"Push entry `e` onto the trail; past the modelled trail size the trail is counted as shifted (`_growTrail!`)."
+@inline function _trail_push!(ld::PL_local_data, e::UInt64)::Nothing
+    push!(ld.trail, e)                                  # (tTop++)->address = e
+    length(ld.trail) > ld.trail_size && _growTrail!(ld)
+    return nothing
+end
+
+# ORIGINAL: the trail's shift (DIVERGES: see `_trail_push!`): the modelled size doubles until it holds the entries, as
+# `nextStackSize` takes the next power of two above the size and the need (pl-gc.c:5270-5290), and the shift is counted (pl-gc.c:5472 at 18168e62).
+"Grow the modelled trail size to hold the trail's entries and count a trail shift (pl-gc.c `grow_stacks`' trail part)."
+@noinline function _growTrail!(ld::PL_local_data)::Nothing
+    size = max(ld.trail_size, 1)
+    while size < length(ld.trail)
+        size *= 2                                       # tsize = stack_nrealloc(tb, tsize)
+    end
+    ld.trail_size = size
+    ld.shift_status.trail_shifts += 1                   # LD->shift_status.trail_shifts++
+    return nothing
+end
+
 # ORIGINAL: drop the entries above `n` WITHOUT undoing them (a frozen ball's bindings,
 # `copy_exception!`).
 "Truncate the trail to `n` entries, leaving their bindings in place."

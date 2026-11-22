@@ -138,7 +138,7 @@ end
 "Bind the unbound cell at global position `p` to word `c`, trailed below `mark_bar` (pl-attvar.h)."
 @inline function _bind_const!(ld::PL_local_data, p::Int, c::word)::Nothing
     ld.gstack[p] = c                                # *p = (c)
-    p <= ld.mark_bar && push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # trail_ptr(p)
+    p <= ld.mark_bar && _trail_push!(ld, _trail_addr(p, TRAIL_GLOBAL))  # trail_ptr(p)
     return nothing
 end
 
@@ -344,7 +344,7 @@ end
 "While call_residue_vars/2 runs, trail the creation of the attributed variable at global position `p` (pl-attvar.c)."
 @inline function trail_new_attvar(ld::PL_local_data, p::Int)::Nothing
     if ld.attvar_call_residue_vars_count != 0              # if ( LD->attvar.call_residue_vars_count )
-        push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))       #   tTop->address = p; tTop++
+        _trail_push!(ld, _trail_addr(p, TRAIL_GLOBAL))      #   tTop->address = p; tTop++
     end
     return nothing
 end

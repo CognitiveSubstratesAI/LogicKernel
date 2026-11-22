@@ -841,6 +841,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     gc_safe_hits::Vector{Symbol}                                # ORIGINAL: the sites at which the hook fired while `gc_force` (G1-2)
     gc::ld_gc                                                   # gc: the stack collector's state (G1-1)
     shift_status::pl_shift_status_t                             # shift_status: the shifter's counters (G1-1)
+    trail_size::Int                                             # ORIGINAL stacks.trail's size in entries, MODELLED: the trail vector has no capacity; only `_growTrail!`'s shift count reads it (G1, D-0966)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -972,7 +973,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         false,                                  # gc_force: off (G1-2)
         Symbol[],                               # gc_safe_hits: none (G1-2)
         ld_gc(),                                # gc: nothing collected, policies at init_stack's (G1-1)
-        pl_shift_status_t()                     # shift_status: nothing shifted (G1-1)
+        pl_shift_status_t(),                    # shift_status: nothing shifted (G1-1)
+        0                                       # trail_size: set by allocStacks! (G1, D-0966)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
@@ -1023,6 +1025,10 @@ const LOCAL_INITIAL = 4096
 # setup:1599/1605 `minglobal = 8*SIZEOF_WORD K`, `iglobal = nextStackSizeAbove(minglobal-1)`: 64 KB, here in words.
 "The words of a new global stack (pl-setup.c `allocStacks`'s `iglobal`): a growth past it is a shift (G1)."
 const GLOBAL_INITIAL = 8192
+
+# setup:1601/1604 `mintrail = 4*SIZEOF_WORD K`, `itrail = nextStackSizeAbove(mintrail-1)`: 32 KB, here in entries.
+"The entries of a new trail (pl-setup.c `allocStacks`'s `itrail`): the modelled `trail_size` starts here (G1)."
+const TRAIL_INITIAL = 4096
 
 # The `stack_limit` flag's default, 1 GiB (swipl 10.1.16: `1073741824`), here in positions.
 "The default `stacks_limit`, in positions: `stack_limit`'s default of 1 GiB, in words."

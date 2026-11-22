@@ -47,6 +47,7 @@ function allocStacks!(ld::PL_local_data{T})::Bool where {T}
     ld.global_spare = ld.global_def_spare = GLOBAL_SPARE    # init_stack(global, …, 512*SIZEOF_WORD)
     init_stack!(ld, LOCAL_INITIAL, LOCAL_SPARE)
     ld.trail_spare = ld.trail_def_spare = TRAIL_SPARE       # init_stack(trail, …, 256*SIZEOF_WORD)
+    ld.trail_size = TRAIL_INITIAL                           # itrail = nextStackSizeAbove(mintrail-1) (pl-setup.c:1601/1604; G1: a modelled size, `_growTrail!`)
     return true
 end
 
