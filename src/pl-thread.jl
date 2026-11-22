@@ -347,7 +347,7 @@ function _create_engine(
     gd.thread.highest_id += 1
     info = PL_thread_info{T}(
         gd.thread.highest_id, 1, true, true, false, false, stack_limit, PL_THREAD_RUNNING,
-        eld, nothing, :user
+        eld, nothing, :user, nothing
     )                                               # detached: `attrs = {0}` has no PL_THREAD_NOT_DETACHED (pl-thread.c:6967, 4101)
     push!(gd.thread.infos, info)                    # index = pl_tid
     eld.thread_info = info
@@ -906,10 +906,10 @@ end
 
 # PORT: pl-thread.c unify_thread_status
 # (pl-thread.c:2698-2765 at the pin; `unify_engine_status` :2690-2696)
-# DIVERGES: the main thread is a record `nothing` and is running; the lock (`lock`) has no counterpart. The statuses `exited`,
-# `exception` and `nomem` need `info->return_value` (a thread's result; no thread here ends with one): refused by name, no record of an
-# engine reaches them (a destroyed engine's slot is dropped).
-"Unify `status` with the status `stat` of the thread `info`: `running`, `suspended` (an engine not entered), `true`, `false` (pl-thread.c)."
+# DIVERGES: the main thread is a record `nothing` and is running; the lock (`lock`) has no counterpart. `info.return_value` is the
+# thread's recorded result; no engine ends with a status that reads it (a finished engine's slot is dropped), so the statuses `exited`,
+# `exception` and `nomem` are reached only with a record whose status was set by hand (the white-box rows of the engines test).
+"Unify `status` with the status `stat` of the thread `info`: `running`, `suspended` (an engine not entered), `exited(T)`, `true`, `false`, `exception(T)` (pl-thread.c)."
 function unify_thread_status(
     gd::PL_global_data{T}, ld::PL_local_data{T}, status::term_t,
     info::Union{Nothing, PL_thread_info{T}}, stat::Int
@@ -919,18 +919,34 @@ function unify_thread_status(
             return PL_unify_atom(ld, status, mk_sym(T, :suspended))    # unify_engine_status
         end
         return PL_unify_atom(ld, status, mk_sym(T, :running))
+    elseif stat == PL_THREAD_EXITED || stat == PL_THREAD_EXCEPTION
+        tmp = PL_new_term_ref(ld)
+        rc = true
+        rv = info === nothing ? nothing : info.return_value
+        if rv !== nothing
+            rc = PL_recorded(ld, rv, tmp)
+        end
+        rc || return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+        a1 = PL_new_term_ref(ld)                            # PL_unify_term(status, PL_FUNCTOR, f, PL_TERM, tmp)
+        return PL_unify_functor(
+                ld, status, mk_sym(T, stat == PL_THREAD_EXITED ? :exited : :exception), 1
+            ) && _PL_get_arg(ld, 1, status, a1) && PL_unify(ld, a1, tmp)
     elseif stat == PL_THREAD_SUCCEEDED
         return PL_unify_atom(ld, status, mk_sym(T, :true))
     elseif stat == PL_THREAD_FAILED
         return PL_unify_atom(ld, status, mk_sym(T, :false))
-    elseif stat == PL_THREAD_EXITED || stat == PL_THREAD_EXCEPTION || stat == PL_THREAD_NOMEM
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :thread_status),
-                "thread status exited(T), exception(T), exception(error(resource_error(memory), _)) (info->return_value)",
-                "TH1"
-            )
-        )
+    elseif stat == PL_THREAD_NOMEM
+        # exception(error(resource_error(memory), _))
+        a1 = PL_new_term_ref(ld)
+        a2 = PL_new_term_ref(ld)
+        a3 = PL_new_term_ref(ld)
+        return PL_unify_functor(ld, status, mk_sym(T, :exception), 1) &&
+               _PL_get_arg(ld, 1, status, a1) &&
+               PL_unify_functor(ld, a1, mk_sym(T, :error), 2) &&
+               _PL_get_arg(ld, 1, a1, a2) &&
+               PL_unify_functor(ld, a2, mk_sym(T, :resource_error), 1) &&
+               _PL_get_arg(ld, 1, a2, a3) &&
+               PL_unify_atom(ld, a3, mk_sym(T, :memory))
     end
     return false                                            # default: can happen in current_thread/2
 end
@@ -1027,34 +1043,65 @@ function thread_thread_property(
     return PL_unify_atom(ld, prop, alias === nothing ? th.interactor_thread : alias)
 end
 
+# PORT: pl-thread.c system_thread_id
+# DIVERGES: the kernel runs on the OS threads Julia gives it and has no thread record of its own: the identifier is the calling
+# thread's (`gettid`, as `PID_IDENTIFIES_THREAD` builds answer), on Linux; elsewhere -1, upstream's "cannot tell" (the property then fails).
+"The operating system's id of the calling thread, -1 when the kernel cannot tell (pl-thread.c)."
+function system_thread_id()::Int
+    Sys.islinux() || return -1
+    return Int(ccall(:gettid, Cint, ()))
+end
+
 # PORT: pl-thread.c thread_tid_property
-# DIVERGES: refused by name: it is the id of the OS thread (`system_thread_id(info)`), and the kernel runs one OS thread.
-"`system_thread_id(Id)`: the operating system's id of the thread (pl-thread.c): refused by name."
+# DIVERGES: an engine runs on the thread that entered it, so its id is that of the calling thread (upstream records it when the engine is
+# entered: `set_system_thread_id`, activate_interactor); the main thread (no record) always has one, as upstream's `has_tid` of main.
+"`system_thread_id(Id)`: the operating system's id of the thread, while it is entered (pl-thread.c)."
 function thread_tid_property(
     ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
 )::Bool where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :system_thread_id),
-            "thread_property system_thread_id(Id) (pl-thread.c thread_tid_property, system_thread_id)",
-            "TH1"
-        )
-    )
+    if info === nothing || info.has_tid
+        tid = system_thread_id()
+        tid != -1 && return PL_unify_integer(ld, prop, tid)
+    end
+    return false
+end
+
+# PORT: pl-thread.c sizeof_thread
+# DIVERGES: the kernel's own count in bytes, not upstream's (the C structs `sizeof(*info)` and `sizeof(*ld)` have no Julia value: the
+# sizes of the record's fields, 8 bytes a word); the global, local and trail stacks and their spares as the kernel measures them
+# (`_size_stack`). NOT counted, named: the argument stack (the kernel has none), the message queue (no queue exists), the thread-local
+# definitions (no per-thread clause vector, src/pl-proc.jl `new_ldef_vector` note) and the tabling node pool. The main thread has no record
+# or kept local data: `ld` counts when it IS the main thread's, else 0 (upstream: `info->thread_data`, which main has).
+"The bytes the thread `info` uses, 0 when it is not running (pl-thread.c)."
+function sizeof_thread(
+    ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}
+)::Int where {T}
+    size = sizeof(PL_thread_info{T})
+    tld = nothing
+    if info === nothing
+        ld.thread_info === nothing && (tld = ld)
+    else
+        info.status != PL_THREAD_RUNNING && return 0
+        tld = info.thread_data
+    end
+    if tld !== nothing
+        eld = tld::PL_local_data{T}
+        size += sizeof(PL_local_data{T})
+        size += _size_stack(eld, :global) + 8 * eld.global_spare
+        size += _size_stack(eld, :local) + 8 * eld.local_spare
+        size += _size_stack(eld, :trail) + 8 * eld.trail_spare
+    end
+    return size
 end
 
 # PORT: pl-thread.c thread_size_property
-# DIVERGES: refused by name: it sums the sizes of the stacks and tables of the thread (`sizeof_thread`).
-"`size(Bytes)`: the memory the thread uses (pl-thread.c): refused by name."
+"`size(Bytes)`: the memory the thread uses, when it is running (pl-thread.c)."
 function thread_size_property(
     ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}}, prop::term_t
 )::Bool where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :size),
-            "thread_property size(Size) (pl-thread.c thread_size_property, sizeof_thread)",
-            "TH1"
-        )
-    )
+    size = sizeof_thread(ld, info)
+    size != 0 && return PL_unify_int64(ld, prop, size)
+    return false
 end
 
 # PORT: pl-thread.c thread_class_property
@@ -1116,8 +1163,7 @@ end
 
 # PORT: pl-thread.c thread_property
 # (PRED_IMPL("thread_property", 2, thread_property, PL_FA_NONDETERMINISTIC), pl-thread.c:3404-3512 at the pin; NDET|PL_FA_ISO, :8849)
-# DIVERGES: see the section head (the state is the retry integer); the main thread is a record `nothing`; the properties
-# `system_thread_id` and `size` are refused by name, so an enumeration of all properties of a thread raises at them.
+# DIVERGES: see the section head (the state is the retry integer); the main thread is a record `nothing`.
 "`thread_property(?Thread, ?Property)`: the properties of the threads and engines, on backtracking (pl-thread.c)."
 function pl_thread_property(
     ld::PL_local_data{T}, thread::term_t, property::term_t, ctx::control_t{T}
