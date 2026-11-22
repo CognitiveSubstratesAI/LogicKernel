@@ -2396,6 +2396,15 @@ function _manifest_index(T)
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # WRAPPERS-2 — pl-srcfile.c: $set_source_files/1, $clause_from_source/4, $flush_predicate/1, $flushed_predicate/1
+        (LK.flush_procedure!, Tuple{LK.SourceFile{T}, LK.Procedure{T}}, false),
+        (LK.flush_predicate, Tuple{LD, Int}, false),
+        [
+            (f, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false) for f in (
+                LK.pl_set_source_files1_va, LK.pl_clause_from_source4_va,
+                LK.pl_flush_predicate1_va, LK.pl_flushed_predicate1_va
+            )
+        ]...,
         # WRAPPERS-2 — pl-index.c's Prolog connection (src/pl-indexpred.jl)
         (LK._put_index_args, Tuple{LD, Int, NTuple{4, LK.iarg_t}}, false),
         (LK._put_hints, Tuple{LD, Int, LK.hash_hints}, false),
