@@ -3628,6 +3628,7 @@ _index_entry_points(T) = (
         )
     ]...,
     (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._ftruncate_stream, Tuple{LK.IOSTREAM}, false),       # set_end_of_stream/1's Sfileno + ftruncate
     (LK.unify_diff_list, Tuple{LK.PL_local_data{T}, Int, Int, Vector{Int}, Bool}, false),
     (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
     (LK.copy_stream_data, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),

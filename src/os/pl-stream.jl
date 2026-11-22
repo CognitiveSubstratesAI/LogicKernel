@@ -1982,9 +1982,10 @@ end
 # ── files (pl-stream.c Sopen_file), since R2's S1 ───────────────────────────────────────────────
 
 # DIVERGES: Linux's values, as src/pl-error.jl's (EPERM, EAGAIN, EACCES, ENFILE, EMFILE, EROFS, EPIPE,
-# ENAMETOOLONG, ENOTEMPTY, ELOOP: Y1); upstream uses the C library's names. The two this file adds.
+# ENAMETOOLONG, ENOTEMPTY, ELOOP: Y1); upstream uses the C library's names. The three this file adds.
 # (a comment, not a docstring, for each constant)
 const ENOENT = 2
+const EBADF = 9
 const EINVAL = 22
 
 "The process's file creation mask (`umask(2)`, read by setting it and putting it back)."

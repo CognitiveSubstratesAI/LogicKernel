@@ -254,7 +254,9 @@ const _SA_CASES = [
     ("sa142", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B"),
     # set_stream_position/2 stores `(int)lineno` and `(int)linepos`: a value past 32 bits wraps (pl-file.c:5644-5645)
     ("sa220", raw"ro(S), set_stream_position(S, '$stream_position'(7, 4294967299, 4294967298, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"),
-    ("sa221", raw"ro(S), set_stream_position(S, '$stream_position'(7, 2147483648, 2147483649, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP")
+    ("sa221", raw"ro(S), set_stream_position(S, '$stream_position'(7, 2147483648, 2147483649, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"),
+    # set_end_of_stream/1 on a pipe: Sfileno(s) is a descriptor and ftruncate refuses it with EINVAL: existence_error(stream, S) (pl-file.c:2641-2646)
+    ("sa222", raw"open(pipe('cat >/dev/null'), write, S), cerr(set_end_of_stream(S), R0), close(S), R = R0")
 ]
 
 # swipl 10.1.20 (pin 18168e62)'s answers to the program and cases above (the driver's lines; evidence/STREAMS-A/streams_a_rows.out)
@@ -403,7 +405,8 @@ const _SA_PINNED = [
     "t_sa141 c[116,95,115,97,49,52,49]/1(c[45]/2(a[102,97,105,108,101,100],i6))",
     "t_sa142 c[116,95,115,97,49,52,50]/1(c[45]/2(a[102,97,105,108,101,100],i6))",
     "t_sa220 c[116,95,115,97,50,50,48]/1(c[45]/2(i3,i2))",
-    "t_sa221 c[116,95,115,97,50,50,49]/1(c[45]/2(i-2147483648,i-2147483647))"
+    "t_sa221 c[116,95,115,97,50,50,49]/1(c[45]/2(i-2147483648,i-2147483647))",
+    "t_sa222 c[116,95,115,97,50,50,50]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))"
 ]
 
 const _SA_DATA = "abc\nxyz\nlast line\n"
@@ -477,9 +480,9 @@ end
         k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
         @test k == p
     end
-    # not vacuous: the pins hold raised errors (56), permission errors (20), type_error(byte, _) answers (4) and 1 failing row(s),
+    # not vacuous: the pins hold raised errors (57), permission errors (20), type_error(byte, _) answers (4) and 1 failing row(s),
     # so the comparison can pass and can fail
-    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _SA_PINNED) == 56      # raised(…)
+    @test count(l -> occursin("c[114,97,105,115,101,100]", l), _SA_PINNED) == 57      # raised(…)
     @test count(l -> occursin("c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3", l), _SA_PINNED) == 20  # permission_error(…)
     @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(a[98,121,116,101]", l), _SA_PINNED) == 4  # type_error(byte, _)
     @test count(l -> occursin(r"^t_sa\d+ *$", l), _SA_PINNED) == 1                    # failed rows
