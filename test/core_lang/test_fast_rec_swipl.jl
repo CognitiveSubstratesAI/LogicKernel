@@ -6,11 +6,10 @@
 # on PATH the .out is checked against a live run as well, so it cannot go stale.
 # Rows t0-t66 are the encoder (term to string: the bytes of the record, as the code list R). Rows t0-t6 are ALSO pinned as
 # literal byte vectors below, so the bytes of the layouts are in this file and not only in the .out. Rows r0-r9 are the decoder
-# side (string to term): each is `@test_broken` with owner FAST-2 (the decoder), one fresh kernel run per row.
-# Rows held `@test_broken` among the encoder's, each with its owner:
-#   t18, t34  an integer with |N| >= 2^56 inside a compound: the pin writes PL_REC_MPZ, the kernel's addExternalIndirect writes
-#             PL_TYPE_INTEGER. Owner FAST-1d (the fix: an integer outside the tagged range takes the mpz path).
+# side (string to term): each against the .out (FAST-2c, the decoder), one fresh kernel run per row.
+# One row stays `@test_broken` among the encoder's, with its owner:
 #   t30       a rational at the root: pending a named DIVERGES (audit ruling).
+# (t18, t34, an integer with |N| >= 2^56 inside a compound, are real rows: addExternalIndirect writes PL_REC_MPZ for it, as the pin.)
 # No row carries a size, an offset, a variable number or a length in 256..383, 512..639 ...: rows for those ranges follow the
 # land of wip/rec-sizeint.
 using Test, LogicKernel
@@ -191,7 +190,6 @@ const _FR_PINS = Dict(
 )
 
 # encoder rows the kernel answers differently from the pin today, each `@test_broken` with its owner
-const _FR_BROKEN_FAST1D = ["t18", "t34"]      # an integer with |N| >= 2^56 inside a compound: PL_REC_MPZ in the pin (owner FAST-1d)
 const _FR_BROKEN_RULING = ["t30"]             # a rational at the root: pending a named DIVERGES (audit ruling)
 
 @testset "FAST1: fast_term_serialized/2 term to string == swipl's bytes (the .out), through a program" begin
@@ -213,7 +211,7 @@ const _FR_BROKEN_RULING = ["t30"]             # a rational at the root: pending 
         @test length(bytes) >= 12 && bytes[1] == 114                     # the header byte of a ground record
     end
     # the broken rows are rows of the program
-    @test all(n -> n in tnames, vcat(_FR_BROKEN_FAST1D, _FR_BROKEN_RULING))
+    @test all(n -> n in tnames, _FR_BROKEN_RULING)
 
     # ---- the encoder: one kernel run over t0-t66, one line per row against the .out ----
     kl = kernel_lines(_TL, _FR_PL, tnames)
@@ -222,25 +220,21 @@ const _FR_BROKEN_RULING = ["t30"]             # a rational at the root: pending 
         @test _fr_bytes(_fr_row(kl, n)) == bytes
     end
     for n in tnames
-        n in _FR_BROKEN_FAST1D && continue
         n in _FR_BROKEN_RULING && continue
         @test (n, _fr_row(kl, n)) == (n, _fr_row(expected, n))
-    end
-    for n in _FR_BROKEN_FAST1D                                          # owner FAST-1d
-        @test_broken (n, _fr_row(kl, n)) == (n, _fr_row(expected, n))
     end
     for n in _FR_BROKEN_RULING                                          # pending a named DIVERGES (audit ruling)
         @test_broken (n, _fr_row(kl, n)) == (n, _fr_row(expected, n))
     end
 
-    # ---- the decoder side: one FRESH kernel run per row (a NotPortedError ends a run), owner FAST-2 ----
+    # ---- the decoder side: one FRESH kernel run per row (a refusal by name ends a run), against the .out ----
     for n in rnames
         rl = kernel_lines(_TL, _FR_PL, [n])
         @test rl[1] == "ok"
         got = _fr_row(rl, n)
         want = _fr_row(expected, n)
-        @test_broken got == want                                        # owner FAST-2: the decoder
-        @test endswith(got, " notported") || got == want                # the kernel's line is the row's answer or the named stop
+        @test !endswith(got, " notported") && !endswith(got, " undefined")   # not the named stop, not a missing row
+        @test got == want                                               # the decoder: the row's answer, as swipl's
     end
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
