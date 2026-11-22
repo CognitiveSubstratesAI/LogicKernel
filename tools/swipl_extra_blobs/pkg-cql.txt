@@ -1,0 +1,16 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-cql — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-cql; the files are upstream's bytes, never edited.
+# source: sub packages/cql 66f916527b5fe873a7a30226924ef26a142f2704
+100644 blob ac6cd6d24fceee35955de9abdc1706ea4b3372db	packages/cql/.gitignore
+100644 blob b300f9e3ff5a25e0bec9cfb0c5499c069c307082	packages/cql/CMakeLists.txt
+100644 blob 45e0865502b431e3516047ec7a9ed5d36c3a86ac	packages/cql/cql.pl
+100644 blob 2420a947187f5615425e91bf1717d052a1384836	packages/cql/cql.plx
+100644 blob efd30d8fbe865f9504f281aa6e433d24e5eedddc	packages/cql/cql_autoschema.pl
+100644 blob fbd951dc549099d05080c9bcf41f1d40333d61d4	packages/cql/cql_database.pl
+100644 blob 5079e5fb9ae5675bfdad5c647c6d19003eb0e189	packages/cql/cql_demo.pl
+100644 blob 73bdf6a8ccf5a23da97b052a346dbf9b889bb03f	packages/cql/cql_hooks.pl
+100644 blob a4e5723b16dd159921d015c53559b14404ad3585	packages/cql/gen/cql.bbl
+100644 blob 0dfb2416e9cabbebf9080ae0338b3098db6fbc3c	packages/cql/sql_keywords.pl
+100644 blob ffc3d937e227bc2a02b2ace4769e6d1d190e14e5	packages/cql/sql_parser.pl
+100644 blob afca0da08fb2feb1cd606119431e30d576f36659	packages/cql/sql_tokenizer.pl
+100644 blob 37977ad66d602e03efc64322b74a956d750e22a4	packages/cql/sql_write.pl
