@@ -5564,6 +5564,11 @@ _manifest_pkg2_plain() = (
     (LK.yaml_is_special_float, Tuple{Vector{UInt8}}, false),
     (LK.yaml_implicit_tag, Tuple{Vector{UInt8}}, false),
     (LK.re_utf8_skip_char, Tuple{Vector{UInt8}, Int}, false),
+    # PCRE1 piece 2 — the option tables' pure functions
+    (LK.re_cap_type_str, Tuple{Int}, false),
+    (LK.re_init_data, Tuple{}, false),
+    (LK.re_reset_match_flags!, Tuple{LK.re_data}, false),
+    (LK.re_lookup_optdef, Tuple{Vector{LK.re_optdef}, String}, false),
     (LK.re_utf8_seek, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.re_char_offset, Tuple{Vector{UInt8}, Int, Int}, false),
     (LK.re_bytep_to_charp, Tuple{LK.re_subject, Int}, false),
@@ -5588,6 +5593,11 @@ _manifest_yaml_events(T) = begin
         (LK.yaml_emit_error, Tuple{LD, Int, String}, false),
         # YAML1 piece 3 — the anchor table (add and store take the local data; the rest is in `_manifest_pkg2_plain`)
         (LK.yaml_add_anchor, Tuple{LD, LK.yaml_htable, String, Int}, false),
+        # PCRE1 piece 2 — the option flags (these take the local data)
+        (LK.re_effective_bool, Tuple{LD, Int}, false),
+        (LK.re_set_flag, Tuple{LD, Int, LK.re_options_flags, UInt32, UInt32, Bool}, false),
+        (LK.re_lookup_and_apply_optdef, Tuple{LD, Vector{LK.re_optdef}, String, Int, Int, UInt32, LK.re_options_flags}, false),
+        (LK.re_lookup_and_apply_optdef_arg, Tuple{LD, Vector{LK.re_optdef}, Int, Int, Int, UInt32, LK.re_options_flags}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
