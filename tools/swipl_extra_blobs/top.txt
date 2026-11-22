@@ -1,0 +1,17 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class top — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra top; the files are upstream's bytes, never edited.
+# source: super af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 app customize demo
+100644 blob 13e55643ce8d68cff816386ac55174567bdd202e	app/README.md
+100644 blob a4444340af8d16acddba387a2157455183f70dc0	app/app.pl
+100644 blob 84f4f434eecb7aec2557dc7d8f9730c4079b8f89	app/pack.pl
+100644 blob f08c1586fdb926bb96a99e9779e879f7940935a3	app/qlf.pl
+100644 blob 9fff138ebd946b75382e90b7a6f228ac0e2c2482	app/splfr.pl
+100644 blob 07e0d485edba3b6a2f142b44ed8dd6816abae72f	app/sys.pl
+100644 blob 151cea3ba72bd4bbec0200c70063ed0d1320d322	customize/README.md
+100755 blob 9ef4ee453e7ebcb81e0a697c6e269d951a58b3ab	customize/edit
+100644 blob c984b514c09ff26fccc312fe9da149d5e811d54d	customize/init.pl
+100644 blob fb3850a4dae3c29faea7907d9b3cd48d940fcfaa	demo/README.md
+100644 blob 52391491930d72df055298b28a7d9487847de140	demo/colours.pl
+100644 blob 88f3d2edcb0fb68c99b559676e5982b3780715f6	demo/likes.pl
+100644 blob 5dd10ee3d9176c0792afbf874c50844679b93659	demo/trace.pl
+100644 blob c7132cc2cee914b6fc132cdd4f22e25010bd6e36	demo/unicode.pl
