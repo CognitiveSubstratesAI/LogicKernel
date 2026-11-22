@@ -1859,6 +1859,77 @@ function PL_atom_mbchars(
     return (text.text, text.length)
 end
 
+# ── modules and predicates (FLI-API group H): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info
+# (pl-fli.c; resolveModule is wip/clib1's) ───────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-fli.c PL_context
+# DIVERGES: the database and the local data are arguments; the module is an INDEX into `gd`'s module table
+# (`PL_strip_module`'s convention), `MODULE_user`'s outside a frame.
+"The context module, an index into the module table: that of the environment frame, `user` outside one (pl-fli.c)."
+function PL_context(gd::PL_global_data{T}, ld::PL_local_data{T})::Int where {T}
+    return ld.environment_frame != 0 ? contextModule(gd, ld, ld.environment_frame) : MODULE_user(gd).index
+end
+
+# PORT: pl-fli.c PL_new_module
+# DIVERGES: the database is an argument; the name is an interface symbol, the answer the module's index; no
+# `valid_atom_t` check (`O_VALIDATE_API`, owner FLI1).
+"The index of the module named `name`, created if there is none (pl-fli.c)."
+PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T} = lookupModule(gd, name).index
+
+# PORT: pl-fli.c PL_pred
+# DIVERGES: the database and the local data are arguments; the module is an index (0 for upstream's NULL, the
+# context module); upstream's `PL_api_error("invalid arity %d (out of range)")` is `error` (the kernel has no
+# `PL_api_error`; both end the call, upstream by an abort in a debug build); the functor is its name and arity
+# (`lookupProcedure`); no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1).
+"The procedure of functor word `functor` in module `module_` (0: the context module), created if new (pl-fli.c)."
+function PL_pred(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, functor::word, module_::Int
+)::Procedure{T} where {T}
+    arity = arityFunctor(ld.functors, functor)
+    (arity < 0 || arity > MAXARITY) && error("invalid arity $arity (out of range)")
+    module_ == 0 && (module_ = PL_context(gd, ld))          # if ( module == NULL ) module = PL_context()
+    return lookupProcedure(PL_functor_name(ld, functor), arity, gd.modules[module_])
+end
+
+# PORT: pl-fli.c PL_predicate
+# DIVERGES: the database and the local data are arguments; the name and the module are byte vectors, cut at
+# the first 0 as `strlen` cuts them; both go to `PL_new_atom_mbchars` with the flag word `ENC_UTF8`, as upstream passes it (`nothing` for upstream's NULL module); `PL_api_error` is `error` (see
+# `PL_pred`); the arity is range-checked before the name, as upstream; `PL_unregister_atom` is left out (the
+# kernel has no atom garbage collection, so the atoms need no reference).
+"The procedure `name/arity` of module `module_` (`nothing`: the context module), `name` and `module_` byte vectors (pl-fli.c)."
+function PL_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::AbstractVector{UInt8}, arity::Int,
+    module_::Union{Nothing, AbstractVector{UInt8}}
+)::Procedure{T} where {T}
+    (arity < 0 || arity > MAXARITY) && error("invalid arity $arity (out of range)")
+    a = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, name)
+    if a === nothing
+        PL_clear_exception(ld)
+        error("invalid predicate name $(String(Vector{UInt8}(view(name, 1:_c_strlen(name))))) (invalid UTF-8)")
+    end
+    f = PL_new_functor_sz(ld, a, arity)                     # lookupFunctorDef(a, arity)
+    if module_ !== nothing
+        b = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, module_)
+        if b === nothing
+            PL_clear_exception(ld)
+            error("invalid module name $(String(Vector{UInt8}(view(module_, 1:_c_strlen(module_))))) (invalid UTF-8)")
+        end
+        m = lookupModule(gd, b).index                       # m = lookupModule(a)
+    else
+        m = PL_context(gd, ld)
+    end
+    return PL_pred(gd, ld, f, m)
+end
+
+# PORT: pl-fli.c PL_predicate_info
+# DIVERGES: the three outputs are the answer `(true, name, arity, module)` (upstream's pointer arguments, each
+# optional); the name is the definition's interface symbol, the module its index (`definition.module_`).
+"`(true, name, arity, module)` of the predicate `pred`: its name symbol, its arity, its module's index (pl-fli.c)."
+function PL_predicate_info(pred::Procedure{T})::Tuple{Bool, T, Int, Int} where {T}
+    def = pred.definition
+    return (true, def.name, def.arity, def.module_)
+end
+
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
 # DIVERGES: left out: the `GC_DEBUG`/`O_DEBUG`/ASAN line that keeps the memory reclaim (a build option) and the

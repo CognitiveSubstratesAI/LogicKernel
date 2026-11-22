@@ -12,6 +12,8 @@
 # TARGETS (audit D-0238): the new functions have no caller in the kernel yet (foreign code calls them), so the step's own
 # file is the only one that exercises the mutated code; PL_unify_int64_ex and PL_unify_pointer reach unify_int64_ex, whose
 # other callers' file test_fli_unify_cells.jl is listed too.
+# GROUP 3 (ids H1-H12): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info (resolveModule is wip/clib1's); PL_context's
+# frame branch (the context module of an environment frame) has no row: no frame is open in the test's engine.
 # NOT LISTED (group 2): the canonicalisation failure of PL_new_atom_mbchars (no input of the two encodings it takes
 # fails: `nothing` is upstream's 0 for a wide text with an invalid code point) and the `$expr` branch of PL_functor_name.
 # NOT LISTED: PL_put_list's and PL_put_functor's cell COUNT (the compound's arity is its functor word; a missing cell
@@ -131,4 +133,43 @@ MUTANTS = [
     dict(id="FLIAPI-B4 get_atom_ptr_text reads a non-textual atom as text (aimed by PL_atom_mbchars: the empty list)", file=F, targets=TS,
          old="(a.type.flags & PL_BLOB_TEXT) == 0 && return nothing",
          new="false && return nothing"),
+    dict(id="FLIAPI-H1 PL_context answers the system module outside a frame (aimed by PL_context: user)", file=F, targets=TS,
+         old="contextModule(gd, ld, ld.environment_frame) : MODULE_user(gd).index\nend",
+         new="contextModule(gd, ld, ld.environment_frame) : MODULE_system(gd).index\nend"),
+    dict(id="FLIAPI-H2 PL_new_module answers the index of the next module (aimed by PL_new_module: the reads of gd.modules[m1])", file=F, targets=TS,
+         old="PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T} = lookupModule(gd, name).index",
+         new="PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T} = lookupModule(gd, name).index + 1"),
+    dict(id="FLIAPI-H3 PL_pred refuses the arity MAXARITY too (aimed by PL_pred: the functor of arity MAXARITY)", file=F, targets=TS,
+         old="(arity < 0 || arity > MAXARITY) && error(\"invalid arity $arity (out of range)\")\n    module_ == 0",
+         new="(arity < 0 || arity >= MAXARITY) && error(\"invalid arity $arity (out of range)\")\n    module_ == 0"),
+    dict(id="FLIAPI-H4 PL_pred takes no context module for NULL (aimed by PL_pred: module 0)", file=F, targets=TS,
+         old="module_ == 0 && (module_ = PL_context(gd, ld))",
+         new="false && (module_ = PL_context(gd, ld))"),
+    dict(id="FLIAPI-H5 PL_pred looks the procedure up in the context module (aimed by PL_pred: the module m1)", file=F, targets=TS,
+         old="lookupProcedure(PL_functor_name(ld, functor), arity, gd.modules[module_])",
+         new="lookupProcedure(PL_functor_name(ld, functor), arity, gd.modules[PL_context(gd, ld)])"),
+    dict(id="FLIAPI-H6 PL_predicate makes the functor of arity 0 (aimed by PL_predicate: p/2 is the procedure of PL_pred)", file=F, targets=TS,
+         old="f = PL_new_functor_sz(ld, a, arity)                     # lookupFunctorDef(a, arity)",
+         new="f = PL_new_functor_sz(ld, a, 0)                     # lookupFunctorDef(a, arity)"),
+    dict(id="FLIAPI-H7 PL_predicate accepts a negative arity (aimed by PL_predicate: arity -1)", file=F, targets=TS,
+         old="(arity < 0 || arity > MAXARITY) && error(\"invalid arity $arity (out of range)\")\n    a = PL_new_atom_mbchars",
+         new="(arity > MAXARITY) && error(\"invalid arity $arity (out of range)\")\n    a = PL_new_atom_mbchars"),
+    dict(id="FLIAPI-H8 PL_predicate reads the name as UTF-8 (aimed by PL_predicate: the UTF-8 bytes of the name read as Latin-1)", file=F, targets=TS,
+         old="a = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, name)",
+         new="a = PL_new_atom_mbchars(ld, Int(REP_UTF8), -1, name)"),
+    dict(id="FLIAPI-H8b PL_predicate reads the module as UTF-8 (aimed by PL_predicate: the UTF-8 bytes of the module read as Latin-1)", file=F, targets=TS,
+         old="b = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, module_)",
+         new="b = PL_new_atom_mbchars(ld, Int(REP_UTF8), -1, module_)"),
+    dict(id="FLIAPI-H9 PL_predicate puts the predicate in the context module (aimed by PL_predicate: the module m1)", file=F, targets=TS,
+         old="m = lookupModule(gd, b).index                       # m = lookupModule(a)",
+         new="m = PL_context(gd, ld)                       # m = lookupModule(a)"),
+    dict(id="FLIAPI-H10 PL_predicate leaves the exception pending for an invalid name (aimed by PL_predicate: ld.exception_term == 0; survives, equivalent: the branch is unreachable, a Latin-1 text always canonicalises)", file=F, targets=TS,
+         old="PL_clear_exception(ld)\n        error(\"invalid predicate name",
+         new="error(\"invalid predicate name"),
+    dict(id="FLIAPI-H11 PL_predicate_info swaps the arity and the module (aimed by PL_predicate_info: q/0 in user)", file=F, targets=TS,
+         old="return (true, def.name, def.arity, def.module_)",
+         new="return (true, def.name, def.module_, def.arity)"),
+    dict(id="FLIAPI-H12 PL_predicate_info answers false (aimed by PL_predicate_info: ok === true)", file=F, targets=TS,
+         old="return (true, def.name, def.arity, def.module_)",
+         new="return (false, def.name, def.arity, def.module_)"),
 ]

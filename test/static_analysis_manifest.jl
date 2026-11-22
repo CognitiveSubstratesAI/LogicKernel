@@ -1776,6 +1776,13 @@ function _manifest_index(T)
         (LK.PL_atom_wchars, Tuple{LD, T}, false),
         (LK.PL_atom_mbchars, Tuple{LD, T, UInt32}, false),
         (LK.PL_get_atom_chars, Tuple{LD, Int}, false),
+        # FLI-API group 3 (pl-fli.c): modules and predicates
+        (LK.PL_context, Tuple{GD, LD}, false),
+        (LK.PL_new_module, Tuple{GD, T}, false),
+        (LK.PL_pred, Tuple{GD, LD, UInt64, Int}, false),
+        (LK.PL_predicate, Tuple{GD, LD, Vector{UInt8}, Int, Nothing}, false),
+        (LK.PL_predicate, Tuple{GD, LD, Vector{UInt8}, Int, Vector{UInt8}}, false),
+        (LK.PL_predicate_info, Tuple{LK.Procedure{T}}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (

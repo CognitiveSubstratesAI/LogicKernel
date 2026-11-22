@@ -3,7 +3,8 @@
 # PL_get_pointer, PL_get_arg (pl-fli.c PL_get_arg_sz), PL_get_compound_name_arity (PL_get_compound_name_arity_sz),
 # PL_unify_int64_ex, PL_unify_pointer (src/pl-fli.jl); group 2: PL_new_atom, PL_new_atom_mbchars, PL_new_functor_sz,
 # PL_new_functor, PL_functor_name, PL_functor_arity, PL_atom_chars, PL_atom_nchars, PL_atom_wchars, PL_atom_mbchars,
-# PL_get_atom_chars. test/core_lang/test_fli_api1_cells.jl — on every term type.
+# PL_get_atom_chars; group 3: PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info (resolveModule: skipped, wip/clib1 defines it).
+# test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
 # expected value is written from pl-fli.c at the pin (swipl-devel 18168e62), the line cited per row. The meter
@@ -263,6 +264,95 @@ end
     a = LK.PL_new_atom_mbchars(ld, Int(u8), 3, UInt8[0xe2, 0x82, 0xac])
     @test LK.PL_atom_mbchars(ld, a, u8) == (UInt8[0xe2, 0x82, 0xac], 3)
 end
+
+"The UTF-8 bytes of `s`."
+_fa_b(s::String) = Vector{UInt8}(s)
+"The message of the error `f` raises, \"\" where it raises none."
+_fa_msg(f) = try
+    f()
+    ""
+catch e
+    e isa ErrorException ? e.msg : "not an ErrorException: $(typeof(e))"
+end
+"A fresh database: `(gd, ld)`."
+function _fa_db()
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    return db.gd, db.ld
+end
+
+# LK-ONLY (pl-fli.c:4692-4709): PL_context is the context module — `user` outside a frame (:4696) — and PL_new_module is
+# lookupModule: the module named, created if new, the one index for one name; the reserved `user` and `system` exist.
+@testset "LK-ONLY: PL_context and PL_new_module (pl-fli.c:4692, :4704)" begin
+    gd, ld = _fa_db()
+    @test ld.environment_frame == 0
+    @test LK.PL_context(gd, ld) == LK.MODULE_user(gd).index
+    @test LK.PL_new_module(gd, _rs("user")) == LK.MODULE_user(gd).index
+    @test LK.PL_new_module(gd, _rs("system")) == LK.MODULE_system(gd).index
+    m1 = LK.PL_new_module(gd, _rs("m1"))
+    @test m1 != LK.MODULE_user(gd).index && m1 != LK.MODULE_system(gd).index && m1 > 0
+    @test LK.PL_new_module(gd, _rs("m1")) == m1                              # created once
+    @test LK.PL_new_module(gd, _rs("m2")) != m1
+    @test lk_name(gd.modules[m1].atom) === :m1
+end
+
+# LK-ONLY (pl-fli.c:4733-4744): PL_pred is lookupProcedure of the functor in the module, the context module for NULL (0);
+# one procedure for one name, arity and module; an arity above MAXARITY is an error (:4738-4739), MAXARITY itself is not.
+@testset "LK-ONLY: PL_pred (pl-fli.c:4733)" begin
+    gd, ld = _fa_db()
+    u = LK.MODULE_user(gd).index
+    m1 = LK.PL_new_module(gd, _rs("m1"))
+    f = _fa_functor(ld, "p", 2)
+    pr = LK.PL_pred(gd, ld, f, 0)                                            # NULL: PL_context()
+    @test pr.definition.module_ == u && pr.definition.arity == 2 && lk_name(pr.definition.name) === :p
+    @test LK.PL_pred(gd, ld, f, u) === pr && LK.PL_pred(gd, ld, f, 0) === pr   # one procedure per functor and module
+    pm = LK.PL_pred(gd, ld, f, m1)
+    @test pm !== pr && pm.definition.module_ == m1 && pm.definition.arity == 2
+    @test LK.PL_pred(gd, ld, _fa_functor(ld, "p", 3), m1) !== pm              # another arity
+    @test LK.PL_pred(gd, ld, _fa_functor(ld, "k", 0), 0).definition.arity == 0
+    @test LK.PL_pred(gd, ld, _fa_functor(ld, "b", LK.MAXARITY), 0).definition.arity == LK.MAXARITY
+    @test_throws ErrorException("invalid arity $(LK.MAXARITY + 1) (out of range)") LK.PL_pred(
+        gd, ld, _fa_functor(ld, "b", LK.MAXARITY + 1), 0
+    )
+end
+
+# LK-ONLY (pl-fli.c:4747-4776): PL_predicate takes a name and a module (NULL module: the context, :4773), an arity out of
+# 0..MAXARITY is an error (:4751-4752). Both texts reach PL_new_atom_mbchars as the flag word ENC_UTF8 (:4754, :4765), a
+# value that has neither REP_UTF8 nor REP_MB set (SWI-Prolog.h:1037-1038), so the bytes are read as ISO Latin-1 (:712-713):
+# no byte string is invalid (:4755-4758, :4766-4769 are unreachable). The procedure is the one PL_pred finds.
+@testset "LK-ONLY: PL_predicate (pl-fli.c:4747)" begin
+    gd, ld = _fa_db()
+    u = LK.MODULE_user(gd).index
+    pr = LK.PL_predicate(gd, ld, _fa_b("p"), 2, nothing)
+    @test pr === LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), 0) && pr.definition.module_ == u
+    pm = LK.PL_predicate(gd, ld, _fa_b("p"), 2, _fa_b("m1"))
+    @test pm !== pr && lk_name(gd.modules[pm.definition.module_].atom) === :m1
+    @test pm === LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), LK.PL_new_module(gd, _rs("m1")))
+    @test LK.PL_predicate(gd, ld, _fa_b("p"), 2, _fa_b("user")) === pr
+    latin1(s) = Symbol(String(map(Char, codeunits(s))))                      # each byte one character
+    pe = LK.PL_predicate(gd, ld, _fa_b("é€"), 1, _fa_b("ü"))                # the UTF-8 bytes, read as Latin-1
+    @test lk_name(pe.definition.name) === latin1("é€") && lk_name(pe.definition.name) !== Symbol("é€")
+    @test lk_name(gd.modules[pe.definition.module_].atom) === latin1("ü")
+    @test LK.PL_predicate(gd, ld, UInt8[0x61, 0x62, 0x00, 0x63, 0x64], 0, nothing) === LK.PL_predicate(gd, ld, _fa_b("ab"), 0, nothing)  # strlen
+    @test LK.PL_predicate(gd, ld, _fa_b("b"), LK.MAXARITY, nothing).definition.arity == LK.MAXARITY
+    @test _fa_msg(() -> LK.PL_predicate(gd, ld, _fa_b("p"), -1, nothing)) == "invalid arity -1 (out of range)"
+    @test _fa_msg(() -> LK.PL_predicate(gd, ld, _fa_b("p"), LK.MAXARITY + 1, nothing)) ==
+          "invalid arity $(LK.MAXARITY + 1) (out of range)"
+    pf = LK.PL_predicate(gd, ld, UInt8[0xff, 0xfe], 1, UInt8[0xff])         # no byte string is invalid as Latin-1
+    @test lk_name(pf.definition.name) === Symbol("\u00ff\u00fe")
+    @test lk_name(gd.modules[pf.definition.module_].atom) === Symbol("\u00ff")
+    @test ld.exception_term == 0
+end
+
+# LK-ONLY (pl-fli.c:4782-4794): PL_predicate_info answers true with the name, the arity and the module of the definition.
+@testset "LK-ONLY: PL_predicate_info (pl-fli.c:4782)" begin
+    gd, ld = _fa_db()
+    m1 = LK.PL_new_module(gd, _rs("m1"))
+    ok, name, arity, m = LK.PL_predicate_info(LK.PL_pred(gd, ld, _fa_functor(ld, "p", 3), m1))
+    @test ok === true && lk_name(name) === :p && arity == 3 && m == m1
+    ok, name, arity, m = LK.PL_predicate_info(LK.PL_predicate(gd, ld, _fa_b("q"), 0, nothing))
+    @test ok === true && lk_name(name) === :q && arity == 0 && m == LK.MODULE_user(gd).index
+end
+
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin
     ld, t = _fa_engine(_R[_rf("f", _rs("a"), _rv(1)), _rv(2), _rv(3), _rv(4), _fa_k(77)])
