@@ -2667,6 +2667,87 @@ function pl_char_code2_va(
     end
 end
 
+# PORT: pl-prims.c is_code
+# DIVERGES: on a dereferenced location's `(kind, word)`; a small integer is a tagged one (`isTaggedInt`), or on a
+# term type that tags no integer its value-table word's (`_untagged_int`, as `get_arg_integer_ex` reads it).
+"Whether the dereferenced `(k, w)` is an integer that is a code point (pl-prims.c)."
+function is_code(ld::PL_local_data{T}, k::UInt8, w::word)::Bool where {T}
+    k == DU_VALUE || return false
+    v = isTaggedIntW(w) ? valInt(w) : _untagged_int(ld, w)    # isTaggedInt(w): valInt(w)
+    return v !== nothing && VALID_CODE_POINT(Int(v))
+end
+
+# PORT: pl-prims.c is_char
+# DIVERGES: on a dereferenced location's `(kind, word)`; `charCode` is the one-character test (a text atom of one
+# character: `[]` and a blob are no text), where upstream takes the atom's text and its `PL_text_length`.
+"Whether the dereferenced `(k, w)` is an atom of one character (pl-prims.c)."
+function is_char(ld::PL_local_data{T}, k::UInt8, w::word)::Bool where {T}
+    (k == DU_WORD && isAtomW(w)) || return false
+    return charCode(_atom_value(ld, w)) != -1
+end
+
+# PORT: pl-prims.c is_char_code as pl_is_char_code1_va
+# (PRED_IMPL("$is_char_code", 1, is_char_code, 0))
+"`'\$is_char_code'(@Term)`: `Term` is an integer that is a code point (pl-prims.c)."
+function pl_is_char_code1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    k, w, _ = _deref_loc(ld, -(PL__t0 + 1))             # p = valTermRef(A1); deRef(p)
+    return is_code(ld, k, w) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c is_char as pl_is_char1_va
+# (PRED_IMPL("$is_char", 1, is_char, 0))
+"`'\$is_char'(@Term)`: `Term` is an atom of one character (pl-prims.c)."
+function pl_is_char1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    k, w, _ = _deref_loc(ld, -(PL__t0 + 1))             # p = valTermRef(A1); deRef(p)
+    return is_char(ld, k, w) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c is_text_list
+# DIVERGES: the test is a flag, `chars` (upstream's function pointer `test`: `is_char` when true, else `is_code`);
+# `skip_list(p, &tail)` at the 1000th element is `skip_list_cells` on the position `p`.
+"Whether the list `text` holds is a proper list of codes (`chars` false) or characters, and unify `lent` with its length (pl-prims.c)."
+function is_text_list(
+    ld::PL_local_data{T}, text::term_t, lent::term_t, chars::Bool
+)::Bool where {T}
+    k, w, p = _deref_loc(ld, -(text + 1))               # p = valTermRef(text); deRef(p)
+    len = 0
+
+    while _is_list_word(ld, k, w)                       # isList(*p)
+        hk, hw, _ = _deref_loc(ld, valPtr(w) + 1)       # av = HeadList(p); deRef2(av, h)
+        (chars ? is_char(ld, hk, hw) : is_code(ld, hk, hw)) || return false
+        k, w, p = _deref_loc(ld, valPtr(w) + 2)         # deRef2(av+1, p)
+
+        if (len += 1) == 1000
+            _, tk, tw, _ = skip_list_cells(ld, p)       # skip_list(p, &tail)
+            (tk == DU_WORD && tw == ld.atom_nil_w) || return false   # !isNil(*tail)
+        end
+    end
+
+    return k == DU_WORD && w == ld.atom_nil_w && PL_unify_integer(ld, lent, len)   # isNil(*p) && PL_unify_int64(lent, len)
+end
+
+# PORT: pl-prims.c is_code_list as pl_is_code_list2_va
+# (PRED_IMPL("$is_code_list", 2, is_code_list, 0))
+"`'\$is_code_list'(@Term, -Length)`: `Term` is a proper list of code points, `Length` its length (pl-prims.c)."
+function pl_is_code_list2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return is_text_list(ld, PL__t0, PL__t0 + 1, false) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c is_char_list as pl_is_char_list2_va
+# (PRED_IMPL("$is_char_list", 2, is_char_list, 0))
+"`'\$is_char_list'(@Term, -Length)`: `Term` is a proper list of one-character atoms, `Length` its length (pl-prims.c)."
+function pl_is_char_list2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    return is_text_list(ld, PL__t0, PL__t0 + 1, true) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c atom_number as pl_atom_number2_va
 # (PRED_IMPL("atom_number", 2, atom_number, 0))
 # DIVERGES: `PL_get_nchars` is `PL_get_text` (no `PL_mb_text`/`PL_save_text`: an atom's or a
@@ -3028,6 +3109,21 @@ function pl_ground1_va(
     return ground_cells(ld, -(A1 + 1)) == 0 ? FTRUE : FFALSE    # ground(valTermRef(A1)) == NULL
 end
 
+# PORT: pl-prims.c nonground as pl_nonground2_va
+# (PRED_IMPL("nonground", 2, nonground, 0))
+# DIVERGES: no `ALLOW_GC|ALLOW_SHIFT` (the stacks grow on demand, as `arg/3` below); `ground_cells` gives the first
+# variable's POSITION where upstream's `ground` gives its address (0 for NULL).
+"`nonground(@Term, -V)`: `V` is the first variable of `Term`, as `ground/1` finds it; fails when `Term` is ground (pl-prims.c)."
+function pl_nonground2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2 = PL__t0, PL__t0 + 1
+    p = ground_cells(ld, -(A1 + 1))                 # p = ground(valTermRef(A1))
+    p != 0 && return unify_ptrs_cells(ld, -(A2 + 1), p) ? FTRUE : FFALSE
+
+    return FFALSE
+end
+
 # PORT: pl-prims.c acyclic_term as pl_acyclic_term1_va
 # (PRED_IMPL("acyclic_term", 1, acyclic_term, PL_FA_ISO))
 # DIVERGES: `PL_is_acyclic` on the cells (`is_acyclic_cells`); no MEMORY_OVERFLOW.
@@ -3100,6 +3196,115 @@ function pl_functor3_va(
     end
 
     return FFALSE
+end
+
+# PORT: pl-prims.c match_functor_type
+# DIVERGES: `atype` is the WORD of the atom the caller's type holds (0: an unbound type, upstream's 0 atom) and `type`
+# the symbol it is matched against; the atoms are compared by their words.
+"Whether the type `atype` of `functor/4`'s caller names `type` — an unbound `Type` is unified with it; `callable` also names `atom` and `compound` (pl-prims.c)."
+function match_functor_type(
+    ld::PL_local_data{T}, Type::term_t, atype::word, type::T
+)::Bool where {T}
+    if atype == word(0)                                 # !atype
+        return PL_unify_atom(ld, Type, type)
+    end
+    tw = _atom_word!(ld, type)
+    atype == tw && return true
+    if atype == _atom_word!(ld, mk_sym(T, :callable)) &&
+        (tw == _atom_word!(ld, mk_sym(T, :atom)) || tw == _atom_word!(ld, mk_sym(T, :compound)))
+        return true
+    end
+
+    return false
+end
+
+# PORT: pl-prims.c functor as pl_functor4_va
+# (PRED_IMPL("functor", 4, functor, 0))
+# DIVERGES: as `functor/3` above: a compound whose head is no symbol is named `$expr`, its arity the number of its
+# children (`PL_get_name_arity`); a compound too large for the global stack gives a failure (`ensureGlobalSpace`).
+"`functor(?Callable, ?Name, ?Arity, ?Type)` (pl-prims.c): the name, arity and type (`atom`, `compound` or `atomic`) of `Callable`, or the term of that name, arity and type."
+function pl_functor4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    atype = word(0)                                     # atom_t type
+    type = PL_get_atom(ld, A4)
+    if type === nothing
+        if !PL_is_variable(ld, A4)
+            return PL_type_error(ld, "atom", A4) ? FTRUE : FFALSE
+        end
+    else
+        atype = _atom_word!(ld, type)
+    end
+
+    k, w, _ = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p)
+    if k == DU_WORD && _is_gcompound(w)                 # isTerm(*p)
+        na = PL_get_name_arity(ld, A1)::Tuple{T, Int}   # fd = valueFunctor(functorTerm(*p))
+
+        return if (
+                PL_unify_atom(ld, A2, na[1]) && PL_unify_integer(ld, A3, na[2]) &&
+                match_functor_type(ld, A4, atype, mk_sym(T, :compound))
+            )
+            FTRUE
+        else
+            FFALSE
+        end
+    elseif k == DU_WORD && isAtomW(w)                   # isAtom(*p)
+        return if (
+                PL_unify_atom(ld, A2, _atom_value(ld, w)) && PL_unify_integer(ld, A3, 0) &&
+                match_functor_type(ld, A4, atype, mk_sym(T, :atom))
+            )
+            FTRUE
+        else
+            FFALSE
+        end
+    elseif !(k == DU_CELL || k == DU_ATTVAR)            # !canBind(*p)
+        return if (
+                PL_unify(ld, A2, A1) && PL_unify_integer(ld, A3, 0) &&
+                match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
+            )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    arity = PL_get_size_ex(ld, A3)
+    arity === nothing && return FFALSE
+
+    if arity > 0
+        name = PL_get_atom_ex(ld, A2)
+        name === nothing && return FFALSE
+        match_functor_type(ld, A4, atype, mk_sym(T, :compound)) || return FFALSE
+        ensureGlobalSpace(ld, 1 + arity) || return FFALSE
+        f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)
+        return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
+    end
+
+    name = PL_get_atom(ld, A2)
+    if name !== nothing
+        if atype == _atom_word!(ld, mk_sym(T, :compound))
+            f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), 0)
+            return PL_unify_compound(ld, A1, f) ? FTRUE : FFALSE
+        elseif atype == _atom_word!(ld, mk_sym(T, :callable)) ||
+                atype == _atom_word!(ld, mk_sym(T, :atom))
+            return PL_unify_atom(ld, A1, name) ? FTRUE : FFALSE
+        elseif atype == _atom_word!(ld, mk_sym(T, :atomic))
+            return FFALSE
+        else
+            return PL_domain_error(ld, "functor_type", A4) ? FTRUE : FFALSE
+        end
+    elseif PL_is_atomic(ld, A2)
+        return if (
+                PL_unify(ld, A2, A1) && match_functor_type(ld, A4, atype, mk_sym(T, :atomic))
+            )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    return PL_type_error(ld, "atomic", A2) ? FTRUE : FFALSE
 end
 
 # PORT: pl-prims.c compound_name_arity as pl_compound_name_arity3_va
@@ -3370,6 +3575,65 @@ function pl_compound_name_arguments3_va(
     return PL_error(ld, ERR_TYPE, mk_sym(T, :compound), t) ? FTRUE : FFALSE
 end
 
+# PORT: pl-prims.c filled_array as pl_filled_array4_va
+# (PRED_IMPL("$filled_array", 4, filled_array, 0))
+# DIVERGES: `allocGlobal(arity+1)` is `ensureGlobalSpace` and the compound's cells laid out on the cells
+# (`_alloc_compound!`); a failed check gives a failure after the overflow is raised. `bArgVar(&p[1], v)` is
+# `_cell_link_lower!` of the slot of `A4` (term reference `t` is slot `t + 1`).
+"`'\$filled_array'(-Compound, +Name, +Arity, +Value)`: `Compound` is the term `Name(Value, …, Value)` of `Arity` arguments, all the one `Value` (pl-prims.c)."
+function pl_filled_array4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    name = PL_get_atom_ex(ld, A2)
+    name === nothing && return FFALSE
+    arity = PL_get_size_ex(ld, A3)
+    arity === nothing && return FFALSE
+    compound = PL_new_term_ref(ld)
+
+    f = lookupFunctorDef(ld.functors, _atom_word!(ld, name), arity)   # PL_new_functor(name, arity)
+    ensureGlobalSpace(ld, 1 + arity) || return FFALSE   # !(p = allocGlobal(arity+1))
+    p = _alloc_compound!(ld, f, arity)                  # p[0] = f
+    if arity > 0
+        _cell_link_lower!(ld, p + 1, A4 + 1)            # v = valTermRef(A4); deRef(v); bArgVar(&p[1], v)
+        c = ld.gstack[p + 1]
+        wv = isVar(c) ? makeRefG(p + 1) : c             # w = isVar(p[1]) ? makeRefG(&p[1]) : p[1]
+        for i in 2:arity
+            ld.gstack[p + i] = wv
+        end
+    end
+
+    ld.slots[compound + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)   # *valTermRef(compound) = consCompound(p)
+    return PL_unify(ld, A1, compound) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prims.c unbind_template as pl_unbind_template1_va
+# (PRED_IMPL("$unbind_template", 1, unbind_template, 0))
+# DIVERGES: on the cells: an argument that is a reference (`isRef`) is the cell it references, set unbound
+# (`setVar`) with no trail entry, as upstream's.
+"`'\$unbind_template'(+Template)`: `Template` is `v(A1, …)`, each `Ai` a reference into another term; every referenced cell is made unbound again (pl-prims.c)."
+function pl_unbind_template1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1 = PL__t0
+    k, w, _ = _deref_loc(ld, -(A1 + 1))                 # p = valTermRef(A1); deRef(p)
+    if k == DU_WORD && _is_gcompound(w)                 # isTerm(*p)
+        q = valPtr(w)
+        arity = arityFunctor(ld.functors, ld.gstack[q])
+        for i in 1:arity
+            c = ld.gstack[q + i]                        # w = f->arguments[i]
+            if isRef(c)
+                ld.gstack[unRef(c)] = word(0)           # setVar(*tp)
+            else
+                return PL_type_error(ld, "template", A1) ? FTRUE : FFALSE
+            end
+        end
+    elseif !(k == DU_WORD && isAtomW(w))                # !isAtom(*p)
+        return PL_type_error(ld, "template", A1) ? FTRUE : FFALSE
+    end
+
+    return FTRUE
+end
 
 
 # PORT: pl-prims.c term_variables
