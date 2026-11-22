@@ -197,7 +197,7 @@ const TH_INTERACTOR_DONE = UInt32(0x0004)
 # PORT: pl-thread.h PL_thread_info_t as PL_thread_info
 # DIVERGES: only the members the engines read: `pl_tid`, `open_count`, `detached`, `debug`, `has_tid`, `is_engine`, `stack_limit`,
 # `status`, `thread_data` (the local data, an `AbstractLocalData`: the type is defined later), `symbol` (the handle blob, `nothing`
-# = 0) and `class`; no pthread, no c_stack, no `module`/`goal`/`return_value`, no lock-free `access`, no free list (the kernel runs
+# = 0), `class` and `return_value` (read by thread_property's `status`; no engine sets it); no pthread, no c_stack, no `module`/`goal`, no lock-free `access`, no free list (the kernel runs
 # one OS thread: owner TH1-threads). `class` is the atom's name (`user`, as `PL_thread_attach_engine` sets it).
 "The record of one thread or engine (pl-thread.h `PL_thread_info_t`)."
 mutable struct PL_thread_info{T}
@@ -212,6 +212,7 @@ mutable struct PL_thread_info{T}
     thread_data::Union{Nothing, AbstractLocalData}    # thread_data: the local data of the engine
     symbol::Union{Nothing, T}                   # symbol: the thread_handle blob (nothing: 0)
     class::Symbol                               # class: `user` or `system`
+    return_value::Union{Nothing, record{T}}     # return_value: the recorded result of a thread that ended (`nothing` for an engine)
 end
 
 # PORT: pl-thread.h thread_handle
