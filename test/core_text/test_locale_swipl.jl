@@ -336,6 +336,9 @@ wb2_gone :- \\+ locale_property(default, alias(_)).
         f = joinpath(d, "wb2.pl")
         write(f, _LCS_WB2)
         gd = LK.PL_global_data{_TL}()
+        # the template's copy holds no stream (the boot ld's standard streams were dropped and gave back
+        # their reference, src/pl-qlf.jl drop_boot_std_streams!): the alias, current, default_locale itself
+        @test gd.locale.default_locale.references == 3
         ld = LK.PL_local_data{_TL}(gd)
         st, _ = LK.load_file!(gd, ld, f)
         @test st === :ok
