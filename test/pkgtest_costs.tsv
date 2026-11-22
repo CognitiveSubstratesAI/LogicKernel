@@ -213,5 +213,7 @@ test_port_check.jl	30.2
 test_r2_status.jl	11.7
 test_standalone_consumer.jl	2.6
 test_type_discipline.jl	57.3
+# test_vendored_extra.jl: 0.5 is copied from test_vendored_plunit.jl — MEASURE ON THE LANE
+test_vendored_extra.jl	0.5
 test_vendored_plunit.jl	0.5
 test_vendored_swipl.jl	0.9
