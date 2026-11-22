@@ -30,7 +30,8 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
     # initBuildIns! makes PROCEDURE_tune_gc3 = PL_predicate("tune_gc", 3, "prolog") (pl-ext.c:385-386 at 18168e62),
     # and PL_predicate creates the module `prolog` there as upstream's initBuildIns does (pl-ext.c:381-386
     # PL_new_module(ATOM_prolog) for heartbeat0): the table is system, user, prolog (3), not 2; no behaviour moved.
-    @test length(gd.modules) == 3 && lk_name(gd.modules[3].atom) === :prolog && gd.modules[3].index == 3
+    @test length(gd.modules) == 3 && lk_name(gd.modules[3].atom) === :prolog &&
+        gd.modules[3].index == 3
     sys, user = gd.modules
     @test sys === LK.MODULE_system(gd) && user === LK.MODULE_user(gd)
     @test (sys.index, user.index) == (1, 2)
