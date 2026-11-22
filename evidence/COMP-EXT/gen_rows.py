@@ -4,7 +4,7 @@
 # usage: python3 -I gen_rows.py <path to test_compext_swipl.jl>   (the test file is rewritten in place)
 import re, subprocess, sys, pathlib
 
-SWIPL = str(pathlib.Path.home() / ".local/bin/swipl")
+SWIPL = str(pathlib.Path.home() / ".local/swipl-pin1-18168e62/bin/swipl")   # the explicit pin binary
 CAP = ["systemd-run", "--user", "--scope", "-q", "-p", "MemoryMax=2G", "-p", "MemorySwapMax=0", "-p", "TasksMax=64", "timeout", "300"]
 tf = pathlib.Path(sys.argv[1])
 src = tf.read_text()
@@ -12,7 +12,7 @@ prog = re.search(r'const _CX_PROGRAM = raw"""\n(.*?)"""', src, re.S).group(1)
 drv = re.search(r'const _CX_DRIVER = raw"""\n(.*?)"""', src, re.S).group(1)
 wrap = re.search(r'const _CX_WRAP = raw"(.*?)" \*\s*\n\s*"\\n"', src, re.S).group(1) + "\n"
 cases = re.findall(r'\(\s*"(cx\d+)",\s*raw"(.*?)"\s*\),?\n', src, re.S)
-assert len(cases) == 171, len(cases)
+assert len(cases) == 201, len(cases)   # cx01-cx201
 text = prog + "".join(wrap.replace("@ID@", i).replace("@GOAL@", g) for i, g in cases)
 pathlib.Path("cx_rows.pl").write_text(text)
 names = ",".join(f"t_{i}" for i, _ in cases)

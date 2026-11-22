@@ -1,6 +1,6 @@
 # ORIGINAL: a LIVE differential of COMP-EXT's predicates against swipl at the pin: `'$notrace'/1` (pl-pro.c:392-410), `'$predefine_foreign'/1`
 # `'$vmi_property'/2`, `'$fetch_vm'/4`, `'$xr_member'/2`, `'$break_pc'/3` and `'$break_at'/3` (pl-comp.c:5277-5285, :7697-7849, :8106-8206, :8874-8920, :9137-9180),
-# `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx171:
+# `'$spy'/1` and `'$nospy'/1` (pl-trace.c:2342-2379); audit D-0784. Rows cx01-cx201:
 #   * A PROGRAM of cases `t_<id>(R)` consulted by the kernel's loader and run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`, then `set_prolog_flag(debug, false)` (a row that switched the debug mode on leaves it off);
 #     the driver is test_notrace_swipl.jl's (`enc`oded answers), whose state discipline the `'$notrace'/1` rows follow (save first, restore last).
@@ -21,7 +21,7 @@
 #     the rows with a called or dynamic predicate (cx104-cx105) read the instruction NAMES only.
 #   * NOT REPLAYED (COMPEXT-1): the LK-only row that `thread_create/3` is REFUSED by name (NotPortedError, step "TH1"): the integration tip has
 #     the TH1 engines and no thread_create/3, so the refusal does not exist there (only the meta-spec was replayed, src/pl-ext.jl).
-#   * `'$xr_member'/2`, `'$break_pc'/3`, `'$break_at'/3` rows (cx116-cx171): enumeration and test of the objects a clause references, the break-points
+#   * `'$xr_member'/2`, `'$break_pc'/3`, `'$break_at'/3` rows (cx116-cx201): enumeration and test of the objects a clause references, the break-points
 #     of a clause as `Start-End` offsets, the argument checks and error terms of `'$break_at'/3` (the offsets of cx148-cx158 are swipl's, pinned).
 #   * LK-ONLY row (no swipl answer): SETTING a break-point with
 #     `'$break_at'(Ref, Start, true)` at an instruction that carries VIF_BREAK is REFUSED by name (NotPortedError, step "DBG1": the debugger's
@@ -135,6 +135,19 @@ vr7(X) :- Y = bar, vc(Y), Y == bar, X \== bar.
 vr8(X) :- vc(3), vc(X).
 vr9(X) :- m1:vc(X).
 vr10(X) :- X == 5, X \== 6.
+vr11(X) :- Y = foo(X), vc(Y).
+vr12(_) :- vc(foo).
+vr14(_) :- Y = a:b, vc(Y).
+vr16(X) :- ( X = a ; X = b ).
+vr21(X) :- vc(Y), Y = foo(X).
+vr22(X) :- system:vc(X).
+vr30(X) :- m1:vq(X).
+vr31(X) :- m1:vs(X).
+vr32(X) :- m1:vd(X).
+vs(2).
+m1:vs(1).
+:- dynamic m1:vd/1.
+vd(1).
 vq1(1).
 vq2(1).
 :- dynamic vq3/1.
@@ -157,6 +170,15 @@ const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(S
 # object: atom, small int, functor skeleton, module, `user:`/`m1:` procedures, a float that no clause holds; cx143-cx146 a partly bound object and the error forms,
 # an erased clause); `'$break_pc'/3` (cx147-cx158 the `Start-End` pairs of a fact, calls, cut, `is`, a body unification, comparisons, a bound start, the error forms);
 # `'$break_at'/3` (cx159-cx171 the domain, type and instantiation errors, an offset past the code, clearing and setting at offset 0 of a fact).
+# cx172-cx201 (COMPEXT-5, the weak spots of cx116-cx171 that the DEC4 mutants of tools/mutants/COMPEXT.py showed): cx172-cx175 the instruction lists of `vr11` (`Y = foo(X)`
+# in the body: `b_unify_firstvar`), `vr12` (`vc(foo)`: `l_atom`, `b_atom`), `vr16` (`X = a ; X = b`: `b_unify_vc`), `vr21` (`vc(Y), Y = foo(X)`: `b_unify_var`);
+# cx176-cx177 the break-points across those inline body unifications; cx178-cx183 the objects a clause references (the atom operands, the `:`/2 skeleton, the module
+# `system` of `vr22`); cx184-cx190 a bound object (an atom operand, a module name that is no module operand, the `:`/2 skeleton `_:_` and `a:b` that `'$xr_member'/2`
+# does not look up as a functor); cx191-cx192 the context module of the call (`m1:'$xr_member'(...)`); cx193-cx199 a procedure of the same name and arity that the clause's call
+# does not bind to (`wouldBindToDefinition` false: `m2:vc`, `m2:vq`, the static `m1:vs`, the dynamic `m1:vd` shadowing `user:vs` and `user:vd`); cx200 an offset equal to the code
+# size, cx201 an offset inside the operands of an instruction whose successor is breakable (`vr1`, offset 5).
+# NOT A ROW (swipl cannot answer it): a clause holding a NULL module operand (`@/2`: `I_DEPARTATM`): swipl itself fails on `'$xr_member'/2` of it, so the NULL operand
+# has no pin (mutant XM-69 stays dropped; the index-1 module `system` of `vr22` is cx183, cx188).
 const _CX_CASES = [
     (
         "cx01",
@@ -841,6 +863,126 @@ const _CX_CASES = [
     (
         "cx171",
         raw"clause(vf1(_), _, Ref), catch('$break_at'(Ref, 0, on), error(permission_error(set, break, break(Ref2, O)), _), ( Ref2 == Ref -> R = got(O) ; R = other ))"
+    ),
+    (
+        "cx172",
+        raw"vm_of(vr11(_), R)"
+    ),
+    (
+        "cx173",
+        raw"vm_of(vr12(_), R)"
+    ),
+    (
+        "cx174",
+        raw"vm_of(vr16(_), R)"
+    ),
+    (
+        "cx175",
+        raw"vm_of(vr21(_), R)"
+    ),
+    (
+        "cx176",
+        raw"clause(vr11(_), _, Ref), findall(S-E, '$break_pc'(Ref, S, E), R)"
+    ),
+    (
+        "cx177",
+        raw"clause(vr21(_), _, Ref), findall(S-E, '$break_pc'(Ref, S, E), R)"
+    ),
+    (
+        "cx178",
+        raw"clause(vr11(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx179",
+        raw"clause(vr12(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx180",
+        raw"clause(vr14(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx181",
+        raw"clause(vr16(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx182",
+        raw"clause(vr21(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx183",
+        raw"clause(vr22(_), _, Ref), findall(X, '$xr_member'(Ref, X), R)"
+    ),
+    (
+        "cx184",
+        raw"clause(vr12(_), _, Ref), ( '$xr_member'(Ref, foo) -> R = yes ; R = no )"
+    ),
+    (
+        "cx185",
+        raw"clause(vr16(_), _, Ref), ( '$xr_member'(Ref, b) -> R = yes ; R = no )"
+    ),
+    (
+        "cx186",
+        raw"clause(vr1(_), _, Ref), ( '$xr_member'(Ref, system) -> R = yes ; R = no )"
+    ),
+    (
+        "cx187",
+        raw"clause(vr1(_), _, Ref), ( '$xr_member'(Ref, user) -> R = yes ; R = no )"
+    ),
+    (
+        "cx188",
+        raw"clause(vr22(_), _, Ref), ( '$xr_member'(Ref, system) -> R = yes ; R = no )"
+    ),
+    (
+        "cx189",
+        raw"clause(vr14(_), _, Ref), ( '$xr_member'(Ref, _:_) -> R = yes ; R = no )"
+    ),
+    (
+        "cx190",
+        raw"clause(vr14(_), _, Ref), ( '$xr_member'(Ref, a:b) -> R = yes ; R = no )"
+    ),
+    (
+        "cx191",
+        raw"clause(vr1(_), _, Ref), ( m1:'$xr_member'(Ref, vc(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx192",
+        raw"clause(vr9(_), _, Ref), ( m1:'$xr_member'(Ref, vc(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx193",
+        raw"assertz(m2:vc(1)), clause(vr1(_), _, Ref), ( '$xr_member'(Ref, m2:vc(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx194",
+        raw"assertz(m2:vq(1)), clause(vr30(_), _, Ref), ( '$xr_member'(Ref, m2:vq(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx195",
+        raw"clause(vr30(_), _, Ref), ( '$xr_member'(Ref, m1:vq(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx196",
+        raw"clause(vr31(_), _, Ref), ( '$xr_member'(Ref, user:vs(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx197",
+        raw"clause(vr31(_), _, Ref), ( '$xr_member'(Ref, m1:vs(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx198",
+        raw"clause(vr32(_), _, Ref), ( '$xr_member'(Ref, user:vd(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx199",
+        raw"clause(vr32(_), _, Ref), ( '$xr_member'(Ref, m1:vd(_)) -> R = yes ; R = no )"
+    ),
+    (
+        "cx200",
+        raw"clause(vf1(_), _, Ref), vm_end(Ref, 0, End), '$break_at'(Ref, End, true), R = ok"
+    ),
+    (
+        "cx201",
+        raw"clause(vr1(_), _, Ref), catch('$break_at'(Ref, 5, true), error(permission_error(set, break, break(Ref2, O)), _), ( Ref2 == Ref -> R = got(O) ; R = other ))"
     )
 ]
 
@@ -1017,7 +1159,37 @@ const _CX_PINNED = [
     "t_cx168 c[116,95,99,120,49,54,56]/1(c[103,111,116]/1(i0))",
     "t_cx169 c[116,95,99,120,49,54,57]/1(c[103,111,116]/1(i0))",
     "t_cx170 c[116,95,99,120,49,55,48]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
-    "t_cx171 c[116,95,99,120,49,55,49]/1(c[103,111,116]/1(i0))"
+    "t_cx171 c[116,95,99,120,49,55,49]/1(c[103,111,116]/1(i0))",
+    "t_cx172 c[116,95,99,120,49,55,50]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[98,95,117,110,105,102,121,95,102,105,114,115,116,118,97,114]/1(i1),c[91,124,93]/2(c[98,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102,111,111],i1)),c[91,124,93]/2(c[98,95,97,114,103,118,97,114]/1(i0),c[91,124,93]/2(a[98,95,112,111,112],c[91,124,93]/2(a[98,95,117,110,105,102,121,95,101,120,105,116],c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i5),c[91,124,93]/2(c[108,95,118,97,114]/2(i0,i1),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[98,95,118,97,114,49],c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))))))))",
+    "t_cx173 c[116,95,99,120,49,55,51]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[108,95,110,111,108,99,111]/1(i5),c[91,124,93]/2(c[108,95,97,116,111,109]/2(i0,a[102,111,111]),c[91,124,93]/2(c[105,95,108,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(c[98,95,97,116,111,109]/1(a[102,111,111]),c[91,124,93]/2(c[105,95,100,101,112,97,114,116]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(a[105,95,101,120,105,116],nil))))))))",
+    "t_cx174 c[116,95,99,120,49,55,52]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[99,95,111,114]/1(i5),c[91,124,93]/2(c[98,95,117,110,105,102,121,95,118,99]/2(i0,a[97]),c[91,124,93]/2(c[99,95,106,109,112]/1(i3),c[91,124,93]/2(c[98,95,117,110,105,102,121,95,118,99]/2(i0,a[98]),c[91,124,93]/2(a[105,95,101,120,105,116],nil)))))))",
+    "t_cx175 c[116,95,99,120,49,55,53]/1(c[91,124,93]/2(a[105,95,101,110,116,101,114],c[91,124,93]/2(c[98,95,102,105,114,115,116,118,97,114]/1(i1),c[91,124,93]/2(c[105,95,99,97,108,108]/1(c[47]/2(a[118,99],i1)),c[91,124,93]/2(c[98,95,117,110,105,102,121,95,118,97,114]/1(i1),c[91,124,93]/2(c[104,95,102,117,110,99,116,111,114]/1(c[47]/2(a[102,111,111],i1)),c[91,124,93]/2(c[104,95,118,97,114]/1(i0),c[91,124,93]/2(a[104,95,112,111,112],c[91,124,93]/2(a[98,95,117,110,105,102,121,95,101,120,105,116],c[91,124,93]/2(a[105,95,101,120,105,116],nil))))))))))",
+    "t_cx176 c[116,95,99,120,49,55,54]/1(c[91,124,93]/2(c[45]/2(i0,i1),c[91,124,93]/2(c[45]/2(i1,i9),c[91,124,93]/2(c[45]/2(i17,i19),c[91,124,93]/2(c[45]/2(i19,i20),nil)))))",
+    "t_cx177 c[116,95,99,120,49,55,55]/1(c[91,124,93]/2(c[45]/2(i0,i1),c[91,124,93]/2(c[45]/2(i3,i5),c[91,124,93]/2(c[45]/2(i5,i13),c[91,124,93]/2(c[45]/2(i13,i14),nil)))))",
+    "t_cx178 c[116,95,99,120,49,55,56]/1(c[91,124,93]/2(c[102,111,111]/1(V0),c[91,124,93]/2(c[118,99]/1(V1),c[91,124,93]/2(c[118,99]/1(V2),nil))))",
+    "t_cx179 c[116,95,99,120,49,55,57]/1(c[91,124,93]/2(a[102,111,111],c[91,124,93]/2(c[118,99]/1(V0),c[91,124,93]/2(a[102,111,111],c[91,124,93]/2(c[118,99]/1(V1),nil)))))",
+    "t_cx180 c[116,95,99,120,49,56,48]/1(c[91,124,93]/2(c[58]/2(V0,V1),c[91,124,93]/2(a[97],c[91,124,93]/2(a[98],c[91,124,93]/2(c[118,99]/1(V2),c[91,124,93]/2(c[118,99]/1(V3),nil))))))",
+    "t_cx181 c[116,95,99,120,49,56,49]/1(c[91,124,93]/2(a[97],c[91,124,93]/2(a[98],nil)))",
+    "t_cx182 c[116,95,99,120,49,56,50]/1(c[91,124,93]/2(c[118,99]/1(V0),c[91,124,93]/2(c[102,111,111]/1(V1),nil)))",
+    "t_cx183 c[116,95,99,120,49,56,51]/1(c[91,124,93]/2(a[115,121,115,116,101,109],c[91,124,93]/2(c[58]/2(a[115,121,115,116,101,109],c[118,99]/1(V0)),nil)))",
+    "t_cx184 c[116,95,99,120,49,56,52]/1(a[121,101,115])",
+    "t_cx185 c[116,95,99,120,49,56,53]/1(a[121,101,115])",
+    "t_cx186 c[116,95,99,120,49,56,54]/1(a[110,111])",
+    "t_cx187 c[116,95,99,120,49,56,55]/1(a[110,111])",
+    "t_cx188 c[116,95,99,120,49,56,56]/1(a[121,101,115])",
+    "t_cx189 c[116,95,99,120,49,56,57]/1(a[110,111])",
+    "t_cx190 c[116,95,99,120,49,57,48]/1(a[110,111])",
+    "t_cx191 c[116,95,99,120,49,57,49]/1(a[110,111])",
+    "t_cx192 c[116,95,99,120,49,57,50]/1(a[110,111])",
+    "t_cx193 c[116,95,99,120,49,57,51]/1(a[110,111])",
+    "t_cx194 c[116,95,99,120,49,57,52]/1(a[110,111])",
+    "t_cx195 c[116,95,99,120,49,57,53]/1(a[121,101,115])",
+    "t_cx196 c[116,95,99,120,49,57,54]/1(a[110,111])",
+    "t_cx197 c[116,95,99,120,49,57,55]/1(a[121,101,115])",
+    "t_cx198 c[116,95,99,120,49,57,56]/1(a[110,111])",
+    "t_cx199 c[116,95,99,120,49,57,57]/1(a[121,101,115])",
+    "t_cx200 c[116,95,99,120,50,48,48]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[112,114,111,103,114,97,109,95,99,111,117,110,116,101,114],i3)))",
+    "t_cx201 c[116,95,99,120,50,48,49]/1(c[103,111,116]/1(i5))"
 ]
 
 function _cx_file()::Tuple{String, Vector{String}}
@@ -1073,7 +1245,7 @@ function _cx_kernel(::Type{T}, path::String, names::Vector{String}) where {T}
     return out, gd, ld
 end
 
-@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1, '\$fetch_vm'/4, '\$xr_member'/2, '\$break_pc'/3 and '\$break_at'/3 as swipl's (cx01-cx171)" begin
+@testset "'\$notrace'/1, '\$predefine_foreign'/1, '\$vmi_property'/2, '\$spy'/1, '\$nospy'/1, '\$fetch_vm'/4, '\$xr_member'/2, '\$break_pc'/3 and '\$break_at'/3 as swipl's (cx01-cx201)" begin
     f, names = _cx_file()
     kl, _, _ = _cx_kernel(_CX, f, names)
     @test length(kl) == length(_CX_PINNED)
@@ -1285,6 +1457,21 @@ end
     @test all(id -> pin["t_cx$id"] == err("type_error", _cx_a("bool"), _cx_a("foo")), (162, 163))   # the Boolean is read before the offset
     @test all(id -> pin["t_cx$id"] == _cx_c("got", "i0"), (166, 168, 169, 171))   # the culprit `break(Ref, 0)` of the clear and set errors
     @test pin["t_cx170"] == _cx_c("raised", _cx_a("instantiation_error"))
+    # cx172-cx201 (COMPEXT-5): the instruction kinds, operand kinds and lookups the rows above never held
+    @test occursin("b_unify_firstvar", decoded["t_cx172"]) && occursin("b_unify_exit", decoded["t_cx172"])
+    @test occursin("l_atom", decoded["t_cx173"]) && occursin("b_atom", decoded["t_cx173"])
+    @test occursin("b_unify_vc", decoded["t_cx174"]) && occursin("b_unify_var", decoded["t_cx175"])
+    @test pin["t_cx176"] == _cx_pairs((0, 1), (1, 9), (17, 19), (19, 20))   # `vr11`: the inline unification 1-9 is one break-point
+    @test pin["t_cx177"] == _cx_pairs((0, 1), (3, 5), (5, 13), (13, 14))    # `vr21`: `b_unify_var` ... `b_unify_exit` is 5-13
+    @test pin["t_cx178"] == _cx_l(_cx_c("foo", "V0"), vc(1), vc(2))
+    @test pin["t_cx179"] == _cx_l(_cx_a("foo"), vc(0), _cx_a("foo"), vc(1))   # `vr12`: `l_atom` and `b_atom`, each a `foo`
+    @test pin["t_cx180"] == _cx_l(_cx_c(":", "V0", "V1"), _cx_a("a"), _cx_a("b"), vc(2), vc(3))
+    @test pin["t_cx181"] == _cx_l(_cx_a("a"), _cx_a("b"))                    # `vr16`: the two `b_unify_vc` constants
+    @test pin["t_cx182"] == _cx_l(vc(0), _cx_c("foo", "V1"))
+    @test pin["t_cx183"] == _cx_l(_cx_a("system"), _cx_c(":", _cx_a("system"), vc(0)))
+    @test all(id -> pin["t_cx$id"] == _cx_a(id in (184, 185, 188, 195, 197, 199) ? "yes" : "no"), 184:199)
+    @test pin["t_cx200"] == err("domain_error", _cx_a("program_counter"), "i3")   # `vf1` has 3 code words: offset 3 is past the code
+    @test pin["t_cx201"] == _cx_c("got", "i5")
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin
