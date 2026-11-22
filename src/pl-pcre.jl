@@ -557,3 +557,80 @@ function re_get_options(ld::PL_local_data{T}, options::term_t, re::re_data)::Boo
     end
     return PL_get_nil_ex(ld, tail)
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# PCRE1 piece 7 (packages/pcre/pcre4pl.c write_pcre, save_pcre_options_flag, load_pcre_options_flag, save_pcre, load_pcre; a5e4c885): the
+# pure parts of the blob's write, save and load functions. The kernel has no package blob type yet (design question Q-BLOB1, evidence/R2/
+# pkg2_blob_design.md), so these are plain functions with no caller; the hook slots call them later. NOT PORTED: `PL_blob_data`/`PL_new_blob`
+# (the blob itself), `PL_qlf_put_atom`/`PL_qlf_get_atom` (the qlf write and read state: the callbacks `put_atom`/`get_atom` stand for them),
+# load's `re_compile_impl` (libpcre2, or the Julia engine: the carrier question), `free_pcre`, and the `PL_warning` text the C prints.
+
+# PORT: packages/pcre/pcre4pl.c write_pcre
+# DIVERGES: 12. `%p` prints the blob's address; the stand-in is the regex's creation serial in the same `0x<hex>` form (`re_compare`, 10). The result is the
+# text; the C writes it to a stream with `SfprintfX` and answers whether that worked.
+"The text `write_pcre` prints for `re`: `<regex>(0x<serial in hex>, <pattern>)` (pcre4pl.c)."
+re_write_text(re::re_data)::String = string("<regex>(0x", string(re.serial, base = 16), ", ", re.pattern, ")")
+
+# PORT: packages/pcre/pcre4pl.c save_pcre_options_flag
+"Write one flag pair as two state-file unsigned integers (pcre4pl.c `save_pcre_options_flag`)."
+function re_save_options_flag(of::re_options_flags, fd::IOSTREAM)::Bool
+    return PL_qlf_put_uint32(of.seen, fd) && PL_qlf_put_uint32(of.flags, fd)
+end
+
+# PORT: packages/pcre/pcre4pl.c load_pcre_options_flag
+# DIVERGES: writes the pair into `of` and answers whether both reads left the stream without an error (the C writes through pointers).
+"Read one flag pair from two state-file unsigned integers into `of` (pcre4pl.c `load_pcre_options_flag`)."
+function re_load_options_flag(fd::IOSTREAM, of::re_options_flags)::Bool
+    ok1, seen = PL_qlf_get_uint32(fd)
+    of.seen = seen
+    ok1 || return false
+    ok2, flags = PL_qlf_get_uint32(fd)
+    of.flags = flags
+    return ok2
+end
+
+# PORT: packages/pcre/pcre4pl.c save_pcre
+# DIVERGES: 13. `put_atom(pattern, fd)::Bool` stands for `PL_qlf_put_atom(re->pattern, fd)`, which exists only inside a qlf write state. The capture
+# names and the compiled code are not saved (the load recompiles), as the C.
+"Write `re` to a state file: version 1, the pattern atom, then the nine flag pairs (pcre4pl.c `save_pcre`); true if every write succeeded."
+function re_save_fields(re::re_data, fd::IOSTREAM, put_atom::Function)::Bool
+    return PL_qlf_put_uint32(UInt32(1), fd) &&
+        put_atom(re.pattern, fd) &&
+        re_save_options_flag(re.compile_options_flags, fd) &&
+        re_save_options_flag(re.capture_type, fd) &&
+        re_save_options_flag(re.optimise_flags, fd) &&
+        re_save_options_flag(re.jit_options_flags, fd) &&
+        re_save_options_flag(re.compile_ctx_flags, fd) &&
+        re_save_options_flag(re.compile_bsr_flags, fd) &&
+        re_save_options_flag(re.compile_newline_flags, fd) &&
+        re_save_options_flag(re.match_options_flags, fd) &&
+        re_save_options_flag(re.start_flags, fd)
+end
+
+# PORT: packages/pcre/pcre4pl.c load_pcre (up to the recompile)
+# DIVERGES: 13. `get_atom(fd)::Union{Nothing,String}` stands for `PL_qlf_get_atom` (the pattern's text, or nothing on a failure); the result is the regex with
+# the saved flag pairs and the pattern, or `nothing` (the C's `(atom_t)0`) after a version other than 1 (the stream gets `SIO_FERR` with the C's message) or a
+# failed read. `PL_warning` is not printed (no port yet). The recompile (`re_compile_impl`) and the blob are not ported: the caller of this piece does them.
+"Read the fields `save_pcre` wrote from a state file into a regex (pcre4pl.c `load_pcre`, up to the recompile); nothing on a failure."
+function re_load_fields(fd::IOSTREAM, get_atom::Function)::Union{Nothing, re_data}
+    _, version = PL_qlf_get_uint32(fd)
+    if version != 1
+        Sseterr(fd, SIO_FERR, "Version mismatch for PCRE2 blob load")
+        return nothing
+    end
+    pattern = get_atom(fd)
+    pattern === nothing && return nothing
+    re = re_init_data(pattern)
+    if !re_load_options_flag(fd, re.compile_options_flags) ||
+            !re_load_options_flag(fd, re.capture_type) ||
+            !re_load_options_flag(fd, re.optimise_flags) ||
+            !re_load_options_flag(fd, re.jit_options_flags) ||
+            !re_load_options_flag(fd, re.compile_ctx_flags) ||
+            !re_load_options_flag(fd, re.compile_bsr_flags) ||
+            !re_load_options_flag(fd, re.compile_newline_flags) ||
+            !re_load_options_flag(fd, re.match_options_flags) ||
+            !re_load_options_flag(fd, re.start_flags)
+        return nothing
+    end
+    return re
+end

@@ -5582,6 +5582,12 @@ _manifest_pkg2_plain() = (
     # QLF32 — the state file's unsigned varint (pl-qlf.c)
     (LK.qlfPutUInt32, Tuple{UInt32, LK.IOSTREAM}, false),
     (LK.qlfGetUInt32, Tuple{LK.IOSTREAM}, false),
+    # PCRE1 piece 7 — the blob's write text, save and load fields (callbacks stand for the qlf atoms)
+    (LK.re_write_text, Tuple{LK.re_data}, false),
+    (LK.re_save_options_flag, Tuple{LK.re_options_flags, LK.IOSTREAM}, false),
+    (LK.re_load_options_flag, Tuple{LK.IOSTREAM, LK.re_options_flags}, false),
+    (LK.re_save_fields, Tuple{LK.re_data, LK.IOSTREAM, Function}, false),
+    (LK.re_load_fields, Tuple{LK.IOSTREAM, Function}, false),
     (LK.PL_qlf_put_uint32, Tuple{UInt32, LK.IOSTREAM}, false),
     (LK.PL_qlf_get_uint32, Tuple{LK.IOSTREAM}, false),
     # YAML1 piece 3 — the anchor table's pure functions
