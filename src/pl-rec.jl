@@ -935,6 +935,233 @@ function copy_record(
     return nothing
 end
 
+# ORIGINAL: the atom cases of `copy_record` and `PL_recorded_external` (`PL_TYPE_NIL`, `PL_TYPE_DICT`, `PL_TYPE_EXT_ATOM`,
+# `PL_TYPE_EXT_WATOM`, the opcode `op` already fetched) as one function: the word of the atom; `word(0)` (never an atom's word)
+# for any other opcode, which the callers answer by failing (upstream's `assert(0)` default).
+"The atom word an external record's atom opcode `op` stands for, its text read from the copy's position (pl-rec.c)."
+function fetchExtAtomWord(
+    ld::PL_local_data{T}, code::Vector{UInt8}, b::copy_info, op::UInt8
+)::word where {T}
+    if op == PL_TYPE_NIL
+        return ld.atom_nil_w
+    elseif op == PL_TYPE_DICT
+        return ATOM_dict
+    elseif op == PL_TYPE_EXT_ATOM
+        return _atom_word!(ld, fetchAtom(T, code, b))
+    elseif op == PL_TYPE_EXT_WATOM
+        return _atom_word!(ld, fetchAtomW(T, code, b))
+    end
+    return word(0)
+end
+
+# ORIGINAL: upstream's `consIndirect(b->gstore, TAG_*)` of `copy_record`, for a value `v` whose box is the first of the `cells`
+# cells the record's size gives it (the header, the data, the header again): the value-table word is at the box, the rest of
+# the cells stay the unbound cells `allocGlobalCells!` made and nothing refers to them; a root goes into its slot as
+# `_slot_link_loc!` stores it, any other location holds the word.
+"Lay the value `v` out at `b.gstore` as an indirect of `cells` cells, its word in location `p` (root `slot` for 0)."
+function _rec_indirect!(
+    ld::PL_local_data{T}, slot::Int, p::Int, b::copy_info, v::T, cells::Int
+)::Nothing where {T}
+    box = b.gstore
+    b.gstore += cells
+    w = _vword_at!(ld, v, box)
+    if p == 0
+        _slot_link_loc!(ld, slot, (DU_VALUE, w, box))
+    else
+        ld.gstack[p] = w
+    end
+    return nothing
+end
+
+# ORIGINAL: `PL_TYPE_INTEGER` of `copy_record`. DIVERGES: an integer in the tagged range is the tagged word (the kernel's one
+# form of it; upstream's record may carry it as an indirect), its `cells` cells skipped; any other is a value-table entry.
+"Lay the integer `v` out at `b.gstore` (it takes `cells` cells), its word in location `p` (pl-rec.c)."
+function _rec_int64!(
+    ld::PL_local_data{T}, slot::Int, p::Int, b::copy_info, v::Int64, cells::Int
+)::Nothing where {T}
+    if PLMINTAGGEDINT <= v <= PLMAXTAGGEDINT
+        b.gstore += cells
+        _rec_put!(ld, slot, p, consInt(v))
+    else
+        _rec_indirect!(ld, slot, p, b, mk_gnd(T, v), cells)
+    end
+    return nothing
+end
+
+# ORIGINAL: `PL_REC_MPZ` of `copy_record`, and the integer a `PL_REC_MPQ` of denominator 1 is. DIVERGES: the integer is
+# the kernel's canonical one: an `Int64` when it fits (and the tagged word when that fits), else the big integer.
+"Lay the integer `z` out at `b.gstore` (it takes `cells` cells), its word in location `p` (pl-rec.c)."
+function _rec_mpz!(
+    ld::PL_local_data{T}, slot::Int, p::Int, b::copy_info, z::BigInt, cells::Int
+)::Nothing where {T}
+    fits, i = mpz_to_int64(z)
+    if fits
+        _rec_int64!(ld, slot, p, b, i, cells)
+    else
+        _rec_indirect!(ld, slot, p, b, _put_big(T, z), cells)
+    end
+    return nothing
+end
+
+# PORT: pl-rec.c copy_record, its external cases
+# DIVERGES: as `copy_record` (location 0 is the root, slot `slot`; the cells were laid out unbound; `goto right_recursion`
+# is `continue`), over `code`, the opcodes read through `version_map` (`fetchOpCode`). An indirect is a value-table
+# entry (`_rec_indirect!`); an integer is canonical (`_rec_int64!`, `_rec_mpz!`); a rational of denominator 1 is the integer; a
+# float's NaN is the kernel's one (`PL_nan`, as `put_number` makes it). `PL_TYPE_FLOAT` is read as the external float
+# (`fetchExtFloat`: the machine's byte order is the external one). The positions of the dict compounds are pushed to
+# `dicts` (upstream counts them: `b->dicts`) for `resortDictsInTerm`. FALSE, the agenda cleared, for what upstream
+# asserts (`assert(0)`: an unknown opcode, an atom opcode that is none of the four, a string whose first byte is neither `B` nor
+# `W`, a rational with denominator 0); a record shorter than its code says is a `BoundsError`. `PL_TYPE_ATOM`
+# and `PL_TYPE_COMPOUND` hold process-local words and are refused by name. NOT DECODED: `PL_TYPE_ATTVAR` and
+# `PL_REC_ALLOCVAR` (an attributed variable and the global cell of a root one): they answer FALSE as an
+# unknown opcode does (upstream's `copy_record` restores them: a later step with `register_attvar`).
+"Lay the external record's code out from `b.gstore`, its root in slot `slot` (pl-rec.c `copy_record`)."
+function copy_external_record(
+    ld::PL_local_data{T}, slot::Int, code::Vector{UInt8}, b::copy_info,
+    version_map::Vector{Int}, dicts::Vector{Int}
+)::Bool where {T}
+    a = ld.walk_agenda
+    p = 0
+    is_compound = false
+    while true
+        tag = fetchOpCode(code, b, version_map)
+        if tag == PL_TYPE_VARIABLE
+            n = fetchSizeInt(code, b) + 1
+            if p == 0                                       # (a root variable: its cell)
+                c = b.gstore
+                b.gstore += 1
+                b.vars[n] = c
+                ld.slots[slot] = makeRefG(c)
+            elseif b.vars[n] != 0
+                v = b.vars[n]
+                if p > v                                    # ensure the reference is in the
+                    ld.gstack[p] = makeRefG(v)              # right direction!
+                else
+                    ld.gstack[p] = ld.gstack[v]             # wrong way.  make sure b->vars[n]
+                    ld.gstack[v] = makeRefG(p)              # stays at the real variable
+                    b.vars[n] = p
+                end
+            else
+                ld.gstack[p] = word(0)                      # setVar(*p)
+                b.vars[n] = p
+            end
+        elseif tag == PL_TYPE_NIL || tag == PL_TYPE_DICT || tag == PL_TYPE_EXT_ATOM || tag == PL_TYPE_EXT_WATOM
+            _rec_put!(ld, slot, p, fetchExtAtomWord(ld, code, b, tag))
+        elseif tag == PL_TYPE_TAGGED_INTEGER
+            _rec_put!(ld, slot, p, consInt(fetchInt64(code, b)))
+        elseif tag == PL_TYPE_INTEGER
+            _rec_int64!(ld, slot, p, b, fetchInt64(code, b), 3)   # WORDS_PER_PLINT + 2
+        elseif tag == PL_REC_MPZ
+            z, next, cells = loadMPZFromCharp(code, b.data)
+            b.data = next
+            _rec_mpz!(ld, slot, p, b, z, cells)
+        elseif tag == PL_REC_MPQ
+            num, den, next, cells = loadMPQFromCharp(code, b.data)
+            b.data = next
+            if iszero(den)
+                clearCellAgenda!(a)
+                return false
+            end
+            q = num // den
+            if isone(denominator(q))
+                _rec_mpz!(ld, slot, p, b, numerator(q), cells)
+            else
+                _rec_indirect!(ld, slot, p, b, _put_big(T, q), cells)
+            end
+        elseif tag == PL_TYPE_FLOAT || tag == PL_TYPE_EXT_FLOAT
+            f = fetchExtFloat(code, b)
+            isnan(f) && (f = PL_nan())
+            _rec_indirect!(ld, slot, p, b, mk_gnd(T, f), 3)   # WORDS_PER_DOUBLE + 2
+        elseif tag == PL_TYPE_STRING
+            len = fetchSizeInt(code, b)
+            lw = (len + 8) ÷ 8                              # see globalBlob()
+            s0 = b.data
+            stop = s0 + len - 1
+            stop <= length(code) || throw(BoundsError(code, stop))
+            text = ""
+            if len >= 1 && code[s0] == UInt8('B')        # ISO Latin-1 characters
+                text = String(Char.(view(code, (s0 + 1):stop)))
+            elseif len >= 4 && len % 4 == 0 && code[s0] == UInt8('W') &&
+                   code[s0 + 1] == 0 && code[s0 + 2] == 0 && code[s0 + 3] == 0
+                chars = Char[]                              # wchar_t characters, little-endian
+                for k in 1:(len ÷ 4 - 1)
+                    cp = UInt32(0)
+                    for i in 0:3
+                        cp |= UInt32(code[s0 + 4 * k + i]) << (8 * i)
+                    end
+                    if !isvalid(Char, cp)
+                        clearCellAgenda!(a)
+                        return false
+                    end
+                    push!(chars, Char(cp))
+                end
+                text = String(chars)
+            else
+                clearCellAgenda!(a)
+                return false
+            end
+            b.data += len
+            _rec_indirect!(ld, slot, p, b, mk_gnd(T, text), lw + 2)
+        elseif tag == PL_REC_CYCLE
+            off = fetchSizeInt(code, b)
+            _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))
+        elseif tag == PL_TYPE_CONS || tag == PL_TYPE_EXT_COMPOUND || tag == PL_TYPE_EXT_COMPOUND_V2
+            nw = word(0)
+            if tag == PL_TYPE_CONS
+                fdef = ld.functor_dot2
+            else
+                arity = fetchSizeInt(code, b)
+                if tag == PL_TYPE_EXT_COMPOUND
+                    nw = fetchExtAtomWord(ld, code, b, fetchOpCode(code, b, version_map))
+                else
+                    nw = _atom_word!(ld, fetchAtom(T, code, b))
+                end
+                if nw == word(0)
+                    clearCellAgenda!(a)
+                    return false
+                end
+                fdef = lookupFunctorDef(ld.functors, nw, arity)
+            end
+            arity = arityFunctor(ld.functors, fdef)
+            c = b.gstore
+            _rec_put!(ld, slot, p, consPtr(c, TAG_COMPOUND | STG_GLOBAL))
+            ld.gstack[c] = fdef
+            b.gstore += arity + 1
+            nw == ATOM_dict && push!(dicts, c)              # b->dicts++
+            if !is_compound
+                is_compound = true
+                initCellAgenda!(a, arity, c + 1)
+            else
+                pushWorkCellAgenda!(a, arity, c + 1)
+            end
+        elseif tag == PL_TYPE_ATOM
+            clearCellAgenda!(a)
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, :fast_term_serialized),
+                    "an external record's atom as a process-local word (PL_TYPE_ATOM)", "a word is process-local"
+                )
+            )
+        elseif tag == PL_TYPE_COMPOUND
+            clearCellAgenda!(a)
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, :fast_term_serialized),
+                    "an external record's functor as a process-local word (PL_TYPE_COMPOUND)", "a word is process-local"
+                )
+            )
+        else
+            clearCellAgenda!(a)
+            return false                                    # assert(0)
+        end
+        is_compound || break
+        p = nextCellAgendaNoDeRef!(a)
+        p == 0 && break
+    end
+    clearCellAgenda!(a)
+    return true
+end
+
 # PORT: pl-rec.c copyRecordToGlobal
 # DIVERGES: the block is `allocGlobalCells!`'s (it grows the stack on demand: `ensureGlobalSpace` is
 # the limit's check, see src/pl-alloc.jl); no `flags` (`ALLOW_GC`: no collector).
@@ -953,6 +1180,75 @@ function copyRecordToGlobal(
     copy_record(ld, copy + 1, r, b)
     @assert b.gstore == ld.gTop + 1                         # assert(b.gstore == gTop)
     return true
+end
+
+# PORT: pl-rec.c PL_recorded_external
+# DIVERGES: the record is a byte vector, `t` the term reference the term is put in (its slot, `t + 1`). The version map is
+# `v2_map` for version 2 and the empty map (the opcodes as they are) for 3; any other version, and a record of the other word
+# size, are refused as upstream does: its message to the debug output (`_qlf_Sdprintf!`) and failure. A root variable takes one cell of
+# the block as in an internal record (gsize + 1; the record holds nothing else then). A record shorter than its code says
+# (a `BoundsError`), a variable number past `nvars` and an unknown opcode FAIL (upstream reads on or asserts); a stated size
+# that differs from the code's cells stays the `@assert` of `copyRecordToGlobal` (no other diagnosis). The dicts the copy met are
+# re-sorted after it (`resortDictsInTerm` over the positions `copy_external_record` recorded).
+"Put the term of the external record `rec` in term reference `t` (pl-rec.c); false for a record it cannot read."
+function PL_recorded_external(
+    ld::PL_local_data{T}, rec::Vector{UInt8}, t::term_t
+)::Bool where {T}
+    hb = copy_info(1, Int[], 0, 0)                          # b.base = b.data = rec
+    try
+        m = rec[hb.data]
+        hb.data += 1
+        version_map = Int[]                                 # b.version_map = NULL
+        if !REC_COMPAT(m)
+            if (m & REC_SZMASK) != REC_64
+                _qlf_Sdprintf!(
+                    ld,
+                    "PL_recorded_external(): Incompatible word-length ($((m & REC_32) != 0 ? 32 : 64))\n"
+                )
+                return false
+            end
+            save_version = Int((m & REC_VMASK) >> REC_VSHIFT)
+            if save_version == 2
+                version_map = v2_map
+            else
+                _qlf_Sdprintf!(
+                    ld,
+                    "PL_recorded_external(): Incompatible version ($save_version, current $PL_REC_VERSION)\n"
+                )
+                return false
+            end
+        end
+
+        if (m & (REC_INT | REC_ATOM)) != 0                  # primitive cases
+            if (m & REC_INT) != 0
+                return PL_put_int64(ld, t, fetchInt64(rec, hb))
+            end
+            w = fetchExtAtomWord(ld, rec, hb, fetchOpCode(rec, hb, version_map))
+            w == word(0) && return false
+            ld.slots[t + 1] = w
+            return true
+        end
+
+        skipSizeInt(rec, hb)                                # code-size
+        gsize = fetchSizeInt(rec, hb)
+        nvars = (m & REC_GROUND) == 0 ? fetchSizeInt(rec, hb) : 0
+        nvars <= length(rec) || return false                # a variable occurs in at least a byte
+        n = rec[hb.data] == PL_TYPE_VARIABLE ? gsize + 1 : gsize   # the root variable's cell
+        ensureGlobalSpace(ld, n) || return false
+        gbase = n > 0 ? allocGlobalCells!(ld, n) : ld.gTop + 1
+        b = copy_info(hb.data, zeros(Int, nvars), gbase, gbase)
+        dicts = Int[]
+        copy_external_record(ld, t + 1, rec, b, version_map, dicts) || return false
+        @assert b.gstore == ld.gTop + 1                     # assert(b.gstore == gTop)
+        isempty(dicts) || resortDictsInTerm(ld, dicts)
+        return true
+    catch e
+        if e isa BoundsError
+            clearCellAgenda!(ld.walk_agenda)
+            return false
+        end
+        rethrow()
+    end
 end
 
 # ── the recorded database (pl-rec.c), since R2's D2 ──────────────────────────────────────────────
