@@ -86,6 +86,7 @@ _manifest_per_type(T) = (
     (LK.th_start_term, Tuple{T, Int}, false),
     (LK.th_next_arg!, Tuple{Base.RefValue{Int}, Vector{LK.th_data{T}}}, true),
     (LK.termHashValue, Tuple{T}, false), (LK.pl_term_hash, Tuple{T}, false),
+    (LK.termHashValue4, Tuple{T, Int}, false),   # term_hash/4 (src/pl-prims.jl)
     (LK.variant_sha1_walk!, Tuple{LK.ac_term_agenda{T}, LK.sha1_state}, false),
     (LK.variant_hash_walk, Tuple{T, LK.hash_algo}, false),
     (LK.variant_hash, Tuple{T, LK.hash_algo}, false),
