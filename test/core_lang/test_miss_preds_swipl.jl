@@ -331,6 +331,20 @@ const _MG_CASES = [
     # (in_clause_jump) equals it only while the kernel compiles to swipl's word layout: a kernel answer other than 15 is a layout difference
     # to be reported, not a test fault.
     ("ca14", raw"mg_pc(R)", _mgi(15)),
+    # trace/0 where the kernel does NOT refuse (audit D-0768 (2): no port of PORT_MASK is visible, so the tracer cannot stop): swipl answers as the
+    # kernel does, MEASURED with the pin: `'$visible'(V0, 0), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off )`
+    # gives on-off (a mask of 0 and one outside PORT_MASK, 512, alike). The rows restore the mask and the debug mode (`nodebug`: trace/0 switches the
+    # debug mode on). The refusal with a port visible is kernel-only: the direct testset below (swipl enters its tracer there).
+    (
+        "tr01",
+        raw"'$visible'(V0, 0), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off ), nodebug, '$visible'(_, V0), R = A-B",
+        _mgc("-", _mga("on"), _mga("off"))
+    ),
+    (
+        "tr02",
+        raw"'$visible'(V0, 512), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off ), nodebug, '$visible'(_, V0), R = A-B",
+        _mgc("-", _mga("on"), _mga("off"))
+    ),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -399,7 +413,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge16, cn01-cn07, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca14)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge16, cn01-cn07, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca14, tr01-tr02)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -425,6 +439,18 @@ end
     end
 end
 
+# trace/0 (pl-trace.c:2287-2290) is `tracemode(true, NULL)`; the kernel has no tracer, so with a port of PORT_MASK visible it is refused by name
+# BEFORE any state changes (audit D-0768 (2); owner row DBG2 in docs/r2_owners.tsv, mutants MISS1-TR3 and MISS1-TR4). LK-ONLY: swipl enters its tracer
+# there (MEASURED with the pin: `swipl -q -g "trace, writeln(x)" -t halt < /dev/null` prints `   Call: (12) writeln(x) ? ` and exits with status 4 at EOF),
+# so no row of _MG_CASES can pin the refusal. The rows tr01, tr02 pin the not-refused side against swipl.
+_mg_refused(f) =
+    try
+        f()
+        nothing
+    catch e
+        e isa LK.NotPortedError ? e : rethrow()
+    end
+
 @testset "trace/0, notrace/0, tracing/0 and the initial port masks, called directly (the tracer is not started)" begin
     gd = LK.PL_global_data{_MG}()
     ld = LK.PL_local_data{_MG}(gd)
@@ -434,15 +460,43 @@ end
     @test LK.CUT_PORT == 0xc0 && LK.PORT_MASK == 0x1ff && LK.UNIFY_PORT == 0x10 && LK.NO_PORT == 0
     @test LK.pl_tracing(ld) == LK.FFALSE
     @test !ld.debugstatus_debugging
-    @test LK.pl_trace(ld) == LK.FTRUE                  # tracemode(true): the debug mode goes on with it
-    @test ld.debugstatus_tracing && ld.debugstatus_debugging
-    @test ld.debugstatus_skiplevel == LK.SKIP_VERY_DEEP
-    @test LK.pl_tracing(ld) == LK.FTRUE
+    # the initial mask shows ports: trace/0 is refused by name, DBG2, and nothing changes
+    e = _mg_refused(() -> LK.pl_trace(ld))
+    @test e isa LK.NotPortedError && e.step == "DBG2" && occursin("trace/0 with a visible port", e.what)
+    @test LK.pl_tracing(ld) == LK.FFALSE
+    @test !ld.debugstatus_debugging
+    sk = ld.debugstatus_skiplevel
+    # one visible port of each kind refuses; a mask outside PORT_MASK (0x200, 0x400) or 0 shows no port: tracemode(true)
+    for (v, refused) in (
+        (0x001, true), (0x002, true), (0x004, true), (0x008, true), (0x010, true), (0x040, true),
+        (0x080, true), (0x100, true), (0x1ff, true), (0x3ff, true), (0x200, false), (0x400, false),
+        (0x000, false)
+    )
+        ld.debugstatus_visible = v
+        ld.debugstatus_leashing = 0                    # the leashed ports play no part
+        e = _mg_refused(() -> LK.pl_trace(ld))
+        if refused
+            @test e isa LK.NotPortedError
+            @test LK.pl_tracing(ld) == LK.FFALSE && !ld.debugstatus_debugging && ld.debugstatus_skiplevel == sk
+        else
+            @test e === nothing
+            @test LK.pl_tracing(ld) == LK.FTRUE && ld.debugstatus_debugging   # tracemode(true): the debug mode goes on with it
+            @test ld.debugstatus_skiplevel == LK.SKIP_VERY_DEEP
+            @test LK.pl_notrace(ld) == LK.FTRUE
+            @test LK.pl_tracing(ld) == LK.FFALSE
+            @test ld.debugstatus_debugging             # notrace switches the trace mode off only
+            @test LK.debugmode(ld, false, nothing, UInt32(0))
+            @test !ld.debugstatus_debugging
+            ld.debugstatus_skiplevel = sk
+        end
+    end
+    # trace mode already on, then a port made visible: refused again, and the mode stays on (the test comes before tracemode)
+    ld.debugstatus_visible = 0x000
+    @test LK.pl_trace(ld) == LK.FTRUE
     @test LK.pl_trace(ld) == LK.FTRUE                  # trace again: still on, still true
+    ld.debugstatus_visible = LK.CALL_PORT
+    @test _mg_refused(() -> LK.pl_trace(ld)) isa LK.NotPortedError
     @test LK.pl_tracing(ld) == LK.FTRUE
     @test LK.pl_notrace(ld) == LK.FTRUE
     @test LK.pl_tracing(ld) == LK.FFALSE
-    @test ld.debugstatus_debugging                     # notrace switches the trace mode off only
-    @test LK.debugmode(ld, false, nothing, UInt32(0))
-    @test !ld.debugstatus_debugging
 end

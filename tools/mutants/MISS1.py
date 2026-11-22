@@ -9,6 +9,7 @@
 # CN1-CN5 ('$call_no_catch'/1, kill: MG cn rows). TARGETS for the pl-file.jl and pl-pro.jl mutants add the files that exercise put_code and the
 # character input (test_lb5_swipl.jl, test_s2a_swipl.jl; audit D-0238). NOT COVERED: `return streamStatus(ld, s)` of get_nonblank (a stream error at EOF
 # needs an erroring stream: no row), `'$sig_unblock'` always true (not killable: nothing to observe).
+# C23: TR3-TR8 (trace/0's refusal while a port is visible, audit D-0768 (2); kill: MG tr01-tr02 and the direct testset, written blind: nothing ran).
 # Every `old` was counted EXACTLY once in its file (python3, src.count(old) == 1) at the tip of wip/miss-preds when this file was written (no Julia ran);
 # `new` != `old`. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 MG = "test/core_lang/test_miss_preds_swipl.jl"
@@ -74,6 +75,23 @@ MUTANTS = [
     # trace/0 switches the trace mode off (kill: MG direct testset)
     m("MISS1-TR2", "    return tracemode(ld, true, nothing) ? FTRUE : FFALSE\n",
       "    return tracemode(ld, false, nothing) ? FTRUE : FFALSE\n", TARGETS_TR),
+    # trace/0 (audit D-0768 (2); C23): never refused (kill: MG direct testset: the 0x001...0x3ff rows raise nothing, the state changes)
+    m("MISS1-TR3", '    if (ld.debugstatus_visible & PORT_MASK) != 0\n',
+      "    if false\n", [MG]),
+    # trace/0 refused whatever is visible (kill: MG tr01, tr02 raise the refusal inside the row; the direct testset's 0, 0x200 and 0x400 rows)
+    m("MISS1-TR4", '    if (ld.debugstatus_visible & PORT_MASK) != 0\n',
+      "    if true\n", [MG]),
+    # the refusal's port mask misses the exception port (kill: MG direct testset: the 0x100 row, `LK.PORT_MASK == 0x1ff`)
+    m("MISS1-TR5", "const PORT_MASK = 0x1ff\n", "const PORT_MASK = 0x0ff\n", [MG], eq=None),
+    # the refusal comes AFTER the state change (kill: MG direct testset: tracing/0 is true after the refused call, in each refused row)
+    m("MISS1-TR6", '    if (ld.debugstatus_visible & PORT_MASK) != 0\n',
+      "    if tracemode(ld, true, nothing) && (ld.debugstatus_visible & PORT_MASK) != 0\n", [MG]),
+    # the refusal when no port is visible, none when one is (kill: MG tr01, tr02, the direct testset's first call)
+    m("MISS1-TR7", '    if (ld.debugstatus_visible & PORT_MASK) != 0\n',
+      "    if (ld.debugstatus_visible & PORT_MASK) == 0\n", [MG]),
+    # the refusal names another step (kill: MG direct testset: `e.step == "DBG2"`; docs/r2_owners.tsv owns the key under DBG2)
+    m("MISS1-TR8", '"trace/0 with a visible port: the tracer (pl-trace.c tracePort)", "DBG2"',
+      '"trace/0 with a visible port: the tracer (pl-trace.c tracePort)", "DBG1"', [MG]),
     # '$unload_file'/1: no check of the argument (kill: MG ul04/ul05)
     m("MISS1-UL1", "    name === nothing && return FFALSE\n\n    sf = lookupSourceFile(gd, name, false)\n",
       "    sf = lookupSourceFile(gd, name::T, false)\n", [MG], file=S),
