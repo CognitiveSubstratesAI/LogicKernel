@@ -2538,6 +2538,11 @@ function _manifest_index(T)
             false,
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (
+            LK.freePrologThread!,
+            Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
+            false,
+        ),
         (LK._destroy_engine!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (
             LK.destroy_interactor!,
