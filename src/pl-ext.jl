@@ -73,6 +73,7 @@ const foreigns = (
     PL_extension("print", 2, pl_print2, 0x00),
     PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO),
     PL_extension("thread_self", 1, pl_thread_self, PL_FA_ISO),      # BOOTPRED (pl-ext.c:186)
+    PL_extension("thread_property", 2, pl_thread_property, PL_FA_NONDETERMINISTIC | PL_FA_ISO),   # TH1 (pl-thread.c:3404; NDET|ISO :8849)
     PL_extension("is_engine", 1, pl_is_engine, 0x00),               # TH1 engines (pl-thread.c:4504; O_ENGINES: BeginPredDefs :8849)
     PL_extension("\$engine_create", 3, pl_engine_create, 0x00),       # TH1 engines (pl-thread.c:4098)
     PL_extension("engine_destroy", 1, pl_engine_destroy, 0x00),     # TH1 engines (pl-thread.c:4233)

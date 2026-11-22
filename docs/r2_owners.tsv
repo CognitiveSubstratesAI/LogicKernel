@@ -33,7 +33,6 @@ pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
 pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_join/2	TH1	seed: missing_c_preds.tsv
-pred:thread_property/2	TH1	seed: missing_c_preds.tsv
 pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 pred:trace/0	DBG1	seed: missing_c_preds.tsv
@@ -78,6 +77,9 @@ kfile:pl-qlf.jl	LB3	seed: the QLF refusal sites
 refusal:src/pl-tabling.jl::tbl_refuse::what	TB5-TB9	the named refusal of a branch whose body is a later step's (`tbl_refuse(T, fname, what, owner)`: the argument `owner` names the step: TB5 the worklist branch of `reset_answer_table` (its calls to `destroy_depending_worklists` and `free_worklist` need an engine: `ld`, or a GD-to-LD reference; wip/tb5 calls `reset_answer_table(atrie, flags)` with two arguments, the stack's is `(gd, atrie, flags)`: batch-4 carry list, evidence/TAB1/stack4_handoff5.md), TB6 IDG, TB7 monotonic, TB8 tripwires, TB9 tracked tables (wip/tb9 ports the transaction tables and the eight sites call `tt_*`: the three refusal sites of TB9 are gone; the one refusal that still names TB9 is the tracked branch of `reset_answer_table`, whose callers `destroy_answer_trie`, `abolish_table` and `reset_table_bulk` run `reset_answer_table_tracked` first), TH1 shared tables, which stay named)
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction I_YIELD in an engine (pl-vmi.c:2419)	TH1	the named refusal of the branch (its body is the owner's step)
 refusal:src/pl-thread.jl::interactor_post_answer_nolock::PL_yielded (pl-wam.c:3331), the VM yield	TH1	the named refusal of the branch `rc == YIELD_ENGINE_YIELD` of engine_next/2 and engine_post/3 (its body is the VM yield, its own engine-core step)
+refusal:src/pl-thread.jl::unify_thread_status::thread status exited(T), exception(T), exception(error(resou	TH1	the named refusal of the statuses `exited`, `exception` and `nomem` of unify_thread_status (pl-thread.c:2721-2762): they read `info->return_value`, a thread's result; no engine record reaches them (a destroyed engine's slot is dropped)
+refusal:src/pl-thread.jl::thread_tid_property::thread_property system_thread_id(Id) (pl-thread.c thread_tid	TH1	the named refusal of thread_property's `system_thread_id(Id)` (pl-thread.c:3308-3320): the id of the OS thread; the kernel runs one OS thread
+refusal:src/pl-thread.jl::thread_size_property::thread_property size(Size) (pl-thread.c thread_size_property	TH1	the named refusal of thread_property's `size(Size)` (pl-thread.c:3326-3338, sizeof_thread :3155): the stack sizes of a thread
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
