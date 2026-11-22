@@ -1,7 +1,7 @@
 # ORIGINAL: a LIVE differential of term_hash/2 (pl-termhash.c:306-319), term_hash/4 (pl-prims.c termHashValue4) and
 # variant_hash/2, variant_sha1/2 (pl-termhash.c:659-692) against swipl at the pin (18168e62, 10.1.20); audit D-0894. Rows:
 #   th01-th50 term_hash/2 (atoms, every number class, strings, compounds, non-ground: the key stays unbound), tq01-tq42
-#   term_hash/4 (depth, range, every error), vh01-vh24 variant_hash/2, vs01-vs24 variant_sha1/2; cy01-cy06 a CYCLIC argument.
+#   term_hash/4 (depth, range, every error), vh01-vh24 variant_hash/2, vs01-vs26 variant_sha1/2; cy01-cy06 a CYCLIC argument.
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_bootpred3_swipl.jl's (`enc`oded answers).
 #   * Every answer line is swipl's, PINNED (the pinned swipl, run twice, byte-identical output); with `swipl` on PATH the
@@ -239,7 +239,9 @@ const _TH_CASES = [
     ("vs21", raw"""variant_sha1("", R)"""),
     ("vs22", raw"""variant_sha1('', R)"""),
     ("vs23", raw"""compound_name_arguments(T, f, []), variant_sha1(T, R)"""),
-    ("vs24", raw"""thx_ca([233], A), variant_sha1(A, R)""")
+    ("vs24", raw"""thx_ca([233], A), variant_sha1(A, R)"""),
+    ("vs25", raw"""variant_sha1("abcdefg", R)"""),
+    ("vs26", raw"""thx_cs([26085], S), variant_sha1(S, R)""")
 ]
 
 # a cyclic argument: swipl answers; the kernel answers cy05 and refuses the others by name — a separate database each
@@ -393,7 +395,9 @@ const _TH_PINNED = [
     "t_vs21 c[116,95,118,115,50,49]/1(a[48,55,53,48,98,50,51,101,49,100,55,100,49,48,97,51,100,49,55,98,55,48,99,99,48,55,98,97,102,101,102,53,99,101,50,102,100,51,55,54])",
     "t_vs22 c[116,95,118,115,50,50]/1(a[55,52,50,99,51,57,54,99,56,98,49,97,51,101,97,102,102,49,50,98,56,56,52,49,102,102,99,53,54,54,48,55,102,55,54,49,98,50,102,57])",
     "t_vs23 c[116,95,118,115,50,51]/1(a[56,101,53,99,53,49,53,52,102,56,50,55,97,50,51,98,54,98,49,102,101,56,57,55,57,102,50,50,97,102,99,55,99,50,49,56,55,54,50,99])",
-    "t_vs24 c[116,95,118,115,50,52]/1(a[53,97,54,53,50,53,52,52,48,55,97,53,51,99,101,52,49,50,101,49,50,100,51,102,55,56,98,98,101,98,99,53,48,99,52,101,53,53,101,51])"
+    "t_vs24 c[116,95,118,115,50,52]/1(a[53,97,54,53,50,53,52,52,48,55,97,53,51,99,101,52,49,50,101,49,50,100,51,102,55,56,98,98,101,98,99,53,48,99,52,101,53,53,101,51])",
+    "t_vs25 c[116,95,118,115,50,53]/1(a[101,51,49,53,53,48,48,54,97,50,50,53,49,52,99,100,99,100,49,57,55,98,50,52,97,97,97,97,57,49,50,101,55,57,50,101,56,56,57,99])",
+    "t_vs26 c[116,95,118,115,50,54]/1(a[102,98,50,56,50,98,98,49,51,53,56,52,56,52,102,56,100,56,54,101,50,51,56,48,101,57,57,99,100,97,48,55,98,53,51,100,53,57,98,102])"
 ]
 
 const _TH_CY_PINNED = [
@@ -578,7 +582,7 @@ end
     @test _th_atom(_th_pin("vh15")) == "same" && _th_atom(_th_pin("vh23")) == "diff"
     # variant_sha1/2: 40 hex digits; the variant relation
     for id in ("vs01", "vs02", "vs03", "vs04", "vs05", "vs06", "vs07", "vs08", "vs09", "vs10", "vs11", "vs12", "vs15",
-               "vs19", "vs20", "vs21", "vs22", "vs23", "vs24")
+               "vs19", "vs20", "vs21", "vs22", "vs23", "vs24", "vs25", "vs26")
         a = _th_atom(_th_pin(id))
         @test a !== nothing && length(a) == 40 && all(c -> c in "0123456789abcdef", a)
     end
