@@ -20,14 +20,22 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 
 # ---- the frames of an open query ----
-# `bd(X) :- n(X), X = p(_, _)`: bd/1's frame has arity 1 and three clause variables (two beyond its argument); n/1's clauses have none.
+# `bd(X) :- n(X), X = p(Y, Z), p(Y, Z) = X`: bd/1's frame has arity 1 and three clause variables (two beyond its argument); n/1's clauses have none.
+# Y and Z occur TWICE on purpose: a variable that occurs once (`X = p(_, _)`) is a VOID, which the compiler gives no frame slot (prolog_vars = 1, probed), so the
+# clause would have no slot beyond its argument to clear.
 const _GF_CLAUSES = Tuple{_R, Union{Nothing, _R}}[
     (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),
     (_rf("n", _rf("p", _rg(Int64(2)), _rg(3.25))), nothing),
     (_rf("n", _rf("p", _rg(Int64(3)), _rg(4.25))), nothing),
     (
         _rf("bd", _rv(1)),
-        _rconj(_rf("n", _rv(1)), _rf("=", _rv(1), _rf("p", _rv(2), _rv(3))))
+        _rconj(
+            _rf("n", _rv(1)),
+            _rconj(
+                _rf("=", _rv(1), _rf("p", _rv(2), _rv(3))),
+                _rf("=", _rf("p", _rv(2), _rv(3)), _rv(1))
+            )
+        )
     )
 ]
 
@@ -96,7 +104,11 @@ function _gf_rows(db)
     nfr = _gf_clause_frame(ld)
     bfr = ld.frames[nfr].parent
     bdef = _rproc(db, _rf("bd", _rv(1))).definition
-    fdef = _rproc(db, _rf("atom_length", _rv(1), _rv(2))).definition
+    # the SYSTEM module's atom_length/2 (a P_FOREIGN definition): `_rproc` looks it up in `user`, which creates a fresh undefined user:atom_length/2 (flags 0)
+    fproc = LK.visibleProcedure(
+        db.gd, _rfunctor(_rf("atom_length", _rv(1), _rv(2)))..., db.user
+    )
+    fdef = fproc.definition
     ph = ld.placeholder
     rows = Tuple{String, Bool}[]
     chk!(name, ok) = push!(rows, (name, ok === true))
