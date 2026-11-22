@@ -60,8 +60,8 @@ t28(R) :- member(N, [20, 40, 100]), rep(N, 0x3b1, L), string_codes(S, L), fsh(S,
 
 % ---- rationals ----
 t29(R) :- member(E, [2**70 rdiv 3, 2**100 rdiv 3**50]), Q is E, fs(Q, R).
-% swipl 10.1.20 answers a root rational whose misread numerator fits an int64 with an INTEGER record (get_int64 reads the mpq's cells as an
-% mpz): 1r3 gives the integer 3, -2r7 gives -3, 7r2**80 gives 5. The kernel writes the rational's own PL_REC_MPQ record.
+% swipl 10.1.20 answers these root rationals with an INTEGER record: 1r3 gives the integer 3, -2r7 gives -3, 7r2**80 gives 5.
+% The kernel writes the rational's own PL_REC_MPQ record. The row is pending a named DIVERGES (audit ruling).
 t30(R) :- member(E, [1 rdiv 3, -2 rdiv 7, 7 rdiv 2**80]), Q is E, fs(Q, R).
 t31(R) :- member(E, [1 rdiv 3, -2 rdiv 7, 2**70 rdiv 3]), Q is E, fs(f(Q), R).
 
