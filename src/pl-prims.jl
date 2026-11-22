@@ -5218,6 +5218,104 @@ function pl_collation_key2_va(
     end
 end
 
+# ── term_hash/4 ─────────────────────────────────────────────────────────────────────────────────
+# PORT: pl-prims.c termHashValue
+# DIVERGES: an explicit walk (five parallel stacks: the compound, the child index of its argument 0, its arity, its next
+# argument, the depth its arguments are hashed at) instead of C recursion; a CYCLIC term never reaches it (`_term_hash_arg`
+# refuses it, where upstream's `visited()` folds the running hash into itself and goes on); atomic data are those of
+# term_hash/2 (`primitiveHashValue`), so a string with a code above 0xff hashes as UTF-8 where swipl's `getCharsString`
+# reads a wide string as bytes (no value to pin).
+"""
+    termHashValue4(t, depth) -> Union{UInt32, Nothing}
+
+The hash of `t` down to `depth` levels (`-1`: all of them) from `MURMUR_SEED` (pl-prims.c `termHashValue`): an atom or
+a number adds what term_hash/2 does, a compound its functor name's hash plus its arity as 8 bytes and then, while
+`--depth != 0`, its arguments. `nothing` when a variable is reached.
+"""
+function termHashValue4(t, depth::Int)::Union{Nothing, UInt32}
+    T = term_type(t)
+    hval = MURMUR_SEED
+    terms = T[]
+    offs = Int[]
+    arities = Int[]
+    nexts = Int[]
+    depths = Int[]
+    cur = t
+    d = depth
+    while true
+        if kind(cur) === EXPR
+            off, arity = _comp_shape(cur)
+            name = off == 2 ? UInt64(_atom_hash(child(cur, 1))) : UInt64(0)
+            hval = MurmurHashAligned2((name + UInt64(arity),), 8, hval)
+            d -= 1
+            if d != 0                                       # -1 keeps on going
+                push!(terms, cur)
+                push!(offs, off)
+                push!(arities, arity)
+                push!(nexts, 0)
+                push!(depths, d)
+            end
+        else
+            h = primitiveHashValue(cur, hval)
+            h === nothing && return nothing                 # a variable: no hash
+            hval = h
+        end
+        found = false
+        while !isempty(terms)
+            i = length(terms)
+            if nexts[i] < arities[i]
+                cur = child(terms[i], offs[i] + nexts[i])
+                d = depths[i]
+                nexts[i] += 1
+                found = true
+                break
+            end
+            pop!(terms)
+            pop!(offs)
+            pop!(arities)
+            pop!(nexts)
+            pop!(depths)
+        end
+        found || return hval
+    end
+end
+
+# PORT: pl-prims.c term_hash4 as pl_term_hash_4_va
+# (PRED_IMPL("term_hash", 4, term_hash4, 0), pl-prims.c:1616-1647 at the pin)
+# DIVERGES: a cyclic argument is refused (`_term_hash_arg`), and only when the depth is not 0 (upstream reads the term
+# only then); `range` is a C int, so a range above 2^31-1 is `representation_error(int)`.
+"""
+`term_hash(+Term, +Depth, +Range, -HashKey)`: a hash of `Term` down to `Depth` levels (`-1`: all), modulo `Range`;
+`HashKey` stays unbound when a variable is reached within the depth (pl-prims.c).
+"""
+function pl_term_hash_4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    A1, A2, A3, A4 = PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3
+    hraw = MURMUR_SEED
+
+    depth = PL_get_int64_ex(ld, A2)
+    depth === nothing && return FFALSE
+    if depth < -1
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), A2)
+        return FFALSE
+    end
+    range = PL_get_integer_ex(ld, A3)
+    range === nothing && return FFALSE
+    if range < 1
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_one), A2)     # sic: the culprit is A2, as upstream's
+        return FFALSE
+    end
+
+    if depth != 0
+        h = termHashValue4(_term_hash_arg(ld, A1), depth)
+        h === nothing && return FTRUE                       # non-ground within the depth
+        hraw = h
+    end
+
+    return PL_unify_integer(ld, A4, Int(hraw % UInt32(range))) ? FTRUE : FFALSE
+end
+
 # PORT: pl-prims.c BeginPredDefs as PL_predicates_from_prims
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (prims:6570-6677);
 # `PRED_DEF` ors in `PL_FA_VARARGS`. The others of upstream's table arrive with their ports.
@@ -5275,6 +5373,7 @@ const PL_predicates_from_prims = (
     PL_extension("deterministic", 1, pl_deterministic1_va, PL_FA_VARARGS),   # (AV9)
     PL_extension("\$free_variable_set", 3, pl_free_variable_set3_va, PL_FA_VARARGS),
     PL_extension("unifiable", 3, pl_unifiable3_va, PL_FA_VARARGS),
+    PL_extension("term_hash", 4, pl_term_hash_4_va, PL_FA_VARARGS),
     PL_extension("atom_length", 2, pl_atom_length2_va, PL_FA_ISO | PL_FA_VARARGS),       # (T1)
     PL_extension("name", 2, pl_name2_va, PL_FA_VARARGS),
     PL_extension("atom_chars", 2, pl_atom_chars2_va, PL_FA_ISO | PL_FA_VARARGS),

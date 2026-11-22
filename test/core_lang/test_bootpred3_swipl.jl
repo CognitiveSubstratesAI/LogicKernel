@@ -7,7 +7,7 @@
 #     with `swipl` on PATH the live answers are compared with the pins too.
 #   * KNOWN DIFFERENCES, each a row whose pin is swipl's answer and whose kernel answer is pinned too (`_B3_KNOWN`, with swipl's in
 #     a comment): the message counters are not kernel state (src/pl-error.jl: rows bp3i11, bp3i12; the debugger state is since
-#     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer), and variant_sha1's DIGEST VALUES are not swipl's (pl-termhash.jl DIVERGES 1-2: row bp3v15; the other v-rows compare lengths,
+#     DBG1-SMALL: rows bp3n01, bp3n07, bp3n18 are swipl's answers; the listeners of prolog_listen/2,3 are kept since EV1: row bp3l33 is swipl's answer); variant_sha1's digest of `foo` (row bp3v15) is swipl's since TERMHASH (the other v-rows compare lengths,
 #     alphabet and variant equality, never a digest). A known row stops being one when its kernel line equals swipl's.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -370,9 +370,7 @@ const _B3_KNOWN = Dict{String, String}(
     # no error counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
     "t_bp3i11" => "t_bp3i11 c[116,95,98,112,51,105,49,49]/1(i0)",
     # no warning counter is kept (src/pl-error.jl DIVERGES): swipl counts 1
-    "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)",
-    # the digest values are not swipl's (src/pl-termhash.jl DIVERGES 1-2): swipl's is cee71ebc1d023af131e3461b322e4251b2e5a510
-    "t_bp3v15" => "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[53,100,97,52,50,51,51,48,52,100,101,50,50,97,101,53,97,49,52,102,56,54,49,57,55,55,53,99,98,49,53,49,99,97,54,55,102,100,55,53])"
+    "t_bp3i12" => "t_bp3i12 c[116,95,98,112,51,105,49,50]/1(i0)"
 )
 
 function _b3_file()::Tuple{String, Vector{String}}
@@ -430,24 +428,12 @@ function _b3_kernel(path::String, names::Vector{String})
 end
 
 
-# a digest atom's 40 character codes replaced by a shape (one atom of exactly 40 codes), for the alt term types' bp3v15
-_b3_digest_shape(l::AbstractString) = replace(l, r"a\[(?:\d+,){39}\d+\]" => "a[40 codes]")
-
 @testset "BOOTPRED3's five predicates as swipl's (bp3m, bp3i, bp3n, bp3l, bp3v)" begin
     f, names = _b3_file()
     kl, _, _ = _b3_kernel(f, names)
     @test length(kl) == length(_B3_PINNED)
     for (k, p) in zip(kl, _B3_PINNED)
         want = get(_B3_KNOWN, first(split(p, ' ')), p)
-        if LK_TERM_IMPL != "reference" && first(split(p, ' ')) == "t_bp3v15"
-            # variant_sha1's digest hashes the term type's own `sym_hash` (RECORDED OWNER: src/pl-termhash.jl file-wide
-            # DIVERGES 1, "ATOMIC DATA", and the pl-termhash.jl row of docs/architecture.md: "not SWI's values"; the
-            # `sym_hash` contract is src/term_interface.jl's): the value is type-dependent and not swipl's, so the alt
-            # types are compared by SHAPE (one atom of 40 codes); the reference type keeps the exact pin.
-            k = _b3_digest_shape(k)
-            want = _b3_digest_shape(want)
-            @test k == "t_bp3v15 c[116,95,98,112,51,118,49,53]/1(a[40 codes])"
-        end
         k == want || println(stderr, "  ours  ", k, "\\n  swipl ", p)
         @test k == want
     end

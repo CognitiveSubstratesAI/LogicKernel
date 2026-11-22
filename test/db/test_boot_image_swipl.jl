@@ -203,7 +203,9 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # INT-MERGE-11, second step (+ wip/wrappers-1): WRAPPERS registers 8 more foreign rows of `system` ($candidate_indexes/3, $set_candidate_indexes/2, $set_source_files/1, $clause_from_source/4,
 # $flush_predicate/1, $flushed_predicate/1, redefine_system_predicate/1, $predefine_foreign/1: the branch's own 210 - 8 = 202), disjoint from every row counted above; RE-COUNTED by the same script on the
 # merged tree, not summed: 82 not registered - 4 (the calibration offset) = 78 (the script gave 90 before this step: 90 - 8 = 82). DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
-const _BI_KERNEL_MISSING_FOREIGN = 78     # INT-MERGE-11: script count 82 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
+# INT-MERGE-14 (+ wip/termhash-reg): the branch registers term_hash/2, term_hash/4 and variant_hash/2 (foreign rows of `system`; variant_sha1/2 is no row of the oracle); RE-COUNTED by the same script on the
+# merged tree, not summed: 79 not registered (was 82 before this merge; wip/c29-tty registered none) - 4 (the calibration offset) = 75. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
+const _BI_KERNEL_MISSING_FOREIGN = 75     # INT-MERGE-14: script count 79 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave
