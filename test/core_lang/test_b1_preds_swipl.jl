@@ -1,5 +1,5 @@
 # ORIGINAL: a LIVE differential of thread_statistics/3 (pl-thread.c:7416-7459 at the pin, swipl-devel 18168e62; swipl 10.1.20) against swipl, on the
-# main thread (rows ts01-ts27) and on engines (rows te01-te12), kept in ONE database in order; thread_statistics/3 is read-only, so every row
+# main thread (rows ts01-ts33) and on engines (rows te01-te16), kept in ONE database in order; thread_statistics/3 is read-only, so every row
 # is state-neutral. Added by B1-1 (edit-only: NOTHING was compiled or run when this file was written, the kernel's answers are UNVERIFIED).
 #   * A PROGRAM-less file of cases `t_<id>(R)` run in order in one database, each wrapped in `catch(Goal, error(E, _), R = raised(E))`; the
 #     driver is test_thread_ops_swipl.jl's. The VALUES of the statistics (times, sizes, counts) differ between swipl and the kernel and
@@ -7,6 +7,10 @@
 #     failing rows are exact. An engine handle is never printed (a blob).
 #   * Every swipl answer line is swipl's, PINNED (swipl 10.1.20, the pin binary, two runs byte-identical, evidence/B1/gen_rows.py --fill); with `swipl`
 #     on PATH the live answers are compared with the pins too.
+#   * AIMED ROWS (T3 battery tools/mutants/B1.py; their values are RELATIONS that hold on swipl, oracle-checked, not types): ts28/ts29 the target's clock is
+#     refreshed (a later read is larger after work), ts30/ts31 a LIST value for warnings/errors fails (the arm answers before qp_statistics), ts32/ts33 the value is
+#     exactly 0, te15 an engine's `inferences` grow by what the engine ran (a swap of the target's local data for the caller's reads the caller's counter),
+#     te16 an engine's `stacks` are smaller than the caller's with a 100000-element list live (the list-form path reads the target's stacks).
 #   * KNOWN DIFFERENCE: `warnings` and `errors` are always 0 in the kernel (`ld_statistics` does not count them); the rows ask for `integer`.
 #   * REFUSED by name (TH1), kernel only: the main thread named from an engine (rf01): the kernel does not keep the main thread's local data
 #     where an engine can reach it. swipl answers it; no swipl line is pinned.
@@ -119,6 +123,12 @@ const _B1_CASES = [
     ("ts25", raw"thread_statistics(main, runtime, [_])"),
     ("ts26", raw"thread_statistics(main, cputime, X), thread_statistics(1, cputime, Y), ( Y >= X -> R = mono ; R = bad )"),
     ("ts27", raw"call_cleanup(thread_statistics(main, errors, _), Det = true), R = Det"),
+    ("ts28", raw"thread_statistics(main, cputime, X), findall(B, (between(1,20000,B), atom_length(abc,_)), _), thread_statistics(main, cputime, Y), ( Y > X -> R = later ; R = same )"),
+    ("ts29", raw"thread_statistics(main, runtime, [X,_]), findall(B, (between(1,200000,B), atom_length(abc,_)), _), thread_statistics(main, runtime, [Y,_]), ( Y > X -> R = later ; R = same )"),
+    ("ts30", raw"thread_statistics(main, warnings, [_])"),
+    ("ts31", raw"thread_statistics(main, errors, [_])"),
+    ("ts32", raw"thread_statistics(main, warnings, 0), R = ok"),
+    ("ts33", raw"thread_statistics(main, errors, 0), R = ok"),
     ("te01", raw"engine_create(x, true, E), thread_statistics(E, cputime, X), ( float(X) -> R = float ; R = other )"),
     ("te02", raw"engine_create(x, true, E), thread_statistics(E, runtime, [A,B]), integer(A), integer(B), R = ok"),
     ("te03", raw"engine_create(x, true, E), thread_statistics(E, system_time, [A,B]), integer(A), integer(B), R = ok"),
@@ -132,7 +142,9 @@ const _B1_CASES = [
     ("te11", raw"engine_create(x, ( thread_self(M), thread_statistics(M, errors, V), integer(V) ), E), engine_next(E, R)"),
     ("te12", raw"engine_create(x, true, E), thread_statistics(E, inferences, X), ( integer(X) -> R = integer ; R = other )"),
     ("te13", raw"engine_create(x, true, E), thread_statistics(E, runtime, [_])"),
-    ("te14", raw"engine_create(x, ( thread_self(M), thread_statistics(M, nokey, _) ), E), catch(engine_next(E, _), error(domain_error(D, K), _), R = d(D, K))")
+    ("te14", raw"engine_create(x, ( thread_self(M), thread_statistics(M, nokey, _) ), E), catch(engine_next(E, _), error(domain_error(D, K), _), R = d(D, K))"),
+    ("te15", raw"engine_create(x, ( findall(Y, (between(1,3000,Y), atom_length(abc,_)), _) ; true ), E), thread_statistics(E, inferences, I0), engine_next(E, _), thread_statistics(E, inferences, I1), D is I1 - I0, ( D >= 3000 -> R = grew ; R = small )"),
+    ("te16", raw"numlist(1, 100000, L), statistics(stacks, [GM,_]), engine_create(x, true, E), thread_statistics(E, stacks, [GE,_]), L = [_|_], ( GE < GM -> R = less ; R = notless )")
 ]
 
 # the swipl lines of every case, PINNED (evidence/B1/gen_rows.py --fill writes the block)
@@ -165,6 +177,12 @@ const _B1_PINNED = [
     "t_ts25 c[116,95,116,115,50,53]/1(V0)",
     "t_ts26 c[116,95,116,115,50,54]/1(a[109,111,110,111])",
     "t_ts27 c[116,95,116,115,50,55]/1(a[116,114,117,101])",
+    "t_ts28 c[116,95,116,115,50,56]/1(a[108,97,116,101,114])",
+    "t_ts29 c[116,95,116,115,50,57]/1(a[108,97,116,101,114])",
+    "t_ts30",
+    "t_ts31",
+    "t_ts32 c[116,95,116,115,51,50]/1(a[111,107])",
+    "t_ts33 c[116,95,116,115,51,51]/1(a[111,107])",
     "t_te01 c[116,95,116,101,48,49]/1(a[102,108,111,97,116])",
     "t_te02 c[116,95,116,101,48,50]/1(a[111,107])",
     "t_te03 c[116,95,116,101,48,51]/1(a[111,107])",
@@ -178,7 +196,9 @@ const _B1_PINNED = [
     "t_te11 c[116,95,116,101,49,49]/1(a[120])",
     "t_te12 c[116,95,116,101,49,50]/1(a[105,110,116,101,103,101,114])",
     "t_te13 c[116,95,116,101,49,51]/1(V0)",
-    "t_te14 c[116,95,116,101,49,52]/1(c[100]/2(a[115,116,97,116,105,115,116,105,99,115,95,107,101,121],a[110,111,107,101,121]))"
+    "t_te14 c[116,95,116,101,49,52]/1(c[100]/2(a[115,116,97,116,105,115,116,105,99,115,95,107,101,121],a[110,111,107,101,121]))",
+    "t_te15 c[116,95,116,101,49,53]/1(a[103,114,101,119])",
+    "t_te16 c[116,95,116,101,49,54]/1(a[108,101,115,115])"
 ]
 
 const _B1_IDS = [id for (id, _) in _B1_CASES]
@@ -251,7 +271,7 @@ function _b1_file()::Tuple{String, Vector{String}}
     return f, ["t_$id" for id in _B1_IDS]
 end
 
-@testset "thread_statistics/3 as swipl's (ts01-ts27, te01-te14)" begin
+@testset "thread_statistics/3 as swipl's (ts01-ts33, te01-te16)" begin
     f, names = _b1_file()
     kl, gd, ld, e = _b1_kernel(f, names)
     @test e === nothing
