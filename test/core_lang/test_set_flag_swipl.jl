@@ -575,8 +575,7 @@ end
 # kernel answer permission_error(modify, flag, file_name_case_handling)): it has no row here.
 const _SF_REFUSED = [
     ("tty_control", "true"), ("debug_on_interrupt", "true"), ("var_tag", "dict"),
-    ("incomparable", "error"), ("encoding", "utf8"), ("unicode_atoms", "error"),
-    ("theme", "dark"), ("agc_margin", "100"),
+    ("encoding", "utf8"), ("unicode_atoms", "error"), ("agc_margin", "100"),
     ("heartbeat", "0"),
     ("max_integer_size", "2000")
 ]
@@ -595,7 +594,7 @@ const _SF_REFUSED = [
         # UNVERIFIED on the kernel: gate decides (the refusal's class for `threads`, `tty_control`: the value that changes the flag)
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
-    @test length(_SF_REFUSED) >= 10                # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit); RT: 10 entries, the run on RT passes
+    @test length(_SF_REFUSED) >= 8                 # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit) - 2 (incomparable, theme: setters ported); RT: 8 entries, the run on RT passes
 end
 
 # KNOWN DIFFERENCE BY DESIGN (D1, the no-threads build; checklist: R2's threads): `threads` is read-only in the kernel (upstream's `#else` of
