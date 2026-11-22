@@ -300,3 +300,98 @@ end
         end
     end
 end
+
+# WHITE-BOX: the raw API. A query opened with `PL_Q_ALLOW_YIELD | PL_Q_EXT_STATUS` returns the yield code from PL_next_solution, `PL_yielded`
+# names the term reference of the yielded term, the next PL_next_solution resumes (pl-wam.c:3870-3910) and clears `yield_term`.
+const _EY_WB = raw"""
+ey_wb(X) :- engine_yield(f(X)), X = 1.
+ey_wb2(_) :- '$engines':'$engine_yield'(g(1), 300).
+ey_wb3(_) :- engine_yield(x).
+"""
+
+"Consult the white-box program; return `(gd, ld)`."
+function _ey_wb_load()
+    f = joinpath(mktempdir(), "ey_wb.pl")
+    write(f, _EY_WB)
+    gd, ld, st = _ey_load(f)
+    @test st == "ok"
+    return gd, ld
+end
+
+"Open a query on `pred/1` with an unbound argument: `(fid, a, qid)`."
+function _ey_wb_open(gd, ld, pred::String, flags::UInt32)
+    proc = LK.isCurrentProcedure(sym_key(_eys(pred)), 1, LK.MODULE_user(gd))
+    @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 1)
+    LK.putSlotValue!(ld, a + 1, mk_var(_EY, LK.fresh_var_keys!(1)), LK.PutVarMap())
+    qid = LK.PL_open_query(gd, ld, nothing, flags, proc, a)
+    return fid, a, qid
+end
+
+const _EY_FLAGS = LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS | LK.PL_Q_ALLOW_YIELD
+
+@testset "engine yield: white-box (the yield code, PL_yielded, the resume, PL_can_yield)" begin
+    gd, ld = _ey_wb_load()
+    @test !LK.PL_can_yield(ld)                          # no query open
+    fid, a, qid = _ey_wb_open(gd, ld, "ey_wb", _EY_FLAGS)
+    q = ld.queries[LK.QueryFromQid(ld, qid)]
+    @test q.yield_term == 0                             # PL_open_query: qf->yield.term = 0
+    @test LK.PL_can_yield(ld)                           # the innermost query was opened with PL_Q_ALLOW_YIELD
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == 256                                     # the yield code of engine_yield/1
+    t = LK.PL_yielded(ld, qid)
+    @test t != 0
+    @test q.yield_term == t
+    @test _ey_enc(lk_answers(ld, t)[1]) == "c[102]/1(V0)"   # f(_): the yielded term, argument 1 of the instruction
+    rc = LK.PL_next_solution(gd, ld, qid)               # resumes after the yield: X = 1, then the clause exits
+    @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+    @test q.yield_term == 0                             # the resume cleared it
+    @test _ey_enc(lk_answers(ld, a)[1]) == "i1"
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    @test !LK.PL_can_yield(ld)                          # the query is closed
+end
+
+@testset "engine yield: white-box (a code of the caller's choice, 300)" begin
+    gd, ld = _ey_wb_load()
+    fid, a, qid = _ey_wb_open(gd, ld, "ey_wb2", _EY_FLAGS)
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == 300                                     # `Code must be an integer >= 256`: the value is returned as it is
+    t = LK.PL_yielded(ld, qid)
+    @test t != 0
+    @test _ey_enc(lk_answers(ld, t)[1]) == "c[103]/1(i1)"
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
+@testset "engine yield: white-box (a query that did not ask to yield refuses, PL_can_yield is false)" begin
+    gd, ld = _ey_wb_load()
+    fid, a, qid = _ey_wb_open(gd, ld, "ey_wb3", LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
+    @test !LK.PL_can_yield(ld)
+    rc = LK.PL_next_solution(gd, ld, qid)
+    @test rc == LK.PL_S_EXCEPTION                       # permission_error(execute, vmi, 'I_YIELD')
+    @test LK.PL_yielded(ld, qid) == 0
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+end
+
+@testset "engine yield: white-box (a yielded query is closed, the record of the next one starts clean)" begin
+    gd, ld = _ey_wb_load()
+    fid, a, qid = _ey_wb_open(gd, ld, "ey_wb", _EY_FLAGS)
+    q1 = ld.queries[LK.QueryFromQid(ld, qid)]
+    @test LK.PL_next_solution(gd, ld, qid) == 256
+    @test q1.yield_term != 0
+    LK.PL_close_query(ld, qid)                          # closed while yielded: its yield foreign frame goes with it
+    LK.PL_close_foreign_frame(ld, fid)
+    fid2, a2, qid2 = _ey_wb_open(gd, ld, "ey_wb", _EY_FLAGS)
+    q2 = ld.queries[LK.QueryFromQid(ld, qid2)]
+    @test q2 === q1                                     # pushQuery! reuses the record of the same depth (the pool)
+    @test q2.yield_term == 0                            # PL_open_query resets it: a stale one would read as a resume
+    @test LK.PL_next_solution(gd, ld, qid2) == 256      # the first call of the new query runs from the start
+    @test _ey_enc(lk_answers(ld, LK.PL_yielded(ld, qid2))[1]) == "c[102]/1(V0)"
+    LK.PL_close_query(ld, qid2)
+    LK.PL_close_foreign_frame(ld, fid2)
+end
