@@ -1753,6 +1753,17 @@ function _manifest_index(T)
         (LK.PL_skip_list, Tuple{LD, Int}, false),
         (LK.PL_unify_functor, Tuple{LD, Int, T, Int}, false),
         (LK.PL_unify_arg, Tuple{LD, Int, Int, Int}, false),
+        # FLI-API group 1 (pl-fli.c): the pointer, functor, list-cell and argument API
+        (LK.PL_put_bool, Tuple{LD, Int, Bool}, false),
+        (LK.PL_put_pointer, Tuple{LD, Int, UInt}, false),
+        (LK.PL_put_functor, Tuple{LD, Int, UInt64}, false),
+        (LK.PL_put_list, Tuple{LD, Int}, false),
+        (LK.PL_get_uintptr, Tuple{LD, Int}, false),
+        (LK.PL_get_pointer, Tuple{LD, Int}, false),
+        (LK.PL_get_arg, Tuple{LD, Int, Int, Int}, false),
+        (LK.PL_get_compound_name_arity, Tuple{LD, Int}, false),
+        (LK.PL_unify_int64_ex, Tuple{LD, Int, Int}, false),
+        (LK.PL_unify_pointer, Tuple{LD, Int, UInt}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (

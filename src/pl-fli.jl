@@ -297,6 +297,14 @@ function PL_put_atom(ld::PL_local_data{T}, t::term_t, a::T)::Bool where {T}
     return true
 end
 
+# PORT: pl-fli.c PL_put_bool
+# DIVERGES: the atom `true` or `false` as a symbol of the term type, put as `PL_put_atom` puts it.
+"Make term reference `t` hold the atom `true` if `val`, else `false` (pl-fli.c)."
+function PL_put_bool(ld::PL_local_data{T}, t::term_t, val::Bool)::Bool where {T}
+    PL_put_atom(ld, t, mk_sym(T, val ? Symbol("true") : Symbol("false")))  # PL_put_atom(t, val ? ATOM_true : ATOM_false)
+    return true
+end
+
 # PORT: pl-fli.c PL_put_nil
 "Make term reference `l` hold `[]` (pl-fli.c)."
 PL_put_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_put_atom(ld, l, mk_nil(T))
@@ -310,6 +318,14 @@ PL_put_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_intptr(
 # PORT: pl-fli.c PL_put_integer
 "Make term reference `t` hold the integer `i` (pl-fli.c)."
 PL_put_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_int64(ld, t, i)
+
+# PORT: pl-fli.c PL_put_pointer
+# DIVERGES: a pointer is a `UInt` (a `uintptr_t`); on a 64-bit platform `pointerToInt` is the identity
+# (pl-inline.h), so the integer put is the pointer's bits as an `int64_t`.
+"Make term reference `t` hold the pointer `ptr` as an integer (pl-fli.c)."
+function PL_put_pointer(ld::PL_local_data{T}, t::term_t, ptr::UInt)::Bool where {T}
+    return PL_put_int64(ld, t, reinterpret(Int, ptr))       # PL_put_int64(t, (int64_t)pointerToInt(ptr))
+end
 
 # PORT: pl-fli.c PL_put_float
 # DIVERGES: the float's word as `PL_put_intptr` lays an integer (`mk_gnd`); a NaN is the canonical one
@@ -327,6 +343,30 @@ end
 "Make term reference `t` hold the number `n` (pl-fli.c)."
 function _PL_put_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
     setSlotValue!(ld, t + 1, put_number(T, n))      # setHandle(t, consInt(…)) / put_number(&w, n)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_functor
+# DIVERGES: the functor is a functor WORD (as `PL_cons_functor`'s); no global space to ensure, so it
+# cannot fail. The arguments are the unbound cells `_alloc_compound!` lays out (`setVar`).
+"Make term reference `t` hold a new term of functor word `f` whose arguments are fresh variables — the atom `f` names if its arity is 0 (pl-fli.c)."
+function PL_put_functor(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
+    arity = arityFunctor(ld.functors, f)                    # size_t arity = arityFunctor(f)
+    if arity == 0
+        ld.slots[t + 1] = nameFunctor(ld.functors, f)       # setHandle(t, nameFunctor(f))
+    else
+        a = _alloc_compound!(ld, f, arity)                  # a = allocGlobal(1+arity); *a++ = f; setVar(*a++)…
+        ld.slots[t + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL)     # setHandle(t, consCompound(a))
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list
+# DIVERGES: no global space to ensure, so it cannot fail.
+"Make term reference `l` hold a new list cell whose head and tail are fresh variables (pl-fli.c)."
+function PL_put_list(ld::PL_local_data{T}, l::term_t)::Bool where {T}
+    a = _alloc_compound!(ld, ld.functor_dot2, 2)            # a = allocGlobal(3); *a++ = FUNCTOR_dot2; setVar(*a++)…
+    ld.slots[l + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL) # setHandle(l, consCompound(a))
     return true
 end
 
@@ -612,6 +652,27 @@ end
 "The `intptr_t` term reference `t` holds, or `nothing` (pl-fli.c)."
 PL_get_intptr(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long(ld, t)
 
+# PORT: pl-fli.c PL_get_uintptr
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; `size_t` is 64 bits
+# (the `SIZEOF_VOIDP < 8` range check is not taken).
+"The non-negative integer term reference `t` holds, as an unsigned `size_t`, or `nothing` (pl-fli.c)."
+function PL_get_uintptr(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt} where {T}
+    v = PL_get_int64(ld, t)                                 # PL_get_int64(t, &val)
+    (v === nothing || v < 0) && return nothing              # val < 0
+    return UInt(v)                                          # *i = (size_t)val
+end
+
+# PORT: pl-fli.c PL_get_pointer
+# DIVERGES: returns the pointer as a `UInt` (a `uintptr_t`), or `nothing`, where upstream writes a
+# `void *` through `ptr`; on a 64-bit platform `intToPointer` is the identity (pl-inline.h), so a
+# negative `int64_t` is the pointer of its bits.
+"The pointer the integer term reference `t` holds, as a `UInt`, or `nothing` (pl-fli.c)."
+function PL_get_pointer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt} where {T}
+    p = PL_get_int64(ld, t)                                 # PL_get_int64(t, &p)
+    p === nothing && return nothing
+    return reinterpret(UInt, p)                             # *ptr = intToPointer((uintptr_t)p)
+end
+
 # PORT: pl-fli.c PL_get_bool
 # DIVERGES: as `PL_get_stdbool` (upstream writes an `int`).
 "The Boolean term reference `t` holds, or `nothing` (pl-fli.c)."
@@ -658,6 +719,41 @@ function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bo
         return true
     end
     return false
+end
+
+# PORT: pl-fli.c PL_get_arg_sz as PL_get_arg
+# DIVERGES: a compound whose head is no symbol has every child as an argument (see `_PL_get_arg`);
+# the negative `int` index of the `PL_get_arg` wrapper (a fatal error upstream) is no argument here; the
+# `valid_term_t`/`valid_user_term_t` checks are upstream's `O_VALIDATE_API` and are not made.
+"Put argument `index` (from 1) of the compound term reference `t` holds into `a`; false if `t` is no compound or has no such argument (pl-fli.c)."
+function PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && _is_gcompound(w) && index > 0        # isTerm(w) && index > 0
+        q = valPtr(w)
+        if index <= arityFunctor(ld.functors, ld.gstack[q]) # --index < arity
+            _slot_from_cell!(ld, a + 1, q + index)          # setHandle(a, linkValI(&f->arguments[index]))
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_get_compound_name_arity_sz as PL_get_compound_name_arity
+# DIVERGES: returns `(name, arity)`, or `nothing`, where upstream writes them through pointers; a
+# compound whose head is no symbol is named `$expr`, as `PL_get_name_arity` names it.
+"The name and arity of the compound term reference `t` holds — an atom is none — or `nothing` (pl-fli.c)."
+function PL_get_compound_name_arity(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Tuple{T, Int}} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && _is_gcompound(w)                     # isTerm(w)
+        f = ld.gstack[valPtr(w)]                            # fd = valueFunctor(functorTerm(w))
+        name = nameFunctor(ld.functors, f)
+        arity = arityFunctor(ld.functors, f)
+        name == ld.atom_dexpr && return (mk_sym(T, Symbol("\$expr")), arity)
+        return (_atom_value(ld, name), arity)
+    end
+    return nothing
 end
 
 # PORT: pl-fli.h PL_is_functor
@@ -1342,6 +1438,17 @@ end
 "Unify the term `t` references with the integer `i` (pl-fli.c `PL_unify_int64`)."
 PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
+
+# PORT: pl-fli.c PL_unify_int64_ex
+"Unify the term `t` references with the integer `i`; a non-integer is a type error (pl-fli.c)."
+PL_unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
+    unify_int64_ex(ld, t, i, true)
+
+# PORT: pl-fli.c PL_unify_pointer
+# DIVERGES: a pointer is a `UInt` (see `PL_put_pointer`).
+"Unify the term `t` references with the pointer `ptr` as an integer (pl-fli.c)."
+PL_unify_pointer(ld::PL_local_data{T}, t::term_t, ptr::UInt) where {T} =
+    unify_int64_ex(ld, t, reinterpret(Int, ptr), false)      # unify_int64_ex(t, (int64_t)pointerToInt(ptr), false)
 
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
