@@ -114,8 +114,8 @@ MUTANTS = [
          new="haltProlog(gd, ld, 128 + 6)"),
     dict(id="HALT1-F6 halt(abort) ends with status 135 (KILL testset 3: halt_exited == [134])",
          file=FLI, targets=TH,
-         old="_halt_exit!(gd, 128 + 6) ",
-         new="_halt_exit!(gd, 128 + 7) "),
+         old="PL_CLEANUP_NO_CANCEL)\n    _halt_exit!(gd, 128 + 6) ",
+         new="PL_CLEANUP_NO_CANCEL)\n    _halt_exit!(gd, 128 + 7) "),     # widened by INT-MERGE-16: fliapi's _fli_* fatal paths call _halt_exit!(gd, 128 + 6) too
     dict(id="HALT1-F7 haltProlog treats a recursive clean-up as one that went ahead (KILL testset 8)",
          file=FLI, targets=TH,
          old="if rc == PL_CLEANUP_CANCELED || rc == PL_CLEANUP_RECURSIVE",
