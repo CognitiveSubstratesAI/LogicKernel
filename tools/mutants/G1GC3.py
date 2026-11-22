@@ -118,8 +118,8 @@ MUTANTS = [
 
     # ---- the walk of the alternative clauses (pl-gcwalk.jl)
     m("G1GC3-A1 mark_alt_clauses: a frame with unmarked arguments returns at once (KILL AC: argument 1 is not marked)",
-      "    unmarked == 0 && return nothing\n    ws = gc_walk_state(",
-      "    unmarked == 0 || return nothing\n    ws = gc_walk_state(", file=W),
+      "    unmarked == 0 && return nothing\n    ws = ld.gc.walk",
+      "    unmarked == 0 || return nothing\n    ws = ld.gc.walk", file=W),
     m("G1GC3-A2 mark_alt_clauses: `envtop` is the first argument, nothing is below it (KILL AC: `is_marked(ld.slots[sp + 1])`)",
       "    ws.envtop = sp + argc\n",
       "    ws.envtop = sp\n", file=W),

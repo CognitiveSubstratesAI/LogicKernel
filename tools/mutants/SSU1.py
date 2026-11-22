@@ -111,7 +111,7 @@ MUTANTS = [
     # flags, so the neck test is implied by the flags equality above it (tools/mutants/BP2r.py, BP2-Q9c/Q9d).
     # ── pl-supervisor.c chainPredicateSupervisor ──
     dict(id="SSU1-S1 `S_SSU_DET` not prepended (KILL the v-rows' supervisors, the call's refusal)", file=S, targets=TA + TB,
-         old="    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
+         old="    if meta || (def.flags & (P_SSU_DET | P_DET)) != 0   # ison(def, P_SSU_DET|P_DET)\n",
          new="    if meta\n"),
     # ── boot/init.pl's guard rewrite (the consult stand-in, D7) ──
     # SSU1-D1 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv

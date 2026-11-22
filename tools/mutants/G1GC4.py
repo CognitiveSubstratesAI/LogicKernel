@@ -40,8 +40,8 @@ def m(id, old, new, file=T, eq=None):
 MUTANTS = [
     # ---- the sentinel and the state
     m("G1GC4-S1 gc_trail_begin!: the sentinel word is not 0 (KILL RT: `ld.trail[end] == 0`, the model with its sentinel)",
-      "    push!(ld.trail, word(0))\n    ts = gc_trail_state()",
-      "    push!(ld.trail, word(1))\n    ts = gc_trail_state()"),
+      "    push!(ld.trail, word(0))\n    ts = ld.gc.trail_state",
+      "    push!(ld.trail, word(1))\n    ts = ld.gc.trail_state"),
     m("G1GC4-S2 gc_trail_end!: the sentinel is left on the trail (KILL RT: `ld.trail == orig`; ER: `length(ld.trail) == length(live)`)",
       "    pop!(ld.trail)\n    ts.top = 0",
       "    ts.top = 0"),

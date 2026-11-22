@@ -123,7 +123,7 @@ MUTANTS = [
       "            st.needs_relocation += 1\n            into_relocation_chain(ld, sw, GC_TRAIL_BASE + i, STG_STATIC)",
       "            into_relocation_chain(ld, sw, GC_TRAIL_BASE + i, STG_STATIC)"),
     m("G1GC5-E1 sweep_frame: an unmarked global argument keeps its word (KILL LQ: the arguments become `garbage_collected`)",
-      "            ld.slots[idx] = _atom_word!(ld, mk_sym(T, :garbage_collected))", "            nothing"),
+      "            ld.slots[idx] = ATOM_garbage_collected", "            nothing"),
     m("G1GC5-E2 sweep_environments: the frame keeps its FR_MARKED flag (KILL LQ: every flag cleared; the frame is swept twice and its chain is overwritten)",
       "        f.flags &= ~FR_MARKED\n", "        f.flags &= ~UInt32(0)\n"),
     m("G1GC5-E3 sweep_choicepoints: the mark of a choicepoint is not swept (KILL LQ: marks_swept, the chains of the choice marks)",
