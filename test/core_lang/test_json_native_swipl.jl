@@ -358,12 +358,16 @@ end
             (".25}", Int('0'), 0.25, Int('}')),                      # a float
             ("2.5e3,x", Int('1'), 12500.0, Int(',')),                # an exponent
             ("e5,", Int('1'), 100000.0, Int(',')),                   # the `e` joins the text (1e5 reads as a float)
+            ("e-5,", Int('1'), 1.0e-5, Int(',')),                    # so does a `-` inside the text
+            ("9,", Int('1'), 19, Int(',')),                          # 9 is the last digit that joins
         ]
         @test _rn_ok(_TL, text, c0, want, after)
     end
     # json.c:133: `put_byte(&t, c)` keeps the LOW byte of c0 as a char: 0x0631's is '1' (0x31), 0x0663's is 'c' (0x63)
     @test _rn_ok(_TL, "5", 0x0631, 15, -1)
     @test _rn_error(_TL, "5", 0x0663, "syntax_error")                # the text `c5` is no number
+    # the byte is `c & 0xff`, not `c & 0x7f`: 0x00b1 keeps its high bit (a Latin-1 byte that is no digit); masked to 7 bits it would be '1'
+    @test _rn_error(_TL, "5", 0x00b1, "syntax_error")
     # the third argument: a right preset unifies, a wrong one is an illegal number (the stream's error, json.c:140-143)
     r = _rn(_TL, "2,x", Int('1'), 12)
     @test r.rc == LK.FTRUE && !r.exc
@@ -460,6 +464,9 @@ end
     @test _num_ok(_TL, "123456789012345678901234567890", parse(BigInt, "123456789012345678901234567890"))
     @test _num_ok(_TL, "12345", 123; len = 3)                        # only the first `len` bytes are read
     @test _num_ok(_TL, "12345", 12345; len = 5)
+    let r = _ptfc(_TL, "abcdef"; len = 3), a = _ptfc_answer(r)         # the reader branch reads `len` bytes too
+        @test r.rc && !r.exc && kind(a) === SYM && sym_text(a) == "abc"
+    end
     @test _atom_ok(_TL, Vector{UInt8}(codeunits("abc")), LK.CVT_EXCEPTION, "abc")
     for (text, name) in [("a-1", "-"), ("1+2", "+")]                 # first char a digit but the number ends early / not a number at all
         r = _ptfc(_TL, text)
@@ -506,6 +513,8 @@ end
     @test !LK.activate_static_extension(ld, "nosuch")
     r = _run(_TL, LK.pl_activate_static_extension1_va, :nosuch)
     @test r.rc == LK.FFALSE && r.exc && r.formal == "existence_error"
+    f = child(_exc_term(r.ld), 2)                                    # existence_error(foreign_extension, nosuch)
+    @test sym_text(child(f, 2)) == "foreign_extension" && sym_text(child(f, 3)) == "nosuch"
     r = _run(_TL, LK.pl_activate_static_extension1_va, 7)             # a number is no extension name: CVT_EXCEPTION
     @test r.rc == LK.FFALSE && r.exc
     r = _run(_TL, LK.pl_activate_static_extension1_va, nothing)
@@ -532,4 +541,26 @@ end
         proc = LK.isCurrentProcedure(sym_key(lk_sym(_TL, Symbol(name))), ar, m)
         @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
     end
+end
+
+# PL_syntax_error with a stream (pl-error.c:935-973): error(syntax_error(Msg), stream(S, Line, LinePos, CharNo)) from the stream's position
+@testset "PL_syntax_error with a stream: the position is in the term" begin
+    gd, ld = _env(_TL)
+    t = LK.PL_new_term_refs(ld, 1)
+    s = _instream(ld, t, "ab\ncd")
+    for _ in 1:4                                                     # a, b, newline, c: line 2, column 1, 4 characters
+        LK.Sgetcode(s)
+    end
+    @test !LK.PL_syntax_error(ld, "illegal_number", s)
+    @test _exc(ld)
+    ex = _exc_term(ld)
+    @test sym_text(child(ex, 1)) == "error"
+    @test sym_text(child(child(ex, 2), 1)) == "syntax_error"
+    @test sym_text(child(child(ex, 2), 2)) == "illegal_number"
+    loc = child(ex, 3)
+    @test sym_text(child(loc, 1)) == "stream" && nchildren(loc) == 5
+    # MEASURE ON THE LANE: Sopen_text's stream records its position (SIO_RECORDPOS), as swipl's does
+    @test [lk_value(child(loc, k)) for k in 3:5] == [2, 1, 4]
+    LK.PL_clear_exception(ld)
+    @test !_exc(ld)
 end
