@@ -35,10 +35,13 @@
 # Since R2's D1, `erase/1` and `instance/2` for a CLAUSE reference (`pl_erase1_va`, `pl_instance2_va` with
 # `fixup_ssu`, below the copying: the clause blobs of src/pl-dbref.jl); since D2 the recorded database
 # (`recorda/3`, `recordz/3`, `recorded/3`, `current_key/1`, `erase/1` and `instance/2` of a record, the keys
-# and their lists). NOT PORTED: the rest of pl-rec.c — external records (`PL_record_external`, the
-# `PL_TYPE_EXT_*` opcodes), `term_complexity`,
-# atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
-# `freeRecord` (a record is freed by Julia's GC).
+# and their lists). Since FAST-1b the EXTERNAL encoder: `compile_external_record` (the `PL_TYPE_EXT_*`,
+# `PL_TYPE_INTEGER`, `PL_REC_MPZ`, `PL_REC_MPQ` opcodes, the header) and `fast_term_serialized/2`, the term to
+# the string. LATER STEPS and left out: the rest of pl-rec.c — the string to the term (`PL_recorded_external`,
+# `fast_term_serialized/2`'s other direction: refused, step FAST-2), `PL_record_external` (pl-rec.c:896, the C
+# interface over `compile_external_record`: a later step), `fast_write/2`, `fast_read/2`, `term_complexity`,
+# atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT` in an INTERNAL
+# record: its atom keeps its word), and `freeRecord` (a record is freed by Julia's GC).
 #
 # ATTRIBUTED VARIABLES (AV6, as upstream's `O_ATTVAR` cases): `PL_TYPE_ATTVAR` records an attributed
 # variable as a numbered variable followed by its attribute list, so findall/3 and bagof/3 give back
@@ -46,26 +49,45 @@
 # compiled the attvar cell holds the var-link word, and `restoreVars` puts its saved word back.
 
 # PORT: pl-rec.c PL_TYPE_VARIABLE
-# DIVERGES: the opcodes of what the kernel's cells hold; an indirect is `PL_REC_VALUE` (ORIGINAL),
-# not `PL_TYPE_INTEGER`, `PL_REC_MPZ`, `PL_REC_MPQ`, `PL_TYPE_FLOAT` or `PL_TYPE_STRING`.
+# DIVERGES: the opcodes of what the kernel's cells hold; an INTERNAL record's indirect is `PL_REC_VALUE`
+# (ORIGINAL), not `PL_TYPE_INTEGER`, `PL_REC_MPZ`, `PL_REC_MPQ`, `PL_TYPE_FLOAT` or `PL_TYPE_STRING` (an EXTERNAL
+# record's are upstream's, but for `PL_TYPE_FLOAT`: `PL_TYPE_EXT_FLOAT`).
 "Record opcode: a variable, its number following (pl-rec.c)."
 const PL_TYPE_VARIABLE = 0x01
 "Record opcode: an atom, its word following (pl-rec.c)."
 const PL_TYPE_ATOM = 0x02
+"Record opcode (external): an integer that fits 64 bits, its bytes following (pl-rec.c)."
+const PL_TYPE_INTEGER = 0x03
 "Record opcode: a tagged integer, its value following (pl-rec.c)."
 const PL_TYPE_TAGGED_INTEGER = 0x04
+"Record opcode (external): a string, its byte count and bytes following (pl-rec.c)."
+const PL_TYPE_STRING = 0x06
 "Record opcode: a compound, its functor word following (pl-rec.c)."
 const PL_TYPE_COMPOUND = 0x07
 "Record opcode: a list cell (pl-rec.c)."
 const PL_TYPE_CONS = 0x08
 "Record opcode: `[]` (pl-rec.c)."
 const PL_TYPE_NIL = 0x09
+"Record opcode (external): the reserved atom `dict` (pl-rec.c)."
+const PL_TYPE_DICT = 0x0a
+"Record opcode (external): a Latin-1 atom, its byte count and bytes following (pl-rec.c)."
+const PL_TYPE_EXT_ATOM = 0x0b
+"Record opcode (external): a wide atom, its byte count and 4-byte characters following (pl-rec.c)."
+const PL_TYPE_EXT_WATOM = 0x0c
+"Record opcode (external): a compound, its arity and name atom following (pl-rec.c)."
+const PL_TYPE_EXT_COMPOUND = 0x0d
+"Record opcode (external): a float, its 8 bytes in the machine's order following (pl-rec.c)."
+const PL_TYPE_EXT_FLOAT = 0x0e
 "Record opcode: a compound met before, the offset of its copy following (pl-rec.c)."
 const PL_REC_CYCLE = 0x11
 "Record opcode: an attributed variable, its number following, then its attribute list (pl-rec.c)."
 const PL_TYPE_ATTVAR = 0x0f
 "Record opcode: a global cell for a root attributed variable, the `PL_TYPE_ATTVAR` following (pl-rec.c)."
 const PL_REC_ALLOCVAR = 0x10
+"Record opcode (external): a GMP integer, its 4-byte signed length and big-endian bytes following (pl-rec.c)."
+const PL_REC_MPZ = 0x12
+"Record opcode (external): a GMP rational, the two headers and the two byte strings following (pl-rec.c)."
+const PL_REC_MPQ = 0x13
 # ORIGINAL: see the file header.
 "Record opcode: an indirect, its index in the record's `values` following."
 const PL_REC_VALUE = 0x40
@@ -75,7 +97,7 @@ const PL_REC_VALUE = 0x40
 # saved word (`reinterpret`ed) under its NEGATED position (upstream: the word under `mkAttVarP(p)`, the
 # pointer's low bit set); `values` the indirects (see the file
 # header); `marks` is upstream's `LD->cycle.lstack` of `cycle_mark` (the functor cell's position and
-# its word). NOT KEPT: `external`, `lock`, `error`, `econtext` (no external records, no atom GC).
+# its word). NOT KEPT: `lock` (no atom GC). `econtext` is the culprit's value (upstream: `atom_t econtext[1]`).
 "The state of one `compile_term_to_heap` (pl-rec.c `compile_info`)."
 mutable struct compile_info{T}
     const code::Vector{UInt8}               # code buffer
@@ -84,7 +106,17 @@ mutable struct compile_info{T}
     const marks::Vector{Tuple{Int, word}}   # (LD->cycle.lstack: functor cell, its word)
     size::Int                               # size on global stack
     nvars::Int                              # # variables
+    const external::Bool                    # Allow for external storage
+    error::Int                              # generated error (`ENONE`, `EFAST_SERIALIZE`)
+    econtext::Union{Nothing, T}             # error context
 end
+
+# PORT: pl-rec.c cerror
+# DIVERGES: `Int` constants (the enum's two values).
+"`compile_info.error`: no error (pl-rec.c `ENONE`)."
+const ENONE = 0
+"`compile_info.error`: a blob cannot be serialised, `econtext` is it (pl-rec.c `EFAST_SERIALIZE`)."
+const EFAST_SERIALIZE = 1
 
 # PORT: pl-rec.c addOpCode
 "Add opcode `code` (pl-rec.c)."
@@ -107,6 +139,30 @@ function addSizeInt(info::compile_info, val::Int)::Nothing
             if d != 0 || !leading
                 zips != 0 && (d |= 0x80)
                 push!(info.code, d % UInt8)
+                leading = false
+            end
+            zips -= 1
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-rec.c addUintBuffer
+# DIVERGES: the buffer is a `Vector{UInt8}`. The mask is `~Int(0x7f)`: `addSizeInt` above keeps `~0x7f` of the
+# UInt8 `0x7f` (= `0x80`), which writes a value in 256..383, 512..639, ... as ONE byte (a separate fix branch,
+# wip/rec-sizeint, corrects it; it is not changed on this branch).
+"Add `val` to the buffer `b`: 7 bits per byte, most significant first, every byte but the last with its 8th bit set (pl-rec.c)."
+function addUintBuffer(b::Vector{UInt8}, val::Int)::Nothing
+    if (val & ~Int(0x7f)) == 0
+        push!(b, val % UInt8)
+    else
+        zips = (8 * 8 + 7 - 1) ÷ 7 - 1                     # ((sizeof(val))*8+7-1)/7 - 1
+        leading = true
+        while zips >= 0
+            d = (val >> (zips * 7)) & 0x7f
+            if d != 0 || !leading
+                zips != 0 && (d |= 0x80)
+                push!(b, d % UInt8)
                 leading = false
             end
             zips -= 1
@@ -142,9 +198,141 @@ function addWord(info::compile_info, w::word)::Nothing
     return nothing
 end
 
+# PORT: pl-rec.c addAtom
+# DIVERGES: the atom is its word `a`. An INTERNAL record keeps a dict atom as its word (`PL_TYPE_ATOM`; upstream
+# writes `PL_TYPE_DICT` in both: `copy_record` has no dict case here). A text atom is its text (`sym_text`):
+# `PL_TYPE_EXT_WATOM` when a character is above 0xFF (`isUCSAtom`; 4 little-endian bytes per character, the
+# `wchar_t` of the machine), else `PL_TYPE_EXT_ATOM` (one byte per character). What is no text atom (a blob; upstream's
+# `PL_BLOB_TEXT` also covers a reserved symbol, `[]` and `dict`, handled above) is the error, `econtext` the atom's
+# value. Left out: `lock` (no atom GC).
+"Add atom `a` to the code (pl-rec.c); false, `info.error` set, for one that cannot go into an external record."
+function addAtom(ld::PL_local_data{T}, info::compile_info{T}, a::word)::Bool where {T}
+    if a == ld.atom_nil_w
+        addOpCode(info, PL_TYPE_NIL)
+    elseif info.external && a == ATOM_dict
+        addOpCode(info, PL_TYPE_DICT)
+    elseif info.external
+        v = _atom_value(ld, a)
+        if isTextAtom(v)
+            text = sym_text(v)
+            if _is_ucs_text(text)
+                addOpCode(info, PL_TYPE_EXT_WATOM)
+                addSizeInt(info, 4 * length(text))          # a->length: bytes
+                for ch in text
+                    c = UInt32(ch)
+                    for i in 0:3
+                        push!(info.code, (c >> (8 * i)) % UInt8)
+                    end
+                end
+            else
+                addOpCode(info, PL_TYPE_EXT_ATOM)
+                addSizeInt(info, length(text))
+                for ch in text
+                    push!(info.code, UInt32(ch) % UInt8)
+                end
+            end
+        else
+            info.error = EFAST_SERIALIZE
+            info.econtext = v
+            return false
+        end
+    else
+        addOpCode(info, PL_TYPE_ATOM)
+        addWord(info, a)
+    end
+    return true
+end
+
+# PORT: pl-rec.c addFunctor
+"Add functor `f` to the code (pl-rec.c); false, `info.error` set, when an external record's functor name is a blob."
+function addFunctor(ld::PL_local_data{T}, info::compile_info{T}, f::word)::Bool where {T}
+    if f == ld.functor_dot2
+        addOpCode(info, PL_TYPE_CONS)
+    elseif info.external
+        addOpCode(info, PL_TYPE_EXT_COMPOUND)
+        addSizeInt(info, arityFunctor(ld.functors, f))
+        return addAtom(ld, info, nameFunctor(ld.functors, f))
+    else
+        addOpCode(info, PL_TYPE_COMPOUND)
+        addWord(info, f)
+    end
+    return true
+end
+
+# ORIGINAL: the external record's text of a string and its size on the global stack, as the `TAG_STRING` case
+# of `compile_term_to_heap` writes them. A string is its storage: a `B` and the characters (ISO Latin-1), or a
+# `W`, three padding bytes and 4 little-endian bytes per character (a character above 0xFF); `n` words
+# hold them and a byte more (upstream: `allocString`: always at least one padding byte), the header and the
+# trailer two more.
+"The bytes of string `text` as upstream's global stack holds it, and the cells it takes there (pl-rec.c, `TAG_STRING`)."
+function _external_string(text::String)::Tuple{Vector{UInt8}, Int}
+    b = UInt8[]
+    if _is_ucs_text(text)
+        push!(b, UInt8('W'), 0x00, 0x00, 0x00)
+        for ch in text
+            c = UInt32(ch)
+            for i in 0:3
+                push!(b, (c >> (8 * i)) % UInt8)
+            end
+        end
+    else
+        push!(b, UInt8('B'))
+        for ch in text
+            push!(b, UInt32(ch) % UInt8)
+        end
+    end
+    return (b, (length(b) + 8) ÷ 8 + 2)                     # n = wsizeofInd; info->size += n+2
+end
+
+# ORIGINAL: the `TAG_INTEGER`, `TAG_STRING` and `TAG_FLOAT` cases of `compile_term_to_heap` for an EXTERNAL
+# record, on the indirect's value `v`.
+# DIVERGES: an integer that fits an `Int64` is `PL_TYPE_INTEGER` (upstream's `V_INTEGER`: the indirect int64), a
+# larger one `PL_REC_MPZ`; the size accounting is upstream's global-stack cells (`wsizeofIndirect(w) + 2`: 3 for
+# an int64 or a float, an mpz's limbs and `MPZ_STACK_EXTRA`, an mpq's two). A value of no SWI type (`NUM_OTHER`: no
+# upstream counterpart) is refused as a blob, `econtext` the value.
+"Add the indirect value `v` to an external record's code and size (pl-rec.c `compile_term_to_heap`); false, `info.error` set, for a value of no SWI type."
+function addExternalIndirect(info::compile_info{T}, v::T)::Bool where {T}
+    k = number_kind(v)
+    if k === NUM_INTEGER
+        if integer_is_int64(v)
+            info.size += 1 + 2                              # wsizeofIndirect(w) + 2
+            addOpCode(info, PL_TYPE_INTEGER)
+            addInt64(info, int64_value(v))
+        else
+            z = bigint_value(v)
+            info.size += mpz_wsize(z) + MPZ_STACK_EXTRA + 2
+            addOpCode(info, PL_REC_MPZ)
+            addMPZToBuffer(info.code, z)
+        end
+    elseif k === NUM_RATIONAL
+        q = rational_value(v)
+        info.size += mpz_wsize(numerator(q)) + mpz_wsize(denominator(q)) + 2 * MPZ_STACK_EXTRA + 2
+        addOpCode(info, PL_REC_MPQ)
+        addMPQToBuffer(info.code, q)
+    elseif k === NUM_FLOAT
+        info.size += 1 + 2                                  # WORDS_PER_DOUBLE + 2
+        addOpCode(info, PL_TYPE_EXT_FLOAT)
+        bits = reinterpret(UInt64, Float64(float_value(v)))
+        for i in 0:7                                        # double_byte_order: the machine's, LSB first
+            push!(info.code, (bits >> (8 * i)) % UInt8)
+        end
+    elseif k === NUM_STRING
+        bytes, sz = _external_string(string_value(v))
+        info.size += sz
+        addOpCode(info, PL_TYPE_STRING)
+        addSizeInt(info, length(bytes))                     # addChars
+        append!(info.code, bytes)
+    else
+        info.error = EFAST_SERIALIZE
+        info.econtext = v
+        return false
+    end
+    return true
+end
+
 # PORT: pl-rec.c compile_term_to_heap
 # DIVERGES: on locations (`ld.walk_agenda`, dereferenced here); the cases of the kernel's words (see
-# the file header); always true (upstream fails only for an external record's blob: not ported). An
+# the file header); false only for an external record's blob (`info.error`). An
 # attributed variable's `goto again` on its attribute list is the inner loop.
 "Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`)."
 function compile_term_to_heap(
@@ -195,12 +383,7 @@ function compile_term_to_heap(
             addOpCode(info, PL_TYPE_VARIABLE)
             addSizeInt(info, Int(w >> LMASK_BITS))
         elseif isAtomW(w)                                   # TAG_ATOM: addAtom
-            if w == ld.atom_nil_w
-                addOpCode(info, PL_TYPE_NIL)
-            else
-                addOpCode(info, PL_TYPE_ATOM)
-                addWord(info, w)
-            end
+            addAtom(ld, info, w) || return false
         elseif isTaggedIntW(w)                              # TAG_INTEGER, isTaggedInt
             addOpCode(info, PL_TYPE_TAGGED_INTEGER)
             addInt64(info, valInt(w))
@@ -215,19 +398,18 @@ function compile_term_to_heap(
                 push!(info.marks, (f, fd))                  # pushSegStack(&LD->cycle.lstack, mark)
                 ld.gstack[f] = consUInt(UInt64(info.size))  # f->definition = consUInt(info->size)
                 info.size += arity + 1
-                if fd == ld.functor_dot2                    # addFunctor
-                    addOpCode(info, PL_TYPE_CONS)
-                else
-                    addOpCode(info, PL_TYPE_COMPOUND)
-                    addWord(info, fd)
-                end
+                addFunctor(ld, info, fd) || return false
                 pushWorkCellAgenda!(a, arity, f + 1)
             end
         elseif _is_vword(w) || _is_side_word(w)             # an indirect (see the file header)
-            push!(info.values, _indirect_value(ld, w))
-            info.size += 1                                  # (its box)
-            addOpCode(info, PL_REC_VALUE)
-            addSizeInt(info, length(info.values))
+            if info.external                                # its bytes (upstream's TAG_INTEGER, TAG_STRING, TAG_FLOAT)
+                addExternalIndirect(info, _indirect_value(ld, w)) || return false
+            else
+                push!(info.values, _indirect_value(ld, w))
+                info.size += 1                              # (its box)
+                addOpCode(info, PL_REC_VALUE)
+                addSizeInt(info, length(info.values))
+            end
         else
             error("compile_term_to_heap: not a cell word: $(repr(w))")   # assert(0)
         end
@@ -274,7 +456,7 @@ Record the term `t` references (pl-rec.c): a byte code that no longer needs the 
 undoing the bindings it was made under does not change.
 """
 function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
-    info = compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0)    # init_cycle, initBuffer
+    info = compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, false, ENONE, nothing)    # init_cycle, initBuffer
     a = ld.walk_agenda
     initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
     rc = compile_term_to_heap(ld, a, info)
@@ -284,6 +466,213 @@ function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
     @assert rc                                              # (no external record: see above)
     info.code[1] == PL_TYPE_VARIABLE && (info.size += 1)    # (a root variable: its cell)
     return record{T}(info.size, info.nvars, info.code, info.values)
+end
+
+# ── external records (pl-rec.c, FAST-1b: the encoder; `PL_recorded_external` is FAST-2) ────────────
+# PORT: pl-rec.c REC_32
+"External record header bit: the word is 32 bits (pl-rec.c)."
+const REC_32 = 0x01
+# PORT: pl-rec.c REC_64
+"External record header bit: the word is 64 bits (pl-rec.c)."
+const REC_64 = 0x02
+# PORT: pl-rec.c REC_INT
+"External record header bit: the record just contains an integer (pl-rec.c)."
+const REC_INT = 0x04
+# PORT: pl-rec.c REC_ATOM
+"External record header bit: the record just contains an atom (pl-rec.c)."
+const REC_ATOM = 0x08
+# PORT: pl-rec.c REC_GROUND
+"External record header bit: the record is ground (pl-rec.c)."
+const REC_GROUND = 0x10
+# PORT: pl-rec.c REC_VMASK
+"External record header: the version mask (pl-rec.c)."
+const REC_VMASK = 0xe0
+# PORT: pl-rec.c REC_VSHIFT
+"External record header: the shift of the version (pl-rec.c)."
+const REC_VSHIFT = 5
+# PORT: pl-rec.c REC_HDR
+# DIVERGES: always `REC_64` (the kernel's word is 64 bits).
+"The first byte of an external record without its type bits: the word size and the version (pl-rec.c)."
+const REC_HDR = REC_64 | (PL_REC_VERSION << REC_VSHIFT)
+
+# PORT: pl-rec.c record_data
+# DIVERGES: `info.code` and `hdr` are `Vector{UInt8}`s; the constructor makes the `compile_info` with
+# `external` set (upstream: `compile_external_record` sets `data->info.external = true` and `lock = false`;
+# `lock` is not kept).
+"An external record being made (pl-rec.c `record_data`): the code, and the header unless it is `simple`."
+mutable struct record_data{T}
+    simple::Bool                            # no header
+    const info::compile_info{T}
+    const hdr::Vector{UInt8}
+end
+
+"A fresh `record_data{T}` for an external record."
+record_data(::Type{T}) where {T} = record_data{T}(
+    false, compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, true, ENONE, nothing), UInt8[]
+)
+
+# PORT: pl-rec.c rec_error
+# DIVERGES: `PL_permission_error` is `PL_error(…, ERR_PERMISSION, …)` (the kernel has no wrapper); the culprit is the
+# value `econtext` holds. The `default` case (`assert(0)`) is an error.
+"Raise the error `info` holds (pl-rec.c): `permission_error(fast_serialize, blob, Culprit)`; false."
+function rec_error(ld::PL_local_data{T}, info::compile_info{T})::Bool where {T}
+    if info.error == EFAST_SERIALIZE
+        t = PL_new_term_ref(ld)
+        t == 0 && return false
+        PL_put_atom(ld, t, info.econtext::T) || return false
+        return PL_error(
+            ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :fast_serialize), mk_sym(T, :blob), t
+        )
+    end
+    error("rec_error: no error to raise: $(info.error)")    # assert(0)
+end
+
+# PORT: pl-rec.c compile_external_record
+# DIVERGES: the root is read through `_deref_loc` (an integer: a tagged word, or an indirect that fits an `Int64`: upstream's
+# `get_int64`); `data` is made by the caller (`record_data`), `info.external` is already set; the compile uses
+# `ld.walk_agenda`. NO `+1` for a root variable (the cell that `compileTermToHeap`, the internal record, adds). An
+# atom-only record whose atom cannot be written (a blob) FAILS without an error (upstream, pl-rec.c:863: `return false`).
+"Compile the term `t` references into `data`, an external record (pl-rec.c): false when it has a blob (an error raised, but for a root blob atom)."
+function compile_external_record(
+    ld::PL_local_data{T}, t::term_t, data::record_data{T}
+)::Bool where {T}
+    first = Int(REC_HDR)
+    info = data.info
+
+    k, x, _ = _deref_loc(ld, -(t + 1))                      # p = valTermRef(t); deRef(p)
+    v = nothing
+    if k == DU_VALUE
+        if isTaggedIntW(x)
+            v = valInt(x)
+        else
+            iv = _indirect_value(ld, x)
+            isInteger(iv) && integer_is_int64(iv) && (v = int64_value(iv))
+        end
+    end
+
+    if v !== nothing                                        # integer-only record
+        first |= REC_INT | REC_GROUND
+        addOpCode(info, first % UInt8)
+        addInt64(info, Int64(v))
+        data.simple = true
+        return true
+    elseif k == DU_WORD && isAtomW(x)                       # atom-only record
+        first |= REC_ATOM | REC_GROUND
+        addOpCode(info, first % UInt8)
+        addAtom(ld, info, x) || return false                # (no error: pl-rec.c:863)
+        data.simple = true
+        return true
+    end
+
+    data.simple = false                                     # the real stuff
+    info.size = 0
+    info.nvars = 0
+
+    a = ld.walk_agenda
+    initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, p)
+    rc = compile_term_to_heap(ld, a, info)
+    clearCellAgenda!(a)
+    info.nvars == 0 && (first |= REC_GROUND)
+    restoreVars(ld, info)
+    unvisit(ld, info)
+    rc || return rec_error(ld, info)
+    scode = length(info.code)
+
+    push!(data.hdr, first % UInt8)                          # magic code
+    addUintBuffer(data.hdr, scode)                          # code size
+    addUintBuffer(data.hdr, info.size)                      # size on stack
+    info.nvars > 0 && addUintBuffer(data.hdr, info.nvars)   # Number of variables
+    return true
+end
+
+# PORT: pl-rec.c skipSizeInt
+"Advance the copy past the size at its position (pl-rec.c)."
+function skipSizeInt(code::Vector{UInt8}, b::copy_info)::Nothing
+    while (code[b.data] & 0x80) != 0
+        b.data += 1
+    end
+    b.data += 1
+    return nothing
+end
+
+# PORT: pl-rec.c is_external
+# DIVERGES: the record is a byte vector; a record shorter than its own header says (a read past the end) is
+# `false`, where upstream reads on; an unknown first byte is `false` (upstream's `assert(0)`, which a release build
+# does not run). The case of an atom-only record whose atom is none of the four falls through to the header case, as upstream's.
+"Whether the first `len` bytes of `rec` are one complete external record (pl-rec.c)."
+function is_external(rec::Vector{UInt8}, len::Int)::Bool
+    len >= 2 || return false
+    info = copy_info(1, Int[], 0, 0)                        # info.data = info.base = rec
+    try
+        m = rec[info.data]                                  # fetchBuf(&info, &m, uchar)
+        info.data += 1
+        if m == (REC_HDR | REC_INT | REC_GROUND)
+            bytes = Int(rec[info.data])
+            info.data += 1
+            return len == bytes + 2
+        elseif m == (REC_HDR | REC_ATOM | REC_GROUND)
+            code = rec[info.data]
+            info.data += 1
+            if code == PL_TYPE_NIL || code == PL_TYPE_DICT
+                return len == 2
+            elseif code == PL_TYPE_EXT_WATOM || code == PL_TYPE_EXT_ATOM
+                bytes = fetchSizeInt(rec, info)
+                return len == (info.data - 1) + bytes
+            end
+        elseif m != (REC_HDR | REC_GROUND) && m != REC_HDR
+            return false                                    # default
+        end
+        codes = fetchSizeInt(rec, info)                     # REC_HDR|REC_GROUND, REC_HDR
+        skipSizeInt(rec, info)                              # global stack size
+        (m & REC_GROUND) == 0 && skipSizeInt(rec, info)     # # variables
+        return len == (info.data - 1) + codes
+    catch e
+        e isa BoundsError && return false
+        rethrow()
+    end
+end
+
+# PORT: pl-rec.c fast_term_serialized as pl_fast_term_serialized2_va
+# (PRED_IMPL("fast_term_serialized", 2, fast_term_serialized, 0))
+# DIVERGES: the TERM TO STRING direction is upstream's: the text is the header and the code as ISO Latin-1
+# (`PL_unify_text` with `PL_STRING`: upstream `PL_unify_string_nchars` for a simple record, a `globalBlob`
+# string whose storage tag `B` precedes them otherwise: the same string). The STRING TO TERM direction checks the
+# text as upstream does (`PL_get_text` with `CVT_STRING|CVT_EXCEPTION`, `is_external`) and then refuses by name:
+# `NotPortedError` for `PL_recorded_external` (FAST-2); a string with a character above 0xFF too (upstream asks for
+# `REP_ISO_LATIN_1`). `PL_record_external` (pl-rec.c:896, the C interface) is a later step.
+"`fast_term_serialized(?Term, ?String)` (pl-rec.c): `String` is the external record of `Term`; the other direction is FAST-2."
+function pl_fast_term_serialized2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    term, string = PL__t0, PL__t0 + 1                       # term_t term = A1, string = A2
+
+    if PL_is_variable(ld, string)
+        data = record_data(T)
+        compile_external_record(ld, term, data) || return FFALSE
+        bytes = data.simple ? data.info.code : vcat(data.hdr, data.info.code)
+        text = PL_chars_t(bytes, length(bytes), ENC_ISO_LATIN_1, true)
+        return PL_unify_text(ld, string, 0, text, PL_STRING) ? FTRUE : FFALSE
+    end
+
+    text = PL_get_text(ld, string, CVT_STRING | CVT_EXCEPTION)
+    text === nothing && return FFALSE
+    rc = PL_canonicalise_text(text)
+    rc == 1 || (text_error(ld, rc); return FFALSE)
+    if text.encoding === ENC_WCHAR
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :fast_term_serialized),
+                "fast_term_serialized/2 string above 0xFF (REP_ISO_LATIN_1)", "step FAST-2"
+            )
+        )
+    end
+    is_external(text.text, length(text.text)) || return FFALSE
+    throw(
+        NotPortedError{T}(
+            mk_sym(T, :fast_term_serialized),
+            "fast_term_serialized/2 string -> term (PL_recorded_external)", "step FAST-2"
+        )
+    )
 end
 
 # PORT: pl-rec.c copy_info
@@ -1048,8 +1437,8 @@ function pl_instance2_va(
 end
 
 # PORT: pl-rec.c BeginPredDefs as PL_predicates_from_rec
-# DIVERGES: the entries of the predicates the kernel has ported (the fast-term family, `fast_term_serialized/2`,
-# `fast_write/2`, `fast_read/2`, is left out); `PRED_DEF` and `PRED_SHARE` or in `PL_FA_VARARGS` (the arity is
+# DIVERGES: the entries of the predicates the kernel has ported (of the fast-term family only
+# `fast_term_serialized/2`, the term to the string; `fast_write/2` and `fast_read/2` are left out); `PRED_DEF` and `PRED_SHARE` or in `PL_FA_VARARGS` (the arity is
 # the call's `PL__ac`: recorded/2,3, recordz/2,3 and recorda/2,3 each share ONE function over both arities).
 "pl-rec.c's registration table (`BeginPredDefs(rec)`), in upstream's order: the ported entries."
 const PL_predicates_from_rec = (
@@ -1063,5 +1452,6 @@ const PL_predicates_from_rec = (
     PL_extension("instance", 2, pl_instance2_va, PL_FA_VARARGS),
     PL_extension(
         "current_key", 1, pl_current_key1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
-    )
+    ),
+    PL_extension("fast_term_serialized", 2, pl_fast_term_serialized2_va, PL_FA_VARARGS)
 )

@@ -616,3 +616,60 @@ function mpz_root(x::BigInt, n::UInt64)::Tuple{BigInt, Bool}
     end
     return (y, y^k == x)
 end
+
+# ── export (pl-gmp.c, FAST-1b: the byte form of an external record) ──────────────────────────────
+# PORT: pl-gmp.h MPZ_STACK_EXTRA
+# DIVERGES: the GMP build's value (`O_GMP`: 1, the oracle swipl has `gmp_version` 6 and no `libbf_version`; `O_BF`'s is 2); the kernel has no stack form,
+# the constant only counts the global-stack cells an external record's header states (`compile_info.size`).
+"The extra cells an mpz takes on upstream's global stack, over its limbs (pl-gmp.c, `O_GMP`)."
+const MPZ_STACK_EXTRA = 1
+
+# PORT: pl-gmp.c mpz_wsize
+# DIVERGES: the value's limb count (GMP's `abs(_mp_size)`, 64-bit limbs) times 8 bytes over 8: the limbs, in
+# words; no `s` out-parameter (the byte size).
+"The words an integer's limbs take on upstream's global stack (pl-gmp.c): its 64-bit limbs."
+mpz_wsize(mpz::BigInt)::Int = iszero(mpz) ? 0 : (ndigits(abs(mpz); base=2) + 63) ÷ 64
+
+# PORT: pl-gmp.c add_mpz_size_buffer
+# DIVERGES: the bytes go to a `Vector{UInt8}` (upstream: `*b->top++`).
+"Add the 4-byte big-endian header of `±size` (negative iff `mpz` is) to `b` (pl-gmp.c)."
+function add_mpz_size_buffer(b::Vector{UInt8}, mpz::BigInt, size::Int)::Nothing
+    hdrsize = mpz < 0 ? -size : size
+    push!(b, ((hdrsize >> 24) & 0xff) % UInt8)
+    push!(b, ((hdrsize >> 16) & 0xff) % UInt8)
+    push!(b, ((hdrsize >> 8) & 0xff) % UInt8)
+    push!(b, (hdrsize & 0xff) % UInt8)
+    return nothing
+end
+
+# PORT: pl-gmp.c add_mpz_bits_buffer
+# DIVERGES: `mpz_export(…, 1, 1, 1, 0, …)` (most significant first, 1-byte units, big-endian) is the
+# big-endian digits of the magnitude, `size` of them.
+"Add the `size` bytes of `|mpz|`, most significant first, to `b` (pl-gmp.c)."
+function add_mpz_bits_buffer(b::Vector{UInt8}, mpz::BigInt, size::Int)::Nothing
+    append!(b, UInt8.(reverse(digits(abs(mpz); base=256, pad=size))))
+    return nothing
+end
+
+# PORT: pl-gmp.c addMPZToBuffer
+"Add `mpz` in a machine independent form to `b`: the byte count as a 4-byte big-endian header, then the bytes (pl-gmp.c)."
+function addMPZToBuffer(b::Vector{UInt8}, mpz::BigInt)::Nothing
+    size = (ndigits(abs(mpz); base=2) + 7) ÷ 8              # (mpz_sizeinbase(mpz, 2)+7)/8
+    add_mpz_size_buffer(b, mpz, size)
+    add_mpz_bits_buffer(b, mpz, size)
+    return nothing
+end
+
+# PORT: pl-gmp.c addMPQToBuffer
+"Add `mpq` in a machine independent form to `b`: the two headers, then the two bit patterns (pl-gmp.c)."
+function addMPQToBuffer(b::Vector{UInt8}, mpq::Rational{BigInt})::Nothing
+    num = numerator(mpq)
+    den = denominator(mpq)
+    num_size = (ndigits(abs(num); base=2) + 7) ÷ 8
+    den_size = (ndigits(abs(den); base=2) + 7) ÷ 8
+    add_mpz_size_buffer(b, num, num_size)
+    add_mpz_size_buffer(b, den, den_size)
+    add_mpz_bits_buffer(b, num, num_size)
+    add_mpz_bits_buffer(b, den, den_size)
+    return nothing
+end
