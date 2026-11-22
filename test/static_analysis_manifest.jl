@@ -104,6 +104,8 @@ _manifest_per_type(T) = (
     # the trail's entries (L1b stage D)
     (LK._untrail!, Tuple{LK.PL_local_data{T}, UInt64}, false),
     (LK._trail_truncate!, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._trail_push!, Tuple{LK.PL_local_data{T}, UInt64}, false),         # G1 (D-0966): the push may grow the vector
+    (LK._growTrail!, Tuple{LK.PL_local_data{T}}, true),                   # G1 (D-0966): the modelled size and the counter, no allocation
     # the value table (L1b stage C2): a push may grow its vectors; the reads and the truncation do not
     (LK._vword!, Tuple{LK.PL_local_data{T}, T}, false),
     (LK._truncate_vtable!, Tuple{LK.PL_local_data{T}}, true),
