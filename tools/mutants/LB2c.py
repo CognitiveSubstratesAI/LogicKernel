@@ -93,9 +93,9 @@ MUTANTS = [
          old='''    sf.mtime = mtime''',
          new='''    sf.mtime = 0.0'''),
     dict(id="LB2-18 $end_consult does not release the lookup's reference", file=SF, targets=S,
-         old='''            rc = endConsult(sf)
+         old='''            rc = endConsult(gd, ld, sf)
             releaseSourceFile(sf)''',
-         new='''            rc = endConsult(sf)'''),
+         new='''            rc = endConsult(gd, ld, sf)'''),
     dict(id="LB2-19 $fixup_reconsult does not release the lookup's reference", file=SF, targets=S,
          old='''            releaseSourceFile(sf)
             sf.current_procedure = nothing''',

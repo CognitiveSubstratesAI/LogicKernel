@@ -96,7 +96,7 @@ MUTANTS = [
     dict(id="LB3-F7 the modification time is not recorded (KILL loadable)", file=Q, targets=TQ,
          old="        sf.mtime = st.mtime\n", new="        nothing\n"),
     dict(id="LB3-F8 startConsult is not called (KILL loadable)", file=Q, targets=TQ,
-         old="    startConsult(sf)\n", new="    nothing\n"),
+         old="    startConsult(gd, ld, sf)\n", new="    nothing\n"),
     dict(id="LB3-F9 the missing-file message omits the path (KILL elif)", file=Q, targets=TQ,
          old='"Failed to open $path\\n"', new='"Failed to open\\n"'),
     dict(id="LB3-F10 clauses are asserted at the start of the predicate", file=Q, targets=TQ,
