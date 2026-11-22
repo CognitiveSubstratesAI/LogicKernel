@@ -1,0 +1,17 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-paxos — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-paxos; the files are upstream's bytes, never edited.
+# source: sub packages/paxos 151c7bd0878e08109d766d9f45586ae2090c55a0
+100644 blob c8112524671823ef7e3c5072a97076661d6f5e03	packages/paxos/.gitignore
+100644 blob 9e09974867fd8b2d9cae5d02434112e07b533f18	packages/paxos/CMakeLists.txt
+100644 blob c46dca9dde78c966b2311c85ea7aa358f62cb4ca	packages/paxos/README.md
+100644 blob 90bd76247dfe2388e8d28f192673521f95aed67e	packages/paxos/demo/README.md
+100644 blob b3c6dacbd632fbf64af8774e05c1386e477fc2cd	packages/paxos/demo/multicast.pl
+100644 blob ccc66772cc0d702224706784e660268361f2a6f0	packages/paxos/demo/udp_paxos.pl
+100644 blob 4f7b232dfbc250804f3c6db3cd91e05bf10d1f52	packages/paxos/doc/ISSUES.md
+100644 blob 0c0e658393ca7259327e803b12931be687fc342b	packages/paxos/paxos.pl
+100644 blob de085d3ac80949afefde8b838d62d9f455240d32	packages/paxos/paxos.plx
+100644 blob bf82d6dcfc9b18c9cbc16084fe765d8313e28b29	packages/paxos/test/README.md
+100644 blob 8bb2c6d7e3cb961da90ab2147f850d8210837703	packages/paxos/test/nodes.pl
+100644 blob 10fab2d9d760f407d3b6cd5a8d2a2be348d0861c	packages/paxos/test/paxos_node.pl
+100644 blob e50eab4b880058246af2c40b1a9f5ecda2b8d142	packages/paxos/test/poor_udp.pl
+100644 blob 3b08b4cc4a807adf4bb3fe1a0fbfb53f027820f2	packages/paxos/test/scenario.pl
