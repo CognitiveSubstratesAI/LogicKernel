@@ -403,8 +403,8 @@ MUTANTS = [
       '(def.flags & P_FOREIGN) == 0',
       'false', file=S, targets=TS),
     m("WR1-171 cmp: `==` -> `!=` (aimed by ipcf01)",
-      'P_FOREIGN) == 0',
-      'P_FOREIGN) != 0', file=S, targets=TS),
+      'def = proc.definition                       # getProcDefinition(proc)\n            if (def.flags & P_FOREIGN) == 0',   # widened (INT-MERGE-12): delete_old_predicates has the same test
+      'def = proc.definition                       # getProcDefinition(proc)\n            if (def.flags & P_FOREIGN) != 0', file=S, targets=TS),
     m("WR1-176 cond: `cl.source_no == source_no` -> `true` (aimed by ipcf01)",
       'cl.source_no == source_no',
       'true', file=S, targets=TS),
@@ -488,11 +488,11 @@ MUTANTS = [
       '    releaseSourceFile(of)\n    sf === nothing || releaseSourceFile(sf)\n    return rc ? FTRUE : FFALSE\nend',
       '    releaseSourceFile(of)\n    sf === nothing || releaseSourceFile(sf)\n    return rc ? FFALSE : FTRUE\nend', file=S, targets=TS),
     m("WR1-213 cmp: `===` -> `!==` (aimed by ipdf_fp2)",
-      '.reload === nothing &',
-      '.reload !== nothing &', file=S, targets=TS),
+      '    if reload !== nothing\n        r = get(reload.procedures, proc, nothing)',   # refit (INT-MERGE-12): the reload arm of flush_procedure!
+      '    if reload === nothing\n        r = get(reload.procedures, proc, nothing)', file=S, targets=TS),
     m("WR1-215 bool: `true` -> `false` (aimed by ipdf_fp2)",
-      'reload === nothing && return true',
-      'reload === nothing && return false', file=S, targets=TS),
+      '    end\n\n    return true\nend\n\n# PORT: pl-srcfile.c flush_predicate\n',   # refit (INT-MERGE-12): the result of flush_procedure!
+      '    end\n\n    return false\nend\n\n# PORT: pl-srcfile.c flush_predicate\n', file=S, targets=TS),
     m("WR1-218 branch: `ReadingSource(ld)` -> `!ReadingSource(ld)` (aimed by ipfl13)",
       'ReadingSource(ld) || return true',
       '!ReadingSource(ld) || return true', file=S, targets=TS),

@@ -79,8 +79,10 @@ MUTANTS = [
          old='''sf.resource = v ''',
          new='''sf.resource = !v '''),
     dict(id="LB2-14 $source_file_property does not release its reference", file=SF, targets=S,
-         old='''    sf === nothing || releaseSourceFile(sf)''',
-         new='''    nothing'''),
+         old='''    end
+    sf === nothing || releaseSourceFile(sf)''',
+         new='''    end
+    nothing'''),   # INT-MERGE-12: widened, `$set_source_files` (WRAPPERS) has the same line after `releaseSourceFile(of)`
     dict(id="LB2-15 $set_source_file does not release its reference", file=SF, targets=S,
          old='''        releaseSourceFile(sf)
         return rc ? FTRUE : FFALSE''',
