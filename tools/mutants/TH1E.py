@@ -15,6 +15,10 @@
 # THE THREAD EVENTS (Q1, TH1E-Q1..Q10: src/pl-event.jl `PL_call_event_hook_va`'s thread branch, src/pl-thread.jl `freePrologThread!`): TARGETS is the
 # engines test alone: no other file destroys an engine or listens to a thread event (test_event_swipl.jl reaches the other branches of
 # PL_call_event_hook_va, none a mutant here touches). No equivalent among Q1-Q10.
+# THE THREAD INITIALISATION GOALS (TI1..TI4: src/pl-thread.jl `thread_init_goals!`, its call in `_create_engine`; pl-thread.c:7003): TARGETS is the
+# engines test alone (no other file creates an engine). No equivalent among TI1-TI4. NOT LISTED: the context-module argument of the call
+# (`MODULE_system(gd)` -> `nothing`: the procedure is fixed, the context cannot change what `$thread_init/0` does), the query flags
+# (PL_Q_NORMAL -> PL_Q_PASS_EXCEPTION: only an init goal that raises shows it, and the oracle itself dies on that shape: no row).
 # NOT LISTED (with the reason; a survivor would prove nothing about dead code, D-0238):
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
@@ -325,5 +329,22 @@ MUTANTS = [
          file=T, targets=TARGETS,
          old="        PL_clear_exception(ld)\n    end\n    info.thread_data = nothing",
          new="    end\n    info.thread_data = nothing"),
+    # ---- the thread initialisation goals of a new engine
+    dict(id="TH1E-TI1 an engine does not run the thread initialisation goals (KILL ti01-ti05, ti07)",
+         file=T, targets=TARGETS,
+         old="    thread_init_goals!(gd, eld)\n    return eld\n",
+         new="    return eld\n"),
+    dict(id="TH1E-TI2 the goals run twice for an engine (KILL ti01-ti04)",
+         file=T, targets=TARGETS,
+         old="    thread_init_goals!(gd, eld)\n    return eld\n",
+         new="    thread_init_goals!(gd, eld)\n    thread_init_goals!(gd, eld)\n    return eld\n"),
+    dict(id="TH1E-TI3 the goals run in the creator's local data, not the engine's (KILL ti07: the engine's global variable)",
+         file=T, targets=TARGETS,
+         old="    thread_init_goals!(gd, eld)\n    return eld\n",
+         new="    thread_init_goals!(gd, ld)\n    return eld\n"),
+    dict(id="TH1E-TI4 the procedure is looked up in user, not system: it is undefined and nothing runs (KILL ti01-ti05, ti07)",
+         file=T, targets=TARGETS,
+         old="Symbol(\"\\$thread_init\")), 0, MODULE_system(gd))",
+         new="Symbol(\"\\$thread_init\")), 0, MODULE_user(gd))"),
 ]
 
