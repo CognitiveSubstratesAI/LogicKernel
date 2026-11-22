@@ -96,7 +96,9 @@ end
 # `compact_trail`. It cannot run inside the mark phase (the trail is untagged until `tag_trail`, and bits 5-6
 # of an untagged entry are its position). Each field holds the plain entry COUNT: `alien_into_relocation_chain`
 # chains the entry at index count + 1 itself. `mark_foreign_frame` already counted `needs_relocation` for the
-# foreign frames, so only the choicepoints are counted here.
+# foreign frames, so only the choicepoints are counted here. The choicepoints are walked in place, as
+# `gc_choice_indices` lists them (the same steps; ALLOC-FIX c: no list is built inside a collection):
+# chaining a mark's `trailtop` changes no `parent`, `saved_environment` or `saved_bfr` the walk reads.
 "Put the `trailtop` of every real foreign-frame mark and of every choicepoint of `vm` into its trail entry's chain."
 function gc_alien_trailtops(
     ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts, vm::vm_state
@@ -109,9 +111,19 @@ function gc_alien_trailtops(
         end
         fr = f.parent
     end
-    for ch in gc_choice_indices(ld, vm)
-        st.needs_relocation += 1
-        alien_into_relocation_chain(ld, sw, _gcs_mfield(false, ch, 2), STG_STATIC)
+    fr = vm.frame                                       # the walk of gc_choice_indices
+    ch = vm.choice
+    while fr != 0
+        qf = gc_top_query(ld, fr)
+        while ch != 0
+            st.needs_relocation += 1
+            alien_into_relocation_chain(ld, sw, _gcs_mfield(false, ch, 2), STG_STATIC)
+            ch = ld.choices[ch].parent
+        end
+        q = ld.queries[qf]
+        q.parent == 0 && break
+        fr = q.saved_environment
+        ch = q.saved_bfr
     end
     return nothing
 end
