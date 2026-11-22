@@ -5579,6 +5579,11 @@ _manifest_pkg2_plain() = (
     (LK.re_bytep_to_charp, Tuple{LK.re_subject, Int}, false),
     (LK.init_subject!, Tuple{LK.re_subject}, false),
     (LK._yaml_cstring, Tuple{String}, false),
+    # QLF32 — the state file's unsigned varint (pl-qlf.c)
+    (LK.qlfPutUInt32, Tuple{UInt32, LK.IOSTREAM}, false),
+    (LK.qlfGetUInt32, Tuple{LK.IOSTREAM}, false),
+    (LK.PL_qlf_put_uint32, Tuple{UInt32, LK.IOSTREAM}, false),
+    (LK.PL_qlf_get_uint32, Tuple{LK.IOSTREAM}, false),
     # YAML1 piece 3 — the anchor table's pure functions
     (LK.yaml_new_anchor_table, Tuple{}, false),
     (LK.yaml_murmur_hash_aligned2, Tuple{Vector{UInt8}, Int, UInt32}, false),

@@ -1888,3 +1888,58 @@ const PL_predicates_from_wic = (
     PL_extension("\$unmap_id", 1, pl_unmap_id1_va, PL_FA_VARARGS),
     PL_extension("\$import_wic", 3, pl_import_wic3_va, PL_FA_VARARGS)
 )
+
+# ── the state file's 32-bit unsigned integers (pl-qlf.c 640, 2371, 4875, 4937; swipl-devel 18168e62) ──────────────────────────
+# A pure varint over an IOSTREAM: 7 bits a byte, the LOW group first, and the LAST byte (the one that holds the highest group)
+# carries 0x80 (the reverse of the usual LEB128 marker). The reader needs no state file, so a blob save/load function (pcre4pl.c)
+# reaches it through `PL_qlf_put_uint32` / `PL_qlf_get_uint32`. `Qgetc` of the C is `Snpgetc` (no position recording, as upstream builds
+# without O_DEBUG).
+
+# PORT: pl-qlf.c qlfPutUInt32
+# DIVERGES: none in the bytes; `Sputc`'s result is ignored as in the C (`Sferror` reports a failure).
+"Write `i` to `fd` as a pl-qlf.c unsigned varint: 7 bits a byte, low group first, 0x80 on the last byte (pl-qlf.c `qlfPutUInt32`)."
+function qlfPutUInt32(i::UInt32, fd::IOSTREAM)::Nothing
+    while true
+        b = Int(i & 0x7f)
+        i >>= 7
+        i == 0 && (b |= 0x80)
+        Sputc(b, fd)
+        i == 0 && return nothing
+    end
+end
+
+# PORT: pl-qlf.c qlfGetUInt32
+# DIVERGES: a seventh group (corrupt input; the C shifts by 35, undefined) shifts out to 0; at end of file `Snpgetc` answers -1, which
+# the C's `unsigned int c` reads as 0xffffffff (so `c & 0x80` is set and the value is 0x7f); the same here (`-1 % UInt32`).
+"Read a pl-qlf.c unsigned varint from `fd` (pl-qlf.c `qlfGetUInt32`)."
+function qlfGetUInt32(fd::IOSTREAM)::UInt32
+    c = Snpgetc(fd) % UInt32
+    (c & 0x80) != 0 && return c & 0x7f
+    v = c & 0x7f
+    shift = 7
+    while true
+        c = Snpgetc(fd) % UInt32
+        if (c & 0x80) != 0
+            v |= (c & 0x7f) << shift
+            return v
+        else
+            v |= c << shift
+            shift += 7
+        end
+    end
+end
+
+# PORT: pl-qlf.c PL_qlf_put_uint32
+"Write `i` as a state-file unsigned integer; true if the stream has no error afterwards (pl-qlf.c `PL_qlf_put_uint32`)."
+function PL_qlf_put_uint32(i::UInt32, s::IOSTREAM)::Bool
+    qlfPutUInt32(i, s)
+    return Sferror(s) == 0
+end
+
+# PORT: pl-qlf.c PL_qlf_get_uint32
+# DIVERGES: the C writes the value through `ip` and returns `!Sferror(s)`; this returns `(ok, value)`.
+"Read a state-file unsigned integer: `(true if the stream has no error afterwards, the value)` (pl-qlf.c `PL_qlf_get_uint32`)."
+function PL_qlf_get_uint32(s::IOSTREAM)::Tuple{Bool, UInt32}
+    v = qlfGetUInt32(s)
+    return (Sferror(s) == 0, v)
+end
