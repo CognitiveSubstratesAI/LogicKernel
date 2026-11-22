@@ -691,6 +691,11 @@ end
 "The `int64_t` term reference `t` holds — an integer in `Int64`'s range — or `nothing` (pl-fli.c)."
 PL_get_int64(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long(ld, t)
 
+# PORT: pl-fli.c PL_get_uint64
+# DIVERGES: returns the value (a `UInt64`), or `nothing`, where upstream writes `*i` and returns the flag.
+"The `uint64_t` term reference `t` holds — a non-negative integer in `UInt64`'s range — or `nothing`, no error raised (pl-fli.c)."
+PL_get_uint64(ld::PL_local_data{T}, t::term_t) where {T} = pl_get_uint64(ld, t, false)
+
 # PORT: pl-fli.c atom_to_bool
 # DIVERGES: `nothing` for neither, where upstream returns -1.
 "The Boolean atom `a` names — `true`/`on` or `false`/`off` — or `nothing` (pl-fli.c)."

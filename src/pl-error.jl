@@ -878,6 +878,49 @@ function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
     return nothing
 end
 
+# PORT: pl-error.c pl_get_uint64, PL_get_uint64_ex
+# DIVERGES: returns the value (a `UInt64`), or `nothing`, where upstream writes `*i` and returns the flag; `ex` is a `Bool`.
+# On the WORDS as `PL_get_size_ex` above: a tagged integer, else the value read as upstream's `PL_get_number`; the bignum
+# branch (`O_BIGNUM`) is the only one, as the kernel's integers past Int64 are `BigInt`s (`mpz_to_uint64`: -1, 0, 1).
+"""
+The `uint64_t` term reference `t` holds, or `nothing`; with `ex` also the error raised: `domain_error(not_less_than_zero, T)`,
+`representation_error(uint64_t)` or `type_error(integer, T)` (pl-error.c `pl_get_uint64`).
+"""
+function pl_get_uint64(ld::PL_local_data{T}, t::term_t, ex::Bool)::Union{Nothing, UInt64} where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
+    if k == DU_VALUE && isTaggedIntW(x)                     # if ( isTaggedInt(*p) )
+        valInt(x) >= 0 && return UInt64(valInt(x))          # *i = v
+        ex && PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        return nothing
+    end
+    if k == DU_VALUE
+        p = _value_term(ld, x)                              # PL_get_number(t, &n)
+        if isInteger(p)
+            if integer_is_int64(p)                          # case V_INTEGER
+                v = int64_value(p)
+                v >= 0 && return UInt64(v)
+                ex && PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+                return nothing
+            end
+            status, u = mpz_to_uint64(bigint_value(p))      # case V_MPZ
+            status == 0 && return u
+            if ex
+                if status == -1
+                    PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+                else
+                    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint64_t))
+                end
+            end
+            return nothing
+        end
+    end
+    ex && PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)    # a variable, an atom, a compound, a float, a rational
+    return nothing
+end
+
+"The `uint64_t` term reference `t` holds, or `nothing` after raising the error of `pl_get_uint64` (pl-error.c)."
+PL_get_uint64_ex(ld::PL_local_data{T}, t::term_t) where {T} = pl_get_uint64(ld, t, true)
+
 # PORT: pl-error.c PL_get_list_ex
 "As `PL_get_list`; on neither a list cell nor `[]`, false after raising `type_error(list, L)` (pl-error.c)."
 function PL_get_list_ex(

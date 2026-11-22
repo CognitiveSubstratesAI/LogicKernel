@@ -4377,6 +4377,9 @@ _index_entry_points(T) = (
     (LK.PL_error_range, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.PL_get_char, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.PL_get_uint64_ex, Tuple{LK.PL_local_data{T}, Int}, false),   # PKG2-5: pl-error.c PL_get_uint64_ex
+    (LK.PL_get_uint64, Tuple{LK.PL_local_data{T}, Int}, false),   # pl-fli.c PL_get_uint64
+    (LK.pl_get_uint64, Tuple{LK.PL_local_data{T}, Int, Bool}, false),   # pl-error.c pl_get_uint64
     (LK.PL_get_pointer_ex, Tuple{LK.PL_local_data{T}, Int}, false),   # TB4e: pl-error.c PL_get_pointer_ex
     (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, Nothing}, false),
     (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, LK.IOSTREAM}, false),   # JSON1: the stream form
