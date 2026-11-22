@@ -160,12 +160,19 @@ end
 # the global stack and the trail the rest; here the local stack may take it whole, while the global stack and the trail are held by no
 # limit during exception processing (`hasStackSpace` / `ensureGlobalSpace`, src/pl-alloc.jl:160/178). Kept: the split exists only where
 # upstream sizes three stacks at once, which this kernel's on-demand global stack and trail leave to the local stack alone.
+# DIVERGES (G1, audit D-0966 (2): the shift counters, pl-gc.c:5419-5421, :5472, :5496-5499 at 18168e62): `shift_status.local_shifts`
+# ticks when the local stack's size changes here or in `growStacks_trim!`; `global_shifts` in `_growGlobalStack!` (src/pl-alloc.jl)
+# past the initial size, `trail_shifts` in `_growTrail!` (src/pl-inline.jl, a modelled trail size). The counts follow the kernel's
+# own sizes: upstream also grows the global stack and the trail when a collection leaves them tight (`tight()`, GLOBAL_TRAIL_RATIO)
+# and shrinks them on `trim_stacks`, which ticks all three; here only the local stack shrinks. `shift_status.time` and
+# `shift_status.inferences` (pl-gc.c:5426, :5540-5541) are not kept: nothing reads them.
 "Grow the local stack so `l` more positions fit above `lTop` (pl-gc.c `growStacks`)."
 function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     need = ld.lTop + l
     need <= ld.lMax && return nothing
     want = need + ld.local_def_spare                # include_spare_stack: the spare on top
-    size = max(ld.lMax + ld.local_spare, 1)
+    oldsize = ld.lMax + ld.local_spare              # lsize: sizeStack(local) (pl-gc.c:5419 at 18168e62)
+    size = max(oldsize, 1)
     while size < want
         size *= 2
     end
@@ -180,6 +187,7 @@ function growStacks!(ld::PL_local_data{T}, l::Int)::Nothing where {T}
     _resize_local!(ld, size)
     ld.lMax = size                                  # include_spare_stack: max += spare
     ld.local_spare = 0
+    size != oldsize && (ld.shift_status.local_shifts += 1)   # l = (sizeStack(local) != lsize); if ( l ) LD->shift_status.local_shifts++ (pl-gc.c:5419, :5498-5499 at 18168e62)
     trim_stack!(ld)                                 # reenable_spare_stack
     return nothing
 end
@@ -204,7 +212,9 @@ function growStacks_trim!(ld::PL_local_data)::Nothing
     else
         n = ld.lTop + LOCAL_MARGIN + ld.local_def_spare     # usedStackP(s) + s->min_free + s->def_spare
         new = max(2 << MSB64(Int64(n)), LOCAL_INITIAL)      # nextStackSizeAbove(n): SMALLSTACK at least
-        ld.lMax = min(new, size)                    # never above the stack's size
+        new = min(new, size)                        # never above the stack's size
+        new != size && (ld.shift_status.local_shifts += 1)   # GROW_TRIM goes through grow_stacks: l = (sizeStack(local) != lsize); local_shifts++ (pl-gc.c:5419, :5498-5499 at 18168e62)
+        ld.lMax = new
     end
     trim_stack_trail!(ld)                           # reenable_spare_stack(trail)
     trim_stack_global!(ld)                          # … (global)
