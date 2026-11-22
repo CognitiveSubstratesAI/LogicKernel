@@ -4414,23 +4414,26 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
 end
 
 # PORT: pl-prims.c pl_statistics_ld
-# DIVERGES: the local data is the one argument (`PASS_AS_LD(ld)`): there is one thread. The key's atom
-# is read as its text, a Symbol.
-"`statistics/2` for the local data `ld`: unify the value of the key `k` with `value` (pl-prims.c)."
-function pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T}
+# DIVERGES: the key's atom is read as its text, a Symbol. Upstream's `DECL_LD` (the calling thread, which owns the term references `k` and
+# `value`) and its `ld` argument (the thread whose statistics are read, `PASS_AS_LD(ld)`) are `ld` and `sld` here; the 3-argument method is
+# `statistics/2` on the calling thread (`sld = ld`), `thread_statistics/3` passes the thread's own.
+"`statistics/2` for the local data `sld`: unify the value of the key `k` (a term of `ld`) with `value` (pl-prims.c)."
+function pl_statistics_ld(
+    ld::PL_local_data{T}, k::term_t, value::term_t, sld::PL_local_data{T}
+)::Bool where {T}
     a = PL_get_atom_ex(ld, k)
     a === nothing && return false
     key = Symbol(sym_text(a))
 
     if !PL_is_list(ld, value)
         result = number()
-        if swi_statistics(ld, key, result) == 1
+        if swi_statistics(sld, key, result) == 1
             return PL_unify_number(ld, value, result)
         end
     end
 
     v = zeros(Int64, 4)
-    rc = qp_statistics(ld, key, v)
+    rc = qp_statistics(sld, key, v)
     if rc >= 0
         tail = PL_copy_term_ref(ld, value)
         head = PL_new_term_ref(ld)
@@ -4446,6 +4449,10 @@ function pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool 
 
     return PL_error(ld, "statistics", 2, "", ERR_DOMAIN, mk_sym(T, :statistics_key), k)
 end
+
+"`statistics/2` on the calling thread: `pl_statistics_ld` with the statistics of `ld` itself (pl-prims.c `pl_statistics_ld(A1, A2, LD)`)."
+pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T} =
+    pl_statistics_ld(ld, k, value, ld)
 
 # PORT: pl-prims.c statistics as pl_statistics2_va
 # (PRED_IMPL("statistics", 2, statistics, 0))

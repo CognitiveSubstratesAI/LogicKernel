@@ -91,6 +91,7 @@ const foreigns = (
     PL_extension("thread_join", 2, pl_thread_join, 0x00),           # TH1 (pl-thread.c:2913)
     PL_extension("thread_detach", 1, pl_thread_detach, PL_FA_ISO),  # TH1 (pl-thread.c:2989; ISO)
     PL_extension("set_thread", 2, pl_set_thread, 0x00),             # TH1 (pl-thread.c:3049)
+    PL_extension("thread_statistics", 3, pl_thread_statistics, 0x00),   # TH1 (pl-thread.c:7416; :8866)
     PL_extension("debug_reset_from_class", 0, pl_debug_reset_from_class0, 0x00),   # TH1 (pl-thread.c:3145)
     PL_extension("is_engine", 1, pl_is_engine, 0x00),               # TH1 engines (pl-thread.c:4504; O_ENGINES: BeginPredDefs :8849)
     PL_extension("\$engine_create", 3, pl_engine_create, 0x00),       # TH1 engines (pl-thread.c:4098)
