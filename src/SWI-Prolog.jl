@@ -147,6 +147,102 @@ const REP_ISO_LATIN_1 = 0x00000000
 # PORT: SWI-Prolog.h PL_DIFF_LIST
 "Text type flag: the list is a difference list, its tail left in the next term reference (SWI-Prolog.h)."
 const PL_DIFF_LIST = 0x01000000
+# PORT: SWI-Prolog.h PL_VARIABLE
+"Term type: an unbound variable (`PL_unify_term`: nothing follows) (SWI-Prolog.h)."
+const PL_VARIABLE = 1
+# PORT: SWI-Prolog.h PL_FLOAT
+"Term type: a float (SWI-Prolog.h)."
+const PL_FLOAT = 5
+# PORT: SWI-Prolog.h PL_TERM
+"Term type: a term (a term reference follows) (SWI-Prolog.h)."
+const PL_TERM = 7
+# PORT: SWI-Prolog.h PL_NIL
+"Term type: the constant `[]` (SWI-Prolog.h)."
+const PL_NIL = 8
+# PORT: SWI-Prolog.h PL_BLOB
+"Term type: a non-text atom (SWI-Prolog.h)."
+const PL_BLOB = 9
+# PORT: SWI-Prolog.h PL_LIST_PAIR
+"Term type: a `[_|_]` term (SWI-Prolog.h)."
+const PL_LIST_PAIR = 10
+# PORT: SWI-Prolog.h PL_FUNCTOR
+"Term type: a functor, its arguments follow (SWI-Prolog.h)."
+const PL_FUNCTOR = 11
+# PORT: SWI-Prolog.h PL_CHARS
+"Term type: atom text (SWI-Prolog.h)."
+const PL_CHARS = 13
+# PORT: SWI-Prolog.h PL_POINTER
+"Term type: a pointer (SWI-Prolog.h)."
+const PL_POINTER = 14
+# PORT: SWI-Prolog.h PL_BOOL
+"Term type: a Boolean (SWI-Prolog.h)."
+const PL_BOOL = 17
+# PORT: SWI-Prolog.h PL_FUNCTOR_CHARS
+"Term type: a functor by name and arity (SWI-Prolog.h)."
+const PL_FUNCTOR_CHARS = 18
+# PORT: SWI-Prolog.h PL_SHORT
+"Term type: a short (SWI-Prolog.h)."
+const PL_SHORT = 20
+# PORT: SWI-Prolog.h PL_INT
+"Term type: an int (SWI-Prolog.h)."
+const PL_INT = 21
+# PORT: SWI-Prolog.h PL_LONG
+"Term type: a long (SWI-Prolog.h)."
+const PL_LONG = 22
+# PORT: SWI-Prolog.h PL_DOUBLE
+"Term type: a double (SWI-Prolog.h)."
+const PL_DOUBLE = 23
+# PORT: SWI-Prolog.h PL_NCHARS
+"Term type: atom text with its length (SWI-Prolog.h)."
+const PL_NCHARS = 24
+# PORT: SWI-Prolog.h PL_UTF8_CHARS
+"Term type: atom text in UTF-8 (SWI-Prolog.h)."
+const PL_UTF8_CHARS = 25
+# PORT: SWI-Prolog.h PL_UTF8_STRING
+"Term type: string text in UTF-8 (SWI-Prolog.h)."
+const PL_UTF8_STRING = 26
+# PORT: SWI-Prolog.h PL_INT64
+"Term type: an int64 (SWI-Prolog.h)."
+const PL_INT64 = 27
+# PORT: SWI-Prolog.h PL_NUTF8_CHARS
+"Term type: atom text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_CHARS = 28
+# PORT: SWI-Prolog.h PL_NUTF8_CODES
+"Term type: code list text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_CODES = 29
+# PORT: SWI-Prolog.h PL_NUTF8_STRING
+"Term type: string text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_STRING = 30
+# PORT: SWI-Prolog.h PL_NWCHARS
+"Term type: atom text of wide characters with its length (SWI-Prolog.h)."
+const PL_NWCHARS = 31
+# PORT: SWI-Prolog.h PL_NWCODES
+"Term type: code list of wide characters with its length (SWI-Prolog.h)."
+const PL_NWCODES = 32
+# PORT: SWI-Prolog.h PL_NWSTRING
+"Term type: string of wide characters with its length (SWI-Prolog.h)."
+const PL_NWSTRING = 33
+# PORT: SWI-Prolog.h PL_MBCHARS
+"Term type: atom text in the locale's multibyte encoding (SWI-Prolog.h)."
+const PL_MBCHARS = 34
+# PORT: SWI-Prolog.h PL_MBCODES
+"Term type: code list in the multibyte encoding (SWI-Prolog.h)."
+const PL_MBCODES = 35
+# PORT: SWI-Prolog.h PL_MBSTRING
+"Term type: string in the multibyte encoding (SWI-Prolog.h)."
+const PL_MBSTRING = 36
+# PORT: SWI-Prolog.h PL_INTPTR
+"Term type: an intptr_t (SWI-Prolog.h)."
+const PL_INTPTR = 37
+# PORT: SWI-Prolog.h PL_DICT
+"Term type: a dict (SWI-Prolog.h)."
+const PL_DICT = 44
+# PORT: SWI-Prolog.h PL_SWORD
+"Term type: a signed word (internal) (SWI-Prolog.h)."
+const PL_SWORD = 45
+# PORT: SWI-Prolog.h _PL_PREDICATE_INDICATOR
+"Term type: a predicate as `Name/Arity` (a Procedure follows) (SWI-Prolog.h)."
+const _PL_PREDICATE_INDICATOR = 19
 # PORT: SWI-Prolog.h CVT_ATOM
 "Text conversion: an atom (SWI-Prolog.h)."
 const CVT_ATOM = 0x00000001

@@ -2495,6 +2495,248 @@ function PL_predicate_info(pred::Procedure{T})::Tuple{Bool, T, Int, Int} where {
     return (true, def.name, def.arity, def.module_)
 end
 
+# ── FLI-API group F (pl-fli.c): building terms from a tagged argument list, atomic words, the term type ───────────
+
+# PORT: pl-fli.c PL_get_module
+# DIVERGES: the database is an argument; the answer is the module's index (see `PL_context`), `nothing` for
+# upstream's `false`; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The index of the module named by the atom term reference `t` holds (created if new), `nothing` if `t` holds no atom (pl-fli.c)."
+function PL_get_module(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    a = PL_get_atom(ld, t)                                  # if ( PL_get_atom(t, &a) )
+    a === nothing && return nothing
+    return lookupModule(gd, a).index                        # *m = lookupModule(a)
+end
+
+# PORT: pl-fli.c _PL_get_atomic
+# DIVERGES: the local data is an argument; the answer is the word of the dereferenced term (`_deref_loc`; 0 for an
+# unbound variable, whose cell word is never read); no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The word the term reference `t` holds, dereferenced: `PL_atomic_t` (pl-fli.c)."
+function _PL_get_atomic(ld::PL_local_data{T}, t::term_t)::word where {T}
+    _, w, _ = _deref_loc(ld, -(t + 1))                      # return valHandle(t)
+    return w
+end
+
+# PORT: pl-fli.c _PL_put_atomic
+# DIVERGES: the local data is an argument; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Make term reference `t` hold the word `a` (`PL_atomic_t`, pl-fli.c)."
+function _PL_put_atomic(ld::PL_local_data{T}, t::term_t, a::word)::Nothing where {T}
+    ld.slots[t + 1] = a                                     # setHandle(t, a)
+    return nothing
+end
+
+# ORIGINAL (FLI-API): pl-fli.c's `xpceref_t` (SWI-Prolog.h): an XPCE object reference, an integer or an atom.
+"An XPCE reference: `type` is `PL_INTEGER` (the integer `i`) or `PL_ATOM` (the atom `a`) (SWI-Prolog.h `xpceref_t`)."
+struct xpceref_t{T}
+    type::Int
+    i::Int64
+    a::Union{Nothing, T}
+end
+
+# PORT: pl-fli.c put_xpce_ref_arg
+# DIVERGES: the local data is an argument; the answer is the word for the argument cell, 0 after the
+# representation error (upstream returns the `false` of `PL_representation_error`, as a word).
+"The word of the XPCE reference `ref` as the argument of `@/1`: a tagged integer, or the atom's word (pl-fli.c)."
+function put_xpce_ref_arg(ld::PL_local_data{T}, ref::xpceref_t{T})::word where {T}
+    if ref.type == PL_INTEGER                               # if ( ref->type == PL_INTEGER )
+        w = consInt(ref.i)                                  # word w = consInt(ref->value.i)
+        if valInt(w) != ref.i                               # if ( valInt(w) != ref->value.i)
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :pce_reference))
+            return word(0)                                  # return PL_representation_error("pce_reference")
+        end
+        return w
+    end
+    return _atom_word!(ld, ref.a::T)                        # return ref->value.a
+end
+
+# PORT: pl-fli.c PL_term_type
+# DIVERGES: the local data is an argument; on the WORDS (`_deref_loc`): an unbound or attributed variable
+# `PL_VARIABLE`, a tagged integer or an integer value `PL_INTEGER`, other rationals `PL_RATIONAL`; no
+# `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The type of the term reference `t` holds: `PL_VARIABLE`, `PL_ATOM`, `PL_NIL`, `PL_BLOB`, `PL_INTEGER`, `PL_RATIONAL`, `PL_FLOAT`, `PL_STRING`, `PL_TERM`, `PL_LIST_PAIR`, `PL_DICT` (pl-fli.c)."
+function PL_term_type(ld::PL_local_data{T}, t::term_t)::Int where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t); t0 = type_map[tag(w)]
+    (k == DU_CELL || k == DU_ATTVAR) && return PL_VARIABLE
+    if k == DU_WORD
+        if isAtomW(w)                                       # case PL_ATOM
+            isTextAtom(_atom_value(ld, w)) && return PL_ATOM    # isTextAtom(w)
+            w == ld.atom_nil_w && return PL_NIL             # w == ATOM_nil
+            return PL_BLOB
+        end
+        f = ld.gstack[valPtr(w)]                            # case PL_TERM: f = word2functor(valueTerm(w)->definition)
+        f == ld.functor_dot2 && return PL_LIST_PAIR         # f == FUNCTOR_dot2
+        nameFunctor(ld.functors, f) == ATOM_dict && return PL_DICT   # fd->name == ATOM_dict
+        return PL_TERM
+    end
+    isTaggedIntW(w) && return PL_INTEGER                    # case PL_INTEGER
+    v = _indirect_value(ld, w)
+    isInteger(v) && return PL_INTEGER                       # isInteger(w) ? PL_INTEGER : PL_RATIONAL
+    isRational(v) && return PL_RATIONAL
+    isFloat(v) && return PL_FLOAT
+    isString(v) && return PL_STRING
+    error("PL_term_type: unknown value word")
+end
+
+# PORT: pl-fli.c PL_unify_output
+# DIVERGES: the local data is an argument; the fast path is taken where the value is an atom or a compound word
+# (`bindConst(p1, *p2)`), a value-table word goes through `PL_unify`: the same binding; `hasGlobalSpace(0)` is
+# true (the global stack grows).
+"Unify the output argument `t1` with `t2`: a variable bound to a non-variable is bound directly (pl-fli.c)."
+function PL_unify_output(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
+    k1, _, q1 = _deref_loc(ld, -(t1 + 1))                   # deRef(p1)
+    k2, w2, _ = _deref_loc(ld, -(t2 + 1))                   # deRef(p2)
+    if (k1 == DU_CELL || k1 == DU_ATTVAR) && k2 == DU_WORD  # canBind(*p1) && !canBind(*p2) && hasGlobalSpace(0)
+        bindConst(ld, q1, w2)                               # bindConst(p1, *p2)
+        return true
+    end
+    return PL_unify(ld, t1, t2)                             # unify_ptrs(p1, p2, ALLOW_GC|ALLOW_SHIFT)
+end
+
+# ORIGINAL (FLI-API): pl-fli.c's agenda entry `work` of PL_unify_termv: `is_list` false is `w_term` (`ref` the
+# term, `n` its arity, `arg` the current argument), true is `w_list` (`ref` the tail, `n` the elements left).
+mutable struct _unify_work
+    is_list::Bool
+    ref::term_t
+    n::Int
+    arg::Int
+end
+
+# PORT: pl-fli.c PL_unify_termv
+# DIVERGES: the argument list is a vector holding each tag and its values in order (`va_arg`): atoms as the
+# interface symbol, texts as byte vectors (`PL_NWCHARS`: `UInt32` code points), pointers `UInt`, floats
+# `Float64`, a `PL_FUNCTOR` as the functor word, a `_PL_PREDICATE_INDICATOR` as the `Procedure`; the database is
+# an argument; the multibyte tags (`PL_MBCHARS`...) reach the refusal of `PL_unify_chars` (`REP_MB`); the text
+# tags call `PL_unify_chars` (wip/clib-uri, wip/clib1) and the wide-text tags (`PL_NWCHARS`, `PL_NWCODES`,
+# `PL_NWSTRING`) call `PL_unify_wchars` (wip/clib-uri, whose code points are `Int`s: converted here): NEITHER is
+# in this branch (duplicates of those branches), so this function only checks, runs or passes JET once a clib
+# branch is merged under it; the agenda
+# is a vector of `_unify_work`; the warning of an unknown tag ("Format error in PL_unify_term()", `PL_warning`, a
+# later group of this file) is left to that function and the call fails; a `PL_LIST` whose `PL_unify_list` fails
+# with elements left fails the call (forced: repeating the same call cannot end).
+"Unify the term `t` references with the term the tagged `args` describe (`PL_unify_term`'s variadic list) (pl-fli.c)."
+function PL_unify_termv(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, args::AbstractVector
+)::Bool where {T}
+    tsave = PL_new_term_refs(ld, 0)                         # save for reclaim
+    agenda = _unify_work[]
+    t = PL_copy_term_ref(ld, t)                             # if ( !(t = PL_copy_term_ref(t)) )
+    t == 0 && return false
+    ai = 0
+    ok = true
+    while true                                              # cont:
+        op = Int(args[ai += 1]::Integer)                    # switch((op=va_arg(args, int)))
+        rval = true
+        if op == PL_VARIABLE                                # rval = true
+        elseif op == PL_ATOM
+            rval = PL_unify_atom(ld, t, args[ai += 1]::T)
+        elseif op == PL_BOOL
+            v = args[ai += 1]
+            b = v isa Bool ? v : v != 0                     # v ? ATOM_true : ATOM_false
+            rval = PL_unify_atom(ld, t, mk_sym(T, b ? Symbol("true") : Symbol("false")))
+        elseif op == PL_SHORT || op == PL_INT || op == PL_INTEGER || op == PL_LONG
+            rval = PL_unify_integer(ld, t, Int(args[ai += 1]::Integer))
+        elseif op == PL_INT64 || op == PL_INTPTR || op == PL_SWORD
+            rval = PL_unify_int64(ld, t, Int(args[ai += 1]::Integer))
+        elseif op == PL_POINTER
+            rval = PL_unify_pointer(ld, t, UInt(args[ai += 1]::Integer))
+        elseif op == PL_FLOAT || op == PL_DOUBLE
+            rval = PL_unify_float(ld, t, Float64(args[ai += 1]::Real))
+        elseif op == PL_STRING
+            rval = PL_unify_string_chars(ld, t, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_TERM
+            rval = PL_unify(ld, t, args[ai += 1]::term_t)
+        elseif op == PL_CHARS
+            rval = PL_unify_atom_chars(ld, t, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_NCHARS
+            len = Int(args[ai += 1]::Integer)
+            rval = PL_unify_atom_nchars(ld, t, len, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_UTF8_CHARS || op == PL_UTF8_STRING
+            rval = PL_unify_chars(                          # PL_unify_text(t, 0, &txt, PL_STRING or PL_ATOM)
+                ld, t, (op == PL_UTF8_STRING ? PL_STRING : PL_ATOM) | Int(REP_UTF8), -1,
+                args[ai += 1]::AbstractVector{UInt8}
+            )
+        elseif op == PL_NUTF8_CHARS || op == PL_NUTF8_CODES || op == PL_NUTF8_STRING
+            len = Int(args[ai += 1]::Integer)
+            ty = op == PL_NUTF8_CHARS ? PL_ATOM : op == PL_NUTF8_CODES ? PL_CODE_LIST : PL_STRING
+            rval = PL_unify_chars(ld, t, ty | Int(REP_UTF8), len, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_NWCHARS || op == PL_NWCODES || op == PL_NWSTRING
+            len = Int(args[ai += 1]::Integer)
+            ty = op == PL_NWCHARS ? PL_ATOM : op == PL_NWCODES ? PL_CODE_LIST : PL_STRING
+            ws = args[ai += 1]::AbstractVector{UInt32}      # wip/clib-uri's PL_unify_wchars takes the code points as `Int`s
+            rval = PL_unify_wchars(ld, t, ty, len, Int[Int(c) for c in ws])
+        elseif op == PL_MBCHARS || op == PL_MBCODES || op == PL_MBSTRING
+            ty = op == PL_MBCHARS ? PL_ATOM : op == PL_MBCODES ? PL_CODE_LIST : PL_STRING
+            rval = PL_unify_chars(ld, t, ty | Int(REP_MB), -1, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_FUNCTOR_CHARS || op == PL_FUNCTOR
+            if op == PL_FUNCTOR_CHARS
+                a = PL_new_atom(ld, args[ai += 1]::AbstractVector{UInt8})   # atom_t a = PL_new_atom(s)
+                arity = Int(args[ai += 1]::Integer)         # arity = va_arg(args, int)
+                ft = PL_new_functor(ld, a, arity)           # ft = PL_new_functor(a, arity)
+            else
+                ft = args[ai += 1]::word                    # ft = va_arg(args, functor_t)
+                arity = arityFunctor(ld.functors, ft)       # arity = arityFunctor(ft)
+            end
+            if PL_unify_functor(ld, t, PL_functor_name(ld, ft), arity)   # common_f: PL_unify_functor(t, ft)
+                c = PL_copy_term_ref(ld, t)
+                c == 0 && return false
+                push!(agenda, _unify_work(false, c, arity, 0))
+            else
+                rval = false
+            end
+        elseif op == PL_LIST
+            c = PL_copy_term_ref(ld, t)
+            c == 0 && return false
+            push!(agenda, _unify_work(true, c, Int(args[ai += 1]::Integer), 0))
+        elseif op == _PL_PREDICATE_INDICATOR
+            proc = args[ai += 1]::Procedure{T}
+            rval = unify_definition(
+                gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_HIDESYSTEM | GP_NAMEARITY
+            )
+        else                                                # default: PL_warning("Format error in PL_unify_term()")
+            rval = false
+        end
+        if !rval
+            ok = false                                      # failout
+            break
+        end
+        more = false
+        while !isempty(agenda)                              # while( tos > 0 )
+            w = agenda[end]
+            if !w.is_list
+                if w.arg < w.n                              # w->value.term.arg < w->value.term.arity
+                    w.arg += 1
+                    _PL_get_arg(ld, w.arg, w.ref, t)        # _PL_get_arg(++w->value.term.arg, w->value.term.term, t)
+                    more = true                             # goto cont
+                    break
+                end
+                pop!(agenda)                                # tos--
+            elseif w.n > 0                                  # w->value.list.len > 0
+                if PL_unify_list(ld, w.ref, t, w.ref)       # PL_unify_list(tail, t, tail)
+                    w.n -= 1
+                    more = true                             # goto cont
+                    break
+                end
+                ok = false
+                break
+            elseif PL_unify_nil(ld, w.ref)                  # else if ( PL_unify_nil(w->value.list.tail) )
+                pop!(agenda)                                # tos--
+            else
+                ok = false                                  # goto failout
+                break
+            end
+        end
+        ok || break
+        more || break
+    end
+    PL_reset_term_refs(ld, tsave)                           # PL_reset_term_refs(tsave)
+    return ok
+end
+
+# PORT: pl-fli.c PL_unify_term
+# DIVERGES: the tagged arguments are the rest of the call (see `PL_unify_termv`); the database is an argument.
+"Unify the term `t` references with the term the tagged `args` describe (pl-fli.c)."
+PL_unify_term(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, args...) where {T} =
+    PL_unify_termv(gd, ld, t, Any[args...])
+
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
 # DIVERGES: left out: the `GC_DEBUG`/`O_DEBUG`/ASAN line that keeps the memory reclaim (a build option) and the
