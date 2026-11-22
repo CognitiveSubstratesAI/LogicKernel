@@ -35,8 +35,9 @@
 #   3. FINITE TREES. The registrations export their argument from its cells first (`export_cells`): an attributed
 #      variable is then a plain variable (term_hash/2 leaves A2 unbound for it, variant_hash/2 numbers it, and
 #      variant_sha1/2 raises `type_error(free_of_attvar, T)` after a `TV_ATTVAR` scan, as upstream's E_ATTVAR). A CYCLIC
-#      argument is refused by name (`_variant_arg`: `term_canonical_form` of pl-bisim.c, which hashes the canonical
-#      form upstream, `hash_prefix`; `_term_hash_arg`: the `CYCLE_CONST` path of term_hash), owner R2. The walks see
+#      argument of variant_hash/2 and variant_sha1/2 is hashed as upstream does, through its canonical form
+#      (`_variant_arg`: `term_canonical_form` of pl-bisim.c, prefix `C`, `hash_prefix`); a cyclic argument of term_hash
+#      is refused by name (`_term_hash_arg`: the `CYCLE_CONST` path of term_hash), owner R2. The walks see
 #      finite trees: no `in_cycle`, no reuse of a shared subterm's hash (a finite shared subterm rehashes to the same
 #      value), no `E_CYCLE`/`E_RESOURCE`. Variables are numbered in a map where upstream overwrites their cells and
 #      restores them afterwards.
@@ -735,15 +736,23 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
     end
 end
 
+# PORT: pl-termhash.c hash_prefix
+"Mix `prefix` into the digest before the term (pl-termhash.c `hash_prefix`): `HASH(prefix, strlen(prefix))`."
+hash_prefix!(state::sha1_state, prefix::String)::Nothing = _HASH_str!(state, prefix)
+
 # PORT: pl-termhash.c variant_hash_walk
-"The digest of `term`'s variant class under `algorithm` (pl-termhash.c)."
-function variant_hash_walk(term, algorithm::hash_algo)::termhash_t
+"""
+The digest of `term`'s variant class under `algorithm` (pl-termhash.c); a non-empty `prefix` is mixed in before the term
+(upstream's `prefix` argument, NULL for the acyclic path).
+"""
+function variant_hash_walk(term, algorithm::hash_algo; prefix::String="")::termhash_t
     state = sha1_state(algorithm)
     if algorithm == HASH_SHA1
         sha1_begin!(state.sha1)
     else
         hash_init!(state.murmur)
     end
+    isempty(prefix) || hash_prefix!(state, prefix)
     agenda = ac_initTermAgenda(term)
     variant_sha1_walk!(agenda, state)
     if state.algorithm == HASH_SHA1
@@ -756,23 +765,26 @@ end
 
 # PORT: pl-termhash.c variant_hash
 # DIVERGES: the walk's digest is the answer: a cyclic argument and an attributed variable are dealt with by the
-# registrations before the walk (`_variant_arg`, file header 3), so no canonical-form rehash and no `E_ATTVAR`.
+# registrations before the walk (`_variant_arg`, file header 3: the canonical form of a cyclic argument is hashed there,
+# with the prefix `C`), so no `E_CYCLE` rehash and no `E_ATTVAR` here.
 """
-    variant_hash(term, algorithm) -> termhash_t
+    variant_hash(term, algorithm; prefix="") -> termhash_t
 
-The digest of `term`'s variant class: equal for `=@=` terms (pl-termhash.c).
+The digest of `term`'s variant class: equal for `=@=` terms (pl-termhash.c). `prefix` is what upstream passes for the
+canonical form of a cyclic term, `"C"`.
 """
-variant_hash(term, algorithm::hash_algo) = variant_hash_walk(term, algorithm)
+variant_hash(term, algorithm::hash_algo; prefix::String="") =
+    variant_hash_walk(term, algorithm; prefix)
 
 # PORT: pl-termhash.c variant_sha1 as pl_variant_sha1
 """
-    pl_variant_sha1(t) -> String
+    pl_variant_sha1(t; prefix="") -> String
 
 `variant_sha1/2`: the SHA-1 digest of `t`'s variant class, as 40 lowercase hex digits; the same
 for `=@=` terms (pl-termhash.c).
 """
-function pl_variant_sha1(t)::String
-    hash = variant_hash(t, HASH_SHA1)
+function pl_variant_sha1(t; prefix::String="")::String
+    hash = variant_hash(t, HASH_SHA1; prefix)
     hexd = "0123456789abcdef"
     o = Vector{UInt8}(undef, SHA1_DIGEST_SIZE * 2)
     for n in 1:SHA1_DIGEST_SIZE
@@ -785,32 +797,44 @@ end
 
 # PORT: pl-termhash.c variant_hash as pl_variant_hash
 """
-    pl_variant_hash(t) -> Int
+    pl_variant_hash(t; prefix="") -> Int
 
 `variant_hash/2`: the MurmurHash of `t`'s variant class, masked to `PLMAXTAGGEDINT32`; the same
 for `=@=` terms (pl-termhash.c).
 """
-pl_variant_hash(t)::Int = Int(variant_hash(t, HASH_MURMUR).murmur & PLMAXTAGGEDINT32)
+pl_variant_hash(t; prefix::String="")::Int =
+    Int(variant_hash(t, HASH_MURMUR; prefix).murmur & PLMAXTAGGEDINT32)
 
 # PORT: pl-termhash.c variant_hash as _variant_arg
-# (the cyclic-term branch of variant_hash)
-# DIVERGES: a cyclic argument is refused by name (upstream hashes its canonical form, pl-bisim.c `term_canonical_form`,
-# R2). The `E_ATTVAR` error of variant_sha1/2 is a `TV_ATTVAR` scan of the cells before the export (the exported term
-# holds an attributed variable as a plain one, as upstream's canonical form does for variant_hash/2).
+# (the `E_CYCLE` branch of variant_hash: the digest of a cyclic term is that of its canonical form, with the prefix `C`)
+# DIVERGES: a cyclic argument is detected by `is_acyclic_cells` before the walk, where upstream walks first and meets
+# `E_CYCLE`; the canonical form (pl-bisim.c `term_canonical_form`, in a foreign frame of its own, discarded after the
+# export) is exported and hashed with the prefix `C` as upstream does. The `E_ATTVAR` error of variant_sha1/2 is a
+# `TV_ATTVAR` scan of the cells before the export (the exported term holds an attributed variable as a plain one, as
+# upstream's canonical form does for variant_hash/2); for a cyclic argument it is the `attvars` flag of
+# `term_canonical_form`.
 """
-The term `A1` holds, exported from its cells, for a variant digest (pl-termhash.c `variant_hash`): a cyclic term is
-refused; with `sha1`, an attributed variable raises `type_error(free_of_attvar, A1)` and the result is `nothing`.
+The term `A1` holds, exported from its cells, for a variant digest (pl-termhash.c `variant_hash`), with the prefix to mix
+in: `""` for a finite term, `"C"` for the canonical form of a cyclic one. With `sha1`, an attributed variable raises
+`type_error(free_of_attvar, A1)` and the result is `nothing`.
 """
 function _variant_arg(
     ld::PL_local_data{T}, A1::term_t, sha1::Bool
-)::Union{Nothing, T} where {T}
-    is_acyclic_cells(ld, -(A1 + 1)) || throw(
-        NotPortedError{T}(
-            mk_sym(T, :term_canonical_form),
-            "the digest of a cyclic term (its canonical form, pl-bisim.c term_canonical_form)",
-            "R2 (pl-bisim.c term_canonical_form)"
-        )
-    )
+)::Union{Nothing, Tuple{T, String}} where {T}
+    if !is_acyclic_cells(ld, -(A1 + 1))
+        fid = PL_open_foreign_frame(ld)
+        fid == 0 && return nothing
+        form = PL_new_term_ref(ld)
+        ok, attvars = term_canonical_form(ld, A1, form)
+        t = ok && !(attvars && sha1) ? export_cells(ld, cell_export{T}(), -(form + 1)) : nothing
+        PL_discard_foreign_frame(ld, fid)         # the form was only needed here
+        ok || return nothing                      # exception already raised
+        if attvars && sha1
+            PL_error(ld, ERR_TYPE, mk_sym(T, :free_of_attvar), A1)
+            return nothing
+        end
+        return (t, "C")
+    end
     if sha1
         fid = PL_open_foreign_frame(ld)
         fid == 0 && return nothing
@@ -821,7 +845,7 @@ function _variant_arg(
             return nothing
         end
     end
-    return export_cells(ld, cell_export{T}(), -(A1 + 1))
+    return (export_cells(ld, cell_export{T}(), -(A1 + 1)), "")
 end
 
 # PORT: pl-termhash.c term_hash as _term_hash_arg
@@ -850,10 +874,11 @@ function pl_variant_sha1_2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    t = _variant_arg(ld, A1, true)
-    t === nothing && return FFALSE
+    r = _variant_arg(ld, A1, true)
+    r === nothing && return FFALSE
+    t, prefix = r
 
-    return PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t)))) ? FTRUE : FFALSE
+    return PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t; prefix)))) ? FTRUE : FFALSE
 end
 
 # PORT: pl-termhash.c variant_hash as pl_variant_hash_2_va
@@ -863,10 +888,11 @@ function pl_variant_hash_2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     A1, A2 = PL__t0, PL__t0 + 1
-    t = _variant_arg(ld, A1, false)
-    t === nothing && return FFALSE
+    r = _variant_arg(ld, A1, false)
+    r === nothing && return FFALSE
+    t, prefix = r
 
-    return PL_unify_integer(ld, A2, pl_variant_hash(t)) ? FTRUE : FFALSE
+    return PL_unify_integer(ld, A2, pl_variant_hash(t; prefix)) ? FTRUE : FFALSE
 end
 
 # PORT: pl-termhash.c term_hash as pl_term_hash_2_va
