@@ -666,7 +666,30 @@ function _ql_call(gd, ld, name::String, args::Vector)::Symbol
     return r
 end
 
-@testset "the fourteen write-side predicates take the no-state branch; the 8 others are refused by name" begin
+# '$file_hash'(+File, -Hash) with Hash unbound: its value (a BigInt), or the Symbol of the failure
+function _ql_hash(gd, ld, path::String)
+    proc = LK.isCurrentProcedure(sym_key(_qls("\$file_hash")), 2, LK.MODULE_system(gd))
+    fid = LK.PL_open_foreign_frame(ld)
+    a = LK.PL_new_term_refs(ld, 2)
+    LK.putSlotValue!(ld, a, _qls(path), LK.PutVarMap())
+    qid = LK.PL_open_query(
+        gd, ld, nothing, LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS, proc, a
+    )
+    rc = LK.PL_next_solution(gd, ld, qid)
+    r = :fail
+    if rc == LK.PL_S_TRUE || rc == LK.PL_S_LAST
+        n = LK.number()
+        LK.PL_get_number(ld, a + 1, n) || (r = :notnumber)
+        r === :fail && (r = n.type === LK.V_INTEGER ? BigInt(n.i) : n.mpz)
+    elseif rc == LK.PL_S_EXCEPTION
+        r = :exception
+    end
+    LK.PL_close_query(ld, qid)
+    LK.PL_close_foreign_frame(ld, fid)
+    return r
+end
+
+@testset "the write-side predicates take the no-state branch, `$file_hash` runs; the 7 others are refused by name" begin
     # UNVERIFIED on the kernel: gate decides
     tbl = LK.PL_predicates_from_wic
     @test length(tbl) == 22
@@ -678,11 +701,12 @@ end
         ("\$import_wic", 3), ("\$qlf_include", 5),
         # QLF1: their NULL-state branch is upstream's whole behaviour while no state can be opened (rows below)
         ("\$qlf_current_source", 1), ("\$qlf_dependency", 1), ("\$qlf_close", 0),
-        ("\$close_wic", 0), ("\$map_id", 2), ("\$unmap_id", 1)
+        ("\$close_wic", 0), ("\$map_id", 2), ("\$unmap_id", 1),
+        # QLF1B: a real predicate (the content hash needs no state)
+        ("\$file_hash", 2)
     ]
     refused = [
         ("\$qlf_versions", 6), ("\$qlf_is_compatible", 1), ("\$qlf_sources", 2),
-        ("\$file_hash", 2),
         ("\$qlf_module", 2), ("\$qlf_load", 2),
         ("\$qlf_open", 1), ("\$open_wic", 2)
     ]
@@ -699,7 +723,7 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     # the six QLF1 rows have their own answers (below), not "true"
     qlf1 = Set(["\$qlf_current_source", "\$qlf_dependency", "\$qlf_close", "\$close_wic",
-                "\$map_id", "\$unmap_id"])
+                "\$map_id", "\$unmap_id", "\$file_hash"])
     for (n, ar) in shells
         (n == "\$qlf_include" || n in qlf1) && continue
         args = _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:ar]
@@ -728,6 +752,30 @@ end
     @test _ql_call(gd, ld, "\$unmap_id", _QL[one]) === :ok
     @test _ql_call(gd, ld, "\$map_id", _QL[foo, foo]) === :exception        # permission_error(map, identifier, foo)
     @test _ql_call(gd, ld, "\$map_id", _QL[one, one]) === :exception        # before either argument is read
+    # QLF1B: '$file_hash'(+File, -Hash), FNV-1a 64 of the bytes (pl-qlf.c:1872-1904, 3708-3716); the values are swipl 10.1.20
+    # 18168e62's own on the same bytes (probed 2026-11-13); an unreadable file (missing, a directory) is 0, a variable File is an
+    # instantiation_error, the hash is above Int64 half the time (the empty file's is the offset basis 0xcbf29ce484222325)
+    mktempdir() do d
+        fix = joinpath(d, "qfm.pl")
+        write(fix, ":- module(qlf_fix_m,[foo/1]).\nfoo(1).\nfoo(2).\n")
+        emp = joinpath(d, "empty.pl")
+        write(emp, "")
+        aa = joinpath(d, "a.txt")
+        write(aa, "a")
+        bin = joinpath(d, "bin.dat")
+        write(bin, UInt8[0xff, 0x00, 0x80])
+        for (f, h) in (
+            (fix, "366204078513464565"), (emp, "14695981039346656037"),
+            (aa, "12638187200555641996"), (bin, "17951498867582526750"),
+            (joinpath(d, "missing.pl"), "0"), (d, "0")
+        )
+            @test _ql_hash(gd, ld, f) == parse(BigInt, h)
+            @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), lk_gnd(_QL, parse(BigInt, h))]) === :ok
+            @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), lk_gnd(_QL, 1)]) === :fail
+            @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), foo]) === :fail
+        end
+        @test _ql_call(gd, ld, "\$file_hash", _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]) === :exception   # File unbound: instantiation_error
+    end
     for (n, ar) in refused
         gd2 = LK.PL_global_data{_QL}()
         ld2 = LK.PL_local_data{_QL}(gd2)
