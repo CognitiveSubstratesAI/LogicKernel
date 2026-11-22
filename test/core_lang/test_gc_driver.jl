@@ -246,6 +246,41 @@ end
     @test ld.gc.status.blocked == 0 && !ld.gc.status.active
 end
 
+# The base prefix of the global stack is a root class (audit D-0966 (1), `mark_base_cells`, src/pl-gcmark.jl; G1GC3-S5). The undo list's cell (global
+# cell 1) is named by NO slot, so only that rule keeps it; and every cell below it that a slot used to name and no longer names (the two cells of
+# `init_delay_list`'s references) too. Without the rule the first collection frees cells 1, 8 and 9, the bin slot is relocated to cell 1 (the engine
+# still caches `exception_cells` = 2), the tmp_h slot to 10 (cached `tmp_cells` = 13) and `gstack[undo_list]` is the bin cell's word, no longer `[]`.
+@testset "the base prefix is a root: the cells the engine caches by position do not move, the undo cell stays []" begin
+    db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
+    ld = db.ld
+    ul, ec, tc = ld.undo_list, ld.exception_cells, ld.tmp_cells
+    @test ul == 1 && ec > ul && tc > ec                         # the layout of `emptyStacks!`: the undo cell first, then the exception's cells, then tmp's
+    @test ld.gstack[ul] == ld.atom_nil_w
+    @test LK.unRef(ld.slots[ld.exception_bin + 1]) == ec
+    @test LK.unRef(ld.slots[ld.tmp_h + 1]) == tc
+    @test ld.gTop >= tc + LK.TMP_PTR_SIZE - 1
+    # non-vacuity: no slot names the undo cell, so no reference keeps it (only the rule roots it) ...
+    @test !any(
+        i -> (w = ld.slots[i] & LK.VALUE_MASK; LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && LK.unRef(w) == ul),
+        1:(ld.lTop)
+    )
+    @test ld.lTop > 0
+    # ... and some prefix cell is named by no slot besides it (cells 8 and 9 of `init_delay_list`: slots there hold other words)
+    named = Set{Int}()
+    for i in 1:(ld.lTop)
+        w = ld.slots[i] & LK.VALUE_MASK
+        LK.isRef(w) && LK.storage(w) == LK.STG_GLOBAL && push!(named, LK.unRef(w))
+    end
+    @test count(p -> !(p in named), 1:(tc + LK.TMP_PTR_SIZE - 1)) >= 3
+    @test LK.garbageCollect(ld, _GD_GC) == LK.BOOLEX_TRUE
+    @test (ld.undo_list, ld.exception_cells, ld.tmp_cells) == (ul, ec, tc)
+    @test LK.unRef(ld.slots[ld.exception_bin + 1]) == ld.exception_cells     # the slots still name the cached positions
+    @test LK.unRef(ld.slots[ld.tmp_h + 1]) == ld.tmp_cells
+    @test ld.gstack[ld.undo_list] == ld.atom_nil_w
+    @test ld.gTop >= tc + LK.TMP_PTR_SIZE - 1
+    @test LK.check_stacks!(ld) > 0
+end
+
 @testset "signals and counters: SIG_GC is cleared, SIG_TUNE_GC kept, gc.inferences is the inference count" begin
     ld, t, n0, dead_cells = _gd_heap()
     LK.raiseGcSignal!(ld, LK.SIG_GC)
