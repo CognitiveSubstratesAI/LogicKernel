@@ -19,7 +19,7 @@
 #      and type name (variant digests); a number or string contributes its bytes as swipl lays them out (an integer
 #      from PLMINTAGGEDINT to PLMAXTAGGEDINT as one int64, any other integer and a rational as GMP words, a float as
 #      its double, a string as Latin-1 or, when a code exceeds 0xff, UTF-8 in term_hash and UCS-4 in a variant digest),
-#      so the VALUES equal swipl's (the pins of test/core_lang/test_termhash_preds_swipl.jl). The terms whose bytes the
+#      so the VALUES equal swipl's (the pins of test/core_lang/test_term_hash_pred_swipl.jl). The terms whose bytes the
 #      term interface does not give keep the term TYPE's own keys (src/term_interface.jl): a BLOB atom contributes
 #      its `sym_hash` (a variant digest: its 8 bytes as the name bytes, then the blob type's name), and a grounded
 #      value of kind NUM_OTHER its `gnd_key` (a constant when it has none); for those the digest differs between the
