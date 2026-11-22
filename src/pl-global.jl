@@ -764,7 +764,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since MOD6: `module_enums`, the pool of `'$current_module'/2`'s states.
 # Since R2 G1: `gvar_nb_vars` and `gvar_grefs`, upstream's `LD->gvar.nb_vars` (the
 # global variables: atom word -> value word) and `.grefs` (how many hold a value on the global stack, which
-# `_release_frozen!` then keeps), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
+# the collector keeps as roots), and `gvar_enums`, the pool of nb_current/2's states (src/pl-gvar.jl). Since R2 D2: `recorded_states`, the pool of recorded/2,3's states
 # (`recorded_state`, pl-incl.jl).
 # Since lane F (pl-prof.c): `profile` (`LD->profile`: the profiler state; src/pl-incl.jl `ld_profile`), placed after `statistics` as pl-global.h does.
 # Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).

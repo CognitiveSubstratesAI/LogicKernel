@@ -184,8 +184,7 @@ end
 # PORT: pl-wam.c reclaim_attvars
 # DIVERGES: positions, 0 for upstream's NULL; `gTop` is the last cell in use, so upstream's
 # `attvars >= after` (a link cell at or above the new first free cell) is `attvars > after` here, as
-# `TrailAssignment!`'s `p <= mark_bar`. Also called by `_release_frozen!` (src/pl-inline.jl), which
-# lowers `gTop` as `Undo!` does.
+# `TrailAssignment!`'s `p <= mark_bar`.
 "Drop the links of the attributed variables' chain that lie above global position `after` (pl-wam.c)."
 @inline function reclaim_attvars(ld::PL_local_data, after::Int)::Nothing
     while ld.attvar_attvars > after                 # while ( LD->attvar.attvars >= after )
@@ -2828,9 +2827,7 @@ function _end_query(ld::PL_local_data{T}, qid::Int, close::Bool)::Int where {T}
             Undo!(ld, ld.choices[q.choice].mark)
         end
 
-        qm = ld.choices[q.choice].mark          # (read before restore_after_query drops the records)
-        restore_after_query(ld, qf)
-        _release_frozen!(ld, qm, close)         # e5 (b): the outermost query's end
+        restore_after_query(ld, qf)             # (upstream's bar stays: nothing lowers it at the outermost close, G1-E)
         q.magic = QID_CMAGIC                    # disqualify the frame
     end
     return rc

@@ -1072,101 +1072,11 @@ function freezeGlobal!(ld::PL_local_data)::Nothing
     return nothing
 end
 
-# ORIGINAL (e5): the global position word `w` references — a reference's cell, a compound's first cell, a
-# value-table word's box — or 0 for a word that references none (an atom, a small integer, a free cell).
-"The global position the word `w` references, 0 for none (`_release_frozen!`'s reading of a word)."
-@inline function _global_pos(ld::PL_local_data, w::word)::Int
-    return if isRef(w)
-        unRef(w)
-    elseif _is_gcompound(w)
-        valPtr(w)
-    elseif _is_vword(w)
-        ld.vbox[valPtr(w)]
-    else
-        0
-    end
-end
-
-# ORIGINAL (ENG2a, audit D-0411): the scan of pl-gc.c `gvars_to_term_refs` (:1109-1131), reduced to the
-# highest position: every value of the table, a `b_setval` entry being the reference to its cell. A value
-# made before a mark lies wholly at or below that mark's `globaltop` (the stack only grows between), so its
-# first position decides. Linear in the number of global variables; no allocation (a Dict's values).
-"The highest global position a global variable's value references, 0 for none (pl-gc.c `gvars_to_term_refs`)."
-function _gvar_reach(ld::PL_local_data)::Int
-    hi = 0
-    for w in values(ld.gvar_nb_vars)
-        hi = max(hi, _global_pos(ld, w))
-    end
-    return hi
-end
-
-# ORIGINAL (e5; audit D-0029 option (b)): the frozen region released when the OUTERMOST query ends.
-# DIVERGES: upstream keeps `frozen_bar` for the thread's life (pl-gvar.c `destroyGlobalVars`) and its
-# garbage collector frees a frozen ball once nothing references it. The kernel's collector (G1, wired at chunk 8) does the
-# same: `ld.frozen_bar` is a root it saves and relocates (`gvars_to_term_refs`, `sweep_frozen_bar`), and the cells below the
-# bar that nothing references are freed and the bar moves down (test_ball_cells.jl's collector-on row; the loader's dead cells,
-# gTop 1270 -> 20 at the first collection). A throw therefore no longer pins the stack for the engine's life
-# (the reason for this function, evidence/A-0029 in the audit channel); what it still does is the D-0029 (b) behaviour the rows of test_ball_cells.jl,
-# test_attvar_words.jl and test_gvar_swipl.jl pin: at the outermost query's end the bar is 0 and `gTop` at the query's own
-# mark, without waiting for a collection. Retiring it (G1-open item E) is an open question, not decided here. When the
-# outermost query has ended (`ld.query == 0`) with no
-# exception pending, nothing the engine runs can reach the region: the bar is lowered to 0 and, after a
-# CLOSE, `gTop` to the query's own mark `target` — but first every live term reference and every open
-# foreign frame's mark is checked to point at or below `target` (raises otherwise).
-# ENG2 (audit D-0435 option (a)): the live term references are what upstream's collector marks as roots
-# from foreign code, pl-gc.c `mark_term_refs` (:1016-1055): the `size` references above each frame of the
-# `fli_context` chain. With no query open nothing else on the local stack is live; a frame's header and a
-# slot a closed frame or query left behind may still hold an old word, which is not a reference.
-# DIVERGES (ENG2a, audit D-0411): global variables (pl-gvar.c, G1; design D7). Upstream's `Undo` leaves
-# `gTop = max(frozen_bar, mark.globaltop)` (pl-incl.h:2250, pl-wam.c:1632) and the bar stays until
-# `destroyGlobalVars` (pl-gvar.c:62-70); a ball above a global variable's value is then the collector's:
-# `gvars_to_term_refs` makes every value a root and keeps the bar across the collection (pl-gc.c:1109-1163).
-# The kernel releases what the collector would release for a dead ball: it scans the live values (the
-# `nb_vars` table, whose `b_setval` entries reference their trailed cell; `_gvar_reach`) and keeps the
-# region, returning at once, when a value reaches above `target` — or above the mark of an open foreign
-# frame, which a later `Undo!` to that mark would otherwise cut through with the bar at 0 (all but frame 1,
-# the one `emptyStacks` opens at global position 0 (pl-setup.c:1544), which nothing undoes). Every value
-# at or below both: the region is released as above. The full collector comes with G1 (owner G1).
-"Release the frozen region after the outermost query ended, its mark `m` (`close`: lower `gTop` to `m.globaltop`)."
-function _release_frozen!(ld::PL_local_data, m::mark, close::Bool)::Nothing
-    target = m.globaltop
-    (ld.frozen_bar == 0 || ld.query != 0 || ld.exception_term != 0) && return nothing
-    if ld.gvar_grefs > 0                            # a value on the global stack (LD->gvar.grefs)
-        lim = target
-        for f in 2:(ld.nfliframes)                  # … must survive an Undo! to an open frame's mark
-            lim = min(lim, ld.fliframes[f].mark.globaltop)  # (not frame 1: emptyStacks' own, never undone)
-        end
-        _gvar_reach(ld) > lim && return nothing     # a live value above it: the region stays
-    end
-    if close && ld.gTop > target
-        fr = ld.fli_context                         # live term references: none above `target`
-        while fr != 0                               # (pl-gc.c mark_term_refs: each open frame's own)
-            f = ld.fliframes[fr]
-            for n in 0:(f.size - 1)
-                r = refFliP(f.base, n)              # Word sp = refFliP(fr, 0); n-- > 0; sp++
-                p = _global_pos(ld, ld.slots[r + 1])
-                p > target && error(
-                    "_release_frozen!: term reference $r of foreign frame $fr references global position $p above the reset target $target"
-                )
-            end
-            fr = f.parent
-        end
-        for f in 1:(ld.nfliframes)                  # open foreign frames: none above `target`
-            g = ld.fliframes[f].mark.globaltop
-            g > target && error(
-                "_release_frozen!: foreign frame $f's mark $g lies above the reset target $target"
-            )
-        end
-    end
-    ld.frozen_bar = 0
-    ld.mark_bar = m.saved_bar                       # what DiscardMark(m) restores with no frozen bar
-    if close && ld.gTop > target
-        reclaim_attvars(ld, target)                 # (the attvar chain with it, as Undo!: AV1)
-        ld.gTop = target                            # what Undo!'s max(frozen_bar, …) kept
-        _truncate_vtable!(ld)
-    end
-    return nothing
-end
+# G1-E (audit D-0979 (2)): the e5 stand-in `_release_frozen!` (with `_gvar_reach` and `_global_pos`, which only it read) is RETIRED.
+# Upstream never lowers the bar except at a thread's end (pl-gvar.c `destroyGlobalVars`, :62-70, `LD->frozen_bar = NULL`): the outermost
+# query's close leaves `gTop = max(frozen_bar, mark.globaltop)` (`Undo!`, pl-incl.h:2253, pl-wam.c:1632) and the ball and the garbage
+# below the bar are the collector's (`gvars_to_term_refs`/`sweep_frozen_bar`, pl-gc.c:1135-1159, :5082). Pinned by test_ball_cells.jl
+# (the bar does not move at the close; a collection reclaims the ball) and mutated by tools/mutants/E1R.py (a close that lowers the bar).
 
 # PORT: pl-incl.h NoMark
 "A mark that must never be undone to (pl-incl.h `NoMark`): a built-in's foreign frame has one."
