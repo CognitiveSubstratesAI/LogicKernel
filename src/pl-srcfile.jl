@@ -860,7 +860,8 @@ end
 
 # PORT: pl-srcfile.c unloadFile
 # DIVERGES: the database and the local data are arguments (`delayEvents`, `sendDelayedEvents`); no lock; `DEBUG(MSG_UNLOAD, …)` is left out;
-# `removeClausesPredicate!` takes `gd` first (src/pl-proc.jl).
+# `removeClausesPredicate!` takes `gd` first (src/pl-proc.jl); `sf.procedures` is a vector with the newest LAST (`addProcedureSourceFile` conses
+# onto the front of upstream's list), so it is walked in reverse: the generation of each predicate's erased clauses follows upstream's order.
 "Remove all clauses `sf` defined and detach its procedures and modules (pl-srcfile.c); false when an event listener raised."
 function unloadFile(
     gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
@@ -869,7 +870,7 @@ function unloadFile(
 
     delayEvents(ld)
     # remove the clauses
-    for proc in sf.procedures
+    for proc in Iterators.reverse(sf.procedures)
         def = proc.definition
 
         if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0
