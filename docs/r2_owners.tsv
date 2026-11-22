@@ -21,7 +21,6 @@ pred:engine_next/2	TH1	seed: missing_c_preds.tsv
 pred:get/1	S2a	seed: missing_c_preds.tsv
 pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
-pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
