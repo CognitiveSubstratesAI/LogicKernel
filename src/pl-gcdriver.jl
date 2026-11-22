@@ -47,7 +47,20 @@ function gc_get_vmi_state(
         vmi_state_of === nothing && return nothing
         return vmi_state_of(ld, qi)::vm_state
     end
-    vm = vm_state()
+    vm = ld.gc.vm                                   # ALLOC-FIX d: the collection's record (upstream: a stack local)
+    vm.frame = 0                                    # ALLOC-FIX d: every field as `vm_state()` makes it
+    vm.choice = 0
+    vm.pc = 0
+    vm.pc_start_vmi = 0
+    vm.argp = 0
+    vm.argp0 = 0
+    vm.adepth = 0
+    vm.lSave = 0
+    vm.lNext = 0
+    vm.new_args = 0
+    vm.uwrite_count = 0
+    vm.save_argp = false
+    vm.in_body = false
     vm.choice = ld.BFR                              # state->choice = LD->choicepoints
     vm.lSave = ld.lTop                              # state->lSave = lTop
     vm.in_body = false
@@ -154,7 +167,22 @@ end
 "The `vm_state` of a query inside the VM (`registers_fr != 0`): the `vmi_state_of(ld, query_index)` callback of the collector (pl-gc.c `get_vmi_state`)."
 function get_vmi_state(ld::PL_local_data{T}, qi::Int)::vm_state where {T}
     qf = ld.queries[qi]
-    vm = vm_state()
+    # ALLOC-FIX d (audit D-0971 (4)): the safe point's own state is the collection's record; a PARENT query's state is
+    # a fresh object (mark_stacks / sweep_stacks build it while the record is live)
+    vm = qi == ld.query ? ld.gc.vm : vm_state()
+    vm.frame = 0                                    # ALLOC-FIX d: every field as `vm_state()` makes it
+    vm.choice = 0
+    vm.pc = 0
+    vm.pc_start_vmi = 0
+    vm.argp = 0
+    vm.argp0 = 0
+    vm.adepth = 0
+    vm.lSave = 0
+    vm.lNext = 0
+    vm.new_args = 0
+    vm.uwrite_count = 0
+    vm.save_argp = false
+    vm.in_body = false
     vm.choice = ld.BFR
     vm.lSave = ld.lTop
     vm.in_body = false
@@ -387,7 +415,11 @@ function garbageCollect(
     end
 
     try
-        st = gc_mark_counts()                       # needs_relocation = 0, total_marked = 0, ...
+        st = ld.gc.mark_counts                      # needs_relocation = 0, total_marked = 0, ... (LD->gc; ALLOC-FIX d)
+        st.total_marked = 0
+        st.needs_relocation = 0
+        st.local_marked = 0
+        st.trailcells_deleted = 0
         attvars = link_attvars(ld)
         astack = argument_stack_to_term_refs(ld, vm)
         gvar_saves, saved_bar_at = gvars_to_term_refs(ld)
@@ -396,7 +428,12 @@ function garbageCollect(
 
         ts = gc_trail_begin!(ld)                    # tTop->address = 0
         tag_trail(ld, ts)
-        sw = gc_sweep_counts()
+        sw = ld.gc.sweep_counts                     # relocation_chains = 0, ... (LD->gc; ALLOC-FIX d)
+        sw.relocation_chains = 0
+        sw.relocation_cells = 0
+        sw.alien_relocations = 0
+        sw.marks_swept = 0
+        sw.relocated_cells = 0
         gc_trail_phase(ld, st, sw, ts, vm)          # compact_trail()
         collect_phase(ld, st, sw, vm; vmi_state_of=vmi_state_of, saved_bar_at=saved_bar_at)
         restore_grefs(ld, grefs)

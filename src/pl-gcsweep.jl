@@ -49,16 +49,7 @@
 # itself is an ordinary one-cell marked cell: compaction (G1-6) re-points `ld.vbox[i]` when it moves a cell
 # for which `gc_box_index` answers non-zero.
 
-# ---- the counters of one sweep (upstream's `relocation_chains`, `relocation_cells`, `alien_relocations`,
-#      `marks_swept` and `relocated_cells` globals of the collector) ----
-mutable struct gc_sweep_counts
-    relocation_chains::Int
-    relocation_cells::Int
-    alien_relocations::Int
-    marks_swept::Int
-    relocated_cells::Int
-    gc_sweep_counts() = new(0, 0, 0, 0, 0)
-end
+# (the struct `gc_sweep_counts`, the counters of one sweep, is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 
 # ---- the cell addressing of the chains ----
 const GC_TRAIL_BASE = 1 << 41

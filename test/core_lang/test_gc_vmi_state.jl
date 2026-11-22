@@ -644,3 +644,58 @@ end
     @test res !== nothing && res == (true, true, true)
     @test ans == base                                                # answers 2 and 3 are read after the collection
 end
+
+
+# ALLOC-FIX d (audit D-0971 (4)): the safe point's own VM state is the collection's record `ld.gc.vm` (upstream: a C stack local of
+# garbageCollect, pl-gc.c); the state of a PARENT query, which mark_stacks and sweep_stacks build in the middle of a nested query's
+# collection while the record is live, must be a FRESH object: building it may not overwrite the record. The nested query is opened by
+# hand at the first answer of the outer one (as test_gc_compact.jl's NQ rows do); both queries are put "inside the VM" by hand
+# (`registers_fr` a clause frame of each, pc NULL: the state of an exit) and every register touched is put back.
+@testset "a nested collection: the parent query's VM state is a fresh object, the live record ld.gc.vm is not overwritten" begin
+    db = _rdb(copy(_GV_CLAUSES))
+    gd, ld = db.gd, db.ld
+    res = Ref{Any}(nothing)
+    _rcall(
+        db, _rf("bd", _rv(90));
+        at=(qid, k) -> begin
+            k == 1 || return nothing
+            qf1 = ld.query
+            nfr1 = _gv_clause_frame(ld)
+            env0 = ld.environment_frame
+            ld.environment_frame == 0 && (ld.environment_frame = ld.queries[qf1].frame)
+            fid2 = LK.PL_open_foreign_frame(ld)
+            args2 = LK.PL_new_term_refs(ld, 1)
+            LK.putSlotValue!(ld, args2 + 1, _rv(91), LK.PutVarMap())
+            qid2 = LK.PL_open_query(
+                gd, ld, nothing, LK.PL_Q_NORMAL | LK.PL_Q_EXT_STATUS,
+                _rproc(db, _rf("bd", _rv(1))), args2
+            )
+            ok2 = qid2 != 0 && LK.PL_next_solution(gd, ld, qid2) == LK.PL_S_TRUE
+            qf2 = ld.query
+            q1, q2 = ld.queries[qf1], ld.queries[qf2]
+            nfr2 = _gv_clause_frame(ld)
+            s1 = (q1.registers_fr, q1.registers_pc, q1.next_environment)
+            s2 = (q2.registers_fr, q2.registers_pc, q2.next_environment)
+            empty = LK.Code{_R}(LK.code[], _R[], 0)
+            q1.registers_fr, q1.registers_pc, q1.next_environment = nfr1, empty, 0
+            q2.registers_fr, q2.registers_pc, q2.next_environment = nfr2, empty, 0
+            vm = LK.get_vmi_state(ld, qf2)                   # the safe point's own state: the record
+            own = (vm.frame, vm.choice, vm.argp, vm.lSave)
+            sub = LK.get_vmi_state(ld, qf1)                  # the parent's, as mark_stacks builds it mid-walk
+            res[] = (
+                ok2 && qf2 != qf1 && q2.parent == qf1 && nfr1 != nfr2,   # premise: two queries, two frames
+                vm === ld.gc.vm,                             # the safe point's state is the record
+                sub !== ld.gc.vm,                            # the parent's is a fresh object
+                (vm.frame, vm.choice, vm.argp, vm.lSave) == own && vm.frame == nfr2,   # the record is intact
+                sub.frame == nfr1                            # and the parent's state is the parent's
+            )
+            q1.registers_fr, q1.registers_pc, q1.next_environment = s1
+            q2.registers_fr, q2.registers_pc, q2.next_environment = s2
+            LK.PL_close_query(ld, qid2)
+            LK.PL_close_foreign_frame(ld, fid2)
+            ld.environment_frame = env0
+            return nothing
+        end
+    )
+    @test res[] == (true, true, true, true, true)
+end

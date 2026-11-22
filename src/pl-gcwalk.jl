@@ -31,23 +31,7 @@ const GCM_ALTCLAUSE = 2
 "The `adepth` after a `B_UNIFY_VAR`/`B_UNIFY_FIRSTVAR`: never mark over ARGP (pl-gc.c `NO_ADEPTH`)."
 const GC_NO_ADEPTH = 1234567
 
-# PORT: pl-gc.c walk_state as gc_walk_state
-# DIVERGES: `GCM_ACTIVE`/`GCM_CHOICE` and the bit vectors `active`/`clear` belong to the ACTIVE walk of
-# pl-gc.jl (`walk_state`), so there are no bit vectors here and `clear_choice_mark`/`mark_choice_mark`
-# (which act under `GCM_CHOICE` only) are no-ops of this walk; `c0` (debug output) is not carried.
-# `frame` is an index, `base` its position, `envtop` and `ARGP` are POSITIONS of the local stack, `arity`
-# is `frame->predicate->functor->arity` (for `I_CALLCLEANUP` and the others).
-"The state of one `walk_and_mark_gc` (pl-gc.c `walk_state`, the stack collector's fields)."
-mutable struct gc_walk_state
-    frame::Int                  # LocalFrame frame: processing node (index)
-    base::Int                   # the frame's position
-    arity::Int                  # frame->predicate->functor->arity
-    flags::Int                  # general flags (GCM_*)
-    envtop::Int                 # Word envtop: just above environment (position)
-    unmarked::Int               # size_t unmarked: left when marking alt clauses
-    ARGP::Int                   # Word ARGP: head unify instructions (position)
-    adepth::Int                 # int adepth: ARGP nesting
-end
+# (the struct `gc_walk_state` is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 gc_walk_state(frame::Int, base::Int, arity::Int, flags::Int) =
     gc_walk_state(frame, base, arity, flags, 0, 0, argFrameP(base, 0), 0)
 
@@ -423,7 +407,15 @@ function mark_alt_clauses(
         is_marked(ld.slots[sp + i + 1]) || (unmarked += 1)
     end
     unmarked == 0 && return nothing
-    ws = gc_walk_state(fr, f.base, argc, GCM_ALTCLAUSE)
+    ws = ld.gc.walk                                     # ALLOC-FIX d: as gc_walk_state(fr, f.base, argc, GCM_ALTCLAUSE)
+    ws.frame = fr
+    ws.base = f.base
+    ws.arity = argc
+    ws.flags = GCM_ALTCLAUSE
+    ws.envtop = 0
+    ws.unmarked = 0
+    ws.ARGP = argFrameP(f.base, 0)
+    ws.adepth = 0
     ws.unmarked = unmarked
     ws.envtop = sp + argc
     while cref !== nothing && ws.unmarked > 0           # for(; cref && state.unmarked > 0; cref=cref->next)
@@ -479,7 +471,15 @@ function mark_environments(
     while fr != 0
         f = ld.frames[fr]
         pred = f.predicate::Definition{T}
-        ws = gc_walk_state(fr, f.base, pred.arity, 0)
+        ws = ld.gc.walk                                 # ALLOC-FIX d: as gc_walk_state(fr, f.base, pred.arity, 0)
+        ws.frame = fr
+        ws.base = f.base
+        ws.arity = pred.arity
+        ws.flags = 0
+        ws.envtop = 0
+        ws.unmarked = 0
+        ws.ARGP = argFrameP(f.base, 0)
+        ws.adepth = 0
         if (f.flags & FR_MARKED) == 0
             f.flags |= FR_MARKED
             ws.flags = GCM_CLEAR
@@ -580,7 +580,10 @@ foreign frames (pl-gc.c); the trail is walked once from the top by early reset.
 function mark_stacks(
     ld::PL_local_data{T}, st::gc_mark_counts, vm::vm_state; vmi_state_of=nothing
 )::Nothing where {T}
-    ms = mark_state(vm)
+    ms = ld.gc.mark                                     # ALLOC-FIX d: the collection's record, reset
+    ms.vm = vm
+    ms.flictx = 0
+    ms.reset_entry = 0
     ms.reset_entry = length(ld.trail)                   # state.reset_entry = tTop - 1
     ms.flictx = ld.fli_context
     st.trailcells_deleted = 0

@@ -20,60 +20,11 @@
 # `makeRefLG(current)` / `makePtr(current, tag)` back pointers in cells whose address may lie on the
 # local stack (the start cell), so a back pointer carries its storage class: `_gc_ptr`/`_gc_unptr`.
 
-"""
-    gc_mark_counts()
+# (the struct `gc_mark_counts` is in src/pl-global.jl, before `ld_gc`, which holds one per collection: ALLOC-FIX d)
 
-The counters of one mark phase (upstream's `LD->gc.*` / `total_marked` / `needs_relocation`
-statistics): `total_marked` (cells marked on the global stack; a local start cell nets 0),
-`needs_relocation` (references to relocate; consumed by G1-5), `local_marked` (marked local cells),
-`trailcells_deleted` (trail entries zeroed by early reset).
-"""
-mutable struct gc_mark_counts
-    total_marked::Int
-    needs_relocation::Int
-    local_marked::Int
-    trailcells_deleted::Int
-    gc_mark_counts() = new(0, 0, 0, 0)
-end
+# (the struct `vm_state` is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 
-# PORT: pl-gc.c vm_state
-# DIVERGES: the registers are POSITIONS (a slot position, a frame base; 0 = NULL), not pointers; an ARGP
-# in write mode on the global stack is stored as 0 (marking never reads it at `adepth > 0`). G1-2 builds
-# this at the safe point (get_vmi_state); `frame`/`choice` are indexes into ld.frames/ld.choices (0 = none).
-"""
-    vm_state()
-
-The state of the VM at the safe point (pin `vm_state`): the frame and choicepoint being run, the program
-counter (`pc`, an index into the frame's clause codes), the start of the VMI (`pc_start_vmi`), `argp` and
-`argp0` (positions), `adepth`, `lSave`/`lNext` (positions), the `new_args` count, the number of UWRITE
-argument-stack entries (`uwrite_count`), `save_argp` and `in_body`.
-"""
-mutable struct vm_state
-    frame::Int
-    choice::Int
-    pc::Int
-    pc_start_vmi::Int
-    argp::Int
-    argp0::Int
-    adepth::Int
-    lSave::Int
-    lNext::Int
-    new_args::Int
-    uwrite_count::Int
-    save_argp::Bool
-    in_body::Bool
-    vm_state() = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false)
-end
-
-# PORT: pl-gc.c mark_state
-# DIVERGES: `flictx` is the index of the innermost foreign frame to mark, `reset_entry` the trail index
-# early reset has reached (upstream: pointers into the foreign-frame and trail chains).
-mutable struct mark_state
-    vm::vm_state
-    flictx::Int
-    reset_entry::Int
-    mark_state(vm::vm_state) = new(vm, 0, 0)
-end
+# (the struct `mark_state` is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 
 # ---- the cell-bit helpers (pl-data.h:186-193) ----
 const GC_MASK = MARK_MASK | FIRST_MASK

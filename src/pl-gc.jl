@@ -1596,13 +1596,13 @@ function considerGarbageCollect(ld::PL_local_data, s::Union{Nothing, Symbol}=not
 end
 
 # PORT: pl-gc.c call_tune_gc_hook
-# DIVERGES: `PROCEDURE_tune_gc3` is looked up as `prolog:tune_gc/3` on each call (upstream: `PL_predicate("tune_gc", 3, "prolog")` at pl-ext.c:385, the
-# same procedure); the database is the running query's (`_query_gd`). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is src/pl-setup.jl's; `gc_stat_end!` raises
+# DIVERGES: the database is the running query's (`_query_gd`); `PROCEDURE_tune_gc3` is its `procedures_tune_gc3`, made by initBuildIns!
+# (`PL_predicate("tune_gc", 3, "prolog")`, pl-ext.c:385-386 at the pin; ALLOC-FIX f). The caller, `gc_tune_handler` (pl-setup.c:838-840, on `SIG_TUNE_GC`), is src/pl-setup.jl's; `gc_stat_end!` raises
 # `SIG_TUNE_GC` (`raiseGcSignal!`) when a collection took more than 20% and `handleSignals` runs the handler at the next safe point.
 "Call `prolog:tune_gc(+GcTime, +LastFraction, +AggregatedFraction)` if the program defines it (pl-gc.c `call_tune_gc_hook`)."
 function call_tune_gc_hook(ld::PL_local_data{T})::Nothing where {T}
     gd = _query_gd(ld)
-    proc = lookupProcedure(mk_sym(T, :tune_gc), 3, lookupModule(gd, mk_sym(T, :prolog)))
+    proc = gd.procedures_tune_gc3                   # PROCEDURE_tune_gc3, made by initBuildIns! (pl-ext.c:385-386)
 
     if isDefinedProcedure(gd, proc)
         fid = PL_open_foreign_frame(ld)

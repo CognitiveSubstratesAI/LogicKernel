@@ -32,29 +32,18 @@
 # after `tag_trail`, in the same pass that numbers the marks.
 
 # ── the state of the trail during one collection ────────────────────────────────────────────────
-"""
-    gc_trail_state()
-
-The bookkeeping of the trail across one collection: `top` the index of the sentinel word (upstream
-`tTop`), `tagged` whether the entries are in the tagged form, and the counters `values` (value entries
-seen by `tag_trail`), `zeroed` (deleted entries `compact_trail` removed), `kept` (entries it kept) and
-`chains` (relocation chains it unwound).
-"""
-mutable struct gc_trail_state
-    top::Int
-    tagged::Bool
-    values::Int
-    zeroed::Int
-    kept::Int
-    chains::Int
-    gc_trail_state() = new(0, false, 0, 0, 0, 0)
-end
+# (the struct `gc_trail_state` is in src/pl-global.jl, before `ld_gc`: ALLOC-FIX d)
 
 # ORIGINAL: `tTop->address = 0` of garbageCollect(): the sentinel entry past the last one (see above).
 "Push the zero sentinel word on the trail and return the state naming it; the first call of a collection."
 function gc_trail_begin!(ld::PL_local_data{T})::gc_trail_state where {T}
     push!(ld.trail, word(0))
-    ts = gc_trail_state()
+    ts = ld.gc.trail_state                          # ALLOC-FIX d: the collection's record, reset
+    ts.tagged = false
+    ts.values = 0
+    ts.zeroed = 0
+    ts.kept = 0
+    ts.chains = 0
     ts.top = length(ld.trail)
     return ts
 end

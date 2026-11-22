@@ -252,6 +252,7 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -438,6 +439,110 @@ mutable struct ld_statistics
 end
 ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 
+# ---- the records of one stack collection (G1-GC; moved here from pl-gcmark.jl, pl-gcwalk.jl, pl-gctrail.jl and
+#      pl-gcsweep.jl by ALLOC-FIX d, audit D-0971 (4), so `ld_gc` can hold one of each) ----
+"""
+    gc_mark_counts()
+
+The counters of one mark phase (upstream's `LD->gc.*` / `total_marked` / `needs_relocation`
+statistics): `total_marked` (cells marked on the global stack; a local start cell nets 0),
+`needs_relocation` (references to relocate; consumed by G1-5), `local_marked` (marked local cells),
+`trailcells_deleted` (trail entries zeroed by early reset).
+"""
+mutable struct gc_mark_counts
+    total_marked::Int
+    needs_relocation::Int
+    local_marked::Int
+    trailcells_deleted::Int
+    gc_mark_counts() = new(0, 0, 0, 0)
+end
+
+# PORT: pl-gc.c vm_state
+# DIVERGES: the registers are POSITIONS (a slot position, a frame base; 0 = NULL), not pointers; an ARGP
+# in write mode on the global stack is stored as 0 (marking never reads it at `adepth > 0`). G1-2 builds
+# this at the safe point (get_vmi_state); `frame`/`choice` are indexes into ld.frames/ld.choices (0 = none).
+"""
+    vm_state()
+
+The state of the VM at the safe point (pin `vm_state`): the frame and choicepoint being run, the program
+counter (`pc`, an index into the frame's clause codes), the start of the VMI (`pc_start_vmi`), `argp` and
+`argp0` (positions), `adepth`, `lSave`/`lNext` (positions), the `new_args` count, the number of UWRITE
+argument-stack entries (`uwrite_count`), `save_argp` and `in_body`.
+"""
+mutable struct vm_state
+    frame::Int
+    choice::Int
+    pc::Int
+    pc_start_vmi::Int
+    argp::Int
+    argp0::Int
+    adepth::Int
+    lSave::Int
+    lNext::Int
+    new_args::Int
+    uwrite_count::Int
+    save_argp::Bool
+    in_body::Bool
+    vm_state() = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false)
+end
+
+# PORT: pl-gc.c mark_state
+# DIVERGES: `flictx` is the index of the innermost foreign frame to mark, `reset_entry` the trail index
+# early reset has reached (upstream: pointers into the foreign-frame and trail chains).
+mutable struct mark_state
+    vm::vm_state
+    flictx::Int
+    reset_entry::Int
+    mark_state(vm::vm_state) = new(vm, 0, 0)
+end
+
+# PORT: pl-gc.c walk_state as gc_walk_state
+# DIVERGES: `GCM_ACTIVE`/`GCM_CHOICE` and the bit vectors `active`/`clear` belong to the ACTIVE walk of
+# pl-gc.jl (`walk_state`), so there are no bit vectors here and `clear_choice_mark`/`mark_choice_mark`
+# (which act under `GCM_CHOICE` only) are no-ops of this walk; `c0` (debug output) is not carried.
+# `frame` is an index, `base` its position, `envtop` and `ARGP` are POSITIONS of the local stack, `arity`
+# is `frame->predicate->functor->arity` (for `I_CALLCLEANUP` and the others).
+"The state of one `walk_and_mark_gc` (pl-gc.c `walk_state`, the stack collector's fields)."
+mutable struct gc_walk_state
+    frame::Int                  # LocalFrame frame: processing node (index)
+    base::Int                   # the frame's position
+    arity::Int                  # frame->predicate->functor->arity
+    flags::Int                  # general flags (GCM_*)
+    envtop::Int                 # Word envtop: just above environment (position)
+    unmarked::Int               # size_t unmarked: left when marking alt clauses
+    ARGP::Int                   # Word ARGP: head unify instructions (position)
+    adepth::Int                 # int adepth: ARGP nesting
+end
+
+"""
+    gc_trail_state()
+
+The bookkeeping of the trail across one collection: `top` the index of the sentinel word (upstream
+`tTop`), `tagged` whether the entries are in the tagged form, and the counters `values` (value entries
+seen by `tag_trail`), `zeroed` (deleted entries `compact_trail` removed), `kept` (entries it kept) and
+`chains` (relocation chains it unwound).
+"""
+mutable struct gc_trail_state
+    top::Int
+    tagged::Bool
+    values::Int
+    zeroed::Int
+    kept::Int
+    chains::Int
+    gc_trail_state() = new(0, false, 0, 0, 0, 0)
+end
+
+# ---- the counters of one sweep (upstream's `relocation_chains`, `relocation_cells`, `alien_relocations`,
+#      `marks_swept` and `relocated_cells` globals of the collector) ----
+mutable struct gc_sweep_counts
+    relocation_chains::Int
+    relocation_cells::Int
+    alien_relocations::Int
+    marks_swept::Int
+    relocated_cells::Int
+    gc_sweep_counts() = new(0, 0, 0, 0, 0)
+end
+
 # PORT: pl-global.h gc as ld_gc
 # DIVERGES: `LD->gc` is `{inferences, status, [marked_attvars], active, stats}`; here also the three stacks' policies (the kernel's stacks are
 # not structs: `global_policy`, `trail_policy`, `local_policy`, `init_stack`/`gcPolicy` values, pl-setup.c:1584, :1690) and `sig_pending`, the
@@ -453,17 +558,38 @@ mutable struct ld_gc
     trail_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.trail`'s policy
     local_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.local`'s policy
     sig_pending::UInt64                                         # ORIGINAL: the pending virtual signals, bit `sig - SIG_PROLOG_OFFSET`
+    # ORIGINAL (ALLOC-FIX d, audit D-0971 (4)): the records of ONE collection, kept here and RESET at each use, so a
+    # collection allocates nothing. Upstream keeps the counters in `LD->gc` (pl-gc.c:132-151 at the pin 18168e62:
+    # `_total_marked`, `_needs_relocation`, `_local_marked`, `_trailcells_deleted`, `_relocation_*`, ...); `vm_state`,
+    # `mark_state` and `walk_state` are C stack locals of garbageCollect, mark_stacks and mark_environments. A collection
+    # never nests (`blockGC`); a PARENT query's VM state (the walk into the parent of a nested query) is a FRESH object, as
+    # it is live together with `vm`.
+    vm::vm_state                                                # the safe point's VM state (gc_get_vmi_state, get_vmi_state of `ld.query`)
+    mark::mark_state                                            # mark_stacks's state
+    walk::gc_walk_state                                         # the walk of mark_environments / mark_alt_clauses
+    mark_counts::gc_mark_counts                                 # garbageCollect's mark counters
+    sweep_counts::gc_sweep_counts                               # garbageCollect's sweep counters
+    trail_state::gc_trail_state                                 # gc_trail_begin!'s state
 end
-ld_gc() = ld_gc(
-    0,
-    pl_gc_status_t(),
-    0,
-    gc_stats(),
-    gc_stack_policy(true),
-    gc_stack_policy(true),
-    gc_stack_policy(false),
-    UInt64(0)
-)
+function ld_gc()
+    vm = vm_state()
+    return ld_gc(
+        0,
+        pl_gc_status_t(),
+        0,
+        gc_stats(),
+        gc_stack_policy(true),
+        gc_stack_policy(true),
+        gc_stack_policy(false),
+        UInt64(0),
+        vm,
+        mark_state(vm),
+        gc_walk_state(0, 0, 0, 0, 0, 0, 0, 0),
+        gc_mark_counts(),
+        gc_sweep_counts(),
+        gc_trail_state()
+    )
+end
 
 # PORT: pl-global.h tabling as tbl_restraint
 # DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).
