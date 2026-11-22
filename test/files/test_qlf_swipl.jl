@@ -580,6 +580,31 @@ end
     @test any(m -> startswith(m, "Failed to open $nofile"), _ql_messages(ld))
 end
 
+# LB3-F5 (EQ2, audit D-0472 item 4): read_clause answers false, WITHOUT a syntax error, when print_message/2 raises while the singleton warning
+# is printed (check_singletons -> printMessage -> false with the exception kept); the loop prints "Syntax error" and goes on with the
+# next clause (pl-qlf.c `continue`). swipl 10.1.20, 2026-11-10, its own boot compile (`swipl -o y.prc -b boot/init.pl f5.pl`, boot/ = the pin's
+# sources, then `swipl -x y.prc` asking current_predicate/1) of this very program: `f5.pl:2: Syntax error`, p undefined, q defined, r defined.
+# Mutant `break`: the compile stops at p, q and r stay undefined.
+const _QL_F5_PROGRAM = """
+user:message_hook(singletons(_, _), _, _) :- throw(x).
+p(X) :- true.
+q(a).
+r(b).
+"""
+const _QL_F5_PINNED = ["p undefined", "q defined", "r defined"]
+
+@testset "a read_clause that fails without a syntax error (print_message/2 raises) is skipped, the file goes on (LB3-F5; swipl pin: its boot compile)" begin
+    # UNTESTED: nothing was run when this row was written. The kernel keeps the exception printMessage raised pending, as upstream does
+    # (PL_Q_PASS_EXCEPTION); the row clears it before it queries. If the loop does not reach q and r on the kernel, read pl-qlf.jl's loop first.
+    gd, ld, f = _ql_db(_QL_F5_PROGRAM; name="f5.pl")
+    LK.compileFile(gd, ld, nothing, f)
+    LK.PL_clear_exception(ld)
+    kl = _ql_query_lines(gd, ld, ["p", "q", "r"])
+    got = [startswith(l, n * " undefined") ? n * " undefined" : n * " defined" for (l, n) in zip(kl, ["p", "q", "r"])]
+    @test got == _QL_F5_PINNED
+    @test count(m -> occursin(r":[0-9]+: Syntax error\n$", m), _ql_messages(ld)) == 1
+end
+
 @testset "a term that cannot be asserted is reported as Failed to compile and the loop goes on" begin
     # UNVERIFIED on the kernel: gate decides (addClauseWic's failure; the clause head is a system predicate)
     rc, gd, ld, f = _ql_compile(
