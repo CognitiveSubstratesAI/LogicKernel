@@ -19,6 +19,12 @@
 # engines test alone (no other file creates an engine). No equivalent among TI1-TI4. NOT LISTED: the context-module argument of the call
 # (`MODULE_system(gd)` -> `nothing`: the procedure is fixed, the context cannot change what `$thread_init/0` does), the query flags
 # (PL_Q_NORMAL -> PL_Q_PASS_EXCEPTION: only an init goal that raises shows it, and the oracle itself dies on that shape: no row).
+# THE C FUNCTIONS OF AN EVENT LIST (AE1..AE9: src/pl-event.jl `register_event_function` and the C-function branch of `call_event_list`,
+# src/pl-thread.jl `PL_thread_at_exit`; pl-thread.c:3598-3620): TARGETS is the engines test alone: no other file registers a C function
+# (test_event_swipl.jl reaches only the Prolog-listener branches of call_event_list, none a mutant here touches). No equivalent among
+# AE1-AE9. NOT LISTED: the `ev.argc == 1`/`== 2` branches of the void call and the `argc == 2` branch of the bool call (no registrar
+# gives them an event: PL_thread_at_exit's argc is 0, the bool test's event has argc 1), the `@assert argc >= ev.argc` (the rows' events
+# always satisfy it), `argv + 1` -> `argv + 2` of the bool call (the row checks only that the term reference is nonzero).
 # NOT LISTED (with the reason; a survivor would prove nothing about dead code, D-0238):
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
@@ -346,5 +352,41 @@ MUTANTS = [
          file=T, targets=TARGETS,
          old="Symbol(\"\\$thread_init\")), 0, MODULE_system(gd))",
          new="Symbol(\"\\$thread_init\")), 0, MODULE_user(gd))"),
+    # ---- the C functions of an event list (PL_thread_at_exit)
+    dict(id="TH1E-AE1 a void function is treated as a bool one (KILL the white-box S1: the log, S3)",
+         file=EV, targets=TARGETS,
+         old="                if (ev.flags & EV_CALLBACK_VOID) != 0\n",
+         new="                if (ev.flags & EV_CALLBACK_VOID) == 0\n"),
+    dict(id="TH1E-AE2 an exception raised by a void function does not fail the listener (KILL the white-box S4: the rest of the list runs)",
+         file=EV, targets=TARGETS,
+         old="                    if PL_exception(ld, 0) != 0\n                        rc = false\n",
+         new="                    if false\n                        rc = false\n"),
+    dict(id="TH1E-AE3 a void function is gated by an earlier listener's result (KILL the white-box S3)",
+         file=EV, targets=TARGETS,
+         old="                        f.fn(gd, ld, f.closure)\n",
+         new="                        rc && f.fn(gd, ld, f.closure)\n"),
+    dict(id="TH1E-AE4 PL_thread_at_exit registers at the tail (KILL the white-box S1: the order of the log)",
+         file=T, targets=TARGETS,
+         old="nothing, false, func, closure, 0, EV_CALLBACK_VOID)",
+         new="nothing, true, func, closure, 0, EV_CALLBACK_VOID)"),
+    dict(id="TH1E-AE5 the global and the local list swapped (KILL the white-box S1, S2)",
+         file=T, targets=TARGETS,
+         old="is_global ? PLEV_THREAD_EXIT : PLEV_THIS_THREAD_EXIT",
+         new="is_global ? PLEV_THIS_THREAD_EXIT : PLEV_THREAD_EXIT"),
+    dict(id="TH1E-AE6 PL_thread_at_exit registers a function of one argument (KILL the white-box S1, S2: the call has the wrong arity)",
+         file=T, targets=TARGETS,
+         old="nothing, false, func, closure, 0, EV_CALLBACK_VOID)",
+         new="nothing, false, func, closure, 1, EV_CALLBACK_VOID)"),
+    dict(id="TH1E-AE7 the result of a bool function is dropped (KILL the white-box S5: a false result must skip the Prolog listener)",
+         file=EV, targets=TARGETS,
+         old="                        rc = f.fn(gd, ld, f.closure, argv + 1)::Bool\n",
+         new="                        f.fn(gd, ld, f.closure, argv + 1)::Bool\n"),
+    dict(id="TH1E-AE8 every registered function is the first function's (KILL the white-box S1: the second function's tag)",
+         file=EV, targets=TARGETS,
+         old="event_callback{T, definition{T}}(name, 0, nothing, length(fns), nothing, argc, flags)",
+         new="event_callback{T, definition{T}}(name, 0, nothing, 1, nothing, argc, flags)"),
+    dict(id="TH1E-AE9 the closure is not kept (KILL the white-box S1, S2, S4, S5: the closure in the log)",
+         file=EV, targets=TARGETS,
+         old="push!(fns, event_function(func, closure))",
+         new="push!(fns, event_function(func, nothing))"),
 ]
-
