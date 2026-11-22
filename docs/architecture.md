@@ -2560,7 +2560,6 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
 | S2a | 4 | 4 | 0 | `get/1`, `get/2`, `put/1`, `put/2` |
 | S2b | 4 | 0 | 4 | `refusal a stream pair`, `refusal open(pipe(Command), …)`, `refusal open/4's lock(Lock) option (advisory fil…`, `refusal closing a stream pair` |
-| CT1 | 2 | 0 | 2 | `refusal open/4's locale(Locale) option`, `refusal set_stream/2's locale(Locale)` |
 | FL1 | 2 | 2 | 0 | `get_flag/2`, `set_flag/2` |
 | CONT1 | 1 | 0 | 1 | `refusal backtracking into a $(db_c.type) choice …` |
 | COV1 | 1 | 0 | 1 | `refusal coverage collection ('record_coverage': …` |
@@ -8626,6 +8625,16 @@ setlocale, 0)`, with `lccats`) is ported ahead of the rest of that file.
   `enc_from_locale`, `init_locale` (the last two are written, not called at boot: a text stream here is UTF-8).
 - **Rows:** test/core_text/test_char_type_swipl.jl (t0-t41) and test/core_text/test_ctype_text_swipl.jl (t0-t33, plus a unit test of `enc_from_locale`);
   swipl 10.1.20's answers, identical in two runs. Mutants: tools/mutants/CT1B.py, CT1C.py.
+
+## CT1 LOCALE-STREAM — open/4's and set_stream/2's `locale(Locale)`, the stream property `locale` (R2, CT1-LOC-1; pl-file.c at swipl-devel 18168e62; edit-only: nothing was compiled or run)
+
+- **Code (src/os/pl-file.jl):** `openStream` reads the option as an `OPT_TERM` (pl-option.jl has no `OPT_LOCALE`), runs `getLocaleEx` on the copied term right after the scan
+  (upstream: `get_optval` inside the scan; DIVERGES only in which error wins when two options are bad), and after the encoding and newline set `Ssetlocale(s, locale)` and
+  `releaseLocale(locale)` (pl-file.c:4377-4380). `set_stream`'s `:locale` arm is `getLocaleEx` + `Ssetlocale` (:2434-2446) without releasing getLocaleEx's reference, as upstream
+  (the `permission_error(locale, stream, S)` branch is not written: `Ssetlocale` here never fails). `stream_locale_prop` is `unifyLocale(prop, s->locale, true)` (:5110-5116).
+- **Owner rows removed:** `open/4's locale(Locale) option` and `set_stream/2's locale(Locale)` (CT1); the r2 floor of test/test_r2_status.jl 147 -> 145 (derived, not run).
+- **Rows:** test/core_text/test_stream_locale_swipl.jl (t0-t5 through test_stream_locale_swipl.pl/.out, swipl 10.1.20's answers, identical in two runs, plus two white-box
+  testsets: the reference count and `stream_locale_prop` of a stream without a locale). Mutants: tools/mutants/CT1LOC.py (19 rows).
 
 ## CONT1 — continuations at run time: `reset/3`, `shift/1`, `shift_for_copy/1`, `call_continuation/1` (R2, audit D-0402 item 2d; pl-cont.c, pl-vmi.c, pl-gc.c at swipl-devel cbf4e1896275)
 

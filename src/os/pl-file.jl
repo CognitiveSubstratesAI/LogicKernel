@@ -1048,9 +1048,11 @@ end
 # DIVERGES: returns the stream, or `nothing` with the error raised; the file is opened by Julia
 # (`Sopen_file`), a failure's error from its errno (`ERR_FILE_OPERATION`); `pipe(Command)` is `Sopen_pipe` (lane D: a
 # `/bin/sh -c` child; `PL_clear_exception` and `REP_FN` of the command text are unwritten). Unwritten, each raising
-# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`),
-# the `locale` option (`PL_locale`). The encodings ENC_ANSI (`text`: libc's `mbrtowc`/`wcrtomb`, ENC1), UTF-16 and wchar_t are ported.
-# `locale`'s default is the `encoding` flag's (`LD->encoding`).
+# `NotPortedError` BEFORE a file is opened: IRIs (`iri_hook`), the `lock(Lock)` option is `Sopen_file`'s `l`/`L` flag (`fcntl`).
+# `locale(Locale)` (CT1): the specification is an `OPT_TERM` (the option types of pl-option.jl do not include `OPT_LOCALE`) and `getLocaleEx`
+# runs on the copied term right after the scan, where upstream's `get_optval` runs it in the scan: a bad later option's error wins over a
+# bad locale's, otherwise the same. As upstream, an error after it leaves the reference `getLocaleEx` acquired. The encodings ENC_ANSI (`text`: libc's `mbrtowc`/`wcrtomb`, ENC1), UTF-16 and wchar_t are ported.
+# `encoding`'s default is the `encoding` flag's (`LD->encoding`).
 "Open the file `file` as `mode` and `options` say (pl-file.c); the stream, or `nothing` after raising the error."
 function openStream(
     ld::PL_local_data{T}, file::term_t, mode::term_t, options::term_t
@@ -1069,6 +1071,7 @@ function openStream(
     bom = -1
     create = 0
     unicode_atoms_opt = nothing
+    locale::Union{Nothing, PL_locale_rec{T}} = nothing
 
     if options != 0
         vals = PL_scan_options(ld, options, 0, "stream_option", open4_options)
@@ -1094,8 +1097,10 @@ function openStream(
         b11 isa Bool && (bom = b11 ? 1 : 0)
         i12 = vals[12]
         i12 isa Int && (create = i12)
-        if vals[13] !== nothing
-            throw(NotPortedError{T}(type, "open/4's locale(Locale) option", "PL_locale"))
+        t13 = vals[13]
+        if t13 isa Int                                          # OPT_LOCALE: getLocaleEx (acquires the reference)
+            locale = getLocaleEx(gd, ld, t13)
+            locale === nothing && return nothing
         end
         unicode_atoms_opt = _opt_atom(T, vals[14])
     end
@@ -1223,6 +1228,10 @@ function openStream(
 
     s.encoding = enc
     fnewline == -1 || (s.newline = fnewline & 0x3)
+    if locale !== nothing
+        Ssetlocale(s, locale)
+        releaseLocale(locale)                                   # acquired by getLocaleEx (upstream: by PL_scan_options)
+    end
     close_on_abort || (s.flags |= SIO_NOCLOSE)
 
     if how[1] == 'r'
@@ -3585,11 +3594,14 @@ function stream_unicode_atoms_prop(
 end
 
 # PORT: pl-file.c stream_locale_prop
-# DIVERGES (representation): upstream unifies `unifyLocale(prop, s->locale, true)` when the stream has a locale
-# (pl-file.c:5069-5076); the stream layer has no `locale` field (`Ssetlocale` is left to the locale step), so
-# the answer is `false`.
+# DIVERGES (representation): `unifyLocale` takes the global data and the local data as arguments (src/os/pl-locale.jl); the
+# stream's `locale` field is the abstract `IOLocale` (src/os/pl-stream.jl), a `PL_locale_rec{T}` by construction.
 "`locale(Locale)` of `s` (pl-file.c)."
-stream_locale_prop(ld::PL_local_data, s::IOSTREAM, prop::term_t)::Bool = false
+function stream_locale_prop(ld::PL_local_data{T}, s::IOSTREAM, prop::term_t)::Bool where {T}
+    l = s.locale
+    l === nothing && return false
+    return unifyLocale(_query_gd(ld), ld, prop, l::PL_locale_rec{T}, true)
+end
 
 # PORT: pl-file.c stream_reperror_prop
 "`representation_errors(Mode)` of `s`: `xml`, `prolog`, `unicode` or `error` (pl-file.c)."
@@ -3927,7 +3939,8 @@ end
 #    TOP1b ports those readers;
 #  - `timeout(T)` (file:2325-2342, `Sset_timeout`): the stream layer has no timeout; `infinite` is what every stream
 #    has and succeeds, any other time raises upstream's own failure, `permission_error(timeout, stream, S)`;
-#  - `locale(L)` (file:2395-2404, `getLocaleEx`, `Ssetlocale`): REFUSED (`NotPortedError`), as open/4's `locale`;
+#  - `locale(L)` (file:2434-2446, `getLocaleEx`, `Ssetlocale`): ported (CT1); `Ssetlocale` here never fails, so upstream's
+#    `permission_error(locale, stream, S)` branch is not written; as upstream, the reference `getLocaleEx` acquired is not released;
 #  - `close_on_exec(B)` (file:2455-2458, `setCloseOnExec`): the stream has no descriptor (`Sfileno(s) < 0`), upstream's
 #    own `permission_error(close_on_exec, stream, S)` of that case;
 #  - `buffer_size(N)` on an input stream
@@ -4062,11 +4075,10 @@ function set_stream(
         s.unicode_atoms = mode
         return true
     elseif aname === :locale                        # locale(Locale)
-        throw(
-            NotPortedError{T}(
-                mk_sym(T, :locale), "set_stream/2's locale(Locale)", "PL_locale"
-            )
-        )
+        val = getLocaleEx(gd, ld, a)
+        val === nothing && return false
+        Ssetlocale(s, val)                          # upstream's `== 0` is always true here: no permission_error branch
+        return true
     elseif aname === :representation_errors
         val = PL_get_atom_ex(ld, a)
         val === nothing && return false
