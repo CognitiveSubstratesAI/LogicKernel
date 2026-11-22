@@ -827,7 +827,7 @@ end
             st, ans = _ql_goal(gd, ld, "\$qlf_versions", _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])
             return st, [_ql_enc(a) for a in ans]
         end
-        i(x) = _ql_enc(lk_gnd(_QL, x))
+        ival(x) = _ql_enc(lk_gnd(_QL, x))
         # (file, '$qlf_versions' answers or nothing, '$qlf_is_compatible' formal message or nothing = true)
         for (f, vs, cm) in (
             (real, (72, 68, 72, 3857584396, 3857584396), nothing),
@@ -838,7 +838,7 @@ end
         )
             st, ans = versions(f)
             @test st === :true
-            @test ans[2:6] == [i(x) for x in vs]
+            @test ans[2:6] == [ival(x) for x in vs]
             if cm === nothing
                 @test _ql_call(gd, ld, "\$qlf_is_compatible", _QL[_qls(f)]) === :ok
             else
