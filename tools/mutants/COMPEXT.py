@@ -219,7 +219,8 @@ MUTANTS = [
          file=COMP, targets=TS,
          old="                ar = functor_arity(w)\n",
          new="                ar = functor_arity(w) + 1\n"),
-    dict(id="UV-18 a functor operand's name is read from the last literal (aimed by cx75, cx79, cx83; candidate equivalent in clauses whose functor is the only literal: needs the widened run and the audit's ruling)",
+    # candidate equivalent: in a clause whose functor is its only literal; needs the widened run and the audit's ruling
+    dict(id="UV-18 a functor operand's name is read from the last literal (aimed by cx75, cx79, cx83)",
          file=COMP, targets=TS,
          old="nm = li == 0 ? mk_sym(T, Symbol(\"\\$expr\")) : lits[li]",
          new="nm = li == 0 ? mk_sym(T, Symbol(\"\\$expr\")) : lits[end]"),
@@ -247,7 +248,8 @@ MUTANTS = [
          file=COMP, targets=TS,
          old="rc = PL_unify_functor(ld, a, mk_sym(T, :clause), 1) &&",
          new="rc = PL_unify_functor(ld, a, mk_sym(T, :clause_ref), 1) &&"),
-    dict(id="UV-25 a clause-reference operand reads the first reference of the side table (candidate equivalent: a supervisor with one clause reference, which is every supervisor the rows read; needs the widened run and the audit's ruling; aimed by cx104, cx110)",
+    # candidate equivalent: a supervisor with one clause reference, which is every supervisor the rows read; needs the widened run and the audit's ruling
+    dict(id="UV-25 a clause-reference operand reads the first reference of the side table (aimed by cx104, cx110)",
          file=COMP, targets=TS,
          old="PL_unify_clref(gd, ld, tmp, crefs[Int(w)].clause::Clause{T})",
          new="PL_unify_clref(gd, ld, tmp, crefs[1].clause::Clause{T})"),
@@ -301,7 +303,8 @@ MUTANTS = [
          file=COMP, targets=TS,
          old="    pcoffset = PL_get_int64_ex(ld, offset)\n    pcoffset === nothing && return FFALSE\n",
          new="    pcoffset = PL_get_int64_ex(ld, offset)\n    nothing\n"),
-    dict(id="FV-10 the length of a supervisor is its vector's length (candidate equivalent: every shared block is `[I, I_EXIT]`, whose walk ends at its vector's end; needs the widened run and the audit's ruling; aimed by cx99-cx103)",
+    # candidate equivalent: every shared block is `[I, I_EXIT]`, whose walk ends at its vector's end; needs the widened run and the audit's ruling
+    dict(id="FV-10 the length of a supervisor is its vector's length (aimed by cx99-cx103)",
          file=COMP, targets=TS,
          old="len = supervisorLength(def.code_data, base)",
          new="len = length(base)"),
@@ -314,11 +317,13 @@ MUTANTS = [
          file=SUP, targets=TS,
          old="    return pc                                                   # PC++; return PC-base",
          new="    return pc - 1                                               # PC++; return PC-base"),
-    dict(id="SL-3 the walk steps one word at a time (candidate equivalent: the shared blocks are `[I, I_EXIT]` with a zero-argument first instruction; needs the widened run and the audit's ruling)",
+    # candidate equivalent: the shared blocks are `[I, I_EXIT]` with a zero-argument first instruction; needs the widened run and the audit's ruling
+    dict(id="SL-3 the walk steps one word at a time (aimed by cx99-cx103)",
          file=SUP, targets=TS,
          old="pc += 1 + codeTable(base[pc]).arguments",
          new="pc += 1"),
-    dict(id="SL-4 the walk starts at the second word (candidate equivalent: the first instruction of every shared block takes no operand, so the second word is the I_EXIT; needs the widened run and the audit's ruling)",
+    # candidate equivalent: the first instruction of every shared block takes no operand, so the second word is the I_EXIT; needs the widened run and the audit's ruling
+    dict(id="SL-4 the walk starts at the second word (aimed by cx99-cx103)",
          file=SUP, targets=TS,
          old="    pc = 1\n    while base[pc] != I_EXIT",
          new="    pc = 2\n    while base[pc] != I_EXIT"),

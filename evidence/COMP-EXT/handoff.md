@@ -1,3 +1,18 @@
+# DEC2 STATE (rows and mutants WRITTEN, committed; no julia run, nothing formatted or compiled, test_type_discipline.jl and warm.sh check NOT run)
+- Rows: test/core_lang/test_compext_swipl.jl cx65-cx115 (51 `$fetch_vm/4` rows; 115 cases, `_CX_PINNED` 116 lines), commits f5ccdb27 (cx65-cx107) and 05937b73 (cx108-cx115).
+  `_CX_PINNED` from swipl 10.1.20 (explicit pin binary, each run in a capped scope; gen_rows.py now caps the `--version` call too), TWO runs byte-identical.
+  gen_rows.py asserts 115 cases and reads ids `cx\d+` (three digits from cx100). The program has `vm_all/2,3`, `vm_pc/3`, `vm_end/3`, `vm_of/2`, `vm_pcs/2` and the
+  predicates `vc/1`, `vf1-vf8`, `vr1-vr8`, `vq1-vq3`. cx70/cx71 (h_string, h_mpz) compare instruction lists only (kernel offsets differ by design); the rows with
+  offsets are on clauses without those two. cx104/cx105 read the instruction NAMES only (`s_trustme`'s operand is a pointer in swipl, a clause reference in the kernel).
+  Every row is UNVERIFIED on the kernel: the gate decides; any row it cannot answer becomes `@test_broken` with its owner named, never skipped or weakened.
+- Mutants: tools/mutants/COMPEXT.py 72 = 30 + 42 new (UV-1..25 unify_vmi, UF-1..3 unify_functor, FV-1..10 pl_fetch_vm4_va, SL-1..4 supervisorLength), each "aimed by
+  <rows>", `old` exactly once (python3 -I), TARGETS = the file's TS. Candidate equivalents (comments, no `equivalent=`): UV-18, UV-25, FV-10, SL-3, SL-4 (the shared
+  supervisor blocks are `[I, I_EXIT]`, so supervisorLength's walk equals the vector length). VM-1's `old` was pinned to the lookup_vmi line (unify_vmi spells the same expression).
+  (REPLAY on wip/compext-int: 70 = 28 + 42, TC-1/TC-2/THR not replayed; FV-9's `old` includes the preceding offset-read line, the tip's pl_clause_term_position3_va has the same bare line.)
+- NOT aimed by any row (a CA1 kind no plain clause or called supervisor reaches): CA1_JUMP, CA1_MODULE index 0, CA1_FOREIGN, T_ATOM/T_FUNCTOR data, `$expr` functors, CA1_TRIE_NODE.
+- Left: `warm.sh fmt` (the new `_CX_CASES` tuples follow the formatter's layout), `warm.sh check`, the three-type run of test_compext_swipl.jl,
+  `tools/pkgtest_way.sh test/core_lang/test_compext_swipl.jl`, test/test_type_discipline.jl, then push `mutants/COMP-EXT` and `gate/comp-ext` at one SHA.
+
 # COMPEXT4 STATE (read first; COMPEXT3 and COMP-EXT2 below are history)
 Commit 2 (54381a53, `TEST: COMP-EXT rows and mutants`) DONE, no julia run, nothing pushed, `test_type_discipline.jl` and `warm.sh check` NOT run:
 - test/core_lang/test_compext_swipl.jl: rows cx01-cx64 (cx01-13 `$notrace/1`, cx14-21 `$predefine_foreign/1`, cx22-50 `$vmi_property/2`,
