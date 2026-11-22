@@ -915,6 +915,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     var_names_numbervars_frame::Int                             # var_names.numbervars_frame
     prolog_flag_unknown_option::Int                             # prolog_flag.unknown_option
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
+    prolog_flag_incomparable_error::Bool                        # prolog_flag.incomparable_error (FL1: `setIncomparable`)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
@@ -1049,6 +1050,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # no numbervars frame
         0x2,                                    # unknown_option: ignore (OPT_UNKNOWN_IGNORE)
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
+        false,                                  # incomparable_error: the flag `incomparable` is `arbitrary`
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
