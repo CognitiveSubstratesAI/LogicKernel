@@ -2396,6 +2396,15 @@ function _manifest_index(T)
         (LK.pl_start_consult2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        # WRAPPERS-2 — pl-index.c's Prolog connection (src/pl-indexpred.jl)
+        (LK._put_index_args, Tuple{LD, Int, NTuple{4, LK.iarg_t}}, false),
+        (LK._put_hints, Tuple{LD, Int, LK.hash_hints}, false),
+        (LK.pl_candidate_indexes3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_set_candidate_indexes2_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (LK.fileNameStream, Tuple{GD, LK.IOSTREAM}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, T}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, Nothing}, false),
@@ -2520,6 +2529,7 @@ function _manifest_index(T)
         (LK.get_name_value, Tuple{LD, Int, Int, LK.mark}, false),
         (LK.PL_is_dict, Tuple{LD, Int}, false),
         (LK.PL_get_dict_ex, Tuple{LD, Int, Int, Int, Int}, false),
+        (LK.PL_put_dict, Tuple{LD, Int, T, Int, Vector{T}, Int}, false),   # pl-fli.c PL_put_dict (WRAPPERS-2)
         (LK.get_create_dict_ex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: put_dict/3, select_dict/3, get_dict/3
         (LK.assign_in_dict, Tuple{LD, Int, Int}, false),
