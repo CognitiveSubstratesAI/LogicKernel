@@ -881,7 +881,7 @@ end
 # ORIGINAL: whether the atom `a` is the text atom `name` (by its text: no term is built, so no term type
 # is taken from the argument).
 _sym_is(a, name::Symbol)::Bool =
-    kind(a) === SYM && !is_reserved_symbol(a) && !is_blob(a) && Symbol(sym_text(a)) === name
+    kind(a) === SYM && !is_reserved_symbol(a) && !is_blob(a) && Symbol(sym_text(a)) === name   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
 
 # PORT: pl-file.c encoding_names
 # DIVERGES: the names as symbols, in upstream's order, the aliases last; `PL_atom_to_encoding` reads
@@ -899,7 +899,7 @@ const encoding_names = (
 "The encoding the atom `a` names, or `ENC_UNKNOWN` (pl-file.c)."
 function PL_atom_to_encoding(a::T)::IOENC where {T}
     (kind(a) === SYM && !is_reserved_symbol(a) && !is_blob(a)) || return ENC_UNKNOWN
-    name = Symbol(sym_text(a))
+    name = Symbol(sym_text(a))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
     for (n, enc) in encoding_names
         n === name && return enc
     end
@@ -3700,7 +3700,7 @@ function get_stream_property_def(ld::PL_local_data, t::term_t)::Union{Nothing, s
     f === nothing && return nothing
     name, arity = f
     (kind(name) === SYM && !is_reserved_symbol(name) && !is_blob(name)) || return nothing
-    nm = Symbol(sym_text(name))
+    nm = Symbol(sym_text(name))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
     for p in sprop_list
         p.name === nm && p.arity == arity && return p
     end
@@ -4191,7 +4191,7 @@ function pl_set_stream2_va(
         nm = na[1]
         (kind(nm) === SYM && !is_reserved_symbol(nm) && !is_blob(nm)) ||
             return PL_domain_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE
-        name = Symbol(sym_text(nm))
+        name = Symbol(sym_text(nm))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
         i = findfirst(info -> info[1] === name, ss_info)
         i === nothing &&
             return PL_domain_error(ld, "stream_attribute", attr) ? FTRUE : FFALSE

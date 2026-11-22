@@ -480,15 +480,12 @@ if _WF_SWIPL !== nothing
         theirs = _wf_swipl([
             "wf(" * _wf_codes(s) * ", " * _WF_OPS_TEXT * ")" for s in texts
         ])
-        # what the kernel cannot read is what the reader refuses: an atom holding the character 0
-        # (the term interface's named gap, R1f's review); swipl reads it — so its lines differ
-        nul = [k for k in eachindex(ours) if ours[k][1] == "unreadable"]
-        @test all(s -> occursin('\0', s), unread)
-        for k in nul
-            theirs[k] = ours[k]
-        end
-        println(stderr, "  hand corpus: $(length(texts)) terms × $(length(ops)) calls; ",
-            "$(length(unread)) unreadable here (the character 0)")
+        # until ATOM1 the kernel could not read an atom holding the character 0 (the term interface's named gap, R1f's
+        # review) and those lines were copied from the kernel's; now it reads every text of the corpus: nothing is
+        # unreadable here and every line is compared with swipl's
+        @test isempty(unread)
+        @test any(s -> occursin("\\0", s), texts)                 # the corpus holds texts with a `\0` escape (the character 0)
+        println(stderr, "  hand corpus: $(length(texts)) terms × $(length(ops)) calls")
         @test _wf_compare(labels, ours, theirs) == 0
         # not vacuous: texts on both streams, and swipl's own lines carry them
         @test count(r -> !isempty(r[1]), theirs) > 0.7 * length(theirs)

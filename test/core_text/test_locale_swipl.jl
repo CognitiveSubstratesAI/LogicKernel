@@ -108,15 +108,11 @@ function kernel_lines(
     return out
 end
 
-# KNOWN DIFFERENCE, with swipl 10.1.20's own answer (evidence 2026-11-19; LC-C2 of tools/mutants/LOCALE.py waits on it, ATOM1 is the port item): swipl
-# ACCEPTS the atom of length 3, [0'a, 0, 0'b]: `locale_create(L, "C", [decimal_point(A)])` stores `a` (the string is cut at the first NUL; locale_property
-# gives decimal_point(a), atom_length 1), the same for thousands_sep. The kernel's exact answer here is the refusal below (the line `t12 notported`).
-# (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
-# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"), whether the
-# reader makes it from program text (`'a\000\b'` loses the whole consult) or atom_codes/2 makes it at run time. t12 is the row
-# of a decimal_point holding the character 0 (it was part of t10); its atom is built at run time, so only t12 meets the
-# refusal: the kernel's line is `t12 notported`, swipl's answer is in the .out. t12 is the last row of the program, and
-# a refused row ends one run (its ld is thrown away): `kernel_lines_all` continues after it on a fresh engine.
+# t12 (LC-C2 of tools/mutants/LOCALE.py): swipl ACCEPTS the atom of length 3, [0'a, 0, 0'b]: `locale_create(L, "C", [decimal_point(A)])`
+# stores `a` (the string is cut at the first NUL; locale_property gives decimal_point(a), atom_length 1), the same for thousands_sep.
+# Since ATOM1 the kernel's atoms hold the character 0 too (src/pl-read.jl `_atom_from_text`: the atom is named by the escaped text,
+# `atom_escape`), so t12 is compared with swipl's answer (the .out) like every row; before ATOM1 it was a pinned NotPortedError
+# ("an atom containing the character 0": the line `t12 notported`). The row is built at run time by atom_codes/2.
 const _LCS_NUL_ROWS = ("t12",)
 
 # `kernel_lines`, continued after every refused row on a fresh engine (the lines of the rows that follow)
@@ -213,20 +209,15 @@ end
         "t15 c[116,49,53]/1(c[91,124,93]/2(a[100,101,102,97,117,108,116],c[91,124,93]/2(a[116,114,117,101],c[91,124,93]/2(a[116,114,117,101]," *
           "c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(a[59],nil)))))))"
 
-    @test all(r -> r in names, _LCS_NUL_ROWS)                                 # the known-difference rows are rows
+    @test all(r -> r in names, _LCS_NUL_ROWS)                                 # the rows of the character 0 are rows
     @test occursin(_codes("true"), expected[findfirst(startswith("t12 "), expected)])  # swipl answers: the decimal point was made
 
     kl = kernel_lines_all(_TL, _LCS_PL, names)
     @test length(kl) == length(expected)
     for i in eachindex(kl)
-        row = i == 1 ? "ok" : names[i - 1]
-        if row in _LCS_NUL_ROWS
-            @test kl[i] == row * " notported"                                 # the refusal, by name
-            @test_broken kl[i] == expected[i]                                 # swipl answers (the .out)
-        else
-            @test (i, kl[i]) == (i, expected[i])
-        end
+        @test (i, kl[i]) == (i, expected[i])
     end
+    @test !any(l -> endswith(l, " notported"), kl)                            # no row is refused any more (ATOM1)
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing

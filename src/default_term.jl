@@ -210,16 +210,21 @@ blob_rank(t::Term)::Int =
 function sym_text(t::Term)::String
     t.kind === SYM || throw(ArgumentError("sym_text: not a symbol"))
     t.blob && throw(ArgumentError("sym_text: a blob has no text"))
-    return String(t.name)
+    return atom_unescape(String(t.name))              # the name holds no 0: ATOM1's escape
 end
 # An interned `Symbol` is never freed and its name is NUL-terminated after the header
-# (`jl_symbol_name`): the byte read in place, `0x00` for `''` (an atom holds no NUL: R1's known gap).
-# Allocation-free: the manifest's AllocCheck entry proves it.
+# (`jl_symbol_name`): the byte read in place, `0x00` for `''` (the terminator, as upstream's `stringAtom(a)[0]`).
+# An atom whose text starts with the character 0 is named 0xC0 0x80 (ATOM1's escape, `atom_escape`): that pair is 0x00.
+# (A name starting 0xC0 0x81 is the byte 0xC0 itself: it stays 0xC0.) Allocation-free: the manifest's AllocCheck entry proves it.
 function sym_first_byte(t::Term)::UInt8
     t.kind === SYM || throw(ArgumentError("sym_first_byte: not a symbol"))
     t.blob && throw(ArgumentError("sym_first_byte: a blob has no text"))
     s = t.name
-    return GC.@preserve s unsafe_load(Base.unsafe_convert(Ptr{UInt8}, s))
+    p = Base.unsafe_convert(Ptr{UInt8}, s)
+    b = GC.@preserve s unsafe_load(p)
+    b == 0xc0 || return b
+    b2 = GC.@preserve s unsafe_load(p, 2)             # the byte after the lead: the terminator when the name ends
+    return b2 == 0x80 ? 0x00 : b
 end
 is_nil(t::Term)::Bool = t.kind === SYM && t.reserved && t.name === NIL_NAME   # reserved ⇒ not a blob
 function is_pair(t::Term)::Bool
@@ -286,7 +291,8 @@ end
 The name of a [`SYM`](@ref) term. Not part of the term interface — the kernel never needs names —
 but a CLIENT of the default type does: printing, and recognising a functor without building one.
 Found by the standalone consumer (test/test_standalone_consumer.jl), which could not otherwise read a
-symbol through the public API.
+symbol through the public API. It is the NAME: for an atom holding the character 0 that is the escaped text
+([`atom_escape`](@ref)), not the text — [`sym_text`](@ref) answers the text.
 """
 function sym_name(t::Term)::Symbol
     t.blob && throw(ArgumentError("sym_name: a blob has no name (see blob_type)"))

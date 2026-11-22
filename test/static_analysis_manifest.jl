@@ -6310,6 +6310,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._sym_key, Tuple{Symbol}, true),
     (LK.compareAtoms, Tuple{Symbol, Symbol}, true),
     (LK.compareAtoms, Tuple{Symbol, Bool, Symbol, Bool}, true),
+    (LK._cmp_escaped, Tuple{Ptr{UInt8}, Ptr{UInt8}}, true),            # ATOM1: the order of two escaped names, in place
+    (LK._unescaped_byte, Tuple{Ptr{UInt8}, Int}, true),
+    (LK.atom_escape, Tuple{String}, false), (LK.atom_unescape, Tuple{String}, false),
     (LK.compareReservedSymbol, Tuple{Symbol, Symbol}, true),
     (LK._reserved_sym_key, Tuple{Symbol}, true),
     (LK._blob_key, Tuple{UInt64, Int}, true),

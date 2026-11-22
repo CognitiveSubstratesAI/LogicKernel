@@ -66,7 +66,7 @@ plain lowercase identifier, otherwise quoted — so the TEXT atom `'[]'` is writ
 reads the two apart. Every swipl differential writes symbols through this.
 """
 function lk_atom_text(t)::String
-    n = String(lk_name(t))
+    n = atom_unescape(String(lk_name(t)))                     # the TEXT: the name of an atom holding the character 0 is escaped (ATOM1)
     if is_reserved_symbol(t)
         is_nil(t) || error("lk_atom_text: no Prolog text for the reserved symbol $n")
         return "[]"

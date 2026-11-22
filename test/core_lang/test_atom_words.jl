@@ -6,9 +6,11 @@
 #   * a symbol above Latin-1 is a wide (`ucs_atom`) atom, read back unchanged;
 #   * other values still go to the value table (small integers too, until the instructions read
 #     words: building a term from `consInt` would allocate on every read);
-#   * an atom holding the character 0 cannot be a `Symbol`: planted by hand (no binding can make
-#     one yet — every atom in the engine comes from a symbol), its read raises
-#     `AtomNotRepresentableError` with the atom's code points (the L1 plan §2c; user, 2026-10-14);
+#   * an atom holding the character 0 (ATOM1: named by the escaped text, `atom_escape`) is an atom like
+#     any other: its word is the atom table's (the text, 3 characters, the 0 included), it reads back
+#     as the same symbol with the text `a\0b`; an atom planted by hand in the table with no symbol
+#     recorded (what the L1 plan §2c's `AtomNotRepresentableError` was for) is the internal error
+#     of every unrecorded word;
 #   * `Undo!` unbinds an atom-bound cell like any other;
 #   * the atom table is the DATABASE's (`GD->atoms`, before C6b: user, 2026-10-15): two engines on
 #     one database share their atom words — an atom one of them made is the same word in the other
@@ -82,19 +84,34 @@ end
     @test lk_eq(_aw_read(ld, y), lk_gnd(_AW, Int64(7)))
 end
 
-@testset "an atom holding the character 0 raises AtomNotRepresentableError on its read" begin
+@testset "an atom holding the character 0 is one atom: its word, its text, its symbol" begin
     ld = LK.PL_local_data{_AW}(LK.PL_global_data{_AW}())
-    x = LK.allocGlobalCells!(ld, 1)
-    a0b = LK.lookupAtom(ld.atoms, UInt8[0x61, 0x00, 0x62])      # 'a\0b', planted by hand
-    ld.gstack[x] = a0b
+    x, y = LK.allocGlobalCells!(ld, 1), LK.allocGlobalCells!(ld, 1)
+    nm = Symbol(LK.atom_escape("a\0b"))                          # the NAME: a Symbol holds no 0
+    @test !occursin('\0', String(nm))
+    _aw_bind!(ld, x, lk_sym(_AW, nm))
+    w = _aw_word(ld, x)
+    @test LK.isAtomW(w)
+    a = LK.atomValue(ld.atoms, w)                               # the atom table holds the text itself
+    @test a.length == 3 && a.name[1:3] == UInt8[0x61, 0x00, 0x62]
+    r = _aw_read(ld, x)
+    @test lk_eq(r, lk_sym(_AW, nm)) && LK.sym_text(r) == "a\0b"
+    _aw_bind!(ld, y, lk_sym(_AW, Symbol(LK.atom_escape("a\0b"))))
+    @test _aw_word(ld, y) == w                                  # one atom per text
+    @test LK.lookupAtom(ld.atoms, UInt8[0x61, 0x00, 0x62]) == w # the same word as the table's own lookup
+    @test LK.lookupAtom(ld.atoms, UInt8[0x61]) != w             # 'a' and 'a\0b' are two atoms
+    # an atom made in the table with no symbol recorded: the internal error, whatever its text
+    z = LK.allocGlobalCells!(ld, 1)
+    planted = LK.lookupAtom(ld.atoms, UInt8[0x61, 0x00, 0x63])
+    ld.gstack[z] = planted
     err = try
-        _aw_read(ld, x)
+        _aw_read(ld, z)
         nothing
     catch e
         e
     end
-    @test err isa LK.AtomNotRepresentableError && err.codes == UInt32[0x61, 0x00, 0x62]
-    ld.gstack[x] = UInt64(0)
+    @test err isa ErrorException && occursin("has no recorded symbol", err.msg)
+    ld.gstack[z] = UInt64(0)
 end
 
 @testset "Undo! unbinds an atom-bound cell" begin

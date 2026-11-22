@@ -106,23 +106,10 @@ function kernel_lines(
     return out
 end
 
-# KNOWN DIFFERENCE (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
-# character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"). t42 and t43
-# are t1 and t3 for the character 0 (char_code/2 makes that atom); swipl's answer is in the .out, the kernel's line is
-# `<row> notported`. They come after t0-t41, and a refused row ends one run (its ld is thrown away): the
-# rows after it are run again on a fresh engine, so no other row is lost.
+# ATOM1: swipl's atoms hold the character 0 and so do the kernel's now (a NUL atom's Symbol is the escaped text, see
+# `atom_escape`). t42 and t43 are t1 and t3 for the character 0 (char_code/2 makes that atom); the kernel's lines are
+# compared with swipl's (the .out) like every other row. The rows are named so the test can show they are not vacuous.
 const _CT_NUL_ROWS = ("t42", "t43")
-
-# `kernel_lines`, continued after every refused row on a fresh engine (the lines of the rows that follow)
-function kernel_lines_all(
-    ::Type{T}, path::String, names::Vector{String}
-)::Vector{String} where {T}
-    out = kernel_lines(T, path, names)
-    while length(out) - 1 < length(names) && endswith(out[end], " notported")
-        out = vcat(out, kernel_lines(T, path, names[(length(out)):end])[2:end])
-    end
-    return out
-end
 
 # the driver swipl runs to print its lines (the .out is its output)
 const DRIVER = raw"""
@@ -188,16 +175,11 @@ end
         _CT_NUL_ROWS
     )  # swipl answers for 0
 
-    kl = kernel_lines_all(_TL, _CT_PL, names)
+    kl = kernel_lines(_TL, _CT_PL, names)
     @test length(kl) == length(expected)
+    @test !any(l -> endswith(l, " notported"), kl)                            # no row is refused any more (ATOM1)
     for i in eachindex(kl)
-        row = i == 1 ? "ok" : names[i - 1]
-        if row in _CT_NUL_ROWS
-            @test kl[i] == row * " notported"                                 # the refusal, by name
-            @test_broken kl[i] == expected[i]                                 # swipl answers (the .out)
-        else
-            @test (i, kl[i]) == (i, expected[i])
-        end
+        @test (i, kl[i]) == (i, expected[i])                                  # including t42 and t43 (the character 0)
     end
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")

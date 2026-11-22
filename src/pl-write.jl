@@ -2288,7 +2288,7 @@ function pl_write_term3(
     attr = vals[19]
     priority = something(vals[20], 1200)::Int
     partial = something(vals[21], false)::Bool
-    spacing = vals[22] === nothing ? :standard : Symbol(sym_text(vals[22]::T))
+    spacing = vals[22] === nothing ? :standard : Symbol(sym_text(vals[22]::T))   # DIVERGES (ATOM1): ArgumentError for a NUL (known difference, architecture.md ## ATOM1)
     blobs = vals[23]
     cycles = something(vals[24], true)::Bool
     varnames = something(vals[25], 0)::Int

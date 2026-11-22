@@ -292,13 +292,18 @@ end
     return w
 end
 
-# ORIGINAL: the exception the L1 plan §2c names (user, 2026-10-14): an atom holding the character 0
-# cannot leave the engine as an interface symbol (a Julia `Symbol` cannot hold 0).
+# ORIGINAL: the exception the L1 plan §2c names (user, 2026-10-14): a text holding the character 0 was asked
+# for as an atom at a TEXT ENTRY POINT of the FLI (PL_new_atom_mbchars, PL_get_text_as_atom, PL_put_blob,
+# PL_unify_blob in src/pl-fli.jl) or in the QLF reader (`getAtom`, src/pl-qlf.jl). Since ATOM1 the engine's own
+# atoms hold the character 0 (`atom_escape`), so no engine path raises it any more; the entry points above
+# still refuse, as they did when the atom could not exist (INT-MERGE-20: ATOM1 deleted the struct, the line's
+# FLI and QLF code, written after ATOM1's base, still names it: restored, retiring those refusals is the
+# follow-up recorded in evidence/R2/int_merge1_handoff.md).
 """
     AtomNotRepresentableError(codes)
 
-An atom whose text holds the character 0 was asked for as an interface symbol, which cannot hold it
-(atoms stay `Symbol` at the boundary: user, 2026-10-14). `codes` are the atom's code points.
+A text holding the character 0 was refused as an atom at an FLI or QLF text entry point (see the comment above).
+`codes` are the text's code points.
 """
 struct AtomNotRepresentableError <: Exception
     codes::Vector{UInt32}
@@ -360,9 +365,10 @@ end
 
 # ORIGINAL: an atom word's interface symbol (L1b stage C3), from the DATABASE's store (C6b). Every
 # atom word that reaches a cell or a clause's code comes from `_atom_word!`, which records the
-# symbol, so a miss is an error: an atom holding the character 0 (planted: no binding can make one
-# yet — it raises `AtomNotRepresentableError`), or a broken invariant. The miss builds its error
-# inside the `throw`, so the read itself allocates nothing (`deRef` stays allocation-free).
+# symbol, so a miss is a broken invariant. An atom holding the character 0 is no exception since
+# ATOM1: its symbol is named by the escaped text (`atom_escape`), recorded like any other. The miss
+# builds its error inside the `throw`, so the read itself allocates nothing (`deRef` stays
+# allocation-free).
 "The interface symbol of the atom word `w`."
 function _atom_value(ld::PL_local_data{T}, w::word)::T where {T}
     v = atomSymbol(ld.atom_symbols, indexAtom(w))
@@ -371,15 +377,8 @@ function _atom_value(ld::PL_local_data{T}, w::word)::T where {T}
 end
 
 # ORIGINAL: the error of an atom word with no cached symbol (`_atom_value`).
-"`AtomNotRepresentableError` for an atom holding the character 0; else an internal error."
+"The internal error of an atom word with no recorded symbol."
 @noinline function _atom_value_error(ld::PL_local_data, w::word)::Exception
-    a = atomValue(ld.atoms, w)
-    codes = if a.type === ucs_atom
-        UInt32[reinterpret(UInt32, view(a.name, 1:(a.length)))...]
-    else
-        UInt32[a.name[j] for j in 1:(a.length)]
-    end
-    any(iszero, codes) && return AtomNotRepresentableError(codes)
     return ErrorException(
         "atom word $(repr(w)) has no recorded symbol: every atom word in a cell or a clause comes from _atom_word!"
     )

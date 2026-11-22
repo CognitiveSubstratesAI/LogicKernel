@@ -203,12 +203,12 @@ blob_handle(::AltTerm) = throw(ArgumentError("blob_handle: not a blob"))
 blob_rank(::AltTerm) = throw(ArgumentError("blob_rank: not a blob"))
 is_nil(::AltTerm) = false
 is_nil(t::AltRSym) = alt_name(t) === Symbol("[]")
-sym_text(t::Union{AltSym, AltRSym}) = String(alt_name(t))
+sym_text(t::Union{AltSym, AltRSym}) = LogicKernel.atom_unescape(String(alt_name(t)))   # ATOM1: the name is escaped
 sym_text(::AltBlob) = throw(ArgumentError("sym_text: a blob has no text"))
 sym_first_byte(::AltBlob) = throw(ArgumentError("sym_first_byte: a blob has no text"))
 # Through the decoded text, not in place (the reference type's way): it allocates, and must agree.
 function sym_first_byte(t::Union{AltSym, AltRSym})::UInt8
-    s = String(alt_name(t))
+    s = LogicKernel.atom_unescape(String(alt_name(t)))
     return isempty(s) ? 0x00 : codeunit(s, 1)
 end
 is_pair(::AltTerm) = false

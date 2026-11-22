@@ -195,11 +195,74 @@ function mk_expr end
 # is the second flagged SYM; it has NO text at all, so `sym_text`, `sym_first_byte` and the default
 # type's `sym_name` raise on it — a site that reads them asks [`is_blob`](@ref) first.
 
+# ORIGINAL (ATOM1; swipl's atoms hold the character 0, a Julia `Symbol` cannot): an atom whose text holds the character
+# 0 is named by the ESCAPED form of its text, a `Symbol` that holds no 0. The escape is per BYTE of the UTF-8 text
+# (so it is total and injective on every byte string): the byte 0x00 is the two bytes 0xC0 0x80, the byte 0xC0 (never in
+# valid UTF-8; the escape's own lead byte) is 0xC0 0x81, every other byte is itself. A text without either byte (every
+# atom of ordinary text) is its own name, so NO name changes for it. The escape sits behind the interface: `mk_sym`
+# takes the NAME, `sym_text` and `sym_first_byte` answer for the TEXT, and `sym_key` / `sym_hash` / the standard order
+# are functions of the NAME (the order is kept: `compareAtoms` reads the escaped bytes as the characters they stand for).
+"""
+    atom_escape(text::AbstractString) -> String
+
+The NAME of the text atom `text` (see [`mk_sym`](@ref)): `text` with each byte 0x00 written as 0xC0 0x80 and each
+byte 0xC0 as 0xC0 0x81, so a `Symbol` can hold it. `text` itself (no copy) when it holds neither byte.
+"""
+function atom_escape(text::AbstractString)::String
+    str = String(text)
+    cu = codeunits(str)
+    any(b -> b == 0x00 || b == 0xc0, cu) || return str
+    out = UInt8[]
+    sizehint!(out, length(cu) + 2)
+    for b in cu
+        if b == 0x00
+            push!(out, 0xc0, 0x80)
+        elseif b == 0xc0
+            push!(out, 0xc0, 0x81)
+        else
+            push!(out, b)
+        end
+    end
+    return String(out)
+end
+
+"""
+    atom_unescape(name::AbstractString) -> String
+
+The TEXT of the atom named `name` ([`atom_escape`](@ref)'s inverse): 0xC0 0x80 is the byte 0x00, 0xC0 0x81 the byte
+0xC0. `name` itself (no copy) when it holds no byte 0xC0. A 0xC0 followed by any other byte stays as it is.
+"""
+function atom_unescape(name::AbstractString)::String
+    str = String(name)
+    cu = codeunits(str)
+    findfirst(==(0xc0), cu) === nothing && return str
+    out = UInt8[]
+    sizehint!(out, length(cu))
+    i = 1
+    n = length(cu)
+    while i <= n
+        b = cu[i]
+        if b == 0xc0 && i < n && cu[i + 1] == 0x80
+            push!(out, 0x00)
+            i += 2
+        elseif b == 0xc0 && i < n && cu[i + 1] == 0x81
+            push!(out, 0xc0)
+            i += 2
+        else
+            push!(out, b)
+            i += 1
+        end
+    end
+    return String(out)
+end
+
 """
     mk_sym(T::Type, name::Symbol) -> T
 
 The TEXT atom `name`. `mk_sym(T, Symbol("[]"))` is the atom `'[]'`, NOT the empty list — that is
-[`mk_nil`](@ref).
+[`mk_nil`](@ref). `name` is the atom's NAME: its text, except that an atom holding the character 0 (which a `Symbol`
+cannot) is named by [`atom_escape`](@ref) of its text (`mk_sym(T, Symbol(atom_escape("a\\0b")))`); a text atom made by
+the kernel's reader or text builtins is always built so, and [`sym_text`](@ref) answers the unescaped text.
 """
 function mk_sym end
 
@@ -287,7 +350,8 @@ function blob_rank end
 The TEXT of the [`SYM`](@ref) `t` (pl-atom.c, an atom's `name`, decoded): `"foo"` for `foo`,
 `"[]"` for SWI-7's `[]` and for the text atom `'[]'` alike — the two differ by their blob type
 ([`is_reserved_symbol`](@ref)), not by their text (user, 2026-10-06, Q-AR7). The reader, the writer
-and `charCode` need it (R1).
+and `charCode` need it (R1). The text may hold the character 0: the NAME is escaped ([`atom_escape`](@ref)),
+the text is not (ATOM1).
 """
 function sym_text end
 
@@ -296,7 +360,8 @@ function sym_text end
 
 The FIRST BYTE of the [`SYM`](@ref) `t`'s text, UTF-8 (pl-atom.c, `stringAtom(a)[0]`): `0x24` for
 `'\$foo'`, `0x5b` for `[]` and `'[]'` alike (their text is one), `0xc3` for `'é'`, and `0x00` for the
-empty atom `''` — the C string's terminator, which upstream reads there. It reads the byte IN PLACE:
+empty atom `''` — the C string's terminator, which upstream reads there — and for an atom whose text STARTS with the
+character 0 (its name starts 0xC0 0x80, [`atom_escape`](@ref)). It reads the byte IN PLACE:
 allocation-free on the reference type, where [`sym_text`](@ref) builds a `String` (D-0140, 2026-10-24:
 pl-wam.c `call_internal_det_foreign` tests a predicate name's first byte on every setup and cleanup
 goal, twice per findall/3). Its judge in the conformance suite is the host name's first code unit.

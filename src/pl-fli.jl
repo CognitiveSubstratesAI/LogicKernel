@@ -989,7 +989,7 @@ end
 
 # PORT: pl-fli.c uncachedCodeToAtom
 # DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` from the
-# character (so a code 0 is refused as in every atom: `NotPortedError`); upstream's `lookupAtom` of the one byte
+# character (a code 0 gives the escaped atom of ATOM1, as in every atom); upstream's `lookupAtom` of the one byte
 # (a code below 256) or its UCS-atom blob (`lookupBlob`, `put_wchar`) are one symbol of the character here.
 "The one-character atom of the code `chrcode`, made afresh (pl-fli.c)."
 function uncachedCodeToAtom(::Type{T}, chrcode::Int)::T where {T}
@@ -999,7 +999,8 @@ end
 # PORT: pl-fli.c codeToAtom
 # DIVERGES: no `GD->atoms.for_code` cache of the atoms of the codes below 2^15 (see `cleanupCodeToAtom`): a
 # symbol is its text and costs no table lookup, so the page/entry branch is `uncachedCodeToAtom` itself, the
-# same atom as the cache would hand back. `EOF` (-1) is `end_of_file`.
+# same atom as the cache would hand back (the code 0 is the atom whose NAME is the escape `atom_escape("\0")`,
+# ATOM1; its text is the one character 0). `EOF` (-1) is `end_of_file`.
 "The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
 function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
     chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
