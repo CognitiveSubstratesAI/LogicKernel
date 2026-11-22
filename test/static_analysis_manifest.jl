@@ -2601,7 +2601,7 @@ function _manifest_index(T)
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # WRAPPERS-2 — pl-srcfile.c: $set_source_files/1, $clause_from_source/4, $flush_predicate/1, $flushed_predicate/1
-        (LK.flush_procedure!, Tuple{LK.SourceFile{T}, LK.Procedure{T}}, false),
+        (LK.flush_procedure!, Tuple{GD, LD, LK.SourceFile{T}, PR}, false),
         (LK.flush_predicate, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false) for f in (

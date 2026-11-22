@@ -15,7 +15,7 @@
 # `fix_det`, `fix_ssu`, `check_ssu`). Since R2 LB6b-2 `startConsult` reloads a file consulted before and `endConsult` /
 # `'$fixup_reconsult'/1` finish it (`endReconsult` with `delete_old_predicates`, `delete_pending_clauses`, `end_reconsult_proc`,
 # `fix_module`, `registerReloadModule`, and `reconsultFinalizePredicate!` in src/pl-proc.jl); `unloadFile` is below; the locks and
-# `flush_procedure` (`'$flush_predicate'/1`) are not here. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
+# `flush_procedure!` (`'$flush_predicate'/1`, WRAPPERS-2) is below. Since R2 LB2 the `$source_file…`/`$start_consult`/`$end_consult` predicates are here (below).
 
 # PORT: pl-srcfile.c GEN_RELOAD
 # (swipl-devel cbf4e189, src/pl-srcfile.c:892-896)
@@ -1328,12 +1328,31 @@ function pl_clause_from_source4_va(
 end
 
 # PORT: pl-srcfile.c flush_procedure as flush_procedure!
-# DIVERGES: a source file has no reload context here (`startConsult` refuses a reconsult), so there is nothing to
-# finalize: true. The reload arm is `NotPortedError`, for a file whose `reload` a white-box row sets.
-"Finalize the definition of `proc` with respect to the file `sf` being reloaded (pl-srcfile.c)."
-function flush_procedure!(sf::SourceFile{T}, proc::Procedure{T})::Bool where {T}
-    sf.reload === nothing && return true
-    throw(NotPortedError{T}(sf.name, "flushing a predicate while its file is reloaded", "LB6b"))
+# (swipl-devel 18168e62, src/pl-srcfile.c:1662-1685)
+# DIVERGES: the database and the local data are arguments (as for `end_reconsult_proc`, whose per-procedure sequence the first arm repeats); the
+# reload's procedure table is an `IdDict` (`get` for `lookupHTablePP`); no `GET_LD`.
+"Finalize the definition of `proc` with respect to the file `sf` being reloaded (pl-srcfile.c); true, also without a reload."
+function flush_procedure!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}, proc::Procedure{T}
+)::Bool where {T}
+    reload = sf.reload
+    if reload !== nothing
+        r = get(reload.procedures, proc, nothing)
+        if r !== nothing
+            if (r.flags & (P_NEW | P_NO_CLAUSES)) == 0
+                def = proc.definition
+
+                delete_pending_clauses(gd, ld, sf, def, r)
+                fix_attributes(gd, sf, def, r)
+                reconsultFinalizePredicate!(gd, ld, reload, def, r)
+            end
+        else
+            delete_old_predicate(gd, ld, sf, proc)
+            reloadContext(gd, ld, sf, proc)
+        end
+    end
+
+    return true
 end
 
 # PORT: pl-srcfile.c flush_predicate
@@ -1347,7 +1366,7 @@ function flush_predicate(ld::PL_local_data{T}, pred::term_t)::Bool where {T}
     name, arity, mi = get_functor(gd, ld, pred, ld.modules_source, 0, GF_PROCEDURE)
     if arity >= 0
         proc = isCurrentProcedure(sym_key(name), arity, gd.modules[mi])
-        proc === nothing || (rc = flush_procedure!(sf, proc))
+        proc === nothing || (rc = flush_procedure!(gd, ld, sf, proc))
     end
     releaseSourceFile(sf)
     return rc
@@ -1381,7 +1400,7 @@ function pl_flushed_predicate1_va(
     proc === nothing && return FFALSE
     ReadingSource(ld) || return isDefinedProcedure(gd, proc) ? FTRUE : FFALSE
     sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}
-    flush_procedure!(sf, proc)
+    flush_procedure!(gd, ld, sf, proc)
     rc = isDefinedProcedure(gd, proc)
     releaseSourceFile(sf)
     return rc ? FTRUE : FFALSE

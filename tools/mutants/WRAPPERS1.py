@@ -16,7 +16,7 @@
 # and `|` pair, `if false` next to a branch); failure arms of calls that cannot fail (`return false` -> `true` after PL_put_integer/PL_cons_list, `return true`
 # of ensureGlobalSpace); trivial kills (a tuple index 1 -> 0 or 2 -> 3 breaks every call); the duplicate-key arm of PL_put_dict (rows WR1-303, -306, -312, -313:
 # unreachable, the keys are distinct) and the `tag === nothing` arm (WR1-284: PL_put_dict is only called with a tag); over-allocation (WR1-273, -274, -278) and a leaked
-# mark (WR1-306): not observable by an answer; `flush_procedure!`'s reload arm (WR1-217: unreachable until LB6b); arity-0 flush (WR1-228, -229) and a second
+# mark (WR1-306): not observable by an answer; arity-0 flush (WR1-228, -229) and a second
 # loaded file in `$clause_from_source` (WR1-163, -164, -169): NO test row reaches them, a white-box row (WRAPPERS-3 plan) is the gap, not these mutants.
 T = ["test/core_lang/test_index_preds_swipl.jl", "test/db/test_boot_image_swipl.jl", "test/core_lang/test_dict_preds_swipl.jl", "test/core_lang/test_index_words.jl"]
 TS = ["test/core_lang/test_index_preds_swipl.jl", "test/db/test_boot_image_swipl.jl", "test/db/test_source_file_swipl.jl", "test/files/test_load_swipl.jl"]
@@ -515,7 +515,7 @@ MUTANTS = [
       'proc === nothing |',
       'proc !== nothing |', file=S, targets=TS),
     m("WR1-232 stmt: `proc === nothing || (rc = flush_procedure...` -> `nothing` (aimed by ipdf_fp2)",
-      'proc === nothing || (rc = flush_procedure!(sf, proc))',
+      'proc === nothing || (rc = flush_procedure!(gd, ld, sf, proc))',
       'nothing', file=S, targets=TS),
     m("WR1-233 stmt: `releaseSourceFile(sf)` -> `nothing` (aimed by ipdf_fp2)",
       '    end\n    releaseSourceFile(sf)',
@@ -559,9 +559,11 @@ MUTANTS = [
       '    ReadingSource(ld) || return isDefinedProcedure(gd, proc) ? FTRUE : FFALSE\n    sf = lookupSourceFile(gd, ld.read_source.file::T, false)::SourceFile{T}', file=S, targets=TS,
       equivalent='src/pl-srcfile.jl pl_flushed_predicate1_va: the file being read was entered by $start_consult, so lookupSourceFile finds it and `create` is never used'),
     m("WR1-253 stmt: `flush_procedure!(sf, proc)` -> `nothing` (aimed by ipfl01)",
-      '    sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}\n    flush_procedure!(sf, proc)',
+      '    sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}\n    flush_procedure!(gd, ld, sf, proc)',
       '    sf = lookupSourceFile(gd, ld.read_source.file::T, true)::SourceFile{T}\n    nothing', file=S, targets=TS,
-      equivalent='src/pl-srcfile.jl pl_flushed_predicate1_va: flush_procedure! has no effect for a file without reload context (src/pl-srcfile.jl flush_procedure! returns true at its first line) and its result is ignored'),
+      # INT-MERGE-12: no longer EQUIVALENT: flush_procedure! has its reload arm (pl-srcfile.c:1662-1685), reached when `$flushed_predicate/1` runs while its file is reloaded.
+      # It needs a test row that reconsults a file and calls `$flushed_predicate` mid-file (the WRAPPERS-3 white-box plan); until then it is a SURVIVOR to kill.
+      ),
     m("WR1-254 stmt: `releaseSourceFile(sf)` -> `nothing` (aimed by ipfl01)",
       '    rc = isDefinedProcedure(gd, proc)\n    releaseSourceFile(sf)',
       '    rc = isDefinedProcedure(gd, proc)\n    nothing', file=S, targets=TS,

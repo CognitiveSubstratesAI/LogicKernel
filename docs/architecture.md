@@ -8670,7 +8670,7 @@ pl-global.h:892-899 (`LD->reload`). Plan and rulings: evidence/LB6/plan.md and h
 - **LB6b-2 (the reload is live; source ported blind, rows test/db/test_reload_swipl.jl, mutants tools/mutants/LB6B2.py).** `startConsult(gd, ld, sf)` calls `startReconsultFile` on a second consult; `endConsult` and
   `'$fixup_reconsult'/1` call `endReconsult` (`delete_old_predicates`, `end_reconsult_proc` with `delete_pending_clauses`, `fix_attributes`, `reconsultFinalizePredicate!` (src/pl-proc.jl), `fix_module`,
   the clause GC, the delayed events); `declareModule` takes `registerReloadModule` instead of abolishing when the file is reloaded; `exportProcedureSource` records the export in the reload. The `untable` event of a
-  reloaded `'$tabled'/2` clause comes from `delete_old_predicate`/`delete_pending_clauses` (`untable_definition_clauses`, `untable_from_clause`). Left: `flush_procedure` (`'$flush_predicate'/1`), `destroySourceFile`,
+  reloaded `'$tabled'/2` clause comes from `delete_old_predicate`/`delete_pending_clauses` (`untable_definition_clauses`, `untable_from_clause`). `flush_procedure!` (`'$flush_predicate'/1`, `'$flushed_predicate'/1`; WRAPPERS-2) runs the same per-procedure sequence mid-file, or `delete_old_predicate` + `reloadContext` for a procedure the reload has not seen. Left: `destroySourceFile`,
   breakpoints of a deleted clause (DBG1). DIVERGES: the reload's procedures and modules are identity tables, so the order the ends are visited in (event order only) is Julia's.
 - **DIVERGES (each in a comment at its site):**
   - *representation, owner TH1:* `gd.reload_generation` (a field of `PL_global_data`) stands in for `LD->reload.generation` and is its ONLY copy (audit D-0416 item 3; the local data has
