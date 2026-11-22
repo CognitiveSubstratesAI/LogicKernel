@@ -617,6 +617,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # (`recorded_state`, pl-incl.jl).
 # Since lane F (pl-prof.c): `profile` (`LD->profile`: the profiler state; src/pl-incl.jl `ld_profile`), placed after `statistics` as pl-global.h does.
 # Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).
+# Since ENC1 (flags `encoding`, `unicode_atoms`): `encoding` (`LD->encoding`) and `unicode_atoms` (`LD->unicode_atoms`), appended last.
 # Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
@@ -807,6 +808,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
     undo_running::Int                                           # undo.running: undo goals are running (TX1e)
     coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
+    encoding::IOENC                                             # encoding: the default text encoding, flag `encoding` (pl-global.h; ENC1 flags)
+    unicode_atoms::Sunicode_atoms_t                             # unicode_atoms: the default atom-content policy, flag `unicode_atoms` (ENC1 flags)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -934,7 +937,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
         UInt64[],                               # undo.scheduled: none (TX1e)
         0,                                      # undo.running: no undo goal runs (TX1e)
-        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
+        ld_coverage{T}(),                       # coverage: no data, not active (pl-global.c: zero)
+        ENC_UTF8,                               # encoding: DIVERGES, upstream's initEncoding (init_locale) is lazy; the kernel's text is UTF-8 (pl-ctype.jl)
+        S_UATOMS_ACCEPT                         # unicode_atoms: the flag's default `accept` (pl-prologflag.c:2684)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
