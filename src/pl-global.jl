@@ -910,6 +910,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # `'$quasi_quotation'(Ptr, Start, Len)` holds a pointer to the read data; Julia keeps no object in a word, so the pointer is `objectid(rd)` and
 # this vector is where `$qq_open` finds the data again, only while `parse_quasi_quotations` runs the library.
 # Since MISS1: `debugstatus_leashing` and `debugstatus_visible` (`$leash/2`, `$visible/2`; initTracer's port mask), appended after `debugstatus_showContext`.
+# Since FLI-API16: `fli_SP_state` (`LD->fli.SP_state`, pl-global.h; `SP_set_state`, `SP_get_state`: src/pl-fli.jl), placed after `bags`: upstream's `fli` struct follows `bags` (pl-global.h:820-830), so the positional constructor `_bare_local_data` has its entry there.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -1041,6 +1042,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     prolog_flag_write_attributes::Int                           # prolog_flag.write_attributes
     prolog_flag_incomparable_error::Bool                        # prolog_flag.incomparable_error (FL1: `setIncomparable`)
     bags::Vector{findall_bag{T}}                                # bags: findall/3's (pl-bag.c)
+    fli_SP_state::Int                                           # fli.SP_state: the Quintus/SICStus state `SP_set_state` stores (FLI-API16)
     between_states::foreign_state_pool{between_state}           # (between/3's REDO_PTR states, NF1)
     retract_contexts::foreign_state_pool{retract_context{T}}    # (retract/1's REDO_PTR states, NF2)
     retract_ctxbuf::retract_context{T}                          # (retract/1's C-stack `ctxbuf`)
@@ -1184,6 +1186,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0x040,                                  # write_attributes: ignore (PL_WRT_ATTVAR_IGNORE)
         false,                                  # incomparable_error: the flag `incomparable` is `arbitrary`
         findall_bag{T}[],                       # bags: none (pl-bag.c: `LD->bags` is NULL)
+        0,                                      # fli.SP_state: 0 (pl-global.c: zero; FLI-API16)
         foreign_state_pool{between_state}(),    # between/3's states: none
         foreign_state_pool{retract_context{T}}(),   # retract/1's states: none
         retract_context{T}(),                   # retract/1's first-call buffer

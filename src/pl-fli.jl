@@ -302,6 +302,14 @@ function PL_put_atom(ld::PL_local_data{T}, t::term_t, a::T)::Bool where {T}
     return true
 end
 
+# PORT: pl-fli.c PL_put_bool
+# DIVERGES: the atom `true` or `false` as a symbol of the term type, put as `PL_put_atom` puts it.
+"Make term reference `t` hold the atom `true` if `val`, else `false` (pl-fli.c)."
+function PL_put_bool(ld::PL_local_data{T}, t::term_t, val::Bool)::Bool where {T}
+    PL_put_atom(ld, t, mk_sym(T, val ? Symbol("true") : Symbol("false")))  # PL_put_atom(t, val ? ATOM_true : ATOM_false)
+    return true
+end
+
 # PORT: pl-fli.c PL_put_nil
 "Make term reference `l` hold `[]` (pl-fli.c)."
 PL_put_nil(ld::PL_local_data{T}, l::term_t) where {T} = PL_put_atom(ld, l, mk_nil(T))
@@ -315,6 +323,14 @@ PL_put_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_intptr(
 # PORT: pl-fli.c PL_put_integer
 "Make term reference `t` hold the integer `i` (pl-fli.c)."
 PL_put_integer(ld::PL_local_data{T}, t::term_t, i::Int) where {T} = PL_put_int64(ld, t, i)
+
+# PORT: pl-fli.c PL_put_pointer
+# DIVERGES: a pointer is a `UInt` (a `uintptr_t`); on a 64-bit platform `pointerToInt` is the identity
+# (pl-inline.h), so the integer put is the pointer's bits as an `int64_t`.
+"Make term reference `t` hold the pointer `ptr` as an integer (pl-fli.c)."
+function PL_put_pointer(ld::PL_local_data{T}, t::term_t, ptr::UInt)::Bool where {T}
+    return PL_put_int64(ld, t, reinterpret(Int, ptr))       # PL_put_int64(t, (int64_t)pointerToInt(ptr))
+end
 
 # PORT: pl-fli.c PL_put_float
 # DIVERGES: the float's word as `PL_put_intptr` lays an integer (`mk_gnd`); a NaN is the canonical one
@@ -332,6 +348,30 @@ end
 "Make term reference `t` hold the number `n` (pl-fli.c)."
 function _PL_put_number(ld::PL_local_data{T}, t::term_t, n::number)::Bool where {T}
     setSlotValue!(ld, t + 1, put_number(T, n))      # setHandle(t, consInt(…)) / put_number(&w, n)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_functor
+# DIVERGES: the functor is a functor WORD (as `PL_cons_functor`'s); no global space to ensure, so it
+# cannot fail. The arguments are the unbound cells `_alloc_compound!` lays out (`setVar`).
+"Make term reference `t` hold a new term of functor word `f` whose arguments are fresh variables — the atom `f` names if its arity is 0 (pl-fli.c)."
+function PL_put_functor(ld::PL_local_data{T}, t::term_t, f::word)::Bool where {T}
+    arity = arityFunctor(ld.functors, f)                    # size_t arity = arityFunctor(f)
+    if arity == 0
+        ld.slots[t + 1] = nameFunctor(ld.functors, f)       # setHandle(t, nameFunctor(f))
+    else
+        a = _alloc_compound!(ld, f, arity)                  # a = allocGlobal(1+arity); *a++ = f; setVar(*a++)…
+        ld.slots[t + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL)     # setHandle(t, consCompound(a))
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list
+# DIVERGES: no global space to ensure, so it cannot fail.
+"Make term reference `l` hold a new list cell whose head and tail are fresh variables (pl-fli.c)."
+function PL_put_list(ld::PL_local_data{T}, l::term_t)::Bool where {T}
+    a = _alloc_compound!(ld, ld.functor_dot2, 2)            # a = allocGlobal(3); *a++ = FUNCTOR_dot2; setVar(*a++)…
+    ld.slots[l + 1] = consPtr(a, TAG_COMPOUND | STG_GLOBAL) # setHandle(l, consCompound(a))
     return true
 end
 
@@ -661,6 +701,27 @@ end
 "The `intptr_t` term reference `t` holds, or `nothing` (pl-fli.c)."
 PL_get_intptr(ld::PL_local_data{T}, t::term_t) where {T} = PL_get_long(ld, t)
 
+# PORT: pl-fli.c PL_get_uintptr
+# DIVERGES: returns the value, or `nothing`, where upstream writes it through `i`; `size_t` is 64 bits
+# (the `SIZEOF_VOIDP < 8` range check is not taken).
+"The non-negative integer term reference `t` holds, as an unsigned `size_t`, or `nothing` (pl-fli.c)."
+function PL_get_uintptr(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt} where {T}
+    v = PL_get_int64(ld, t)                                 # PL_get_int64(t, &val)
+    (v === nothing || v < 0) && return nothing              # val < 0
+    return UInt(v)                                          # *i = (size_t)val
+end
+
+# PORT: pl-fli.c PL_get_pointer
+# DIVERGES: returns the pointer as a `UInt` (a `uintptr_t`), or `nothing`, where upstream writes a
+# `void *` through `ptr`; on a 64-bit platform `intToPointer` is the identity (pl-inline.h), so a
+# negative `int64_t` is the pointer of its bits.
+"The pointer the integer term reference `t` holds, as a `UInt`, or `nothing` (pl-fli.c)."
+function PL_get_pointer(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt} where {T}
+    p = PL_get_int64(ld, t)                                 # PL_get_int64(t, &p)
+    p === nothing && return nothing
+    return reinterpret(UInt, p)                             # *ptr = intToPointer((uintptr_t)p)
+end
+
 # PORT: pl-fli.c PL_get_bool
 # DIVERGES: as `PL_get_stdbool` (upstream writes an `int`).
 "The Boolean term reference `t` holds, or `nothing` (pl-fli.c)."
@@ -707,6 +768,41 @@ function _PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bo
         return true
     end
     return false
+end
+
+# PORT: pl-fli.c PL_get_arg_sz as PL_get_arg
+# DIVERGES: a compound whose head is no symbol has every child as an argument (see `_PL_get_arg`);
+# the negative `int` index of the `PL_get_arg` wrapper (a fatal error upstream) is no argument here; the
+# `valid_term_t`/`valid_user_term_t` checks are upstream's `O_VALIDATE_API` and are not made.
+"Put argument `index` (from 1) of the compound term reference `t` holds into `a`; false if `t` is no compound or has no such argument (pl-fli.c)."
+function PL_get_arg(ld::PL_local_data{T}, index::Int, t::term_t, a::term_t)::Bool where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && _is_gcompound(w) && index > 0        # isTerm(w) && index > 0
+        q = valPtr(w)
+        if index <= arityFunctor(ld.functors, ld.gstack[q]) # --index < arity
+            _slot_from_cell!(ld, a + 1, q + index)          # setHandle(a, linkValI(&f->arguments[index]))
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_get_compound_name_arity_sz as PL_get_compound_name_arity
+# DIVERGES: returns `(name, arity)`, or `nothing`, where upstream writes them through pointers; a
+# compound whose head is no symbol is named `$expr`, as `PL_get_name_arity` names it.
+"The name and arity of the compound term reference `t` holds — an atom is none — or `nothing` (pl-fli.c)."
+function PL_get_compound_name_arity(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Tuple{T, Int}} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && _is_gcompound(w)                     # isTerm(w)
+        f = ld.gstack[valPtr(w)]                            # fd = valueFunctor(functorTerm(w))
+        name = nameFunctor(ld.functors, f)
+        arity = arityFunctor(ld.functors, f)
+        name == ld.atom_dexpr && return (mk_sym(T, Symbol("\$expr")), arity)
+        return (_atom_value(ld, name), arity)
+    end
+    return nothing
 end
 
 # PORT: pl-fli.h PL_is_functor
@@ -851,15 +947,32 @@ function charCode(w)::Int
     return -1
 end
 
+# PORT: pl-fli.c uncachedCodeToAtom
+# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` from the
+# character (so a code 0 is refused as in every atom: `NotPortedError`); upstream's `lookupAtom` of the one byte
+# (a code below 256) or its UCS-atom blob (`lookupBlob`, `put_wchar`) are one symbol of the character here.
+"The one-character atom of the code `chrcode`, made afresh (pl-fli.c)."
+function uncachedCodeToAtom(::Type{T}, chrcode::Int)::T where {T}
+    return _atom_from_text(T, string(Char(chrcode)))
+end
+
 # PORT: pl-fli.c codeToAtom
-# DIVERGES: the atom is a term of the term type `T` (an atom is a symbol), built by `_atom_from_text` (so a
-# code 0 is refused as in every atom: `NotPortedError`); no `GD->atoms.for_code` cache of the atoms of the
-# codes below 2^15 — a symbol is its text. `EOF` (-1) is `end_of_file`.
+# DIVERGES: no `GD->atoms.for_code` cache of the atoms of the codes below 2^15 (see `cleanupCodeToAtom`): a
+# symbol is its text and costs no table lookup, so the page/entry branch is `uncachedCodeToAtom` itself, the
+# same atom as the cache would hand back. `EOF` (-1) is `end_of_file`.
 "The one-character atom of the code `chrcode`; `end_of_file` for -1 (pl-fli.c)."
 function codeToAtom(::Type{T}, chrcode::Int)::T where {T}
     chrcode == -1 && return mk_sym(T, :end_of_file)         # EOF: ATOM_end_of_file
     @assert chrcode >= 0
-    return _atom_from_text(T, string(Char(chrcode)))
+    return uncachedCodeToAtom(T, chrcode)                   # the cache miss and the codes from 2^15 on
+end
+
+# PORT: pl-fli.c cleanupCodeToAtom
+# DIVERGES: a no-op, as there is no `GD->atoms.for_code` page table to free (the cache of `codeToAtom` is
+# absent: a representation difference, `codeToAtom` gives the same atom with or without it).
+"Free the cache of the atoms of character codes; nothing here, there is none (pl-fli.c)."
+function cleanupCodeToAtom()::Nothing
+    return nothing
 end
 
 # PORT: pl-fli.c PL_strip_module_ex
@@ -1663,6 +1776,17 @@ end
 PL_unify_int64(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
     unify_int64_ex(ld, t, i, false)
 
+# PORT: pl-fli.c PL_unify_int64_ex
+"Unify the term `t` references with the integer `i`; a non-integer is a type error (pl-fli.c)."
+PL_unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
+    unify_int64_ex(ld, t, i, true)
+
+# PORT: pl-fli.c PL_unify_pointer
+# DIVERGES: a pointer is a `UInt` (see `PL_put_pointer`).
+"Unify the term `t` references with the pointer `ptr` as an integer (pl-fli.c)."
+PL_unify_pointer(ld::PL_local_data{T}, t::term_t, ptr::UInt) where {T} =
+    unify_int64_ex(ld, t, reinterpret(Int, ptr), false)      # unify_int64_ex(t, (int64_t)pointerToInt(ptr), false)
+
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
 # number is read into a `number` (`PL_get_number`), not from the word.
@@ -1852,8 +1976,9 @@ function PL_call_predicate(
 end
 
 # PORT: pl-fli.c ucs_atom
-# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); NOT PORTED: its hooks
-# (`compareUCSAtom`, `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`).
+# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); its hooks (`compareUCSAtom`,
+# `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`) are the functions of FLI-API group D below,
+# not slots of this value.
 "The blob type of a wide-character text atom (pl-fli.c): unique, text, `pl_wchar_t` code points."
 const ucs_atom = PL_blob_t(PL_BLOB_UNIQUE | PL_BLOB_TEXT | PL_BLOB_WCHAR, "ucs_text")
 
@@ -1868,6 +1993,1300 @@ function lookupUCSAtom(
     bytes = Vector{UInt8}(reinterpret(UInt8, Vector{UInt32}(view(s, 1:len))))
     return first(lookupBlob(atoms, bytes, len * sizeof(UInt32), ucs_atom))
 end
+
+# PORT: pl-text.h PL_chars_t
+# DIVERGES: the text is a byte vector in its encoding — ISO Latin-1, or UTF-8 (ENC_UTF8) where
+# upstream holds `pl_wchar_t` (ENC_WCHAR), as the term interface's texts are UTF-8; no storage
+# class (`storage`, `buf`: Julia's GC owns the bytes). A UTF-8 text is NEVER canonical, as
+# upstream's never is: `PL_canonicalise_text` recodes it to ISO Latin-1 or `ENC_WCHAR` (since L1b
+# stage A, an `ENC_WCHAR` text is upstream's buffer: native 4-byte `pl_wchar_t`s).
+"A text and its encoding (pl-text.h)."
+mutable struct PL_chars_t
+    text::Vector{UInt8}             # the text
+    length::Int                     # its length, in characters
+    encoding::IOENC                 # how it is encoded
+    canonical::Bool                 # true: ENC_ISO_LATIN_1 or ENC_WCHAR, never ENC_UTF8
+end
+
+# ── FLI-API group 2 (pl-fli.c): atoms and functors ───────────────────────────────────────────────
+# ORIGINAL (FLI-API): the interface symbol of the text atom `w`, recorded in the database's store (what
+# `_atom_word!` does for a symbol it is given); the symbol is made of the characters of `text`.
+"The interface symbol of the text atom `w` made of `text`, recorded in `ld.atom_symbols` where it is new."
+function _record_atom_symbol!(
+    ld::PL_local_data{T}, w::word, text::PL_chars_t
+)::T where {T}
+    v = mk_sym(T, Symbol(_text_string(text)))
+    i = indexAtom(w)
+    atomSymbol(ld.atom_symbols, i) === nothing && setAtomSymbol!(ld.atom_symbols, i, v)
+    return v
+end
+
+# ORIGINAL (FLI-API): `strlen` of a byte vector: the bytes before the first 0, or all of them.
+_c_strlen(s::AbstractVector{UInt8})::Int = something(findfirst(iszero, s), length(s) + 1) - 1
+
+# PORT: pl-fli.c PL_new_atom
+# DIVERGES: the local data is an argument (upstream's `lookupAtom` on `GD->atoms`, after `initAtoms` where the
+# system is not initialised: the kernel's atom table exists); the text is a byte vector, cut at the first 0 as
+# `strlen` cuts it, and the answer is the atom's interface symbol.
+"The text atom of the ISO Latin-1 bytes of `s` before the first 0, created if new; its symbol (pl-fli.c)."
+function PL_new_atom(ld::PL_local_data{T}, s::AbstractVector{UInt8})::T where {T}
+    n = _c_strlen(s)
+    bytes = Vector{UInt8}(view(s, 1:n))
+    w = lookupAtom(ld.atoms, bytes, n)                      # lookupAtom(s, strlen(s))
+    return _record_atom_symbol!(ld, w, PL_chars_t(bytes, n, ENC_ISO_LATIN_1, true))
+end
+
+# PORT: pl-fli.c PL_new_atom_mbchars
+# DIVERGES: the local data is an argument; the text is a byte vector, `len` -1 for `strlen`; `nothing` for
+# upstream's 0 (a text that cannot be canonicalised). A text holding the character 0 raises
+# `AtomNotRepresentableError` before the atom is made (a symbol cannot hold it, `_atom_word!`). `REP_MB`
+# (`ENC_ANSI`) is refused by name.
+"The text atom of `len` bytes of `s` in the encoding `flags` names (`REP_UTF8`, else ISO Latin-1); its symbol (pl-fli.c)."
+function PL_new_atom_mbchars(
+    ld::PL_local_data{T}, flags::Int, len::Int, s::AbstractVector{UInt8}
+)::Union{Nothing, T} where {T}
+    len == -1 && (len = _c_strlen(s))
+    if (flags & REP_UTF8) == 0 && (flags & REP_MB) != 0
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_new_atom_mbchars with REP_MB", "ENC_ANSI is unwritten"
+            )
+        )
+    end
+    enc = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1
+    text = PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, enc, false)
+    PL_canonicalise_text(text) == 1 || return nothing       # textToAtom(&text) == 0
+    codes = if text.encoding === ENC_WCHAR
+        UInt32[reinterpret(UInt32, view(text.text, 1:(4 * text.length)))...]
+    else
+        UInt32[text.text[j] for j in 1:(text.length)]
+    end
+    any(iszero, codes) && throw(AtomNotRepresentableError(codes))
+    w = textToAtom(ld.atoms, text)                          # a = textToAtom(&text)
+    w == 0 && return nothing
+    return _record_atom_symbol!(ld, w, text)
+end
+
+# PORT: pl-fli.c PL_new_functor_sz
+# DIVERGES: the local data is an argument (`DECL_LD`); the name is an interface symbol, the answer a functor word.
+"The functor word of the name `f` and `arity` (pl-fli.c `PL_new_functor_sz`), created if new."
+PL_new_functor_sz(ld::PL_local_data{T}, f::T, arity::Int)::word where {T} =
+    lookupFunctorDef(ld.functors, _atom_word!(ld, f), arity)
+
+# PORT: pl-fli.c PL_new_functor
+# DIVERGES: the local data is an argument; the name is an interface symbol; upstream's `fatalError("Arity out of
+# range: %d")` for a negative arity is `error` (a negative `int`, or one past `typemax(Int32)`, is out of range).
+"The functor word of the name `f` and the `int` `arity` (pl-fli.c); an arity out of `int`'s range is an error."
+function PL_new_functor(ld::PL_local_data{T}, f::T, arity::Int)::word where {T}
+    (arity < 0 || arity > typemax(Int32)) && error("Arity out of range: $arity")
+    return PL_new_functor_sz(ld, f, arity)
+end
+
+# PORT: pl-fli.c PL_functor_name
+# DIVERGES: the local data is an argument; the name is its interface symbol (the `$expr` atom as
+# `PL_get_compound_name_arity` names it); no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1).
+"The name, an atom, of functor word `f` (pl-fli.c)."
+function PL_functor_name(ld::PL_local_data{T}, f::word)::T where {T}
+    name = nameFunctor(ld.functors, f)
+    name == ld.atom_dexpr && return mk_sym(T, Symbol("\$expr"))
+    return _atom_value(ld, name)
+end
+
+# PORT: pl-fli.c PL_functor_arity_sz as PL_functor_arity
+# PORT: pl-fli.c PL_functor_arity
+# DIVERGES: the local data is an argument; no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1); `VALID_INT_ARITY`'s
+# `fatalError` is `error`.
+"The arity of functor word `f`, as an `int` (pl-fli.c `PL_functor_arity`; `PL_functor_arity_sz` is the same here)."
+function PL_functor_arity(ld::PL_local_data, f::word)::Int
+    arity = arityFunctor(ld.functors, f)
+    (arity < 0 || arity > typemax(Int32)) && error("Arity out of range: $arity")  # VALID_INT_ARITY(arity)
+    return arity
+end
+
+# PORT: pl-fli.c get_atom_ptr_text
+# DIVERGES: the atom is an argument and the answer the text or `nothing` (upstream returns a Bool and fills a `PL_chars_t`
+# it is given); the text is a COPY of the atom's name (upstream points into the atom): a wide text atom is
+# `ENC_WCHAR` with its length in code points, any other text atom ISO Latin-1; both canonical.
+"The canonical text of the text atom `a`, `nothing` for a non-textual atom (pl-fli.c `get_atom_ptr_text`)."
+function get_atom_ptr_text(a::atom)::Union{Nothing, PL_chars_t}
+    (a.type.flags & PL_BLOB_TEXT) == 0 && return nothing    # isoff(a->type, PL_BLOB_TEXT): non-textual atom
+    bytes = Vector{UInt8}(view(a.name, 1:(a.length)))
+    if a.type === ucs_atom
+        return PL_chars_t(bytes, a.length ÷ sizeof(UInt32), ENC_WCHAR, true)
+    end
+    return PL_chars_t(bytes, a.length, ENC_ISO_LATIN_1, true)
+end
+
+# ── FLI-API group D (pl-fli.c): the wide-atom blob type's hooks and the text of atoms, strings and values ────────────
+
+# PORT: pl-fli.c blob_write_usc_atom
+# DIVERGES: the wide atom's text and the write options are the arguments (upstream's `atom_t a` and the `void *context`
+# that holds the options); the options are untyped here, as pl-write.jl is included after this file.
+"Write the wide atom with text `name` under `options` (`writeUCSAtom`): 1 for success, -1 for failure (pl-fli.c)."
+function blob_write_usc_atom(name::String, options)::Int
+    rc = writeUCSAtom(name, options)
+    return rc ? 1 : -1
+end
+
+# PORT: pl-fli.c initUCSAtoms
+# DIVERGES: the atom table is an argument (upstream registers the blob type once per process); registering is idempotent.
+"Register the blob type of wide text atoms `ucs_atom` in the atom table `atoms` (pl-fli.c)."
+function initUCSAtoms(atoms::atoms_t)::Nothing
+    PL_register_blob_type(atoms, ucs_atom)
+    return nothing
+end
+
+# PORT: pl-fli.c isUCSAtom
+# DIVERGES: the atom is a value (`atom`, src/pl-atom.jl), its type compared by identity.
+"Is the atom `a` of the blob type of wide text atoms (pl-fli.c)?"
+isUCSAtom(a::atom)::Bool = a.type === ucs_atom
+
+# PORT: pl-fli.c get_atom_text
+# DIVERGES: the atom table is an argument and the answer is the text or `nothing` (upstream returns a Bool and fills
+# the `PL_chars_t` it is given).
+"The canonical text of the atom with word `w`, `nothing` for a non-textual atom (pl-fli.c)."
+get_atom_text(atoms::atoms_t, w::word)::Union{Nothing, PL_chars_t} =
+    get_atom_ptr_text(atomValue(atoms, w))
+
+# PORT: pl-fli.c get_string_text
+# DIVERGES: the argument is the interface value of the string (upstream's string word); the answer is the text (upstream
+# fills a `PL_chars_t` and returns true); the bytes are a COPY (no `PL_CHARS_PROLOG_STACK`); a value that is no string
+# raises an error (upstream reads a cell it checked the caller for).
+"The canonical text of the string `s`: ISO Latin-1 where every character is below 0x100, else `ENC_WCHAR` (pl-fli.c)."
+function get_string_text(s::T)::PL_chars_t where {T}
+    isString(s) || error("get_string_text: not a string")
+    codes = UInt32[UInt32(c) for c in string_value(s)]
+    if all(c -> c < 0x00000100, codes)                        # isBString(w)
+        return PL_chars_t(UInt8[UInt8(c) for c in codes], length(codes), ENC_ISO_LATIN_1, true)
+    end
+    return PL_chars_t(Vector{UInt8}(reinterpret(UInt8, codes)), length(codes), ENC_WCHAR, true)
+end
+
+# PORT: pl-fli.c compareUCSAtom
+# DIVERGES: the atoms are values (`atom`); `get_wchar` is the plain dereference of a 32-bit `pl_wchar_t`.
+"The order of two wide text atoms by code point, then by length in bytes: -1, 0 or 1 (pl-fli.c)."
+function compareUCSAtom(a1::atom, a2::atom)::Int
+    s1 = reinterpret(UInt32, view(a1.name, 1:(a1.length)))
+    s2 = reinterpret(UInt32, view(a2.name, 1:(a2.length)))
+    for i in 1:min(length(s1), length(s2))
+        c1, c2 = Int(s1[i]), Int(s2[i])
+        c1 != c2 && return Int(c1 > c2) - Int(c1 < c2)                  # SCALAR_TO_CMP(c1, c2)
+    end
+    return Int(a1.length > a2.length) - Int(a1.length < a2.length)      # SCALAR_TO_CMP(a1->length, a2->length)
+end
+
+# PORT: pl-fli.c saveUCSAtom
+# DIVERGES: refused by name; owner LD2 (the QLF reader and writer, src/pl-qlf.jl, are refused by name: `qlfPutStringW`).
+"Refused by name: the QLF writer of a wide atom (pl-fli.c `saveUCSAtom`), owner LD2."
+function saveUCSAtom(a::atom, fd)::Bool
+    throw(
+        NotPortedError{Nothing}(
+            nothing, "saveUCSAtom (qlfPutStringW)", "LD2: the QLF writer is refused by name"
+        )
+    )
+end
+
+# PORT: pl-fli.c loadUCSAtom
+# DIVERGES: refused by name; owner LD2 (`qlfGetStringW`, as `saveUCSAtom`).
+"Refused by name: the QLF reader of a wide atom (pl-fli.c `loadUCSAtom`), owner LD2."
+function loadUCSAtom(fd)::UInt64
+    throw(
+        NotPortedError{Nothing}(
+            nothing, "loadUCSAtom (qlfGetStringW)", "LD2: the QLF reader is refused by name"
+        )
+    )
+end
+
+# PORT: pl-fli.c is_text_value
+# DIVERGES: the value's type is the argument (upstream reads it from the `pl_value_t`: `PL_get_arg_values` is owner
+# FLI1); `flags` is the `UInt32` of the `CVT_*` bits.
+"Is a value of type `type` (`PL_STRING`, `PL_ATOM`, `PL_INTEGER`, `PL_RATIONAL`) converted as text under `flags` (pl-fli.c)?"
+function is_text_value(type::Int, flags::UInt32)::Bool
+    if type == PL_STRING
+        return true
+    elseif type == PL_ATOM
+        return (flags & CVT_ATOM) != 0
+    elseif type == PL_INTEGER || type == PL_RATIONAL
+        return (flags & CVT_FLOAT) == 0
+    end
+    return false
+end
+
+# PORT: pl-fli.c get_value_text
+# DIVERGES: the local data is an argument; the answer is `(bytes, length)` or `nothing` (upstream writes `v->value.s` and
+# `v->length` of a `pl_value_t`, owner FLI1); no `PL_save_text` (Julia's GC owns the vector); as `PL_mb_text`, only
+# `REP_UTF8` is written: any other target raises `NotPortedError`.
+"The bytes and their count of the text the term reference `tmp` holds, converted by `cvt` where `flags` set the rest (pl-fli.c)."
+function get_value_text(
+    ld::PL_local_data{T}, tmp::term_t, cvt::UInt32, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    flags = (flags & ~CVT_MASK) | cvt
+    text = PL_get_text(ld, tmp, flags)
+    text === nothing && return nothing
+    PL_mb_text(text, flags) || return nothing
+    bytes = Vector{UInt8}(text.text)
+    return (bytes, length(bytes))
+end
+
+# ORIGINAL (FLI-API): the code points of the canonical text `text`, in order.
+"The code points of the canonical text `text`."
+function _fli_text_codes(text::PL_chars_t)::Vector{UInt32}
+    if text.encoding === ENC_WCHAR
+        return UInt32[reinterpret(UInt32, view(text.text, 1:(4 * text.length)))...]
+    end
+    return UInt32[text.text[j] for j in 1:(text.length)]
+end
+
+# ORIGINAL (FLI-API): whether the canonical text `text` holds the character 0 (an atom's symbol cannot).
+"Does the canonical text `text` hold a 0 character?"
+_fli_text_has_nul(text::PL_chars_t)::Bool = any(iszero, _fli_text_codes(text))
+
+# PORT: pl-fli.c PL_get_text_as_atom
+# DIVERGES: the local data is an argument; the answer is the atom's interface symbol or `nothing` (upstream writes `*a`);
+# a text with the character 0 raises `AtomNotRepresentableError` (a symbol cannot hold it); no `PL_STRINGS_MARK`, no
+# `valid_term_t` check.
+"The atom term reference `t` holds, else the atom of the text it holds as `flags` (`CVT_*`) allow, else `nothing` (pl-fli.c)."
+function PL_get_text_as_atom(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32
+)::Union{Nothing, T} where {T}
+    a = PL_get_atom(ld, t)
+    a === nothing || return a                               # isAtom(w): *a = (atom_t) w
+    text = PL_get_text(ld, t, flags)
+    text === nothing && return nothing
+    PL_canonicalise_text(text) == 1 || return nothing       # textToAtom canonicalises first, 0 where it cannot
+    _fli_text_has_nul(text) && throw(AtomNotRepresentableError(_fli_text_codes(text)))
+    w = textToAtom(ld.atoms, text)                          # ta = textToAtom(&text)
+    w == 0 && return nothing
+    return _record_atom_symbol!(ld, w, text)
+end
+
+# PORT: pl-fli.c PL_atom_chars
+# DIVERGES: the local data is an argument; a COPY of the atom's name bytes (upstream's `stringAtom(a)`, a pointer
+# to them) without the terminating 0; no `valid_atom_t` check (`O_VALIDATE_API`, owner FLI1).
+"The bytes of the name of atom `a` (pl-fli.c): ISO Latin-1 for a text atom, 4 bytes a code point for a wide one."
+function PL_atom_chars(ld::PL_local_data{T}, a::T)::Vector{UInt8} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    return Vector{UInt8}(view(x.name, 1:(x.length)))
+end
+
+# PORT: pl-fli.c PL_atom_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's NULL), the bytes a COPY.
+"The name bytes and their count of atom `a`, `nothing` for a wide text atom (pl-fli.c)."
+function PL_atom_nchars(
+    ld::PL_local_data{T}, a::T
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    x.type === ucs_atom && return nothing
+    return (Vector{UInt8}(view(x.name, 1:(x.length))), x.length)
+end
+
+# PORT: pl-fli.c PL_atom_wchars
+# DIVERGES: the local data is an argument; `(chars, length)` or `nothing` (upstream's NULL), the code points a COPY
+# with the terminating 0 (upstream's stack buffer for a narrow atom, its own name for a wide one); the length is
+# in code points.
+"The code points and their count of text atom `a`, `nothing` for a non-textual atom (pl-fli.c)."
+function PL_atom_wchars(
+    ld::PL_local_data{T}, a::T
+)::Union{Nothing, Tuple{Vector{UInt32}, Int}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))
+    if x.type === ucs_atom
+        n = x.length ÷ sizeof(UInt32)
+        ws = Vector{UInt32}(reinterpret(UInt32, Vector{UInt8}(view(x.name, 1:(x.length)))))
+        push!(ws, UInt32(0))
+        return (ws, n)
+    elseif (x.type.flags & PL_BLOB_TEXT) != 0
+        ws = UInt32[x.name[j] for j in 1:(x.length)]        # addBuffer(b, *s, wchar_t)
+        push!(ws, UInt32(0))                                # addBuffer(b, 0, wchar_t)
+        return (ws, x.length)
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_get_atom_chars
+# DIVERGES: the local data is an argument; the name bytes (a COPY) or `nothing`, where upstream writes a pointer
+# through `s`; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The name bytes of the text atom term reference `t` holds, else `nothing` (pl-fli.c): a reserved symbol is none."
+function PL_get_atom_chars(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Vector{UInt8}} where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    if k == DU_WORD && isAtomW(w)                           # isAtom(w)
+        a = atomValue(ld.atoms, w)
+        if (a.type.flags & PL_BLOB_TEXT) != 0               # ison(a->type, PL_BLOB_TEXT)
+            return Vector{UInt8}(view(a.name, 1:(a.length)))
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-fli.c PL_atom_mbchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the bytes a COPY,
+# `PL_save_text` and the `PL_STRINGS_MARK` buffers are unwritten. A target other than `REP_UTF8` is refused
+# (`PL_mb_text` refuses it by name, `NotPortedError`). With `CVT_EXCEPTION`, a non-textual atom raises
+# `type_error(atom, A)`.
+"The text of atom `a` recoded as `flags` asks (`REP_UTF8`): the bytes and their count, `nothing` for no text (pl-fli.c)."
+function PL_atom_mbchars(
+    ld::PL_local_data{T}, a::T, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    text = get_atom_ptr_text(atomValue(ld.atoms, _atom_word!(ld, a)))
+    if text === nothing
+        if (flags & CVT_EXCEPTION) != 0
+            t = PL_new_term_ref(ld)
+            PL_put_atom(ld, t, a)
+            PL_type_error(ld, "atom", t)
+        end
+        return nothing
+    end
+    PL_mb_text(text, flags) || return nothing
+    return (text.text, text.length)
+end
+
+# ── FLI-API group E1 (pl-fli.c): putting and unifying text — atoms, strings, code and character lists ──────────────
+
+# ORIGINAL (FLI-API): the `PL_chars_t` of `len` bytes of `s` that `PL_put_chars` makes from its
+# `flags` (pl-fli.c: the `text.encoding = REP_UTF8 ? ENC_UTF8 : REP_MB ? ENC_ANSI : ENC_ISO_LATIN_1` lines), and the
+# `flags` left once the representation bits are cleared. `len` -1 is `strlen`; `REP_MB` (`ENC_ANSI`) is refused by name.
+"The not yet canonical text of `len` bytes of `s` as `flags` name its encoding, and the type bits of `flags` (pl-fli.c)."
+function _fli_chars_text(
+    flags::Int, len::Int, s::AbstractVector{UInt8}, who::String
+)::Tuple{PL_chars_t, Int}
+    if len == -1                                            # if ( len == (size_t)-1 )
+        len = _c_strlen(s)                                  #   len = strlen(s)
+    end
+    if (flags & REP_MB) != 0 && (flags & REP_UTF8) == 0
+        throw(NotPortedError{Nothing}(nothing, "$who with REP_MB", "ENC_ANSI is unwritten"))
+    end
+    enc = (flags & REP_UTF8) == 0 ? ENC_ISO_LATIN_1 : ENC_UTF8
+    text = PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, enc, false)
+    return (text, flags & ~(REP_UTF8 | REP_MB | REP_ISO_LATIN_1))  # flags &= ~(REP_UTF8|REP_MB|REP_ISO_LATIN_1)
+end
+
+# ORIGINAL (FLI-API): the string of `len` ISO Latin-1 bytes of `s` (upstream's `globalString(len, s)`); `len` -1 is
+# `strlen`, as in `PL_new_atom_mbchars`.
+"The `String` of `len` ISO Latin-1 bytes of `s`, `len` -1 for the bytes before the first 0 (pl-fli.c `globalString`)."
+function _latin1_string(len::Int, s::AbstractVector{UInt8})::String
+    if len == -1
+        len = _c_strlen(s)
+    end
+    return _text_string(PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, ENC_ISO_LATIN_1, true))
+end
+
+# PORT: pl-fli.c PL_put_atom_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0 (`PL_new_atom`); no
+# `PL_unregister_atom` (no atom GC).
+"Make term reference `t` hold the atom of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+function PL_put_atom_chars(
+    ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}
+)::Bool where {T}
+    PL_put_atom(ld, t, PL_new_atom(ld, s))                  # a = lookupAtom(s, strlen(s)); setHandle(t, a)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_atom_nchars
+# DIVERGES (forced): `len` -1 is `strlen` (upstream passes the -1 to `lookupAtom`, then fixes `len` after the
+# fact); a 0 byte inside the text raises `AtomNotRepresentableError` (a symbol cannot hold it, `PL_new_atom_mbchars`);
+# no `PL_unregister_atom`.
+"Make term reference `t` hold the atom of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+function PL_put_atom_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    a = PL_new_atom_mbchars(ld, 0, len, s)                  # a = lookupAtom(s, len)
+    a === nothing && return false
+    return PL_put_atom(ld, t, a)                            # setHandle(t, a)
+end
+
+# PORT: pl-fli.c PL_put_string_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0; the string is a grounded
+# value of the term type, stored as `PL_put_float` stores one (`setSlotValue!`); it cannot fail (no `globalString`
+# allocation to refuse).
+"Make term reference `t` hold the string of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+function PL_put_string_chars(
+    ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}
+)::Bool where {T}
+    setSlotValue!(ld, t + 1, mk_gnd(T, _latin1_string(-1, s)))     # w = globalString(strlen(s), s); setHandle(t, w)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_string_nchars
+# DIVERGES: as `PL_put_string_chars`; `len` -1 is `strlen`.
+"Make term reference `t` hold the string of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+function PL_put_string_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    setSlotValue!(ld, t + 1, mk_gnd(T, _latin1_string(len, s)))    # w = globalString(len, s); setHandle(t, w)
+    return true
+end
+
+# PORT: pl-fli.c PL_put_chars
+# DIVERGES: the local data is an argument; the text is a byte vector, `len` -1 for `strlen`; `REP_MB` (`ENC_ANSI`) is
+# refused by name (`NotPortedError`); an atom is the term type's symbol of the text (`_atom_from_text`, so a text
+# holding the character 0 is refused as in every atom), a string its grounded value (`setSlotValue!`); the error of a
+# text that cannot be canonicalised is raised for a string as `PL_unify_text` raises it; an unknown type is `error`
+# (upstream's `assert(0)`); no `PL_free_text`.
+"Make term reference `t` hold the text of `len` bytes of `s` as `flags` say: a type (`PL_ATOM`, `PL_STRING`, `PL_CODE_LIST`, `PL_CHAR_LIST`) and a representation (pl-fli.c)."
+function PL_put_chars(
+    ld::PL_local_data{T}, t::term_t, flags::Int, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
+    text, flags = _fli_chars_text(flags, len, s, "PL_put_chars")
+    if flags == PL_ATOM
+        PL_canonicalise_text(text) == 1 || return false     # w = textToAtom(&text): 0
+        return PL_put_atom(ld, t, _atom_from_text(T, _text_string(text)))
+    elseif flags == PL_STRING
+        rc = PL_canonicalise_text(text)                     # w = textToString(&text)
+        rc == 1 || return text_error(ld, rc)
+        setSlotValue!(ld, t + 1, mk_gnd(T, _text_string(text)))
+        return true
+    elseif flags == PL_CODE_LIST || flags == PL_CHAR_LIST
+        PL_put_variable(ld, t)
+        return PL_unify_text(ld, t, 0, text, flags)         # rc = PL_unify_text(t, 0, &text, flags)
+    else
+        error("PL_put_chars: unknown type $flags")          # assert(0)
+    end
+end
+
+# PORT: pl-fli.c PL_put_list_ncodes
+# DIVERGES: the local data is an argument; the codes are the bytes of a vector (`*chars & 0xff`); no global space to
+# ensure, so it cannot fail; the cells are laid out as `PL_cons_list_v` lays them.
+"Make term reference `t` hold the list of the `len` bytes of `chars`, as integer codes (pl-fli.c)."
+function PL_put_list_ncodes(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if len == 0
+        ld.slots[t + 1] = ld.atom_nil_w                     # setHandle(t, ATOM_nil)
+    else
+        p = allocGlobalCells!(ld, 3 * len)                  # p = allocGlobal(len*3)
+        ld.slots[t + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)    # setHandle(t, consCompound(p))
+        for i in 0:(len - 1)
+            q = p + 3 * i
+            ld.gstack[q] = ld.functor_dot2                  # *p++ = FUNCTOR_dot2
+            ld.gstack[q + 1] = consInt(Int64(chars[i + 1])) # *p++ = consInt(*chars & 0xff)
+            ld.gstack[q + 2] =
+                i + 1 < len ? consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL) : ld.atom_nil_w    # *p = consCompound(p+1); p[-1] = ATOM_nil
+        end
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list_codes
+"Make term reference `t` hold the list of the bytes of `chars` before the first 0, as integer codes (pl-fli.c)."
+PL_put_list_codes(ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_put_list_ncodes(ld, t, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_put_list_nchars
+# DIVERGES: as `PL_put_list_ncodes`; each head is the one-character atom of the byte (`codeToAtom`, which refuses
+# the byte 0 by name).
+"Make term reference `t` hold the list of the `len` bytes of `chars`, as one-character atoms (pl-fli.c)."
+function PL_put_list_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if len == 0
+        ld.slots[t + 1] = ld.atom_nil_w                     # setHandle(t, ATOM_nil)
+    else
+        p = allocGlobalCells!(ld, 3 * len)                  # p = allocGlobal(len*3)
+        ld.slots[t + 1] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)    # setHandle(t, consCompound(p))
+        for i in 0:(len - 1)
+            q = p + 3 * i
+            ld.gstack[q] = ld.functor_dot2                  # *p++ = FUNCTOR_dot2
+            ld.gstack[q + 1] = _atom_word!(ld, codeToAtom(T, Int(chars[i + 1])))   # *p++ = codeToAtom(*chars & 0xff)
+            ld.gstack[q + 2] =
+                i + 1 < len ? consPtr(q + 3, TAG_COMPOUND | STG_GLOBAL) : ld.atom_nil_w
+        end
+    end
+    return true
+end
+
+# PORT: pl-fli.c PL_put_list_chars
+"Make term reference `t` hold the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
+PL_put_list_chars(ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_put_list_nchars(ld, t, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_unify_atom_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0 (`PL_new_atom`); no
+# `PL_unregister_atom`.
+"Unify the term `t` references with the atom of the ISO Latin-1 bytes of `chars` before the first 0 (pl-fli.c)."
+PL_unify_atom_chars(
+    ld::PL_local_data{T}, t::term_t, chars::AbstractVector{UInt8}
+) where {T} = PL_unify_atom(ld, t, PL_new_atom(ld, chars))
+
+# PORT: pl-fli.c PL_unify_atom_nchars
+# DIVERGES: as `PL_put_atom_nchars` (`len` -1 is `strlen`; a 0 byte inside the text raises
+# `AtomNotRepresentableError`).
+"Unify the term `t` references with the atom of `len` ISO Latin-1 bytes of `chars` (pl-fli.c)."
+function PL_unify_atom_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    a = PL_new_atom_mbchars(ld, 0, len, chars)              # a = lookupAtom(chars, len)
+    a === nothing && return false
+    return PL_unify_atom(ld, t, a)
+end
+
+# PORT: pl-fli.c PL_unify_string_chars
+# DIVERGES: the local data is an argument; the text is a byte vector cut at the first 0; the string is a grounded
+# value of the term type (`PL_unify_atomic`); no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Unify the term `t` references with the string of the ISO Latin-1 bytes of `s` before the first 0 (pl-fli.c)."
+PL_unify_string_chars(ld::PL_local_data{T}, t::term_t, s::AbstractVector{UInt8}) where {T} =
+    PL_unify_atomic(ld, t, mk_gnd(T, _latin1_string(-1, s)))
+
+# PORT: pl-fli.c PL_unify_string_nchars
+# DIVERGES: as `PL_unify_string_chars`; `len` -1 is `strlen`.
+"Unify the term `t` references with the string of `len` ISO Latin-1 bytes of `s` (pl-fli.c)."
+PL_unify_string_nchars(
+    ld::PL_local_data{T}, t::term_t, len::Int, s::AbstractVector{UInt8}
+) where {T} = PL_unify_atomic(ld, t, mk_gnd(T, _latin1_string(len, s)))
+
+# PORT: pl-fli.c PL_unify_list_ncodes
+# DIVERGES: the local data is an argument; the codes are the bytes of a vector (`*chars & 0xff`); the early `false`
+# leaves the term references it made, as upstream does.
+"Unify the term `l` references with the list of the `len` bytes of `chars`, as integer codes (pl-fli.c)."
+function PL_unify_list_ncodes(
+    ld::PL_local_data{T}, l::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if PL_is_variable(ld, l)
+        tmp = PL_new_term_ref(ld)
+        return PL_put_list_ncodes(ld, tmp, len, chars) && PL_unify(ld, l, tmp)
+    else
+        head = PL_new_term_ref(ld)
+        t = PL_copy_term_ref(ld, l)
+        for i in 1:len
+            (PL_unify_list(ld, t, head, t) && PL_unify_integer(ld, head, Int(chars[i]))) ||
+                return false
+        end
+        rval = PL_unify_nil(ld, t)
+        PL_reset_term_refs(ld, head)
+        return rval
+    end
+end
+
+# PORT: pl-fli.c PL_unify_list_codes
+"Unify the term `l` references with the list of the bytes of `chars` before the first 0, as integer codes (pl-fli.c)."
+PL_unify_list_codes(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_unify_list_ncodes(ld, l, _c_strlen(chars), chars)
+
+# PORT: pl-fli.c PL_unify_list_nchars
+# DIVERGES: as `PL_unify_list_ncodes`; each element is the one-character atom of the byte (`codeToAtom`, which
+# refuses the byte 0 by name).
+"Unify the term `l` references with the list of the `len` bytes of `chars`, as one-character atoms (pl-fli.c)."
+function PL_unify_list_nchars(
+    ld::PL_local_data{T}, l::term_t, len::Int, chars::AbstractVector{UInt8}
+)::Bool where {T}
+    if PL_is_variable(ld, l)
+        tmp = PL_new_term_ref(ld)
+        return PL_put_list_nchars(ld, tmp, len, chars) && PL_unify(ld, l, tmp)
+    else
+        head = PL_new_term_ref(ld)
+        t = PL_copy_term_ref(ld, l)
+        for i in 1:len
+            (
+                PL_unify_list(ld, t, head, t) &&
+                PL_unify_atom(ld, head, codeToAtom(T, Int(chars[i])))
+            ) || return false
+        end
+        rval = PL_unify_nil(ld, t)
+        PL_reset_term_refs(ld, head)
+        return rval
+    end
+end
+
+# PORT: pl-fli.c PL_unify_list_chars
+"Unify the term `l` references with the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
+PL_unify_list_chars(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+    PL_unify_list_nchars(ld, l, _c_strlen(chars), chars)
+
+# ── FLI-API group E2 (pl-fli.c): getting text, the cvt_i family, the code-to-atom cache (PL_get_wchars, PL_unify_wchars
+# and PL_unify_wchars_diff are wip/clib-uri's) ─────────────────────────────────────────────────────────────────────
+
+# ORIGINAL (FLI-API): the sp_encoding of pl-fli.c (`static int sp_encoding = REP_UTF8`).
+const _sp_encoding = Ref{UInt32}(REP_UTF8)
+
+# PORT: pl-fli.c PL_cvt_encoding
+# DIVERGES: the value is a `UInt32`, the type of the `REP_*` constants; `PL_cvt_set_encoding` (the only writer of
+# `sp_encoding`) is unwritten, so it is `REP_UTF8`.
+"The encoding the `PL_cvt_i_string` family of conversions uses, `REP_UTF8` (pl-fli.c)."
+PL_cvt_encoding()::UInt32 = _sp_encoding[]
+
+# PORT: pl-fli.c _PL_cvt_i_char
+# DIVERGES: the local data is an argument; returns the byte stored through `c` (a `UInt8`, the C `char`'s bit
+# pattern: the caller reads it signed or unsigned), `nothing` after the error where upstream returns false;
+# `PL_get_text` gives the kernel's non-canonical UTF-8 text, so it is canonicalised first (upstream's is canonical
+# already: an `ENC_ISO_LATIN_1` text of one character); no `PL_STRINGS_MARK`; `PL_representation_error` is
+# `PL_error(..., ERR_REPRESENTATION, ...)`; no `valid_term_t` check.
+"The C `char` of the term reference `p`: an integer in `mn..mx` or a one-character ISO Latin-1 text, else `nothing` after an error (pl-fli.c)."
+function _PL_cvt_i_char(
+    ld::PL_local_data{T}, p::term_t, mn::Int, mx::Int
+)::Union{Nothing, UInt8} where {T}
+    i = PL_get_integer(ld, p)
+    if i !== nothing && i >= mn && i <= mx
+        return UInt8(i & 0xff)                              # *c = (char)i
+    end
+    txt = PL_get_text(ld, p, CVT_ATOM | CVT_STRING | CVT_LIST)
+    if txt !== nothing && PL_canonicalise_text(txt) == 1 && txt.length == 1 &&
+       txt.encoding === ENC_ISO_LATIN_1
+        return txt.text[1]                                  # *c = txt.text.t[0]
+    end
+    if PL_is_integer(ld, p)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, mn < 0 ? :char : :uchar))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), p)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_cvt_i_schar
+# DIVERGES: returns the `Int8`, or `nothing` after the error, where upstream writes it through `c`.
+"The C `signed char` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function PL_cvt_i_schar(ld::PL_local_data{T}, p::term_t)::Union{Nothing, Int8} where {T}
+    c = _PL_cvt_i_char(ld, p, -128, 127)                    # SCHAR_MIN, SCHAR_MAX
+    c === nothing && return nothing
+    return reinterpret(Int8, c)                             # (char *)c written as a signed char
+end
+
+# PORT: pl-fli.c PL_cvt_i_uchar
+# DIVERGES: returns the `UInt8`, or `nothing` after the error, where upstream writes it through `c`.
+"The C `unsigned char` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function PL_cvt_i_uchar(ld::PL_local_data{T}, p::term_t)::Union{Nothing, UInt8} where {T}
+    return _PL_cvt_i_char(ld, p, 0, 255)                    # 0, UCHAR_MAX
+end
+
+# PORT: pl-fli.c _PL_cvt_i_short
+# DIVERGES: returns the value `i` (the `short` or `unsigned short` it narrows to, as the range `mn..mx` says), or
+# `nothing` after the error, where upstream writes it through `s`; no `valid_term_t` check.
+"The C `short` (or `unsigned short`, by `mn`) term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+function _PL_cvt_i_short(
+    ld::PL_local_data{T}, p::term_t, mn::Int, mx::Int
+)::Union{Nothing, Int} where {T}
+    i = PL_get_integer(ld, p)
+    if i !== nothing && i >= mn && i <= mx
+        return i                                            # *s = (short)i
+    end
+    if PL_is_integer(ld, p)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, mn < 0 ? :short : :ushort))
+        return nothing
+    end
+    PL_error(ld, ERR_TYPE, mk_sym(T, :integer), p)
+    return nothing
+end
+
+# PORT: pl-fli.c PL_cvt_i_int64
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`.
+"The `int64_t` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+PL_cvt_i_int64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64_ex(ld, p)
+
+# ORIGINAL (FLI-API): pl-error.c `PL_get_uint64_ex`, which the kernel has not written; as `PL_get_size_ex` above it
+# with the range of `uint64_t`: a non-negative integer up to `typemax(UInt64)`, else the error.
+"The `uint64_t` term reference `t` holds, or `nothing` after `domain_error(not_less_than_zero, T)`, `representation_error(uint64_t)` or `type_error(integer, T)`."
+function _fli_get_uint64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt64} where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))
+    if k != DU_VALUE                                        # a variable, an atom, a compound
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+        return nothing
+    end
+    p = isTaggedIntW(x) ? nothing : _value_term(ld, x)
+    v = if p === nothing
+        BigInt(valInt(x))
+    elseif isInteger(p)
+        integer_is_int64(p) ? BigInt(int64_value(p)) : bigint_value(p)
+    else
+        PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
+        return nothing
+    end
+    if v < 0
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+        return nothing
+    elseif v > typemax(UInt64)
+        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint64_t))
+        return nothing
+    end
+    return UInt64(v)
+end
+
+# PORT: pl-fli.c PL_cvt_i_uint64
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`;
+# `PL_get_uint64_ex` is `_fli_get_uint64_ex`.
+"The `uint64_t` term reference `p` holds, or `nothing` after an error (pl-fli.c)."
+PL_cvt_i_uint64(ld::PL_local_data{T}, p::term_t) where {T} = _fli_get_uint64_ex(ld, p)
+
+# PORT: pl-fli.c PL_get_list_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the ISO Latin-1 bytes a
+# fresh vector without the terminating 0; `flags` has no `BUF_MALLOC` to read (no buffer ring); no
+# `valid_term_t` check.
+"The ISO Latin-1 bytes and their count of the code or character list `l` holds, else `nothing` (pl-fli.c)."
+function PL_get_list_nchars(
+    ld::PL_local_data{T}, l::term_t, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    b, _ = codes_or_chars_to_buffer(ld, l, false)           # codes_or_chars_to_buffer(l, flags, false, &result)
+    b === nothing && return nothing
+    return (b, length(b))                                   # len = entriesBuffer(b, char)
+end
+
+# PORT: pl-fli.c PL_get_nchars
+# DIVERGES: the local data is an argument; `(bytes, length)` or `nothing` (upstream's false), the bytes a fresh
+# vector without the terminating 0, the length in bytes (`PL_mb_text` leaves the length of a UTF-8 text the kernel
+# gives in characters: the byte count is the bytes' own); no `PL_save_text`, no `PL_STRINGS_MARK_IF_MALLOC`; as
+# `PL_mb_text`, only `REP_UTF8` is written: any other target of `flags` raises `NotPortedError`; no `valid_term_t` check.
+"The bytes and their count of the text term reference `l` holds as `flags` (`CVT_*`, `REP_UTF8`) say, else `nothing` (pl-fli.c)."
+function PL_get_nchars(
+    ld::PL_local_data{T}, l::term_t, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    text = PL_get_text(ld, l, flags)
+    text === nothing && return nothing
+    PL_mb_text(text, flags) || return nothing
+    return (Vector{UInt8}(text.text), length(text.text))    # *length = text.length, in bytes
+end
+
+# PORT: pl-fli.c PL_get_chars
+# DIVERGES: returns the bytes (the length is not asked for: `PL_get_nchars(t, NULL, s, flags)`), or `nothing`.
+"The bytes of the text term reference `t` holds as `flags` say, else `nothing` (pl-fli.c)."
+function PL_get_chars(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32
+)::Union{Nothing, Vector{UInt8}} where {T}
+    r = PL_get_nchars(ld, t, flags)
+    r === nothing && return nothing
+    return r[1]
+end
+
+# ── modules and predicates (FLI-API group H): PL_context, PL_new_module, PL_pred, PL_predicate, PL_predicate_info
+# (pl-fli.c; resolveModule is wip/clib1's) ───────────────────────────────────────────────────────────────────────────
+
+# PORT: pl-fli.c PL_context
+# DIVERGES: the database and the local data are arguments; the module is an INDEX into `gd`'s module table
+# (`PL_strip_module`'s convention), `MODULE_user`'s outside a frame.
+"The context module, an index into the module table: that of the environment frame, `user` outside one (pl-fli.c)."
+function PL_context(gd::PL_global_data{T}, ld::PL_local_data{T})::Int where {T}
+    return ld.environment_frame != 0 ? contextModule(gd, ld, ld.environment_frame) : MODULE_user(gd).index
+end
+
+# PORT: pl-fli.c PL_new_module
+# DIVERGES: the database is an argument; the name is an interface symbol, the answer the module's index; no
+# `valid_atom_t` check (`O_VALIDATE_API`, owner FLI1).
+"The index of the module named `name`, created if there is none (pl-fli.c)."
+PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T} = lookupModule(gd, name).index
+
+# PORT: pl-fli.c PL_pred
+# DIVERGES: the database and the local data are arguments; the module is an index (0 for upstream's NULL, the
+# context module); upstream's `PL_api_error("invalid arity %d (out of range)")` is `error` (the kernel has no
+# `PL_api_error`; both end the call, upstream by an abort in a debug build); the functor is its name and arity
+# (`lookupProcedure`); no `valid_functor_t` check (`O_VALIDATE_API`, owner FLI1).
+"The procedure of functor word `functor` in module `module_` (0: the context module), created if new (pl-fli.c)."
+function PL_pred(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, functor::word, module_::Int
+)::Procedure{T} where {T}
+    arity = arityFunctor(ld.functors, functor)
+    (arity < 0 || arity > MAXARITY) && error("invalid arity $arity (out of range)")
+    module_ == 0 && (module_ = PL_context(gd, ld))          # if ( module == NULL ) module = PL_context()
+    return lookupProcedure(PL_functor_name(ld, functor), arity, gd.modules[module_])
+end
+
+# PORT: pl-fli.c PL_predicate
+# DIVERGES: the database and the local data are arguments; the name and the module are byte vectors, cut at
+# the first 0 as `strlen` cuts them; both go to `PL_new_atom_mbchars` with the flag word `ENC_UTF8`, as upstream passes it (`nothing` for upstream's NULL module); `PL_api_error` is `error` (see
+# `PL_pred`); the arity is range-checked before the name, as upstream; `PL_unregister_atom` is left out (the
+# kernel has no atom garbage collection, so the atoms need no reference).
+"The procedure `name/arity` of module `module_` (`nothing`: the context module), `name` and `module_` byte vectors (pl-fli.c)."
+function PL_predicate(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, name::AbstractVector{UInt8}, arity::Int,
+    module_::Union{Nothing, AbstractVector{UInt8}}
+)::Procedure{T} where {T}
+    (arity < 0 || arity > MAXARITY) && error("invalid arity $arity (out of range)")
+    a = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, name)
+    if a === nothing
+        PL_clear_exception(ld)
+        error("invalid predicate name $(String(Vector{UInt8}(view(name, 1:_c_strlen(name))))) (invalid UTF-8)")
+    end
+    f = PL_new_functor_sz(ld, a, arity)                     # lookupFunctorDef(a, arity)
+    if module_ !== nothing
+        b = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, module_)
+        if b === nothing
+            PL_clear_exception(ld)
+            error("invalid module name $(String(Vector{UInt8}(view(module_, 1:_c_strlen(module_))))) (invalid UTF-8)")
+        end
+        m = lookupModule(gd, b).index                       # m = lookupModule(a)
+    else
+        m = PL_context(gd, ld)
+    end
+    return PL_pred(gd, ld, f, m)
+end
+
+# PORT: pl-fli.c PL_predicate_info
+# DIVERGES: the three outputs are the answer `(true, name, arity, module)` (upstream's pointer arguments, each
+# optional); the name is the definition's interface symbol, the module its index (`definition.module_`).
+"`(true, name, arity, module)` of the predicate `pred`: its name symbol, its arity, its module's index (pl-fli.c)."
+function PL_predicate_info(pred::Procedure{T})::Tuple{Bool, T, Int, Int} where {T}
+    def = pred.definition
+    return (true, def.name, def.arity, def.module_)
+end
+
+# ── FLI-API group F (pl-fli.c): building terms from a tagged argument list, atomic words, the term type ───────────
+
+# PORT: pl-fli.c PL_get_module
+# DIVERGES: the database is an argument; the answer is the module's index (see `PL_context`), `nothing` for
+# upstream's `false`; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The index of the module named by the atom term reference `t` holds (created if new), `nothing` if `t` holds no atom (pl-fli.c)."
+function PL_get_module(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+    a = PL_get_atom(ld, t)                                  # if ( PL_get_atom(t, &a) )
+    a === nothing && return nothing
+    return lookupModule(gd, a).index                        # *m = lookupModule(a)
+end
+
+# PORT: pl-fli.c _PL_get_atomic
+# DIVERGES: the local data is an argument; the answer is the word of the dereferenced term (`_deref_loc`; 0 for an
+# unbound variable, whose cell word is never read); no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The word the term reference `t` holds, dereferenced: `PL_atomic_t` (pl-fli.c)."
+function _PL_get_atomic(ld::PL_local_data{T}, t::term_t)::word where {T}
+    _, w, _ = _deref_loc(ld, -(t + 1))                      # return valHandle(t)
+    return w
+end
+
+# PORT: pl-fli.c _PL_put_atomic
+# DIVERGES: the local data is an argument; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Make term reference `t` hold the word `a` (`PL_atomic_t`, pl-fli.c)."
+function _PL_put_atomic(ld::PL_local_data{T}, t::term_t, a::word)::Nothing where {T}
+    ld.slots[t + 1] = a                                     # setHandle(t, a)
+    return nothing
+end
+
+# ORIGINAL (FLI-API): pl-fli.c's `xpceref_t` (SWI-Prolog.h): an XPCE object reference, an integer or an atom.
+"An XPCE reference: `type` is `PL_INTEGER` (the integer `i`) or `PL_ATOM` (the atom `a`) (SWI-Prolog.h `xpceref_t`)."
+struct xpceref_t{T}
+    type::Int
+    i::Int64
+    a::Union{Nothing, T}
+end
+
+# PORT: pl-fli.c put_xpce_ref_arg
+# DIVERGES: the local data is an argument; the answer is the word for the argument cell, 0 after the
+# representation error (upstream returns the `false` of `PL_representation_error`, as a word).
+"The word of the XPCE reference `ref` as the argument of `@/1`: a tagged integer, or the atom's word (pl-fli.c)."
+function put_xpce_ref_arg(ld::PL_local_data{T}, ref::xpceref_t{T})::word where {T}
+    if ref.type == PL_INTEGER                               # if ( ref->type == PL_INTEGER )
+        w = consInt(ref.i)                                  # word w = consInt(ref->value.i)
+        if valInt(w) != ref.i                               # if ( valInt(w) != ref->value.i)
+            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :pce_reference))
+            return word(0)                                  # return PL_representation_error("pce_reference")
+        end
+        return w
+    end
+    return _atom_word!(ld, ref.a::T)                        # return ref->value.a
+end
+
+# PORT: pl-fli.c PL_term_type
+# DIVERGES: the local data is an argument; on the WORDS (`_deref_loc`): an unbound or attributed variable
+# `PL_VARIABLE`, a tagged integer or an integer value `PL_INTEGER`, other rationals `PL_RATIONAL`; no
+# `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"The type of the term reference `t` holds: `PL_VARIABLE`, `PL_ATOM`, `PL_NIL`, `PL_BLOB`, `PL_INTEGER`, `PL_RATIONAL`, `PL_FLOAT`, `PL_STRING`, `PL_TERM`, `PL_LIST_PAIR`, `PL_DICT` (pl-fli.c)."
+function PL_term_type(ld::PL_local_data{T}, t::term_t)::Int where {T}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t); t0 = type_map[tag(w)]
+    (k == DU_CELL || k == DU_ATTVAR) && return PL_VARIABLE
+    if k == DU_WORD
+        if isAtomW(w)                                       # case PL_ATOM
+            isTextAtom(_atom_value(ld, w)) && return PL_ATOM    # isTextAtom(w)
+            w == ld.atom_nil_w && return PL_NIL             # w == ATOM_nil
+            return PL_BLOB
+        end
+        f = ld.gstack[valPtr(w)]                            # case PL_TERM: f = word2functor(valueTerm(w)->definition)
+        f == ld.functor_dot2 && return PL_LIST_PAIR         # f == FUNCTOR_dot2
+        nameFunctor(ld.functors, f) == ATOM_dict && return PL_DICT   # fd->name == ATOM_dict
+        return PL_TERM
+    end
+    isTaggedIntW(w) && return PL_INTEGER                    # case PL_INTEGER
+    v = _indirect_value(ld, w)
+    isInteger(v) && return PL_INTEGER                       # isInteger(w) ? PL_INTEGER : PL_RATIONAL
+    isRational(v) && return PL_RATIONAL
+    isFloat(v) && return PL_FLOAT
+    isString(v) && return PL_STRING
+    error("PL_term_type: unknown value word")
+end
+
+# PORT: pl-fli.c PL_unify_output
+# DIVERGES: the local data is an argument; the fast path is taken where the value is an atom or a compound word
+# (`bindConst(p1, *p2)`), a value-table word goes through `PL_unify`: the same binding; `hasGlobalSpace(0)` is
+# true (the global stack grows).
+"Unify the output argument `t1` with `t2`: a variable bound to a non-variable is bound directly (pl-fli.c)."
+function PL_unify_output(ld::PL_local_data{T}, t1::term_t, t2::term_t)::Bool where {T}
+    k1, _, q1 = _deref_loc(ld, -(t1 + 1))                   # deRef(p1)
+    k2, w2, _ = _deref_loc(ld, -(t2 + 1))                   # deRef(p2)
+    if (k1 == DU_CELL || k1 == DU_ATTVAR) && k2 == DU_WORD  # canBind(*p1) && !canBind(*p2) && hasGlobalSpace(0)
+        bindConst(ld, q1, w2)                               # bindConst(p1, *p2)
+        return true
+    end
+    return PL_unify(ld, t1, t2)                             # unify_ptrs(p1, p2, ALLOW_GC|ALLOW_SHIFT)
+end
+
+# ORIGINAL (FLI-API): pl-fli.c's agenda entry `work` of PL_unify_termv: `is_list` false is `w_term` (`ref` the
+# term, `n` its arity, `arg` the current argument), true is `w_list` (`ref` the tail, `n` the elements left).
+mutable struct _unify_work
+    is_list::Bool
+    ref::term_t
+    n::Int
+    arg::Int
+end
+
+# PORT: pl-fli.c PL_unify_termv
+# DIVERGES: the argument list is a vector holding each tag and its values in order (`va_arg`): atoms as the
+# interface symbol, texts as byte vectors (`PL_NWCHARS`: `UInt32` code points), pointers `UInt`, floats
+# `Float64`, a `PL_FUNCTOR` as the functor word, a `_PL_PREDICATE_INDICATOR` as the `Procedure`; the database is
+# an argument; the multibyte tags (`PL_MBCHARS`...) reach the refusal of `PL_unify_chars` (`REP_MB`); the text
+# tags call `PL_unify_chars` (wip/clib-uri, wip/clib1) and the wide-text tags (`PL_NWCHARS`, `PL_NWCODES`,
+# `PL_NWSTRING`) call `PL_unify_wchars` (wip/clib-uri, whose code points are `Int`s: converted here): NEITHER is
+# in this branch (duplicates of those branches), so this function only checks, runs or passes JET once a clib
+# branch is merged under it; the agenda
+# is a vector of `_unify_work`; the warning of an unknown tag ("Format error in PL_unify_term()") goes through
+# `PL_warning` (group I) and the call fails; a `PL_LIST` whose `PL_unify_list` fails
+# with elements left fails the call (forced: repeating the same call cannot end).
+"Unify the term `t` references with the term the tagged `args` describe (`PL_unify_term`'s variadic list) (pl-fli.c)."
+function PL_unify_termv(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, args::AbstractVector
+)::Bool where {T}
+    tsave = PL_new_term_refs(ld, 0)                         # save for reclaim
+    agenda = _unify_work[]
+    t = PL_copy_term_ref(ld, t)                             # if ( !(t = PL_copy_term_ref(t)) )
+    t == 0 && return false
+    ai = 0
+    ok = true
+    while true                                              # cont:
+        op = Int(args[ai += 1]::Integer)                    # switch((op=va_arg(args, int)))
+        rval = true
+        if op == PL_VARIABLE                                # rval = true
+        elseif op == PL_ATOM
+            rval = PL_unify_atom(ld, t, args[ai += 1]::T)
+        elseif op == PL_BOOL
+            v = args[ai += 1]
+            b = v isa Bool ? v : v != 0                     # v ? ATOM_true : ATOM_false
+            rval = PL_unify_atom(ld, t, mk_sym(T, b ? Symbol("true") : Symbol("false")))
+        elseif op == PL_SHORT || op == PL_INT || op == PL_INTEGER || op == PL_LONG
+            rval = PL_unify_integer(ld, t, Int(args[ai += 1]::Integer))
+        elseif op == PL_INT64 || op == PL_INTPTR || op == PL_SWORD
+            rval = PL_unify_int64(ld, t, Int(args[ai += 1]::Integer))
+        elseif op == PL_POINTER
+            rval = PL_unify_pointer(ld, t, UInt(args[ai += 1]::Integer))
+        elseif op == PL_FLOAT || op == PL_DOUBLE
+            rval = PL_unify_float(ld, t, Float64(args[ai += 1]::Real))
+        elseif op == PL_STRING
+            rval = PL_unify_string_chars(ld, t, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_TERM
+            rval = PL_unify(ld, t, args[ai += 1]::term_t)
+        elseif op == PL_CHARS
+            rval = PL_unify_atom_chars(ld, t, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_NCHARS
+            len = Int(args[ai += 1]::Integer)
+            rval = PL_unify_atom_nchars(ld, t, len, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_UTF8_CHARS || op == PL_UTF8_STRING
+            rval = PL_unify_chars(                          # PL_unify_text(t, 0, &txt, PL_STRING or PL_ATOM)
+                ld, t, (op == PL_UTF8_STRING ? PL_STRING : PL_ATOM) | Int(REP_UTF8), -1,
+                args[ai += 1]::AbstractVector{UInt8}
+            )
+        elseif op == PL_NUTF8_CHARS || op == PL_NUTF8_CODES || op == PL_NUTF8_STRING
+            len = Int(args[ai += 1]::Integer)
+            ty = op == PL_NUTF8_CHARS ? PL_ATOM : op == PL_NUTF8_CODES ? PL_CODE_LIST : PL_STRING
+            rval = PL_unify_chars(ld, t, ty | Int(REP_UTF8), len, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_NWCHARS || op == PL_NWCODES || op == PL_NWSTRING
+            len = Int(args[ai += 1]::Integer)
+            ty = op == PL_NWCHARS ? PL_ATOM : op == PL_NWCODES ? PL_CODE_LIST : PL_STRING
+            ws = args[ai += 1]::AbstractVector{UInt32}      # wip/clib-uri's PL_unify_wchars takes the code points as `Int`s
+            rval = PL_unify_wchars(ld, t, ty, len, Int[Int(c) for c in ws])
+        elseif op == PL_MBCHARS || op == PL_MBCODES || op == PL_MBSTRING
+            ty = op == PL_MBCHARS ? PL_ATOM : op == PL_MBCODES ? PL_CODE_LIST : PL_STRING
+            rval = PL_unify_chars(ld, t, ty | Int(REP_MB), -1, args[ai += 1]::AbstractVector{UInt8})
+        elseif op == PL_FUNCTOR_CHARS || op == PL_FUNCTOR
+            if op == PL_FUNCTOR_CHARS
+                a = PL_new_atom(ld, args[ai += 1]::AbstractVector{UInt8})   # atom_t a = PL_new_atom(s)
+                arity = Int(args[ai += 1]::Integer)         # arity = va_arg(args, int)
+                ft = PL_new_functor(ld, a, arity)           # ft = PL_new_functor(a, arity)
+            else
+                ft = args[ai += 1]::word                    # ft = va_arg(args, functor_t)
+                arity = arityFunctor(ld.functors, ft)       # arity = arityFunctor(ft)
+            end
+            if PL_unify_functor(ld, t, PL_functor_name(ld, ft), arity)   # common_f: PL_unify_functor(t, ft)
+                c = PL_copy_term_ref(ld, t)
+                c == 0 && return false
+                push!(agenda, _unify_work(false, c, arity, 0))
+            else
+                rval = false
+            end
+        elseif op == PL_LIST
+            c = PL_copy_term_ref(ld, t)
+            c == 0 && return false
+            push!(agenda, _unify_work(true, c, Int(args[ai += 1]::Integer), 0))
+        elseif op == _PL_PREDICATE_INDICATOR
+            proc = args[ai += 1]::Procedure{T}
+            rval = unify_definition(
+                gd, ld, MODULE_user(gd), t, proc.definition, 0, GP_HIDESYSTEM | GP_NAMEARITY
+            )
+        else                                                # default: PL_warning("Format error in PL_unify_term()")
+            PL_warning(gd, ld, "Format error in PL_unify_term()")
+            rval = false                                    # goto failout
+        end
+        if !rval
+            ok = false                                      # failout
+            break
+        end
+        more = false
+        while !isempty(agenda)                              # while( tos > 0 )
+            w = agenda[end]
+            if !w.is_list
+                if w.arg < w.n                              # w->value.term.arg < w->value.term.arity
+                    w.arg += 1
+                    _PL_get_arg(ld, w.arg, w.ref, t)        # _PL_get_arg(++w->value.term.arg, w->value.term.term, t)
+                    more = true                             # goto cont
+                    break
+                end
+                pop!(agenda)                                # tos--
+            elseif w.n > 0                                  # w->value.list.len > 0
+                if PL_unify_list(ld, w.ref, t, w.ref)       # PL_unify_list(tail, t, tail)
+                    w.n -= 1
+                    more = true                             # goto cont
+                    break
+                end
+                ok = false
+                break
+            elseif PL_unify_nil(ld, w.ref)                  # else if ( PL_unify_nil(w->value.list.tail) )
+                pop!(agenda)                                # tos--
+            else
+                ok = false                                  # goto failout
+                break
+            end
+        end
+        ok || break
+        more || break
+    end
+    PL_reset_term_refs(ld, tsave)                           # PL_reset_term_refs(tsave)
+    return ok
+end
+
+# PORT: pl-fli.c PL_unify_term
+# DIVERGES: the tagged arguments are the rest of the call (see `PL_unify_termv`); the database is an argument.
+"Unify the term `t` references with the term the tagged `args` describe (pl-fli.c)."
+PL_unify_term(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, args...) where {T} =
+    PL_unify_termv(gd, ld, t, Any[args...])
+
+# ── FLI-API group G (pl-fli.c): blobs ─────────────────────────────────────────────────────────────
+
+# ORIGINAL (FLI-API): what `PL_unify_blob` and `PL_put_blob` check before `lookupBlob`, for the blob types a
+# term of the interface can name. The text blob type `text_atom` (an ISO Latin-1 text atom) is a plain text atom:
+# its payload cannot hold the character 0 (a symbol cannot, as in `PL_new_atom_mbchars`). Any other type with
+# `PL_BLOB_TEXT` (a user type whose text is not the kernel's, `ucs_atom` included) and `reserved_symbol` (made by
+# its own constructor, `mk_reserved_symbol`) are refused by name, owner FLI1.
+"Refuse the blob types the interface cannot give a symbol; a 0 byte in a text atom's payload raises (ORIGINAL)."
+function _fli_blob_check(type::PL_blob_t, blob::AbstractVector{UInt8}, len::Int)::Nothing
+    if type === reserved_symbol
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "a blob of the type reserved_symbol",
+                "FLI1: a reserved symbol is made by mk_reserved_symbol"
+            )
+        )
+    end
+    if (type.flags & PL_BLOB_TEXT) != 0
+        if type !== text_atom
+            throw(
+                NotPortedError{Nothing}(
+                    nothing, "a blob of the text type $(type.name)",
+                    "FLI1: only the text atom of ISO Latin-1 has a symbol"
+                )
+            )
+        end
+        any(iszero, view(blob, 1:len)) &&
+            throw(AtomNotRepresentableError(UInt32[blob[j] for j in 1:len]))
+    end
+    return nothing
+end
+
+# ORIGINAL (FLI-API): the interface symbol of the blob atom `w`: the one the database's store holds, else a text
+# atom's symbol (made of its characters, as `_record_atom_symbol!` makes it), else the blob term of the atom
+# (`_blob_term!`: the handle is the word, the rank the type's registration rank).
+"The interface symbol of the atom word `w` of a blob type, recorded in `ld.atom_symbols` where it is new."
+function _fli_blob_symbol!(ld::PL_local_data{T}, w::word)::T where {T}
+    v = atomSymbol(ld.atom_symbols, indexAtom(w))
+    v === nothing || return v
+    x = atomValue(ld.atoms, w)
+    if (x.type.flags & PL_BLOB_TEXT) != 0
+        return _record_atom_symbol!(ld, w, get_atom_ptr_text(x)::PL_chars_t)
+    end
+    return _blob_term!(ld.atoms, ld.atom_symbols, T, w)
+end
+
+# PORT: pl-fli.c PL_unify_blob
+# DIVERGES: the local data is an argument; the payload is a byte vector and `len` its length (a `PL_BLOB_NOCOPY` type
+# keeps the vector itself); the blob's atom is its interface symbol (`_fli_blob_symbol!`). The blob types
+# `_fli_blob_check` names are refused or raise before `lookupBlob`. Left out: `PL_unregister_atom` (the kernel keeps its
+# atoms: owner D-0634 D5) and the `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
+"Unify the term `t` references with the blob of `len` bytes of `blob` and the blob type `type`, made if new (pl-fli.c)."
+function PL_unify_blob(
+    ld::PL_local_data{T}, t::term_t, blob::AbstractVector{UInt8}, len::Int, type::PL_blob_t
+)::Bool where {T}
+    _fli_blob_check(type, blob, len)
+    w, _ = lookupBlob(ld.atoms, blob, len, type)            # atom_t a = lookupBlob(blob, len, type, &new)
+    return PL_unify_atom(ld, t, _fli_blob_symbol!(ld, w))   # rval = PL_unify_atom(t, a)
+end
+
+# PORT: pl-fli.c PL_put_blob
+# DIVERGES: as `PL_unify_blob`; the `valid_user_term_t` check is left out (`O_VALIDATE_API`, owner FLI1).
+"Make the term reference `t` hold the blob of `len` bytes of `blob` and the blob type `type`; true if it was made (pl-fli.c)."
+function PL_put_blob(
+    ld::PL_local_data{T}, t::term_t, blob::AbstractVector{UInt8}, len::Int, type::PL_blob_t
+)::Bool where {T}
+    _fli_blob_check(type, blob, len)
+    w, new = lookupBlob(ld.atoms, blob, len, type)          # atom_t a = lookupBlob(blob, len, type, &new)
+    PL_put_atom(ld, t, _fli_blob_symbol!(ld, w))            # setHandle(t, a)
+    return new
+end
+
+# PORT: pl-fli.c PL_get_blob
+# DIVERGES: `nothing` for upstream's false; else the triple `(blob, len, type)` upstream writes through its three
+# optional pointers: the atom's own name vector, its length in bytes and its blob type. The `valid_term_t` check of the
+# API_STUB is left out (`O_VALIDATE_API`, owner FLI1).
+"The atom `t` references as `(name, length, type)`, `nothing` where it holds no atom (pl-fli.c)."
+function PL_get_blob(
+    ld::PL_local_data, t::term_t
+)::Union{Nothing, Tuple{Vector{UInt8}, Int, PL_blob_t}}
+    k, w, _ = _deref_loc(ld, -(t + 1))                      # word w = valHandle(t)
+    (k == DU_WORD && isAtomW(w)) || return nothing          # isAtom(w)
+    a = atomValue(ld.atoms, w)
+    return (a.name, a.length, a.type)
+end
+
+# PORT: pl-fli.c PL_blob_data
+# DIVERGES: the local data is an argument and the atom is its interface symbol; the answer is the triple
+# `(data, len, type)` upstream returns and writes through its two optional pointers: for a slot that holds no atom
+# (`ATOM_TYPE_IS_INVALID`) the data and the type are `nothing` and the length the slot's. No `valid_atom_t` check
+# (`O_VALIDATE_API`, owner FLI1).
+"The `(data, length, type)` of the blob atom `a` (pl-fli.c); `(nothing, length, nothing)` for an invalid atom."
+function PL_blob_data(
+    ld::PL_local_data{T}, a::T
+)::Tuple{Union{Nothing, Vector{UInt8}}, Int, Union{Nothing, PL_blob_t}} where {T}
+    x = atomValue(ld.atoms, _atom_word!(ld, a))             # Atom x = atomValue(a)
+    x.type === ATOM_TYPE_INVALID && return (nothing, x.length, nothing)   # ATOM_TYPE_IS_INVALID(x->type)
+    return (x.name, x.length, x.type)
+end
+
+# ── FLI-API group I (pl-fli.c): throwing, warnings and fatal errors ─────────────────────────────────────────────
+
+# PORT: pl-fli.c PL_throw
+# DIVERGES (forced, decision 1 of docs/architecture.md, "Exceptions crossing Julia"): the exception is raised and the call
+# returns false; upstream's `longjmp` to the `setjmp` in `PL_next_solution` (`LD->exception.throw_environment`) is the false
+# return, which the running foreign predicate hands to the VM with the exception pending. The local data is an argument.
+"Raise the exception the term `exception` references; false, the exception pending (pl-fli.c)."
+function PL_throw(ld::PL_local_data{T}, exception::term_t)::Bool where {T}
+    PL_raise_exception(ld, exception)                       # PL_raise_exception(exception)
+    return false                                            # no throw_environment: `return false`
+end
+
+# PORT: pl-fli.c PL_rethrow
+# DIVERGES (forced): as `PL_throw`: the pending exception stays and the call returns false.
+"Deliver the exception already pending again; false (pl-fli.c)."
+PL_rethrow(ld::PL_local_data{T}) where {T} = false           # no throw_environment: `return false`
+
+# ORIGINAL (FLI-API15): upstream's `Sfprintf(Suser_error, "%s", text)`: the code points of `text` on `s` (nothing: no stream).
+function _fli_stream_text(s::Union{Nothing, IOSTREAM}, text::AbstractString)::Nothing
+    s === nothing && return nothing
+    for c in text
+        Sputcode(Int(c), s)
+    end
+    return nothing
+end
+
+# ORIGINAL (FLI-API15): the print_message/2 branch of `vwarning` (pl-init.c:2358-2394): the message split at each newline into
+# a list of strings, `error` and `message_lines(Lines)` as the arguments. False where upstream takes `goto nospace`.
+function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    cid = PL_open_foreign_frame(ld)
+    cid == 0 && return false                                # if ( !(cid = PL_open_foreign_frame()) ) goto nospace
+    av = PL_new_term_refs(ld, 2)
+    tail = PL_copy_term_ref(ld, av + 1)
+    head = PL_new_term_ref(ld)
+    bytes = codeunits(msg)
+    pos = 1
+    while true
+        eol = findnext(==(0x0a), bytes, pos)                # strchr(s, '\n')
+        if eol !== nothing
+            if !PL_unify_list(ld, tail, head, tail) ||
+               !PL_unify_string_nchars(ld, head, eol - pos, view(bytes, pos:(eol - 1)))
+                PL_discard_foreign_frame(ld, cid)           # nospace: if ( cid ) PL_discard_foreign_frame(cid)
+                return false
+            end
+            pos = eol + 1
+        else
+            if pos <= length(bytes)                         # if ( *s )
+                if !PL_unify_list(ld, tail, head, tail) ||
+                   !PL_unify_string_chars(ld, head, view(bytes, pos:length(bytes)))
+                    PL_discard_foreign_frame(ld, cid)
+                    return false
+                end
+            end
+            if !PL_unify_nil(ld, tail)
+                PL_discard_foreign_frame(ld, cid)
+                return false
+            end
+            break
+        end
+    end
+    if !PL_cons_functor(ld, av + 1, PL_new_functor(ld, mk_sym(T, :message_lines), 1), av + 1)
+        PL_discard_foreign_frame(ld, cid)
+        return false
+    end
+    PL_put_atom(ld, av, mk_sym(T, :error))                  # PL_put_atom(av, ATOM_error)
+    PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG, gd.procedures_print_message2, av)
+    PL_discard_foreign_frame(ld, cid)
+    return true
+end
+
+# ORIGINAL (FLI-API15): pl-init.c `vwarning` (:2348), the function `PL_warning` calls, written here with it.
+# DIVERGES: (a) the message is the formatted text (`Svsnprintf(message, LINESIZ, fm, args)` is the caller's, not cut at
+# LINESIZ), and the `fm[0] != '$'` test reads the text; (b) `GD->initialised` is a field this kernel lacks: `print_message/2`
+# being defined (`isDefinedProcedure`) stands for it, as `printMessage` does; (c) the `pl_trace()` that `debug_on_error` asks for
+# after the message (the interactive debugger) is left to DBG1; (d) `Suser_error` is `nothing` where the host set no stream:
+# then the fallback text has nowhere to go and is dropped.
+# (e) when building the line list fails midway the fallback prints the whole text, upstream's the text from the line it
+# stopped at (`s` is advanced as the lines are taken); the case needs a full global stack and is not distinguished here.
+function _fli_vwarning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    toldString(ld)                                          # play safe
+    if truePrologFlag(ld, PLFLAG_REPORT_ERROR)
+        done = false
+        if !gd.bootsession && isDefinedProcedure(gd, gd.procedures_print_message2) &&
+           !ld.outofstack && !startswith(msg, "\$")
+            done = _fli_warning_message(gd, ld, msg)
+        end
+        if !done                                            # nospace:
+            _fli_stream_text(Suser_error(ld), "ERROR: " * msg * "\n")
+            Pause(0.2)
+        end
+    end
+    return false
+end
+
+# PORT: pl-fli.c PL_warning
+# DIVERGES: the message is the formatted text, not a format and its arguments (see `_fli_vwarning`); the database and the local
+# data are arguments.
+"Print the warning `msg` through print_message/2 (to `user_error` where that cannot be called); false (pl-fli.c)."
+PL_warning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} = _fli_vwarning(gd, ld, msg)
+
+"`vfatalError`'s `static int active`: a second fatal error while one is reported ends the process by `abort()` alone."
+const _FLI_FATAL_ACTIVE = Ref(0)
+
+# ORIGINAL (FLI-API15): pl-init.c `vfatalError` (:2305), the function `PL_fatal_error` calls, written here with it.
+# DIVERGES: (a) the message is the formatted text; (b) the report goes to `Suser_error` (upstream's `Serror`, the same stream
+# until the host redirects it); (c) where the seam of `PL_abort_process` returns (a test that embeds the kernel:
+# `gd.halt_exit = false`) the `active` count is reset, as the process upstream never returns from.
+function _fli_vfatal_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Nothing where {T}
+    active = _FLI_FATAL_ACTIVE[]
+    _FLI_FATAL_ACTIVE[] = active + 1                        # if ( active++ )
+    if active != 0
+        _halt_exit!(gd, 128 + 6)                            # abort()
+        _FLI_FATAL_ACTIVE[] = 0
+        return nothing
+    end
+    tbuf = Libc.strftime("%a %b %e %H:%M:%S %Y", time())    # ctime_r(), without its newline
+    s = Suser_error(ld)
+    _fli_stream_text(s, "[FATAL ERROR: at " * tbuf * "\n\t" * msg * "]\n")
+    s === nothing || Sflush(s)
+    PL_abort_process(gd, ld)
+    _FLI_FATAL_ACTIVE[] = 0
+    return nothing
+end
+
+# PORT: pl-fli.c PL_fatal_error
+# DIVERGES: the message is the formatted text (see `_fli_vfatal_error`); the database and the local data are arguments.
+"Report the fatal error `msg` on `user_error` and end the process as `abort()` does (pl-fli.c)."
+PL_fatal_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} =
+    _fli_vfatal_error(gd, ld, msg)
 
 # ── halting (HALT1): PL_halt, haltProlog, PL_abort_process (pl-fli.c) ───────────────────────────
 # PORT: pl-fli.c haltProlog
@@ -1994,4 +3413,211 @@ function PL_abort_process(gd::PL_global_data{T}, ld::PL_local_data{T})::Nothing 
     _halt_exit!(gd, 128 + 6)                            # abort()
     gd.halt_cleaning = CLN_NORMAL                       # the seam returned
     return nothing
+end
+
+# ── state, actions, queries, version (FLI-API16): SP_set_state, SP_get_state, PL_action, PL_query, PL_version_info (pl-fli.c) ──
+
+# PORT: pl-fli.c SP_set_state
+# (swipl-devel 18168e62, src/pl-fli.c:1115-1120)
+# DIVERGES: the local data is an argument (upstream's `GET_LD`).
+"Store the Quintus/SICStus state `state` in the engine `ld` (`LD->fli.SP_state`, pl-fli.c)."
+function SP_set_state(ld::PL_local_data, state::Int)::Nothing
+    ld.fli_SP_state = state                             # LD->fli.SP_state = state
+    return nothing
+end
+
+# PORT: pl-fli.c SP_get_state
+# (swipl-devel 18168e62, src/pl-fli.c:1123-1128)
+# DIVERGES: the local data is an argument (upstream's `GET_LD`).
+"The Quintus/SICStus state stored in the engine `ld` (0 until `SP_set_state`; pl-fli.c)."
+function SP_get_state(ld::PL_local_data)::Int
+    return ld.fli_SP_state                              # return LD->fli.SP_state
+end
+
+"`vsysError`'s `static int active`: a second system error while one is reported ends the process by `abort()` alone."
+const _FLI_SYS_ACTIVE = Ref(0)
+
+# ORIGINAL (FLI-API16): pl-init.c `vsysError` (:2241-2284), the function `sysError` (:2111-2121) calls and `PL_action`'s and
+# `PL_query`'s default arms use, written here with them; same cut as `_fli_vfatal_error`.
+# DIVERGES: (a) the message is the formatted text; (b) the report goes to `Suser_error` (upstream's `Serror`, unbuffered: flushed
+# here); (c) left out: the 30 s timer (`set_cleanup_timeout`), `save_backtrace`, `printCrashContext`, and the interactive branch
+# ("Action?" prompt, taken when `user_input` and `user_error` are terminals and the system is not booting): the process always
+# ends as the non-interactive branch ends it; (d) where the seam of `PL_abort_process` returns (`gd.halt_exit = false`) the
+# `active` count is reset, as the process upstream never returns from. Returns false, as `sysError`.
+function _fli_sys_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+    active = _FLI_SYS_ACTIVE[]
+    _FLI_SYS_ACTIVE[] = active + 1                          # if ( active++ )
+    if active != 0
+        _halt_exit!(gd, 128 + 6)                            # abort()
+        _FLI_SYS_ACTIVE[] = 0
+        return false
+    end
+    s = Suser_error(ld)
+    _fli_stream_text(s, "\nERROR: system error: " * msg * "\n")    # Sfprintf(Serror, "\nERROR: %s error: ", errtype) ...
+    s === nothing || Sflush(s)
+    PL_abort_process(gd, ld)                                # non-interactive or booting
+    _FLI_SYS_ACTIVE[] = 0
+    return false
+end
+
+# ORIGINAL (FLI-API16): pl-stream.c `Sfputs` (:2395-2402), which `PL_action(PL_ACTION_WRITE, ...)` calls: every byte of the text up to
+# the first 0 is one code point (`*q&0xff`, so UTF-8 bytes are Latin-1 characters) written by `Sputcode`; 0, or -1 (`EOF`) on an
+# error. DIVERGES: `nothing` for a missing stream (upstream would dereference NULL) is -1.
+function _fli_sfputs(s::Union{Nothing, IOSTREAM}, text::AbstractString)::Int
+    s === nothing && return -1
+    for b in codeunits(text)
+        b == 0x00 && break                                  # for( ; *q; q++)
+        Sputcode(Int(b), s) < 0 && return -1                # if ( Sputcode(*q&0xff, s) < 0 ) return EOF
+    end
+    return 0
+end
+
+# PORT: pl-fli.c PL_action
+# (swipl-devel 18168e62, src/pl-fli.c:5934-6039)
+# DIVERGES: (a) the database, the local data and the varargs are arguments (`args...`: the one `int` or `char *` an action
+# takes); the text of WRITE is a `String`. (b) PL_ACTION_BACKTRACE: `gc_status.active` and `GD->initialised` have no field
+# (the collector never runs inside a foreign call, the database exists): the "initialising" message is `gd.bootsession`'s;
+# PL_backtrace is DBG1's: `NotPortedError`. (c) PL_ACTION_GUIAPP: `GD->os.gui_app` is Win32's and has no field: accepted, true.
+# (d) PL_ACTION_TRADITIONAL: `NotPortedError` (the kernel is SWI-7 only, owner R2 LB7, as the `--traditional` option,
+# src/pl-init.jl). (e) PL_GMP_SET_ALLOC_FUNCTIONS: `GD->gmp.initialised` is always true once a database exists (`initGMP` runs
+# in `setupProlog`, pl-setup.c:166): false, as upstream's else-branch. (f) PL_ACTION_ATTACH_CONSOLE is `attachConsole()`
+# (pl-thread.c:7027, the O_PLMT build the pin is) written in place. (g) The default arm is `_fli_sys_error`; where the seam
+# returns, the answer is false.
+"""
+    PL_action(gd, ld, action, args...) -> Bool
+
+Perform `action` (`PL_ACTION_*`, `PL_GMP_SET_ALLOC_FUNCTIONS`): TRACE and DEBUG switch the modes, BACKTRACE (`depth`), BREAK runs a nested
+toplevel, HALT (`status`) halts, ABORT raises `unwind(abort)`, WRITE (`text`) and FLUSH go to the current output, ATTACH_CONSOLE calls
+`user:attach_console/0`; any other action is a system error (pl-fli.c).
+"""
+function PL_action(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, action::Int, args...
+)::Bool where {T}
+    rval = true
+
+    if action == PL_ACTION_TRACE
+        rval = tracemode(ld, true, nothing)                 # rval = (bool)pl_trace()
+    elseif action == PL_ACTION_DEBUG
+        debugmode(ld, true, nothing, DBG_ALL)               # debugmode(NULL, true, NULL, DBG_ALL)
+    elseif action == PL_ACTION_BACKTRACE
+        depth = Int(args[1])                                # int a = va_arg(args, int)
+        if gd.bootsession                                   # GD->bootsession || !GD->initialised
+            _fli_stream_text(Suser_error(ld), "\n[Cannot print stack while initialising]\n")
+            rval = false
+        else
+            throw(
+                NotPortedError{Nothing}(
+                    nothing, "PL_action(PL_ACTION_BACKTRACE): PL_backtrace($depth, 0)", "DBG1"
+                )
+            )
+        end
+    elseif action == PL_ACTION_BREAK
+        rval = pl_break(gd, ld)                             # rval = (bool)pl_break()
+    elseif action == PL_ACTION_HALT
+        PL_halt(gd, ld, Int(args[1]))                       # PL_halt(a)
+        rval = false
+    elseif action == PL_ACTION_ABORT
+        rval = abortProlog(ld)                              # rval = abortProlog()
+    elseif action == PL_ACTION_GUIAPP
+        nothing                                             # GD->os.gui_app = guiapp (no field)
+    elseif action == PL_ACTION_TRADITIONAL
+        throw(
+            NotPortedError{Nothing}(
+                nothing,
+                "PL_action(PL_ACTION_TRADITIONAL): setTraditional, resetListAtoms: the kernel is SWI-7 only",
+                "R2 LB7"
+            )
+        )
+    elseif action == PL_ACTION_WRITE
+        rval = _fli_sfputs(Scurout(ld), args[1]) == 0       # rval = Sfputs(s, Scurout) == 0
+    elseif action == PL_ACTION_FLUSH
+        out = Scurout(ld)
+        rval = out !== nothing && Sflush(out) == 0          # rval = Sflush(Scurout) == 0
+    elseif action == PL_ACTION_ATTACH_CONSOLE
+        fid = PL_open_foreign_frame(ld)                     # attachConsole() (pl-thread.c:7027)
+        pred = PL_predicate(gd, ld, codeunits("attach_console"), 0, codeunits("user"))
+        rval = PL_call_predicate(gd, ld, nothing, PL_Q_NODEBUG, pred, 0)
+        PL_discard_foreign_frame(ld, fid)
+    elseif action == PL_GMP_SET_ALLOC_FUNCTIONS
+        rval = false                                        # GD->gmp.initialised is true: `else { rval = false; }`
+    else
+        _fli_sys_error(gd, ld, "PL_action(): Illegal action: $action")
+        rval = false
+    end
+
+    return rval
+end
+
+# PORT: pl-fli.c PL_query
+# (swipl-devel 18168e62, src/pl-fli.c:6045-6098)
+# DIVERGES: (a) the database and the local data are arguments. (b) PL_QUERY_ARGV is a `char **`: `NotPortedError` (owner FLI1;
+# the vector is `gd.cmdline.appl_argv`); PL_QUERY_ARGC is its length (`GD->cmdline.appl_argc`). (c) PL_QUERY_GETC: `PopTty`
+# (restoring the terminal mode from `ttytab`) has no counterpart: the character is `Sgetchar()`, `Sgetc(Sinput)`, -1 where
+# `user_input` is `nothing`. (d) PL_QUERY_ENCODING: `LD->encoding` is the flag `encoding`, `utf8` (src/os/pl-prologflag.jl:2182;
+# `setEncoding` is refused, :1375): `ENC_UTF8`. (e) The one-thread O_PLMT build: PL_QUERY_MAX_THREADS prints the message of the
+# O_PLMT branch (on `Suser_error`, flushed as `Sdprintf` does) and answers 100000. (f) The default arm is `_fli_sys_error`; where
+# the seam returns, 0.
+"""
+    PL_query(gd, ld, query) -> Int
+
+Information about the system: `PL_QUERY_ARGC`, `PL_QUERY_MAX_TAGGED_INT` and `_MIN_`, `PL_QUERY_GETC`, `PL_QUERY_VERSION`,
+`PL_QUERY_MAX_THREADS`, `PL_QUERY_ENCODING`, `PL_QUERY_USER_CPU` (milliseconds), `PL_QUERY_HALTING`; 0 for `_MAX_INTEGER` and
+`_MIN_INTEGER` (not representable); any other query is a system error (pl-fli.c).
+"""
+function PL_query(gd::PL_global_data{T}, ld::PL_local_data{T}, query::Int)::Int where {T}
+    if query == PL_QUERY_ARGC
+        return length(gd.cmdline.appl_argv)                 # (intptr_t) GD->cmdline.appl_argc
+    elseif query == PL_QUERY_ARGV
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_query(PL_QUERY_ARGV): a char** (gd.cmdline.appl_argv is the vector)", "FLI1"
+            )
+        )
+    elseif query == PL_QUERY_MAX_INTEGER || query == PL_QUERY_MIN_INTEGER
+        return 0                                            # return false; /* cannot represent (anymore) */
+    elseif query == PL_QUERY_MAX_TAGGED_INT
+        return PLMAXTAGGEDINT                               # (SIZEOF_WORD > SIZEOF_VOIDP is false)
+    elseif query == PL_QUERY_MIN_TAGGED_INT
+        return PLMINTAGGEDINT
+    elseif query == PL_QUERY_GETC
+        s = Suser_input(ld)                                 # (PopTty: no counterpart)
+        return s === nothing ? -1 : Sgetc(s)                # (intptr_t) Sgetchar()
+    elseif query == PL_QUERY_VERSION
+        return PLVERSION
+    elseif query == PL_QUERY_MAX_THREADS
+        s = Suser_error(ld)
+        _fli_stream_text(s, "PL_query(PL_QUERY_MAX_THREADS) is no longer supported\n")    # Sdprintf(...)
+        s === nothing || Sflush(s)
+        return 100000
+    elseif query == PL_QUERY_ENCODING
+        return Int(ENC_UTF8)                                # return LD->encoding
+    elseif query == PL_QUERY_USER_CPU
+        return trunc(Int, CpuTime(CPU_USER) * 1000.0)       # (intptr_t)(cpu*1000.0)
+    elseif query == PL_QUERY_HALTING
+        return gd.halt_cleaning != CLN_NORMAL ? 1 : 0       # (GD->halt.cleaning != CLN_NORMAL)
+    end
+
+    _fli_sys_error(gd, ld, "PL_query: Illegal query: $query")
+    return 0
+end
+
+# PORT: pl-fli.c PL_version_info
+# (swipl-devel 18168e62, src/pl-fli.c:6166-6178)
+# DIVERGES: PL_VERSION_VM (`VM_SIGNATURE`) and PL_VERSION_BUILT_IN (`GD->foreign.signature`) are hashes of upstream's instruction
+# table and built-in predicate table (the flag `abi_version`, src/os/pl-prologflag.jl): `NotPortedError` (owner FLI1).
+"The version number `which` (`PL_VERSION_*`): the system's, the FLI's, record's, QLF's, the oldest loadable QLF; 0 for any other (pl-fli.c)."
+function PL_version_info(which::Int)::UInt32
+    which == PL_VERSION_SYSTEM && return UInt32(PLVERSION)
+    which == PL_VERSION_FLI && return UInt32(PL_FLI_VERSION)
+    which == PL_VERSION_REC && return UInt32(PL_REC_VERSION)
+    which == PL_VERSION_QLF && return UInt32(PL_QLF_VERSION)
+    which == PL_VERSION_QLF_LOAD && return UInt32(PL_QLF_LOADVERSION)
+    if which == PL_VERSION_VM || which == PL_VERSION_BUILT_IN
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_version_info($which): the VM and built-in signatures (abi_version)", "FLI1"
+            )
+        )
+    end
+    return UInt32(0)
 end

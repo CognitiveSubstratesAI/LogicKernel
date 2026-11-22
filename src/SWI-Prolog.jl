@@ -108,6 +108,12 @@ const PL_FA_TRANSPARENT = 0x02
 # PORT: SWI-Prolog.h PL_ATOM
 "Text type: an atom (SWI-Prolog.h)."
 const PL_ATOM = 2
+# PORT: SWI-Prolog.h PL_INTEGER
+"Term type: an integer (SWI-Prolog.h)."
+const PL_INTEGER = 3
+# PORT: SWI-Prolog.h PL_RATIONAL
+"Term type: a rational number (SWI-Prolog.h)."
+const PL_RATIONAL = 4
 # PORT: SWI-Prolog.h PL_LIST
 "`PL_skip_list`'s result: a proper list (SWI-Prolog.h)."
 const PL_LIST = 12
@@ -132,12 +138,111 @@ const PL_CHAR_LIST = 16
 # PORT: SWI-Prolog.h REP_UTF8
 "Text conversion: the text is UTF-8 (SWI-Prolog.h)."
 const REP_UTF8 = 0x00100000
-# PORT: SWI-Prolog.h REP_ISO_LATIN_1
-"Text conversion: the text is ISO Latin-1 (SWI-Prolog.h)."
-const REP_ISO_LATIN_1 = 0x00000000
 # PORT: SWI-Prolog.h REP_MB
-"Text conversion: the text is in the locale's multibyte encoding (SWI-Prolog.h)."
+"Text conversion: the text is in the multibyte encoding of the locale (SWI-Prolog.h)."
 const REP_MB = 0x00200000
+# PORT: SWI-Prolog.h REP_ISO_LATIN_1
+"Text conversion: the text is ISO Latin-1, the default encoding (SWI-Prolog.h)."
+const REP_ISO_LATIN_1 = 0x00000000
+# PORT: SWI-Prolog.h PL_DIFF_LIST
+"Text type flag: the list is a difference list, its tail left in the next term reference (SWI-Prolog.h)."
+const PL_DIFF_LIST = 0x01000000
+# PORT: SWI-Prolog.h PL_VARIABLE
+"Term type: an unbound variable (`PL_unify_term`: nothing follows) (SWI-Prolog.h)."
+const PL_VARIABLE = 1
+# PORT: SWI-Prolog.h PL_FLOAT
+"Term type: a float (SWI-Prolog.h)."
+const PL_FLOAT = 5
+# PORT: SWI-Prolog.h PL_TERM
+"Term type: a term (a term reference follows) (SWI-Prolog.h)."
+const PL_TERM = 7
+# PORT: SWI-Prolog.h PL_NIL
+"Term type: the constant `[]` (SWI-Prolog.h)."
+const PL_NIL = 8
+# PORT: SWI-Prolog.h PL_BLOB
+"Term type: a non-text atom (SWI-Prolog.h)."
+const PL_BLOB = 9
+# PORT: SWI-Prolog.h PL_LIST_PAIR
+"Term type: a `[_|_]` term (SWI-Prolog.h)."
+const PL_LIST_PAIR = 10
+# PORT: SWI-Prolog.h PL_FUNCTOR
+"Term type: a functor, its arguments follow (SWI-Prolog.h)."
+const PL_FUNCTOR = 11
+# PORT: SWI-Prolog.h PL_CHARS
+"Term type: atom text (SWI-Prolog.h)."
+const PL_CHARS = 13
+# PORT: SWI-Prolog.h PL_POINTER
+"Term type: a pointer (SWI-Prolog.h)."
+const PL_POINTER = 14
+# PORT: SWI-Prolog.h PL_BOOL
+"Term type: a Boolean (SWI-Prolog.h)."
+const PL_BOOL = 17
+# PORT: SWI-Prolog.h PL_FUNCTOR_CHARS
+"Term type: a functor by name and arity (SWI-Prolog.h)."
+const PL_FUNCTOR_CHARS = 18
+# PORT: SWI-Prolog.h PL_SHORT
+"Term type: a short (SWI-Prolog.h)."
+const PL_SHORT = 20
+# PORT: SWI-Prolog.h PL_INT
+"Term type: an int (SWI-Prolog.h)."
+const PL_INT = 21
+# PORT: SWI-Prolog.h PL_LONG
+"Term type: a long (SWI-Prolog.h)."
+const PL_LONG = 22
+# PORT: SWI-Prolog.h PL_DOUBLE
+"Term type: a double (SWI-Prolog.h)."
+const PL_DOUBLE = 23
+# PORT: SWI-Prolog.h PL_NCHARS
+"Term type: atom text with its length (SWI-Prolog.h)."
+const PL_NCHARS = 24
+# PORT: SWI-Prolog.h PL_UTF8_CHARS
+"Term type: atom text in UTF-8 (SWI-Prolog.h)."
+const PL_UTF8_CHARS = 25
+# PORT: SWI-Prolog.h PL_UTF8_STRING
+"Term type: string text in UTF-8 (SWI-Prolog.h)."
+const PL_UTF8_STRING = 26
+# PORT: SWI-Prolog.h PL_INT64
+"Term type: an int64 (SWI-Prolog.h)."
+const PL_INT64 = 27
+# PORT: SWI-Prolog.h PL_NUTF8_CHARS
+"Term type: atom text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_CHARS = 28
+# PORT: SWI-Prolog.h PL_NUTF8_CODES
+"Term type: code list text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_CODES = 29
+# PORT: SWI-Prolog.h PL_NUTF8_STRING
+"Term type: string text in UTF-8 with its length (SWI-Prolog.h)."
+const PL_NUTF8_STRING = 30
+# PORT: SWI-Prolog.h PL_NWCHARS
+"Term type: atom text of wide characters with its length (SWI-Prolog.h)."
+const PL_NWCHARS = 31
+# PORT: SWI-Prolog.h PL_NWCODES
+"Term type: code list of wide characters with its length (SWI-Prolog.h)."
+const PL_NWCODES = 32
+# PORT: SWI-Prolog.h PL_NWSTRING
+"Term type: string of wide characters with its length (SWI-Prolog.h)."
+const PL_NWSTRING = 33
+# PORT: SWI-Prolog.h PL_MBCHARS
+"Term type: atom text in the locale's multibyte encoding (SWI-Prolog.h)."
+const PL_MBCHARS = 34
+# PORT: SWI-Prolog.h PL_MBCODES
+"Term type: code list in the multibyte encoding (SWI-Prolog.h)."
+const PL_MBCODES = 35
+# PORT: SWI-Prolog.h PL_MBSTRING
+"Term type: string in the multibyte encoding (SWI-Prolog.h)."
+const PL_MBSTRING = 36
+# PORT: SWI-Prolog.h PL_INTPTR
+"Term type: an intptr_t (SWI-Prolog.h)."
+const PL_INTPTR = 37
+# PORT: SWI-Prolog.h PL_DICT
+"Term type: a dict (SWI-Prolog.h)."
+const PL_DICT = 44
+# PORT: SWI-Prolog.h PL_SWORD
+"Term type: a signed word (internal) (SWI-Prolog.h)."
+const PL_SWORD = 45
+# PORT: SWI-Prolog.h _PL_PREDICATE_INDICATOR
+"Term type: a predicate as `Name/Arity` (a Procedure follows) (SWI-Prolog.h)."
+const _PL_PREDICATE_INDICATOR = 19
 # PORT: SWI-Prolog.h CVT_ATOM
 "Text conversion: an atom (SWI-Prolog.h)."
 const CVT_ATOM = 0x00000001
@@ -180,6 +285,9 @@ const CVT_ALL = CVT_ATOMIC | CVT_LIST
 # PORT: SWI-Prolog.h CVT_XINTEGER
 "Text conversion: an integer, in hexadecimal (SWI-Prolog.h)."
 const CVT_XINTEGER = 0x00000400 | CVT_INTEGER
+# PORT: SWI-Prolog.h CVT_MASK
+"The bits of the flags that say which types convert (SWI-Prolog.h)."
+const CVT_MASK = 0x00000fff
 # PORT: SWI-Prolog.h CVT_EXCEPTION
 "Text conversion: raise an error where the conversion fails (SWI-Prolog.h)."
 const CVT_EXCEPTION = 0x00001000
@@ -492,3 +600,109 @@ const PL_BT_SAFE = 1
 # PORT: SWI-Prolog.h PL_BT_USER
 "`PL_backtrace` flag: only show user goals (SWI-Prolog.h)."
 const PL_BT_USER = 2
+# FLI-API16 (pl-fli.c PL_action, PL_query, PL_version_info): the action, query and version selectors (SWI-Prolog.h:1333-1393, 18168e629eab)
+# PORT: SWI-Prolog.h PL_ACTION_TRACE
+"`PL_action`: switch to trace mode (SWI-Prolog.h)."
+const PL_ACTION_TRACE = 1
+# PORT: SWI-Prolog.h PL_ACTION_DEBUG
+"`PL_action`: switch to debug mode (SWI-Prolog.h)."
+const PL_ACTION_DEBUG = 2
+# PORT: SWI-Prolog.h PL_ACTION_BACKTRACE
+"`PL_action`: show a backtrace (stack dump) (SWI-Prolog.h)."
+const PL_ACTION_BACKTRACE = 3
+# PORT: SWI-Prolog.h PL_ACTION_BREAK
+"`PL_action`: create a break environment (SWI-Prolog.h)."
+const PL_ACTION_BREAK = 4
+# PORT: SWI-Prolog.h PL_ACTION_HALT
+"`PL_action`: halt Prolog execution (SWI-Prolog.h)."
+const PL_ACTION_HALT = 5
+# PORT: SWI-Prolog.h PL_ACTION_ABORT
+"`PL_action`: generate a Prolog abort (SWI-Prolog.h)."
+const PL_ACTION_ABORT = 6
+# PORT: SWI-Prolog.h PL_ACTION_WRITE
+"`PL_action`: write via the Prolog i/o buffer (SWI-Prolog.h)."
+const PL_ACTION_WRITE = 8
+# PORT: SWI-Prolog.h PL_ACTION_FLUSH
+"`PL_action`: flush the Prolog i/o buffer (SWI-Prolog.h)."
+const PL_ACTION_FLUSH = 9
+# PORT: SWI-Prolog.h PL_ACTION_GUIAPP
+"`PL_action`: Win32: set when this is a gui (SWI-Prolog.h)."
+const PL_ACTION_GUIAPP = 10
+# PORT: SWI-Prolog.h PL_ACTION_ATTACH_CONSOLE
+"`PL_action`: MT: attach a console (SWI-Prolog.h)."
+const PL_ACTION_ATTACH_CONSOLE = 11
+# PORT: SWI-Prolog.h PL_GMP_SET_ALLOC_FUNCTIONS
+"`PL_action`: GMP: do not change the allocation functions (SWI-Prolog.h)."
+const PL_GMP_SET_ALLOC_FUNCTIONS = 12
+# PORT: SWI-Prolog.h PL_ACTION_TRADITIONAL
+"`PL_action`: set --traditional (SWI-Prolog.h)."
+const PL_ACTION_TRADITIONAL = 13
+# PORT: SWI-Prolog.h PL_VERSION_SYSTEM
+"`PL_version_info`: the Prolog version (SWI-Prolog.h)."
+const PL_VERSION_SYSTEM = 1
+# PORT: SWI-Prolog.h PL_VERSION_FLI
+"`PL_version_info`: the PL_* compatibility version (SWI-Prolog.h)."
+const PL_VERSION_FLI = 2
+# PORT: SWI-Prolog.h PL_VERSION_REC
+"`PL_version_info`: the PL_record_external() compatibility version (SWI-Prolog.h)."
+const PL_VERSION_REC = 3
+# PORT: SWI-Prolog.h PL_VERSION_QLF
+"`PL_version_info`: the saved QLF format version (SWI-Prolog.h)."
+const PL_VERSION_QLF = 4
+# PORT: SWI-Prolog.h PL_VERSION_QLF_LOAD
+"`PL_version_info`: the minimum loadable QLF format version (SWI-Prolog.h)."
+const PL_VERSION_QLF_LOAD = 5
+# PORT: SWI-Prolog.h PL_VERSION_VM
+"`PL_version_info`: the VM signature (SWI-Prolog.h)."
+const PL_VERSION_VM = 6
+# PORT: SWI-Prolog.h PL_VERSION_BUILT_IN
+"`PL_version_info`: the built-in predicate signature (SWI-Prolog.h)."
+const PL_VERSION_BUILT_IN = 7
+# PORT: SWI-Prolog.h PL_QUERY_ARGC
+"`PL_query`: main()'s argc (SWI-Prolog.h)."
+const PL_QUERY_ARGC = 1
+# PORT: SWI-Prolog.h PL_QUERY_ARGV
+"`PL_query`: main()'s argv (SWI-Prolog.h)."
+const PL_QUERY_ARGV = 2
+# PORT: SWI-Prolog.h PL_QUERY_GETC
+"`PL_query`: read a character from the terminal (SWI-Prolog.h)."
+const PL_QUERY_GETC = 5
+# PORT: SWI-Prolog.h PL_QUERY_MAX_INTEGER
+"`PL_query`: the largest integer (SWI-Prolog.h)."
+const PL_QUERY_MAX_INTEGER = 6
+# PORT: SWI-Prolog.h PL_QUERY_MIN_INTEGER
+"`PL_query`: the smallest integer (SWI-Prolog.h)."
+const PL_QUERY_MIN_INTEGER = 7
+# PORT: SWI-Prolog.h PL_QUERY_MAX_TAGGED_INT
+"`PL_query`: the largest tagged integer (SWI-Prolog.h)."
+const PL_QUERY_MAX_TAGGED_INT = 8
+# PORT: SWI-Prolog.h PL_QUERY_MIN_TAGGED_INT
+"`PL_query`: the smallest tagged integer (SWI-Prolog.h)."
+const PL_QUERY_MIN_TAGGED_INT = 9
+# PORT: SWI-Prolog.h PL_QUERY_VERSION
+"`PL_query`: the version, 207006 = 2.7.6 (SWI-Prolog.h)."
+const PL_QUERY_VERSION = 10
+# PORT: SWI-Prolog.h PL_QUERY_MAX_THREADS
+"`PL_query`: the maximum thread count (SWI-Prolog.h)."
+const PL_QUERY_MAX_THREADS = 11
+# PORT: SWI-Prolog.h PL_QUERY_ENCODING
+"`PL_query`: the I/O encoding (SWI-Prolog.h)."
+const PL_QUERY_ENCODING = 12
+# PORT: SWI-Prolog.h PL_QUERY_USER_CPU
+"`PL_query`: the user CPU time in milliseconds (SWI-Prolog.h)."
+const PL_QUERY_USER_CPU = 13
+# PORT: SWI-Prolog.h PL_QUERY_HALTING
+"`PL_query`: true if the system is in PL_cleanup() (SWI-Prolog.h)."
+const PL_QUERY_HALTING = 14
+# PORT: SWI-Prolog.h PL_FLI_VERSION
+"The version of the PL_*() functions (SWI-Prolog.h:79, 18168e629eab): `PL_version_info(PL_VERSION_FLI)` (SWI-Prolog.h)."
+const PL_FLI_VERSION = 2
+# PORT: SWI-Prolog.h PL_REC_VERSION
+"The version of PL_record_external() and fastrw (SWI-Prolog.h:80, 18168e629eab): `PL_version_info(PL_VERSION_REC)` (SWI-Prolog.h)."
+const PL_REC_VERSION = 3
+# PORT: SWI-Prolog.h PL_QLF_LOADVERSION
+"The oldest QLF version loaded (SWI-Prolog.h:81, 18168e629eab): `PL_version_info(PL_VERSION_QLF_LOAD)`; the oracle's `--abi-version` carries it (SWI-Prolog.h)."
+const PL_QLF_LOADVERSION = 68
+# PORT: SWI-Prolog.h PL_QLF_VERSION
+"The QLF version saved (SWI-Prolog.h:82, 18168e629eab): `PL_version_info(PL_VERSION_QLF)` (SWI-Prolog.h)."
+const PL_QLF_VERSION = 72
