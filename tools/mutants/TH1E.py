@@ -33,9 +33,13 @@
 #   * the `rc == YIELD_ENGINE_YIELD` branch and the default (unknown code) branch of interactor_post_answer_nolock: no query returns a
 #     yield code until the VM yield lands (its own engine-core step); the yield rows (yl1, yl2) wait for it.
 #   * `thread_symbol` of the main thread (the text atom `main`) and the nested caller's alias in thread(Thread): no row has an engine called from an aliased engine.
-#   * the refusals of thread_property/2 (system_thread_id, size, the statuses exited/exception/nomem) raise a Julia exception: no row.
 #   * `copy_debug_mode`: only a caller in debug or trace mode changes anything, and no row switches them (the debug step's).
 #   * the TH_IS_INTERACTOR test of get_interactor: every handle that exists is an engine (no other thread records).
+# THE THREAD_PROPERTY LEFT-OVERS (TS1..TS15: src/pl-thread.jl `system_thread_id`, `thread_tid_property`, `sizeof_thread`, `thread_size_property`,
+# `unify_thread_status`; pl-thread.c:2041, :2698-2765, :3156, :3305-3338): TARGETS is the engines test alone (tp26-tp34 and the white-box testset
+# "thread_property: the status of a thread that ended"; no other file reaches them). No equivalent among TS1-TS15. NOT LISTED: the `tid != -1` test
+# of `thread_tid_property` and the non-Linux `-1` of `system_thread_id` (the Linux lane never sees -1), the `rc || return raiseStackOverflow` of
+# `unify_thread_status` (PL_recorded of a record made in the same database cannot fail), the argument stack/message queue terms of `sizeof_thread` (not counted).
 TARGETS = ["test/core_lang/test_engines_swipl.jl"]
 T = "src/pl-thread.jl"
 O = "src/os/pl-option.jl"
@@ -422,4 +426,65 @@ MUTANTS = [
          file=T, targets=TARGETS,
          old="    return symbol_alias(gd, info.symbol)\n",
          new="    return info.symbol\n"),
+    # ---- thread_property: system_thread_id, size and the statuses of an ended thread
+    dict(id="TH1E-TS1 system_thread_id answers -1 on Linux (KILL tp26, tp27: no id for main)",
+         file=T, targets=TARGETS,
+         old="    Sys.islinux() || return -1\n    return Int(ccall(:gettid, Cint, ()))\n",
+         new="    return -1\n"),
+    dict(id="TH1E-TS2 a suspended engine has a system thread id (KILL tp28)",
+         file=T, targets=TARGETS,
+         old="    if info === nothing || info.has_tid\n        tid = system_thread_id()",
+         new="    if true\n        tid = system_thread_id()"),
+    dict(id="TH1E-TS3 the main thread has no system thread id (KILL tp26, tp27)",
+         file=T, targets=TARGETS,
+         old="    if info === nothing || info.has_tid\n        tid = system_thread_id()",
+         new="    if info !== nothing && info.has_tid\n        tid = system_thread_id()"),
+    dict(id="TH1E-TS4 sizeof_thread counts a thread that is not running (KILL the white-box testset: 0 for EXITED; st_size)",
+         file=T, targets=TARGETS,
+         old="        info.status != PL_THREAD_RUNNING && return 0\n",
+         new=""),
+    dict(id="TH1E-TS5 size(S) is given for a size of 0 (KILL st_size: a status past RUNNING has no size)",
+         file=T, targets=TARGETS,
+         old="    size != 0 && return PL_unify_int64(ld, prop, size)\n",
+         new="    size >= 0 && return PL_unify_int64(ld, prop, size)\n"),
+    dict(id="TH1E-TS6 sizeof_thread leaves the size of the local data out (KILL the white-box lower bound)",
+         file=T, targets=TARGETS,
+         old="        size += sizeof(PL_local_data{T})\n",
+         new=""),
+    dict(id="TH1E-TS7 sizeof_thread leaves the global stack out (KILL the white-box lower bound)",
+         file=T, targets=TARGETS,
+         old="        size += _size_stack(eld, :global) + 8 * eld.global_spare\n",
+         new=""),
+    dict(id="TH1E-TS8 sizeof_thread leaves the trail out (KILL the white-box lower bound)",
+         file=T, targets=TARGETS,
+         old="        size += _size_stack(eld, :trail) + 8 * eld.trail_spare\n",
+         new=""),
+    dict(id="TH1E-TS9 the main thread's size counts any local data (KILL the white-box: an engine's data is not main's)",
+         file=T, targets=TARGETS,
+         old="        ld.thread_info === nothing && (tld = ld)\n",
+         new="        tld = ld\n"),
+    dict(id="TH1E-TS10 exited and exception swap their functor (KILL st_exited, st_exception)",
+         file=T, targets=TARGETS,
+         old="stat == PL_THREAD_EXITED ? :exited : :exception",
+         new="stat == PL_THREAD_EXITED ? :exception : :exited"),
+    dict(id="TH1E-TS11 the result of an ended thread is not read from its record (KILL st_exited)",
+         file=T, targets=TARGETS,
+         old="        if rv !== nothing\n            rc = PL_recorded(ld, rv, tmp)\n",
+         new="        if false\n            rc = PL_recorded(ld, rv, tmp)\n"),
+    dict(id="TH1E-TS12 the status exception is not answered (KILL st_exception)",
+         file=T, targets=TARGETS,
+         old="    elseif stat == PL_THREAD_EXITED || stat == PL_THREAD_EXCEPTION\n",
+         new="    elseif stat == PL_THREAD_EXITED\n"),
+    dict(id="TH1E-TS13 the status nomem names another resource (KILL st_nomem)",
+         file=T, targets=TARGETS,
+         old="               PL_unify_atom(ld, a3, mk_sym(T, :memory))\n",
+         new="               PL_unify_atom(ld, a3, mk_sym(T, :disk))\n"),
+    dict(id="TH1E-TS14 a succeeded thread's status is false (KILL st_true, st_false)",
+         file=T, targets=TARGETS,
+         old="    elseif stat == PL_THREAD_SUCCEEDED\n        return PL_unify_atom(ld, status, mk_sym(T, :true))\n",
+         new="    elseif stat == PL_THREAD_SUCCEEDED\n        return PL_unify_atom(ld, status, mk_sym(T, :false))\n"),
+    dict(id="TH1E-TS15 sizeof_thread leaves the local stack out (KILL the white-box lower bound)",
+         file=T, targets=TARGETS,
+         old="        size += _size_stack(eld, :local) + 8 * eld.local_spare\n",
+         new=""),
 ]

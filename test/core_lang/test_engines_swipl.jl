@@ -14,7 +14,8 @@
 #     type_error(engine, main); the kernel has no table entry for the main thread: existence_error(engine, main)).
 #   * The tp rows (thread_property/2, pl-thread.c:3404-3512, tprop_list :3355-3367) are read from the C the same way; least sure: tp05 (main's
 #     properties), tp22 (debug_mode false), tp23 (main has no class: upstream's info->class of the main thread is NULL, read, not measured),
-#     tp10 (findnsols over the enumeration). The properties system_thread_id and size are refused by name in the kernel: no row.
+#     tp10 (findnsols over the enumeration). tp26-tp34 (system_thread_id, size, the property enumerations) are MEASURED on the pin build
+#     (2026-11-22); tp23 is kernel-only (the toplevel sets main's class, see the row).
 #   * Rows `live = false` are the NAMED DIVERGES (TH1) of the kernel (upstream HANGS on the engine's mutex when an engine is resumed or
 #     posted to while it runs): they are never run in swipl.
 #   * THE YIELD ROWS (engine_yield/1, the I_YIELD instruction and its resume) need the VM step, which is its own engine-core step. Their testset
@@ -368,8 +369,11 @@ const _EN_CASES = [
     (
         "tp22", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, debug_mode(M)), R0 = M", "false", true
     ),
+    # tp23 is KERNEL-ONLY (measured on the pin build, 2026-11-22: swipl answers `console`): the class of the main thread is set by the
+    # toplevel (boot/toplevel.pl:575 `set_thread(main, class(console))`), which the kernel's database never ran; upstream's `info->class`
+    # of main is NULL until then, as here (a thread record's class is plain data: pl-thread.c:2499, thread_class_property :3340-3353).
     (
-        "tp23", "true", "( thread_property(main, class(_)) -> R0 = y ; R0 = n )", "n", true
+        "tp23", "true", "( thread_property(main, class(_)) -> R0 = y ; R0 = n )", "n", false
     ),
     (
         "tp24", "engine_create(X, member(X,[a,b]), E)",
@@ -378,6 +382,43 @@ const _EN_CASES = [
     (
         "tp25", "true", "thread_property(999999, id(_))",
         "raised(existence_error(thread,999999))", true
+    ),
+    # system_thread_id/1 and size/1 (pl-thread.c:3305-3338, system_thread_id :2041, sizeof_thread :3156), measured on the pin build 2026-11-22:
+    # main has an OS thread id, an engine only while it is entered (`has_tid`, the same OS thread as main's), a size while it is running.
+    (
+        "tp26", "true", "thread_property(main, system_thread_id(I)), integer(I), I > 0, R0 = ok", "ok", true
+    ),
+    (
+        "tp27", "engine_create(X, (thread_self(S), thread_property(S, system_thread_id(I)), X = I), E)",
+        "engine_next(E, A), thread_property(main, system_thread_id(M)), ( A == M -> R0 = same ; R0 = diff )", "same", true
+    ),
+    (
+        "tp28", "engine_create(X, member(X,[a,b]), E)",
+        "( thread_property(E, system_thread_id(_)) -> R0 = y ; R0 = n )", "n", true
+    ),
+    (
+        "tp29", "true", "thread_property(main, size(S)), integer(S), S > 0, R0 = ok", "ok", true
+    ),
+    (
+        "tp30", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, size(S)), integer(S), S > 0, R0 = ok", "ok", true
+    ),
+    (
+        "tp31", "engine_create(X, ( thread_self(Me), thread_property(Me, size(S)), integer(S), S > 0, X = ok ), E)",
+        "engine_next(E, R0)", "ok", true
+    ),
+    (
+        "tp32", "true",
+        "findall(N, ( thread_property(main, P), functor(P, N, _), N \\== class ), R0)",
+        "[id,alias,status,detached,debug,debug_mode,engine,system_thread_id,size]", true
+    ),
+    (
+        "tp33", "engine_create(X, member(X,[a,b]), E)",
+        "findall(N, ( thread_property(E, P), functor(P, N, _) ), R0)",
+        "[id,status,detached,debug,debug_mode,engine,size,class]", true
+    ),
+    (
+        "tp34", "engine_create(X, ( thread_self(S), findall(N, ( thread_property(S, P), functor(P, N, _) ), X) ), E)",
+        "engine_next(E, R0)", "[id,status,detached,debug,debug_mode,engine,thread,system_thread_id,size,class]", true
     ),
     # the named DIVERGES (TH1): upstream waits for the mutex of an engine that is running, on one thread: a hang. Kernel only.
     (
@@ -847,6 +888,67 @@ end
     @test selfs == [2, 3]
 end
 
+# thread_property's `status` of a thread record that ended (pl-thread.c:2698-2765, unify_thread_status): no engine reaches these statuses (a
+# finished engine's slot is dropped), so the rows set the record's `status` and `return_value` by hand on a live engine's record.
+const _EN_ST_PRELUDE = _EN_AE_PRELUDE * raw"""
+ck_st_exited(ok) :- ev_keep(E), thread_property(E, status(exited(foo))).
+ck_st_exited_none(ok) :- ev_keep(E), thread_property(E, status(exited(T))), var(T).
+ck_st_exception(ok) :- ev_keep(E), thread_property(E, status(exception(foo))).
+ck_st_nomem(ok) :- ev_keep(E), thread_property(E, status(exception(error(resource_error(memory), V)))), var(V).
+ck_st_true(ok) :- ev_keep(E), thread_property(E, status(true)).
+ck_st_false(ok) :- ev_keep(E), thread_property(E, status(false)).
+ck_st_wrong(ok) :- ev_keep(E), \+ thread_property(E, status(true)), \+ thread_property(E, status(exception(_))), \+ thread_property(E, status(running)).
+ck_st_size(ok) :- ev_keep(E), \+ thread_property(E, size(_)).
+ck_st_listed(ok) :- ev_keep(E), thread_property(T, status(true)), T == E.
+"""
+
+@testset "thread_property: the status of a thread that ended, size and system_thread_id (white-box, read from the C)" begin
+    f = joinpath(mktempdir(), "st.pl")
+    write(f, _EN_ST_PRELUDE)
+    gd, ld, st = _en_load(f)
+    @test st == "ok"
+    @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
+    info = gd.thread.infos[2]
+    ok(n) = _en_ask(gd, ld, "ck_$n") == _en_ok_line(n)
+    @test info.return_value === nothing                                 # an engine ends with no result
+    r = LK.PL_new_term_ref(ld)
+    LK.PL_put_atom(ld, r, _ens(:foo))
+    # exited(T): T is the recorded result, an unbound variable when there is none (`rc` stays true)
+    info.status = LK.PL_THREAD_EXITED
+    @test ok("st_exited_none")
+    info.return_value = LK.PL_record(ld, r)
+    @test ok("st_exited")
+    @test ok("st_wrong")                                                # `exited` answers no other status
+    info.status = LK.PL_THREAD_EXCEPTION
+    @test ok("st_exception")
+    info.status = LK.PL_THREAD_NOMEM                                    # exception(error(resource_error(memory), _)), no record read
+    @test ok("st_nomem")
+    info.status = LK.PL_THREAD_SUCCEEDED
+    @test ok("st_true")
+    @test ok("st_listed")                                               # the enumeration reaches a record with a status past RUNNING
+    info.status = LK.PL_THREAD_FAILED
+    @test ok("st_false")
+    @test ok("st_size")                                                 # `size` is 0 (a failure) unless the thread is RUNNING
+    # the size of a running engine counts its record, its local data and its stacks; main's counts its own
+    info.status = LK.PL_THREAD_RUNNING
+    eld = info.thread_data
+    sz = LK.sizeof_thread(ld, info)
+    @test sz >= sizeof(LK.PL_thread_info{_EN}) + sizeof(LK.PL_local_data{_EN}) + 8 * length(eld.gstack) + 8 * eld.lMax + 8 * length(eld.trail)
+    @test LK.sizeof_thread(ld, nothing) >= sizeof(LK.PL_thread_info{_EN}) + 8 * length(ld.gstack)
+    @test LK.sizeof_thread(eld, nothing) == sizeof(LK.PL_thread_info{_EN})    # main's local data is not the engine's: only the record
+    info.status = LK.PL_THREAD_EXITED
+    @test LK.sizeof_thread(ld, info) == 0
+    info.status = LK.PL_THREAD_RUNNING
+    # system_thread_id: the calling thread's id on Linux; an engine only while it is entered (`has_tid`)
+    if Sys.islinux()
+        @test LK.system_thread_id() == Int(ccall(:gettid, Cint, ()))
+        @test LK.system_thread_id() > 0
+    else
+        @test LK.system_thread_id() == -1
+    end
+    @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
+end
+
 @testset "engine_yield/1 rows (need the VM yield: FAILS until the VM step lands)" begin
     # a loud failure, never a skip: the yield is the VM's (I_YIELD, pl-vmi.c:2410-2448; resume, pl-wam.c:3870-3910; PL_yielded, :3331)
     @test isdefined(LK, :PL_yielded)
@@ -887,7 +989,7 @@ end
     for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp", "ev", "ti")
         @test any(startswith(id, fam) for id in ids)
     end
-    @test count(c -> !c[5], _EN_CASES) == 3             # the three named divergences (dv1-dv3) are the only kernel-only rows
+    @test count(c -> !c[5], _EN_CASES) == 4             # the named divergences (dv1-dv3) and tp23 (the toplevel's class of main) are the only kernel-only rows
     @test _en_ok_line("en01") == "ck_en01 c[99,107,95,101,110,48,49]/1(a[111,107])"
 end
 
