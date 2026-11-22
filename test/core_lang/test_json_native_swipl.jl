@@ -115,8 +115,8 @@ _ws_ok(::Type{T}, text, want::String) where {T} = begin
 end
 
 # (text, the output): json.c's escape table (:204-211, :217-219), control characters as `\u%04x` (:220-223), `</` as `<\/` (:224-226),
-# `<!` as `<!` (:227-230, the handoff's earlier "a bare !" is wrong: Sfprintf(out, "u%04x", c) writes the code of the `!`), U+2028 and
-# U+2029 as ` `, ` ` (:233-240); everything else is written as it is, as UTF-8 (:241-243).
+# `<!` as `<` + backslash + `u0021` (:227-230, the handoff's earlier "a bare !" is wrong: Sfprintf(out, "u%04x", c) writes the code of the `!`), U+2028 and
+# U+2029 as `\u2028`, `\u2029` (:233-240); everything else is written as it is, as UTF-8 (:241-243).
 const _WS_ROWS = [
     ("abc", "$(Q)abc$(Q)"),
     ("", "$(Q)$(Q)"),
@@ -127,13 +127,13 @@ const _WS_ROWS = [
     ("a/b", "$(Q)a/b$(Q)"),                                                      # a lone / is not escaped
     ("</a", "$(Q)<$(BS)/a$(Q)"),                                                 # </ becomes <\/
     ("<<//", "$(Q)<<$(BS)//$(Q)"),                                               # only the / that FOLLOWS a < : pc is the previous code
-    ("<!--", "$(Q)<$(BS)u0021--$(Q)"),                                           # <! becomes <!
+    ("<!--", "$(Q)<$(BS)u0021--$(Q)"),                                           # <! becomes < + backslash + u0021
     ("a!<", "$(Q)a!<$(Q)"),                                                      # ! before < is left alone
     ("<!</", "$(Q)<$(BS)u0021<$(BS)/$(Q)"),                                      # pc follows each written code, escaped or not
     ("\x7f", "$(Q)\x7f$(Q)"),                                                    # DEL is not below ' ': raw
-    ("é€\U0001F600", "$(Q)é€\U0001F600$(Q)"),                # raw UTF-8 on a UTF-8 stream
-    ("  ", "$(Q)$(BS)u2028$(BS)u2029$(Q)"),                            # JavaScript line terminators
-    ("‧‪", "$(Q)‧‪$(Q)"),                                    # their neighbours are not
+    ("\u00e9\u20ac\U0001F600", "$(Q)\u00e9\u20ac\U0001F600$(Q)"),                # raw UTF-8 on a UTF-8 stream
+    ("\u2028\u2029", "$(Q)$(BS)u2028$(BS)u2029$(Q)"),                            # JavaScript line terminators
+    ("\u2027\u202a", "$(Q)\u2027\u202a$(Q)"),                                    # their neighbours are not
     ("\u0080", "$(Q)\u0080$(Q)"),                                                # the first code >= 128 is raw
 ]
 
@@ -175,15 +175,15 @@ end
     @test _pc(0, 0xD800) == (0, "$(BS)ud800")
     @test _pc(0, 0xDBFF) == (0, "$(BS)udbff")
     @test _pc(0, 0xDFFF) == (0, "$(BS)udfff")
-    @test _pc(0, 0xD7FF) == (0, "퟿")                            # just below the range: raw
-    @test _pc(0, 0xE000) == (0, "")                            # just above: raw
+    @test _pc(0, 0xD7FF) == (0, "\ud7ff")                            # just below the range: raw
+    @test _pc(0, 0xE000) == (0, "\ue000")                            # just above: raw
     @test _pc(0, 0x2028) == (0, "$(BS)u2028")
     @test _pc(0, 0x2029) == (0, "$(BS)u2029")
     @test _pc(0, 0x1F600) == (0, "\U0001F600")
     @test _pc(Int('<'), Int('/')) == (0, "$(BS)/")
     @test _pc(Int('<'), Int('!')) == (0, "$(BS)u0021")
     @test _pc(Int('a'), Int('/')) == (0, "/")                        # pc is what counts, not the code
-    @test _pc(Int('<'), 0x20ac) == (0, "€")                     # c >= 128 after a < is raw
+    @test _pc(Int('<'), 0x20ac) == (0, "\u20ac")                     # c >= 128 after a < is raw
     @test _pc(0, 0x7f) == (0, "\x7f")
     @test _pc(0, 0x1f) == (0, "$(BS)u001f")
     @test _pc(0, 0x20) == (0, " ")                                   # ' ' is the first code that is not a control character
@@ -299,7 +299,7 @@ end
             ("  z", 11, 11, 32),                                     # \v (11) is NOT white space
             ("\x0bq", 32, 11, Int('q')),                             # nor is it skipped from the stream
             ("", 0x20ac, 0x20ac, -1),                                # a wide c0 that is not white space
-            (" x", 32, 0xa0, Int('x')),                         # U+00A0 stops the skipping
+            ("\u00a0x", 32, 0xa0, Int('x')),                         # U+00A0 stops the skipping
         ]
         @test _sk_ok(_TL, text, c0, want, after)
     end
@@ -423,4 +423,113 @@ end
     @test !_rn_ok(_TL, "+1", Int('1'), 11, -1)                       # an error is not a number
     @test !_rn_error(_TL, "2", Int('1'), "syntax_error")             # a number is not an error
     @test !_rn_error(_TL, "5", 0x0663, "type_error")                 # the wrong formal
+end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# PL_put_term_from_chars (pl-read.c:7292): a number when the text is all one (first character a digit or `-`, last a digit, str_number reads
+# all of it), else the text read as a term; a syntax error is RAISED under CVT_EXCEPTION, else it is put into the term reference
+
+function _ptfc(::Type{T}, bytes::Vector{UInt8}, len::Int, flags::Integer) where {T}
+    gd, ld = _env(T)
+    t = LK.PL_new_term_refs(ld, 1)
+    rc = LK.PL_put_term_from_chars(ld, t, UInt32(flags), bytes, len)
+    return (rc = rc, exc = _exc(ld), ld = ld, t = t)
+end
+_ptfc(::Type{T}, s::String; len::Int=sizeof(s), flags::Integer=LK.CVT_EXCEPTION) where {T} =
+    _ptfc(T, Vector{UInt8}(codeunits(s)), len, flags)
+_ptfc_answer(r) = lk_answer(r.ld, r.t)
+
+# the text reads as the number `want`: the call succeeds, raises nothing and the reference holds a number equal to `want`
+_num_ok(::Type{T}, s::String, want; len::Int=sizeof(s)) where {T} = begin
+    r = _ptfc(T, s; len = len)
+    a = _ptfc_answer(r)
+    r.rc && !r.exc && kind(a) === GND && lk_value(a) == want
+end
+# the text reads as an atom
+_atom_ok(::Type{T}, bytes::Vector{UInt8}, flags::Integer, want::String) where {T} = begin
+    r = _ptfc(T, bytes, length(bytes), flags)
+    a = _ptfc_answer(r)
+    r.rc && !r.exc && kind(a) === SYM && sym_text(a) == want
+end
+
+@testset "PL_put_term_from_chars: numbers (the first branch) and terms (the reader)" begin
+    @test _num_ok(_TL, "12", 12)
+    @test _num_ok(_TL, "-7", -7)
+    @test _num_ok(_TL, "2.5", 2.5)
+    @test _num_ok(_TL, "0.25", 0.25)
+    @test _num_ok(_TL, "123456789012345678901234567890", parse(BigInt, "123456789012345678901234567890"))
+    @test _num_ok(_TL, "12345", 123; len = 3)                        # only the first `len` bytes are read
+    @test _num_ok(_TL, "12345", 12345; len = 5)
+    @test _atom_ok(_TL, Vector{UInt8}(codeunits("abc")), LK.CVT_EXCEPTION, "abc")
+    for (text, name) in [("a-1", "-"), ("1+2", "+")]                 # first char a digit but the number ends early / not a number at all
+        r = _ptfc(_TL, text)
+        a = _ptfc_answer(r)
+        @test r.rc && !r.exc && kind(a) !== GND && kind(a) !== SYM
+        @test sym_text(child(a, 1)) == name && nchildren(a) == 3
+    end
+    # an encoding: REP_UTF8 reads the bytes of \u00e9 as one character; without it a byte is a Latin-1 character
+    @test _atom_ok(_TL, Vector{UInt8}(codeunits("\u00e9")), LK.CVT_EXCEPTION | LK.REP_UTF8, "\u00e9")
+    @test _atom_ok(_TL, UInt8[0xe9], LK.CVT_EXCEPTION, "\u00e9")
+end
+
+@testset "PL_put_term_from_chars: a syntax error is raised under CVT_EXCEPTION, put into the term otherwise" begin
+    r = _ptfc(_TL, "foo("; flags = LK.CVT_EXCEPTION)
+    @test !r.rc && r.exc
+    @test sym_text(child(_exc_term(r.ld), 1)) == "error"
+    r = _ptfc(_TL, "foo("; flags = 0)
+    @test !r.rc && !r.exc
+    a = _ptfc_answer(r)
+    @test kind(a) !== GND && kind(a) !== SYM && sym_text(child(a, 1)) == "error"      # t holds the error term
+    @test sym_text(child(child(a, 2), 1)) == "syntax_error"
+end
+
+@testset "PL_put_term_from_chars: MUST-FAIL (the checker reports a wrong expectation)" begin
+    @test !_num_ok(_TL, "12", 13)
+    @test !_num_ok(_TL, "12345", 12345; len = 3)
+    @test !_num_ok(_TL, "foo(", 1)
+    @test !_num_ok(_TL, "abc", 1)                                    # an atom is no number
+    @test !_atom_ok(_TL, UInt8[0xe9], LK.CVT_EXCEPTION | LK.REP_UTF8, "\u00e9")   # a lone 0xe9 is no UTF-8
+end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# `$activate_static_extension/1` (pl-load.c, the static form) and the tables that register the four predicates
+
+@testset "\$activate_static_extension/1" begin
+    @test [n for (n, _) in LK.static_extensions] == ["json"]
+    gd, ld = _env(_TL)
+    t = LK.PL_new_term_refs(ld, 1)
+    _put!(ld, t, :json)
+    @test LK.pl_activate_static_extension1_va(ld, t, 1, _ctx(_TL)) == LK.FTRUE
+    @test LK.pl_activate_static_extension1_va(ld, t, 1, _ctx(_TL)) == LK.FTRUE      # twice: nothing is registered twice
+    @test !_exc(ld)
+    @test LK.activate_static_extension(ld, "json")
+    @test !LK.activate_static_extension(ld, "nosuch")
+    r = _run(_TL, LK.pl_activate_static_extension1_va, :nosuch)
+    @test r.rc == LK.FFALSE && r.exc && r.formal == "existence_error"
+    r = _run(_TL, LK.pl_activate_static_extension1_va, 7)             # a number is no extension name: CVT_EXCEPTION
+    @test r.rc == LK.FFALSE && r.exc
+    r = _run(_TL, LK.pl_activate_static_extension1_va, nothing)
+    @test r.rc == LK.FFALSE && r.exc && r.formal == "instantiation_error"
+end
+
+@testset "the json tables and the procedures in system" begin
+    tab = LK.PL_predicates_from_json
+    @test [(e.predicate_name, e.arity) for e in tab] ==
+        [("json_read_number", 3), ("json_skip_ws", 3), ("json_write_string", 2), ("json_write_indent", 3)]
+    @test all(e -> e.flags == LK.PL_FA_VARARGS, tab)
+    @test [e.function_ for e in tab] == Any[
+        LK.pl_json_read_number3_va, LK.pl_json_skip_ws3_va, LK.pl_json_write_string2_va, LK.pl_json_write_indent3_va,
+    ]
+    ld_tab = LK.PL_predicates_from_load
+    @test [(e.predicate_name, e.arity) for e in ld_tab] == [("\$activate_static_extension", 1)]
+    @test ld_tab[1].flags == (LK.PL_FA_TRANSPARENT | LK.PL_FA_VARARGS)
+    gd = LK.PL_global_data{_TL}()
+    m = LK.MODULE_system(gd)
+    for (name, ar) in [
+            ("json_read_number", 3), ("json_skip_ws", 3), ("json_write_string", 2), ("json_write_indent", 3),
+            ("\$activate_static_extension", 1),
+        ]
+        proc = LK.isCurrentProcedure(sym_key(lk_sym(_TL, Symbol(name))), ar, m)
+        @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
+    end
 end
