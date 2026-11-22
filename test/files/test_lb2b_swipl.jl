@@ -9,8 +9,9 @@
 # `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
 # The rows work on the files lk_lb2b_* the test makes in a fresh directory, and are independent of its absolute path
 # (an absolute answer is cut at the working directory); the mutating rows (mkdir, rmdir, rename, chmod) come last.
-# The IRI arguments (`http://...`) are refused by name: checked as refusals below. tmp_file/2 and `$tmp_file_stream`/4 are
-# pinned by SHAPE in test/files/test_tmp_files_swipl.jl (their names differ per run).
+# tmp_file/2 and `$tmp_file_stream`/4 are pinned by SHAPE in test/files/test_tmp_files_swipl.jl (their names differ per run); the IRI arguments
+# (`http://...`) go to `iri_hook` (test/files/test_iri_hook_swipl.jl). No refusal by name is left here: the testset below only checks that a name that is
+# no IRI is an ordinary file name.
 # UNVERIFIED on the kernel: gate decides
 using Test, LogicKernel
 const LK = LogicKernel
@@ -247,7 +248,7 @@ end
 end
 
 # the refusals by name: not swipl's answers (the Julia kernel has no function behind them), an explicit NotPortedError
-@testset "LB2b: refused by name — IRI arguments" begin
+@testset "LB2b: a name that is no IRI is an ordinary file name (no refusal by name is left)" begin
     refusal(goal::String) = mktempdir() do d
         path = joinpath(d, "r.pl")
         write(path, "t0(R) :- $goal, R = ok.\n")
@@ -263,11 +264,7 @@ end
             e.step
         end
     end
-    @test refusal("exists_file('http://example.org/x')") == "LB4"
-    @test refusal("exists_directory('http://example.org/x')") == "LB4"
-    @test refusal("time_file('http://example.org/x', _)") == "LB4"
-    @test refusal("size_file('http://example.org/x', _)") == "LB4"
-    @test refusal("access_file('http://example.org/x', read)") == "LB4"
+    # tmp_file/2 and `\$tmp_file_stream`/4 are ported (W12-TMPFILES), the IRI arguments are no refusal: `iri_hook` calls `'\$iri':iri_hook/4` (test_iri_hook_swipl.jl pins its rows)
     # a name that is no IRI (one letter before `://`, or `:/`) is an ordinary file name
     @test refusal("exists_file('a://x')") === nothing
     @test refusal("exists_file('http:/x')") === nothing

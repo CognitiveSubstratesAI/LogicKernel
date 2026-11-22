@@ -7066,7 +7066,8 @@ What LB2b adds (swipl-devel cbf4e1896275; written edit-only, nothing compiled wh
 - **DIVERGES, kept:** `stat` is `Base.stat`, so a modification time is `sec + nsec * 1e-9`; `~user` (W5c) calls `getpwnam` and reads `pw_dir` at a byte offset known on Linux 64-bit only (refused by name elsewhere), and neither it nor HOME is cached (upstream
   caches them in `GD->os.fred`/`GD->os.myhome`); `expand` and `directory_files` list `.` and `..` first and then `readdir(sort=false)`; `$chdir/1` fails when `AbsoluteFile` already raised.
 - **Ported since W12-TMPFILES:** `tmp_file/2` and `$tmp_file_stream/4` (`TemporaryFile`, `DeleteTemporaryFile`, `RemoveTemporaryFiles` of pl-os.c; the registry is `os_tmp_files`, the name counter `os_temp_counter`; `Sfdopen`).
-- **Refused by name:** an IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory (the `$iri` hook is Prolog: LB4); `PL_FILE_SEARCH` (LB4).
+- **Refused by name:** `PL_FILE_SEARCH` (LB4). An IRI argument (`file_name_is_iri != 0`) of time_file, size_file, access_file, exists_file, exists_directory is no refusal any more: it goes to `iri_hook`
+  (pl-file.c `call_iri_hook`, `iri_hook_va`, `iri_hook`: `'$iri':iri_hook/4`; test/files/test_iri_hook_swipl.jl, tools/mutants/LBB.py); `IRI_OPEN` (pl-file.c:4355, pl-stream.c:3778) is another site, not served.
 - **Rows:** 393 oracle rows against swipl 10.1.19 (`evidence/LB2B/gen_lb2b_rows.py`, driver `run_lb2b_rows.sh`, fixtures `fixtures.sh`); several rows need a non-root user.
 
 Tests: test/files/test_lb2b_swipl.jl (the .pl and .out beside it), the mutant list tools/mutants/LB2B.py (47, two declared equivalent).
@@ -8729,8 +8730,8 @@ flags the options feed, the usage text, and the two option predicates. Nothing h
 - **DIVERGES (owner TOP1b, only what the reduced `query_loop` leaves out):** `PL_initialise!` ends with `query_loop(goal, false)`, which
   is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false` branch). What the kernel's reduced `query_loop`
   does not do of upstream's is TOP1b's; LB7 adds no loop code.
-- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only), `-c` (`$compile`), `--config`
-  (`$config`). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
+- **DIVERGES (refused by name, `NotPortedError`):** `--traditional` (`setTraditional`; the kernel is SWI-7 only). `-c` (`$compile`) and
+  `--dump-runtime-variables` (`$config`) run the Prolog toplevel goals and then `PL_halt` (pl-init.c:1672-1680; ENC1/LB7 relay 9). `--tty` / `--no-tty` go through the `tty_control` flag as upstream and so raise where its value changes, naming
   `PushTty and PopTty (the terminal)` (src/os/pl-prologflag.jl `_flag_not_ported`); the owner is the step that ports PushTty.
 - **DIVERGES (representation):** the stack limit goes to the local data in words (`ld.stacks_limit`), upstream's `LD->stacks.limit` is
   bytes; `memarea_limit` answers `nothing` for `MEMAREA_INVALID_SIZE`, and a negative number or one above 64 bits is invalid (upstream

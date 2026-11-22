@@ -62,6 +62,19 @@ const ACCESS_FILE = 8
 "`AccessFile` mode bit, the IRI extension: a directory (pl-files.h, 0x0010)."
 const ACCESS_DIRECTORY = 16
 
+# PORT: pl-file.h IRI_OPEN
+"`iri_hook` operation (pl-file.h `iri_op`): open a stream; `iri_hook` does not serve it (pl-file.c:4355 and pl-stream.c:3778 are other sites)."
+const IRI_OPEN = 0
+# PORT: pl-file.h IRI_ACCESS
+"`iri_hook` operation (pl-file.h `iri_op`): `access(Mode)`, answers a Boolean."
+const IRI_ACCESS = 1
+# PORT: pl-file.h IRI_SIZE
+"`iri_hook` operation (pl-file.h `iri_op`): `size`, answers an integer."
+const IRI_SIZE = 2
+# PORT: pl-file.h IRI_TIME
+"`iri_hook` operation (pl-file.h `iri_op`): `time`, answers a float."
+const IRI_TIME = 3
+
 # ORIGINAL (LB2b): `access(2)` modes of <unistd.h> on Linux.
 const F_OK = 0
 const X_OK = 1
@@ -353,15 +366,95 @@ function MarkExecutable(ld::PL_local_data{T}, name::String)::Bool where {T}
     return true
 end
 
-# ORIGINAL (LB2b): the IRI hook of pl-file.c `iri_hook` calls the Prolog `$iri`:iri_hook/4 of init.pl; it is
-# refused by name, left to LB4. `what` is the operation (`IRI_TIME`, `IRI_SIZE`, `IRI_ACCESS`).
-function _iri_hook_refused(ld::PL_local_data{T}, fn::String, what::String) where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, Symbol(fn)), "iri_hook $what (`\$iri`:iri_hook/4 of init.pl)", "LB4"
-        )
+# PORT: pl-file.c call_iri_hook
+# DIVERGES: (1) the database and the local data are arguments; `GD->procedures.iri_hook4` is a field that is not in the struct: the
+# procedure `'$iri':iri_hook/4` is looked up on each call (`PL_predicate("iri_hook", 4, "$iri")` is `lookupProcedure` in `lookupModule`'s
+# module, as `propagateAutoload` does). (2) `va_list` is the integer `md` (the `ACCESS_*` mode of `IRI_ACCESS`; unused by the other
+# operations); the answer is the value, or `nothing` where upstream answers false: a `Float64` (`IRI_TIME`), an `Int` (`IRI_SIZE`), a `Bool`
+# (`IRI_ACCESS`). `IRI_OPEN` (a stream answer, `PL_get_stream`) is not served: its callers (pl-file.c:4355, pl-stream.c:3778) are other sites, still refused
+# by name, and `call_iri_hook` stops with the error of upstream's `default: assert(0)` for it. (3) `sysError()` is `error()`.
+# (4) `PL_unify_term(argv+2, PL_FUNCTOR, FUNCTOR_access1, PL_ATOM, mode)` is `PL_unify_functor` and `PL_unify_atom` of the argument.
+"The answer of `'\$iri':iri_hook(Scheme, IRI, Action, Answer)` for the operation `op` on the four references `argv`…, or `nothing` (pl-file.c)."
+function call_iri_hook(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, argv::term_t, op::Int, md::Int
+)::Union{Nothing, Float64, Int, Bool} where {T}
+    pred = lookupProcedure(
+        mk_sym(T, :iri_hook), 4, lookupModule(gd, mk_sym(T, Symbol("\$iri")))
     )
+    if hasClausesDefinition(gd, pred.definition) === nothing
+        error("IRI scheme handler not yet installed")                  # sysError()
+    end
+
+    if op == IRI_ACCESS
+        mode = if md == ACCESS_WRITE
+            :write
+        elseif md == ACCESS_READ
+            :read
+        elseif md == ACCESS_EXECUTE
+            :execute
+        elseif md == ACCESS_EXIST
+            :exist
+        elseif md == ACCESS_FILE
+            :file
+        elseif md == ACCESS_DIRECTORY
+            :directory
+        else
+            error("call_iri_hook: unknown access mode $md")             # assert(0); return false
+        end
+        arg = PL_new_term_ref(ld)
+        (
+            PL_unify_functor(ld, argv + 2, mk_sym(T, :access), 1) &&
+            _PL_get_arg(ld, 1, argv + 2, arg) && PL_unify_atom(ld, arg, mk_sym(T, mode))
+        ) || return nothing
+    elseif op == IRI_TIME
+        PL_put_atom(ld, argv + 2, mk_sym(T, :time)) || return nothing
+    elseif op == IRI_SIZE
+        PL_put_atom(ld, argv + 2, mk_sym(T, :size)) || return nothing
+    else
+        error("call_iri_hook: unknown operation $op")                  # assert(0); return false
+    end
+
+    PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, argv) || return nothing
+    if op == IRI_ACCESS
+        return PL_get_bool_ex(ld, argv + 3)
+    elseif op == IRI_TIME
+        return PL_get_float_ex(ld, argv + 3)
+    else
+        return PL_get_int64_ex(ld, argv + 3)
+    end
 end
+
+# PORT: pl-file.c iri_hook_va
+# DIVERGES: as `call_iri_hook` (`va_list` is `md`). `PL_put_atom_nchars(argv+0, escheme-url, url)` is `PL_put_atom` of the text before the
+# first `:` (the scheme: `file_name_is_iri` has checked it is lower-case ASCII letters); `PL_unify_chars(argv+1, PL_STRING|REP_FN, -1, url)`
+# is the string of the name as a grounded value, as `PL_unify_text`'s `PL_STRING` branch makes it (a `String` is UTF-8, `REP_FN` in a UTF-8 locale).
+"The answer of the hook of the IRI `url` (scheme, string and action as `'\$iri':iri_hook/4` takes them) for the operation `op`, or `nothing` (pl-file.c)."
+function iri_hook_va(
+    ld::PL_local_data{T}, url::String, op::Int, md::Int
+)::Union{Nothing, Float64, Int, Bool} where {T}
+    gd = ld.GD::PL_global_data{T}
+    colon = findfirst(==(UInt8(':')), codeunits(url))::Int         # escheme = strchr(url, ':')
+    fid = PL_open_foreign_frame(ld)
+    fid == 0 && return nothing
+    rc::Union{Nothing, Float64, Int, Bool} = nothing
+    try
+        argv = PL_new_term_refs(ld, 4)
+        if argv != 0 &&
+            PL_put_atom(ld, argv, mk_sym(T, Symbol(String(codeunits(url)[1:(colon - 1)])))) &&
+            PL_unify_atomic(ld, argv + 1, mk_gnd(T, url))
+            rc = call_iri_hook(gd, ld, argv, op, md)
+        end
+    finally
+        PL_close_foreign_frame(ld, fid)                            # (upstream's sysError ends the process)
+    end
+    return rc
+end
+
+# PORT: pl-file.c iri_hook
+# DIVERGES: as `iri_hook_va`: `md` is the `ACCESS_*` mode of `IRI_ACCESS` (0 for the others); the answer is the value or `nothing`.
+"Call the Prolog hook `'\$iri':iri_hook/4` of the IRI `url` for `op` (`IRI_ACCESS`, `IRI_TIME`, `IRI_SIZE`): its answer, or `nothing` (pl-file.c)."
+iri_hook(ld::PL_local_data{T}, url::String, op::Int, md::Int = 0) where {T} =
+    iri_hook_va(ld, url, op, md)
 
 # ORIGINAL (LB2b): `sym_key` equality of an atom with the atom named `name`, for `PL_get_atom`'s result.
 _is_atom_named(a, ::Type{T}, name::Symbol) where {T} =
@@ -373,7 +466,6 @@ _unify_atom_chars(ld::PL_local_data{T}, t::term_t, s::String) where {T} =
 
 # PORT: pl-files.c time_file as pl_time_file2_va
 # (PRED_IMPL("time_file", 2, time_file, 0))
-# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
 "`time_file(+File, -Time)`: the modification time of the file as a float; `existence_error` etc. by `errno` (pl-files.c)."
 function pl_time_file2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -381,7 +473,11 @@ function pl_time_file2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     fn = PL_get_file_name(ld, A1, 0)
     fn === nothing && return FFALSE
-    file_name_is_iri(fn) != 0 && _iri_hook_refused(ld, fn, "IRI_TIME")
+    if file_name_is_iri(fn) != 0
+        t = iri_hook(ld, fn, IRI_TIME)
+        t === nothing && return FFALSE
+        return PL_unify_float(ld, A2, t::Float64) ? FTRUE : FFALSE
+    end
     time, errno = LastModifiedFile(fn)
     errno == 0 && return PL_unify_float(ld, A2, time) ? FTRUE : FFALSE
     rc = PL_error(
@@ -392,7 +488,6 @@ end
 
 # PORT: pl-files.c size_file as pl_size_file2_va
 # (PRED_IMPL("size_file", 2, size_file, 0))
-# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
 "`size_file(+File, -Size)`: the size of the file in bytes (pl-files.c)."
 function pl_size_file2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -400,7 +495,11 @@ function pl_size_file2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     n = PL_get_file_name(ld, A1, 0)
     n === nothing && return FFALSE
-    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_SIZE")
+    if file_name_is_iri(n) != 0
+        sz = iri_hook(ld, n, IRI_SIZE)
+        sz === nothing && return FFALSE
+        return PL_unify_int64(ld, A2, sz::Int) ? FTRUE : FFALSE
+    end
     size, errno = SizeFile(n)
     if size < 0
         rc = PL_error(
@@ -415,7 +514,6 @@ end
 
 # PORT: pl-files.c access_file as pl_access_file2_va
 # (PRED_IMPL("access_file", 2, access_file, 0))
-# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
 "`access_file(+File, +Mode)`: the file can be accessed in `Mode` (pl-files.c)."
 function pl_access_file2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -441,7 +539,11 @@ function pl_access_file2_va(
         PL_error(ld, "access_file", 2, "", ERR_DOMAIN, mk_sym(T, :io_mode), mode)
         return FFALSE
     end
-    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS")
+    if file_name_is_iri(n) != 0
+        rc = iri_hook(ld, n, IRI_ACCESS, md)
+        rc === nothing && return FFALSE
+        return rc::Bool ? FTRUE : FFALSE
+    end
     AccessFile(n, md) && return FTRUE
     if md == ACCESS_WRITE && !AccessFile(n, ACCESS_EXIST)
         dir = DirName(n)
@@ -476,27 +578,33 @@ end
 
 # PORT: pl-files.c exists_file as pl_exists_file1_va
 # (PRED_IMPL("exists_file", 1, exists_file, 0))
-# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
 "`exists_file(+File)`: the file exists and is a regular file (pl-files.c)."
 function pl_exists_file1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     n = PL_get_file_name(ld, PL__t0, 0)
     n === nothing && return FFALSE
-    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS ACCESS_FILE")
+    if file_name_is_iri(n) != 0
+        rc = iri_hook(ld, n, IRI_ACCESS, ACCESS_FILE)
+        rc === nothing && return FFALSE
+        return rc::Bool ? FTRUE : FFALSE
+    end
     return ExistsFile(n) ? FTRUE : FFALSE
 end
 
 # PORT: pl-files.c exists_directory as pl_exists_directory1_va
 # (PRED_IMPL("exists_directory", 1, exists_directory, 0))
-# DIVERGES: an IRI raises `NotPortedError` (`iri_hook`, left to LB4).
 "`exists_directory(+Dir)`: the directory exists (pl-files.c)."
 function pl_exists_directory1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     n = PL_get_file_name(ld, PL__t0, 0)
     n === nothing && return FFALSE
-    file_name_is_iri(n) != 0 && _iri_hook_refused(ld, n, "IRI_ACCESS ACCESS_DIRECTORY")
+    if file_name_is_iri(n) != 0
+        rc = iri_hook(ld, n, IRI_ACCESS, ACCESS_DIRECTORY)
+        rc === nothing && return FFALSE
+        return rc::Bool ? FTRUE : FFALSE
+    end
     return ExistsDirectory(n) ? FTRUE : FFALSE
 end
 

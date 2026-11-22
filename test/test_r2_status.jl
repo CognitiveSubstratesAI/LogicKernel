@@ -311,6 +311,12 @@ end
         "setPrologFlag(gd, \"verbose\", FT_ATOM, 1)\nsetPrologFlag(\n    gd, ld, \"bounded\", FT_BOOL, x)\n# setPrologFlag(gd, \"commented\", FT_BOOL, x)\n"
     ])
     @test defd == Set(["verbose", "bounded"])
+    # the argv setter defines `argv` / `os_argv` (src/pl-init.jl); the function's own definition and a comment are no definition
+    defd_argv = r2_flags_defined([
+        "function _set_argv_prolog_flag!(gd, ld, name, v)\nend\n_set_argv_prolog_flag!(gd, ld, \"os_argv\", cmd.os_argv)\n" *
+            "_set_argv_prolog_flag!(\n    gd, ld, \"argv\", cmd.appl_argv)\n# _set_argv_prolog_flag!(gd, ld, \"commented\", x)\n"
+    ])
+    @test defd_argv == Set(["os_argv", "argv"])
     jl = """
     function $(R2_FLAG_REFUSAL_HELPER)(key::T, effect::String) where {T}
         throw($(R2_REFUSAL_EXCEPTION){T}(key, effect, "R2 F1b"))
@@ -521,13 +527,18 @@ end
     # pl-coverage.jl pc_call_site (REFUSED), pl_cov_start1_va (COV1), pl-prof.jl _prof_refuse (PROF1). MEASURED with the generator's own r2_collect on the tree: 841 rows, 151 owned, 38 NO OWNER.
     # 151 -> 150 (COV1, WIP wip/rec-cov1): `'$cov_start'/1` is ported (the VM's Coverage hooks, src/pl-wam.jl), so its refusal row and its owner
     # line (docs/r2_owners.tsv, COV1) went. TO BE MEASURED ON THE LANE with the generator's own r2_collect (841 rows less the refusal row; 150 owned expected).
+    # 151 -> 150 (IRI hook replay, wip/lbb-replay; D-0083 disclosure, DERIVED not measured: no Julia in that session, the gate's own r2_collect measures it): the refusal
+    # `src/os/pl-files.jl::_iri_hook_refused` (owner LB5-LB7) is gone with the function, the five IRI sites call `iri_hook`, and its owner row went (151 -> 150).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     # 150 -> 148 (INT-MERGE-11, wip/int-g1 + wip/queues-1), D-0083 disclosure: DERIVED from the diff of docs/r2_owners.tsv against the tip before this merge, NOT RUN (the gate's generator
     # measures): 4 `pred:` owner lines went (message_queue_create/1, message_queue_destroy/1, thread_get_message/2, thread_send_message/2: ported by src/pl-queue.jl, so no longer owed) and 2
     # refusal rows were added with an owner (the two blocking-wait refusals of src/pl-queue.jl, both sites present): -4 +2 = -2. The 150 itself is COV1's derivation and was not re-measured by the
     # merges since (INT-MERGE-8 to 10 changed the owner rows too): the lane re-measures the whole figure.
+    # 148 -> 146 (INT-MERGE-13, wip/int-g1 + wip/lbb-replay), D-0083 disclosure: DERIVED, NOT RUN. -1: this merge's branch deleted the owner row of `_iri_hook_refused` (the IRI hook replay,
+    # comment above: its 151 -> 150); -1: the owner row of `_tmp_file_refused` went with W12-TMPFILES (INT-MERGE-10 step 2; that branch left its floor at 151, so no merge counted the row).
+    # The miss-preds/queues-1/atomapi merges also dropped `pred:` owner rows (ports) that no floor counted: the figure is a LOWER BOUND, the lane's r2_collect measures the real one.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 148
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 146
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin
