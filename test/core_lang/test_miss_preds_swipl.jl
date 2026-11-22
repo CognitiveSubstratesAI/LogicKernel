@@ -213,13 +213,14 @@ const _MG_CASES = [
     # lookupSourceFile(name, false): an unknown name is `true` (nothing happens); a known one has its clauses removed (unloadFile) and its
     # modules detached (m->file = NULL, public table cleared). `@DIR@` is the test's temp directory (miss_u.pl: mu_p/1 with 2 clauses and
     # mu_q/1; miss_um.pl: module miss_um exporting mum_p/1). The predicate_property/module_property answers after an unload are DERIVED from the C
-    # (no clauses and not dynamic = not isDefinedProcedure; m->file NULL = no file(_) property; public table cleared = exports []) and are
-    # MEASURE ON THE LANE rows: `swipl` on the same program (the live test below compares every line).
+    # (no clauses and not dynamic = not isDefinedProcedure; m->file NULL = no file(_) property; public table cleared = exports []) and were
+    # MEASURED on the pinned swipl 18168e62 (2026-11-22, by hand): ul01 2-yes-no, ul02 2, ul03 ok, ul04 instantiation_error, ul05 type_error(atom,1),
+    # ul06 no-[], ul07 ok (the live test below compares every line again).
     (
         "ul01",
         raw"load_files('@DIR@/miss_u.pl', []), aggregate_all(count, mu_p(_), N0), ( predicate_property(mu_p(_), defined) -> D0 = yes ; D0 = no ), '$unload_file'('@DIR@/miss_u.pl'), ( predicate_property(mu_p(_), defined) -> D1 = yes ; D1 = no ), R = N0-D0-D1",
         _mgc("-", _mgc("-", _mgi(2), _mga("yes")), _mga("no"))
-    ),   # MEASURE ON THE LANE: swipl -g "load_files('f.pl',[]), '$unload_file'('f.pl'), ( predicate_property(mu_p(_), defined) -> writeln(yes) ; writeln(no) )"
+    ),   # pinned swipl 18168e62: 2-yes-no
     (
         "ul02",
         raw"load_files('@DIR@/miss_u.pl', []), '$unload_file'('@DIR@/miss_u.pl'), load_files('@DIR@/miss_u.pl', []), aggregate_all(count, mu_p(_), N), R = N",
@@ -236,7 +237,7 @@ const _MG_CASES = [
         "ul06",
         raw"load_files('@DIR@/miss_um.pl', []), '$unload_file'('@DIR@/miss_um.pl'), ( module_property(miss_um, file(_)) -> F = yes ; F = no ), module_property(miss_um, exports(E)), R = F-E",
         _mgc("-", _mga("no"), "nil")
-    ),   # m->file = NULL, clearHTableWP(m->public): MEASURE ON THE LANE: the same two module_property/2 calls against swipl
+    ),   # m->file = NULL, clearHTableWP(m->public): pinned swipl 18168e62: no-[]
     (
         "ul07",
         raw"load_files('@DIR@/miss_u.pl', []), '$unload_file'('@DIR@/miss_u.pl'), '$unload_file'('@DIR@/miss_u.pl'), R = ok",

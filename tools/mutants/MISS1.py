@@ -10,6 +10,7 @@
 # character input (test_lb5_swipl.jl, test_s2a_swipl.jl; audit D-0238). NOT COVERED: `return streamStatus(ld, s)` of get_nonblank (a stream error at EOF
 # needs an erroring stream: no row), `'$sig_unblock'` always true (not killable: nothing to observe).
 # C23: TR3-TR8 (trace/0's refusal while a port is visible, audit D-0768 (2); kill: MG tr01-tr02 and the direct testset, written blind: nothing ran).
+# C29: SRC2-1..SRC2-17 ('$unload_file'/1's helpers; the old line's SMALLREF.py group, each `old` refit and counted once), MISS1-UL2 is declared equivalent.
 # Every `old` was counted EXACTLY once in its file (python3, src.count(old) == 1) at the tip of wip/miss-preds when this file was written (no Julia ran);
 # `new` != `old`. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 MG = "test/core_lang/test_miss_preds_swipl.jl"
@@ -22,6 +23,10 @@ TARGETS_CN = [MG]
 TARGETS = TARGETS_CA + [t for t in TARGETS_TR + TARGETS_PG if t not in TARGETS_CA]
 T = "src/pl-trace.jl"
 S = "src/pl-srcfile.jl"
+TSF = "test/db/test_source_file_swipl.jl"
+# unloadFile, delModuleSourceFile and delAllModulesSourceFile__unlocked are called only by '$unload_file'/1 (the reload uses delete_old_predicates):
+# MG ul01-ul07 and TSF u01-u09 plus its white-box testsets are every test that reaches them (audit D-0238).
+TARGETS_UL = [MG, TSF]
 
 
 def m(id, old, new, targets, file=T, eq=None):
@@ -97,7 +102,8 @@ MUTANTS = [
       "    sf = lookupSourceFile(gd, name::T, false)\n", [MG], file=S),
     # '$unload_file'/1: the public table is kept (kill: MG ul06 exports)
     m("MISS1-UL2", "                    empty!(m.public_)               # clearHTableWP(m->public)\n",
-      "", [MG], file=S),
+      "", [MG], file=S,
+      eq="the loop of pl_unload_file1_va runs over `sf.modules`, which delAllModulesSourceFile__unlocked emptied one statement earlier (src/pl-srcfile.jl unloadFile): as in upstream the loop is dead; the helper's own clear is SRC2-11"),
     # the pc key's offset is off by one, either way (kill: MG ca14 pins 15)
     m("MISS1-PC1", "return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE",
       "return PL_unify_int64(ld, A3, offset + 1) ? FTRUE : FFALSE", TARGETS_CA),
@@ -137,4 +143,57 @@ MUTANTS = [
     # '$call_no_catch' does not print the uncaught ball (kill: MG cn07 through the program's message_hook/3 collector)
     m("MISS1-CN5", "        print_unhandled_exception(gd, ld, ex[])     # printed by the VM at the throw upstream\n",
       "", TARGETS_CN, file=P),
+    # ---- C29: the old COMB1 line's SRC2 group (SMALLREF.py, 16 mutants) refit to the Nov-22 text, plus SRC2-17 (the order)
+    m("MISS1-SRC2-1 unloadFile removes every clause of a multifile predicate, not only the file's (kill: TSF multifile testset)",
+      '            deleted += removeClausesPredicate!(\n                gd, def, (def.flags & P_MULTIFILE) != 0 ? sf.index : 0, true\n            )',
+      '            deleted += removeClausesPredicate!(\n                gd, def, 0, true\n            )', TARGETS_UL, file=S),
+    m('MISS1-SRC2-2 unloadFile keeps the FILE_ASSIGNED mark of a static predicate (kill: TSF first testset)',
+      '            def.flags &= ~FILE_ASSIGNED\n            clear_meta_declaration(def)\n        end\n    end\n    sf.number_of_clauses',
+      '            clear_meta_declaration(def)\n        end\n    end\n    sf.number_of_clauses', TARGETS_UL, file=S),
+    m('MISS1-SRC2-3 unloadFile keeps the meta declaration (kill: TSF multifile/meta testset)',
+      '            def.flags &= ~FILE_ASSIGNED\n            clear_meta_declaration(def)\n        end\n    end\n    sf.number_of_clauses',
+      '            def.flags &= ~FILE_ASSIGNED\n        end\n    end\n    sf.number_of_clauses', TARGETS_UL, file=S),
+    m('MISS1-SRC2-4 unloadFile leaves the file a real file (kill: TSF first testset `!sf.isfile`, u05 time 0)',
+      '    sf.isfile = false\n\n    return sendDelayedEvents(gd, ld, true) >= 0',
+      '    sf.isfile = true\n\n    return sendDelayedEvents(gd, ld, true) >= 0', TARGETS_UL, file=S),
+    m("MISS1-SRC2-5 unloadFile does not take the removed clauses off the file's count (kill: TSF first testset, u06 number_of_clauses)",
+      '    sf.number_of_clauses -= UInt32(deleted)\n\n    empty!(sf.procedures)                           # freeList(&sf->procedures)',
+      '    sf.number_of_clauses += UInt32(0)\n\n    empty!(sf.procedures)                           # freeList(&sf->procedures)', TARGETS_UL, file=S),
+    m("MISS1-SRC2-6 unloadFile keeps the file's procedure list (kill: TSF first testset `isempty(sf.procedures)`)",
+      '    empty!(sf.procedures)                           # freeList(&sf->procedures)\n    delAllModulesSourceFile__unlocked(sf)',
+      '    nothing                                         # freeList(&sf->procedures)\n    delAllModulesSourceFile__unlocked(sf)', TARGETS_UL, file=S),
+    m('MISS1-SRC2-7 unloadFile removes the clauses of a foreign or thread-local predicate too (removeClausesPredicate! itself returns 0 for a thread-local one)',
+      '        if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0\n            deleted += removeClausesPredicate!(',
+      '        if true\n            deleted += removeClausesPredicate!(', TARGETS_UL, file=S,
+      eq="src/pl-proc.jl:1214 returns 0 for a thread-local definition and a foreign definition holds no clauses: the loop of removeClausesPredicate! does nothing; only gd._generation moves, which no row reads"),
+    m('MISS1-SRC2-8 unloadFile fails when no event was sent (kill: any u row: `\\$unload_file` of a loaded file must answer true)',
+      '    return sendDelayedEvents(gd, ld, true) >= 0\nend\n\n# PORT: pl-srcfile.c unlinkSourceFileModule',
+      '    return sendDelayedEvents(gd, ld, true) > 0\nend\n\n# PORT: pl-srcfile.c unlinkSourceFileModule', TARGETS_UL, file=S),
+    m('MISS1-SRC2-9 a module keeps its file after the unload (kill: MG ul06 `module_property(.., file(_))`, TSF multifile/module testset)',
+      '        if m.file == sf.index                       # m->file == sf\n            m.file = 0                              # m->file = NULL',
+      '        if m.file == sf.index                       # m->file == sf\n            m.file = m.file                         # m->file = NULL', TARGETS_UL, file=S),
+    m('MISS1-SRC2-10 a module keeps its line number after the unload (kill: TSF multifile/module testset `m.line_no == 0`)',
+      '            m.file = 0                              # m->file = NULL\n            m.line_no = 0\n            empty!(m.public_)                       # clearHTableWP(m->public)\n            empty!(m.public_order)\n        end\n    end',
+      '            m.file = 0                              # m->file = NULL\n            empty!(m.public_)                       # clearHTableWP(m->public)\n            empty!(m.public_order)\n        end\n    end', TARGETS_UL, file=S),
+    m("MISS1-SRC2-11 a module keeps its public table after the unload (kill: TSF `isempty(m.public_)`; the pl_unload_file1_va loop is dead code, so this is the helper's clear)",
+      '            empty!(m.public_)                       # clearHTableWP(m->public)\n            empty!(m.public_order)\n        end\n    end',
+      '            empty!(m.public_order)\n        end\n    end', TARGETS_UL, file=S),
+    m('MISS1-SRC2-12 the module list of the unloaded file is kept (kill: TSF `isempty(sfm.modules)`)',
+      '    empty!(sf.modules)\n',
+      '    nothing\n', TARGETS_UL, file=S),
+    m('MISS1-SRC2-13 a system file is unloaded (kill: TSF system-file testset: the permission error and the clause kept)',
+      '        if sf.system\n            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload)',
+      '        if false\n            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload)', TARGETS_UL, file=S),
+    m('MISS1-SRC2-14 an unknown file answers false (kill: MG ul03, TSF u04)',
+      '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend',
+      '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FFALSE\nend', TARGETS_UL, file=S),
+    m('MISS1-SRC2-15 `\\$unload_file` keeps the reference its lookup took (kill: TSF multifile testset `sf.references - 1 == r0`)',
+      '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend',
+      '        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend', TARGETS_UL, file=S),
+    m('MISS1-SRC2-16 the permission error names another action (kill: TSF system-file testset `occursin(unload)`)',
+      'ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1)',
+      'ERR_PERMISSION, mk_sym(T, :load), mk_sym(T, :file), A1)', TARGETS_UL, file=S),
+    m('MISS1-SRC2-17 unloadFile walks the procedures oldest first (kill: TSF newest-first testset: baz < bar < foo)',
+      '    for proc in Iterators.reverse(sf.procedures)\n        def = proc.definition\n\n        if (def.flags & (P_FOREIGN',
+      '    for proc in sf.procedures\n        def = proc.definition\n\n        if (def.flags & (P_FOREIGN', TARGETS_UL, file=S),
 ]
