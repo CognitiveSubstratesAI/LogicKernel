@@ -289,7 +289,11 @@ end
     @test length(reg) > 100 && "op/3" in reg && "between/3" in reg
     @test r2_pin(root) !== nothing
     rr = r2_refusal_rows(r2_kernel_texts(root))
-    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 14       # the throw sites and the 14 QLF names
+    # QLF2/QLF3 ported nine of the fourteen named QLF refusals (counted 2026-11-22 on wip/qlf3-replay2 by reading the throw sites and
+    # the names passed to the helper: 5 rows in src/pl-qlf.jl: getBlobType, loadInclude, `$qlf_load`, `$qlf_open`, `$open_wic`): the
+    # floor follows the work (stamp ratchet: count, move with a dated note; D-0083 disclosure)
+    # allow-docstring-interp: the lines the hook lists are existing fixture text of this file (raw-string templates), not docstrings
+    @test length(rr) > 40 && count(r -> r.cfile == "src/pl-qlf.jl", rr) >= 5        # the throw sites and the 5 QLF names left
     @test length(unique(r.key for r in rr)) == length(rr)
 end
 
@@ -548,7 +552,11 @@ end
     # `pred:malloc_property/1`, `pred:wait_for_input/3` REFUSED, and the three FAST-2 refusals of src/pl-rec.jl (copy_external_record x2, fetchAtomW)); none removed. A LOWER BOUND like the figures above: the lane's r2_collect
     # measures the real count; if the floor test fails, lower it to the measured figure.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 155
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 146
+    # 155 -> 146 (INT-MERGE-17, wip/int-g1 + wip/qlf3-replay2), D-0083 disclosure: DERIVED, NOT RUN: the branch's own count is 151 -> 142, i.e. -9: the nine `kfile:pl-qlf.jl` (owner LB3) refusal rows the QLF work closed
+    # (14 -> 5: 14 `_qlf_refused` names before; after: the getBlobType and loadInclude throw sites and the names `$qlf_load/2`, `$qlf_open/1`, `$open_wic/2`); the tsv delta is one line (the kfile note), no row count changes.
+    # The figure is a LOWER BOUND, counted by reading (no Julia was run); the first lane run measures it: a count above 146 means the floor moves to that count, a failure means it moves down to the measured figure.
+    # allow-docstring-interp: existing fixture text of this file, not a docstring
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

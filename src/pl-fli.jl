@@ -1787,6 +1787,35 @@ PL_unify_int64_ex(ld::PL_local_data{T}, t::term_t, i::Int) where {T} =
 PL_unify_pointer(ld::PL_local_data{T}, t::term_t, ptr::UInt) where {T} =
     unify_int64_ex(ld, t, reinterpret(Int, ptr), false)      # unify_int64_ex(t, (int64_t)pointerToInt(ptr), false)
 
+# PORT: pl-fli.c PL_unify_uint64
+# DIVERGES: a value past `Int64` is unified through `PL_unify_number` with a `V_MPZ` number, where upstream builds
+# the word with `put_uint64` (a variable: `PL_unify_atomic`) or compares `mpz_to_uint64` of the bound big integer;
+# the outcomes agree: a variable binds to the big integer, a bound integer is equal by value, any other term fails.
+"Unify the term `t` references with the unsigned integer `i`; a value above `typemax(Int64)` is a big integer (pl-fli.c)."
+function PL_unify_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where {T}
+    if reinterpret(Int64, i) >= 0                           # (int64_t)i >= 0
+        return unify_int64_ex(ld, t, Int(i), true)
+    end
+    n = _number_alloc!(ld)                                  # number n (a bigint: V_MPZ)
+    n.type = V_MPZ
+    n.mpz = BigInt(i)
+    rc = PL_unify_number(ld, t, n)                          # put_uint64 + PL_unify_atomic / the V_MPZ compare
+    _number_free!(ld, 1)
+    return rc
+end
+
+# PORT: pl-fli.c PL_put_uint64
+# DIVERGES: a value past `Int64` is put as a fresh variable unified (`PL_unify_uint64`) with the big integer, where
+# upstream builds the word with `put_uint64`; the term the reference holds is the same integer.
+"Make term reference `t` hold the unsigned integer `i`; a value above `typemax(Int64)` is a big integer (pl-fli.c)."
+function PL_put_uint64(ld::PL_local_data{T}, t::term_t, i::UInt64)::Bool where {T}
+    if reinterpret(Int64, i) >= 0                           # (int64_t)i >= 0
+        return PL_put_int64(ld, t, Int(i))
+    end
+    PL_put_variable(ld, t)
+    return PL_unify_uint64(ld, t, i)
+end
+
 # PORT: pl-fli.c get_float
 # DIVERGES: returns the value, or `nothing`, where upstream writes it through `f` and returns a Bool; the
 # number is read into a `number` (`PL_get_number`), not from the word.

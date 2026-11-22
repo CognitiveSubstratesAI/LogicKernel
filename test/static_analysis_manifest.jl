@@ -4151,6 +4151,36 @@ _index_entry_points(T) = (
         false
     ),
     (LK._qlf_refused, Tuple{Type{T}, String, Int}, false),
+    # QLF1B: `$file_hash` (hashStreamContent, fileContentHash) and the QLF header predicates (`$qlf_versions`, `$qlf_is_compatible`)
+    (LK.PL_unify_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.qlfError, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.qlfVersion, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.qlfIsCompatible, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.open_qlf_file, Tuple{LK.PL_local_data{T}, String}, false),
+    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int, Int}, false),
+    # QLF2: `$qlf_sources`: the index at the end of the file, the path translation, the source entries
+    (LK.PL_put_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
+    (LK.pushPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
+    (LK.popPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.qlfFixSourcePath, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
+    (LK.loadFileName, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.qlfSourceInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int, Int}, false),
+    (LK.qlfFilesInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
+    # QLF3: `$qlf_module`: the XR table and reader, the module record
+    (LK.lookupXrId, Tuple{Type{T}, LK.wic_state, Int}, false),
+    (LK.storeXrId, Tuple{LK.wic_state, Int, LK.xr_atom{T}}, false),
+    (LK.qlfGetString, Tuple{LK.PL_local_data{T}, LK.IOSTREAM}, false),
+    (LK.getAtom, Tuple{Type{T}, LK.IOSTREAM, Symbol}, false),
+    (LK.getBlobType, Tuple{Type{T}, LK.IOSTREAM}, false),
+    (LK.getBlob, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK._xr_atom, Tuple{LK.wic_state, LK.xr_atom{T}}, false),
+    (LK.loadXR, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.loadXRc, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
+    (LK.qlfLoadSource, Tuple{LK.PL_local_data{T}, LK.wic_state}, false),
+    (LK.loadInclude, Tuple{LK.PL_local_data{T}, LK.wic_state, Bool}, false),
+    (LK.qlfLoadIncludes, Tuple{LK.PL_local_data{T}, LK.wic_state, Bool}, false),
+    (LK._qlf_mkeys, Tuple{LK.PL_local_data{T}}, false),
+    (LK.qlfModuleInfo, Tuple{LK.PL_local_data{T}, LK.wic_state, Int}, false),
     [
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.control_t{T}}, false) for
         f in (
@@ -6029,6 +6059,27 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.skip_cr, Tuple{LK.IOSTREAM}, false),
     (LK.get_ucs2, Tuple{Vector{UInt8}, Int, Bool}, false),
     (LK.peek_pending_text, Tuple{LK.IOSTREAM}, false),
+    # QLF1B-3 (2026-11-14): the entries of `_index_entry_points`' QLF block that name no term type (`$file_hash`'s hashing, the QLF
+    # header and XR readers, the load errors, the XR table push/pop); in that block they were listed once per type, twice
+    # (`_index_entry_points(_M1)`, `(_M3)`): 18 duplicates, which the 'no duplicate entries' gate refused
+    (LK.hashStreamContent, Tuple{LK.IOSTREAM}, false),
+    (LK.fileContentHash, Tuple{String}, false),
+    (LK.wic_state, Tuple{String}, false),
+    (LK.Qgetc, Tuple{LK.IOSTREAM}, false),
+    (LK.zigzag_decode, Tuple{UInt64}, false),
+    (LK.qlfGetInt64, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetInt32, Tuple{LK.IOSTREAM}, false),
+    (LK.getMagicString, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.qlfGet4BytesInt, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetString, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfLoadFileHash, Tuple{LK.wic_state}, false),
+    (LK.pushXrIdTable, Tuple{LK.wic_state}, false),
+    (LK.popXrIdTable, Tuple{LK.wic_state}, false),
+    (LK.qlfLoadError_ctx, Tuple{LK.wic_state, String, Int}, false),
+    (LK.qlfLoadError, Tuple{LK.wic_state}, false),
+    (LK.qlfGetUInt32, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetDouble, Tuple{LK.IOSTREAM}, false),
+    (LK.qlfGetStringW, Tuple{LK.IOSTREAM}, false),
     # LB3: the entries of its block (_index_entry_points) that name no term type; there they would be listed once per type
     (LK.cond_true, Tuple{LK.condc}, false),
     (LK.condc, Tuple{}, false),
