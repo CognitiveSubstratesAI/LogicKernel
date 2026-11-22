@@ -5567,6 +5567,8 @@ _manifest_pkg2_plain() = (
     # PCRE1 piece 2 — the option tables' pure functions
     (LK.re_cap_type_str, Tuple{Int}, false),
     (LK.re_init_data, Tuple{}, false),
+    (LK.re_init_data, Tuple{String}, false),
+    (LK.re_compare, Tuple{LK.re_data, LK.re_data}, false),
     (LK.re_reset_match_flags!, Tuple{LK.re_data}, false),
     (LK.re_lookup_optdef, Tuple{Vector{LK.re_optdef}, String}, false),
     (LK.re_utf8_seek, Tuple{Vector{UInt8}, Int, Int}, false),

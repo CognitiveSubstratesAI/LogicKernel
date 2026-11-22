@@ -325,3 +325,45 @@ end
     @test _po_exc(ld) == ("type_error", ["option", "bsr/1"])
     LK.PL_discard_foreign_frame(ld, fid)
 end
+
+@testset "re_init_data(pattern), re_compare (pcre4pl.c compare_pcres)" begin
+    @test LK.re_init_data().pattern == "" && LK.re_init_data("a(b)").pattern == "a(b)"
+    s1, s2, s3 = LK.re_init_data().serial, LK.re_init_data().serial, LK.re_init_data().serial
+    @test s1 < s2 < s3
+    mk(p; kw...) = (re = LK.re_init_data(p); for (k, v) in kw
+        getfield(re, k).flags = UInt32(v)
+    end; re)
+    # the pattern first, by code point: the flags do not matter then
+    @test LK.re_compare(mk("a"), mk("b")) == -1 && LK.re_compare(mk("b"), mk("a")) == 1
+    @test LK.re_compare(mk("a"; match_options_flags = 99), mk("b")) == -1
+    @test LK.re_compare(mk("ab"), mk("b")) == -1 && LK.re_compare(mk("a"), mk("ab")) == -1 && LK.re_compare(mk("ab"), mk("a")) == 1
+    @test LK.re_compare(mk("z"), mk("é")) == -1 && LK.re_compare(mk("é"), mk("z")) == 1     # U+E9 after 'z'
+    @test LK.re_compare(mk("￿"), mk("\U1f600")) == -1 && LK.re_compare(mk("\U1f600"), mk("￿")) == 1
+    # then the flags of each group in the struct's order; the first difference decides
+    groups = (
+        :compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags, :compile_ctx_flags, :compile_bsr_flags,
+        :compile_newline_flags, :match_options_flags, :start_flags,
+    )
+    for (i, g) in enumerate(groups)
+        a, b = mk("p"), mk("p")
+        getfield(a, g).flags = UInt32(3)
+        getfield(b, g).flags = UInt32(5)
+        @test LK.re_compare(a, b) == -1 && LK.re_compare(b, a) == 1
+        # an earlier group that differs the other way wins over this one
+        if i > 1
+            x, y = mk("p"), mk("p")
+            getfield(x, groups[i - 1]).flags = UInt32(9)
+            getfield(y, groups[i - 1]).flags = UInt32(1)
+            getfield(x, g).flags = UInt32(1)
+            getfield(y, g).flags = UInt32(9)
+            @test LK.re_compare(x, y) == 1 && LK.re_compare(y, x) == -1
+        end
+    end
+    # the `seen` bits and the capture size are not compared: the creation order decides
+    a, b = mk("p"), mk("p")
+    a.compile_options_flags.seen = UInt32(7); a.capture_size = UInt32(4)
+    @test LK.re_compare(a, b) == -1 && LK.re_compare(b, a) == 1 && LK.re_compare(a, a) == 0 && LK.re_compare(b, b) == 0
+    # a larger flag in a later-created regex still wins over the creation order
+    c, d = mk("p"; start_flags = 8), mk("p")
+    @test LK.re_compare(c, d) == 1 && LK.re_compare(d, c) == -1
+end

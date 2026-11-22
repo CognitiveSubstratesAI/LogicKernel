@@ -97,16 +97,18 @@ end
 # in every 10.x header (ABI), and test_pcre_options.jl compares each with `Base.PCRE.<NAME>` so that a typo here is caught. MEASURE ON THE
 # LANE: that the oracle's own pcre2.h (libpcre2 0.11.2) defines the four names guarded by `#ifdef` upstream (MATCH_INVALID_UTF,
 # EXTRA_ESCAPED_CR_IS_LF, EXTRA_ALT_BSUX, JIT_INVALID_UTF, COPY_MATCHED_SUBJECT: all older than 10.42): they are ported as always defined.
-# NOT PORTED (later pieces): `re_get_options` (needs `PL_get_uint64_ex`, which the kernel lacks, for `start(N)`), the `cfg_opts` table of
-# `re_config`, `re_data`'s symbol, pattern, capture_names and compiled code. Nothing here has run (no Julia process was started).
+# PIECE 5 adds `re_data`'s `pattern` (the atom's text) and `serial`, and `re_compare` (compare_pcres). NOT PORTED (later pieces): the blob
+# machinery itself (the kernel has no `PL_blob_data`/`PL_new_blob`/`PL_qlf_*` for a package type: `acquire/release/write/save/load_pcre`), `re_get_options` (needs `PL_get_uint64_ex`, which the kernel lacks, for `start(N)`), the `cfg_opts` table of
+# `re_config`, `re_data`'s symbol, capture_names and compiled code. Nothing here has run (no Julia process was started).
 #
-# DIVERGES (piece 2):
+# DIVERGES (piece 5, re_compare): 10 below. DIVERGES (piece 2):
 #   5. An option table row is a `re_optdef(name, flag, mode)` and the table a Vector without the C's `{ NULL }` end marker; the `atom` field
 #      (filled lazily by `lookup_optdef`) is dropped: the lookup compares the option's name TEXT (`sym_text`, as the file's other pieces).
 #   6. `re_data` carries only the flag pairs and `capture_size` (the fields option processing reads and writes); `init_re_data` is
 #      `re_init_data` (a constructor of the defaults) and `get_re_copy`'s reset of the match flags is `re_reset_match_flags!`.
 #   7. `effective_bool` answers 1, 0 or -1 as C; `arg == 0` is "no argument" (the C `term_t` 0).
 #   8. `OPTSTART_MASK` is `typemax(UInt32)`: `(uint32_t)PCRE2_SIZE_MAX` with a 64-bit `size_t`.
+#  10. (piece 5) `re_data` has `pattern::String` (the atom's text) and `serial` (the stand-in for the blob address); `re_init_data(pattern)` sets both.
 
 # PORT: packages/pcre/pcre4pl.c enum cap_type
 const CAP_DEFAULT = 0
@@ -225,10 +227,15 @@ mutable struct re_options_flags
 end
 re_options_flags() = re_options_flags(UInt32(0), UInt32(0))
 
+# The serial number of the next regex (the stand-in for the C's stable blob address, see `re_compare`).
+const _re_serial = Threads.Atomic{Int}(0)
+
 # PORT: packages/pcre/pcre4pl.c re_data (the option fields), init_re_data, get_re_copy (the reset of the match flags)
 # DIVERGES: see the piece 2 header, 6.
 "The option part of a regex (pcre4pl.c `re_data`): the flag pairs of the compile, capture, optimise, JIT, context, bsr, newline, match and start options."
 mutable struct re_data
+    pattern::String
+    serial::Int
     compile_options_flags::re_options_flags
     capture_type::re_options_flags
     optimise_flags::re_options_flags
@@ -242,9 +249,9 @@ mutable struct re_data
 end
 
 "A regex's option fields as `init_re_data` leaves them: utf and no UTF check to compile, no UTF check to match, the string capture type (pcre4pl.c)."
-function re_init_data()::re_data
+function re_init_data(pattern::String = "")::re_data
     re = re_data(
-        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
+        pattern, Threads.atomic_add!(_re_serial, 1) + 1, re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
         re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), UInt32(0)
     )
     re.compile_options_flags.flags = PCRE2_UTF | PCRE2_NO_UTF_CHECK
@@ -439,4 +446,29 @@ function re_lookup_and_apply_optdef_arg(
     a = PL_get_atom_ex(ld, name)
     a === nothing && return false
     return re_lookup_and_apply_optdef(ld, opt_defs, sym_text(a), option_term, arg, mask, options_flags)
+end
+
+# PORT: packages/pcre/pcre4pl.c compare_pcres, CMP_FIELD
+# DIVERGES: 10. The blob's address is the field `serial` (a counter at creation, stable and unique); the answer is the sign (-1, 0, 1) where
+# `wcscmp` answers any number of that sign; `pattern` is the atom's text, compared as code points (`wcscmp`; the UTF-8 bytes order the same).
+# CMP_FIELD: -1, 1 by the `flags` of the two groups, else 0.
+_re_cmp_flags(x::re_options_flags, y::re_options_flags)::Int = x.flags < y.flags ? -1 : x.flags > y.flags ? 1 : 0
+
+"Order two regexes (pcre4pl.c `compare_pcres`): by pattern, then the `flags` of each option group in struct order (not `seen`), then the creation serial."
+function re_compare(a::re_data, b::re_data)::Int
+    if a.pattern != b.pattern
+        return a.pattern < b.pattern ? -1 : 1
+    end
+    c = _re_cmp_flags(a.compile_options_flags, b.compile_options_flags)
+    c == 0 && (c = _re_cmp_flags(a.capture_type, b.capture_type))
+    c == 0 && (c = _re_cmp_flags(a.optimise_flags, b.optimise_flags))
+    c == 0 && (c = _re_cmp_flags(a.jit_options_flags, b.jit_options_flags))
+    c == 0 && (c = _re_cmp_flags(a.compile_ctx_flags, b.compile_ctx_flags))
+    c == 0 && (c = _re_cmp_flags(a.compile_bsr_flags, b.compile_bsr_flags))
+    c == 0 && (c = _re_cmp_flags(a.compile_newline_flags, b.compile_newline_flags))
+    c == 0 && (c = _re_cmp_flags(a.match_options_flags, b.match_options_flags))
+    c == 0 && (c = _re_cmp_flags(a.start_flags, b.start_flags))
+    c != 0 && return c
+    # No need to compare capture_names: they are derived from the patterns. Equal so far: the serial (the C: the address) breaks the tie.
+    return a.serial > b.serial ? 1 : a.serial < b.serial ? -1 : 0
 end
