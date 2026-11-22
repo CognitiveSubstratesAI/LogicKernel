@@ -1538,6 +1538,7 @@ end
     @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_TRADITIONAL)
     @test LK.PL_action(gd, ld, LK.PL_GMP_SET_ALLOC_FUNCTIONS, 1) === false
     @test LK.PL_action(gd, ld, LK.PL_GMP_SET_ALLOC_FUNCTIONS, 0) === false
+    @test isempty(gd.halt_exited)                                                   # no arm of this testset is the default (system error) arm
 end
 
 # LK-ONLY (pl-fli.c:5994-6004; Sfputs, pl-stream.c:2395-2402): WRITE is Sfputs(s, Scurout) == 0: every byte up to the first 0 is a code point written
@@ -1556,6 +1557,13 @@ end
         ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1].encoding = LK.ENC_ASCII
         LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "aé")
     end) == (false, "a")
+    # _fli_sfputs itself answers -1 (EOF) on the error, and writes what came before it
+    @test _fa_cout(ld, () -> begin
+        s = ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1]
+        s.encoding = LK.ENC_ASCII
+        LK._fli_sfputs(s, "aé")
+    end) == (-1, "a")
+    @test _fa_cout(ld, () -> LK._fli_sfputs(ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1], "ab\0c")) == (0, "ab")
     # Sfputs of a missing stream (DIVERGES: upstream would dereference NULL) is EOF, -1
     @test LK._fli_sfputs(nothing, "a") === -1
     @test LK._fli_sfputs(nothing, "") === -1
