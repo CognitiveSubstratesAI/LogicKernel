@@ -208,6 +208,7 @@ mutable struct PL_global_data{T}
     const stream_filenames::IdDict{IOSTREAM, T}                 # (pl-file.c's stream context)
     const stream_aliases::Dict{UInt64, IOSTREAM}                # streamAliases: user alias (sym_key) → stream
     const stream_alias_names::Dict{Int, Vector{T}}              # stream_context.alias_head: a stream's aliases, by IOSTREAM.context
+    const stream_context_flags::Dict{Int, Int}                  # stream_context.flags (IO_SEE, IO_TELL): a stream's flags, by IOSTREAM.context
     const stream_table::Vector{Union{Nothing, IOSTREAM}}        # streamContext: the streams Prolog knows; IOSTREAM.context indexes it, a closed stream's entry is `nothing`
     const atoms::atoms_t                                        # atoms: the atom table (L1b A)
     const atom_symbols::atom_symbols{T}                         # (each atom's symbol, L1b C6b)
@@ -284,7 +285,8 @@ end
 # upstream keeps in the stream's context (pl-file.c `streamContext`, the stream table) — the
 # loader registers the stream it opens. Since R2's S1 the stream table has landed: `stream_table`
 # (`streamContext`: the streams Prolog knows, `IOSTREAM.context` their index), `stream_aliases`
-# (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`).
+# (`streamAliases`: the user aliases) and `stream_alias_names` (each stream's `alias_head`); lane D adds `stream_context_flags`
+# (each stream's `stream_context.flags`: `IO_SEE`, `IO_TELL`, set by see/1 and tell/1).
 # Since R2's D1: `clause_refs` and `clause_serials`, the clauses a clause blob names (pl-dbref.c: upstream's blob
 # holds the `Clause` pointer, here its number in `clause_refs`, `clause_serials` its inverse); the clause blob type is
 # registered where pl-setup.c:146 calls `initDBRef`. Since R2's LB2: `bootsession`, `GD->bootsession` (pl-global.h), false
@@ -770,6 +772,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # (`recorded_state`, pl-incl.jl).
 # Since lane F (pl-prof.c): `profile` (`LD->profile`: the profiler state; src/pl-incl.jl `ld_profile`), placed after `statistics` as pl-global.h does.
 # Since lane F (pl-coverage.c): `coverage` (`LD->coverage`: `data`, `active`; src/pl-incl.jl `ld_coverage`).
+# Since ENC1 (flags `encoding`, `unicode_atoms`): `encoding` (`LD->encoding`) and `unicode_atoms` (`LD->unicode_atoms`), appended last.
 # Since R2 PR1: `cur_pred_enums` and `cur_enums`, the pools of `'$c_current_predicate'/2`'s and `current_predicate/1`'s states
 # (`cur_pred_enum`, `cur_enum`, pl-incl.jl). Since R2 O1B: `IO_output_stack` (`LD->IO.output_stack`: the output context stack
 # of `with_output_to/2` and `format/3`'s redirect, src/os/pl-file.jl).
@@ -970,6 +973,8 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     gc::ld_gc                                                   # gc: the stack collector's state (G1-1)
     shift_status::pl_shift_status_t                             # shift_status: the shifter's counters (G1-1)
     trail_size::Int                                             # ORIGINAL stacks.trail's size in entries, MODELLED: the trail vector has no capacity; only `_growTrail!`'s shift count reads it (G1, D-0966)
+    encoding::IOENC                                             # encoding: the default text encoding, flag `encoding` (pl-global.h; ENC1 flags)
+    unicode_atoms::Sunicode_atoms_t                             # unicode_atoms: the default atom-content policy, flag `unicode_atoms` (ENC1 flags)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -1102,7 +1107,9 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         Symbol[],                               # gc_safe_hits: none (G1-2)
         ld_gc(),                                # gc: nothing collected, policies at init_stack's (G1-1)
         pl_shift_status_t(),                    # shift_status: nothing shifted (G1-1)
-        0                                       # trail_size: set by allocStacks! (G1, D-0966)
+        0,                                      # trail_size: set by allocStacks! (G1, D-0966)
+        ENC_UTF8,                               # encoding: DIVERGES, upstream's initEncoding (init_locale) is lazy; the kernel's text is UTF-8 (pl-ctype.jl)
+        S_UATOMS_ACCEPT                         # unicode_atoms: the flag's default `accept` (pl-prologflag.c:2684)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

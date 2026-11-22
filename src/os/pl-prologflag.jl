@@ -941,6 +941,29 @@ function setOccursCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
     return PL_error(ld, ERR_DOMAIN, mk_sym(T, :occurs_check), _flag_atom_ref(ld, a))
 end
 
+# PORT: pl-prologflag.c setEncoding
+# DIVERGES: the local data is an argument (upstream's `GET_LD`); `PL_atom_to_encoding` is src/os/pl-file.jl's table.
+"Set the default text encoding `LD->encoding` from the atom `a`, else `domain_error(encoding, A)` (pl-prologflag.c)."
+function setEncoding(ld::PL_local_data{T}, a::T)::Bool where {T}
+    enc = PL_atom_to_encoding(a)
+    if enc == ENC_UNKNOWN
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :encoding), _flag_atom_ref(ld, a))
+    end
+    ld.encoding = enc
+    return true
+end
+
+# PORT: pl-prologflag.c setUnicodeAtoms
+# DIVERGES: the local data is an argument (upstream's `GET_LD`); `atom_to_unicode_atoms_ex` (src/os/pl-file.jl) returns the
+# mode, or `nothing` after raising the domain error, where upstream writes `*m` and returns false.
+"Set the default atom-content policy `LD->unicode_atoms` from the atom `a`, else `domain_error(unicode_atoms, A)` (pl-prologflag.c)."
+function setUnicodeAtoms(ld::PL_local_data{T}, a::T)::Bool where {T}
+    mode = atom_to_unicode_atoms_ex(ld, a)
+    mode === nothing && return false
+    ld.unicode_atoms = mode
+    return true
+end
+
 # PORT: pl-prologflag.c setStreamTypeCheck
 "Set the `stream_type_check` flag from the atom `a` (`false`, `loose`, `true`) (pl-prologflag.c)."
 function setStreamTypeCheck(ld::PL_local_data{T}, a::T)::Bool where {T}
@@ -1268,9 +1291,10 @@ end
 
 # PORT: pl-prologflag.c set_flag_value
 # DIVERGES: the database and the local data are arguments, the module is its record, and the key an atom. The side
-# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`, `encoding`,
-# `unicode_atoms`, `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
+# effects the kernel has none for are refused by name (design D4): `tty_control` (changed), `debug_on_interrupt`, `var_tag`, `incomparable`,
+# `file_name_case_handling`, `table_monotonic`, `theme`, `agc_margin`, `table_space`,
 # `table_compile_threshold`, `table_drop_intermediate`, `string_stack_tripwire` and `heartbeat`.
+# Since ENC1 `encoding` and `unicode_atoms` are accepted: `setEncoding` and `setUnicodeAtoms` set `LD->encoding` and `LD->unicode_atoms`.
 # Since R2 F1c `debug` and `debugger_show_context` are accepted: `debug` calls `debugmode` and `tracemode` (src/pl-trace.jl) and
 # `rval` is their answer, as upstream's (pl-prologflag.c:1317-1326); the value goes to the table as upstream does, the mask bit only if `rval`.
 # `threads` has no branch: it is read-only in the kernel's no-threads build (design D1; upstream's `O_PLMT` branch is not
@@ -1372,9 +1396,9 @@ function set_flag_value(
         elseif name == "access_level"
             setAccessLevelFromAtom(ld, a) || return false
         elseif name == "encoding"
-            _flag_not_ported(k, "setEncoding (the default encoding)")
+            setEncoding(ld, a) || return false
         elseif name == "unicode_atoms"
-            _flag_not_ported(k, "setUnicodeAtoms")
+            setUnicodeAtoms(ld, a) || return false
         elseif name == "stream_type_check"
             setStreamTypeCheck(ld, a) || return false
         elseif name == "file_name_case_handling"

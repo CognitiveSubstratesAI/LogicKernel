@@ -2,6 +2,7 @@
 # UPSTREAM: swipl-devel src/os/SWI-Stream.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-locale.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -20,9 +21,10 @@
 # `mem` (`buffer == 0` for upstream's NULL buffer); the function table is `functions`, an enum over
 # the function sets, and `handle` their record, where upstream holds function pointers and a
 # `void *`; the open set (`Sfilterfunctions`, STREAMX) takes its callbacks from an `AbstractSfilter` in `filter`, and
-# `Sset_filter` links a filter to the stream it filters (`upstream`, `downstream`). NOT PORTED: locks and threads,
-# timeouts, `tee`, ENC_ANSI and ENC_UTF16* (refused where a stream would use
-# them; ENC_WCHAR is read and written by Sgetcode/Sputcode, not opened by open/4), the EINTR and timeout call sites of `Sset_exception` (the kernel has no signals), close hooks (pl-file.c's `freeStream`, the one
+# `Sset_filter` links a filter to the stream it filters (`upstream`, `downstream`); `Snullfunctions` is pl-file.c's null
+# stream (lane D). NOT PORTED: locks and threads,
+# timeouts, `tee`, the EINTR and timeout call sites of `Sset_exception` (the kernel has no signals; ENC_ANSI is the
+# process's LC_CTYPE through libc: ENC1; so are ENC_UTF16BE/LE and ENC_WCHAR), close hooks (pl-file.c's `freeStream`, the one
 # hook upstream registers, is called by the kernel's closers instead: src/os/pl-file.jl), `Sfprintf`
 # and the other formatted output. Since R2's S1: the stream's `context` (an index into the
 # database's table of the streams Prolog knows, 0: none) and `erased` (closed while a reference is
@@ -44,6 +46,60 @@ const SIO_CMAGIC = 42
 # PORT: pl-stream.c UNDO_SIZE
 "The push-back area before a stream's buffer: `ROUND(PL_MB_LEN_MAX, sizeof(wchar_t))` (pl-stream.c)."
 const UNDO_SIZE = 16
+
+# PORT: pl-utf8.h PL_MB_LEN_MAX
+"The size of the buffer a multibyte conversion writes (pl-utf8.h)."
+const PL_MB_LEN_MAX = 16
+
+# ORIGINAL: the room for an `mbstate_t` (8 bytes on glibc, both x86_64 and aarch64): two words, zeroed, as `memset(.., 0, sizeof)`.
+"The words of a zeroed `mbstate_t`."
+const MBSTATE_WORDS = 2
+
+# ORIGINAL: libc's `wcrtomb(3)` under the process's `LC_CTYPE` (the kernel never calls `setlocale`: the embedder or CT1 does).
+# DIVERGES: the bytes are the answer (`nothing` for `(size_t)-1`, an unrepresentable character); `wchar_t` is a `Cint` (Linux).
+"The bytes that the wide character `c` is in the process's multibyte encoding, `nothing` when it has none; `st` is the state."
+function _wcrtomb(c::Int, st::Vector{UInt64})::Union{Nothing, Vector{UInt8}}
+    buf = Vector{UInt8}(undef, PL_MB_LEN_MAX)
+    n = GC.@preserve buf st ccall(
+        :wcrtomb, Csize_t, (Ptr{UInt8}, Cint, Ptr{UInt64}), pointer(buf), c % Cint,
+        pointer(st)
+    )
+    n == typemax(Csize_t) && return nothing
+    resize!(buf, Int(n))
+    return buf
+end
+
+# ORIGINAL: libc's `mbrtowc(3)` with one byte at a time (Sgetcode) or a run (read_pending_input).
+"`(rc, wc)` of `mbrtowc` on `n` bytes of `buf` from `from`: `rc` is the bytes used, `-1` (illegal) or `-2` (incomplete); `wc` the character."
+function _mbrtowc(
+    buf::Vector{UInt8}, from::Int, n::Int, st::Vector{UInt64}
+)::Tuple{Int, Int}
+    wc = Ref{Cint}(0)
+    rc = GC.@preserve buf st ccall(
+        :mbrtowc, Csize_t, (Ptr{Cint}, Ptr{UInt8}, Csize_t, Ptr{UInt64}),
+        wc, pointer(buf, from), n, pointer(st)
+    )
+    rc == typemax(Csize_t) && return (-1, 0)                    # (size_t)-1
+    rc == typemax(Csize_t) - 1 && return (-2, 0)                # (size_t)-2
+    return (Int(rc), Int(wc[]))
+end
+
+# ORIGINAL: libc's `mbsnrtowcs(NULL, &src, n, 0, ps)` (pl-file.c's HAVE_MBSNRTOWCS arm): the characters of the first `n` bytes of `buf`,
+# an incomplete sequence at the end not counted; `-1` is (size_t)-1. `st` is advanced as libc does (the caller passes a copy).
+"The number of wide characters in the first `n` bytes of `buf` under the process's `LC_CTYPE`, `-1` for an illegal sequence."
+function _mbsnrtowcs_count(buf::Vector{UInt8}, n::Int, st::Vector{UInt64})::Int
+    src = Ref{Ptr{UInt8}}(C_NULL)
+    rc = GC.@preserve buf st begin
+        src[] = pointer(buf)
+        ccall(
+            :mbsnrtowcs, Csize_t,
+            (Ptr{Cint}, Ptr{Ptr{UInt8}}, Csize_t, Csize_t, Ptr{UInt64}),
+            C_NULL, src, n, 0, pointer(st)
+        )
+    end
+    rc == typemax(Csize_t) && return -1
+    return Int(rc)
+end
 
 # PORT: SWI-Stream.h SIO_FBUF
 "Full buffering (SWI-Stream.h)."
@@ -227,7 +283,7 @@ IOPOS() = IOPOS(0, 0, 0, 0, 0)
 
 # PORT: SWI-Stream.h io_functions as IOFUNCTIONS
 # DIVERGES: the function set's name, where upstream holds its function pointers; `S_read`,
-# `S_write`, `S_close` and `S_control` dispatch on it (`S_seek64` is not ported: the memory file's seek is called by name).
+# `S_write`, `S_close`, `S_seek64` (lane D) and `S_control` dispatch on it.
 "Which function set a stream reads, writes, seeks and closes with (SWI-Stream.h `IOFUNCTIONS`)."
 @enum IOFUNCTIONS::UInt8 begin
     Smemfunctions
@@ -235,6 +291,7 @@ IOPOS() = IOPOS(0, 0, 0, 0, 0)
     Siofunctions
     Sstderrfunctions       # pl-file.c's: write to the stream it copies and flush it (R2 TOP1b F)
     Sfilterfunctions       # the functions an `AbstractSfilter` supplies (filter streams: zlib, hash, prolog streams; STREAMX)
+    Snullfunctions         # pl-file.c's `nullFunctions` (open_null_stream/1): write is a no-op, read is at the end (lane D)
 end
 
 # PORT: pl-stream.c memfile
@@ -259,7 +316,10 @@ end
 mutable struct Sjulia_io
     io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}
     close_io::Bool                                     # close the IO with the stream
+    proc::Union{Nothing, Base.Process}                 # the child of `Sopen_pipe` (`popen`), waited for at close (`pclose`)
 end
+Sjulia_io(io::Union{IOStream, IOBuffer, Base.TTY, Base.PipeEndpoint}, close_io::Bool) =
+    Sjulia_io(io, close_io, nothing)
 
 # ORIGINAL (STREAMX): upstream's `io_functions` (SWI-Stream.h:181-188: six C function pointers that take the stream's `handle`) is
 # open: the C packages (zlib4pl.c, hash_stream.c, prolog_stream.c) each bring their own. The kernel's sets are the closed enum
@@ -405,12 +465,25 @@ mutable struct IOSTREAM
     filter::Union{Nothing, Base.RefValue{AbstractSfilter}}  # the functions and context of a `Sfilterfunctions` stream
     fileno::Int                         # the cached file number (`Sfileno`), -1: none
     exception::Union{Nothing, Base.RefValue{AbstractStreamException}}  # the recorded exception (`Sset_exception`)
+    mbstate::Union{Nothing, Vector{UInt64}}  # ENC_ANSI decoding: the `mbstate_t` (nothing: NULL; see `stream_mbstate!`)
     IOSTREAM() = new(
         UInt8[], 0, 0, 0, 0, EOF, 0, 0, UInt32(0), IOPOS(), nothing, nothing,
         Smemfunctions,
         ENC_UNKNOWN, 0, SIO_NL_POSIX, 0, nothing, S_UATOMS_ACCEPT, 0, false, nothing,
-        nothing, nothing, nothing, nothing, -1, nothing
+        nothing, nothing, nothing, nothing, -1, nothing, nothing
     )
+end
+
+# ORIGINAL: pl-stream.c's `if ( !s->mbstate ) { malloc; memset 0 }` of put_code and Sgetcode (and pl-file.c's read_pending_input)
+# DIVERGES: the state is a `Vector{UInt64}`, collected by the GC (upstream frees it in Sclose_ and at shutdown, `free(s->mbstate)`).
+"The `mbstate_t` of `s`: made zeroed the first time (pl-stream.c)."
+function stream_mbstate!(s::IOSTREAM)::Vector{UInt64}
+    st = s.mbstate
+    if st === nothing
+        st = zeros(UInt64, MBSTATE_WORDS)
+        s.mbstate = st
+    end
+    return st
 end
 
 # ── the function sets ───────────────────────────────────────────────────────────────────────────
@@ -434,6 +507,7 @@ function S_read_wrapped(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::
     s.functions == Siofunctions && h isa Sjulia_io &&
         return Sread_julia_io(h, mem, from, size)
     s.functions == Sfilterfunctions && return Sread_filter(s, mem, from, size)
+    s.functions == Snullfunctions && return Sread_null(mem, from, size)
     return Sread_string(s, mem, from, size)
 end
 
@@ -447,6 +521,7 @@ function S_write(s::IOSTREAM, mem::Vector{UInt8}, from::Int, size::Int)::Int
     s.functions == Sstderrfunctions && h isa IOSTREAM &&
         return Swrite_stderr(h, mem, from, size)
     s.functions == Sfilterfunctions && return Swrite_filter(s, mem, from, size)
+    s.functions == Snullfunctions && return Swrite_null(mem, from, size)
     return Swrite_string(s, mem, from, size)
 end
 
@@ -464,6 +539,7 @@ function S_close_wrapped(s::IOSTREAM)::Int
     s.functions == Siofunctions && h isa Sjulia_io && return Sclose_julia_io(h)
     s.functions == Sstderrfunctions && return 0                 # (`close` is NULL)
     s.functions == Sfilterfunctions && return Sclose_filter(s)
+    s.functions == Snullfunctions && return Sclose_null()
     h isa IOSTREAM && return Sclose_string(h)
     return -1
 end
@@ -1003,10 +1079,10 @@ end
 
 # PORT: SWI-Stream.h SIO_RP_BLOCK
 "`Sread_pending` flag: wait for new input if nothing is buffered (SWI-Stream.h)."
-const SIO_RP_BLOCK = 0x1
+const SIO_RP_BLOCK = 1
 # PORT: SWI-Stream.h SIO_RP_NOPOS
 "`Sread_pending` flag: do not update the position (SWI-Stream.h)."
-const SIO_RP_NOPOS = 0x2
+const SIO_RP_NOPOS = 2
 
 # PORT: pl-stream.c Sread_pending
 # DIVERGES: `buf` is a byte vector filled from index 1 (upstream's `char *`); the count is the bytes delivered, an end of file the
@@ -1096,9 +1172,38 @@ function reperror(c::Int, s::IOSTREAM)::Int
     return -1
 end
 
+# PORT: pl-stream.c put_usc2
+"Write the 16-bit unit `c` to `s`, big endian when `be` (pl-stream.c): 0, or -1 on error."
+function put_usc2(c::Int, s::IOSTREAM, be::Bool)::Int
+    if be
+        (put_byte(c >> 8, s) < 0 || put_byte(c & 0xff, s) < 0) && return -1
+    else
+        (put_byte(c & 0xff, s) < 0 || put_byte(c >> 8, s) < 0) && return -1
+    end
+    return 0
+end
+
+# PORT: pl-stream.c put_utf16
+"Write `c` to `s` as UTF-16, a surrogate pair above 0xffff (pl-stream.c): 0, or -1 on error."
+function put_utf16(c::Int, s::IOSTREAM, be::Bool)::Int
+    if c > 0xffff
+        c1, c2 = utf16_encode(c)
+        (
+            put_usc2(c1, s, s.encoding == ENC_UTF16BE) < 0 ||
+            put_usc2(c2, s, s.encoding == ENC_UTF16BE) < 0
+        ) && return -1
+    elseif IS_UTF16_SURROGATE(c)
+        reperror(c, s) < 0 && return -1
+    else
+        put_usc2(c, s, s.encoding == ENC_UTF16BE) < 0 && return -1
+    end
+    return 0
+end
+
 # PORT: pl-stream.c put_code
-# DIVERGES: ENC_ANSI and ENC_UTF16* are refused (not ported); ENC_WCHAR is the 4-byte `wchar_t` of this platform
-# (SIZEOF_WCHAR_T == 4, in the machine's byte order).
+# DIVERGES: ENC_ANSI is libc's `wcrtomb` under the process's LC_CTYPE (the kernel never calls `setlocale`), with the stream's `mbstate`
+# (`stream_mbstate!`); `ENC_WCHAR` is the 4-byte `wchar_t` of this platform (SIZEOF_WCHAR_T == 4, in the machine's byte order: `ENDIAN_BOM`;
+# upstream's `#else` arm), the code truncated to 32 bits as `pl_wchar_t chr = c` does.
 "Write character `c` to `s` in its encoding: `c`, or -1 on error (pl-stream.c)."
 function put_code(c::Int, s::IOSTREAM)::Int
     IS_UTF16_SURROGATE(c) && return reperror(c, s)
@@ -1115,6 +1220,15 @@ function put_code(c::Int, s::IOSTREAM)::Int
         else
             put_byte(c, s) < 0 && return -1
         end
+    elseif enc == ENC_ANSI
+        mb = _wcrtomb(c, stream_mbstate!(s))
+        if mb === nothing
+            reperror(c, s) < 0 && return -1
+        else
+            for x in mb
+                put_byte(Int(x), s) < 0 && return -1
+            end
+        end
     elseif enc == ENC_UTF8
         if c < 128
             put_byte(c, s) < 0 && return -1
@@ -1125,20 +1239,18 @@ function put_code(c::Int, s::IOSTREAM)::Int
                 put_byte(Int(b), s) < 0 && return -1
             end
         end
+    elseif enc == ENC_UTF16BE
+        put_utf16(c, s, true) < 0 && return -1
+    elseif enc == ENC_UTF16LE
+        put_utf16(c, s, false) < 0 && return -1
     elseif enc == ENC_WCHAR
         w = UInt32(c & 0xffffffff)              # `pl_wchar_t chr = c`
         for k in 0:3                            # its bytes, in memory order
             sh = ENDIAN_BOM == 0x04030201 ? 8k : 8 * (3 - k)
             put_byte(Int((w >> sh) & 0xff), s) < 0 && return -1
         end
-    elseif enc == ENC_UNKNOWN
+    else                                    # ENC_UNKNOWN (upstream's `default: assert(0)`)
         return -1
-    else
-        throw(
-            NotPortedError{Nothing}(
-                nothing, "put_code: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
-            )
-        )
     end
     s.lastc = c
     if c == Int('\n') && (s.flags & SIO_LBUF) != 0
@@ -1160,6 +1272,7 @@ function Sputcode(c::Int, s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c Scanrepresent
+# DIVERGES: ENC_ANSI is libc's `wcrtomb` on a fresh state under the process's LC_CTYPE (`_wcrtomb`).
 "0 if `s`'s encoding can represent `c`, else -1 (pl-stream.c)."
 function Scanrepresent(c::Int, s::IOSTREAM)::Int
     enc = s.encoding
@@ -1167,16 +1280,48 @@ function Scanrepresent(c::Int, s::IOSTREAM)::Int
         return c <= 0xff ? 0 : -1
     elseif enc == ENC_ASCII
         return c < 0x7f ? 0 : -1
+    elseif enc == ENC_ANSI
+        return _wcrtomb(c, zeros(UInt64, MBSTATE_WORDS)) === nothing ? -1 : 0   # a fresh `mbstate_t`, as upstream's local `state`
     elseif enc == ENC_UTF16BE || enc == ENC_UTF16LE
         return IS_UTF16_SURROGATE(c) ? -1 : 0      # SIZEOF_WCHAR_T > 2
     elseif enc == ENC_WCHAR || enc == ENC_UTF8
         return 0
     end
-    throw(
-        NotPortedError{Nothing}(
-            nothing, "Scanrepresent: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
-        )
-    )
+    return -1                                   # upstream's `default: assert(0); return -1`
+end
+
+# PORT: pl-stream.c get_ucs2
+"Read one 16-bit unit from `s`, big endian when `be`: -1 at end of file (pl-stream.c)."
+function get_ucs2(s::IOSTREAM, be::Bool)::Int
+    c1 = get_byte(s)
+    c1 == EOF && return -1
+    c2 = get_byte(s)
+    if c2 == EOF
+        Sseterr(s, SIO_WARN, "EOF in unicode character")
+        return UTF8_MALFORMED_REPLACEMENT
+    end
+    return be ? (c1 << 8) + c2 : (c2 << 8) + c1
+end
+
+# PORT: pl-stream.c get_utf16
+"Read one UTF-16 character from `s`, joining a surrogate pair (pl-stream.c): -1 at end of file."
+function get_utf16(s::IOSTREAM, be::Bool)::Int
+    c = get_ucs2(s, be)
+    if IS_UTF16_LEAD(c)
+        c2 = get_ucs2(s, be)
+        if c2 == EOF
+            Sseterr(s, SIO_WARN, "EOF in unicode character")
+            return UTF8_MALFORMED_REPLACEMENT
+        elseif !IS_UTF16_TRAIL(c2)
+            Sseterr(s, SIO_WARN, "Illegal UTF-16 continuation")
+            return UTF8_MALFORMED_REPLACEMENT
+        end
+        return utf16_decode(c, c2)
+    elseif IS_UTF16_TRAIL(c)
+        Sseterr(s, SIO_WARN, "Lone UTF-16 trail surrogate")
+        return UTF8_MALFORMED_REPLACEMENT
+    end
+    return c
 end
 
 # PORT: pl-stream.c Sgetcode (the ENC_WCHAR case)
@@ -1197,7 +1342,8 @@ function get_wchar(s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c Sgetcode
-# DIVERGES: ENC_ANSI and ENC_UTF16* are refused (not ported); no `tee`.
+# DIVERGES: ENC_ANSI is libc's `mbrtowc` under the process's LC_CTYPE, byte by byte on the stream's `mbstate` (`_mbrtowc`);
+# `ENC_WCHAR` is the 4-byte native `wchar_t` (upstream's `#else` arm; `get_wchar`); no `tee`.
 "The next character of `s` in its encoding, or -1 at end of file (pl-stream.c)."
 function Sgetcode(s::IOSTREAM)::Int
     while true                                  # retry:
@@ -1239,14 +1385,40 @@ function Sgetcode(s::IOSTREAM)::Int
                     end
                 end
             end
+        elseif enc == ENC_UTF16BE
+            c = get_utf16(s, true)
+        elseif enc == ENC_UTF16LE
+            c = get_utf16(s, false)
         elseif enc == ENC_WCHAR
             c = get_wchar(s)
+        elseif enc == ENC_ANSI
+            st = stream_mbstate!(s)
+            n = 0                                               # as upstream: `n` is never incremented, so the EOF-in-sequence arm below
+            # cannot be taken (probed on the pin: a lone 0xc3 at EOF reads as -1, no warning)
+            c = 0
+            b1 = UInt8[0]
+            while true
+                c = get_byte(s)
+                if c == EOF
+                    if n != 0
+                        Sseterr(s, SIO_WARN, "EOF in multibyte Sequence")
+                        c = UTF8_MALFORMED_REPLACEMENT          # mberr:
+                    end
+                    break                                       # n == 0: goto out, c is EOF
+                end
+                b1[1] = UInt8(c)
+                rc, wc = _mbrtowc(b1, 1, 1, st)
+                if rc == 1 || rc == 0
+                    c = wc
+                    break
+                elseif rc == -1
+                    Sseterr(s, SIO_WARN, "Illegal multibyte Sequence")
+                    c = UTF8_MALFORMED_REPLACEMENT              # mberr:
+                    break
+                end                                             # else -2: incomplete
+            end
         else
-            throw(
-                NotPortedError{Nothing}(
-                    nothing, "Sgetcode: encoding $enc", "UTF-8 only (R1, user 2026-10-07)"
-                )
-            )
+            c = -1                                              # ENC_UNKNOWN: upstream's `default: assert(0)`
         end
         # out:
         if c == Int('\r') && (s.flags & SIO_TEXT) != 0
@@ -1420,12 +1592,16 @@ end
 # ── creating and closing ────────────────────────────────────────────────────────────────────────
 
 # PORT: pl-stream.c Snew
-# DIVERGES: a text stream's encoding is UTF-8 (`initEncoding`); no mutex, no file number; `initStreamLocale(s)` is NOT
-# called here (it needs the database): the callers that have one call it (`initStreamLocale`, src/os/pl-locale.jl).
+# DIVERGES: a text stream's encoding and `unicode_atoms` are `initEncoding()` and `initUnicodeAtoms()` (pl-stream.c:3544-3545,
+# `LD->encoding` and `LD->unicode_atoms`): the stream layer has no local data (`GET_LD`), so a caller that has one passes them
+# as `enc` and `uatoms` (`ld.encoding`, `ld.unicode_atoms`); the defaults are the kernel's UTF-8 and `accept`; no mutex, no file
+# number; `initStreamLocale(s)` is NOT called here (it needs the database): the callers that have one call it
+# (`initStreamLocale`, src/os/pl-locale.jl), so a stream made by `Snew` alone has `locale == nothing` (a filter stream included).
 "A new stream over `handle` with `functions`, its flags `flags` (pl-stream.c)."
 function Snew(
     handle::Union{Nothing, memfile, IOSTREAM, Sjulia_io}, flags::UInt32,
-    functions::IOFUNCTIONS
+    functions::IOFUNCTIONS, enc::IOENC = ENC_UTF8,
+    uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
 )::IOSTREAM
     s = IOSTREAM()
     s.magic = SIO_MAGIC
@@ -1434,7 +1610,12 @@ function Snew(
     s.handle = handle
     s.functions = functions
     s.posbuf.lineno = 1
-    s.encoding = (flags & SIO_TEXT) != 0 ? ENC_UTF8 : ENC_OCTET
+    if (flags & SIO_TEXT) != 0
+        s.encoding = enc                            # initEncoding()
+        s.unicode_atoms = uatoms                    # initUnicodeAtoms()
+    else
+        s.encoding = ENC_OCTET
+    end
     (flags & SIO_RECORDPOS) != 0 && (s.position = s.posbuf)
     return s
 end
@@ -1551,8 +1732,9 @@ function Srelease(s::IOSTREAM)::Bool
 end
 
 # PORT: pl-stream.c Ssize
-# DIVERGES: the size of a file stream's Julia IO, or what a filter's `control` answers to `SIO_GETSIZE` (upstream asks every function
-# set's `control`, else seeks to the end); -1 for any other stream.
+# DIVERGES: the function set's `control` `SIO_GETSIZE` is what a filter's `control` answers (`Sfilterfunctions`) or `filesize` of a file's
+# Julia IO (`IOStream`); any other stream with a seek function is measured by seeking to its end and back (upstream's second
+# branch); one without sets `ESPIPE` as upstream.
 "The size of the data object `s` reads or writes, or -1 (pl-stream.c)."
 function Ssize(s::IOSTREAM)::Int64
     if s.functions == Sfilterfunctions
@@ -1564,8 +1746,191 @@ function Ssize(s::IOSTREAM)::Int64
         io = h.io
         io isa IOStream && return Int64(filesize(io))
     end
+    if S_has_seek(s)
+        here = Stell64(s)
+        local enddata::Int64
+        if Sseek64(s, Int64(0), SIO_SEEK_END) == 0
+            enddata = Stell64(s)
+        else
+            enddata = Int64(-1)
+        end
+        Sseek64(s, here, SIO_SEEK_SET)
+
+        return enddata
+    end
+
+    s.io_errno = ESPIPE
+    S__seterror(s)
     return Int64(-1)
 end
+
+# ── seek (pl-stream.c) ──────────────────────────────────────────────────────────────────────────
+
+# ORIGINAL: Linux's `ESPIPE` (illegal seek), the value `Sseek64` records where the stream has no seek function.
+const ESPIPE = 29
+
+# PORT: pl-stream.c Sunit_size
+# DIVERGES: `sizeof(wchar_t)` is 4 (Linux); the enum has no other member to assert on.
+"The size in bytes of one unit of the stream's encoding (pl-stream.c)."
+function Sunit_size(s::IOSTREAM)::Int
+    enc = s.encoding
+    (enc == ENC_UTF16BE || enc == ENC_UTF16LE) && return 2
+    enc == ENC_WCHAR && return 4
+    return 1
+end
+
+# ORIGINAL: whether the stream's function set has a `seek` or `seek64` (upstream tests the function pointers):
+# the memory functions, the null functions and a file's Julia IO; the string, stderr, terminal and pipe functions have none.
+"Whether the stream's function set can seek."
+function S_has_seek(s::IOSTREAM)::Bool
+    f = s.functions
+    (f == Smemfunctions || f == Snullfunctions) && return true
+    if f == Siofunctions
+        h = s.handle
+        return h isa Sjulia_io && h.io isa IOStream
+    end
+    return false
+end
+
+# PORT: pl-stream.c Sseek_file64 as Sseek_julia_io
+# DIVERGES: on a file's Julia IO (`IOStream`) in place of `lseek()`: -1 for a negative result, as the system call's EINVAL.
+"Move the file's position (`SIO_SEEK_SET`, `SIO_SEEK_CUR`, `SIO_SEEK_END`): the new position, or -1 (pl-stream.c)."
+function Sseek_julia_io(h::Sjulia_io, pos::Int64, whence::Int)::Int64
+    io = h.io
+    io isa IOStream || return Int64(-1)
+    try
+        if whence == SIO_SEEK_SET
+            target = pos
+        elseif whence == SIO_SEEK_CUR
+            target = Int64(position(io)) + pos
+        elseif whence == SIO_SEEK_END
+            target = Int64(filesize(io)) + pos
+        else
+            return Int64(-1)
+        end
+        target < 0 && return Int64(-1)
+        seek(io, target)
+        return target
+    catch e
+        e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+        return Int64(-1)
+    end
+end
+
+# ORIGINAL: `(*s->functions->seek64)(s->handle, pos, whence)`: the function set's seek, on its handle; -1 for a set with none.
+"Seek as the stream's own function set does: the new position, or -1."
+function S_seek64(s::IOSTREAM, pos::Int64, whence::Int)::Int64
+    h = s.handle
+    s.functions == Smemfunctions && h isa memfile && return Sseek_memfile64(h, pos, whence)
+    s.functions == Siofunctions && h isa Sjulia_io && return Sseek_julia_io(h, pos, whence)
+    s.functions == Snullfunctions && return Int64(Sseek_null(Int(pos), whence))
+    return Int64(-1)
+end
+
+# PORT: pl-stream.c Sseek64
+# DIVERGES: `errno` is the stream's `io_errno`, set here before the error is recorded (`ESPIPE`: no seek function; `EINVAL`
+# for the seek that failed or the stream layer that cannot say more); the position `s.position` is `s.posbuf` or `nothing`.
+"""
+Re-position the stream to byte `pos` (`whence`): 0, or -1 (pl-stream.c). First tries to move the read pointer in the
+buffer; else flushes, drops the buffer and asks the function set.
+"""
+function Sseek64(s::IOSTREAM, pos::Int64, whence::Int)::Int
+    update = false
+    if (s.flags & SIO_INPUT) != 0 && s.limitp > s.buffer           # something there
+        now = Stell64(s)
+
+        if now != -1
+            nbufp = -1
+            newpos = Int64(-1)
+
+            if whence == SIO_SEEK_CUR
+                nbufp = s.bufp + pos
+                newpos = now + pos
+            elseif whence == SIO_SEEK_SET
+                nbufp = s.bufp + (pos - now)
+                newpos = pos
+            else
+                newpos = -1                                        # should not happen
+            end
+
+            if nbufp >= s.buffer && nbufp < s.limitp
+                s.bufp = Int(nbufp)
+
+                pos = newpos
+                update = true
+            end
+        end
+    end
+
+    if !update
+        if !S_has_seek(s)
+            s.io_errno = ESPIPE
+            S__seterror(s)
+            return -1
+        end
+
+        Sflush(s)
+
+        s.bufp = s.buffer
+        (s.flags & SIO_INPUT) != 0 && (s.limitp = s.buffer)
+
+        if whence == SIO_SEEK_CUR
+            pos += Stell64(s)
+            whence = SIO_SEEK_SET
+        end
+
+        pos = S_seek64(s, pos, whence)
+
+        if pos < 0
+            s.io_errno = EINVAL
+            S__seterror(s)
+            return -1
+        end
+    end
+
+    s.flags &= ~(SIO_FEOF | SIO_FEOF2)                             # not on eof of file anymore
+
+    p = s.position
+    if p !== nothing
+        s.flags |= (SIO_NOLINENO | SIO_NOLINEPOS)                  # no update this
+        Sresetesc(p)
+        p.byteno = pos
+        p.charno = div(pos, Sunit_size(s))                         # compatibility
+    end
+
+    return 0
+end
+
+# PORT: pl-stream.c Stell64
+# DIVERGES: as `Sseek64`, `errno` is `s.io_errno` (`EINVAL`: neither a position nor a seek function).
+"The current position in the file in bytes, or -1 (pl-stream.c)."
+function Stell64(s::IOSTREAM)::Int64
+    p = s.position
+    if p !== nothing
+        return p.byteno
+    elseif S_has_seek(s)
+        pos = S_seek64(s, Int64(0), SIO_SEEK_CUR)
+
+        if s.buffer != 0                                           # open
+            off = Int64(s.bufp - s.buffer)
+
+            (s.flags & SIO_INPUT) != 0 && (off -= s.limitp - s.buffer)
+
+            pos += off
+        end
+
+        return pos
+    else
+        s.io_errno = EINVAL
+        S__seterror(s)
+        return -1
+    end
+end
+
+# ── pending input (pl-stream.c) ─────────────────────────────────────────────────────────────────
+# `Sread_pending`, `SIO_RP_BLOCK` and `SIO_RP_NOPOS` are defined once, in the filter-stream section above (INT-2: wip/stream-filter and
+# lane D (wip/rec-enc1) each ported them; the STREAMX copy is kept, its two flag constants made `Int` as lane D's were, because the
+# function takes `flags::Int` and read_pending_codes/3 and the tests pass the constants directly).
 
 # PORT: pl-stream.c bomdefs
 "The byte order marks `ScheckBOM` recognises: the encoding they announce and their bytes (pl-stream.c)."
@@ -1576,9 +1941,7 @@ const bomdefs = (
 )
 
 # PORT: pl-stream.c ScheckBOM
-# DIVERGES: a mark whose encoding the stream layer refuses (UTF-16, `put_code`'s and `Sgetcode`'s
-# NotPortedError) is recognised and skipped all the same, as upstream; the error is raised at the
-# first read. -1 where upstream sets `errno = EINVAL` (a non-buffered stream).
+# DIVERGES: -1 where upstream sets `errno = EINVAL` (a non-buffered stream).
 "Detect a byte order mark at the start of the input stream `s`, switch to its encoding and skip it: 0, or -1 (pl-stream.c)."
 function ScheckBOM(s::IOSTREAM)::Int
     (s.flags & SIO_NBUF) != 0 && return -1                  # errno = EINVAL
@@ -1781,12 +2144,14 @@ end
 
 # PORT: pl-stream.c Sopen_string
 # DIVERGES: no static stream argument (`s`); `size` -1 reads up to the first 0 byte; Julia's GC
-# owns the stream.
+# owns the stream; `uatoms` is `initUnicodeAtoms()` (the stream layer has no `LD`): the caller passes `ld.unicode_atoms`.
 """
 A stream on the user's byte vector `buf` (pl-stream.c): mode `"r"` reads its first `size` bytes,
 `"w"` writes into it; ISO Latin-1, as upstream opens it (`Sopen_text` sets the text's encoding).
 """
-function Sopen_string(buf::Vector{UInt8}, size::Int, mode::String)::Union{Nothing, IOSTREAM}
+function Sopen_string(
+    buf::Vector{UInt8}, size::Int, mode::String, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Union{Nothing, IOSTREAM}
     flags = SIO_FBUF | SIO_USERBUF
     s = IOSTREAM()
     s.mem = buf
@@ -1796,6 +2161,7 @@ function Sopen_string(buf::Vector{UInt8}, size::Int, mode::String)::Union{Nothin
     s.handle = s                                # for Sclose_string()
     s.functions = Sstringfunctions
     s.encoding = ENC_ISO_LATIN_1
+    s.unicode_atoms = uatoms                    # initUnicodeAtoms() (pl-stream.c:4441): the caller's `ld.unicode_atoms`
     m = isempty(mode) ? ' ' : first(mode)
     if m == 'r'
         if size == -1
@@ -1863,15 +2229,18 @@ end
 # as upstream's `close()` failing: `S__close` makes it the stream's error and the closer raises it.
 "Close the IO if the stream owns it: 0, or -1 on error."
 function Sclose_julia_io(h::Sjulia_io)::Int
+    rc = 0
     if h.close_io
         try
             close(h.io)
         catch e
             e isa Union{Base.IOError, SystemError, ArgumentError, EOFError} || rethrow()
-            return -1
+            rc = -1
         end
     end
-    return 0
+    proc = h.proc
+    proc === nothing || wait(proc)                          # pclose(): the exit status is not looked at, as upstream
+    return rc
 end
 
 # PORT: pl-stream.c Sopen_file as Sopen_julia_io
@@ -1892,6 +2261,51 @@ function Sopen_julia_io(
     s = Snew(Sjulia_io(io, close_io), flags, Siofunctions)
     s.newline = SIO_NL_POSIX
     return s
+end
+
+# ── pipes (pl-stream.c Sopen_pipe), lane D ──────────────────────────────────────────────────────
+
+# PORT: pl-stream.c Sopen_pipe
+# DIVERGES: also `Sread_pipe`, `Swrite_pipe`, `Sclose_pipe`, `Scontrol_pipe` and `Spipefunctions` (pl-stream.c:3967-4072 at
+# the pin 18168e62); the child is Julia's (`open(Cmd(["/bin/sh", "-c", command]), …)`) in place of `popen`, its pipe end a `Sjulia_io` of
+# `Siofunctions` (`Sjulia_io.proc` is `pclose`'s child); a `r` child reads `/dev/null` for its stdin, a `w` child shares the process's
+# stdout (file descriptor 1, as `popen`'s child inherits it: `Base.RawFD(1)`, a concrete type, where the global `Base.stdout` is
+# typed `IO` and made `open`'s call a runtime dispatch under JET; `redirect_stdout` re-points descriptor 1, so the child follows it); no seek function (a pipe: `S_has_seek` is false, so `Sseek64` sets ESPIPE), `SIO_GETFILENO` has no twin. The type string:
+# upstream's `popen` takes `type[0]` (`r` or `w`: another first character is EINVAL here as `popen` gives), and its `assert(0)` on a
+# character other than `r`, `w`, `b` is EINVAL here. Returns `(stream, errno)` as `Sopen_file` does.
+# `enc` and `uatoms` are `Snew`'s (`initEncoding()`, `initUnicodeAtoms()`: the caller's `ld.encoding`, `ld.unicode_atoms`).
+"Open a `/bin/sh -c command` child as a stream: `type` is `r` or `w`, then `b` for binary; the stream and 0, or `nothing` and the errno (pl-stream.c)."
+function Sopen_pipe(
+    command::String, type::String, enc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Tuple{Union{Nothing, IOSTREAM}, Int}
+    isempty(type) && return (nothing, EINVAL)
+    mode = type[1]
+    (mode == 'r' || mode == 'w') || return (nothing, EINVAL)
+    flags = SIO_RECORDPOS | SIO_FBUF | SIO_TEXT
+    for c in type
+        if c == 'r'
+            flags |= SIO_INPUT
+        elseif c == 'w'
+            flags |= SIO_OUTPUT
+        elseif c == 'b'
+            flags &= ~SIO_TEXT
+        else
+            return (nothing, EINVAL)
+        end
+    end
+
+    proc = try
+        cmd = Cmd(["/bin/sh", "-c", command])
+        mode == 'r' ? open(cmd, "r", devnull) : open(cmd, "w", Base.RawFD(1))
+    catch e
+        e isa ArgumentError && return (nothing, EINVAL)
+        e isa Base.IOError || rethrow()
+        return (nothing, Int(-e.code))
+    end
+    io = mode == 'r' ? proc.out : proc.in
+    io isa Base.PipeEndpoint || error("Sopen_pipe: the child's pipe end is a ", typeof(io))
+    s = Snew(Sjulia_io(io, true, proc), flags, Siofunctions, enc, uatoms)
+    return (s, 0)
 end
 
 # ── files (pl-stream.c Sopen_file), since R2's S1 ───────────────────────────────────────────────
@@ -1944,20 +2358,44 @@ function _open_julia_file(
     return io
 end
 
+# ORIGINAL: the lock loop of pl-stream.c `Sopen_file` (`fcntl(fd, wait ? F_SETLKW : F_SETLK, &buf)`) as a helper:
+# `struct flock` is built by hand (Linux LP64: `short l_type`, `short l_whence`, `off_t l_start`, `off_t l_len`,
+# `pid_t l_pid`: 32 bytes); `F_RDLCK` 0, `F_WRLCK` 1, `F_SETLK` 6, `F_SETLKW` 7, `SEEK_SET` 0. 0 or the errno; an
+# `EINTR` retries as upstream does (`PL_handle_signals` has no signal to handle here).
+"Lock the whole file of `io`, read (`lock == 1`) or write, waiting or not: 0 or the errno (pl-stream.c Sopen_file)."
+function _fcntl_lock(io::IOStream, lock::Int, wait::Bool)::Int
+    fdn = ccall(:jl_ios_fd, Clong, (Ptr{Cvoid},), io.ios) % Cint
+    buf = zeros(UInt8, 32)
+    buf[1] = lock == 1 ? 0x00 : 0x01                    # l_type: F_RDLCK, F_WRLCK (little endian short)
+    cmd = wait ? Cint(7) : Cint(6)                      # F_SETLKW, F_SETLK
+    while true
+        rc = GC.@preserve buf ccall(
+            :fcntl, Cint, (Cint, Cint, Ptr{UInt8}), fdn, cmd, pointer(buf)
+        )
+        rc == 0 && return 0
+        e = Int(Base.Libc.errno())
+        e == 4 || return e                              # EINTR: try again
+    end
+end
+
 # PORT: pl-stream.c Sopen_file
 # DIVERGES: returns `(stream, errno)` — the stream, or `nothing` and the errno that upstream leaves
 # in `errno`; the file is Julia's (`open`, an `IOStream`), so a failure's errno is what Julia's
-# `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open, and
-# upstream's advisory locks (`l`, `L`: `fcntl`) are refused as upstream's own no-locking branch
-# does (EINVAL). `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `m` and three
-# octal digits (the mode of a new file).
+# `SystemError` carries; a new file gets `mode` less the umask by a `chmod` after the open; the
+# advisory lock (`l`, `L`: upstream's FCNTL_LOCKS branch) is `_fcntl_lock` on the descriptor of the
+# Julia file. `initenc` and `uatoms` are `Snew`'s (`ld.encoding`, `ld.unicode_atoms`). `how`: `r`, `w`, `a` or `u`, then `b` (binary), `r` (no position), `lr`/`lw`/`Lr`/`Lw`
+# (a read or write lock; `L` fails instead of waiting), `m` and three octal digits (the mode of a new file).
 "Open the file `path` as `how` says: the stream and 0, or `nothing` and the errno (pl-stream.c)."
-function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, Int}
+function Sopen_file(
+    path::String, how::String, initenc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+)::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(how) && return (nothing, EINVAL)
     op = how[1]
     flags = SIO_FILE | SIO_TEXT | SIO_RECORDPOS | SIO_FBUF
     enc = ENC_UNKNOWN
     mode = Int(0o666)
+    lock = 0                                                # lnone, lread = 1, lwrite = 2
+    wait = true
     i = 2
     while i <= lastindex(how)
         c = how[i]
@@ -1966,12 +2404,22 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
             enc = ENC_OCTET
         elseif c == 'r'                                     # no record
             flags &= ~SIO_RECORDPOS
+        elseif c == 'L' || c == 'l'                         # lock r: read, w: write
+            c == 'L' && (wait = false)
+            i += 1
+            if i <= lastindex(how) && how[i] == 'r'
+                lock = 1
+            elseif i <= lastindex(how) && how[i] == 'w'
+                lock = 2
+            else
+                return (nothing, EINVAL)
+            end
         elseif c == 'm'
             (i + 3 <= lastindex(how) && all(d -> '0' <= d <= '7', how[(i + 1):(i + 3)])) ||
                 return (nothing, EINVAL)
             mode = parse(Int, how[(i + 1):(i + 3)]; base=8)
             i += 3
-        else                                                # 'l', 'L' (locks: none) and the rest
+        else
             return (nothing, EINVAL)
         end
         i += 1
@@ -1991,7 +2439,14 @@ function Sopen_file(path::String, how::String)::Tuple{Union{Nothing, IOSTREAM}, 
 
     io = _open_julia_file(path, op, mode)
     io isa Int && return (nothing, io)
-    s = Snew(Sjulia_io(io, true), flags, Siofunctions)
+    if lock != 0
+        lerr = _fcntl_lock(io, lock, wait)
+        if lerr != 0
+            close(io)
+            return (nothing, lerr)
+        end
+    end
+    s = Snew(Sjulia_io(io, true), flags, Siofunctions, initenc, uatoms)
     enc != ENC_UNKNOWN && (s.encoding = enc)
     return (s, 0)
 end

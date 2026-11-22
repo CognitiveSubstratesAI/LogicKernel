@@ -4,10 +4,8 @@
 # A missing or refused row without an owner prints NO OWNER in the status (information). An owner line whose key names no missing or refused row is R2-OWNER-STALE:
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
-pred:$activate_static_extension/1	LB5-LB7	seed: missing_c_preds.tsv
 pred:$call_no_catch/1	DBG1	seed: missing_c_preds.tsv
 pred:$can_yield/0	DBG1	seed: missing_c_preds.tsv
-pred:$clause_term_position/3	LB5-LB7	seed: missing_c_preds.tsv
 pred:$engine_create/3	TH1	seed: missing_c_preds.tsv
 pred:$foreign_predicate_source/2	PR1	seed: missing_c_preds.tsv
 pred:$gc_clear/1	TH1	seed: missing_c_preds.tsv
@@ -18,8 +16,6 @@ pred:$sig_unblock/0	TH1	seed: missing_c_preds.tsv
 pred:$unload_file/1	SRC2	seed: missing_c_preds.tsv
 pred:$visible/2	DBG1	seed: missing_c_preds.tsv
 pred:engine_next/2	TH1	seed: missing_c_preds.tsv
-pred:get/1	S2a	seed: missing_c_preds.tsv
-pred:get/2	S2a	seed: missing_c_preds.tsv
 pred:get_flag/2	FL1	seed: missing_c_preds.tsv
 pred:is_engine/1	TH1	seed: missing_c_preds.tsv
 pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
@@ -27,8 +23,6 @@ pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:notrace/0	DBG1	seed: missing_c_preds.tsv
 pred:prolog_choice_attribute/3	DBG1	seed: missing_c_preds.tsv
 pred:prolog_frame_attribute/3	DBG1	seed: missing_c_preds.tsv
-pred:put/1	S2a	seed: missing_c_preds.tsv
-pred:put/2	S2a	seed: missing_c_preds.tsv
 pred:set_flag/2	FL1	seed: missing_c_preds.tsv
 pred:set_thread/2	TH1	seed: missing_c_preds.tsv
 pred:succ/2	AR1	seed: missing_c_preds.tsv
@@ -84,14 +78,12 @@ refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH 
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 refusal:src/os/pl-files.jl::_tmp_file_refused::what	LB5-LB7	tmp_file/2 and $tmp_file_stream/4: boot, off the load path (lb5_sizing.md Ring Q)
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
-refusal:src/os/pl-file.jl::get_stream_handle::a stream pair	S2b	stream_pair/3 handle (pl-file.c get_stream_handle); S2b is the pl-file.c remainder
+refusal:src/os/pl-apple.jl::pl_apple_current_locale_identifier1_va::apple_current_locale_identifier/1: macOS only, CoreFoundatio	APPLE1	platform: macOS only (pl-apple.c, CoreFoundation); refused by name, out of the Linux count; called under the apple flag by boot/toplevel.pl
 refusal:src/os/pl-file.jl::openStream::open/4's locale(Locale) option	CT1	open/4 locale(Locale) option (pl-file.c openStream, PL_locale); the locale objects of pl-locale.c
-refusal:src/os/pl-file.jl::openStream::open/4's lock(Lock) option (advisory file locks)	S2b	open/4 lock(Lock) option (pl-file.c openStream, Sseterr/flock); stream-layer remainder
-refusal:src/os/pl-file.jl::openStream::open(pipe(Command), …)	S2b	open(pipe(Cmd)) (pl-file.c openStream, pl-stream.c Sopen_pipe); stream-layer remainder
-refusal:src/os/pl-file.jl::pl_close::closing a stream pair	S2b	close of a stream pair (pl-file.c do_close via stream_pair); with the pair itself
 refusal:src/os/pl-file.jl::set_stream::set_stream/2's locale(Locale)	CT1	set_stream/2 locale(Locale) (pl-file.c set_stream, PL_locale); with open/4's locale option
 refusal:src/pl-comp.jl::compileSubClause!::compileArith (optimise)	AR1	compileArith under the optimise flag (pl-comp.c O_COMPILE_ARITH); needs the A_* instructions (Q-AR3)
 refusal:src/pl-event.jl::PL_call_event_hook_va::the thread events (`unify_thread_id`)	TH1	thread events unify_thread_id (pl-event.c); threads flag is false
+refusal:src/pl-load.jl::pl_activate_static_extension1_va::activate_static_extension/1: no static extensions in the ker	LB5-LB7	O_STATIC_EXTENSIONS only (pl-load.c:450-540): the pin's own swipl has no such predicate; refused by name, the kernel links no static extension
 refusal:src/pl-proc.jl::pl_set_predicate_attribute3_va::spy points (GP_RESOLVE)	DBG1	spy points, GP_RESOLVE (pl-proc.c pl_set_predicate_attribute, SPY_ME)
 refusal:src/pl-read.jl::_atom_from_text::an atom containing the character 0 (a Symbol cannot hold it)	ATOM1	atoms holding the character 0 (pl-read.c atom from text); board row ATOM1, D-0410 item 7
 refusal:src/pl-srcfile.jl::startConsult::consulting a file again (reconsult)	LB6	startConsult on a loaded file, reconsult (pl-srcfile.c); LB6b item h re-points it (lb67_sizing.md); the same step calls `untable_definition_clauses` (src/pl-tabling.jl, TAB1 TB5) where upstream's `unloadFile` (pl-srcfile.c:1476) and `endReconsult` (:1544) call `untable_from_clause`: neither function exists in the kernel before LB6b, so the `untable` event of a reloaded `'$tabled'/2` clause is raised from nowhere until then
@@ -105,18 +97,6 @@ refusal:src/pl-wam.jl::PL_next_solution_guarded::backtracking into a $(db_c.type
 # claim_answer_table, take_trie, drop_trie, new_trie_array, free_trie_array, register_waiting, unregister_waiting, thread_waits_for_trie, stat_deadlock, is_deadlock, wait_for_table_to_complete.
 # (c) cleanupTabling (pl-tabling.c:12717) has nothing observable in the kernel: it clears fast_ret_functor and, under O_PLMT, frees the shared variant table, the mutex, the condition variable and the node pool: no row.
 # The 2-argument `freeCodesDefinition!` keeps its refusal row below: pl-ext.jl and precompile_workload.jl call it where no database exists (boot), the callers with a database use the 3-argument method.
-refusal:src/os/pl-file.jl::openStream::open/4's unicode_atoms(Mode) option	ENC1	open/4 unicode_atoms(Mode) option (pl-file.c openStream); the NFC normalizer rides with ENC1
-refusal:src/os/pl-file.jl::openStream::string("open/4 with the stream encoding ", enc)	ENC1	open/4 encodings other than UTF-8 (pl-file.c openStream); UTF-8 only by the R1 decision of 2026-10-07
-refusal:src/os/pl-file.jl::_atom_to_unicode_atoms::set_stream/2's unicode_atoms(nfc)	ENC1	set_stream/2 unicode_atoms(nfc) (pl-file.c set_stream); the NFC normalizer rides with ENC1
-refusal:src/os/pl-stream.jl::put_code::put_code: encoding $enc	ENC1	put_code in an encoding other than UTF-8 (pl-stream.c Sputcode); R1 decision
-refusal:src/os/pl-stream.jl::Scanrepresent::Scanrepresent: encoding $enc	ENC1	Scanrepresent in an encoding other than UTF-8 (pl-stream.c); R1 decision
-refusal:src/os/pl-stream.jl::Sgetcode::Sgetcode: encoding $enc	ENC1	Sgetcode in an encoding other than UTF-8 (pl-stream.c); R1 decision
-refusal:src/os/pl-text.jl::PL_canonicalise_text::PL_canonicalise_text of $enc	ENC1	PL_canonicalise_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::text_error::text_error of $rc	ENC1	text_error of a code other than the code-point error (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text to a target other than REP_UTF8	ENC1	PL_mb_text to a target other than REP_UTF8 (pl-text.c wctobuffer, PL_demote_text); no kernel caller
-refusal:src/os/pl-text.jl::PL_mb_text::PL_mb_text of $(text.encoding)	ENC1	PL_mb_text of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_string::the string of a text in $(text.encoding)	ENC1	string of a text in another encoding (pl-text.c); branch without a kernel caller
-refusal:src/os/pl-text.jl::_text_code_points::the code points of a text in $(text.encoding)	ENC1	code points of a text in another encoding (pl-text.c); branch without a kernel caller
 refusal:src/pl-comp.jl::assert_term!::assert_term: PL_CREATE_THREAD_LOCAL	TH1	assert_term PL_CREATE_THREAD_LOCAL (pl-comp.c assert_term, thread-local predicates are TH1's); PL_CREATE_INCREMENTAL is ported by TAB1 TB6 (tbl_set_incremental_predicate)
 refusal:src/pl-modul.jl::set_module::set_module(program_space(N)): the module's code accounting	REFUSED	refused by design (no step ports it): the kernel keeps no per-module code size (m->code_size, D-0149 MQ3), so a limit could be neither checked nor enforced; the pin's tests need no program_space (git grep 18168e62: only boot/syspred.pl:1231 module_property(program_space(_)), which fails without a limit, as the kernel's pl-modul.jl:1447); src/pl-modul.jl:405
 refusal:src/pl-proc.jl::pl_get_predicate_attribute3_va::indexed(L): the Prolog dict of an index property	PR1b	indexed(L) of pl_get_predicate_attribute (pl-proc.c, unify_index_property): predicate_property(P, X) enumeration reaches it via syspred.pl:874; PR1b (R2b list, D-0415 item 5), needs the dict builder; size it before the first boot decides whether it is needed
@@ -126,12 +106,8 @@ refusal:src/pl-read.jl::raw_read2::raw_read2: the comments(C) read option #2	RD2
 refusal:src/pl-read.jl::start_pframe::read: a blob <type>(…)	RD2	reading a blob <type>(...) (pl-read.c PF_BLOB); the blob lookup
 refusal:src/pl-read.jl::start_pframe::read: a quasi-quotation {|Syntax||Quotation|}	RD2	quasi-quotation {|Syntax||Text|} (pl-read.c); refused by the R1 decision, lifted only if the user lifts it
 refusal:src/pl-read.jl::read_clause::read_clause's $what option	RD2	read_clause comments / var_prefix options (pl-read.c read_clause)
-refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) or unicode_atoms option	RD2	read_clause process_comment(true) option (pl-read.c); unicode_atoms half rides with ENC1
-refusal:src/pl-read.jl::read_clause::unicode_atoms(nfc)	ENC1	read_clause unicode_atoms(nfc) (pl-read.c); the NFC normalizer
+refusal:src/pl-read.jl::read_clause::read_clause's process_comment(true) option	RD2	read_clause process_comment(true) option (pl-read.c); the unicode_atoms half is ported (ENC1)
 refusal:src/pl-read.jl::read_term_from_stream::read_term's $what option	RD2	read_term comments / var_prefix / quasi_quotations options (pl-read.c pl_read_term)
-refusal:src/pl-read.jl::read_term_from_stream::read_term's unicode_atoms option	ENC1	read_term unicode_atoms option (pl-read.c pl_read_term); the NFC normalizer
-refusal:src/pl-string.jl::PL_text_recode::PL_text_recode to $encoding	ENC1	PL_text_recode to ENC_ANSI, the locale encoding (pl-string.c); with CT1's locale
-refusal:src/pl-string.jl::pl_string_bytes3_va::string_bytes/3 with the encoding text	ENC1	string_bytes/3 with the text (ENC_ANSI) encoding (pl-string.c); with CT1's locale
 refusal:src/pl-supervisor.jl::freeCodesDefinition!::freeCodesDefinition! of a wrapped predicate needs the databa	WRAP1	freeCodesDefinition of a wrapped predicate (pl-supervisor.c), needs the database; wrap closures are WRAP1
 refusal:src/pl-wam.jl::PL_next_solution_guarded::the VM instruction $(codeTable(thiscode).name)	TAB1	dispatch fallthrough for a VM instruction without a body (pl-vmi.c); each missing instruction has its own vmi: row, the last instruction (S_TABLED) removes this site
 refusal:src/pl-write.jl::writePrimitive::writing a grounded value SWI has no type for	WR2	writePrimitive of a grounded value SWI has no type for; a representation guard of the kernel, permanent until the blob writer takes it

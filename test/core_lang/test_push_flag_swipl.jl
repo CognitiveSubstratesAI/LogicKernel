@@ -392,8 +392,8 @@ end
 # so these rows are the kernel's answer alone. The value is one swipl accepts, so the refusal is the answer, not a type error. After the refusal the
 # stack is as it was: the flag has no pushed value, a pop raises existence_error (the kernel's answer, upstream's code: the new frame is only linked after
 # `set_flag_value` succeeds).
+# (`encoding` is set since ENC1: the testset after this one.)
 const _PF_REFUSED = [
-    ("encoding", "utf8"),
     ("agc_margin", "100"), ("var_tag", "dict"), ("heartbeat", "0")
 ]
 
@@ -422,5 +422,30 @@ const _PF_REFUSED = [
             line
         )
     end
-    @test length(_PF_REFUSED) >= 4
+    @test length(_PF_REFUSED) >= 3
+    @test !any(f == "encoding" for (f, _) in _PF_REFUSED)
+end
+
+# ENC1: push_prolog_flag(encoding, V) reaches `setEncoding` (set_flag_value, pl-prologflag.c:1307ff) and so does the pop's restore
+# (pl-prologflag.c pop_prolog_flag: set_flag_value with the saved value): a stream opened between them has the pushed encoding, one after the
+# pop the restored one. The values are from the C source; kernel alone (the live differential of the flag is in test_set_flag_swipl.jl).
+@testset "push_prolog_flag(encoding) sets LD->encoding and the pop restores it (ENC1)" begin
+    dir = mktempdir()
+    f = joinpath(dir, "pe.out")
+    path = joinpath(dir, "pe.pl")
+    write(
+        path,
+        "t_pe(R) :- push_prolog_flag(encoding, iso_latin_1), open('$f', write, S), stream_property(S, encoding(E)), close(S), " *
+        "pop_prolog_flag(encoding), open('$f', write, S2), stream_property(S2, encoding(E2)), close(S2), " *
+        "current_prolog_flag(encoding, F), R = e(E, E2, F).\n"
+    )
+    gd = LK.PL_global_data{_PF}()
+    ld = LK.PL_local_data{_PF}(gd)
+    st, _ = LK.load_file!(gd, ld, path)
+    @test st === :ok
+    line = _pf_query(gd, ld, "t_pe")
+    @test occursin(
+        "c" * _pf_codes("e") * "/3(a" * _pf_codes("iso_latin_1") * ",a" * _pf_codes("utf8") * ",a" * _pf_codes("utf8") * ")",
+        line
+    )
 end

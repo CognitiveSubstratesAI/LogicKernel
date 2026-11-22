@@ -27,9 +27,10 @@
 #     CVT driver's `cvt_text/3`): write -> `numbervars(T,0,_,[singletons(true)]), with_output_to(string(S), write_term(T,[numbervars(true)]))`;
 #     writeq -> the same with `quoted(true)`; canonical -> `with_output_to(string(S), write_canonical(T))`; list_<m> -> `text_to_string(T,S)` when
 #     T is a code/char list else the <m> goal; atom_<m> -> `atom_string(T,S)` when T is an atom else the <m> goal.
-#     THE NON-ASCII write_canonical EXCLUSION is a DIVERGES in docs/architecture.md (WR2, owner ENC1): the equivalent `write_canonical/1`
+#     THE NON-ASCII write_canonical EXCLUSION is a DIVERGES in docs/architecture.md (WR2): the equivalent `write_canonical/1`
 #     differs from the C flags by PL_WRT_PATTERN_SYNTAX_SOLO and runs over the stream's own encoding, while pl-text.c:363-370 tries ISO Latin-1
-#     then ENC_WCHAR (the kernel's stream layer is UTF-8 only until ENC1), so no oracle value exists for non-ASCII canonical text.
+#     then ENC_WCHAR (the kernel's memory stream is UTF-8; the stream layer takes every encoding since ENC1), so no oracle value exists for
+#     non-ASCII canonical text.
 #   * the kernel's own invariants that no swipl row reaches: the text's length is its code points, the numbervars frame is closed after the
 #     call (the term's variables are unbound again), and the numbering of an acyclic term is the singletons' `_`.
 using Test, LogicKernel

@@ -865,10 +865,11 @@ end
 
 # PORT: pl-text.c PL_text_recode
 # DIVERGES: the encodings `string_bytes/3` reaches: the target is `ENC_UTF8`, `ENC_ISO_LATIN_1`, `ENC_OCTET`,
-# `ENC_ASCII`, `ENC_UTF16LE` or `ENC_UTF16BE` and `text` is canonical (the caller canonicalises it; upstream's
+# `ENC_ASCII`, `ENC_ANSI`, `ENC_UTF16LE` or `ENC_UTF16BE` and `text` is canonical (the caller canonicalises it; upstream's
 # `PL_get_text` gives canonical texts, the kernel's does not, see `PL_chars_t`). The bytes go into `text.text`
-# (a Julia vector: no buffers), the `length` is in bytes for UTF-8 and UTF-16, in characters for the others.
-# NOT PORTED: the `ENC_ANSI` source and target (the locale; `string_bytes/3` refuses it by name first).
+# (a Julia vector: no buffers), the `length` is in bytes for UTF-8, ANSI and UTF-16, in characters for the others.
+# An `ENC_ANSI` source (libc's `mbrtowc`, `_ansi_code_points`) gives false for an illegal or incomplete sequence;
+# an `ENC_ANSI` target is `PL_mb_text(text, REP_MB)`. Any other source or target is upstream's `assert(0)`, an `error()`.
 "Recode the canonical `text` to `encoding` in place; false after the error (pl-text.c)."
 function PL_text_recode(
     ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC
@@ -882,8 +883,19 @@ function PL_text_recode(
                 return true
             end
         end
+        if text.encoding === ENC_ASCII                      # only the encoding changes
+            text.encoding = ENC_UTF8
+            return true
+        end
+        cps = if text.encoding === ENC_ANSI
+            r = _ansi_code_points(text.text, text.length)
+            r === nothing && return false                    # encoding error
+            r
+        else
+            _text_code_points(text)
+        end
         b = UInt8[]
-        for c in _text_code_points(text)
+        for c in cps
             utf8_put_char(b, c)
         end
         text.text = b
@@ -920,13 +932,11 @@ function PL_text_recode(
         text.encoding = encoding
         text.canonical = false
         return true
+    elseif encoding === ENC_ANSI
+        @assert text.canonical "PL_text_recode: a text that is not canonical"
+        return PL_mb_text(text, REP_MB)
     end
-    throw(
-        NotPortedError{Nothing}(
-            nothing, "PL_text_recode to $encoding",
-            "the locale (ENC_ANSI) is refused by name"
-        )
-    )
+    error("PL_text_recode to $encoding")                    # assert(0)
 end
 
 # PORT: pl-string.c string_bytes as pl_string_bytes3_va
@@ -934,9 +944,11 @@ end
 # DIVERGES: `PL_get_nchars(A2, …, CVT_LIST|REP_ISO_LATIN_1|CVT_EXCEPTION)` is `PL_get_text` plus the refusal
 # of a wide text, `representation_error(encoding)` for ISO Latin-1 as upstream's `PL_mb_text`; the byte list is
 # a canonical ISO Latin-1 text. `PL_unify_chars(A2, PL_CODE_LIST|REP_ISO_LATIN_1, …)` is `PL_unify_text` of
-# that text. NOT PORTED: the encoding `text` (`ENC_ANSI`, the locale) is refused by name, `NotPortedError`.
-# Decoding with `ascii` ends in `PL_canonicalise_text` of `ENC_ASCII`, refused by name there (swipl 10.1.19
-# fails an assertion at that line).
+# that text. The encoding `text` is `ENC_ANSI`, the locale (libc's `mbrtowc`/`wcrtomb`): encoding is `PL_text_recode` to
+# `ENC_ANSI` (false when the locale has no sequence for a character), decoding is `PL_unify_text` of an `ENC_ANSI` text, whose
+# `PL_canonicalise_text` gives `syntax_error(illegal_multibyte_sequence)` for an illegal or incomplete sequence.
+# DIVERGES: decoding with `ascii` ends in `PL_canonicalise_text` of `ENC_ASCII`, an `error()` here; the pinned build does
+# not define this case.
 """
 `string_bytes/3` (pl-string.c): `A2` is the list of bytes of the text `A1` in the encoding `A3`, or `A1` the
 string the bytes `A2` hold in that encoding.
@@ -952,11 +964,6 @@ function pl_string_bytes3_va(
     if enc === ENC_UNKNOWN || enc === ENC_WCHAR
         return PL_domain_error(ld, "encoding", A3) ? FTRUE : FFALSE
     end
-    enc === ENC_ANSI && throw(
-        NotPortedError{T}(
-            ename, "string_bytes/3 with the encoding text", "ENC_ANSI is the locale"
-        )
-    )
 
     t = PL_get_text(
         ld, A1, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION | CVT_VARNOFAIL

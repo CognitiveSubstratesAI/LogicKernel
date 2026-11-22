@@ -252,9 +252,11 @@ MUTANTS = [
          old='''            mode = parse(Int, how[(i + 1):(i + 3)]; base=8)''',
          new='''            mode = 0o666'''),
     dict(id="S1-52 an unknown how-letter is accepted", file=S, targets=T,
-         old='''        else                                                # 'l', 'L' (locks: none) and the rest
+         old='''            i += 3
+        else
             return (nothing, EINVAL)''',
-         new='''        else                                                # 'l', 'L' (locks: none) and the rest
+         new='''            i += 3
+        else
             nothing'''),
     # ---- the errors
     dict(id="S1-53 EACCES is an existence error", file=E, targets=T,

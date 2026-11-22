@@ -21,8 +21,8 @@
 #     excluded by name and counted; upstream fix 7f8024cc7 gives the text read, and the exclusion is gone.)
 #   * CYCLIC TERMS WRITTEN (group F, D-0123: `PL_factorize_term`; until then write_canonical of a
 #     cyclic term was refused, decision 4a): 27 goals — three shapes and more, every writer.
-#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2), unicode_atoms —
-#     each `NotPortedError`. term_position and subterm_positions are honoured since LB1 (compared
+#   * THE REFUSALS, explicit: comments, var_prefix, quasi_quotations (R2) — each `NotPortedError`
+#     (unicode_atoms(Mode) is honoured since ENC1: pl-read.c atom_to_unicode_atoms_ex). term_position and subterm_positions are honoured since LB1 (compared
 #     with swipl in test_read_positions_swipl.jl). blob(Mode) is ported since RD1b (pl-read.c
 #     atom_to_blob_mode_ex): its modes and its domain/type/instantiation errors are compared with
 #     swipl in "the hand goals" and pinned in "blob(Mode)" below.
@@ -584,8 +584,7 @@ else
 end
 
 @testset "the refusals: read options the kernel cannot honour" begin
-    for o in
-        ("comments(_)", "var_prefix(true)", "quasi_quotations(_)", "unicode_atoms(nfc)")
+    for o in ("comments(_)", "var_prefix(true)", "quasi_quotations(_)")
         r, _ = _cr_run(
             "read_term_from_atom",
             _CR[_crs("f(X)"), _cr_var(), _cr_read("[" * o * "]")::_CR]
