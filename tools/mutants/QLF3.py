@@ -33,6 +33,10 @@ TARGETS = ["test/files/test_qlf_module_swipl.jl", "test/files/test_qlf_swipl.jl"
 T = TARGETS
 Q = "src/pl-qlf.jl"
 F = "src/pl-fli.jl"
+D = "src/pl-dict.jl"
+# PL_put_dict lives in src/pl-dict.jl (INT-MERGE-17 removed the pl-fli.jl copy); its callers: the QLF reader (the three files), the PL_put_dict testset of
+# test/db/test_jit.jl and the index-predicate wrappers (the TARGETS of WRAPPERS1.py rows that cover PL_put_dict).
+T_PD = T + ["test/db/test_jit.jl", "test/core_lang/test_index_preds_swipl.jl", "test/db/test_boot_image_swipl.jl", "test/core_lang/test_dict_preds_swipl.jl", "test/core_lang/test_index_words.jl"]
 MUTANTS = [
     # ---- qlfGetUInt32 (the id of an XR_REF) and qlfGetInt64
     dict(id="QLF3-1 qlfGetUInt32 starts the second byte at shift 8: a two-byte id 132 reads as 260 (KILL REC: the bigref row, an id never stored)",
@@ -176,9 +180,9 @@ MUTANTS = [
          new="if (flags & Q_FILES) != 0"),
     # ---- PL_put_dict
     dict(id="QLF3-29 PL_put_dict leaves the tag a variable (KILL REC: every row, the tag `#`)",
-         file=F, targets=T,
-         old="if tag !== nothing",
-         new="if false"),
+         file=D, targets=T_PD,
+         old="tag === nothing ? word(0) : _atom_word!(ld, tag)",
+         new="word(0)"),
     dict(id="QLF3-30 qlfGetDouble reads seven bytes: every row with a source is misaligned (KILL REC: the basic row; the srcline and real rows)",
          file=Q, targets=T,
          old="""    for i in 0:7
