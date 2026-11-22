@@ -1729,12 +1729,14 @@ end
 # (the `GP_FINDHERE` path, without `GP_NAMEARITY`, and get_module)
 # DIVERGES: `contextModule(environment_frame)`, the module an unqualified term is looked up in, is an
 # argument (`context`): it is not ported, and the one caller (`'$source_file'/2`) is not transparent, so
-# its context is `system`. A `Module:` qualifier names an existing module, else `user` (get_module's
-# `GP_FINDHERE` case: no module is created). The procedure is returned, or `nothing` (a failure, or
+# its context is `system`. `how` carries `GP_TYPE_QUIET` (COMPEXT:
+# `'$xr_member'/2`'s `GP_FINDHERE|GP_TYPE_QUIET`): a head that is no callable term then fails without the type error.
+# A `Module:` qualifier names an existing module, else `user` (get_module's `GP_FINDHERE` case: no module is created). The procedure is returned, or `nothing` (a failure, or
 # an error raised in `ld`); `h` is not returned.
 "The procedure the head `M:Head` in `descr` names, looked up in that module only (pl-proc.c `GP_FINDHERE`)."
 function get_procedure_findhere(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, context::module_t{T},
+    how::Int=0
 )::Union{Nothing, Procedure{T}} where {T}
     ok, rc, nm = stripModuleName_cells(ld, -(descr + 1))    # stripModuleName(valTermRef(descr), &mname)
     ok || return nothing
@@ -1746,7 +1748,7 @@ function get_procedure_findhere(
     else
         m = context
     end
-    name, arity = get_head_functor(ld, head, 0)
+    name, arity = get_head_functor(ld, head, how)
     arity < 0 && return nothing
     return isCurrentProcedure(sym_key(name), arity, m)      # isCurrentProcedure(fdef, m)
 end

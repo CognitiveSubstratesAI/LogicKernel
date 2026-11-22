@@ -5070,6 +5070,319 @@ function pl_fetch_vm4_va(
     return PL_unify_int64(ld, noffset, next.pc - 1) ? FTRUE : FFALSE    # next-base
 end
 
+# PORT: pl-comp.c break_pc as pl_break_pc3_va
+# (PRED_IMPL("$break_pc", 3, break_pc, PL_FA_NONDETERMINISTIC)) — pl-comp.c:8874-8920 at the pin; under `O_DEBUGGER`
+# DIVERGES: positions are 0-based offsets as upstream's (`Code{T}` is 1-based); `fetchop(PC)` is `decode(PC)`: the kernel's code
+# never holds `D_BREAK` (`'$break_at'/3` raises its refusal before it would write one), so the instruction a position holds
+# is the instruction the table names; the redo state is the offset after the last answer (`ForeignRedoInt`, `PL_retry`).
+"""
+    '\$break_pc'(+ClauseRef, -StartPC, -EndPC)
+
+Enumerate the break-points of the clause: `StartPC` the offset of an instruction the debugger can break on (`VIF_BREAK`)
+and `EndPC` the offset after it, after the closing `B_UNIFY_EXIT` for an inline unification (pl-comp.c).
+"""
+function pl_break_pc3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    ctl = PL_foreign_control(PL__ctx)
+    ctl == FRG_CUTTED && return FTRUE
+    offset = ctl == FRG_FIRST_CALL ? 0 : PL_foreign_context(PL__ctx)   # FRG_FIRST_CALL: 0, else CTX_INT
+    rc, clause = PL_get_clref(gd, ld, A1)
+    rc == 1 || return FFALSE                                # PL_get_clref(A1, &clause) != true
+    cl = clause::Clause{T}
+    codes = cl.codes
+    lits = cl.literals
+    last = length(codes)                                    # end = clause->codes + clause->code_size
+    PC = Code{T}(codes, lits, 1 + offset)
+    while PC.pc <= last
+        op = decode(PC)
+        nextpc = stepPC(PC)
+        if (codeTable(op).flags & VIF_BREAK) != 0
+            if op == B_UNIFY_FIRSTVAR || op == B_UNIFY_VAR
+                while true                                  # do { … } while ( op != B_UNIFY_EXIT )
+                    op = decode(nextpc)
+                    nextpc = stepPC(nextpc)
+                    op == B_UNIFY_EXIT && break
+                end
+            end
+            if PL_unify_integer(ld, A2, PC.pc - 1) && PL_unify_integer(ld, A3, nextpc.pc - 1)
+                return PL_retry(nextpc.pc - 1)              # ForeignRedoInt(nextpc - clause->codes)
+            end
+        end
+        PC = nextpc
+    end
+    return FFALSE
+end
+
+# PORT: pl-comp.c not_breakable / clearBreak (the error terms)
+# The culprit `break(ClauseRef, Offset)` of `permission_error(set, break, …)` (`not_breakable`) and of
+# `existence_error(break, …)` (`clearBreak`, no break-point at the offset).
+"A new term reference holding `break(ClauseRef, Offset)`, or `nothing` (pl-comp.c)."
+function _break_culprit(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, clause::Clause{T}, offset::Int
+)::Union{Nothing, term_t} where {T}
+    brk = PL_new_term_ref(ld)
+    cl = PL_new_term_ref(ld)
+    n = PL_new_term_ref(ld)
+    PL_put_clref(gd, ld, cl, clause)
+    (
+        PL_unify_functor(ld, brk, mk_sym(T, :break), 2) &&
+        _PL_get_arg(ld, 1, brk, n) && PL_unify(ld, n, cl) &&
+        _PL_get_arg(ld, 2, brk, n) && PL_unify_integer(ld, n, offset)
+    ) || return nothing
+    return brk
+end
+
+# PORT: pl-comp.c break_at as pl_break_at3_va
+# (PRED_IMPL("$break_at", 3, break_at, 0)) — pl-comp.c:9137-9180 at the pin; under `O_DEBUGGER`
+# DIVERGES: the arguments are read and checked as upstream's (the clause reference, the Boolean, the offset, `domain_error(
+# program_counter, PC)` past the code). SETTING a break-point on an instruction that carries `VIF_BREAK` writes `D_BREAK` into the
+# code and records the replaced instruction (`setBreak`, `breakTable`): that is the DBG1-BREAK line's (branch wip/dbg1-break), so
+# it raises the NotPortedError refusal with owner DBG1. The rest of `setBreak` is written out: an offset that is no breakable
+# instruction is `permission_error(set, break, break(Ref, Offset))` (`not_breakable`; an offset inside an instruction's operands is
+# read as no breakable instruction: upstream decodes the operand word as an instruction). CLEARING (`clearBreak`): the kernel's code
+# holds no break-point, so the lookup in the empty `breakTable` fails as upstream's does: `existence_error(break, break(Ref, Offset))`.
+"""
+    '\$break_at'(+ClauseRef, +PC, +Bool)
+
+Set (`true`) or clear (`false`) a break-point at offset `PC` of the clause (pl-comp.c).
+"""
+function pl_break_at3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    rc, clause = PL_get_clref(gd, ld, A1)
+    rc == 1 || return FFALSE                                # PL_get_clref(A1, &clause) != true
+    cl = clause::Clause{T}
+    doit = PL_get_stdbool_ex(ld, A3)
+    doit === nothing && return FFALSE
+    offset = PL_get_size_ex(ld, A2)
+    offset === nothing && return FFALSE
+    codes = cl.codes
+    if offset >= length(codes)                              # offset >= (size_t)clause->code_size
+        PL_error(ld, ERR_DOMAIN, mk_sym(T, :program_counter), A2)
+        return FFALSE
+    end
+    brk = _break_culprit(gd, ld, cl, offset)
+    brk === nothing && return FFALSE                        # resource error
+    if doit                                                 # setBreak(clause, offset)
+        PC = Code{T}(codes, cl.literals, 1)
+        while PC.pc - 1 < offset                            # the instruction that starts at `offset`
+            PC = stepPC(PC)
+        end
+        if PC.pc - 1 == offset && (codeTable(decode(PC)).flags & VIF_BREAK) != 0
+            throw(
+                NotPortedError{T}(
+                    mk_sym(T, :break_at), "break_at/3 setting a breakpoint (D_BREAK)", "DBG1"
+                )
+            )
+        end
+        PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :set), mk_sym(T, :break), brk)
+        return FFALSE                                       # not_breakable(ATOM_set, clause, offset)
+    end
+    PL_error(ld, ERR_EXISTENCE, mk_sym(T, :break), brk)     # clearBreak: no break-point at the offset
+    return FFALSE
+end
+
+# PORT: pl-comp.c wouldBindToDefinition
+# DIVERGES: the module of a definition is its index in `gd.modules`, the functor its `functor_name` and `arity`; the super modules
+# are `module_t.supers` (upstream walks only the first, `TBD: multiple supers`, as here).
+"Whether a call of `from` in its module would reach the definition `to`: found in `from`'s module or, while undefined there, in the first super (pl-comp.c)."
+function wouldBindToDefinition(
+    gd::PL_global_data{T}, from::Definition{T}, to::Definition{T}
+)::Bool where {T}
+    m = gd.modules[from.module_]
+    def::Union{Nothing, Definition{T}} = from
+    while true
+        if def !== nothing
+            def === to && return true                       # found it
+            (
+                _impl_any_defined(def) ||                   # defined and not the same
+                (def.flags & PROC_DEFINED) != 0 ||
+                getUnknownModule(gd, gd.modules[def.module_]) == UNKNOWN_FAIL
+            ) && return false
+        end
+        isempty(m.supers) && break
+        m = gd.modules[m.supers[1]]                         # TBD: multiple supers
+        proc = isCurrentProcedure(from.functor_name, from.arity, m)
+        def = proc === nothing ? nothing : proc.definition
+    end
+    return false
+end
+
+# PORT: pl-comp.c xr_member (the CA1_FUNC operand `(functor_t) PC[an]`)
+# DIVERGES: the operand of the kernel's `H_FUNCTOR`/`H_RFUNCTOR`/`B_FUNCTOR`/`B_RFUNCTOR` is the packed `functor_operand` (name
+# from its literal, `$expr` when it is 0, the arity in the operand), that of `T_FUNCTOR`/`T_TRY_FUNCTOR` a functor word (as `unify_vmi`).
+"The `(name, arity)` the `CA1_FUNC` operand `w` of the instruction `op` stands for (pl-comp.c)."
+function _xr_operand_functor(
+    ld::PL_local_data{T}, op::code, w::code, lits::Vector{T}
+)::Tuple{T, Int} where {T}
+    if op == T_FUNCTOR || op == T_TRY_FUNCTOR
+        return (_atom_value(ld, nameFunctor(ld.functors, w)), arityFunctor(ld.functors, w))
+    end
+    li = functor_literal(w)
+    return (li == 0 ? mk_sym(T, Symbol("\$expr")) : lits[li], functor_arity(w))
+end
+
+# PORT: pl-comp.c xr_member (the CA1_DATA operand `code2word(PC[an])`)
+# DIVERGES: per instruction, as the compiler writes it (the reading of `unify_vmi`): `H_ATOM`/`B_ATOM`/`L_ATOM` the packed
+# `atom_operand` (its literal), `B_UNIFY_FC`/`B_UNIFY_VC`/`B_EQ_VC`/`B_NEQ_VC` the literal index, any other an atom word.
+"The value the `CA1_DATA` operand `w` of the instruction `op` stands for (pl-comp.c)."
+function _xr_operand_data(
+    ld::PL_local_data{T}, op::code, w::code, lits::Vector{T}
+)::T where {T}
+    if op == H_ATOM || op == B_ATOM || op == L_ATOM
+        return lits[atom_literal(w)]
+    elseif op == B_UNIFY_FC || op == B_UNIFY_VC || op == B_EQ_VC || op == B_NEQ_VC
+        return lits[Int(w)]
+    end
+    return _atom_value(ld, w)
+end
+
+# PORT: pl-comp.c xr_member as pl_xr_member2_va
+# (PRED_IMPL("$xr_member", 2, xr_member, PL_FA_NONDETERMINISTIC)) — pl-comp.c:7697-7849 at the pin; under `O_DEBUGGER`
+# DIVERGES: the operands are the kernel's table indexes, read per kind as `unify_vmi` reads them (`procedures` index for
+# `CA1_PROC`/`CA1_LPROC`, `_xr_operand_functor`, `_xr_operand_data`, the module's index in `gd.modules`); positions are 0-based
+# offsets in the redo state `(offset << 3) + operand` (`ForeignRedoInt`); a `CA1_MODULE` operand 0 (upstream NULL) yields no answer
+# where upstream's enumeration would read the module's name through the NULL pointer; the context module of an unqualified
+# procedure term is `contextModule(environment_frame)` as `get_procedure_find`.
+"""
+    '\$xr_member'(+ClauseRef, ?Object)
+
+`Object` is an atomic value, a functor skeleton, a predicate head or a module name the clause references: enumerated for a
+variable `Object`, tested otherwise (pl-comp.c).
+"""
+function pl_xr_member2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    A1, term = PL__t0, PL__t0 + 1
+    ctl = PL_foreign_control(PL__ctx)
+    ctl == FRG_CUTTED && return FTRUE
+    rc, clause = PL_get_clref(gd, ld, A1)
+    rc == 1 || return FFALSE                                # PL_get_clref(A1, &clause) != true
+    cl = clause::Clause{T}
+    codes = cl.codes
+    lits = cl.literals
+    procs = cl.procedures
+    last = length(codes)                                    # end = &PC[clause->code_size]
+    PC = Code{T}(codes, lits, 1)
+
+    if PL_is_variable(ld, term)                             # enumerate
+        an = 0
+        if ctl != FRG_FIRST_CALL
+            i = PL_foreign_context(PL__ctx)                 # CTX_INT
+            PC = Code{T}(codes, lits, 1 + (i >> 3))
+            an = i & 0x7
+        end
+        while PC.pc <= last
+            op = decode(PC)
+            ci = codeTable(op)
+            while an < 4 && ci.argtype[an + 1] != 0x00
+                at = ci.argtype[an + 1]
+                an += 1
+                w = codes[PC.pc + an]
+                hit = false
+                ok = true
+                if at == CA1_PROC || at == CA1_LPROC
+                    ok = unify_definition(
+                        gd, ld, MODULE_user(gd), term, procs[Int(w)].definition, 0, 0
+                    )
+                    hit = true
+                elseif at == CA1_FUNC
+                    nm, ar = _xr_operand_functor(ld, op, w, lits)
+                    ok = PL_unify_functor(ld, term, nm, ar)
+                    hit = true
+                elseif at == CA1_DATA
+                    ok = PL_unify_atomic(ld, term, _xr_operand_data(ld, op, w, lits))
+                    hit = true
+                elseif at == CA1_MODULE && w != 0
+                    ok = PL_unify_atom(ld, term, gd.modules[Int(w)].atom)
+                    hit = true
+                end
+                if hit
+                    ok || return FFALSE                     # out of stack
+                    return PL_retry(((PC.pc - 1) << 3) + an)    # ForeignRedoInt(i)
+                end
+            end
+            PC = stepPC(PC)
+            an = 0
+        end
+        return FFALSE
+    end
+
+    if PL_is_atomic(ld, term)                               # instantiated: an atomic data operand or a module
+        while PC.pc <= last
+            op = decode(PC)
+            ci = codeTable(op)
+            for k in 1:4
+                at = ci.argtype[k]
+                at == 0x00 && break
+                w = codes[PC.pc + k]
+                if at == CA1_DATA
+                    PL_unify_atomic(ld, term, _xr_operand_data(ld, op, w, lits)) &&
+                        return FTRUE
+                elseif at == CA1_MODULE
+                    w != 0 && PL_unify_atom(ld, term, gd.modules[Int(w)].atom) &&
+                        return FTRUE
+                end
+            end
+            PC = stepPC(PC)
+        end
+    end
+
+    fd = PL_get_functor(ld, term)
+    if fd !== nothing && !(sym_key(fd[1]) == sym_key(mk_sym(T, :(:))) && fd[2] == 2)  # fd != FUNCTOR_colon2
+        PC = Code{T}(codes, lits, 1)
+        fkey = sym_key(fd[1])
+        while PC.pc <= last
+            op = decode(PC)
+            ci = codeTable(op)
+            for k in 1:4
+                at = ci.argtype[k]
+                at == 0x00 && break
+                if at == CA1_FUNC
+                    nm, ar = _xr_operand_functor(ld, op, codes[PC.pc + k], lits)
+                    sym_key(nm) == fkey && ar == fd[2] && return FTRUE   # fa == fd
+                end
+            end
+            PC = stepPC(PC)
+        end
+    end
+
+    ctxm = if ld.environment_frame != 0
+        gd.modules[contextModule(gd, ld, ld.environment_frame)]
+    else
+        MODULE_user(gd)
+    end
+    proc = get_procedure_findhere(gd, ld, term, ctxm, GP_TYPE_QUIET)  # GP_FINDHERE|GP_TYPE_QUIET
+    if proc !== nothing
+        pd = proc.definition
+        PC = Code{T}(codes, lits, 1)
+        while PC.pc <= last
+            op = decode(PC)
+            ci = codeTable(op)
+            for k in 1:4
+                at = ci.argtype[k]
+                at == 0x00 && break
+                if at == CA1_PROC || at == CA1_LPROC
+                    def = procs[Int(codes[PC.pc + k])].definition
+                    pd === def && return FTRUE
+                    if pd.functor_name == def.functor_name && pd.arity == def.arity &&
+                        wouldBindToDefinition(gd, def, pd)
+                        return FTRUE
+                    end
+                end
+            end
+            PC = stepPC(PC)
+        end
+    end
+    return FFALSE
+end
+
 # ── the source level debugger (pl-comp.c:8484-8900) ─────────────────────────────────────────────
 # ORIGINAL: upstream's pointer arithmetic on a `Code`: `PC + n` and `PC[n]`. The position `n` words
 # on, and the operand word `n` words on (a negative `n` reads back, as `jmploc[-1]` does).
@@ -5425,8 +5738,15 @@ const PL_predicates_from_comp = (
     PL_extension(                                   # PRED_DEF("$fetch_vm", 4, fetch_vm, META)
         "\$fetch_vm", 4, pl_fetch_vm4_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
+    PL_extension(                                   # PRED_DEF("$break_pc", 3, break_pc, NDET)
+        "\$break_pc", 3, pl_break_pc3_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension(                                   # PRED_DEF("$clause_term_position", 3, clause_term_position, 0)
         "\$clause_term_position", 3, pl_clause_term_position3_va, PL_FA_VARARGS
+    ),
+    PL_extension("\$break_at", 3, pl_break_at3_va, PL_FA_VARARGS),     # PRED_DEF("$break_at", 3, break_at, 0)
+    PL_extension(                                   # PRED_DEF("$xr_member", 2, xr_member, NDET)
+        "\$xr_member", 2, pl_xr_member2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
     )
 )
 

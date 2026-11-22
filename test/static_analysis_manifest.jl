@@ -861,6 +861,10 @@ function _manifest_index(T)
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
         (LK.unify_functor, Tuple{LD, Int, T, Int, Int}, false),
         (LK.unify_vmi, Tuple{GD, LD, Int, PCd, Vector{PR}, Vector{CR}}, false),
+        (LK.wouldBindToDefinition, Tuple{GD, D, D}, false),
+        (LK._xr_operand_functor, Tuple{LD, LK.code, LK.code, Vector{T}}, false),
+        (LK._xr_operand_data, Tuple{LD, LK.code, LK.code, Vector{T}}, false),
+        (LK._break_culprit, Tuple{GD, LD, C, Int}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
         # R1b — the operator tables (src/pl-op.jl) and the FLI getters op/3 uses (pl-fli.jl,
         # pl-error.jl)
@@ -2660,6 +2664,9 @@ function _manifest_index(T)
         (LK.pl_predefine_foreign1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_vmi_property2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_fetch_vm4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_break_pc3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_break_at3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_xr_member2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.mustBeVar, Tuple{LD, Int}, false),
         # R2 D1 — clause blobs (pl-dbref.c), assert/2 (pl-comp.c) and erase/1 (pl-rec.c)
         (LK.acquire_clause_blob, Tuple{GD, T}, false),
@@ -2731,6 +2738,7 @@ function _manifest_index(T)
         (LK._atom_is, Tuple{LD, T, Symbol}, false),
         (LK.unify_src_file_time, Tuple{LD, Int, LK.SourceFile{T}}, false),
         (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD}, false),
+        (LK.get_procedure_findhere, Tuple{GD, LD, Int, MOD, Int}, false),
         (LK.get_procedure_find_namearity, Tuple{GD, LD, Int, MOD}, false),
         (LK.get_procedure_namearity, Tuple{GD, LD, Int, MOD, Int}, false),
         (LK.get_functor_procedure, Tuple{LD, Int}, false),
