@@ -135,6 +135,238 @@ function pl_prolog_current_choice1_va(
     return FFALSE
 end
 
+# PORT: pl-trace.c PL_get_frame
+# (pl-trace.c:115 at the pin 18168e62; `static int PL_get_frame` in the pin, unchanged in substance at af9e2e7e)
+# DIVERGES: returns `(ok, fr)` where upstream writes `*fr` and returns a bool: `fr` is the pool INDEX of the frame (`existingFrame`,
+# src/pl-wam.jl, which takes the position `PL_unify_frame` hands out), 0 for upstream's NULL (the atom `none`). `PL_get_intptr` is
+# `PL_get_long` (a `long` is 64 bits).
+"The frame term reference `t` holds — a position or `none` — as `(true, index)` (0 for `none`), else `(false, 0)` (pl-trace.c)."
+function PL_get_frame(ld::PL_local_data{T}, t::term_t)::Tuple{Bool, Int} where {T}
+    i = PL_get_long(ld, t)                              # PL_get_intptr(r, &i)
+    if i !== nothing
+        f = existingFrame(ld, i)                        # existingFrame((LocalFrame)((Word)lBase + i))
+        f != 0 && return (true, f)
+    else
+        a = PL_get_atom(ld, t)
+        if a !== nothing && sym_key(a) == sym_key(mk_sym(T, :none))     # a == ATOM_none
+            return (true, 0)                            # *fr = NULL
+        end
+    end
+    return (false, 0)
+end
+
+# PORT: pl-trace.c is_meta_call
+# (pl-trace.c:200 at the pin 18168e62: "True when `FR` is created through a meta-call"; unchanged at af9e2e7e)
+# DIVERGES: the frames are indices; `parent->clause->value.clause` is the parent's `ClauseRef`'s clause, and a parent without one (a
+# foreign frame: upstream reads its `clause` word, which is the redo context) is no meta-call (false), not a read through a NULL.
+"Whether frame `fr` was created through a meta-call: its parent's clause called it by `I_CALL1`, `I_CALLATM`, … (pl-trace.c)."
+function is_meta_call(ld::PL_local_data{T}, fr::Int)::Bool where {T}
+    f = ld.frames[fr]
+    parent = f.parent
+    if parent != 0
+        pf = ld.frames[parent]
+        if levelFrame(f) == levelFrame(pf) + 1 && ((f.predicate::Definition{T}).flags & P_FOREIGN) == 0
+            pcr = pf.clause
+            pcr === nothing && return false
+            cl = pcr.clause
+            cl === nothing && return false
+            pc = prevPC(cl, f.programPointer)           # prevPC(cl, fr->programPointer)
+            if pc !== nothing
+                op = decode(pc)                         # fetchop(pc)
+                if op == I_CALL1 || op == I_CALLATM || op == I_DEPARTATMV ||
+                    op == I_CALLATMV || op == I_CALLM || op == I_CALLN
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+# PORT: pl-trace.c isDebugFrame
+# (pl-trace.c:242 at the pin 18168e62; af9e2e7e changes only the callers' neighbourhood)
+# DIVERGES: the frame is an index; the `DEBUG(MSG_TRACE_FRAME, ...)` diagnostics are not ported (no debug-message channel keyed by
+# topic); `ison(parent, FR_HIDE_CHILDS)` is the parent FRAME's flag, as upstream. `queryOfFrame(FR)` of a top frame is the
+# query's record. `port` is not read (as upstream).
+"Whether the call of frame `FR` must be visible in the tracer: user code, user hooks of system code, real meta-calls (pl-trace.c)."
+function isDebugFrame(ld::PL_local_data{T}, FR::Int, port::Int)::Bool where {T}
+    f = ld.frames[FR]
+    def = f.predicate::Definition{T}
+    (def.flags & TRACE_ME) == 0 && return false         # hidden predicate
+    (def.flags & HIDE_CHILDS) == 0 && return true       # user pred
+
+    parent = f.parent
+    if parent != 0
+        pdef = ld.frames[parent].predicate::Definition{T}
+        mask = P_NOPROFILE | HIDE_CHILDS
+        if (def.flags & mask) == mask && (pdef.flags & mask) == mask
+            return false                                # noprof system-system
+        end
+
+        while parent != 0 && (((ld.frames[parent].predicate::Definition{T}).flags & P_NOPROFILE) != 0)
+            parent = ld.frames[parent].parent           # parent=parent->parent
+        end
+    end
+
+    if parent != 0
+        pf = ld.frames[parent]
+        if levelFrame(f) == levelFrame(pf) + 1
+            # not last-call optimized
+            if (((pf.predicate::Definition{T}).flags & HIDE_CHILDS) == 0)
+                return true                             # user calls system
+            end
+            return false                               # system calls system
+        else
+            if (pf.flags & FR_HIDE_CHILDS) == 0 && is_meta_call(ld, FR)
+                return true
+            end
+            return false
+        end
+    else
+        qf = ld.queries[queryOfFrame(ld, FR)]
+        return (qf.flags & PL_Q_NODEBUG) == 0
+    end
+end
+
+# PORT: pl-trace.c findQuery
+# (pl-trace.c:1779 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: the frame and the query are indices (0 = NULL).
+"The query (an index) whose top frame is the oldest ancestor of `fr`, 0 for no frame (pl-trace.c)."
+function findQuery(ld::PL_local_data{T}, fr::Int)::Int where {T}
+    while fr != 0 && ld.frames[fr].parent != 0
+        fr = ld.frames[fr].parent
+    end
+    fr != 0 && return queryOfFrame(ld, fr)
+    return 0
+end
+
+# PORT: pl-trace.c hasAlternativesFrame
+# (pl-trace.c:1790 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: frames, choice points and queries are indices; `(void *)ch < (void *)frame` compares their positions (`base`);
+# `LD->choicepoints` is `ld.BFR`.
+"Whether frame `frame` has a clause or jump choice point left, looking through the queries' saved states (pl-trace.c)."
+function hasAlternativesFrame(ld::PL_local_data{T}, frame::Int)::Bool where {T}
+    fr = ld.environment_frame
+    ch = ld.BFR                                         # LD->choicepoints
+    fbase = ld.frames[frame].base
+
+    while true
+        while ch != 0
+            c = ld.choices[ch]
+            c.base < fbase && return false              # (void *)ch < (void *)frame
+            if c.frame == frame
+                if c.type == CHP_CLAUSE || c.type == CHP_JUMP
+                    return true
+                end                                     # CHP_TOP, CHP_CATCH, CHP_DEBUG: continue
+            end
+            ch = c.parent
+        end
+        qi = findQuery(ld, fr)
+        if qi != 0
+            fr = ld.queries[qi].saved_environment
+            ch = ld.queries[qi].saved_bfr
+        else
+            return false
+        end
+    end
+end
+
+# PORT: pl-trace.c alternativeFrame
+# (pl-trace.c:1836 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: as `hasAlternativesFrame`; 0 is upstream's NULL. The `DEBUG(3, ...)` traces (`loffset`, `chp_chars`) are not ported.
+"The frame of the first clause or jump choice point after those of `frame` (an index), 0 for none (pl-trace.c)."
+function alternativeFrame(ld::PL_local_data{T}, frame::Int)::Int where {T}
+    fr = ld.environment_frame
+    ch = ld.BFR                                         # LD->choicepoints
+    fbase = ld.frames[frame].base
+
+    while true
+        while ch != 0
+            c = ld.choices[ch]
+            c.base < fbase && return 0                  # (void *)ch < (void *)frame
+            if c.frame == frame
+                ch = c.parent                           # for(ch = ch->parent; ch; ch = ch->parent )
+                while ch != 0
+                    c2 = ld.choices[ch]
+                    if c2.frame != frame && (c2.type == CHP_CLAUSE || c2.type == CHP_JUMP)
+                        return c2.frame
+                    end                                 # a choice of `frame` itself: skipped; the others: default: break
+                    ch = c2.parent
+                end
+                return 0
+            end
+            ch = c.parent
+        end
+        qi = findQuery(ld, fr)
+        if qi != 0
+            fr = ld.queries[qi].saved_environment
+            ch = ld.queries[qi].saved_bfr
+        else
+            return 0
+        end
+    end
+end
+
+# PORT: pl-trace.c clear_frame_vars
+# (pl-trace.c:2433 at the pin 18168e62; unchanged at af9e2e7e)
+# DIVERGES: frames, choice points and queries are indices, `(fr >= target)` a comparison of positions. `PC` is a `Code` (a code
+# vector and an index) or `nothing` for NULL, and a JUMP choice's `value.pc` is `value_pc`, an index into its frame's clause code;
+# `clearUninitialisedVarsFrame` is not called for a NULL or position-0 `PC` (upstream's own no-op). The function returns upstream's
+# NULL (`QueryFrame`) as `nothing`. Upstream spins forever where it prints "FAILED to find frame (...) to clear!?" under
+# `DEBUG(0, ...)` (the target is not on the chain walked), and where a top frame of the outermost query is still at or above the
+# target; here that is an `error`. The `DEBUG` diagnostics and assertion are not ported.
+"Clear (make variables) the uninitialised variables of frame `target` for the code position its newest callee returns to (pl-trace.c)."
+function clear_frame_vars(ld::PL_local_data{T}, target::Int)::Nothing where {T}
+    fr = ld.environment_frame
+    ch = ld.BFR                                         # LD->choicepoints
+    PC = nothing                                        # Code PC = NULL
+    tbase = ld.frames[target].base
+
+    while true
+        while fr != 0 && ld.frames[fr].base >= tbase    # fr && fr >= target
+            f = ld.frames[fr]
+            if fr == target
+                if PC !== nothing && PC.pc != 0
+                    clearUninitialisedVarsFrame(ld, fr, PC.codes, PC.pc)
+                end
+                return nothing
+            end
+
+            PC = f.programPointer
+            if f.parent != 0
+                fr = f.parent
+            else
+                qf = ld.queries[queryOfFrame(ld, fr)]
+                if qf.parent != 0
+                    fr = qf.saved_environment
+                    PC = nothing
+                    ch = qf.saved_bfr
+                else
+                    error("clear_frame_vars: frame to clear not found on the environment chain")    # (upstream spins)
+                end
+            end
+        end
+
+        if ch != 0
+            ch = ld.choices[ch].parent
+            if ch != 0
+                c = ld.choices[ch]
+                fr = c.frame
+                PC = nothing
+                if c.type == CHP_JUMP
+                    cr = fr != 0 ? ld.frames[fr].clause : nothing
+                    cl = cr === nothing ? nothing : cr.clause
+                    if cl !== nothing
+                        PC = Code(cl, c.value_pc)       # PC = ch->value.pc
+                    end
+                end
+                continue
+            end
+        end
+        error("clear_frame_vars: FAILED to find frame to clear")    # (DEBUG(0, ...); upstream then loops)
+    end
+end
+
 # PORT: pl-trace.c BeginPredDefs as PL_predicates_from_trace
 # DIVERGES: the ported entry only (upstream's table also has `prolog_frame_attribute/3` and the
 # other debugger predicates, pl-trace.c:2830-2840).
