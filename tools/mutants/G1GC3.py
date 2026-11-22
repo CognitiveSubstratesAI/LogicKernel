@@ -22,10 +22,14 @@
 # KILLED BY VALUE (audit D-0971 (6), run on the lane, G1-FIX-10; these were declared `DEFERRED KILL` before, they are kills now):
 #   * G1GC3-D1: test/core_lang/test_gc_driver.jl:454 (`on == off`, testset "gc_force at the audited safe points of a small program ...");
 #   * G1GC3-D2: test/core_lang/test_g1gc_safe_points.jl :341, :346 (twice), :352, :388;
-#   * G1GC3-D3: killed ONLY by an error in test_gc_mark.jl (`AssertionError: (ld.frames[fr]).parent == 0` in the testset "the argument
-#     stack and the choicepoints and frames of a live query are roots"); by construction no comparison row can fail first: the mutated
-#     else arm calls queryOfFrame (src/pl-wam.jl:1551, an @assert on `parent == 0`) for every frame that has a parent. An error-kill needs
-#     a D-entry (D-0971 (6)); the question is in the handoff (section G1GC3-LEDGER).
+#   * G1GC3-D3: an ERROR-KILL BY CONSTRUCTION, like G1GC3-V6 and V7 (audit D-0979 (1)). The assert: src/pl-wam.jl:1551,
+#     `@assert ld.frames[fr].parent == 0` in queryOfFrame (the faithful port of pl-gc.c queryOfFrame). The mutated line: src/pl-gcwalk.jl:514
+#     in mark_environments, `if f.parent != 0` -> `if false`, so the ELSE arm (src/pl-gcwalk.jl:519-522, `qf = queryOfFrame(ld, fr)`) runs
+#     for every frame that HAS a parent. The reason no by-value row can exist: that arm reaches the assert inside mark_phase before any
+#     comparison row runs, so the kill is an error (test_gc_mark.jl:378, `AssertionError: (ld.frames[fr]).parent == 0`, testset "the
+#     argument stack and the choicepoints and frames of a live query are roots"), never a failed comparison; a start frame without a
+#     parent never enters the arm. The non-blocking by-value replacement (the mutant `pc = f.programPointer.pc` -> `pc = 0`) is the card
+#     G1GC3-D3-ROW (evidence/R2/g1_ci_fix_handoff.md): a nested-call program is needed to build its row.
 # G1GC3-A3, A4, A5: the row of testset AC is m(a, p(1), d) / m(b, _, c) (initVMIMerge drops a void head argument before I_EXITFACT,
 #   src/pl-comp.jl:98-118, so `m(b, _)` holds no H_VOID): A1-A4 fail test_gc_mark.jl :564 :566 :569; A5 fails :565 :569 :571.
 # DECLARED, NOT BLOCKING (audit D-0971 (6)): G1GC3-D5 is NOT equivalent in the strict sense: a row with two assignments of one cell within
@@ -177,7 +181,7 @@ MUTANTS = [
       "            mark_alt_clauses(ld, st, fr, c.value_clause.cref)\n            f = ld.frames[fr]",
       "            nothing\n            f = ld.frames[fr]",
       file=W),
-    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (killed ONLY by an error, and NO by-value row can exist for it: test_gc_mark.jl:378 throws AssertionError `(ld.frames[fr]).parent == 0` from queryOfFrame (src/pl-wam.jl:1551), which the mutated else arm of mark_environments reaches for ANY frame that has a parent, before any comparison row runs; an error-kill needs a D-entry (D-0971 (6)): PENDING, see evidence/R2/g1_ci_fix_handoff.md section G1GC3-LEDGER)",
+    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (ERROR-KILL BY CONSTRUCTION, audit D-0979 (1), like V6/V7: the mutated line src/pl-gcwalk.jl:514 `if f.parent != 0` -> `if false` sends every frame with a parent into the else arm, which calls queryOfFrame and trips its faithful-port assert `@assert ld.frames[fr].parent == 0` at src/pl-wam.jl:1551 inside mark_phase, before any comparison row runs: the by-value row cannot exist; killed by the AssertionError at test_gc_mark.jl:378; the non-blocking by-value row is the card G1GC3-D3-ROW)",
       "        if f.parent != 0\n            pc = f.programPointer.pc\n            fr = f.parent",
       "        if false\n            pc = f.programPointer.pc\n            fr = f.parent",
       file=W),
