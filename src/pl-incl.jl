@@ -12,6 +12,7 @@
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-rec.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-rec.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-flag.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-event.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-event.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-copyterm.h @ 18168e629eab
@@ -2785,6 +2786,31 @@ mutable struct prolog_flag_enum
     module_::Int                                    # the module of the key (an index)
 end
 prolog_flag_enum() = prolog_flag_enum(1, false, false, 0)
+
+# ── the flag table (pl-flag.c: get_flag/2, set_flag/2) ───────────────────────────────────────────
+# PORT: pl-flag.c FLG_ATOM
+# (enum flag_type, swipl-devel 18168e62 src/pl-flag.c:41)
+"A `flag`'s value is an atom (pl-flag.c `FLG_ATOM`)."
+const FLG_ATOM = 0
+# PORT: pl-flag.c FLG_INTEGER
+"A `flag`'s value is an integer (pl-flag.c `FLG_INTEGER`)."
+const FLG_INTEGER = 1
+# PORT: pl-flag.c FLG_FLOAT
+"A `flag`'s value is a float (pl-flag.c `FLG_FLOAT`)."
+const FLG_FLOAT = 2
+
+# PORT: pl-flag.c flag
+# DIVERGES: one field per member of upstream's value union (as `prolog_flag`: a Julia `Union` field would box), so a
+# member not in use keeps a value nobody reads; `a` holds an atom's symbol (upstream's `atom_t`), which a new flag
+# fills with `none`; no `PL_register_atom` (no atom GC). `type` is a `FLG_*`, upstream's `int`.
+"A `flag/3` flag (pl-flag.c `struct flag`): its key word, its type and its value."
+mutable struct flag{T}
+    key::word                                       # key to the flag
+    type::Int                                       # type (atom, int, float): FLG_*
+    a::T                                            # value as atom
+    i::Int64                                        # value as integer
+    f::Float64                                      # value as float
+end
 
 # PORT: pl-gvar.c TableEnum as gvar_enum
 # (nb_current/2's `e`)

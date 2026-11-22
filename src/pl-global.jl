@@ -253,6 +253,7 @@ mutable struct PL_global_data{T}
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
+    const flags_table::Dict{word, flag{T}}                      # flags.table: the key's word -> its `flag` (pl-flag.c get_flag/2, set_flag/2; FL1)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
