@@ -1711,6 +1711,7 @@ end
 
 # PORT: pl-file.c set_stream_position as pl_set_stream_position2_va
 # (PRED_IMPL("set_stream_position", 2, set_stream_position, PL_FA_ISO)) — pl-file.c:5611-5650 (pin 18168e62)
+# DIVERGES: `(int)lineno` and `(int)linepos` are `% Int32` (the C truncates the `long` to a 32-bit `int`; `IOPOS` holds `Int`).
 "`set_stream_position(+Stream, +Pos)`: re-position `Stream` to `'\$stream_position'(Char, Line, LinePos, Byte)` (pl-file.c)."
 function pl_set_stream_position2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1747,8 +1748,8 @@ function pl_set_stream_position2_va(
     p = s.position::IOPOS
     p.byteno = byteno
     p.charno = charno
-    p.lineno = lineno
-    p.linepos = linepos
+    p.lineno = Int(lineno % Int32)
+    p.linepos = Int(linepos % Int32)
     Sresetesc(p)
 
     return FTRUE

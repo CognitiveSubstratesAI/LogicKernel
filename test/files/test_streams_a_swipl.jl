@@ -251,7 +251,10 @@ const _SA_CASES = [
     ("sa139", raw"ro(S), skip(S, 10), byte_count(S, B), character_count(S, C), line_count(S, L), close(S), R = [B, C, L]"),
     ("sa140", raw"ro(S), close(S), cerr(character_count(S, _), R)"),
     ("sa141", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, -1), R0), get_byte(S, B), close(S), R = R0-B"),
-    ("sa142", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B")
+    ("sa142", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B"),
+    # set_stream_position/2 stores `(int)lineno` and `(int)linepos`: a value past 32 bits wraps (pl-file.c:5644-5645)
+    ("sa220", raw"ro(S), set_stream_position(S, '$stream_position'(7, 4294967299, 4294967298, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"),
+    ("sa221", raw"ro(S), set_stream_position(S, '$stream_position'(7, 2147483648, 2147483649, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP")
 ]
 
 # swipl 10.1.20 (pin 18168e62)'s answers to the program and cases above (the driver's lines; evidence/STREAMS-A/streams_a_rows.out)
@@ -398,7 +401,9 @@ const _SA_PINNED = [
     "t_sa139 c[116,95,115,97,49,51,57]/1(c[91,124,93]/2(i4,c[91,124,93]/2(i4,c[91,124,93]/2(i2,nil))))",
     "t_sa140 c[116,95,115,97,49,52,48]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
     "t_sa141 c[116,95,115,97,49,52,49]/1(c[45]/2(a[102,97,105,108,101,100],i6))",
-    "t_sa142 c[116,95,115,97,49,52,50]/1(c[45]/2(a[102,97,105,108,101,100],i6))"
+    "t_sa142 c[116,95,115,97,49,52,50]/1(c[45]/2(a[102,97,105,108,101,100],i6))",
+    "t_sa220 c[116,95,115,97,50,50,48]/1(c[45]/2(i3,i2))",
+    "t_sa221 c[116,95,115,97,50,50,49]/1(c[45]/2(i-2147483648,i-2147483647))"
 ]
 
 const _SA_DATA = "abc\nxyz\nlast line\n"
