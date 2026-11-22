@@ -2608,6 +2608,103 @@ end
     return _VS_NEXT                          # goto i_exit?
 end
 
+# ORIGINAL (LAT3b): the body of the helper label call_type_error (pl-vmi.c), outlined; its notes are at the label. `mc_nb` is the meta-call frame's base (i_metacall_common's).
+"The body of call_type_error (pl-vmi.c): raise the type error `callable` on the goal slot of the frame at `mc_nb`: `_VS_THROW`."
+@noinline Base.@constprop :none function _vmi_call_type_error!(
+    ld::PL_local_data{T},
+    @nospecialize(mc_nb::Int),
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    @SAVE_REGISTERS(QID)
+    cte_fid = PL_open_foreign_frame(ld)
+    if cte_fid != 0
+        cte_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(NFR, 0))
+        _slot_copy!(ld, cte_t + 1, argFrameP(mc_nb, 0) + 1)
+        PL_error(ld, ERR_TYPE, mk_sym(T, :callable), cte_t)
+        PL_close_foreign_frame(ld, cte_fid)
+    end
+    @LOAD_REGISTERS(QID)
+    return _VS_THROW                                   # THROW_EXCEPTION
+end
+
+# ORIGINAL (LAT3b): the body of the helper label max_arity_overflow (pl-vmi.c), outlined; `mc_nb` is the meta-call frame's base (i_metacall_common's).
+"The body of max_arity_overflow (pl-vmi.c): raise the representation error `max_procedure_arity`: `_VS_THROW`."
+@noinline Base.@constprop :none function _vmi_max_arity_overflow!(
+    ld::PL_local_data{T},
+    @nospecialize(mc_nb::Int),
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    setLTop!(ld, argFrameP(mc_nb, 1))
+    @SAVE_REGISTERS(QID)
+    mao_fid = PL_open_foreign_frame(ld)
+    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
+    PL_close_foreign_frame(ld, mao_fid)
+    @LOAD_REGISTERS(QID)
+    return _VS_THROW                                   # THROW_EXCEPTION
+end
+
+# ORIGINAL (LAT3b): the body of the helper label callatmv_type_error (I_CALLATMV, I_DEPARTATMV), outlined; `atv_k`, `atv_w`, `atv_p` are the dereferenced module slot.
+"The body of callatmv_type_error (pl-vmi.c I_CALLATMV): raise the type error `module` on the dereferenced slot `(atv_k, atv_w, atv_p)`: `_VS_THROW`."
+@noinline Base.@constprop :none function _vmi_callatmv_type_error!(
+    ld::PL_local_data{T},
+    @nospecialize(atv_k::UInt8),
+    @nospecialize(atv_w::word),
+    @nospecialize(atv_p::Int),
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    @SAVE_REGISTERS(QID)
+    atv_t = pushWordAsTermRef(ld, (atv_k, atv_w, atv_p))   # pushWordAsTermRef(ap)
+    PL_error(ld, ERR_TYPE, mk_sym(T, :module), atv_t)
+    popTermRef(ld)                                  # popTermRef()
+    @LOAD_REGISTERS(QID)
+    return _VS_THROW                                   # THROW_EXCEPTION
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c helper_I_FEXITDET, outlined; its notes are at the label. `fexitdet_rc` is the helper's argument `rc`; the body starts
+# with the LOAD_REGISTERS that follows the caller's SAVE_REGISTERS and the foreign call. `exit_checking_wakeup` is `_VS_NEXT`, dispatched by the label.
+"The body of helper_I_FEXITDET (pl-vmi.c): the deterministic foreign call's return code `fexitdet_rc`: `_VS_NEXT` (exit_checking_wakeup), `_VS_THROW` or `_VS_FRAME_FAILED`."
+@noinline Base.@constprop :none function _vmi_fexitdet!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int),
+    @nospecialize(fexitdet_rc::foreign_t)
+)::Int where {T}
+    @LOAD_REGISTERS(QID)
+    while ld.fli_context != 0 && ld.fliframes[ld.fli_context].base > ld.frames[FR].base
+        ld.fli_context = ld.fliframes[ld.fli_context].parent
+    end
+    if fexitdet_rc == FTRUE
+        if ld.exception_term != 0                   # false alarm
+            PL_clear_foreign_exception(ld, FR)
+        end
+        return _VS_NEXT
+    elseif fexitdet_rc == FFALSE
+        ld.exception_term != 0 && return _VS_THROW     # THROW_EXCEPTION
+        return _VS_FRAME_FAILED                        # FRAME_FAILED
+    end
+    error_foreign_return_code(ld, fexitdet_rc)
+    return _VS_THROW                                   # THROW_EXCEPTION
+end
+
 # The run loop's dispatch (ORIGINAL), as a SORTED BRANCH TREE over the opcodes — decision 1's
 # fallback. MEASURED 2026-10-05: LLVM makes no single jump table of an if/elseif chain over them; it
 # makes four partial ones, broken wherever neighbouring arms share a target, so `S_LIST` was reached
@@ -5155,12 +5252,8 @@ function PL_next_solution_guarded(
     # unbound variable reaches `PL_error`'s ERR_TYPE rule, which raises the instantiation error, as
     # upstream's.
     @label callatmv_type_error
-    @SAVE_REGISTERS(QID)
-    atv_t = pushWordAsTermRef(ld, (atv_k, atv_w, atv_p))   # pushWordAsTermRef(ap)
-    PL_error(ld, ERR_TYPE, mk_sym(T, :module), atv_t)
-    popTermRef(ld)                                  # popTermRef()
-    @LOAD_REGISTERS(QID)
-    @goto b_throw                                   # THROW_EXCEPTION
+    vs_st = _vmi_callatmv_type_error!(ld, atv_k, atv_w, atv_p, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c I_CALLM
     # (pl-vmi.c:5410-5417 at the pin; MOD3a)
@@ -5216,26 +5309,13 @@ function PL_next_solution_guarded(
     # slot's WORD (`_slot_copy!`, f3b-5b), where upstream pushes a temporary one
     # (`pushWordAsTermRef`, `popTermRef`).
     @label call_type_error
-    @SAVE_REGISTERS(QID)
-    cte_fid = PL_open_foreign_frame(ld)
-    if cte_fid != 0
-        cte_t = new_term_ref(ld)                    # pushWordAsTermRef(argFrameP(NFR, 0))
-        _slot_copy!(ld, cte_t + 1, argFrameP(mc_nb, 0) + 1)
-        PL_error(ld, ERR_TYPE, mk_sym(T, :callable), cte_t)
-        PL_close_foreign_frame(ld, cte_fid)
-    end
-    @LOAD_REGISTERS(QID)
-    @goto b_throw                                   # THROW_EXCEPTION
+    vs_st = _vmi_call_type_error!(ld, mc_nb, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c max_arity_overflow
     @label max_arity_overflow
-    setLTop!(ld, argFrameP(mc_nb, 1))
-    @SAVE_REGISTERS(QID)
-    mao_fid = PL_open_foreign_frame(ld)
-    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :max_procedure_arity))
-    PL_close_foreign_frame(ld, mao_fid)
-    @LOAD_REGISTERS(QID)
-    @goto b_throw                                   # THROW_EXCEPTION
+    vs_st = _vmi_max_arity_overflow!(ld, mc_nb, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c I_CATCH
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`). NOT PORTED: retyping the
@@ -6328,21 +6408,9 @@ function PL_next_solution_guarded(
     # DIVERGES: the label is upstream's switch-build helper name (`helper_ ## Name`, wam:3652) — a
     # Julia label cannot share the instruction's; its argument is `fexitdet_rc`.
     @label helper_I_FEXITDET
-    @LOAD_REGISTERS(QID)
-    while ld.fli_context != 0 && ld.fliframes[ld.fli_context].base > ld.frames[FR].base
-        ld.fli_context = ld.fliframes[ld.fli_context].parent
-    end
-    if fexitdet_rc == FTRUE
-        if ld.exception_term != 0                   # false alarm
-            PL_clear_foreign_exception(ld, FR)
-        end
-        @goto exit_checking_wakeup
-    elseif fexitdet_rc == FFALSE
-        ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
-        @goto deep_backtrack                        # FRAME_FAILED
-    end
-    error_foreign_return_code(ld, fexitdet_rc)
-    @goto b_throw                                   # THROW_EXCEPTION
+    vs_st = _vmi_fexitdet!(ld, QID, FR, ARGP, PCc, PCl, PC, fexitdet_rc)   # the body (LAT3b: outlined)
+    vs_st == _VS_NEXT && @goto exit_checking_wakeup
+    @goto vs_status
 
     # ── non-deterministic foreign calls (pl-vmi.c; NF1, docs/architecture.md) ─────────────────────
     # The supervisor is `I_FOPENNDET, I_FCALLNDETVA f, I_FEXITNDET, I_FREDO` (pl-supervisor.jl). The

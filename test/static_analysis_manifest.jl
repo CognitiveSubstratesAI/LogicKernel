@@ -1825,6 +1825,26 @@ function _manifest_index(T)
             Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
             false
         ),
+        (
+            LK._vmi_call_type_error!,
+            Tuple{LD, Int, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_max_arity_overflow!,
+            Tuple{LD, Int, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_callatmv_type_error!,
+            Tuple{LD, UInt8, LK.word, Int, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_fexitdet!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int, LK.foreign_t},
+            false
+        ),
         (LK._abandon_query, Tuple{LD, Int}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),
