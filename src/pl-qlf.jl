@@ -1103,7 +1103,8 @@ end
 # so `file` and `line` are taken and not printed.
 "Raise the format error of a QLF file at the current position (pl-qlf.c `qlfLoadError_ctx`: `fatalError`)."
 function qlfLoadError_ctx(state::wic_state, file::String, line::Int)::Union{}
-    pos = state.wicFd === nothing ? 0 : Stell64(state.wicFd)
+    fd = state.wicFd
+    pos = fd === nothing ? 0 : Stell64(fd)
     error("$(state.wicFile): QLF format error at index = $pos")
 end
 
