@@ -82,6 +82,7 @@ include("pl-event.jl")         # swipl-devel src/pl-event.c — event lists, pro
 include("pl-transaction.jl")  # swipl-devel src/pl-transaction.c — transactions: commit, discard, $transaction/2,3, $snapshot/1 (TX1)
 include("pl-undo.jl")         # swipl-devel src/pl-undo.c — undo/1: goals run when a trailed assignment is undone (TX1e)
 include("pl-mutex.jl")         # swipl-devel src/pl-mutex.c — with_mutex/2 (the single-thread form)
+include("pl-queue.jl")         # swipl-devel src/pl-thread.c — the message queues and their predicates (QUEUES)
 include("pl-bag.jl")           # swipl-devel src/pl-bag.c — the bags of findall/3
 include("pl-gvar.jl")          # swipl-devel src/pl-gvar.c — global variables: b_setval, nb_setval, nb_current …
 include("pl-list.jl")          # swipl-devel src/pl-list.c — is_list/1, '$length'/2, sort/2, msort/2, keysort/2

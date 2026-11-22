@@ -228,14 +228,14 @@ end
 # PORT: pl-thread.c aliasThread
 # DIVERGES: the thread is its record `info` (upstream: the id `tid`, looked up in `GD->threads`; `nothing`: the main thread, which has no
 # record, its handle is `gd.thread.handles[1]`) and the database is an argument; the
-# message queues have no table (`queueTable` is NULL: no queue exists), so only a thread name can be taken. `PL_register_atom` does not
+# a name in the message queue table (`gd.message_queues`, upstream's `queueTable`, empty until the first queue is made) is taken as a thread name is. `PL_register_atom` does not
 # exist (no atom GC). A taken name raises `permission_error(create, Type, Name)` with the message "Alias name already taken".
 "Give the thread `info` the alias `name`; false (the error raised) when the name is taken (pl-thread.c)."
 function aliasThread!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, info::Union{Nothing, PL_thread_info{T}},
     type::T, name::T
 )::Bool where {T}
-    if haskey(gd.thread.thread_table, sym_key(name))
+    if haskey(gd.thread.thread_table, sym_key(name)) || haskey(gd.message_queues, sym_key(name))   # queueTable && lookupHTableWP(queueTable, name)
         obj = PL_new_term_ref(ld)
         PL_put_atom(ld, obj, name)
         return PL_error(
@@ -442,6 +442,7 @@ function freePrologThread!(
         _qlf_pl_write!(ld, ld.exception_term)               # PL_write_term(Serror, exception_term, 1200, PL_WRT_QUOTED|PL_WRT_NEWLINE)
         PL_clear_exception(ld)
     end
+    delete!(gd.thread_queues, info.pl_tid)                  # destroy_thread_message_queue (the thread's queue and its messages go)
     info.thread_data = nothing                              # avoid a loop
     info.has_tid = false                                    # needed?
     return nothing

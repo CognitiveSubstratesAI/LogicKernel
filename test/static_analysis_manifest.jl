@@ -2638,6 +2638,30 @@ function _manifest_index(T)
                 LK.pl_mutex_unlock_all0_va, LK.pl_mutex_property2_va
             )
         ]...,
+        # QUEUES — the message queues of pl-thread.c (src/pl-queue.jl)
+        (LK.qprop_enum{T}, Tuple{}, false),
+        (LK.foreign_state_pool{LK.qprop_enum{T}}, Tuple{}, false),
+        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}}, false),
+        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}, Int}, false),
+        (LK._queue_bytes, Tuple{Int}, false),
+        (LK.unify_queue, Tuple{LD, Int, LK.message_queue{T}}, false),
+        (LK.init_message_queue, Tuple{Type{T}, Int, Int}, false),
+        (LK.unlocked_message_queue_create, Tuple{LD, Int, Int}, false),
+        (LK._thread_queue, Tuple{LK.PL_global_data{T}, Int}, false),
+        (LK.get_message_queue, Tuple{LD, Int}, false),
+        (LK.destroy_message_queue!, Tuple{LK.message_queue{T}}, false),
+        (LK.message_queue_property_value, Tuple{LD, LK.message_queue{T}, Int, Int}, false),
+        (LK.advance_qstate!, Tuple{LK.qprop_enum{T}}, false),
+        (LK.advance_qstate_table!, Tuple{LK.qprop_enum{T}}, false),
+        (LK.free_qstate!, Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}, Int}, false),
+        (LK.get_prop_def, Tuple{LD, Int, Symbol, typeof(LK._QUEUE_PROPERTIES)}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_message_queue_create1_va, LK.pl_message_queue_create2_va,
+                LK.pl_message_queue_destroy1_va, LK.pl_message_queue_property2_va,
+                LK.pl_message_queue_set2_va, LK.pl_is_message_queue1_va
+            )
+        ]...,
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
         (LK.is_dict_functor, Tuple{LD, UInt64}, false),
@@ -5720,6 +5744,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TAB1-min: the registration tables of src/pl-tabling.jl and src/pl-wrap.jl, and the term-type-independent helpers
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_tabling)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_mutex)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_queue)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_wrap)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_alloc)}, false),   # Q10
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_setup)}, false),   # Q10
