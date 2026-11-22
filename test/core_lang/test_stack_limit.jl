@@ -9,7 +9,9 @@
 #   * the handler runs and the stacks are usable after the raise (catch/3, then a list built) — also for a findall
 #     whose ANSWERS alone exceed the limit (audit D-0032);
 #   * a term laid out by a clause body itself, no call in between (B_RLIST: upstream's `ENSURE_GLOBAL_SPACE`, D-0032):
-#     the error raised there, inside the catch/3 — a check at the next call alone would raise it outside;
+#     the error raised there, inside the catch/3 — a check at the next call alone would raise it outside. G1-FIX-8: the
+#     `tinline` row does NOT reach B_RLIST any more, in either system: swipl raises already INSIDE length/2 (its stack shows
+#     `'$length'(_,42000)`), and the kernel, since the collector is live (chunk 8), raises nothing: a KNOWN DIFFERENCE (below);
 #   * the context pinned: the atom `stack_overflow` (DIVERGES: swipl's dict — on the divergence list);
 #   * white-box: after the raise is caught `gTop` is back below the limit; the boundary of `ensureGlobalSpace` exact;
 #     while an exception is processed the limit is not applied.
@@ -23,7 +25,7 @@ include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 "1 MiB in words: swipl's `stack_limit` of 1048576 bytes."
 const _SL_LIMIT = 1_048_576 ÷ 8
 
-"A list of 2500 atoms, written out: laid out by the clause body itself (B_RLIST), no call in between."
+"A list of 2500 atoms, written out: laid out by the clause body itself (B_RLIST), no call in between (the `tinline` row never reaches it: see `_SL_KNOWN_DIFF`)."
 const _SL_INLINE = "[" * join(fill("a", 2500), ",") * "]"
 
 const _SL_PROG = """
@@ -64,6 +66,34 @@ const _SL_GOALS = (
     "tint_ok"
 )
 
+"""
+KNOWN DIFFERENCE (G1-FIX-8, audit D-0969 (2) option (b); owner G1-D): `tinline` (`length(L, 42000)`, then `X = [a x 2500]`).
+  swipl 10.1.20:  `tinline(resource_error(stack)) det` — raised INSIDE `'\$length'(_,42000)`, not at the list.
+  kernel (this pin): `tinline(none) det` — `length(_, 42000)` = 126000 words fits (4884 in use after a collection + 126000 <= 131072), the inline
+  list then reaches the ALLOW_GC site, the collector frees `L` (dead: the rest of `tinl` never names it) and nothing overflows.
+BOTH numbers, measured (largest N for `length(_, N)` under 1 MiB after a collection): swipl 26658 (79974 words, 61 % of the limit), kernel 42028 (126084 words, 96 %).
+CAUSE: swipl's `grow_stacks` keeps a quarter free (pl-gc.c:5369-5402, GLOBAL_TRAIL_RATIO 6, `nextStackSize` :5271-5290 at the pin 18168e62); the kernel's limit is
+use + spares <= limit (src/pl-gc.jl:146-162, the KEPT G1-C5 DIVERGES; src/pl-alloc.jl:163-165/183).
+THIS PIN DOES NOT CLOSE THE LIMIT ARITHMETIC: the rows of test_stack_overflow_swipl.jl, test_local_stack.jl and the q10 stack-limit rows agree with swipl only
+where they were measured to; no other length is claimed to overflow at the same N in both systems.
+CHECKLIST (G1-D, evidence/R2/l1c_checklist.md row 4): port upstream's limit arithmetic (grow_stacks, GLOBAL_TRAIL_RATIO, nextStackSize), delete this table and
+its guard; the row must then answer swipl's line. `_SL_SWIPL` stays swipl's (the live check compares it to swipl); only the kernel comparison reads `_SL_KNOWN_DIFF`.
+"""
+const _SL_KNOWN_DIFF = Dict{String, String}("tinline" => "tinline(none) det")
+
+"swipl's answers for the known-difference rows (the live differential compares them with swipl's own)."
+const _SL_SWIPL = Dict{String, String}("tinline" => "tinline(resource_error(stack)) det")
+
+"`lines` (an answer list of `_rlines`: one line per goal, then `end`) with every known-difference goal's line replaced by `table[goal]`."
+function _sl_swap(lines::Vector{String}, table::Dict{String, String})::Vector{String}
+    out = copy(lines)
+    for (g, _) in table
+        i = findfirst(l -> startswith(l, g * "("), out)
+        i === nothing || (out[i] = table[g])
+    end
+    return out
+end
+
 "A database holding `_SL_PROG`, its limit `_SL_LIMIT`."
 function _sl_db()::_RDB
     db = _RDB()
@@ -83,7 +113,8 @@ end
     over = "exception(resource_error(stack)) det"
     @test count(==(over), ours) == 10                      # every *_big, tbag_list, tbag_ans_last, tcopy_nop
     @test "tbag_ans(-(resource_error(stack),1000)) det" in ours   # D-0032: the answers alone; the handler ran
-    @test "tinline(resource_error(stack)) det" in ours     # D-0032: laid out inline, caught INSIDE the catch
+    @test _SL_KNOWN_DIFF["tinline"] in ours                # KNOWN DIFFERENCE (G1-FIX-8, see `_SL_KNOWN_DIFF`): the kernel raises nothing, swipl does
+    @test !(_SL_SWIPL["tinline"] in ours)
     @test "thandler(-(resource_error(stack),1000)) det" in ours
     @test "tcopy_in(resource_error(stack)) det" in ours     # f1b: raised INSIDE copy_term, caught there
     if _R_SWIPL
@@ -91,11 +122,24 @@ end
             Tuple{_R, Union{Nothing, _R}}[], goals;
             extra=":- set_prolog_flag(stack_limit, 1048576).\n" * _SL_PROG
         )
-        @test ours == theirs
-        ours == theirs || @info "stack-limit differential" ours theirs
+        ours_sw = _sl_swap(ours, _SL_SWIPL)                 # the known-difference rows read as swipl's pin, then compared with swipl live
+        @test ours_sw == theirs
+        ours_sw == theirs || @info "stack-limit differential" ours theirs
     elseif _R_SWIPL_REQUIRED
         @test false
     end
+end
+
+@testset "the known-difference table (no swipl needed): every key is a goal, the kernel's line differs from swipl's" begin
+    @test Set(keys(_SL_KNOWN_DIFF)) == Set(keys(_SL_SWIPL)) && !isempty(_SL_KNOWN_DIFF)
+    for (g, line) in _SL_KNOWN_DIFF
+        @test g in _SL_GOALS
+        @test startswith(line, g * "(") && startswith(_SL_SWIPL[g], g * "(")
+        @test line != _SL_SWIPL[g]                          # equal to swipl's: not a difference, delete the entry
+    end
+    # must-fail: a swapped answer list is not the kernel's
+    @test _sl_swap(["x det", "tinline(none) det", "end"], _SL_SWIPL) ==
+        ["x det", "tinline(resource_error(stack)) det", "end"]
 end
 
 @testset "the context pinned: the atom stack_overflow (swipl: a dict)" begin
@@ -280,6 +324,11 @@ end
     for (room_less, share) in ((0, true), (1, true), (0, false), (1, false))
         db = _sl_db()
         ld = db.ld
+        # G1-FIX-8 (audit D-0969 (1)): collect BEFORE the limit is taken. The loader leaves ~1250 dead cells; with the collector
+        # live (chunk 8) makeMoreStackSpace reclaims them (pl-copyterm.c:847 -> pl-gc.c:4622-4672 garbageCollect, then the retry),
+        # so the premise "one cell fewer raises" holds only when nothing is reclaimable. The new testset below keeps the garbage.
+        @test LK.garbageCollect(ld, Int(LK.GC_USER); vmi_state_of=LK.get_vmi_state) ==
+            LK.BOOLEX_TRUE
         LK.PL_open_foreign_frame(ld)
         t = LK.PL_new_term_ref(ld)
         p = LK.allocGlobalCells!(ld, 30)                    # [_,…,_]: ten list cells, unbound heads
@@ -308,6 +357,40 @@ end
             r = lk_answer(ld, ld.exception_bin)
             @test _rcanonical(r) == "error(resource_error(stack),stack_overflow)"
         end
+    end
+end
+
+# G1-FIX-8 (audit D-0969 (1)): the old reading kept covered. The garbage the loader left is IN PLACE (no collection first),
+# the limit is one cell short of the copy: upstream's copy_term_refs gets no space from the copy (rc < 0), calls
+# makeMoreStackSpace(GLOBAL_OVERFLOW, ALLOW_SHIFT|ALLOW_GC) (pl-copyterm.c:847 at the pin 18168e62), whose garbageCollect
+# (pl-gc.c:4622-4672) reclaims the dead cells, and the loop RETRIES: the copy fits, no exception. Measured (SL-DIAG): ok=true,
+# gTop 1302 -> 82, one collection. Mutant SL1-R1 (tools/mutants/SL1.py: copy_term_refs without ALLOW_GC) must fail this row.
+@testset "f1b: copy_term_refs one cell short, garbage left in place: a collection, the retry fits" begin
+    for share in (true, false)
+        db = _sl_db()
+        ld = db.ld
+        LK.PL_open_foreign_frame(ld)
+        t = LK.PL_new_term_ref(ld)
+        p = LK.allocGlobalCells!(ld, 30)                    # [_,…,_]: ten list cells, unbound heads
+        for i in 0:9
+            ld.gstack[p + 3i] = ld.functor_dot2
+            ld.gstack[p + 3i + 2] = if i < 9
+                LK.consPtr(p + 3i + 3, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+            else
+                ld.atom_nil_w
+            end
+        end
+        ld.slots[t + 1] = LK.consPtr(p, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+        c = LK.PL_new_term_ref(ld)
+        g0 = ld.gTop
+        ld.stacks_limit = LK._stacks_in_use(ld, 0) + 1 + 30 - 1   # one cell fewer than the copy needs
+        c0 = ld.gc.stats.totals.collections
+        ok = LK.copy_term_refs(
+            ld, t, c, LK.cp_options(share ? LK.COPY_SHARE | LK.COPY_ATTRS : LK.COPY_ATTRS)
+        )
+        @test ok && !ld.exception_processing
+        @test ld.gc.stats.totals.collections == c0 + 1          # the retry came from a collection
+        @test ld.gTop < g0                                      # the dead cells below were reclaimed (SL-DIAG: 1302 -> 82)
     end
 end
 

@@ -210,7 +210,17 @@ function _gf_rows(db)
         chk!("setLTopInBody: twice, the same lTop", ld.lTop == newbase + 2)
         # pl-gc.c:3767-3772: `ap > argFrameP(qlTop, 0)` with `qlTop = lTop` (next_environment is NULL) and lTop ALREADY raised to newbase + 2 by the rows above, so the
         # argument frame under construction now starts at argFrameP(newbase + 2, 0) = newbase + 2 + ARGOFFSET; an argument pointer one cell past THAT raises it further
-        # (`newbase + 3` is inside the header of that frame: nothing is raised, as at the pin).
+        # (`newbase + 3` is inside the header of that frame: nothing is raised, as at the pin). THE PIN, quoted (18168e62:src/pl-gc.c:3766-3772; D-0969 (4)):
+        #     if ( ap > argFrameP(qlTop, 0) )
+        #     { state->new_args = (int)(ap - argFrameP(qlTop, 0));
+        #       state->lNext = qlTop;
+        #       if ( (LocalFrame)ap > lTop )
+        #         lTop = (LocalFrame)ap;
+        #     }
+        #     break;
+        # SIZEOF_LOCALFRAME = 8 words: with lTop at newbase + 2, argFrameP(lTop, 0) = newbase + 2 + 8, so newbase + 3 lies INSIDE the header (the first 8 words of the frame
+        # at lTop) and `ap > argFrameP(qlTop, 0)` is false: nothing is raised. The old row (84cb5ccd^) used argument pointer newbase + 3 as the HIGHER one and expected
+        # lTop == newbase + 3: that input contradicted this pin; the expectation (lTop == the argument pointer, raised further) is the same, the input moved to argFrameP(newbase + 2, 0) + 1.
         newbase2 = LK.argFrameP(newbase + 2, 0)
         q.registers_argp = slot(newbase2 + 1)
         LK.setLTopInBody(ld)
