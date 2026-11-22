@@ -322,3 +322,41 @@ end
         @test _rl_swipl_lines(realpath(mktempdir())) == _RL_EXPECTED
     end
 end
+
+# ---- white-box (the C29 reconcile): delete_old_predicates walks the file's procedures newest first (pl-srcfile.c:1501-1521 over the list addProcedureSourceFile
+# conses onto the front), and every removeClausesPredicate call takes a generation of its own (pl-proc.c:1581-1606): the clause of the file's LAST predicate
+# is erased at the smallest generation. swipl cannot show this from Prolog (checked on the pinned swipl 18168e62: the removal sends no event, and the
+# `untable` events of a dropped table come from the clauses of the one `$tabled/2` predicate, in clause order), so the row reads the kernel's vector.
+@testset "a reload drops the predicates it no longer defines newest first; the kept ones stay in their order (pl-srcfile.c delete_old_predicates)" begin
+    dir = realpath(mktempdir())
+    gd = LK.PL_global_data{_RL}()
+    ld = LK.PL_local_data{_RL}(gd)
+    path = joinpath(dir, "rlord.pl")
+    write(path, "rlo_foo(1).\nrlo_bar(1).\nrlo_baz(1).\nrlo_keep1(1).\nrlo_keep2(1).\n")
+    st, _ = LK.load_file!(gd, ld, path)
+    @test st === :ok
+    cur(n) = LK.isCurrentProcedure(sym_key(_rls(n)), 1, LK.MODULE_user(gd))
+    names = ("rlo_foo", "rlo_bar", "rlo_baz", "rlo_keep1", "rlo_keep2")
+    procs = Dict(n => cur(n) for n in names)
+    @test all(p -> p !== nothing, values(procs))
+    cls = Dict(n => procs[n].definition.impl_clauses.first_clause.clause for n in names)
+    sf = LK.lookupSourceFile(gd, _rls(path), false)
+    @test [p.definition.functor_name for p in sf.procedures] ==
+        [sym_key(_rls(n)) for n in names]                                    # the newest last
+    LK.releaseSourceFile(sf)
+    write(path, "rlo_keep1(1).\nrlo_keep2(1).\n")
+    st, _ = LK.load_file!(gd, ld, path)
+    @test st === :ok
+    for n in ("rlo_foo", "rlo_bar", "rlo_baz")
+        @test (cls[n].flags & LK.CL_ERASED) != 0
+    end
+    for n in ("rlo_keep1", "rlo_keep2")
+        @test (cls[n].flags & LK.CL_ERASED) == 0
+    end
+    gen(n) = UInt64(cls[n].generation_erased)
+    @test gen("rlo_baz") < gen("rlo_bar") < gen("rlo_foo")                   # newest predicate first
+    sf = LK.lookupSourceFile(gd, _rls(path), false)
+    @test [p.definition.functor_name for p in sf.procedures] ==
+        [sym_key(_rls("rlo_keep1")), sym_key(_rls("rlo_keep2"))]             # the kept ones stay in order
+    LK.releaseSourceFile(sf)
+end

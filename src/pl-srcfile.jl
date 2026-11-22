@@ -676,7 +676,9 @@ function delete_old_predicate(
 end
 
 # PORT: pl-srcfile.c delete_old_predicates
-# DIVERGES: the procedures of `sf` are a vector (the kept ones stay, in order); `lookupHTablePP` is `haskey` of the reload's `IdDict`.
+# DIVERGES: the procedures of `sf` are a vector (the kept ones stay, in order); `lookupHTablePP` is `haskey` of the reload's `IdDict`. The vector keeps the
+# newest LAST (`addProcedureSourceFile` conses onto the front of upstream's list), so it is walked in reverse and `keep` is reversed back: the generation of
+# each dropped predicate's erased clauses follows upstream's order (newest predicate first, as `unloadFile`).
 "Delete the clauses of the procedures of `sf` the reload did not touch, and drop them from its procedures (pl-srcfile.c)."
 function delete_old_predicates(
     gd::PL_global_data{T}, ld::PL_local_data{T}, sf::SourceFile{T}
@@ -684,7 +686,7 @@ function delete_old_predicates(
     rl = sf.reload::sf_reload{T}
     keep = Procedure{T}[]
 
-    for proc in sf.procedures
+    for proc in Iterators.reverse(sf.procedures)
         if (proc.definition.flags & P_FOREIGN) == 0 && !haskey(rl.procedures, proc)
             delete_old_predicate(gd, ld, sf, proc)
         else
@@ -692,7 +694,7 @@ function delete_old_predicates(
         end
     end
     empty!(sf.procedures)
-    append!(sf.procedures, keep)
+    append!(sf.procedures, Iterators.reverse(keep))
 
     return nothing
 end

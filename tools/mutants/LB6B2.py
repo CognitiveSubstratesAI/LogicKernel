@@ -7,7 +7,7 @@
 # (a second `load_file!`, `$start_consult` / `$fixup_reconsult`), the tabling abolish file (the untable calls), test_miss_preds_swipl.jl and test_clause_ref_swipl.jl
 # (a reload started by hand, the generation after it); the module-export mutants add the export/declare files.
 # NOT COVERED by any row (no mutant is written for them): deleteActiveClauseFromIndexes! and registerDirtyDefinition! in reconsultFinalizePredicate!,
-# `def.flags &= ~P_MODIFIED`, `pl_garbage_collect_clauses!` in endReconsult, `sf.procedures` empty!/append! in delete_old_predicates, `delayEvents(ld)`.
+# `def.flags &= ~P_MODIFIED`, `pl_garbage_collect_clauses!` in endReconsult, the `empty!` of `sf.procedures` in delete_old_predicates (A25/A26 cover its order), `delayEvents(ld)`.
 # MAY SURVIVE: LB6B2-M1 (declareModule's abolish branch also empties the public table, a first load has nothing to abolish) and LB6B2-A14 (fix_attributes
 # in the first arm of end_reconsult_proc; the flags a reload keeps are also set while loading): decide at the battery.
 TR = ["test/db/test_reload_swipl.jl"]
@@ -37,6 +37,12 @@ MUTANTS = [
     dict(id="LB6B2-A5 delete_old_predicate: the untable of a dropped tabled predicate's clauses is not called (KILL rl11, test_tabling_abolish_swipl.jl)", file=S, targets=TARGETS,
          old="    untable_definition_clauses(gd, ld, def)\n\n    removeClausesPredicate!",
          new="    removeClausesPredicate!"),
+    dict(id="LB6B2-A25 delete_old_predicates: the procedures are walked oldest first (KILL the white-box order testset of test_reload_swipl.jl: the erased generations)", file=S, targets=TARGETS,
+         old="    for proc in Iterators.reverse(sf.procedures)\n        if (proc.definition.flags & P_FOREIGN) == 0 && !haskey(rl.procedures, proc)\n",
+         new="    for proc in sf.procedures\n        if (proc.definition.flags & P_FOREIGN) == 0 && !haskey(rl.procedures, proc)\n"),
+    dict(id="LB6B2-A26 delete_old_predicates: the kept procedures are put back in reverse order (KILL the same testset: the order of sf.procedures)", file=S, targets=TARGETS,
+         old="    append!(sf.procedures, Iterators.reverse(keep))\n",
+         new="    append!(sf.procedures, keep)\n"),
     # ── delete_pending_clauses ──
     dict(id="LB6B2-A6 delete_pending_clauses: the pending `$tabled` clause is not untabled (KILL rl14)", file=S, targets=TARGETS,
          old="        isdtabled && untable_from_clause(gd, ld, c)\n",
