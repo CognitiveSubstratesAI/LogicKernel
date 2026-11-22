@@ -154,7 +154,7 @@ const _TO_CASES = [
     ("tp102", raw"debug_reset_from_class, thread_property(main, status(X)), R = X"),
     # engines: the engine handle E is a blob, `C == E` prints `same`
     ("te01", raw"engine_create(x, true, E), catch(thread_join(E, _), error(permission_error(J, T, C), context(Cx, M)), true), ( C == E -> S = same ; S = other ), R = J-T-S-Cx-M"),
-    ("te02", raw"engine_create(x, true, E), thread_detach(E), R = ok"),
+    ("te02", raw"engine_create(x, true, E), thread_detach(E), thread_property(E, detached(R))"),
     ("te03", raw"engine_create(x, true, E), thread_property(E, detached(R))"),
     ("te04", raw"engine_create(x, true, E), is_thread(E), R = yes"),
     ("te05", raw"engine_create(x, true, E), set_thread(E, debug(false)), thread_property(E, debug(R))"),
@@ -227,7 +227,11 @@ const _TO_CASES = [
     ("aq14", raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"),
     # debug_mode(true): the VM in debug mode, LAST
     ("dm01", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), thread_property(E, debug_mode(R))"),
-    ("dm02", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, debug_mode(false)), thread_property(E, debug_mode(R))")
+    ("dm02", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, debug_mode(false)), thread_property(E, debug_mode(R))"),
+    ("dm03", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, class(foo3)), thread_property(E, debug_mode(R))"),
+    ("dm04", raw"set_thread(main, debug_mode(true)), thread_property(main, debug_mode(R))"),
+    ("dm05", raw"debug_reset_from_class, thread_property(main, debug_mode(R))"),
+    ("dm06", raw"set_thread(main, debug_mode(true)), set_thread(main, class(foo6)), thread_property(main, debug_mode(R))")
 ]
 
 # swipl 10.1.20's answers (the driver's lines): `ok`, then one line per case (filled by evidence/THREADOPS/gen_rows.py --fill)
@@ -286,7 +290,7 @@ const _TO_PINNED = [
     "t_tp101 c[116,95,116,112,49,48,49]/1(c[91,124,93]/2(a[120],nil))",
     "t_tp102 c[116,95,116,112,49,48,50]/1(a[114,117,110,110,105,110,103])",
     "t_te01 c[116,95,116,101,48,49]/1(c[45]/2(c[45]/2(c[45]/2(c[45]/2(a[106,111,105,110],a[116,104,114,101,97,100]),a[115,97,109,101]),c[47]/2(a[116,104,114,101,97,100,95,106,111,105,110],i2)),a[67,97,110,110,111,116,32,106,111,105,110,32,100,101,116,97,99,104,101,100,32,116,104,114,101,97,100]))",
-    "t_te02 c[116,95,116,101,48,50]/1(a[111,107])",
+    "t_te02 c[116,95,116,101,48,50]/1(a[116,114,117,101])",
     "t_te03 c[116,95,116,101,48,51]/1(a[116,114,117,101])",
     "t_te04 c[116,95,116,101,48,52]/1(a[121,101,115])",
     "t_te05 c[116,95,116,101,48,53]/1(a[102,97,108,115,101])",
@@ -353,7 +357,11 @@ const _TO_PINNED = [
     "t_aq13 c[116,95,97,113,49,51]/1(a[111,116,104,101,114])",
     "t_aq14 c[116,95,97,113,49,52]/1(a[122,122])",
     "t_dm01 c[116,95,100,109,48,49]/1(a[116,114,117,101])",
-    "t_dm02 c[116,95,100,109,48,50]/1(a[102,97,108,115,101])"
+    "t_dm02 c[116,95,100,109,48,50]/1(a[102,97,108,115,101])",
+    "t_dm03 c[116,95,100,109,48,51]/1(a[102,97,108,115,101])",
+    "t_dm04 c[116,95,100,109,48,52]/1(a[116,114,117,101])",
+    "t_dm05 c[116,95,100,109,48,53]/1(a[102,97,108,115,101])",
+    "t_dm06 c[116,95,100,109,48,54]/1(a[102,97,108,115,101])"
 ]
 
 # the rows where the kernel answers differently from swipl (id => the kernel's exact line); swipl's line is in `_TO_PINNED`
@@ -434,7 +442,7 @@ function _to_kernel(path::String, names::Vector{String})
     return out, gd, ld, nothing
 end
 
-@testset "thread operations as swipl's (tp51-tp102, te01-te31, sc01-sc21, aq01-aq14, dm01-dm02)" begin
+@testset "thread operations as swipl's (tp51-tp102, te01-te31, sc01-sc21, aq01-aq14, dm01-dm06)" begin
     f, names = _to_file()
     kl, gd, ld, e = _to_kernel(f, names)
     @test e === nothing
