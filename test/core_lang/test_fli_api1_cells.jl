@@ -16,6 +16,7 @@
 # group F: PL_get_module, _PL_get_atomic, _PL_put_atomic, put_xpce_ref_arg, PL_term_type, PL_unify_output, PL_unify_termv,
 # PL_unify_term (their text tags call PL_unify_chars and PL_unify_wchars of wip/clib-uri / wip/clib1: rows on those tags need that merge).
 # group G: PL_unify_blob, PL_put_blob, PL_get_blob, PL_blob_data.
+# group I: PL_throw, PL_rethrow, PL_warning, PL_fatal_error.
 # test/core_lang/test_fli_api1_cells.jl — on every term type.
 # LK-ONLY rows: these are C-interface contracts no Prolog goal asks swipl directly (a foreign function calls them;
 # the kernel's built-ins reach them only through the writers already compared in test_fli_unify_cells.jl), so each
@@ -1248,6 +1249,101 @@ end
     @test LK.atomValue(at, w).type === LK.ATOM_TYPE_INVALID
     LK.atomValue(at, w).length = 5                                                   # the slot's own length
     @test LK.PL_blob_data(ld2, LK.mk_blob(_R, w, :fa_invalid, -1)) == (nothing, 5, nothing)
+end
+
+# PL_throw, PL_rethrow, PL_warning, PL_fatal_error (group I) ───────────────────────────────────────────────────────
+
+"`(rc, text)` of `f()` with `user_error` a memory stream: `rc`, and what was written to it."
+function _fa_uerr(ld, f)
+    buf = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+    sz = Ref(0)
+    s = LK.Sopenmem(buf, sz, "w")
+    s.encoding = LK.ENC_UTF8
+    old = ld.IO_streams[LK.SNO_USER_ERROR + 1]
+    ld.IO_streams[LK.SNO_USER_ERROR + 1] = s
+    rc = try
+        f()
+    finally
+        ld.IO_streams[LK.SNO_USER_ERROR + 1] = old
+    end
+    LK.Sclose(s)
+    return rc, buf[] === nothing ? "" : String(copy(buf[][1:sz[]]))
+end
+
+"`f()` with the local stack marked out of stack (the print_message/2 call of `vwarning` is skipped)."
+function _fa_outofstack(ld, f)
+    ld.outofstack = true
+    try
+        return f()
+    finally
+        ld.outofstack = false
+    end
+end
+
+# LK-ONLY (pl-fli.c:5023-5033, :5035-5041; decision 1 of docs/architecture.md): PL_throw is PL_raise_exception and false — the ball is
+# pending afterwards, a compound kept whole — and a variable is refused as by PL_raise_exception (:4989); PL_rethrow is false and leaves
+# the pending exception as it was (none stays none).
+@testset "LK-ONLY: PL_throw and PL_rethrow (pl-fli.c:5023, :5035)" begin
+    gd, ld, t = _fa_gengine(_R[_rf("err", _fa_k(7)), _rv(1)])
+    @test LK.PL_rethrow(ld) === false
+    @test ld.exception_term == 0
+    @test LK.PL_throw(ld, t) === false
+    ex = ld.exception_term
+    @test ex != 0
+    a = LK.PL_new_term_ref(ld)
+    na = LK.PL_get_name_arity(ld, ex)
+    @test na !== nothing && lk_name(na[1]) === :err && na[2] == 1
+    @test LK.PL_get_arg(ld, 1, ex, a) && LK.PL_get_integer(ld, a) == 7
+    @test LK.PL_rethrow(ld) === false
+    @test ld.exception_term == ex
+    @test_throws ErrorException LK.PL_throw(ld, t + 1)
+end
+
+# LK-ONLY (pl-init.c:2348-2399, pl-fli.c:5886): PL_warning returns false whatever it prints. With the local stack out of stack, or a
+# message that starts with a dollar sign, print_message/2 is not called and "ERROR: " and the message and a newline go to user_error
+# (the newlines of the message kept); the flag report_error off prints nothing; a message through print_message/2 leaves the term
+# references and the foreign frame as they were and no exception pending.
+@testset "LK-ONLY: PL_warning (pl-fli.c:5886)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(1)])
+    W = LK.PL_warning
+    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "a b"))) == (false, "ERROR: a b\n")
+    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "x\ny"))) == (false, "ERROR: x\ny\n")
+    @test _fa_uerr(ld, () -> W(gd, ld, "\$raw")) == (false, "ERROR: \$raw\n")
+    before = LK.PL_new_term_refs(ld, 0)
+    @test W(gd, ld, "plain") === false
+    @test LK.PL_new_term_refs(ld, 0) == before
+    @test ld.exception_term == 0
+    LK.clearPrologFlagMask!(ld, LK.PLFLAG_REPORT_ERROR)
+    @test _fa_uerr(ld, () -> W(gd, ld, "\$raw")) == (false, "")
+end
+
+# LK-ONLY (pl-fli.c:4197): an unknown tag of PL_unify_term is PL_warning("Format error in PL_unify_term()") and the call fails.
+@testset "LK-ONLY: PL_unify_term unknown tag warns (pl-fli.c:4197)" begin
+    gd, ld, t = _fa_gengine(_R[_rv(1)])
+    rc, text = _fa_uerr(ld, () -> _fa_outofstack(ld, () -> LK.PL_unify_term(gd, ld, t, 999)))
+    @test rc === false
+    @test text == "ERROR: Format error in PL_unify_term()\n"
+    @test LK.PL_is_variable(ld, t)
+end
+
+# LK-ONLY (pl-init.c:2305-2336, pl-fli.c:5908): PL_fatal_error writes "[FATAL ERROR: at <ctime>", a newline and a tab, the message and
+# "]" and a newline to user_error, then ends the process as abort() does (the seam: status 134); a second fatal error while one is
+# being reported is abort() alone.
+@testset "LK-ONLY: PL_fatal_error (pl-fli.c:5908)" begin
+    gd, ld = _fa_db()
+    gd.halt_exit = false
+    rc, text = _fa_uerr(ld, () -> LK.PL_fatal_error(gd, ld, "disk gone"))
+    @test rc === nothing
+    @test occursin(r"^\[FATAL ERROR: at \w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4}\n\tdisk gone\]\n$", text)
+    @test gd.halt_exited == [134]
+    @test LK._FLI_FATAL_ACTIVE[] == 0
+    gd2, ld2 = _fa_db()
+    gd2.halt_exit = false
+    LK._FLI_FATAL_ACTIVE[] = 1
+    rc, text = _fa_uerr(ld2, () -> LK.PL_fatal_error(gd2, ld2, "again"))
+    @test text == ""
+    @test gd2.halt_exited == [134]
+    @test LK._FLI_FATAL_ACTIVE[] == 0
 end
 
 @testset "the meter: the readers and writers on terms on the stack make no cold traffic" begin

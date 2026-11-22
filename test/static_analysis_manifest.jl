@@ -1844,6 +1844,15 @@ function _manifest_index(T)
         (LK.PL_put_blob, Tuple{LD, Int, Vector{UInt8}, Int, LK.PL_blob_t}, false),
         (LK.PL_get_blob, Tuple{LD, Int}, false),
         (LK.PL_blob_data, Tuple{LD, T}, false),
+        # FLI-API group I (pl-fli.c): throwing, warnings and fatal errors
+        (LK.PL_throw, Tuple{LD, Int}, false),
+        (LK.PL_rethrow, Tuple{LD}, false),
+        (LK._fli_stream_text, Tuple{Union{Nothing, LK.IOSTREAM}, String}, false),
+        (LK._fli_warning_message, Tuple{GD, LD, String}, false),
+        (LK._fli_vwarning, Tuple{GD, LD, String}, false),
+        (LK.PL_warning, Tuple{GD, LD, String}, false),
+        (LK._fli_vfatal_error, Tuple{GD, LD, String}, false),
+        (LK.PL_fatal_error, Tuple{GD, LD, String}, false),
         (LK.PL_get_size_ex, Tuple{LD, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
