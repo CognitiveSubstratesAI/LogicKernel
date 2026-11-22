@@ -1800,6 +1800,31 @@ function _manifest_index(T)
             Tuple{LD, D, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
             false
         ),
+        (
+            LK._vmi_i_yield!,
+            Tuple{LD, D, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_i_exitreset!,
+            Tuple{GD, LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_i_catch!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_i_callcleanup!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
+        (
+            LK._vmi_i_exitcleanup!,
+            Tuple{LD, Int, Int, ARGP, Vector{LK.code}, Vector{T}, Int},
+            false
+        ),
         (LK._abandon_query, Tuple{LD, Int}, false),
         (LK._check_foreign_environment, Tuple{LD, String}, true),
         (LK.PL_raise_exception, Tuple{LD, Int}, false),

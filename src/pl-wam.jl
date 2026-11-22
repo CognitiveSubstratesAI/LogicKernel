@@ -2440,6 +2440,174 @@ end
     return _VS_NEXT                                 # VMI_GOTO(S_STATIC)
 end
 
+# ORIGINAL (LAT3b): the body of pl-vmi.c I_YIELD, outlined; its notes are at the label I_YIELD. The engine branch ends in the `NotPortedError` throw.
+"The body of I_YIELD (pl-vmi.c): the permission error of a query without `PL_Q_ALLOW_YIELD`: `_VS_THROW`."
+@noinline Base.@constprop :none function _vmi_i_yield!(
+    ld::PL_local_data{T},
+    DEF::Definition{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    @SAVE_REGISTERS(QID)
+    if (ld.queries[QueryFromQid(ld, QID)].flags & PL_Q_ALLOW_YIELD) == 0    # !(QF->flags&PL_Q_ALLOW_YIELD)
+        PL_error(ld, "", 0, "not an engine", ERR_PERMISSION_VMI, "I_YIELD")
+        @LOAD_REGISTERS(QID)
+        return _VS_THROW                               # THROW_EXCEPTION
+    end
+    throw(
+        NotPortedError{T}(
+            DEF.name, "the VM instruction I_YIELD in an engine (pl-vmi.c:2419)", "TH1"
+        )
+    )
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c I_EXITRESET, outlined; its notes are at the label I_EXITRESET.
+"The body of I_EXITRESET (pl-vmi.c): the `dtbl_reset6` answer, or `bindConst`: a `_VS_*` status (`_VS_NEXT`: next_instruction)."
+@noinline Base.@constprop :none function _vmi_i_exitreset!(
+    gd::PL_global_data{T},
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    ier_k, ier_w, ier_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 2) + 1))   # p = argFrameP(FR, 2); deRef(p)
+    if ier_k == DU_CELL || ier_k == DU_ATTVAR       # canBind(*p)
+        if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
+            @SAVE_REGISTERS(QID)
+            ier_rc = tbl_reset_add_answer(ld, FR)   # opens a foreign frame if needed
+            @LOAD_REGISTERS(QID)
+            if ier_rc                               # answer completes the table
+                @SAVE_REGISTERS(QID)
+                discardChoicesAfter(ld, FR, FINISH_CUT)
+                @LOAD_REGISTERS(QID)
+            end
+            ld.exception_term != 0 && return _VS_THROW # THROW_EXCEPTION
+            return _VS_BODY_FAILED                 # BODY_FAILED
+        end
+        bindConst(ld, ier_p, consInt(Int64(0)))     # bindConst(p, consInt(0))
+        return _VS_NEXT                      # NEXT_INSTRUCTION
+    else
+        @SAVE_REGISTERS(QID)
+        ier_t = pushWordAsTermRef(ld, (ier_k, ier_w, ier_p))
+        PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, ier_t)  # PL_uninstantiation_error(pushWordAsTermRef(p))
+        popTermRef(ld)
+        @LOAD_REGISTERS(QID)
+        return _VS_THROW                               # THROW_EXCEPTION
+    end
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c I_CATCH, outlined; its notes are at the label I_CATCH. Its `VMI_GOTO(I_CALL1)` is `_VS_NEXT`, dispatched by the label.
+"The body of I_CATCH (pl-vmi.c): `_VS_THROW`, else `_VS_NEXT` (the label then continues at I_CALL1)."
+@noinline Base.@constprop :none function _vmi_i_catch!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    icatch_p = argFrameP(ld.frames[FR].base, 0)
+    newChoice(ld, CHP_CATCH, FR)
+    if _slot_is_var(ld, icatch_p + 1)               # isVar(*p): on the words (f3b-5b; AV1b)
+        @SAVE_REGISTERS(QID)
+        icatch_fid = PL_open_foreign_frame(ld)
+        PL_error(ld, ERR_INSTANTIATION)
+        PL_close_foreign_frame(ld, icatch_fid)
+        @LOAD_REGISTERS(QID)
+        return _VS_THROW                               # THROW_EXCEPTION
+    end
+    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icatch_p + 1)    # = B_VAR0
+    return _VS_NEXT
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c I_CALLCLEANUP, outlined; its notes are at the label I_CALLCLEANUP. Its `VMI_GOTO(I_CALL1)` is `_VS_NEXT`, dispatched by the label.
+"The body of I_CALLCLEANUP (pl-vmi.c): `_VS_THROW`, else `_VS_NEXT` (the label then continues at I_CALL1)."
+@noinline Base.@constprop :none function _vmi_i_callcleanup!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    icc_f = ld.frames[FR]
+    icc_arity = (icc_f.predicate::Definition{T}).arity
+    icc_arg_goal = icc_arity == 2 ? 1 : 2
+
+    # last arg is cleanup ('$tbl_leader'/5: C cleanup)
+    if icc_arity < 5                                # if ( arity < 5 && !mustBeCallable(...) )
+        @SAVE_REGISTERS(QID)
+        icc_fid = PL_open_foreign_frame(ld)
+        icc_ok = mustBeCallable(ld, argFrameP(icc_f.base, icc_arity - 1))
+        PL_close_foreign_frame(ld, icc_fid)
+        @LOAD_REGISTERS(QID)
+        if !icc_ok
+            return _VS_THROW                           # THROW_EXCEPTION
+        end
+    end
+
+    newChoice(ld, CHP_CATCH, FR)
+    icc_f.flags |= FR_CLEANUP                       # set(FR, FR_CLEANUP)
+
+    icc_p = argFrameP(icc_f.base, icc_arg_goal - 1)
+    if _slot_is_var(ld, icc_p + 1)                  # (as I_CATCH's: on the words, f3b-5b)
+        @SAVE_REGISTERS(QID)
+        icc_fid = PL_open_foreign_frame(ld)
+        PL_error(ld, ERR_INSTANTIATION)
+        PL_close_foreign_frame(ld, icc_fid)
+        @LOAD_REGISTERS(QID)
+        return _VS_THROW                               # THROW_EXCEPTION
+    end
+    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icc_p + 1)       # = B_VAR1
+    return _VS_NEXT
+end
+
+# ORIGINAL (LAT3b): the body of pl-vmi.c I_EXITCLEANUP, outlined; its notes are at the label I_EXITCLEANUP.
+"The body of I_EXITCLEANUP (pl-vmi.c): `_VS_THROW`, else `_VS_NEXT` (next_instruction)."
+@noinline Base.@constprop :none function _vmi_i_exitcleanup!(
+    ld::PL_local_data{T},
+    @nospecialize(QID::Int),
+    @nospecialize(FR::Int),
+    ARGP::argp_t{T},
+    @nospecialize(PCc::Vector{code}),
+    PCl::Vector{T},
+    @nospecialize(PC::Int)
+)::Int where {T}
+    iecl_b = ld.BFR
+    while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
+        iecl_b = ld.choices[iecl_b].parent
+    end
+    if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
+        ld.choices[iecl_b].unlinked = true
+        ld.BFR = ld.choices[iecl_b].parent
+        while ld.BFR != 0 && ld.choices[ld.BFR].base > ld.frames[FR].base  # BFR > (Choice)FR
+            iecl_c = ld.choices[ld.BFR]
+            if iecl_c.type != CHP_DEBUG && ld.frames[iecl_c.frame].base > ld.frames[FR].base
+                return _VS_NEXT              # choice from setup of setup_call_catcher_cleanup/4
+            end
+            iecl_c.unlinked = true
+            ld.BFR = iecl_c.parent
+        end
+
+        @SAVE_REGISTERS(QID)
+        frameFinished(ld, FR, FINISH_EXITCLEANUP)
+        @LOAD_REGISTERS(QID)
+        if ld.exception_term != 0
+            return _VS_THROW                           # THROW_EXCEPTION
+        end
+    end
+    return _VS_NEXT                          # goto i_exit?
+end
+
 # The run loop's dispatch (ORIGINAL), as a SORTED BRANCH TREE over the opcodes — decision 1's
 # fallback. MEASURED 2026-10-05: LLVM makes no single jump table of an if/elseif chain over them; it
 # makes four partial ones, broken wherever neighbouring arms share a target, so `S_LIST` was reached
@@ -3986,17 +4154,8 @@ function PL_next_solution_guarded(
     # DIVERGES: the branch of an engine's query (pl-vmi.c:2419-2447: `lTop`, the foreign frame, the
     # yielded term and code, `SOLUTION_RETURN`) is deferred, owner TH1: it raises `NotPortedError`.
     @label I_YIELD
-    @SAVE_REGISTERS(QID)
-    if (ld.queries[QueryFromQid(ld, QID)].flags & PL_Q_ALLOW_YIELD) == 0    # !(QF->flags&PL_Q_ALLOW_YIELD)
-        PL_error(ld, "", 0, "not an engine", ERR_PERMISSION_VMI, "I_YIELD")
-        @LOAD_REGISTERS(QID)
-        @goto b_throw                               # THROW_EXCEPTION
-    end
-    throw(
-        NotPortedError{T}(
-            DEF.name, "the VM instruction I_YIELD in an engine (pl-vmi.c:2419)", "TH1"
-        )
-    )
+    vs_st = _vmi_i_yield!(ld, DEF, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c I_RESET
     # (pl-vmi.c:5760-5804 at the pin; CONT1 C2, the `dtbl_reset6` branch pl-vmi.c:5768-5798, TB2c)
@@ -4054,30 +4213,8 @@ function PL_next_solution_guarded(
     # DIVERGES: `ENSURE_GLOBAL_SPACE(0)` has nothing to make room for: `bindConst` of a small integer
     # only trails. `tbl_reset_add_answer` takes the frame's index (src/pl-tabling.jl).
     @label I_EXITRESET
-    ier_k, ier_w, ier_p = _deref_loc(ld, -(argFrameP(ld.frames[FR].base, 2) + 1))   # p = argFrameP(FR, 2); deRef(p)
-    if ier_k == DU_CELL || ier_k == DU_ATTVAR       # canBind(*p)
-        if ld.frames[FR].predicate === gd.procedures_dtbl_reset6.definition
-            @SAVE_REGISTERS(QID)
-            ier_rc = tbl_reset_add_answer(ld, FR)   # opens a foreign frame if needed
-            @LOAD_REGISTERS(QID)
-            if ier_rc                               # answer completes the table
-                @SAVE_REGISTERS(QID)
-                discardChoicesAfter(ld, FR, FINISH_CUT)
-                @LOAD_REGISTERS(QID)
-            end
-            ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
-            @goto shallow_backtrack                 # BODY_FAILED
-        end
-        bindConst(ld, ier_p, consInt(Int64(0)))     # bindConst(p, consInt(0))
-        @goto next_instruction                      # NEXT_INSTRUCTION
-    else
-        @SAVE_REGISTERS(QID)
-        ier_t = pushWordAsTermRef(ld, (ier_k, ier_w, ier_p))
-        PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, ier_t)  # PL_uninstantiation_error(pushWordAsTermRef(p))
-        popTermRef(ld)
-        @LOAD_REGISTERS(QID)
-        @goto b_throw                               # THROW_EXCEPTION
-    end
+    vs_st = _vmi_i_exitreset!(gd, ld, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # PORT: pl-vmi.c I_CALLCONT
     # (pl-vmi.c:5839-5862 at the pin; CONT1 C5)
@@ -5104,18 +5241,9 @@ function PL_next_solution_guarded(
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`). NOT PORTED: retyping the
     # frame's `CHP_DEBUG` choice point (the debugger's; none here).
     @label I_CATCH
-    icatch_p = argFrameP(ld.frames[FR].base, 0)
-    newChoice(ld, CHP_CATCH, FR)
-    if _slot_is_var(ld, icatch_p + 1)               # isVar(*p): on the words (f3b-5b; AV1b)
-        @SAVE_REGISTERS(QID)
-        icatch_fid = PL_open_foreign_frame(ld)
-        PL_error(ld, ERR_INSTANTIATION)
-        PL_close_foreign_frame(ld, icatch_fid)
-        @LOAD_REGISTERS(QID)
-        @goto b_throw                               # THROW_EXCEPTION
-    end
-    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icatch_p + 1)    # = B_VAR0
-    @goto I_CALL1
+    vs_st = _vmi_i_catch!(ld, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    vs_st == _VS_NEXT && @goto I_CALL1
+    @goto vs_status
 
     # PORT: pl-vmi.c I_EXITCATCH
     # DIVERGES: the CHP_CATCH record taken out of the chain is marked `unlinked` (the soft-cut's
@@ -5144,36 +5272,9 @@ function PL_next_solution_guarded(
     # the C function `tbl_leader_finished()` (see callCleanupHandler), since TB2c)
     # DIVERGES: the goal goes to `argFrameP(lTop, 0)` as a value (`linkValI`), as `I_CATCH`'s.
     @label I_CALLCLEANUP
-    icc_f = ld.frames[FR]
-    icc_arity = (icc_f.predicate::Definition{T}).arity
-    icc_arg_goal = icc_arity == 2 ? 1 : 2
-
-    # last arg is cleanup ('$tbl_leader'/5: C cleanup)
-    if icc_arity < 5                                # if ( arity < 5 && !mustBeCallable(...) )
-        @SAVE_REGISTERS(QID)
-        icc_fid = PL_open_foreign_frame(ld)
-        icc_ok = mustBeCallable(ld, argFrameP(icc_f.base, icc_arity - 1))
-        PL_close_foreign_frame(ld, icc_fid)
-        @LOAD_REGISTERS(QID)
-        if !icc_ok
-            @goto b_throw                           # THROW_EXCEPTION
-        end
-    end
-
-    newChoice(ld, CHP_CATCH, FR)
-    icc_f.flags |= FR_CLEANUP                       # set(FR, FR_CLEANUP)
-
-    icc_p = argFrameP(icc_f.base, icc_arg_goal - 1)
-    if _slot_is_var(ld, icc_p + 1)                  # (as I_CATCH's: on the words, f3b-5b)
-        @SAVE_REGISTERS(QID)
-        icc_fid = PL_open_foreign_frame(ld)
-        PL_error(ld, ERR_INSTANTIATION)
-        PL_close_foreign_frame(ld, icc_fid)
-        @LOAD_REGISTERS(QID)
-        @goto b_throw                               # THROW_EXCEPTION
-    end
-    _slot_link!(ld, argFrameP(ld.lTop, 0) + 1, icc_p + 1)       # = B_VAR1
-    @goto I_CALL1
+    vs_st = _vmi_i_callcleanup!(ld, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    vs_st == _VS_NEXT && @goto I_CALL1
+    @goto vs_status
 
     # PORT: pl-vmi.c I_EXITCLEANUP
     # DIVERGES: positions for addresses. The frame's `CHP_CATCH` record, and any other the walk
@@ -5182,30 +5283,8 @@ function PL_next_solution_guarded(
     # left by a `?=>` clause that exited without a cut) are released by `exit_continue`'s `lowerLTop!`
     # after the handler (D-0219), as upstream's stack-pointer move.
     @label I_EXITCLEANUP
-    iecl_b = ld.BFR
-    while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
-        iecl_b = ld.choices[iecl_b].parent
-    end
-    if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
-        ld.choices[iecl_b].unlinked = true
-        ld.BFR = ld.choices[iecl_b].parent
-        while ld.BFR != 0 && ld.choices[ld.BFR].base > ld.frames[FR].base  # BFR > (Choice)FR
-            iecl_c = ld.choices[ld.BFR]
-            if iecl_c.type != CHP_DEBUG && ld.frames[iecl_c.frame].base > ld.frames[FR].base
-                @goto next_instruction              # choice from setup of setup_call_catcher_cleanup/4
-            end
-            iecl_c.unlinked = true
-            ld.BFR = iecl_c.parent
-        end
-
-        @SAVE_REGISTERS(QID)
-        frameFinished(ld, FR, FINISH_EXITCLEANUP)
-        @LOAD_REGISTERS(QID)
-        if ld.exception_term != 0
-            @goto b_throw                           # THROW_EXCEPTION
-        end
-    end
-    @goto next_instruction                          # goto i_exit?
+    vs_st = _vmi_i_exitcleanup!(ld, QID, FR, ARGP, PCc, PCl, PC)   # the body (LAT3b: outlined)
+    @goto vs_status
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
