@@ -10,6 +10,7 @@
 #     ints, real);
 #   * ERR = the testset "'$qlf_module'/2 errors by name" (the e_* fixtures: the messages and the index of each);
 #   * MOV = the testset "'$qlf_module'/2 of a QLF file that has moved" (pushPathTranslation, qlfFixSourcePath);
+#   * STR = the testset "the XR string entries" (loadXR called on the bytes of one XR_STRING / XR_STRING_UTF8 entry: the decode of a string);
 #   * the `$qlf_module` entries of the table of test_qlf_swipl.jl share the same code (every call of `qlfInfo`).
 # NOT LISTED (each with its reason, `equivalent` here: no row can fail them):
 #   * qlfGetDouble's byte order and its `c & 0xff` mask (pl-qlf.jl:1131): the eight bytes of the time of a source file (and of an
@@ -210,4 +211,9 @@ MUTANTS = [
          file=Q, targets=T,
          old="fx isa xr_functor || qlfLoadError(state)",
          new="true || qlfLoadError(state)"),
+    # ---- the XR string entries (loadXRc): no answer of `'$qlf_module'/2` shows a string, the STR rows call loadXR on the bytes
+    dict(id="QLF3-37 an XR_STRING is decoded as UTF-8, not ISO Latin-1 (C: globalString, one character per byte): the bytes `c3 a9` are one character, the byte 0xE9 an invalid one (KILL STR: the rows of the testset 'the XR string entries', latin1_e9, latin1_utf8_bytes, latin1_ff, pair_l)",
+         file=Q, targets=T,
+         old="xr_string{T}(String(Char[Char(b) for b in bytes]))",
+         new="xr_string{T}(String(bytes))"),
 ]
