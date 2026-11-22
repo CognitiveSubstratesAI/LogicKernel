@@ -26,7 +26,11 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
 
 @testset "the module table: system, then user, its super" begin
     gd = LK.setupProlog(_MP)            # the table setupProlog builds, before the boot adds the boot modules (LB4 b2)
-    @test length(gd.modules) == 2
+    # D-0083 disclosure (internal identity: the table's size and the next index): since ALLOC-FIX f (375d2227)
+    # initBuildIns! makes PROCEDURE_tune_gc3 = PL_predicate("tune_gc", 3, "prolog") (pl-ext.c:385-386 at 18168e62),
+    # and PL_predicate creates the module `prolog` there as upstream's initBuildIns does (pl-ext.c:381-386
+    # PL_new_module(ATOM_prolog) for heartbeat0): the table is system, user, prolog (3), not 2; no behaviour moved.
+    @test length(gd.modules) == 3 && lk_name(gd.modules[3].atom) === :prolog && gd.modules[3].index == 3
     sys, user = gd.modules
     @test sys === LK.MODULE_system(gd) && user === LK.MODULE_user(gd)
     @test (sys.index, user.index) == (1, 2)
@@ -38,12 +42,12 @@ _mpv() = mk_var(_MP, LK.fresh_var_keys!(1))
     @test LK.isCurrentModule(gd.modules, _mps(:user)) === user
     @test LK.isCurrentModule(gd.modules, _mps(:nomod)) === nothing
     @test LK.lookupModule(gd, _mps(:system)) === sys                # found, not created
-    @test length(gd.modules) == 2
+    @test length(gd.modules) == 3
     # any other name makes a module, appended (MOD1; was NotPortedError "R2"): the next index, its super `user`
     mm = LK.lookupModule(gd, _mps(:mm))
-    @test length(gd.modules) == 3 && mm.index == 3 && gd.modules[3] === mm
+    @test length(gd.modules) == 4 && mm.index == 4 && gd.modules[4] === mm
     @test mm.supers == [user.index] && lk_name(mm.atom) === :mm
-    @test LK.lookupModule(gd, _mps(:mm)) === mm && length(gd.modules) == 3   # found, not created again
+    @test LK.lookupModule(gd, _mps(:mm)) === mm && length(gd.modules) == 4   # found, not created again
     @test LK.isCurrentModule(gd.modules, _mps(:mm)) === mm
     # the unknown flag: system's own, inherited by user
     @test LK.getUnknownModule(gd, sys) == LK.UNKNOWN_ERROR
@@ -154,9 +158,9 @@ end
     # a qualifier naming no module yet creates it (MOD1; was NotPortedError "R2")
     @test LK.isCurrentModule(gd.modules, _mps(:mm)) === nothing
     ok, m, plain, _ = strip(_mpf(":", _mps(:mm), _mps(:x)))
-    @test ok && m == 3 && lk_eq(gd.modules[m].atom, _mps(:mm)) && lk_eq(plain, _mps(:x))
-    @test LK.isCurrentModule(gd.modules, _mps(:mm)) === gd.modules[3] &&
-        length(gd.modules) == 3
+    @test ok && m == 4 && lk_eq(gd.modules[m].atom, _mps(:mm)) && lk_eq(plain, _mps(:x))
+    @test LK.isCurrentModule(gd.modules, _mps(:mm)) === gd.modules[4] &&
+        length(gd.modules) == 4
     # a cyclic chain X = user:X (on the cells since L1f f3: the term-level `pl_unify!` and
     # `stripModuleName` before): stripModuleName gives up after 100 levels
     ld = LK.PL_local_data{_MP}(gd)
