@@ -890,8 +890,9 @@ end
 # PORT: pl-event.h event_callback
 # DIVERGES: D is the predicate's type, `definition{T}` (a parameter only to break the struct cycle, as `procedure`'s);
 # `name` is `nothing` for NULL_ATOM; `module_` is the module's INDEX (0: NULL), `procedure` is `nothing` for NULL;
-# `function_` (a C function, `PL_thread_at_exit`'s) is an index (0: none: the C pointer is TH1's) and `closure.pointer` is
-# not kept; `closure` is `closure.term`; `next` is the position in the list's vector.
+# `function_` (a C function, `PL_thread_at_exit`'s) is an index (1-based) into the database's `event_hook.functions`, which
+# holds the Julia function and the closure value (`closure.pointer`) (0: none); `closure` is `closure.term`; `next` is the
+# position in the list's vector.
 "A listener of an event (pl-event.h `struct event_callback`)."
 mutable struct event_callback{T, D}
     name::Union{Nothing, T}                             # Name of the callback
@@ -901,6 +902,16 @@ mutable struct event_callback{T, D}
     closure::Union{Nothing, fastheap_term{T}}           # closure
     argc::Int                                           # #context args
     flags::UInt32                                       # EV_CALLBACK_*
+end
+
+# PORT: pl-event.h event_callback (`function` and `closure.pointer`)
+# DIVERGES: the C function pointer is a Julia callable and the `void *` closure any value; the function takes the database and
+# the local data as its first two arguments (upstream reads them from the thread's `LD`: there is no thread-local here), then the
+# closure, then the event's term references (`argv+1`, `argv+2`) for a callback of `argc` 1 or 2.
+"The C function of an event listener and its closure (pl-event.h `event_callback.function`, `closure.pointer`)."
+struct event_function
+    fn::Any                                             # the function (void (*)(void *) etc.)
+    closure::Any                                        # closure.pointer
 end
 
 # PORT: pl-event.h event_list

@@ -43,9 +43,10 @@ mutable struct event_hooks{T}
     onthreadstart::Union{Nothing, event_list{T, definition{T}}}     # thread start hook
     onthreadexit::Union{Nothing, event_list{T, definition{T}}}      # thread exit hook
     onuntable::Union{Nothing, event_list{T, definition{T}}}         # Untable after reload
+    const functions::Vector{event_function}                         # (the C functions the lists' callbacks name by index: `register_event_function`, TH1)
 end
 event_hooks{T}() where {T} =
-    event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+    event_hooks{T}(nothing, nothing, nothing, nothing, nothing, nothing, nothing, event_function[])
 
 # PORT: pl-init.h pl_options_t
 # (swipl-devel cbf4e189, src/pl-init.h:61-95; `GD->options`, filled by pl-init.c `initDefaultOptions` and
