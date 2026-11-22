@@ -1,0 +1,35 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-clpqr — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-clpqr; the files are upstream's bytes, never edited.
+# source: sub packages/clpqr 82094966ecc4562aef53e5eac7db9b6cd914de3a
+100644 blob 2dc4a44d14560215ebb6718f8c8e0025155661ed	packages/clpqr/.fileheader
+100644 blob 209869c42ba47d79f3d1f097d38b46c8b6003130	packages/clpqr/.gitignore
+100644 blob 2b2f8546343fcd8c4e4b9ac041359248a9cb0b30	packages/clpqr/CMakeLists.txt
+100644 blob 76fcaf04a5190f14290d96397c29013589038ddf	packages/clpqr/ChangeLog
+100644 blob e44b7bb1d768c859e73065b876c3edc1918d5f85	packages/clpqr/README.md
+100644 blob fbb2118621262169c54fb83526abeb7cad7e6d5d	packages/clpqr/clpq.pl
+100644 blob 66aaa9005c0b1a0dc7f34ffbb6dfd6abb351d666	packages/clpqr/clpq/bb_q.pl
+100644 blob b5d65a08b8d10a51d8574b73755d3519be4950a2	packages/clpqr/clpq/bv_q.pl
+100644 blob a9b43e5032464c25ab76a526e3530e9815eb1fa7	packages/clpqr/clpq/fourmotz_q.pl
+100644 blob eaf7ab5610280fe19a975c5e5f6386e273a80586	packages/clpqr/clpq/ineq_q.pl
+100644 blob 3a57090eb151043a4e6344e89ea44c3886deb06a	packages/clpqr/clpq/itf_q.pl
+100644 blob f5e1c1a82704f0a8ce85ae4799ef1145edc09f53	packages/clpqr/clpq/nf_q.pl
+100644 blob a618f55d5e7939d36c2309e86ffa67f4eead80ff	packages/clpqr/clpq/store_q.pl
+100644 blob dd9a8369bdf11a440b32b58fa77a6e1b297661f1	packages/clpqr/clpqr/class.pl
+100644 blob a475650ecd25c4a6bfb90e0f43fd642e7fb7fd7c	packages/clpqr/clpqr/dump.pl
+100644 blob 0f11317842dd26b3cf65fc370be02f2c7da6758a	packages/clpqr/clpqr/geler.pl
+100644 blob 4c46bf578d2faead78eda43da27d5cf05905b463	packages/clpqr/clpqr/highlight.pl
+100644 blob 585fd4dbc69431b9cf93bbef07079d5dec6b42da	packages/clpqr/clpqr/itf.pl
+100644 blob c24088a18f52b4239753eb82e7649a640f11ae4d	packages/clpqr/clpqr/ordering.pl
+100644 blob 4819e4f420d59cd36fc31f42ab3d23f982e35101	packages/clpqr/clpqr/project.pl
+100644 blob 70f27e2b3890730d8bc88733f73cd5731dc9d5ff	packages/clpqr/clpqr/redund.pl
+100644 blob 382f850416c2fa084a6cf3f1d3dcd177dcfc8113	packages/clpqr/clpr.pl
+100644 blob 856df038fedcdd08c841b166eacac91571a9df93	packages/clpqr/clpr/bb_r.pl
+100644 blob 9442e218795f52d507017cec47ad4ab254d1f94a	packages/clpqr/clpr/bv_r.pl
+100644 blob 6b5975261e5612077a3c4df5ea6868f7f2e65845	packages/clpqr/clpr/fourmotz_r.pl
+100644 blob 157d6861f69595a8101efae0789c9d2474d9598e	packages/clpqr/clpr/ineq_r.pl
+100644 blob 0584f50064c9fc79410e23a0a16d225eba9fd192	packages/clpqr/clpr/itf_r.pl
+100644 blob cd7d427b3639bcfcd109fa9460f3178e543162ef	packages/clpqr/clpr/nf_r.pl
+100644 blob 0b79b0829d60d280bccd04fc130fb86249f708cd	packages/clpqr/clpr/store_r.pl
+100644 blob 5aa14d3f5168d91ba8b96225fe00c6b0cf9ac5d9	packages/clpqr/doc/design.md
+100644 blob eb8c45dd9454fe4c8a53c143c45d87cf01fff3de	packages/clpqr/test_clpq.pl
+100644 blob 916c947e0cbf1aca55deb80353efb5c1c9c4561c	packages/clpqr/test_clpr.pl
