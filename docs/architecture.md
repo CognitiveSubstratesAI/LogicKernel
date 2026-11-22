@@ -6676,6 +6676,7 @@ What LB2 adds so far (pl-srcfile.c, pl-file.c, pl-incl.h, pl-proc.c; written edi
   `setMetapredicateMask` do not exist on this base); with them MOD4's `meta_declaration` ReadingSource refusal is replaced by upstream's branch (D-0246).
 
 Tests: test/db/test_source_file_swipl.jl (96 program rows against swipl 10.1.19, the white-box testsets), test/db/test_nth_clause_swipl.jl (compile_predicates/1 rows c01-c28, nth_clause/3 rows n01-n39, '$get_clause_attribute'/3 rows g01-g31); mutants: tools/mutants/LB2c.py.
+`clause_property/2` is boot Prolog (boot/syspred.pl:1093-1111, loaded from the booted template) over this predicate: nothing to port; test/db/test_clause_property_swipl.jl (rows p01-p25 on a consulted file with an include and a `'$source_location'` expansion, pinned from swipl 10.1.20) and tools/mutants/LB6C.py (14 mutants on the loader's line/file/owner stores and the attribute reads) are LB6-CLAUSEPROP's.
 
 ## BOOTPRED — the boot-needed predicates: `'$garbage_collect'/1`, `thread_self/1`, `with_mutex/2`, the six pl-dict.c predicates (R2, audit D-0281)
 
