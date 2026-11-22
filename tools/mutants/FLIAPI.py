@@ -40,7 +40,14 @@
 # debug-on-error trace left to DBG1.
 TS = ["test/core_lang/test_fli_api1_cells.jl"]
 TU = TS + ["test/core_lang/test_fli_unify_cells.jl"]
-TC = TS + ["test/core_text/test_atom_text_swipl.jl"]     # codeToAtom is also char_code/2's and PL_unify_text's
+TC = TS + [                                                  # codeToAtom is also char_code/2's, get_char's, format's ~c and PL_unify_text's (D-0238: every file that exercises it)
+    "test/core_text/test_atom_text_swipl.jl",
+    "test/core_text/test_char_type_swipl.jl",
+    "test/core_text/test_read_stream_swipl.jl",
+    "test/files/test_stream_swipl.jl",
+    "test/core_lang/test_format_swipl.jl",
+    "test/core_lang/test_format_predicate_swipl.jl",
+]
 F = "src/pl-fli.jl"
 MUTANTS = [
     dict(id="FLIAPI-B1 PL_put_bool puts the opposite atom (aimed by PL_put_bool)", file=F, targets=TS,
