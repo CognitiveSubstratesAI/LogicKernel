@@ -6,8 +6,8 @@
 # Pass 1 (rows t0-t40) runs on a clean state: the inactive answers, the order of '$cov_add'/3's checks, clause and call sites read back
 # by the ground lookup and the enumeration, the type and clause restrictions of a pattern, the reset. Pass 2 (rows w0-w7) runs with the
 # collection ACTIVE TWICE: swipl's driver starts it twice, the kernel's `setup` sets `ld.coverage.active = 2`; the rows are cumulative
-# ('$cov_stop'/1's nesting, the permission error of '$cov_reset'/0 while active). `'$cov_start'/1` is a named refusal in the kernel
-# (swipl succeeds there): a separate testset runs it. UNTESTED when written: nothing compiled (lane F, pl-coverage).
+# ('$cov_stop'/1's nesting, the permission error of '$cov_reset'/0 while active). `'$cov_start'/1` is ported since COV1 (the collection is
+# in test_coverage_run_swipl.jl): the row `tcs` and a separate testset run it as the kernel's own row. UNTESTED when written: nothing compiled.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -191,7 +191,7 @@ _cv_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     end
     @test _cv_count(body, "-") >= 5 && _cv_count(body, "true") >= 2
 
-    # pass 1: a clean state; pass 2: the collection active twice (`'$cov_start'/1` is a named refusal, the count is set)
+    # pass 1: a clean state; pass 2: the collection active twice (the kernel's setup sets the count: the rows only read and lower it)
     kl1, ld1 = kernel_run(_TL, _CV_PL, names1)
     kl2, ld2 = kernel_run(_TL, _CV_PL, names2, (gd, ld) -> (ld.coverage.active = 2))
     @test kl2[1] == "ok"
@@ -222,11 +222,13 @@ _cv_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     end
 end
 
-# '$cov_start'/1 is a named refusal: nothing is collected afterwards, and the nesting stays 0
-@testset "COVERAGE: '\$cov_start'/1 is refused by name" begin
+# '$cov_start'/1 answers the nesting 1, makes the data, counts the collection active and sets the alert bit (COV1; the counts it then collects are
+# test_coverage_run_swipl.jl's)
+@testset "COVERAGE: '\$cov_start'/1 starts the collection" begin
     kl, ld = kernel_run(_TL, _CV_PL, ["tcs"])
-    @test kl == ["ok", "tcs notported"]
-    @test ld.coverage.active == 0 && ld.coverage.data === nothing
+    @test kl == ["ok", "tcs c" * _codes("tcs") * "/1(i1)"]
+    @test ld.coverage.active == 1 && ld.coverage.data !== nothing
+    @test (ld.alerted & LK.ALERT_COVERAGE) != 0
 end
 
 # a call site's pc offset outside 0..2^32-2 has no table key here (src/pl-incl.jl): a named refusal, swipl accepts it

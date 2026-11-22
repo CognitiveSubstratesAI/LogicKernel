@@ -519,9 +519,11 @@ end
     # in pl_set_prolog_stack4_va (src/pl-setup.jl, owner R2 F1b) went (184 -> 183); the Q10-42 port closed no owner row.
     # 146 -> 151 (R2-OWNERS2, audit D-0928 (3)): five refusal rows lane F (R2 stack 1) introduced had no owner: os/pl-cstack.jl sigCrashHandler and CStackSize,
     # pl-coverage.jl pc_call_site (REFUSED), pl_cov_start1_va (COV1), pl-prof.jl _prof_refuse (PROF1). MEASURED with the generator's own r2_collect on the tree: 841 rows, 151 owned, 38 NO OWNER.
+    # 151 -> 150 (COV1, WIP wip/rec-cov1): `'$cov_start'/1` is ported (the VM's Coverage hooks, src/pl-wam.jl), so its refusal row and its owner
+    # line (docs/r2_owners.tsv, COV1) went. TO BE MEASURED ON THE LANE with the generator's own r2_collect (841 rows less the refusal row; 150 owned expected).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 151
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 150
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

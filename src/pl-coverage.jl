@@ -11,13 +11,14 @@
 # an exit counter. The sites are in a hash table of src/os/pl-table.jl, keyed by the clause SERIAL and the pc offset
 # (src/pl-incl.jl, the block `pl-coverage`: the structs and the DIVERGES of the keys).
 #
-# THE COLLECTION ITSELF IS A NAMED REFUSAL. Upstream counts through the VM: `Coverage(FR, port)` (pl-coverage.h) at the
-# call, unify, exit and redo ports, behind `ALERT_COVERAGE` in `updateAlerted` and the run mode `'$cov_start'/1` clears.
-# This VM has none of the three (src/pl-wam.jl: the coverage marker there), so a start that succeeded would collect nothing:
-# `'$cov_start'/1` raises `NotPortedError` and `record_coverage`, `call_site`, `clref_site`, `bump` and
-# `running_static_predicate` (what only the VM's hooks call) are unwritten. Everything that does not need a collecting VM
-# is ported: '$cov_add'/3 writes the table, '$cov_data'/3 reads it, '$cov_reset'/0, '$cov_stop'/1 and '$cov_active'/1 act
-# on the active count, which stays 0 here (a test sets it to reach their other branches).
+# THE COLLECTION. Upstream counts through the VM: `Coverage(FR, port)` (pl-coverage.h) at the call, unify and exit ports,
+# behind `ALERT_COVERAGE` in `updateAlerted` and the run mode `'$cov_start'/1` clears. Since COV1 the kernel has all three:
+# the functions the VM's hooks call, `record_coverage`, `call_site`, `clref_site`, `bump`, `running_static_predicate` and
+# `Coverage`, are written here (piece A), `updateAlerted` sets `ALERT_COVERAGE`, and the run loop calls `Coverage` at
+# `i_enter_alerted`, `depart_alerted`, `i_exit_alerted` and `I_EXITFACT` (src/pl-wam.jl, piece B). `'$cov_start'/1` is the
+# port. The redo port is not counted by upstream either. NOT PORTED: the child thread's copy of `coverage.active`
+# (pl-thread.c; no thread start). The pc offsets are the kernel's, 0-based indices into the clause's `codes`, not swipl's
+# code layout (evidence/R2/cov1_design.md Q2): a test compares counts, never pcs.
 #
 # DIVERGES (file-wide):
 #   1. KEYS AND OBJECTS: see src/pl-incl.jl (the serial and offset key, the object vector the table's values index).
@@ -124,6 +125,96 @@ function clause_site(
         end
     end
     return cov.objs[Int(v)]
+end
+
+# PORT: pl-coverage.c running_static_predicate
+# DIVERGES: the frame record is the argument; a frame with no predicate (a record not yet filled) is not a running static predicate.
+"Whether frame `fr` runs a static, non-foreign predicate: `isoff(def, P_DYNAMIC|P_FOREIGN)` (pl-coverage.c)."
+function running_static_predicate(fr::localFrame)::Bool
+    def = fr.predicate
+    def === nothing && return false
+    return (def.flags & (P_DYNAMIC | P_FOREIGN)) == 0
+end
+
+# PORT: pl-coverage.c call_site
+# DIVERGES: file-wide 1 and 2; the frame is an index and the pc an offset (the frame's `programPointer.pc` is 1-based: `- 1`).
+# Two guards upstream does not have: a frame without a parent (a query's top frame) and a parent without a clause have no site
+# (upstream would dereference NULL). The parent of a goal frame is the query's top frame, whose clause is `gd.clauses_top_cref`.
+"The record of the call site `fr` was called from (its RETURN pc in the parent's clause), made if there is none; `nothing` when the parent is dynamic or foreign (pl-coverage.c)."
+function call_site(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::localFrame{T}
+)::Union{Nothing, cov_obj{T}} where {T}
+    fr.parent == 0 && return nothing
+    parent = ld.frames[fr.parent]
+    cov = ld.coverage.data
+    if cov !== nothing && running_static_predicate(parent)      # (cov=LD->coverage.data) && running_static_predicate(parent)
+        cref = parent.clause
+        cref === nothing && return nothing
+        cl = cref.clause                                        # parent->clause->value.clause
+        cl === nothing && return nothing
+        return pc_call_site(gd, cov, cl, fr.programPointer.pc - 1)
+    end
+    return nothing
+end
+
+# PORT: pl-coverage.c clref_site
+# DIVERGES: the database and the local data are arguments; a clause reference without a clause has no site.
+"The record of the clause of `cref`, made if there is none (pl-coverage.c)."
+function clref_site(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, cref::ClauseRef{T}
+)::Union{Nothing, cov_obj{T}} where {T}
+    cl = cref.clause                                            # cref->value.clause
+    cl === nothing && return nothing
+    return clause_site(gd, ld.coverage.data, cl)
+end
+
+# PORT: pl-coverage.c bump
+# DIVERGES: file-wide 2 (a plain `+=`); the argument is `Union{Nothing, cov_obj}` without a type parameter, as `share_coverage_data`'s.
+"Count one call (`CALL_PORT`) or one exit (`EXIT_PORT`) at `obj`; a `nothing` is no site (pl-coverage.c)."
+function bump(obj::Union{Nothing, cov_obj}, port::Int)::Nothing
+    if obj !== nothing
+        if port == CALL_PORT
+            obj.enter += 1                                      # ATOMIC_INC(&cov->enter)
+        elseif port == EXIT_PORT
+            obj.exits += 1                                      # ATOMIC_INC(&cov->exits)
+        else
+            error("bump: port $port is neither the call nor the exit port")     # assert(0)
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-coverage.c record_coverage
+# DIVERGES: `fr` is the frame's index (the VM's `FR`) and the database and local data are arguments; a static predicate's frame
+# without a clause (upstream dereferences it) records no clause site.
+"Record `port` at frame `fr`: the call port counts its call site, the unify port the clause's entry, the exit port the clause's exit and the call site's (pl-coverage.c)."
+function record_coverage(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Int
+)::Nothing where {T}
+    f = ld.frames[fr]
+    if port == CALL_PORT
+        bump(call_site(gd, ld, f), port)
+    elseif port == UNIFY_PORT
+        if running_static_predicate(f) && f.clause !== nothing
+            bump(clref_site(gd, ld, f.clause), CALL_PORT)
+        end
+    elseif port == EXIT_PORT
+        if running_static_predicate(f) && f.clause !== nothing
+            bump(clref_site(gd, ld, f.clause), port)
+        end
+        bump(call_site(gd, ld, f), port)
+    end
+    return nothing
+end
+
+# PORT: pl-coverage.h Coverage
+# DIVERGES: the database and local data are arguments; `fr` is the frame's index.
+"The VM's hook: `record_coverage` while the collection is active (pl-coverage.h `Coverage`)."
+@inline function Coverage(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Int
+)::Nothing where {T}
+    ld.coverage.active != 0 && record_coverage(gd, ld, fr, port)
+    return nothing
 end
 
 # ── the Prolog binding ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -410,20 +501,27 @@ end
 
 # PORT: pl-coverage.c cov_start as pl_cov_start1_va
 # (PRED_IMPL("$cov_start(-Nesting)", 1, cov_start, 0))
-# DIVERGES: A NAMED REFUSAL (the file header): upstream unifies the nesting, makes the data, clears the run mode and counts
-# `LD->coverage.active` up; with no `Coverage()` hooks in the VM nothing would be collected after that. Nothing changes
-# before the refusal.
-"`'\$cov_start'(-Nesting)`: refused by name, the VM has no coverage hooks (pl-coverage.c)."
+# Since COV1 the collection is ported: the VM's `Coverage` hooks (src/pl-wam.jl) count while `ld.coverage.active` is non-zero.
+"""
+    '\$cov_start'(-Nesting)
+
+Start collecting coverage information; if it is already collected, count the nesting up (pl-coverage.c).
+"""
 function pl_cov_start1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, Symbol("\$cov_start")),
-            "coverage collection (`record_coverage`: the VM has no `Coverage()` hooks and `updateAlerted` no `ALERT_COVERAGE`)",
-            "COV1"
-        )
-    )
+    if ld.coverage.data === nothing                             # if ( !LD->coverage.data )
+        PL_unify_integer(ld, PL__t0, 1) || return FFALSE
+        ld.coverage.data = newCoverageData(T)
+    else
+        PL_unify_integer(ld, PL__t0, ld.coverage.active + 1) || return FFALSE
+    end
+
+    clearPrologRunMode!(ld, RUN_MODE_NORMAL)                    # clearPrologRunMode(RUN_MODE_NORMAL)
+    ld.coverage.active += 1
+    updateAlerted(ld)
+
+    return FTRUE
 end
 
 # PORT: pl-coverage.c cov_stop as pl_cov_stop1_va

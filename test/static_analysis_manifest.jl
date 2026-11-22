@@ -4596,7 +4596,7 @@ _manifest_bisim_plain() = (
 )
 
 # LANE F — pl-coverage.c (src/pl-coverage.jl): the '$cov_*' predicates and the coverage records (the structs are in src/pl-incl.jl).
-# `'$cov_start'/1` is a named refusal: its entry only checks that it infers. The functions that take the local data or a
+# `'$cov_start'/1` is the collection's start (COV1). The functions that take the local data or a
 # record of a payload type are checked for every payload type; the ones on plain integers, once, below.
 _manifest_coverage(T) = begin
     LD = LK.PL_local_data{T}
@@ -4614,6 +4614,12 @@ _manifest_coverage(T) = begin
         (LK.free_state, Tuple{ST}, false),
         (LK.is_candidate, Tuple{ST, OBJ}, false),
         (LK.free_coverage_data, Tuple{LD}, false),
+        # COV1: the VM's coverage hooks (the run loop calls `Coverage`, src/pl-wam.jl)
+        (LK.running_static_predicate, Tuple{LK.localFrame{T}}, false),
+        (LK.call_site, Tuple{GD, LD, LK.localFrame{T}}, false),
+        (LK.clref_site, Tuple{GD, LD, LK.ClauseRef{T}}, false),
+        (LK.record_coverage, Tuple{GD, LD, Int, Int}, false),
+        (LK.Coverage, Tuple{GD, LD, Int, Int}, false),
         (LK.cov_obj{T}, Tuple{Int, T, Int, Int, Int, Int}, false),
         (LK.coverage{T}, Tuple{LK.CovTable, Vector{OBJ}, Int, Int}, false),
         (LK.cov_data_state{T}, Tuple{}, false),
@@ -4629,7 +4635,8 @@ _manifest_coverage(T) = begin
 end
 _manifest_coverage_plain() = (
     (LK.free_cov_symbol, Tuple{UInt64, UInt64}, false),
-    (LK._cov_key, Tuple{Int, Int}, false)
+    (LK._cov_key, Tuple{Int, Int}, false),
+    (LK.bump, Tuple{Union{Nothing, LK.cov_obj}, Int}, false)
 )
 
 # LANE F — pl-prof.c (src/pl-prof.jl): the profiler's call tree, its readers and the '$prof_*' predicates (the structs are in

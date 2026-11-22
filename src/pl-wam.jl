@@ -204,8 +204,9 @@ end
 # `is_signalled` reads the collector's virtual signals (G1-C); no compare-and-swap (one engine per thread). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
 # Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245); since P3 the depth and inference limit bits.
-# NOT PORTED: the other masks (profiling, exit requests, the debugger, string buffers, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_SIGNAL` while a signal is pending, `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
+# Since COV1 `ALERT_COVERAGE` while the coverage collection is active (pl-wam.c:246).
+# NOT PORTED: the other masks (profiling, exit requests, the debugger, string buffers).
+"Recompute `ld.alerted` from the engine's state: `ALERT_SIGNAL` while a signal is pending, `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, `ALERT_COVERAGE` while the coverage collection is active, the limit bits while a limit is set (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
     is_signalled(ld) && (mask |= ALERT_SIGNAL)     # if ( is_signalled() ) mask |= ALERT_SIGNAL;
@@ -214,6 +215,7 @@ function updateAlerted(ld::PL_local_data)::Nothing
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
     (ld.attvar_head != 0 && ld.gstack[_attvar_head_cell(ld)] != 0) && (mask |= ALERT_WAKEUP)
     UNDO_SCHEDULED(ld) && (mask |= ALERT_UNDO)      # if ( UNDO_SCHEDULED(ld) ) mask |= ALERT_UNDO
+    ld.coverage.active != 0 && (mask |= ALERT_COVERAGE)     # if ( ld->coverage.active ) mask |= ALERT_COVERAGE (COV1)
     ld.alerted = mask
     return nothing
 end
@@ -4784,9 +4786,10 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c i_enter_alerted
-    # NOT PORTED: coverage (`Coverage(FR, UNIFY_PORT)`) and the debugger's unify port
+    # Since COV1: `Coverage(FR, UNIFY_PORT)` first, as upstream. NOT PORTED: the debugger's unify port
     # (`debug_unify_continue`).
     @label i_enter_alerted
+    Coverage(gd, ld, FR, UNIFY_PORT)                # Coverage(FR, UNIFY_PORT) (COV1)
     (ld.alerted & ALERT_WAKEUP) != 0 && @goto check_wakeup   # CHECK_WAKEUP
     @goto next_instruction
 
@@ -4849,9 +4852,10 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c depart_or_retry_continue
     # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the signal bit (G1-C), the two limit
-    # bits (P3) and the undo bit (TX1e), not for the wakeup bit; the debugger is not ported. Upstream's order inside `depart_alerted` is kept:
-    # the autoloader's early exit, the pending signals (`is_signalled`, a SAFE POINT of the stack collector), the scheduled undo goals
-    # (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit, then the inference limit.
+    # bits (P3), the undo bit (TX1e) and the coverage bit (COV1), not for the wakeup bit; the debugger is not ported. Upstream's order inside
+    # `depart_alerted` is kept: the autoloader's early exit, the pending signals (`is_signalled`, a SAFE POINT of the stack collector), the
+    # scheduled undo goals (`run_undo_hooks`; an exception it leaves is thrown), the coverage call port (COV1), then the depth limit, then
+    # the inference limit.
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4869,8 +4873,10 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
-    (ld.alerted & (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) !=
-    0 &&
+    (
+        ld.alerted &
+        (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)
+    ) != 0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes
     PCl = gd.no_literals
@@ -4896,8 +4902,9 @@ function PL_next_solution_guarded(
     #     { PC = DEF->codes; NEXT_INSTRUCTION; }
     # (pl-vmi.c:1947-2055 at the pin.) G1-C, dispatcher decision 1: the `is_signalled()` arm (a SAFE POINT of the stack collector:
     # `handleSignals` serves a pending `SIG_GC`, pl-setup.c `gc_handler`) is ported, between the autoloader's early exit and the undo goals.
+    # Since COV1 the call port's `Coverage(FR, CALL_PORT)` is after the undo hooks and before the depth limit (upstream's place).
     # DIVERGES: `enterDefinition(DEF)` is `(void)0` without threads (pl-incl.h:1349), so it has no line; `PROCEDURE_catch3` is `gd.procedures_catch3`.
-    # NOT PORTED: `getProcDefinedDefinition`'s other users, the profiler and the coverage and debugger ports (none is ported).
+    # NOT PORTED: `getProcDefinedDefinition`'s other users, the profiler and the debugger's ports (none is ported).
     # `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
     @label depart_alerted
     setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))      # lTop = argFrameP(FR, DEF->functor->arity)
@@ -4959,6 +4966,7 @@ function PL_next_solution_guarded(
             @goto b_throw                           # THROW_EXCEPTION
         end
     end
+    Coverage(gd, ld, FR, CALL_PORT)                 # Coverage(FR, CALL_PORT) (COV1; after Profile(), before the depth limit)
     da_depth = Int(levelFrame(ld.frames[FR]))                   # size_t depth = levelFrame(FR)
     if da_depth > ld.depth_info_reached
         ld.depth_info_reached = da_depth
@@ -5554,9 +5562,17 @@ function PL_next_solution_guarded(
 
     # ── the exits (pl-vmi.c) ──────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_EXIT
-    # DIVERGES: NOT PORTED: the `LD->alerted` test and its helper `i_exit_alerted` (the debugger's
-    # exit port).
+    # DIVERGES: since COV1 the `LD->alerted` test goes to `i_exit_alerted`, which keeps the coverage hook only. NOT PORTED:
+    # the string-buffer release and the debugger's exit port.
     @label I_EXIT
+    ld.alerted != 0 && @goto i_exit_alerted         # if ( unlikely(LD->alerted != 0) )
+    @goto exit_continue                             # VMH_GOTO(exit_continue)
+
+    # PORT: pl-vmi.c i_exit_alerted
+    # NOT PORTED: the `ALERT_BUFFER` release (`release_string_buffers_from_frame`) and the debugger's exit port
+    # (`debug_exit_continue`).
+    @label i_exit_alerted
+    Coverage(gd, ld, FR, EXIT_PORT)                 # Coverage(FR, EXIT_PORT) (COV1)
     @goto exit_continue
 
     # PORT: pl-vmi.c exit_continue
@@ -5638,8 +5654,9 @@ function PL_next_solution_guarded(
     @goto next_instruction
 
     # PORT: pl-vmi.c I_EXITFACT
-    # DIVERGES: NOT PORTED: the `LD->alerted` block (the debugger's unify port, coverage).
+    # DIVERGES: the `LD->alerted` block keeps the coverage hook (COV1). NOT PORTED: the debugger's unify port.
     @label I_EXITFACT
+    ld.alerted != 0 && Coverage(gd, ld, FR, UNIFY_PORT)     # if ( unlikely(LD->alerted) ) { ... Coverage(FR, UNIFY_PORT); }
     @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c exit_checking_wakeup
