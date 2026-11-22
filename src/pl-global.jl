@@ -969,7 +969,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     cp_vmarks::Vector{UInt8}                                    # copy_term's variable-cell marks, by position (L1d step 6)
     cp_lstack::Vector{Int}                                      # … the cells it forwarded (TrailCyclic)
     cp_stack::Vector{Int}                                       # … mark_for_copy's segstack
-    cp_agenda::cell_agendaLR                                    # … copy_term's agenda (term_agendaLRD)
+    cp_agenda::cell_agendaLRD                                   # … copy_term's agenda (term_agendaLRD)
     vt_ids::Vector{Int32}                                       # =@='s node numbers, by position (L1d step 8a)
     vt_nodes::Vector{vt_node}                                   # … its node buffer (VARIANT_BUFFER)
     vt_agenda::vt_pairs                                         # … its argPairs
@@ -1131,7 +1131,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]), NTuple{3, Int}[],   # is_acyclic on cells (L1d)
         Int[], word[],                                             # (the cycle links' cells and words)
         cell_agenda(0, 0, NTuple{2, Int}[]), Bool[], Int[],      # the walks on cells (L1d step 5)
-        UInt8[], Int[], Int[], cell_agendaLR(0, 0, 0, 0, NTuple{4, Int}[]),   # copy_term on cells (L1d step 6)
+        UInt8[], Int[], Int[], cell_agendaLRD(0, 0, 0, 0, 0, NTuple{5, Int}[]),   # copy_term on cells (L1d step 6)
         Int32[], vt_node[], vt_pairs(0, 0, 0, 0, NTuple{4, Int}[]),        # =@= on cells (L1d step 8a)
         UInt32[],                                                  # random/1's state: gmp_randstate_t (arith-c)
         0,                                                         # frozen_bar (e5)

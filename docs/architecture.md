@@ -4097,6 +4097,8 @@ pl-ext.jl, pl-fli.jl). Ported from pl-copyterm.c's attribute-free path, upstream
   (row `tcopy_in`, test_stack_limit.jl).
 * **NOT PORTED:** attributed variables (`COPY_ATTRS`), `copy_term/4`, `copy_term_nat/4`,
   `size_abstract_term/3`, the fast heap terms.
+  (Later: `copy_term/4`, `copy_term_nat/4` and `size_abstract_term/3` are ported, PRIMS-B2: `mark_vars`, `COPY_MARKED`,
+  `COPY_ABSTRACT`, `cell_agendaLRD`; `$fast_record/2`, `$fast_recorded/2` stay out.)
 * **Gates — against the oracle, all three term types:** test/core_lang/test_copyterm_swipl.jl — 49
   answers (renaming, variables shared among a term's arguments, bound variables, atomic arguments,
   a copy that fails to unify, cyclic copies `X = f(X)`, `X = f(X, Y)`, a mutual cycle, a

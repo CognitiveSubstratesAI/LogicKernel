@@ -207,7 +207,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # merged tree, not summed: 79 not registered (was 82 before this merge; wip/c29-tty registered none) - 4 (the calibration offset) = 75. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
 # INT-MERGE-15 (+ wip/b1-preds): the branch registers thread_statistics/3 (a foreign row of `system`, pl-thread.c:7416); RE-COUNTED by the same script on the merged tree, not summed: 78 not registered
 # (was 79 before this merge) - 4 (the calibration offset) = 74. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
-const _BI_KERNEL_MISSING_FOREIGN = 74     # INT-MERGE-15: script count 78 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
+# INT-MERGE-15 (+ wip/prims-replay): the branch registers eleven foreign rows of `system`: functor/4, nonground/2, '$filled_array'/4, '$unbind_template'/1, '$is_char_code'/1, '$is_char'/1, '$is_code_list'/2,
+# '$is_char_list'/2 (pl-prims.c), copy_term/4, copy_term_nat/4, size_abstract_term/3 (pl-copyterm.c); its collation_key/2 is the same row the tip registers already (one definition kept, see the merge commit).
+# RE-COUNTED by the same script on the merged tree, not summed: 67 not registered (78 before this step) - 4 (the calibration offset) = 63. DERIVED, NOT RUN: the gate prints the PIN line (D-0083).
+const _BI_KERNEL_MISSING_FOREIGN = 63     # INT-MERGE-15: script count 67 on the merged tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave

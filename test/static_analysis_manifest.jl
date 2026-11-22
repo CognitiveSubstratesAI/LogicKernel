@@ -67,6 +67,10 @@ _manifest_per_type(T) = (
     (LK.is_variant_ptr, Tuple{T, T}, false),
     # copy_term/2 (src/pl-copyterm.jl)
     (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
+    (LK.copy_term_refs, Tuple{LK.PL_local_data{T}, Int, Int, Int, LK.cp_options}, false),   # PRIMS-B2: the `vars` form
+    (LK.copy_term_4, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int}, false),            # PRIMS-B2: copy_term/4, copy_term_nat/4
+    (LK._functor_minus2, Tuple{LK.PL_local_data{T}}, false),
+    (LK.size_abstract_term, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),               # PRIMS-B2: size_abstract_term/3
     (LK.allocGlobalNoShift, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_same_term, Tuple{LK.PL_local_data{T}, Int, Int}, false),       # L1f f1c
     (LK.makeMoreStackSpace, Tuple{LK.PL_local_data{T}, LK.boolex_t, Int}, false),
@@ -266,14 +270,15 @@ _manifest_per_type(T) = (
     (LK._cp_vm, Tuple{LK.PL_local_data{T}, Int}, true),
     (LK._cp_vm!, Tuple{LK.PL_local_data{T}, Int, UInt8}, false),
     (LK._cp_word, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.can_share_cells, Tuple{LK.PL_local_data{T}, Int}, true),
-    (LK.update_ground_cells, Tuple{LK.PL_local_data{T}, Int}, true),
+    (LK.can_share_cells, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK.update_ground_cells, Tuple{LK.PL_local_data{T}, Int, Int}, true),
+    (LK.mark_vars, Tuple{LK.PL_local_data{T}, Int, Bool}, false),             # PRIMS-B2: copy_term/4
     (LK.mark_for_copy_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.unshare_attvar_cells, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.mark_for_duplicate_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.cp_unmark_cells, Tuple{LK.PL_local_data{T}, Int, Int}, false),
     (LK.exitCyclicCopy_cells, Tuple{LK.PL_local_data{T}, Int}, false),
-    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
+    (LK.copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, Int, Int}, false),
     (LK.do_copy_term_cells, Tuple{LK.PL_local_data{T}, Int, Int, LK.cp_options}, false),
     # =@= on cells (L1d step 8a): the side vector, the node buffer and the agenda grow
     (LK._vt_id, Tuple{LK.PL_local_data{T}, Int}, true),
@@ -1833,9 +1838,16 @@ function _manifest_index(T)
                 LK.pl_arg3_va, LK.pl_compound_name_arity3_va,                       # P1
                 LK.pl_compound_name_arguments3_va, LK.pl_subsumes_term2_va,
                 LK.pl_factorize_term3_va, LK.pl_term_size3_va, LK.pl_term_singletons2_va,
-                LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va
+                LK.pl_term_multitons2_va, LK.pl_is_most_general_term1_va,
+                LK.pl_nonground2_va, LK.pl_functor4_va, LK.pl_filled_array4_va,     # PRIMS-C
+                LK.pl_unbind_template1_va, LK.pl_is_char_code1_va, LK.pl_is_char1_va,
+                LK.pl_is_code_list2_va, LK.pl_is_char_list2_va
             )
         ]...,
+        (LK.match_functor_type, Tuple{LD, Int, LK.word, T}, false),
+        (LK.is_code, Tuple{LD, UInt8, LK.word}, false),
+        (LK.is_char, Tuple{LD, UInt8, LK.word}, false),
+        (LK.is_text_list, Tuple{LD, Int, Int, Bool}, false),
         (LK.initVM, Tuple{PR}, false),
         (LK.PL_open_query, Tuple{GD, LD, Nothing, UInt32, PR, Int}, false),
         (LK.PL_open_query, Tuple{GD, LD, MOD, UInt32, PR, Int}, false),
@@ -2020,6 +2032,7 @@ function _manifest_index(T)
                 LK.pl_prolog_frame_attribute3_va,                                    # DBG1
                 LK.pl_prolog_choice_attribute3_va,                                   # DBG1
                 LK.pl_copy_term2_va, LK.pl_copy_term_nat2_va, LK.pl_duplicate_term2_va,
+                LK.pl_copy_term4_va, LK.pl_copy_term_nat4_va, LK.pl_size_abstract_term3_va,   # PRIMS-B2
                 # V6b: the type checks and \\== (src/pl-prims.jl)
                 LK.pl_nonvar1_va, LK.pl_var1_va, LK.pl_integer1_va, LK.pl_float1_va,
                 LK.pl_rational1_va, LK.pl_string1_va, LK.pl_number1_va, LK.pl_atom1_va,
@@ -6007,7 +6020,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.atom_literal, Tuple{UInt64}, true), (LK.atom_operand_word, Tuple{UInt64}, true),
     (LK.VAROFFSET, Tuple{Int}, true), (LK.VARNUM, Tuple{UInt64}, true),
     (LK.sizeofClause, Tuple{Int}, true),
-    (LK.must_copy_attvar, Tuple{Int}, true),   # AV6: no T in its signature — once, not per term type
+    (LK.must_copy_attvar, Tuple{UInt64, Int, Int}, true),   # AV6: no T in its signature — once, not per term type
+    (LK._cp_must_copy, Tuple{UInt64}, true),                # PRIMS-B2
     (LK.argFrameP, Tuple{Int, Int}, true), (LK.varFrameP, Tuple{Int, Int}, true),
     (LK.refFliP, Tuple{Int, Int}, true), (LK.f_hasSpace, Tuple{Int, Int, Int, Int}, true),
     (LK.NoMark, Tuple{}, true), (LK.isRealMark, Tuple{LK.mark}, true),
@@ -6707,6 +6721,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.vt_next_arg!, Tuple{LK.vt_pairs}, false),
     (LK._vt_loc, Tuple{Int, Int}, true),
     (LK.pushWorkCellAgendaLR!, Tuple{LK.cell_agendaLR, Int, Int, Int, Int}, false),
+    (LK.initCellAgendaLRD!, Tuple{LK.cell_agendaLRD, Int, Int, Int, Int}, true),       # PRIMS-B2: copy_term's depth agenda
+    (LK.clearCellAgendaLRD!, Tuple{LK.cell_agendaLRD}, true),
+    (LK.nextCellAgendaLRD!, Tuple{LK.cell_agendaLRD}, true),
+    (LK.pushWorkCellAgendaLRD!, Tuple{LK.cell_agendaLRD, Int, Int, Int, Int}, false),
     # the one-sided cell agenda of the walks (L1d step 5): the push may grow its stack
     (LK.initCellAgenda!, Tuple{LK.cell_agenda, Int, Int}, true),
     # L1f f1a — reading a record's code (src/pl-rec.jl)

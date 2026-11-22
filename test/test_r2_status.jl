@@ -542,6 +542,8 @@ end
     # 147 -> 148 (INT-MERGE-14, wip/int-g1 + wip/termhash-reg), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: +1 refusal row with an owner (src/pl-termhash.jl `_term_hash_arg`: the hash of a cyclic term, R2; the site is present).
     # 148 -> 148 (INT-MERGE-15, wip/int-g1 + wip/b1-preds), D-0083 disclosure: DERIVED from the tsv delta, NOT RUN: -1 (the `pred:thread_statistics/3` owner line went: the branch ports it), +1 refusal row with
     # an owner (src/pl-thread.jl `pl_thread_statistics`: the main thread named from an engine, TH1; the site is present): net 0. A LOWER BOUND as above; the lane measures.
+    # 148 -> 148 (INT-MERGE-15, wip/int-g1 + wip/prims-replay), D-0083 disclosure: DERIVED, NOT RUN: the merged docs/r2_owners.tsv equals the tip's, line for line (the branch's only change was the owner row of its
+    # `pl_collation_key2_va` refusal, whose function is not kept - the tip's collation_key/2 stays - and two rows its old base still carried, `compileArith (optimise)` and the thread events, which the tip had removed).
     @test !isempty(r2_no_owner(res.rows, ow)) &&
         count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 148
 end

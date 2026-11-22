@@ -140,6 +140,72 @@ function pushWorkCellAgendaLR!(
     return true
 end
 
+# ── the LRD agenda on CELLS (copy_term: the depth of each pair, for size_abstract_term/3) ─────────
+# PORT: pl-termwalk.c term_agendaLRD as cell_agendaLRD
+# DIVERGES: as `cell_agendaLR` (positions, a vector for the segstack) with the `depth` of upstream's `aNodeLRD`; a
+# type of its own so `do_unify`'s `cell_agendaLR` carries no depth.
+"The two-term agenda with depth over the argument cells of two compounds (pl-termwalk.c `term_agendaLRD`)."
+mutable struct cell_agendaLRD
+    left::Int                       # current work: the left compound's base position
+    right::Int                      # … the right one's
+    location::Int                   # the next pair's offset from the bases
+    size::Int                       # pairs still to walk
+    depth::Int                      # work.depth: the nesting of the compound the pairs are arguments of
+    stack::Vector{NTuple{5, Int}}   # the work pushed aside: (left, right, location, size, depth)
+end
+
+# PORT: pl-termwalk.c initTermAgendaLRD as initCellAgendaLRD!
+"Start walking `count` argument pairs of the compounds at `left` and `right`, from offset `location`, at depth 0 (pl-termwalk.c)."
+function initCellAgendaLRD!(
+    a::cell_agendaLRD, count::Int, left::Int, right::Int, location::Int
+)::Nothing
+    empty!(a.stack)
+    a.left = left
+    a.right = right
+    a.location = location
+    a.size = count
+    a.depth = 0
+    return nothing
+end
+
+# PORT: pl-termwalk.c clearTermAgendaLRD as clearCellAgendaLRD!
+"Drop what is left of the walk (pl-termwalk.c)."
+function clearCellAgendaLRD!(a::cell_agendaLRD)::Nothing
+    empty!(a.stack)
+    a.size = 0
+    return nothing
+end
+
+# PORT: pl-termwalk.c nextTermAgendaLRD as nextCellAgendaLRD!
+# DIVERGES: as `nextCellAgendaLR!`; the pair's depth is `a.depth` after the call (upstream: `agenda.work.depth`).
+"The next pair of argument cells: `(true, p1, p2)`, or `(false, 0, 0)` when done (pl-termwalk.c)."
+function nextCellAgendaLRD!(a::cell_agendaLRD)::Tuple{Bool, Int, Int}
+    if a.size == 0
+        isempty(a.stack) && return (false, 0, 0)
+        a.left, a.right, a.location, a.size, a.depth = pop!(a.stack)
+    end
+    i = a.location
+    a.location += 1
+    a.size -= 1
+    return (true, a.left + i, a.right + i)
+end
+
+# PORT: pl-termwalk.c pushWorkAgendaLRD as pushWorkCellAgendaLRD!
+"Walk `amount` argument pairs of the compounds at `left` and `right` from offset `location` next, one level deeper (pl-termwalk.c)."
+function pushWorkCellAgendaLRD!(
+    a::cell_agendaLRD, amount::Int, left::Int, right::Int, location::Int
+)::Bool
+    if a.size > 0
+        push!(a.stack, (a.left, a.right, a.location, a.size, a.depth))
+    end
+    a.left = left
+    a.right = right
+    a.location = location
+    a.size = amount
+    a.depth += 1
+    return true
+end
+
 # PORT: pl-termwalk.c term_agenda as cell_agenda
 # DIVERGES: `work` is a LOCATION (`_deref_loc`'s: a global position, or `-i` for slot `i` — a slot
 # only as the one-cell start) and a count, advanced one cell per argument; the segstack a vector,
