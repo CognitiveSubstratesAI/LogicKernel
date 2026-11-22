@@ -537,8 +537,10 @@ end
     # 148 -> 146 (INT-MERGE-13, wip/int-g1 + wip/lbb-replay), D-0083 disclosure: DERIVED, NOT RUN. -1: this merge's branch deleted the owner row of `_iri_hook_refused` (the IRI hook replay,
     # comment above: its 151 -> 150); -1: the owner row of `_tmp_file_refused` went with W12-TMPFILES (INT-MERGE-10 step 2; that branch left its floor at 151, so no merge counted the row).
     # The miss-preds/queues-1/atomapi merges also dropped `pred:` owner rows (ports) that no floor counted: the figure is a LOWER BOUND, the lane's r2_collect measures the real one.
+    # 146 -> 147 (INT-MERGE-14, wip/int-g1 + wip/c29-tty), D-0083 disclosure: DERIVED from the diff of docs/r2_owners.tsv against the tip before this merge, NOT RUN: +2 refusal rows with an owner
+    # (src/os/pl-os.jl PushTty and PopTty, TOP1b, both sites present), -1 (the `indexed(L)` refusal row of pl_get_predicate_attribute3_va went: the branch ports it). A LOWER BOUND, as above; the lane measures.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 146
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 147
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

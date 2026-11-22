@@ -175,6 +175,20 @@ sizeofClause(n::Int)::Int = 8 + n
 # build (pl-incl.h:1567-1579).
 "The size of a clause reference holding one clause, in positions (pl-incl.h)."
 const SIZEOF_CREF_CLAUSE = 3
+# PORT: pl-incl.h SIZEOF_CREF_LIST
+# DIVERGES: in positions, computed from the 64-bit layout, not measured: `sizeof(clause_ref)` = 16 bytes of `next` and `d`
+# + `sizeof(clause_list)` 64 bytes (pl-incl.h:1554-1570, 1581-1583).
+"The size of a clause reference holding a clause list, in positions (pl-incl.h)."
+const SIZEOF_CREF_LIST = 10
+# ORIGINAL: `sizeof(*ci)` of `sizeofClauseIndex` (pl-index.c) as a name: the size of a `struct clause_index` (pl-incl.h:1738-1752),
+# 48 bytes on a 64-bit build (5 `unsigned int`, the 4 one-bit flags in one more, `args[4]`, `position[8]`, `float`, 8-byte
+# pointer), in positions; computed, not measured.
+"The size of a clause index, in positions (pl-incl.h `struct clause_index`)."
+const SIZEOF_CLAUSE_INDEX = 6
+# ORIGINAL: `sizeof(*ci->entries)` of `sizeofClauseIndex` (pl-index.c) as a name: the size of a `struct clause_bucket`
+# (pl-incl.h:1715-1720), 32 bytes on a 64-bit build (3 words and an `unsigned int` padded), in positions; computed, not measured.
+"The size of a clause bucket, in positions (pl-incl.h `struct clause_bucket`)."
+const SIZEOF_CLAUSE_BUCKET = 4
 # PORT: pl-incl.h CL_BODY_CONTEXT
 "Clause flag: the module context of the body differs from the predicate's — the body starts with `I_CONTEXT` (pl-incl.h; MOD3a)."
 const CL_BODY_CONTEXT = UInt32(0x0080)

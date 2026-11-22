@@ -26,7 +26,7 @@
 #
 # NOT PORTED: deleteClauseList, deleteClauseBucket and delClauseFromIndex (nothing calls
 # delClauseFromIndex upstream), deleteIndexesDefinition (halt — not
-# ported; deleteIndexes is, since PR1), the memory reports sizeofClauseIndex/sizeofClauseIndexes, the debug checks
+# ported; deleteIndexes is, since PR1), the memory report sizeofClauseIndexes (sizeofClauseIndex is ported, PR1b), the debug checks
 # checkClauseIndexSizes/checkClauseIndexes/listIndexGenerations, and the `$candidate_indexes` and
 # `$set_candidate_indexes` predicates. Threads (index locks, waiting for another thread's index) do
 # not exist in the kernel.
@@ -2653,8 +2653,8 @@ function collisionCount(ci::clause_index)::Int
     return cc
 end
 
-# PORT: pl-index.c unify_clause_index
-# DIVERGES: returns the dict's values as an `index_property` instead of unifying a Prolog dict.
+# ORIGINAL: the data accessor of pl-index.c unify_clause_index (the term-building port is the method below, taking the term
+# reference): the dict's values as an `index_property`, for the tests of the index (test_index_swipl.jl, test_jit.jl).
 "The `indexed` property entry of index `ci` (pl-index.c)."
 function unify_clause_index(ci::clause_index)::index_property
     arguments = Int[]
@@ -2673,7 +2673,7 @@ function unify_clause_index(ci::clause_index)::index_property
     )
 end
 
-# PORT: pl-index.c add_deep_indexes
+# ORIGINAL: the data accessor of pl-index.c add_deep_indexes (the term-building port is the method below).
 "Append the indexes of the clause lists of list index `ci`, recursively (pl-index.c)."
 function add_deep_indexes!(out::Vector{index_property}, ci::ClauseIndex{T})::Bool where {T}
     if ci.entries === nothing
@@ -2703,8 +2703,8 @@ function add_deep_indexes!(out::Vector{index_property}, ci::ClauseIndex{T})::Boo
     return true
 end
 
-# PORT: pl-index.c unify_index_pattern
-# DIVERGES: returns the list (`nothing` where upstream fails: no index) instead of unifying it.
+# ORIGINAL: the data accessor of pl-index.c unify_index_pattern (the term-building port is the method below): the list
+# (`nothing` where upstream fails: no index) as `index_property`s, for the tests of the index.
 """
     unify_index_pattern(def) -> Union{Nothing, Vector{index_property}}
 
@@ -2730,4 +2730,190 @@ function unify_index_pattern(
         end
     end
     return found != 0 ? out : nothing
+end
+
+# ── PREDICATE PROPERTY SUPPORT: `indexed(L)`, the Prolog dicts (R2 PR1b) ─────────────────────────
+# The methods below take the local data `ld` untyped (this file loads before pl-global.jl, as `firstClause!`'s) and call the
+# FLI (src/pl-fli.jl) by name at run time.
+
+# PORT: pl-index.c NUM_INDEX_KEYS
+"The number of keys of the dict `unify_clause_index` builds (pl-index.c)."
+const NUM_INDEX_KEYS = 8
+
+# PORT: pl-index.c sizeofClauseIndex
+# DIVERGES: in the kernel's own unit as `sizeof_predicate` counts: positions (words) times 8, where the struct sizes are the
+# 64-bit layout's computed from pl-incl.h (`struct clause_index` 48 bytes, `struct clause_bucket` 32 bytes, `SIZEOF_CREF_LIST`
+# 80 bytes, `SIZEOF_CREF_CLAUSE` 24 bytes; see `SIZEOF_CLAUSE_INDEX`, `SIZEOF_CLAUSE_BUCKET`, `SIZEOF_CREF_LIST`), not measured.
+"The bytes `ci` occupies: the index, its buckets, its clause references and the references of its variable-key clauses (pl-index.c)."
+function sizeofClauseIndex(ci::ClauseIndex{T})::Int where {T}
+    size = SIZEOF_CLAUSE_INDEX                          # size_t size = sizeof(*ci)
+    if ci.entries !== nothing
+        vars = 0
+        usize = ci.is_list ? SIZEOF_CREF_LIST : SIZEOF_CREF_CLAUSE
+        size += Int(ci.buckets) * SIZEOF_CLAUSE_BUCKET  # size += ci->buckets * sizeof(*ci->entries)
+        size += Int(ci.size) * usize                    # size += ci->size * usize
+        cref = (ci.entries::Vector{ClauseBucket{T}})[1].head   # ci->entries[0].head
+        while cref !== nothing
+            if cref.key == 0
+                vars += 1
+            end
+            cref = cref.next
+        end
+        size += vars * Int(ci.buckets) * usize          # size += vars * ci->buckets * usize
+    end
+    return 8 * size
+end
+
+# PORT: pl-index.c put_args
+# DIVERGES: `ep` is a 1-based position in the tuple `args`.
+"Put in term reference `t` the list of the arguments `args` index, the unused tail (0) left out (pl-index.c)."
+function put_args(ld, t::Int, args::NTuple{MAX_MULTI_INDEX, iarg_t})::Bool
+    ep = 1
+    while ep <= MAX_MULTI_INDEX && args[ep] != 0        # ep-args < MAX_MULTI_INDEX && *ep
+        ep += 1
+    end
+    PL_put_nil(ld, t)
+    el = PL_new_term_ref(ld)
+    if el == 0
+        return false
+    end
+    while ep > 1                                        # while( ep > args )
+        ep -= 1
+        if !PL_put_integer(ld, el, Int(args[ep])) || !PL_cons_list(ld, t, el, t)
+            return false
+        end
+    end
+    PL_reset_term_refs(ld, el)
+
+    return true
+end
+
+# PORT: pl-index.c unify_clause_index
+# DIVERGES: `init_index_keys` has no global atoms to cache (no module-level mutable state): the keys and the tag are made
+# each call (`mk_sym`); `acquire`/`release` of nothing. The data accessor of the same name, taking no term reference, is above.
+"Unify term reference `t` with the dict of index `ci`: keys arguments, position, buckets, speedup, list, size, realised, collisions (pl-index.c)."
+function unify_clause_index(ld, t::Int, ci::ClauseIndex{T})::Bool where {T}
+    values = PL_new_term_refs(ld, NUM_INDEX_KEYS)
+    values == 0 && return false
+    tmp = PL_new_term_ref(ld)
+    tmp == 0 && return false
+
+    if !put_args(ld, values + 0, ci.args)
+        return false
+    end
+
+    pos = values + 1
+    if !PL_put_nil(ld, pos)
+        return false
+    end
+
+    n = 1                                               # iarg_t *ap = ci->position; while(*ap != END_INDEX_POS) ap++;
+    while n <= length(ci.position) && ci.position[n] != END_INDEX_POS
+        n += 1
+    end
+    ap = n - 1                                          # for(--ap; ap >= ci->position; ap--)
+    while ap >= 1
+        if !PL_put_integer(ld, tmp, Int(ci.position[ap]) + 1) ||
+            !PL_cons_list(ld, pos, tmp, pos)
+            return false
+        end
+        ap -= 1
+    end
+
+    if !PL_unify_int64(ld, values + 2, Int(ci.buckets)) ||
+        !PL_unify_float(ld, values + 3, Float64(ci.speedup)) ||
+        !PL_unify_bool(ld, values + 4, ci.is_list) ||
+        !PL_unify_int64(ld, values + 5, sizeofClauseIndex(ci)) ||
+        !PL_unify_bool(ld, values + 6, ci.entries !== nothing) ||
+        !PL_unify_int64(ld, values + 7, collisionCount(ci))
+        return false
+    end
+
+    # init_index_keys(): the key atoms and the tag `hash`
+    keys = T[
+        mk_sym(T, :arguments), mk_sym(T, :position), mk_sym(T, :buckets),
+        mk_sym(T, :speedup), mk_sym(T, :list), mk_sym(T, :size),
+        mk_sym(T, :realised), mk_sym(T, :collisions)
+    ]
+    rc = PL_put_dict(ld, tmp, mk_sym(T, :hash), NUM_INDEX_KEYS, keys, values) &&
+        PL_unify(ld, t, tmp)
+
+    PL_reset_term_refs(ld, values)
+
+    return rc
+end
+
+# PORT: pl-index.c add_deep_indexes
+# DIVERGES: the buckets are walked as `ci.entries`' vector; the data accessor of the same name, collecting `index_property`s,
+# is above.
+"Add to the list `tail` ends the dicts of the indexes of the clause lists of list index `ci`, recursively (pl-index.c)."
+function add_deep_indexes!(ld, ci::ClauseIndex{T}, head::Int, tail::Int)::Bool where {T}
+    if ci.entries === nothing
+        return true
+    end
+
+    for bkt in ci.entries::Vector{ClauseBucket{T}}     # for(i=0; i<ci->buckets; i++)
+        cref = bkt.head
+        while cref !== nothing                          # for(; cref; cref = cref->next)
+            if isFunctor(cref.key)
+                cl = cref.clauses::ClauseList{T}
+                cip = cl.clause_indexes
+                if cip !== nothing
+                    for dci in cip
+                        if ISDEADCI(dci)
+                            continue
+                        end
+
+                        if !PL_unify_list(ld, tail, head, tail) ||
+                            !unify_clause_index(ld, head, dci)
+                            return false
+                        end
+                        if dci.is_list && !add_deep_indexes!(ld, dci, head, tail)
+                            return false
+                        end
+                    end
+                end
+            end
+            cref = cref.next
+        end
+    end
+
+    return true
+end
+
+# PORT: pl-index.c unify_index_pattern
+# DIVERGES: no `acquire_def`/`release_def` (no definition reference counting, see `firstClause!`); the data accessor of the
+# same name, taking the definition, is above.
+"Unify term reference `value` with the list of the dicts of every live index of `proc`, deep ones after the list index holding them; false when it has none (pl-index.c)."
+function unify_index_pattern(ld, proc::Procedure{T}, value::Int)::Bool where {T}
+    def = proc.definition                               # getProcDefinition(proc)
+    rc = false
+    found = 0
+
+    cip = def.impl_clauses.clause_indexes
+    if cip !== nothing
+        tail = PL_copy_term_ref(ld, value)
+        head = PL_new_term_ref(ld)
+
+        for ci in cip
+            if ISDEADCI(ci)
+                continue
+            end
+
+            found += 1
+            if !PL_unify_list(ld, tail, head, tail) ||
+                !unify_clause_index(ld, head, ci)
+                return false                            # goto out
+            end
+            if ci.is_list
+                if !add_deep_indexes!(ld, ci, head, tail)
+                    return false                        # goto out
+                end
+            end
+        end
+
+        rc = found != 0 && PL_unify_nil(ld, tail)
+    end
+
+    return rc
 end

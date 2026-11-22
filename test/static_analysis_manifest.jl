@@ -692,6 +692,12 @@ function _manifest_index(T)
         (LK.unify_clause_index, Tuple{CI}, false),
         (LK.add_deep_indexes!, Tuple{Vector{LK.index_property}, CI}, false),
         (LK.unify_index_pattern, Tuple{D}, false),
+        # the term-building ports of the `indexed(L)` property (PR1b): the dict of an index, the list of them
+        (LK.sizeofClauseIndex, Tuple{CI}, false),
+        (LK.put_args, Tuple{LD, Int, NT4}, false),
+        (LK.unify_clause_index, Tuple{LD, Int, CI}, false),
+        (LK.add_deep_indexes!, Tuple{LD, CI, Int, Int}, false),
+        (LK.unify_index_pattern, Tuple{LD, PR, Int}, false),
         # removing clauses from indexes, clause GC of index buckets (src/pl-index.jl)
         (LK.shrunkpow2!, Tuple{D}, true), (LK.gcClauseList!, Tuple{CL, DDI, UInt64}, true),
         (LK.gcClauseBucket!, Tuple{D, CB, UInt32, Bool, DDI, UInt64}, true),
@@ -3944,6 +3950,11 @@ _index_entry_points(T) = (
         true
     ),
     (LK.unify_index_pattern, Tuple{LK.Definition{T}}, false),
+    (
+        LK.unify_index_pattern,
+        Tuple{LK.PL_local_data{T}, LK.Procedure{T}, Int},
+        false
+    ),
     # T2: the string predicates (src/pl-string.jl; pl-string.c and the string family of pl-prims.c)
     [
         (f, Tuple{LK.PL_local_data{T}, Int, Int, LK.foreign_context{T}}, false) for
@@ -5188,6 +5199,9 @@ _manifest_lb7(T) = begin
             Tuple{LD, Int, Int, LK.control_t{T}},
             false
         ),
+        # pl-os.c's PushTty and PopTty (src/os/pl-os.jl, the tty_control flag): the terminal is refused by name
+        (LK.PushTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Int}, false),
+        (LK.PopTty, Tuple{LD, LK.IOSTREAM, LK.ttybuf, Bool}, false),
         (LK.memarea_limit, Tuple{LD, String}, false),
         (
             LK.parseCommandLineOptions,
@@ -6836,6 +6850,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # TOP1b: the terminal mode a stream records (pl-os.c Sttymode, Sset_ttymode); no term type
     (LK.Sttymode, Tuple{LK.IOSTREAM}, true),
     (LK.Sset_ttymode, Tuple{LK.IOSTREAM, Int}, false),
+    (LK.ttybuf, Tuple{}, false),                          # the constructor of pl-os.h's ttybuf (PushTty/PopTty)
     # TOP1b E: the wrapped stream's record and its functions (pl-file.c wrappedIO, Sread_user, closeWrappedIO); no term type
     (LK.wrappedIO, Tuple{LK.LDTable, Int, Bool, UInt32}, false),
     (LK.unregisterLocalData!, Tuple{LK.LDTable, Int}, false),
