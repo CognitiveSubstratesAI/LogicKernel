@@ -22,8 +22,10 @@
 # KILLED BY VALUE (audit D-0971 (6), run on the lane, G1-FIX-10; these were declared `DEFERRED KILL` before, they are kills now):
 #   * G1GC3-D1: test/core_lang/test_gc_driver.jl:454 (`on == off`, testset "gc_force at the audited safe points of a small program ...");
 #   * G1GC3-D2: test/core_lang/test_g1gc_safe_points.jl :341, :346 (twice), :352, :388;
-#   * G1GC3-D3: killed ONLY by an error in test_gc_mark.jl so far (`AssertionError: (ld.frames[fr]).parent == 0` in the testset "the argument
-#     stack and the choicepoints and frames of a live query are roots"); a by-value row next to it is the item to read on the lane.
+#   * G1GC3-D3: killed ONLY by an error in test_gc_mark.jl (`AssertionError: (ld.frames[fr]).parent == 0` in the testset "the argument
+#     stack and the choicepoints and frames of a live query are roots"); by construction no comparison row can fail first: the mutated
+#     else arm calls queryOfFrame (src/pl-wam.jl:1551, an @assert on `parent == 0`) for every frame that has a parent. An error-kill needs
+#     a D-entry (D-0971 (6)); the question is in the handoff (section G1GC3-LEDGER).
 # G1GC3-A3, A4, A5: the row of testset AC is m(a, p(1), d) / m(b, _, c) (initVMIMerge drops a void head argument before I_EXITFACT,
 #   src/pl-comp.jl:98-118, so `m(b, _)` holds no H_VOID): A1-A4 fail test_gc_mark.jl :564 :566 :569; A5 fails :565 :569 :571.
 # DECLARED, NOT BLOCKING (audit D-0971 (6)): G1GC3-D5 is NOT equivalent in the strict sense: a row with two assignments of one cell within
@@ -175,7 +177,7 @@ MUTANTS = [
       "            mark_alt_clauses(ld, st, fr, c.value_clause.cref)\n            f = ld.frames[fr]",
       "            nothing\n            f = ld.frames[fr]",
       file=W),
-    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (killed ONLY by an error so far: test_gc_mark.jl:378 throws AssertionError `(ld.frames[fr]).parent == 0`; the by-value row is the next item)",
+    m("G1GC3-D3 mark_environments: the walk does not go on to the parent frame (killed ONLY by an error, and NO by-value row can exist for it: test_gc_mark.jl:378 throws AssertionError `(ld.frames[fr]).parent == 0` from queryOfFrame (src/pl-wam.jl:1551), which the mutated else arm of mark_environments reaches for ANY frame that has a parent, before any comparison row runs; an error-kill needs a D-entry (D-0971 (6)): PENDING, see evidence/R2/g1_ci_fix_handoff.md section G1GC3-LEDGER)",
       "        if f.parent != 0\n            pc = f.programPointer.pc\n            fr = f.parent",
       "        if false\n            pc = f.programPointer.pc\n            fr = f.parent",
       file=W),
