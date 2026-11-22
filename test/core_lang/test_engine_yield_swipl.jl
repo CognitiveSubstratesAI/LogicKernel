@@ -11,6 +11,9 @@
 #     compared by =@=: the same value on both sides).
 #   * The row `eyk1` is the kernel's named DIVERGES (TH1): a type error of I_YIELD that is CAUGHT inside the engine leaves `yield.term` set upstream
 #     (a later normal answer would be misread as a yield); the kernel resets `yield_term` and `foreign_frame` before the throw. Kernel only.
+#   * Rows gs01-gs11 (TH1 GC stubs): `'$gc_clear'/1`, `'$gc_stop'/0` (pl-thread.c) and `'$can_yield'/0` (pl-pro.c); expected values MEASURED on swipl
+#     10.1.20 (pin 18168e62: `swipl -q` over the rows' goals). The kernel has no GC thread: `'$gc_stop'` fails, `'$gc_clear'` only checks its argument
+#     and `'$gc_wait'/1` is a named refusal (no row: it would block for ever in swipl).
 #   * The white-box testsets read the raw API (`PL_open_query` with `PL_Q_ALLOW_YIELD`, `PL_yielded`, `PL_can_yield`, the query record).
 using Test, LogicKernel
 const LK = LogicKernel
@@ -178,6 +181,26 @@ const _EY_CASES = [
         "numlist(1,200,N), findall(A, (member(_,N), engine_next(E,A)), L), ( L == N -> R0 = ok ; R0 = bad )",
         "ok", true
     ),
+    # '$gc_clear'/1, '$gc_stop'/0 (pl-thread.c:7327-7366) and '$can_yield'/0 (pl-pro.c:461): rows gs01-gs11, expected values read from swipl 10.1.20 (pin 18168e62)
+    ("gs01", "true", raw"'$gc_clear'(garbage_collect_atoms), R0 = ok", "ok", true),
+    ("gs02", "true", raw"'$gc_clear'(garbage_collect_clauses), R0 = ok", "ok", true),
+    ("gs03", "true", raw"'$gc_clear'(foo)", "raised(domain_error(action,foo))", true),
+    ("gs04", "true", raw"'$gc_clear'(abort)", "raised(domain_error(action,abort))", true),
+    ("gs05", "true", raw"'$gc_clear'(_)", "raised(instantiation_error)", true),
+    ("gs06", "true", raw"'$gc_clear'(1)", "raised(type_error(atom,1))", true),
+    ("gs07", "true", raw"'$gc_clear'(f(x))", "raised(type_error(atom,f(x)))", true),
+    ("gs08", "true", raw"( '$gc_stop' -> R0 = stopped ; R0 = none )", "none", true),
+    ("gs09", "true", raw"( '$can_yield' -> R0 = yes ; R0 = no )", "no", true),
+    (
+        "gs10", raw"engine_create(X, ( '$can_yield' -> X = yes ; X = no ), E)",
+        "engine_next(E,R0)", "yes", true
+    ),
+    # the engine's query keeps PL_Q_ALLOW_YIELD across a yield and its resume
+    (
+        "gs11",
+        raw"engine_create(X, ( engine_yield(a), ( '$can_yield' -> X = yes ; X = no ) ), E)",
+        "engine_next(E,A), engine_next(E,B), R0 = A-B", "a-yes", true
+    ),
     # the named DIVERGES (TH1), kernel only: a type error CAUGHT in the engine does not leave `yield_term` set
     (
         "eyk1",
@@ -278,6 +301,12 @@ end
     for n in 1:16
         @test "ey" * lpad(n, 2, '0') in ids
     end
+    for n in 1:11
+        @test "gs" * lpad(n, 2, '0') in ids
+    end
+    # the rows that call the private predicates carry the `$` of their names (raw strings)
+    @test count(c -> occursin("\$gc_clear", c[3]), _EY_CASES) == 7
+    @test count(c -> occursin("\$can_yield", c[2]) || occursin("\$can_yield", c[3]), _EY_CASES) == 3
     @test count(c -> !c[5], _EY_CASES) == 1                 # eyk1 is the only kernel-only row
     @test _ey_ok_line("ey01") == "ck_ey01 c[99,107,95,101,121,48,49]/1(a[111,107])"
     # the rows that call the private predicate carry the `$` of its name: a raw string that a mistaken interpolation would have emptied
@@ -299,6 +328,22 @@ end
             @test line == _ey_ok_line(c[1])
         end
     end
+end
+
+# '$gc_wait'/1 (pl-thread.c:7299) blocks for ever in swipl (no GC thread posts a request): the kernel refuses it by name (TH1), kernel only.
+@testset "'\$gc_wait'/1 is refused by name (the kernel has no GC thread)" begin
+    f = joinpath(mktempdir(), "gc_wait.pl")
+    write(f, raw"gs_wait(_) :- '$gc_wait'(_)." * "\n")
+    gd, ld, st = _ey_load(f)
+    @test st == "ok"
+    err = try
+        _ey_ask(gd, ld, "gs_wait")
+        nothing
+    catch e
+        e
+    end
+    @test err isa LK.NotPortedError
+    @test err isa LK.NotPortedError && err.step == "TH1" && occursin("gc_wait/1", err.what)
 end
 
 # WHITE-BOX: the raw API. A query opened with `PL_Q_ALLOW_YIELD | PL_Q_EXT_STATUS` returns the yield code from PL_next_solution, `PL_yielded`
