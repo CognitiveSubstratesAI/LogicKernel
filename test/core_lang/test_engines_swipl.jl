@@ -28,6 +28,12 @@
 #     not called; an exception of a hook is printed to Serror and cleared (engine_destroy still succeeds). Least sure: ev06 (thread_self in the
 #     hook), ev09 (swallowed exception), ev13 (term closure).
 #   * No row prints an engine handle (a blob: written `<thread>(0x..)`, `<engine>(N,0x..)` upstream): handles only meet inside `=@=`.
+#   * The ti rows (the `'$thread_init'/0` goals of pl-thread.c:7003, boot/toplevel.pl:281: `thread_initialization/1` goals run in a NEW
+#     ENGINE, in the engine's own local data, when the engine is created, before its goal) are measured on the oracle (pin build, probes of
+#     2026-11-22: ti01-ti07 answer as written). NOT ROWS, by name: an init goal that calls thread_self/1, and an init goal that raises:
+#     the pin build itself dies (a fatal signal) later in engine_destroy/1 resp. engine_next/2 on those two shapes, so there is no
+#     oracle answer to copy and they are not pinned (the kernel's answer for them is unmeasured). `toplevel_thread` (set false by
+#     `'$thread_init'`) is not a row: the kernel's flag table is the database's one copy (copy_local_data!), swipl's is per thread.
 using Test, LogicKernel
 const LK = LogicKernel
 
@@ -476,6 +482,55 @@ const _EN_EV_CASES = [
     )
 ]
 
+# the thread initialisation goals (`$thread_init`): `ti_with(Goals, Body)` registers the goals (thread_initialization/1 runs each in the
+# caller too and fails for a failing goal: both are dropped), clears the log, runs `Body` once and removes every registered goal
+const _EN_TI_PRELUDE = raw"""
+:- dynamic ti_log/1.
+ti_reg([]).
+ti_reg([G|T]) :- ( thread_initialization(G) -> true ; true ), ti_reg(T).
+ti_with(Goals, Body) :-
+    setup_call_cleanup(ti_reg(Goals), ( retractall(ti_log(_)), once(Body) ), retractall('$toplevel':'$at_thread_initialization'(_))).
+"""
+
+# rows: (id, setup, goal, expected, live); `R0` is the answer
+const _EN_TI_CASES = [
+    (
+        "ti01", "true",
+        "ti_with([assertz(ti_log(a))], ( engine_create(x, true, E), findall(L, ti_log(L), R0), engine_destroy(E) ))",
+        "[a]", true
+    ),
+    (
+        "ti02", "true",
+        "ti_with([assertz(ti_log(a)), fail, assertz(ti_log(b))], ( engine_create(x, true, E), findall(L, ti_log(L), R0), engine_destroy(E) ))",
+        "[a,b]", true
+    ),
+    (
+        "ti03", "true",
+        "ti_with([assertz(ti_log(a))], ( engine_create(x, assertz(ti_log(goal)), E), findall(L, ti_log(L), R1), engine_next(E,_), findall(L, ti_log(L), R2), engine_destroy(E), R0 = R1-R2 ))",
+        "[a]-[a,goal]", true
+    ),
+    (
+        "ti04", "true",
+        "ti_with([assertz(ti_log(a))], ( engine_create(x, true, E1), engine_create(x, true, E2), findall(L, ti_log(L), R0), engine_destroy(E1), engine_destroy(E2) ))",
+        "[a,a]", true
+    ),
+    (
+        "ti05", "true",
+        "ti_with([assertz(ti_log(a))], ( engine_create(X, member(X,[1,2]), E), engine_next(E,_), engine_next(E,_), findall(L, ti_log(L), R0), engine_destroy(E) ))",
+        "[a]", true
+    ),
+    (
+        "ti06", "true",
+        "ti_with([], ( engine_create(x, true, E), findall(L, ti_log(L), R0), engine_destroy(E) ))",
+        "[]", true
+    ),
+    (
+        "ti07", "true",
+        "ti_with([nb_setval(ti_k, 7)], ( nb_delete(ti_k), engine_create(V, nb_getval(ti_k, V), E), engine_next(E,A), ( nb_current(ti_k, _) -> M = y ; M = n ), engine_destroy(E), R0 = A-M ))",
+        "7-n", true
+    )
+]
+
 # rows that need the VM yield (I_YIELD and its resume): their own testset, which fails loudly when the yield is absent
 const _EN_YIELD_CASES = [
     (
@@ -576,6 +631,10 @@ end
     _en_check(_EN_EV_CASES; prelude=_EN_EV_PRELUDE)
 end
 
+@testset "the thread initialisation goals of a new engine (C-derived rows, kernel)" begin
+    _en_check(_EN_TI_CASES; prelude=_EN_TI_PRELUDE)
+end
+
 @testset "the thread events: the table and the raise paths (white-box)" begin
     # the event table of the O_ENGINES build (pl-event.c:80-95): twelve rows, in upstream's order, the id the row's index
     @test length(LK.PL_events) == 12
@@ -656,13 +715,13 @@ end
 end
 
 @testset "the engine rows are not vacuous" begin
-    allc = vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES)
+    allc = vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES)
     ids = [c[1] for c in allc]
     @test length(unique(ids)) == length(ids)
     for c in allc
         @test !isempty(c[3]) && !isempty(c[4]) && c[4] != "_"    # a row whose expectation cannot fail
     end
-    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp", "ev")
+    for fam in ("en0", "en1", "en2", "en3", "en4", "en5", "dv", "yl", "tp", "ev", "ti")
         @test any(startswith(id, fam) for id in ids)
     end
     @test count(c -> !c[5], _EN_CASES) == 3             # the three named divergences (dv1-dv3) are the only kernel-only rows
@@ -674,8 +733,8 @@ end
     if swipl === nothing
         @info "ENGINES LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES))
-        f, names = _en_file(live; prelude=_EN_EV_PRELUDE)
+        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES))
+        f, names = _en_file(live; prelude=_EN_EV_PRELUDE * _EN_TI_PRELUDE)
         lines = _en_swipl_lines(f, names)
         @test length(lines) == length(live) + 1
         @test lines[1] == "ok"

@@ -2533,6 +2533,7 @@ function _manifest_index(T)
             false,
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
+        (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
         (
             LK.freePrologThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},

@@ -336,8 +336,8 @@ end
 
 # PORT: pl-thread.c PL_create_engine as _create_engine
 # DIVERGES: the engine is a second local data over the database `gd` (`_bare_local_data`: no `initIO`; the creator's streams are copied by
-# `copy_local_data!`); there is no pthread, no `PL_set_engine` (the local data is an argument everywhere) and no `$thread_init`
-# (pl-thread.c:7006: the hook runs the thread initialisation goals and the thread events, owner TH1: the event table). The thread ids
+# `copy_local_data!`); there is no pthread and no `PL_set_engine` (the local data is an argument everywhere). The thread
+# initialisation goals run (`thread_init_goals!`, pl-thread.c:7003) and no event is raised (pl-thread.c:6927-7010 raises none). The thread ids
 # count up from 2 and are never reused (upstream reuses a free slot). NOT PORTED: the creator's `inherit_from`.
 "A new engine, created from `ld`, whose stacks may grow to `stack_limit` positions (pl-thread.c `PL_create_engine`)."
 function _create_engine(
@@ -352,7 +352,20 @@ function _create_engine(
     push!(gd.thread.infos, info)                    # index = pl_tid
     eld.thread_info = info
     copy_local_data!(eld, ld, info)
+    thread_init_goals!(gd, eld)
     return eld
+end
+
+# PORT: pl-thread.c PL_thread_attach_engine (the call of `PROCEDURE_dthread_init0`, pl-thread.c:7003)
+# DIVERGES: the procedure is looked up in `system` at each call (`lookupProcedure`), where upstream keeps it in
+# `GD->procedures.dthread_init0` (`LOOKUPPROC(dthread_init0)`, pl-ext.c:374): no database field, the same procedure. `PL_thread_attach_engine`
+# is not ported as such (there is no pthread to attach: `_create_engine` is the part of it an engine needs); the call is made in the
+# engine's own local data `eld` (upstream: `LD` is the new engine at that point) after `copy_local_data!` and the thread record are in place.
+"Run the thread initialisation goals (`'\$thread_init'/0`, boot/toplevel.pl) for the new engine `eld`; the result is ignored (pl-thread.c:7003)."
+function thread_init_goals!(gd::PL_global_data{T}, eld::PL_local_data{T})::Nothing where {T}
+    pred = lookupProcedure(mk_sym(T, Symbol("\$thread_init")), 0, MODULE_system(gd))
+    PL_call_predicate(gd, eld, MODULE_system(gd), PL_Q_NORMAL, pred, 0)    # (void)PL_call_predicate(MODULE_system, PL_Q_NORMAL, ...)
+    return nothing
 end
 
 # PORT: pl-thread.c freePrologThread (the exit hooks and the release of the thread record; `after_fork` is false)
