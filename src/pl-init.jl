@@ -683,7 +683,8 @@ end
 # without `initOs`, `initDefaults`, `setEarlyDefines`, `initPaths`' paths, `giveVersionInfo`, the saved-state options), then
 # `apply_options_to_flags!` where upstream's `initPrologFlags` read the options, then the tail. (2) `GD->initialised` is not stored
 # (the database is new at each call, the early return `if GD->initialised` has no case). (3) `-c` (`GD->options.compile`) and
-# `--config` (`$compile`, `$config`) raise `NotPortedError` by name. (4) `query_loop(goal, false)` is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false`
+# `--config` run `'\$compile'` and `'\$config'` as upstream does, then `PL_halt`: the seam `gd.halt_exit` (off) returns the call,
+# and the answer is false, as upstream's `fail`. (4) `query_loop(goal, false)` is upstream's own path (`prologToplevel`, pl-pro.c:663-676, its `loop == false`
 # branch: `$initialise` is neither `$query_loop` nor `$toplevel`, so `break_level` is not touched); owner TOP1b only for what the kernel's
 # reduced `query_loop` leaves out of it (audit D-0416 item 4). (5) `initialiseForeign`, `registerForeignLicenses`, the resource
 # database flag and `enableThreads` have nothing to do (no foreign libraries, no resource database, one thread).
@@ -702,10 +703,14 @@ function PL_initialise_tail!(gd::PL_global_data{T}, ld::PL_local_data{T})::Bool 
         SINGLETON_CHECK | SEMSINGLETON_CHECK | DISCONTIGUOUS_STYLE | NOEFFECT_CHECK
     setAccessLevel!(ld, ACCESS_LEVEL_USER)                         # :1666
 
-    if o.config !== nothing
-        throw(NotPortedError{T}(mk_sym(T, :config), "--config (\$config)", "R2 LB7"))
-    elseif o.compile
-        throw(NotPortedError{T}(mk_sym(T, :compile), "-c (\$compile)", "R2 LB7"))
+    if o.config !== nothing                                        # :1672
+        status = query_loop(gd, ld, mk_sym(T, Symbol("\$config")), false) == 1 ? 0 : 1
+        PL_halt(gd, ld, status)
+        return false                                               # fail; (the halt seam returned)
+    elseif o.compile                                               # :1676
+        status = query_loop(gd, ld, mk_sym(T, Symbol("\$compile")), false) == 1 ? 0 : 1
+        PL_halt(gd, ld, status)
+        return false
     end
     return query_loop(gd, ld, mk_sym(T, Symbol("\$initialise")), false) == 1   # prologToplevel("$initialise")
 end

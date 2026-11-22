@@ -118,3 +118,49 @@ end
     @test ld.lTop == l0
     @test ld.gTop == g0
 end
+
+# The `--dump-runtime-variables` and `-c` command lines of PL_initialise (pl-init.c:1672-1680: `prologToplevel('$config')` and
+# `prologToplevel('$compile')`, then `PL_halt(status)`). Expected values: single-shot runs of the pin's swipl (18168e62), two identical
+# runs. The values of the shell variables differ per installation (paths, thread flag): the rows compare the variable NAMES in
+# order and the two constant values (PLBITS, PLSOEXT), the exit status, and the `Warning:` lines.
+const _FB_CONFIG_KEYS = String[
+    "PLBASE",
+    "SWIPL_PACK_PATH",
+    "PLARCH",
+    "PLBITS",
+    "PLVERSION",
+    "PLSOEXT",
+    "PLSOPATH",
+    "PLLIBDIR",
+    "PLLIB",
+    "PLLIBSWIPL",
+    "PLSHARED",
+    "PLTHREADS"
+]
+
+@testset "first boot: --dump-runtime-variables and -c run \$config and \$compile, then halt (swipl pin 18168e62)" begin
+    @testset "swipl -f none -F none --dump-runtime-variables" begin
+        st, o, w = _fb_run(String["--dump-runtime-variables"])
+        lines = String[l for l in split(o, '\n') if !isempty(l)]
+        @test st == 0
+        @test w == String[]
+        @test String[first(split(l, '=')) for l in lines] == _FB_CONFIG_KEYS
+        @test all(endswith(l, ";") for l in lines)
+        @test "PLBITS=\"64\";" in lines
+        @test "PLSOEXT=\"so\";" in lines
+    end
+    @testset "swipl -f none -F none -c (no files)" begin
+        st, o, w = _fb_run(String["-c"])
+        @test st == 0
+        @test o == ""
+        @test w == String[]
+    end
+    @testset "swipl -f none -F none -c <a file that does not exist>" begin
+        st, o, w = _fb_run(String["-c", "/nonexistent_zz.pl"])
+        @test st == 1
+        @test o == ""
+        @test w == String[
+            "Warning: [Thread main] Halting with status 1 due to 1 errors and 0 warnings"
+        ]
+    end
+end
