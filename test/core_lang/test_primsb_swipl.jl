@@ -1,5 +1,5 @@
 # ORIGINAL: a LIVE differential of PRIMS-B's copy predicates — copy_term/4, copy_term_nat/4, size_abstract_term/3
-# (pl-copyterm.c) — against swipl at the pin: rows b43-b45 (the size errors), c01-c43. (term_hash/2, variant_hash/2 and
+# (pl-copyterm.c) — against swipl at the pin: rows b43-b45 (the size errors), c01-c46. (term_hash/2, variant_hash/2 and
 # term_hash/4 are test_term_hash_pred_swipl.jl's.)
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(E, _), R = raised(E))`; the driver is test_p2_swipl.jl's (`enc`oded answers).
@@ -8,7 +8,9 @@
 #   * b43-b45 the size error rows of size_abstract_term/3 (its size argument is checked first, as upstream: pl-copyterm.c
 #     PRED_IMPL size_abstract_term).
 #   * c01-c26 copy_term/4 and copy_term_nat/4 (only the variables of the first argument copied; attributed variables, shared
-#     subterms, variables of a copied attribute); c30-c43 size_abstract_term/3 (the abstract depth, attributes, shared variables).
+#     subterms, variables of a copied attribute); c30-c43 size_abstract_term/3 (the abstract depth, attributes, shared variables);
+#     c44-c46 an unmarked variable under the abstract depth is the ORIGINAL cell, an attributed variable inside a copied attribute
+#     (not in the vars list) is kept, copy_term/4 leaves no mark on an attributed variable.
 #     Kernel and swipl answers are equal (no known difference).
 #   * UNVERIFIED on the kernel: gate decides (nothing was compiled when these rows were written): every kernel answer.
 
@@ -135,7 +137,10 @@ const _PB_COPY_CASES = [
     ("c40", raw"size_abstract_term(2, f(g(a,b),h(c)), T), R = T"),
     ("c41", raw"size_abstract_term(4, f(g(X),h(X)), T), T = f(g(A),h(B)), ( A == B -> R = same ; R = differ )"),
     ("c42", raw"size_abstract_term(1, f(g(X)), T), R = T"),
-    ("c43", raw"size_abstract_term(1, f(g(X)), T), T = f(A), ( A == X -> R = same ; R = fresh )")
+    ("c43", raw"size_abstract_term(1, f(g(X)), T), T = f(A), ( A == X -> R = same ; R = fresh )"),
+    ("c44", raw"size_abstract_term(5, f(X,a), T), T = f(A,_), ( A == X -> R = same ; R = fresh )"),
+    ("c45", raw"put_attr(Y, b, 2), put_attr(X, a, g(Y)), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, g(W)), ( W == Y -> R = same ; get_attr(W, b, B) -> R = B ; R = noattr )"),
+    ("c46", raw"put_attr(X, a, 1), copy_term([X], f(X), _, _), copy_term(X, Y), ( Y == X -> R = same ; get_attr(Y, a, A), R = A )")
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl 10.1.20 (the pin binary, swipl-devel 18168e62; two runs byte-identical)
@@ -187,7 +192,10 @@ const _PB_COPY_PINNED = [
     "t_c40 c[116,95,99,52,48]/1(c[102]/2(c[103]/2(a[97],a[98]),c[104]/1(a[99])))",
     "t_c41 c[116,95,99,52,49]/1(a[115,97,109,101])",
     "t_c42 c[116,95,99,52,50]/1(c[102]/1(c[103]/1(V0)))",
-    "t_c43 c[116,95,99,52,51]/1(a[102,114,101,115,104])"
+    "t_c43 c[116,95,99,52,51]/1(a[102,114,101,115,104])",
+    "t_c44 c[116,95,99,52,52]/1(a[115,97,109,101])",
+    "t_c45 c[116,95,99,52,53]/1(a[115,97,109,101])",
+    "t_c46 c[116,95,99,52,54]/1(i1)"
 ]
 
 "The program's text for `cases`, each wrapped as the driver expects."
@@ -277,7 +285,7 @@ _pb_word(w::String) = "/1(" * _pb_a(w) * ")"
     end
 end
 
-@testset "PRIMS-B copy_term/4, copy_term_nat/4 and size_abstract_term/3 as swipl's (c01-c43)" begin
+@testset "PRIMS-B copy_term/4, copy_term_nat/4 and size_abstract_term/3 as swipl's (c01-c46)" begin
     f, names = _pb_file(_PB_COPY_CASES)
     kl, refused = _pb_kernel(f, names)
     @test isempty(refused)
@@ -308,7 +316,7 @@ end
     end
     @test endswith(rp("c13"), "/1(i1)") && endswith(rp("c31"), "/1(i1)")       # the attribute is copied
     @test endswith(rp("c14"), _pb_word("noattr"))                                 # copy_term_nat/4 drops it
-    for id in ("c15", "c18", "c41")
+    for id in ("c15", "c18", "c41", "c44", "c45")
         @test endswith(rp(id), _pb_word("same"))
     end
     @test endswith(rp("c16"), _pb_word("differ"))             # a variable in a copied attribute is copied
@@ -316,6 +324,7 @@ end
         @test endswith(rp(id), _pb_word("shared"))
     end
     @test endswith(rp("c43"), _pb_word("fresh"))
+    @test endswith(rp("c46"), "/1(i1)")                         # the unmarked attributed variable still copies with its attribute
     # the abstract depth: beyond it a compound is a variable
     @test occursin("V0", rp("c04")) && occursin("c[103]/1(V0)", rp("c04"))
     @test !occursin("V0", rp("c30")) && !occursin("V0", rp("c35"))
