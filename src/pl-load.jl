@@ -3,39 +3,61 @@
 # COPYRIGHT: Copyright (c)  1985-2022, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
-# allow-new-artifact: a 1:1 port of swipl-devel src/pl-load.c (the upstream file was read at the pin; handoff evidence/S2/lane_d_handoff11.md)
+# allow-new-artifact: packages/json C port (Phase 1): the static-extension form of pl-load.c, read from the pin (git show 18168e62)
 #
-# FOREIGN EXTENSIONS (pl-load.c), LB5-LB7 relay 11. UNTESTED, nothing compiled. The kernel loads no shared object
-# and links no static extension, so the file holds the one predicate of the `O_STATIC_EXTENSIONS` block as a refusal
-# by name: `$activate_static_extension/1` (pl-load.c:450-540 at the pin; the predicate is defined only in a build with
-# static extensions, the pin's own swipl answers `existence_error(procedure, ...)`). `open_shared_object/2,3`,
-# `close_shared_object/1` and `call_shared_object_function/2` (pl-load.c, `HAVE_SHARED_OBJECTS`) are written by the
-# step that gives the kernel a foreign interface; this file does not define them.
+# pl-load.c (loading foreign code), the O_STATIC_EXTENSIONS form ONLY: `$activate_static_extension/1`, which
+# boot/syspred.pl's static branch of `use_foreign_library/1` calls (`:- elif(current_predicate(
+# '$activate_static_extension'/1))`). Upstream builds this form for the WASM and static builds, where the
+# packages' C files are linked in and `static_packages.h` lists `{name, install function}`.
+#
+# Left out (the shared-object form, `#ifndef O_STATIC_EXTENSIONS`): `open_shared_object`, `close_shared_object`,
+# `call_shared_object_function`, the dlopen emulation and `cleanupForeign`'s list of loaded objects.
+#
+# The shared-object form (`open_shared_object/2,3`, `close_shared_object/1`, `call_shared_object_function/2`,
+# the dlopen emulation) stays with the flag `open_shared_object` (undefined: D-0151, FLAG F8). The kernel can load no
+# shared object, so every foreign library is a static extension.
+#
+# DIVERGES (file-wide):
+#   1. `static_extensions` is the table `static_packages.h` generates: a tuple of `(name, install function)`,
+#      filled by the ported packages (JSON1: json, src/pl-json.jl).
+#   2. The install function takes the local data and registers nothing: the extension's predicates are registered in
+#      module `system` at boot (the file header of src/pl-json.jl, 1), since the kernel has no per-module foreign
+#      registration. `$activate_static_extension(json)` therefore succeeds and the predicates already exist.
+
+# ORIGINAL (JSON1): upstream's `static_extensions`, the generated `static_packages.h`.
+# DIVERGES: see the file header, 1.
+"The static extensions, `(name, install function)` (pl-load.c `static_extensions`, generated `static_packages.h`)."
+const static_extensions = (("json", install_json),)
+
+# PORT: pl-load.c activate_static_extension
+# DIVERGES: the extension is looked up by name in `static_extensions`, as the `USE_DLOPEN_SELF` == 0 branch does
+# (the other branch's `dlsym(handle, "install_<name>")` has no twin); see the file header, 2.
+"Call the install function of the static extension `ename`; false if there is none (pl-load.c)."
+function activate_static_extension(ld::PL_local_data{T}, ename::String)::Bool where {T}
+    for (name, install) in static_extensions
+        if name == ename
+            install(ld)
+            return true
+        end
+    end
+    return false
+end
 
 # PORT: pl-load.c activate_static_extension as pl_activate_static_extension1_va
-# (PRED_IMPL("$activate_static_extension", 1, activate_static_extension, PL_FA_TRANSPARENT), pl-load.c:501-512;
-# the helper `activate_static_extension(ename)` is pl-load.c:449-498: `dlsym(handle, "install_<ename>")` with
-# `USE_DLOPEN_SELF`, else the table `static_extensions` of `static_packages.h`; upstream's order is
-# `PL_get_chars(A1, &ename, CVT_ATOM|CVT_STRING|CVT_EXCEPTION)`, then the install function, else
-# `PL_existence_error("foreign_extension", A1)`)
-# DIVERGES: refused by name. The kernel has no `static_packages.h` table and no dynamic symbol table of its own
-# executable to look an `install_<ename>` function up in.
-"`\$activate_static_extension(+Name)`: refused by name, the kernel links no static extension (pl-load.c:450-540)."
+# (PRED_IMPL("$activate_static_extension", 1, activate_static_extension, PL_FA_TRANSPARENT))
+"`'\$activate_static_extension'(+Name)`: install the static extension `Name`; `existence_error(foreign_extension, Name)` if there is none (pl-load.c)."
 function pl_activate_static_extension1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    throw(
-        NotPortedError{T}(
-            mk_sym(T, :activate_static_extension),
-            "activate_static_extension/1: no static extensions in the kernel (pl-load.c:450-540)",
-            "LB5-LB7"
-        )
-    )
+    A1 = PL__t0
+    txt = PL_get_text(ld, A1, CVT_ATOM | CVT_STRING | CVT_EXCEPTION)     # PL_get_chars(A1, &ename, …)
+    txt === nothing && return FFALSE
+    activate_static_extension(ld, text_string(txt)) && return FTRUE
+    return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :foreign_extension), A1) ? FTRUE : FFALSE
 end
 
 # PORT: pl-load.c BeginPredDefs as PL_predicates_from_load
-# DIVERGES: only the `O_STATIC_EXTENSIONS` entry; the `HAVE_SHARED_OBJECTS` entries are left out (see the file header).
-"pl-load.c's registration table (`BeginPredDefs(dlopen)`): `\$activate_static_extension/1`."
+# DIVERGES: the table of the static-extension form only (`PRED_DEF("$activate_static_extension", …)`).
 const PL_predicates_from_load = (
     PL_extension(
         "\$activate_static_extension", 1, pl_activate_static_extension1_va,

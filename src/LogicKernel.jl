@@ -106,7 +106,6 @@ include("pl-read.jl")          # swipl-devel src/pl-read.c — the scanner (R1c)
 include("pl-qlf.jl")           # swipl-devel src/pl-qlf.c — the boot compilation of a source file (LB3; no state file)
 include("pl-string.jl")        # swipl-devel src/pl-string.c — the string predicates: atom_string/2, split_string/4, sub_string/5 (T2)
 include("os/pl-fmt.jl")        # swipl-devel src/os/pl-fmt.c — format/2,3, format_predicate/2 (O1A)
-include("pl-load.jl")          # swipl-devel src/pl-load.c — `$activate_static_extension/1`, refused by name (LB5-LB7)
 include("os/pl-apple.jl")      # swipl-devel src/os/pl-apple.c — apple_current_locale_identifier/1, refused by name (APPLE1)
 include("pl-dwim.jl")          # swipl-devel src/pl-dwim.c — dwim_match/3, '$dwim_predicate'/2 (DWIM1)
 include("os/pl-ctype-pred.jl") # swipl-devel src/os/pl-ctype.c — char_type/2, code_type/2 (CT1b; needs the FLI, so loaded after the kernel)
@@ -117,6 +116,8 @@ include("pl-md5.jl")           # swipl-devel packages/clib/md5.c md54pl.c — th
 include("pl-sha.jl")           # swipl-devel packages/clib/sha1/sha2.c sha4pl.c — the SHA-2 core, sha_hash/3, hmac (CLIB5; SHA-1 is pl-termhash.jl's)
 include("pl-hashstream.jl")    # swipl-devel packages/clib/hash_stream.c — open_hash_stream/3, stream_hash/2 over the stream filter (HASH1)
 include("pl-zlib.jl")          # packages/zlib/zlib4pl.c — the carrier binding: the typed ccall wrappers of libz (Zlib_jll), the z_stream/gz_header records (ZLIB1 piece Z1), the filter stream (Z2), zopen/3 and zdebug/1 (Z3); reusable by the zip port; no UPSTREAM header: packages/zlib is a gitlink
+include("pl-json.jl")          # packages/json/json.c — json_read_number/3, json_skip_ws/3, json_write_string/2, json_write_indent/3 (JSON1; no UPSTREAM header: packages/json is a gitlink at the pin)
+include("pl-load.jl")          # swipl-devel src/pl-load.c — $activate_static_extension/1, the static-extension form (JSON1; the table of install functions)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)
