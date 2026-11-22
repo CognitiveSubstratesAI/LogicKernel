@@ -1655,7 +1655,7 @@ end
 # PORT: pl-stream.c Sfgets
 # DIVERGES: `buf` is a byte vector of at least `n` bytes, the result is `buf` or `nothing` (upstream's NULL); the
 # terminating NUL is the byte 0x00 in `buf`.
-"Read a line of at most `n - 1` bytes into `buf`, newline included: `buf`, or `nothing` at end of file (pl-stream.c)."
+"Read a line of at most `n` bytes into `buf`, newline included: `buf`, or `nothing` at end of file (pl-stream.c)."
 function Sfgets(buf::Vector{UInt8}, n::Int, s::IOSTREAM)::Union{Nothing, Vector{UInt8}}
     q = 1
     while n > 0

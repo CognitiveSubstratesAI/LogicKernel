@@ -227,6 +227,26 @@ MUTANTS = [
          new="                return -1                                       # closed\n",
          # candidate equivalent: src/os/pl-file.jl:_ftruncate_stream — read, not run: the catch is reached only by a Julia IO closed behind its IOSTREAM's back; a closed stream is refused by term_stream_handle before the IO is touched (sa201), so no Prolog goal reaches it; needs the widened run and the audit's ruling
          ),
+    # ── STREAM-API4 (part): Sfgets and Sfputs (the testset "Sfgets, Sfputs, Sfree" of test/files/test_stream_swipl.jl; its rows are
+    #    not numbered, so "aimed by" names the @test groups). SA-R1..R10 (Sfread, Sfwrite, Spending) live on other branches. ──
+    dict(id="SA-R11 Sfgets reads one byte fewer than it is given room for (aimed by the Sfgets row with n = 2)", file=S, targets=ALL,
+         old="    while n > 0\n        n -= 1\n        c = Sgetc(s)\n",
+         new="    while n > 1\n        n -= 1\n        c = Sgetc(s)\n"),
+    dict(id="SA-R12 Sfgets ends a line at a carriage return, not a newline (aimed by the Sfgets rows on ab/cd and a/b)", file=S, targets=ALL,
+         old="            if c == Int('\\n')\n                n > 0 && (buf[q] = 0x00)\n",
+         new="            if c == Int('\\r')\n                n > 0 && (buf[q] = 0x00)\n"),
+    dict(id="SA-R13 Sfgets leaves out the NUL when one byte of room is left after the newline (aimed by the Sfgets row with n = 3)", file=S, targets=ALL,
+         old="                n > 0 && (buf[q] = 0x00)\n",
+         new="                n > 1 && (buf[q] = 0x00)\n"),
+    dict(id="SA-R14 Sfgets answers the buffer at the end of the file (aimed by the third Sfgets row of ab/cd)", file=S, targets=ALL,
+         old="            return q == 1 ? nothing : buf\n",
+         new="            return buf\n"),
+    dict(id="SA-R15 Sfputs writes on past the first NUL (aimed by the Sfputs row of a, NUL, b)", file=S, targets=ALL,
+         old="        b == 0x00 && break\n",
+         new=""),
+    dict(id="SA-R16 Sfgets writes the NUL after a newline even when no room is left (aimed by the Sfgets row with n = 2 on a/b: the byte past the newline stays)", file=S, targets=ALL,
+         old="                n > 0 && (buf[q] = 0x00)\n",
+         new="                buf[q] = 0x00\n"),
 ]
 
 if __name__ == "__main__":

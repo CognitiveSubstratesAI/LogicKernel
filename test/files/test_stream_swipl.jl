@@ -147,6 +147,56 @@ end
     @test_throws LK.NotPortedError LK.Sputcode(Int('a'), s)    # UTF-8 only (user, 2026-10-07)
 end
 
+# STREAM-API4 (pl-stream.c Sfgets, Sfputs, Sfree). swipl cannot be asked these C calls directly; the position
+# columns [byte, char, line, line position] of the Sfputs rows are pinned from swipl 10.1.20 for the Prolog call that
+# runs the same loop (put_char/2 = Sputcode): driver evidence/STREAM-API/sfx_drv.pl, output evidence/STREAM-API/sfx_rows.out
+# (two byte-identical runs). The returned values and the buffer contents are the C functions' own (pl-stream.c:2349-2406),
+# written by hand. Sfread, Sfwrite and Spending are not in this branch.
+@testset "Sfgets, Sfputs, Sfree" begin
+    _p(s) = [Int(s.position.byteno), Int(s.position.charno), s.position.lineno, s.position.linepos]
+    # Sfgets: a line with its newline and a NUL, the last line without one, then NULL
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("ab\ncd"))), Ref(5), "r")
+    buf = fill(0x7a, 10)
+    @test LK.Sfgets(buf, 10, s) === buf && buf[1:4] == UInt8[97, 98, 10, 0]
+    buf = fill(0x7a, 10)
+    @test LK.Sfgets(buf, 10, s) === buf && buf[1:3] == UInt8[99, 100, 0]
+    buf = fill(0x7a, 10)
+    @test LK.Sfgets(buf, 10, s) === nothing && buf[1] == 0x00
+    LK.Sclose(s)
+    # Sfgets reads n bytes at most (the C's `while (n-- > 0)`), and writes the NUL only after a newline or at the end of file
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("abc"))), Ref(3), "r")
+    buf = fill(0x7a, 5)
+    @test LK.Sfgets(buf, 2, s) === buf && buf == UInt8[97, 98, 0x7a, 0x7a, 0x7a]
+    LK.Sclose(s)
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r")
+    buf = fill(0x7a, 5)
+    @test LK.Sfgets(buf, 3, s) === buf && buf == UInt8[97, 10, 0x00, 0x7a, 0x7a]
+    @test LK.Sfgets(buf, 2, s) === buf && buf[1] == 98
+    LK.Sclose(s)
+    # a newline in the last byte of room: no NUL after it (n is 0 then)
+    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r")
+    buf = fill(0x7a, 5)
+    @test LK.Sfgets(buf, 2, s) === buf && buf == UInt8[97, 10, 0x7a, 0x7a, 0x7a]
+    LK.Sclose(s)
+    # wc rows of sfx_rows.out: Sfputs writes each byte as a character (Sputcode); the position as put_char/2 leaves it
+    for (str, want) in (
+        ("ab\ncd\te", [7, 7, 2, 9]), ("\n\nx", [3, 3, 3, 1]), ("x\by", [3, 3, 1, 1]), ("a\rb", [3, 3, 1, 1]),
+    )
+        bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+        sizep = Ref(0)
+        w = LK.Sopenmem(bufp, sizep, "w")
+        @test LK.Sfputs(str, w) == 0
+        @test _p(w) == want
+        @test LK.Sclose(w) == 0 && String(bufp[][1:sizep[]]) == str
+    end
+    # the C string ends at the first NUL
+    bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
+    sizep = Ref(0)
+    w = LK.Sopenmem(bufp, sizep, "w")
+    @test LK.Sfputs(UInt8[97, 0, 98], w) == 0 && LK.Sclose(w) == 0 && bufp[][1:sizep[]] == UInt8[97]
+    @test LK.Sfree(UInt8[1]) === nothing
+end
+
 const _ST_SWIPL = (
     get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
 )
