@@ -12,11 +12,13 @@
 # bit only in the branch the flag leaves; needs the widened run and the audit's ruling.
 # NOT LISTED: the `m === nothing && return false` and `k === nothing && return false` lines (their removal reaches dict_lookup_ptr
 # with `nothing`: a Julia MethodError, not a verdict the rows read).
-# TARGETS (audit D-0238): the step's own file first, then test_type_discipline.jl (the three term types). test_dict_preds_swipl.jl
-# names these predicates only in a comment, so it does not exercise the mutated code.
+# TARGETS (audit D-0238): the step's own file first, then test_dictrec_swipl.jl (DICT-REC's rows call the same three predicates) and
+# test_type_discipline.jl (the three term types). test_dict_preds_swipl.jl names these predicates only in a comment, so it does not
+# exercise the mutated code.
 TS = "test/core_lang/test_dict_set_swipl.jl"
+TR = "test/core_lang/test_dictrec_swipl.jl"    # its rows dr01-dr50, dr129-dr131 call the three predicates (audit D-0238)
 TT = "test/test_type_discipline.jl"
-TARGETS = [TS, TT]
+TARGETS = [TS, TR, TT]
 D = "src/pl-dict.jl"
 MUTANTS = [
     # ── setdict ──
