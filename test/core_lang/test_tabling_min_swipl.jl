@@ -539,6 +539,9 @@ _tm_call_error(gd, ld, name::String) = _tm_call_result(gd, ld, name)[2]
         @test LK.find_wrapper(gd, d03, n1)[1] !== d03.codes       # the first sits in the closure of the outer one
         # WRAP1: `freeCodesDefinition!` has the one method, with the database (the refusal of the method without it is gone):
         # a wrapped predicate keeps its wrapper and its wrapped supervisor is the virgin one again
+        # (the supervisor is set to the static one first, so the row after the call can fail: it is NOT the virgin block before)
+        cc.supervisor = d01c.code_data.staticp
+        @test cc.supervisor !== d01c.code_data.virgin
         LK.freeCodesDefinition!(gd, d01c, true)
         @test _tm_wrapped(d01c)
         @test cc.supervisor === d01c.code_data.virgin

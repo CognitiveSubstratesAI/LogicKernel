@@ -180,7 +180,7 @@ const CP_LD = PL_local_data{BT}(CP_GD)                             # the compile
 const CP_USER = MODULE_user(CP_GD)
 const CP_PROC = lookupProcedure(_a(:cp), 2, CP_USER)
 const CP_DEF = CP_PROC.definition
-setDynamicDefinition!(CP_GD, CP_DEF, true)                            # :- dynamic cp/2.
+setDynamicDefinition!(CP_GD, CP_DEF, true)                         # :- dynamic cp/2.
 _cp_compile(h::BT) = compileClause(CP_GD, CP_LD, h, nothing, CP_PROC, CP_USER)
 for i in 1:1000
     assertDefinition!(
