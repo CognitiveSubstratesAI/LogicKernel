@@ -2603,6 +2603,9 @@ function _manifest_index(T)
         (LK._tprop_pack, Tuple{Int, Int, Bool, Bool}, false),
         (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
         (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (LK.pl_gc_wait, Tuple{LD, Int}, false),
+        (LK.pl_gc_clear, Tuple{LD, Int}, false),
+        (LK.pl_gc_stop, Tuple{LD}, true),
         (LK.pl_with_mutex, Tuple{LD, Int, Int}, false),
         # BOOTPRED — pl-dict.c: representation, lookup, ordering, creation (src/pl-dict.jl)
         (LK.dict_functor, Tuple{LD, Int}, false),
