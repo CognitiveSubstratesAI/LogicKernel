@@ -1751,6 +1751,7 @@ end
 
 # PORT: pl-file.c set_stream_position as pl_set_stream_position2_va
 # (PRED_IMPL("set_stream_position", 2, set_stream_position, PL_FA_ISO)) — pl-file.c:5611-5650 (pin 18168e62)
+# DIVERGES: `(int)lineno` and `(int)linepos` are `% Int32` (the C truncates the `long` to a 32-bit `int`; `IOPOS` holds `Int`).
 "`set_stream_position(+Stream, +Pos)`: re-position `Stream` to `'\$stream_position'(Char, Line, LinePos, Byte)` (pl-file.c)."
 function pl_set_stream_position2_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1787,8 +1788,8 @@ function pl_set_stream_position2_va(
     p = s.position::IOPOS
     p.byteno = byteno
     p.charno = charno
-    p.lineno = lineno
-    p.linepos = linepos
+    p.lineno = Int(lineno % Int32)
+    p.linepos = Int(linepos % Int32)
     Sresetesc(p)
 
     return FTRUE
@@ -1852,11 +1853,36 @@ function pl_seek4_va(
     return PL_unify_int64(ld, newloc, Int(new)) ? FTRUE : FFALSE
 end
 
+# ORIGINAL: `Sfileno(s)` then `ftruncate(fileno, Stell64(s))` of `set_end_of_stream/1`, on a Julia IO: 0 or the errno.
+# A file (`IOStream`) is truncated through its descriptor (`Base.fd`) after the IO's own buffer is flushed (a C stream has
+# none); a terminal or a pipe has a descriptor, and `ftruncate` refuses it with EINVAL; a closed file is EBADF. -1: the
+# stream is not a file (a memory file, a string, a buffer, the null stream: upstream's `Sfileno` is -1).
+function _ftruncate_stream(s::IOSTREAM)::Int
+    h = s.handle
+    if s.functions == Siofunctions && h isa Sjulia_io
+        io = h.io
+        if io isa IOStream
+            try
+                flush(io)
+                fdno = Cint(Base.fd(io).fd)
+                rc = ccall((:ftruncate, LIBC), Cint, (Cint, Int64), fdno, Stell64(s))
+                return rc == 0 ? 0 : Int(Base.Libc.errno())
+            catch e
+                e isa Union{SystemError, Base.IOError, ArgumentError} || rethrow()
+                return EBADF                                    # closed
+            end
+        elseif io isa Base.TTY || io isa Base.PipeEndpoint
+            return EINVAL
+        end
+    end
+    return -1
+end
+
 # PORT: pl-file.c set_end_of_stream as pl_set_end_of_stream1_va
 # (PRED_IMPL("set_end_of_stream", 1, set_end_of_stream, 0)) — pl-file.c:2634-2664 (pin 18168e62)
-# DIVERGES: `Sfileno(s) >= 0` + `ftruncate(fileno, Stell64(s))` is a stream over a file's Julia IO (`IOStream`) and
-# `truncate(io, Stell64(s))`, the IO's own buffer flushed first; every other stream "is not a file". `PL_get_stream(A1, &s,
-# SIO_OUTPUT)` reads its own flags (`SIO_OUTPUT` has no `SH_ALIAS` bit: a non-atom is `domain_error(stream, X)`).
+# DIVERGES: `Sfileno(s) >= 0` and `ftruncate(fileno, Stell64(s))` are `_ftruncate_stream` (a Julia IO has no descriptor of its
+# own to hand out); the errno is its result, passed to `PL_error` as an argument. `PL_get_stream(A1, &s, SIO_OUTPUT)` reads its
+# own flags (`SIO_OUTPUT` has no `SH_ALIAS` bit: a non-atom is `domain_error(stream, X)`); no lock to release.
 "`set_end_of_stream(+Stream)`: truncate the file of the output stream `Stream` at its current position (pl-file.c)."
 function pl_set_end_of_stream1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1870,27 +1896,21 @@ function pl_set_end_of_stream1_va(
     s = get_stream_handle(ld, a, SH_ERRORS | SH_ALIAS | SH_OUTPUT)
     s === nothing && return FFALSE
 
-    h = s.handle
-    if s.functions == Siofunctions && h isa Sjulia_io && h.io isa IOStream
-        io = h.io::IOStream
-        try
-            flush(io)
-            truncate(io, Stell64(s))
-        catch e
-            e isa SystemError || rethrow()
-            rc = PL_error(
-                ld, "", 0, Base.Libc.strerror(e.errnum), ERR_FILE_OPERATION,
-                mk_sym(T, :set_end_of_stream), mk_sym(T, :stream), A1, Int(e.errnum)
-            )
-            return rc ? FTRUE : FFALSE
-        end
-        return FTRUE
+    errno = _ftruncate_stream(s)
+    if errno > 0
+        rc = PL_error(
+            ld, "", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :set_end_of_stream),
+            mk_sym(T, :stream), A1, errno
+        )
+        return rc ? FTRUE : FFALSE
+    elseif errno < 0
+        rc = PL_error(
+            ld, "", 0, "not a file", ERR_PERMISSION, mk_sym(T, :set_end_of_stream),
+            mk_sym(T, :stream), A1
+        )
+        return rc ? FTRUE : FFALSE
     end
-    rc = PL_error(
-        ld, "", 0, "not a file", ERR_PERMISSION, mk_sym(T, :set_end_of_stream),
-        mk_sym(T, :stream), A1
-    )
-    return rc ? FTRUE : FFALSE
+    return FTRUE
 end
 
 # ── buffer and size (pl-file.c) ─────────────────────────────────────────────────────────────────
@@ -1906,8 +1926,8 @@ function pl_fill_buffer1_va(
     s = getInputStream(ld, stream, S_DONTCARE)
     if s !== nothing
         if (s.flags & SIO_NBUF) != 0
-            _PL_permission_error(ld, :fill_buffer, :stream, stream)
-            return FFALSE
+            streamStatus(ld, s) || return FFALSE                  # PL_release_stream(s) &&
+            return _PL_permission_error(ld, :fill_buffer, :stream, stream) ? FTRUE : FFALSE
         end
 
         if (s.flags & SIO_FEOF) == 0

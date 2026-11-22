@@ -9039,3 +9039,23 @@ Messages are `record{T}` (`PL_record`/`PL_recorded`) in arrival order; `key`/`se
 `thread_send_message` on a full queue, with no deadline, raise the refusal for TH1 (two rows in docs/r2_owners.tsv). `waiting` is always 0 (the property fails). `process_deadline_options` is a private scanner (`PL_scan_options` has no `OPT_DOUBLE`).
 QUIRK kept: `message_queue_property(main, alias(_))` succeeds with the argument unbound (a thread queue's `id` is 0). Unbound `Queue` enumerates only user queues, in creation order (upstream: hash order).
 Not run here; tests and mutants are the next step's (evidence/R2/queues1_handoff.md, B4-2 note).
+
+## STREAMS-A and STREAM-API — the byte and character predicates of pl-file.c and the seek family of pl-stream.c (R2, swipl-devel 18168e62; replayed onto the Edinburgh I/O line, edit-only: NOTHING was compiled or run when this block was written, the gate decides)
+
+UPSTREAM: swipl-devel 18168e62 — `src/os/pl-file.c`: `put_byte`/`put_byte1`/`put_byte2`, `get_byte2`/`get_byte1`, `get_char1`, `get_nonblank`/`get1`/`get2`, `skip1`, `peek` (the byte branch),
+`peek_byte`/`peek_code`/`peek_char1`, `flush_output`, `set_input`/`set_output`, `byte_count`/`character_count`, `fill_buffer`, `copy_stream_data`, `peek_string`, `seek/4`,
+`set_stream_position/2` (`(int)lineno` and `(int)linepos`), `set_end_of_stream/1` (`ftruncate` through the descriptor); `src/os/pl-stream.c`: `Sseek64`, `S__seek_update`, `Sseek`, `Stell64`, `Stell`,
+`S_seek64`, `S_has_seek`, `Sunit_size`, `Ssize`, `Scontrol_getsize` (`SIO_GETSIZE`: `Scontrol_file`, `Scontrol_memfile`, `Scontrol_pipe`), `Sfgets`, `Sfputs`, `Sfree`.
+
+- **Where it lives**: src/os/pl-file.jl holds the predicates. `seek/4`, `set_stream_position/2` and `set_end_of_stream/1` are NOT refused on this base: they are lane D's (the Edinburgh I/O line wrote
+  them), refitted here to the C (`getRepositionableStream`, the `(int)` stores, `_ftruncate_stream` for `ftruncate`). src/os/pl-stream.jl holds the stream layer under them.
+- **Known differences** (each a DIVERGES at the function): the `errno` a C call leaves behind is `s.io_errno`, set at each failure site of `S_seek64` and `Sseek_julia_io`; a Julia IO has no descriptor of
+  its own to hand out (`_ftruncate_stream` takes `Base.fd`); `SIO_GETSIZE` is answered per handle (a file by `filesize`, a memory file by `here`, a popen pipe and a null or string stream by nothing,
+  a terminal or stdio pipe by 0); `Sfgets` and `Sfputs` take a byte vector (or a `String`) for the C buffer and string; `Sfree` frees nothing (the GC owns the memory); no lock (`releaseStream`),
+  no `PL_handle_signals` in `copy_stream_data`; `peek_string/3` refuses an encoding it does not know by name (`NotPortedError`).
+- **Behaviour that follows the C and differs from the earlier base**: `S_has_seek` is true for a terminal and a stdio pipe (upstream's `Sttyfunctions` and `Sfilefunctions` have `lseek`, which says
+  `ESPIPE`), so `seek/4` on `user_output` fails in `Sseek64` with the permission error built from `ESPIPE`, not in `getRepositionableStream`; `'$size_stream'/2` on a memory stream answers
+  `mf->here` (0 before the first read, as swipl does: d189), on a terminal 0.
+- **Tests**: test/files/test_streams_a_swipl.jl (rows sa001-sa222; sa143-sa219 pinned from swipl at the pin, evidence/STREAM-API/rows.out, two byte-identical runs), test/files/test_stream_swipl.jl
+  (`Sfgets`, `Sfputs`, `Sfree`; evidence/STREAM-API/sfx_rows.out), test/core_lang/test_lane_d_swipl.jl. Mutants: tools/mutants/STREAMSA.py (SA-Q1..Q34, SA-R11..R16), LANED5/6/7. `Sfread`, `Sfwrite` and `Spending` are
+  not on this branch (they live on wip/stream-filter and wip/hash-stream).

@@ -1,0 +1,265 @@
+# ORIGINAL: STREAMS-A's mutant list — no swipl-devel counterpart.
+# tools/mutants/STREAMSA.py — the mutation battery of STREAMS-A (os/pl-file.c, swipl-devel 18168e62: get/put/get0/skip/get_nonblank,
+# put_byte, get_byte, peek (the byte branch), set_input, set_output, byte_count, character_count, fill_buffer, copy_stream_data,
+# peek_string), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as
+# S2A.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. "Aimed by": each id names the
+# rows of test/files/test_streams_a_swipl.jl (sa001-sa222) written to kill it. Verdicts: written by the battery, not yet run; the
+# rows themselves were never run either (the gate shows which kill).
+# The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the writing agent had no daemon):
+# RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to occur
+# exactly once in src/os/pl-file.jl at wip/streams-a (a text count, python3 -I, no Julia).
+# REPLAY (onto the Edinburgh I/O line, pl-file.jl as lane D wrote it): every `old` below was re-fitted to that text; the targets add
+# lane D's and the Edinburgh I/O files (they exercise the same predicates).
+# REPLAY (STREAM-API): SA-Q1..SA-Q34 (the seek/tell group, replay of 457ce8b8 and fbdbd2dc) are re-fitted to this base's text of pl-stream.jl
+# (S__seek_update, Sseek_julia_io with `s`, io_errno set in S_seek64) and pl-file.jl; every `old` occurs once (python3 -I over the whole list); the
+# targets add the with_output_to file (sa216 runs under it). SA-Q16 and SA-Q34 are candidate equivalents: the battery and the audit rule.
+# TARGETS (audit D-0238): the step's own file first (a run stops at the first target that decides), then every file that reaches
+# pl-file.jl's stream code: the S2a and LB5 rows (peek, skip, get_char/2 share the handles), the stream, open/close and
+# process-stream files.
+TS = ["test/files/test_streams_a_swipl.jl"]
+TF = ["test/core_lang/test_lane_d_swipl.jl", "test/core_lang/test_edinburgh_io_swipl.jl", "test/core_lang/test_s2a_swipl.jl", "test/core_lang/test_lb5_swipl.jl", "test/files/test_stream_swipl.jl",
+      "test/files/test_open_close_swipl.jl", "test/files/test_process_streams_swipl.jl", "test/core_lang/test_with_output_to_swipl.jl"]
+ALL = TS + TF
+TARGETS = ALL                                        # the baseline's targets (mutate_ci.py plan reads TARGETS; pre-push check 5)
+F = "src/os/pl-file.jl"
+S = "src/os/pl-stream.jl"                              # the STREAM-API mutants (SA-Q*) mutate pl-stream.jl too
+MUTANTS = [
+    # ── get_nonblank (get/1,2) ──
+    dict(id="SA-G1 get_nonblank returns the first character, layout or not (aimed by sa003, sa014)", file=F, targets=ALL,
+         old="            isBlankW(c) || return PL_unify_integer(ld, chr, c)\n",
+         new="            return PL_unify_integer(ld, chr, c)\n"),
+    dict(id="SA-G2 get_nonblank answers 0, not -1, at the end of the stream (aimed by sa004, sa005)", file=F, targets=ALL,
+         old="                PL_unify_integer(ld, chr, -1) || return false\n",
+         new="                PL_unify_integer(ld, chr, 0) || return false\n"),
+    # ── put_byte ──
+    dict(id="SA-B1 put_byte accepts 256 (aimed by sa040, sa047)", file=F, targets=ALL,
+         old="    if c === nothing || c < 0 || c > 255\n",
+         new="    if c === nothing || c < 0 || c > 256\n"),
+    dict(id="SA-B2 put_byte accepts -1 (aimed by sa041)", file=F, targets=ALL,
+         old="    if c === nothing || c < 0 || c > 255\n",
+         new="    if c === nothing || c < -1 || c > 255\n"),
+    dict(id="SA-B3 put_byte writes to a text stream too (aimed by sa044, sa045)", file=F, targets=ALL,
+         old="    s = getOutputStream(ld, stream, S_BINARY)       # getBinaryOutputStream\n",
+         new="    s = getOutputStream(ld, stream, S_DONTCARE)     # getBinaryOutputStream\n"),
+    # ── get_byte2 ──
+    dict(id="SA-B4 get_byte reads a text stream too (aimed by sa052, sa053)", file=F, targets=ALL,
+         old="    s = getInputStream(ld, in, S_BINARY)            # getBinaryInputStream\n    if s !== nothing\n        c = Sgetc(s)\n",
+         new="    s = getInputStream(ld, in, S_DONTCARE)          # getBinaryInputStream\n    if s !== nothing\n        c = Sgetc(s)\n"),
+    dict(id="SA-B5 get_byte(S, a) fails instead of raising the type error (aimed by sa054)", file=F, targets=ALL,
+         old="        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n",
+         new="        nothing                                     # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n"),
+    dict(id="SA-B6 get_byte(S, -1) before the end raises the type error: the eof branch is -2 (aimed by sa141: -1 offered before the end fails, the byte is consumed; sa142 pins the end_of_file atom half, which this mutant leaves in place)",
+         file=F, targets=ALL,
+         old="        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n            return false\n        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n",
+         new="        (i == -2 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n            return false\n        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n"),
+    # ── peek (byte branch, unbuffered refusal) ──
+    dict(id="SA-K1 peek_byte takes a text stream (aimed by sa071)", file=F, targets=ALL,
+         old="    s = getInputStream(ld, stream, how === :byte ? S_BINARY : S_TEXT)\n",
+         new="    s = getInputStream(ld, stream, S_TEXT)\n"),
+    dict(id="SA-K2 peek on an unbuffered stream is allowed (aimed by sa061, sa072)", file=F, targets=ALL,
+         old="    if (s.flags & SIO_NBUF) != 0 || (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX\n",
+         new="    if (s.bufsize != 0 && s.bufsize < UNDO_SIZE)   # PL_MB_LEN_MAX\n"),
+    dict(id="SA-K3 peek_byte keeps the byte it read: no Sungetc (aimed by sa050, sa060)", file=F, targets=ALL,
+         old="        c != EOF && Sungetc(c, s)\n",
+         new="        nothing\n"),
+    dict(id="SA-K4 peek_byte leaves the byte position after the byte it unread (aimed by sa051)", file=F, targets=ALL,
+         old="        p.byteno, p.charno, p.lineno, p.linepos, p.esc_state = oldpos.byteno,\n        oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state          # s->posbuf = pos\n",
+         new="        p.byteno, p.charno, p.lineno, p.linepos, p.esc_state = p.byteno,\n        oldpos.charno, oldpos.lineno, oldpos.linepos, oldpos.esc_state          # s->posbuf = pos\n"),
+    # ── set_input, set_output ──
+    dict(id="SA-S1 set_input takes an output stream (aimed by sa084, sa082, sa089)", file=F, targets=ALL,
+         old="    s = getInputStream(ld, PL__t0, S_DONTCARE)\n    if s !== nothing\n        setStandardStream(ld, SNO_CURRENT_INPUT, s)\n",
+         new="    s = getOutputStream(ld, PL__t0, S_DONTCARE)\n    if s !== nothing\n        setStandardStream(ld, SNO_CURRENT_INPUT, s)\n"),
+    dict(id="SA-S2 set_input sets the current output (aimed by sa082, sa060, sa089)", file=F, targets=ALL,
+         old="    setStandardStream(ld, SNO_CURRENT_INPUT, s)\n",
+         new="    setStandardStream(ld, SNO_CURRENT_OUTPUT, s)\n"),
+    dict(id="SA-S3 set_output takes an input stream (aimed by sa083, sa088)", file=F, targets=ALL,
+         old="    s = getOutputStream(ld, PL__t0, S_DONTCARE)\n    if s !== nothing\n        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)\n",
+         new="    s = getInputStream(ld, PL__t0, S_DONTCARE)\n    if s !== nothing\n        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)\n"),
+    dict(id="SA-S4 set_output sets the current input (aimed by sa088, sa091, sa093)", file=F, targets=ALL,
+         old="        setStandardStream(ld, SNO_CURRENT_OUTPUT, s)\n        return FTRUE\n    end\n    return FFALSE\nend\n",
+         new="        setStandardStream(ld, SNO_CURRENT_INPUT, s)\n        return FTRUE\n    end\n    return FFALSE\nend\n"),
+    # ── byte_count, character_count ──
+    dict(id="SA-C1 byte_count answers the character position (aimed by sa133, sa134)", file=F, targets=ALL,
+         old="    n = (s.position::IOPOS).byteno\n",
+         new="    n = (s.position::IOPOS).charno\n"),
+    dict(id="SA-C2 character_count answers the byte position (aimed by sa133, sa134)", file=F, targets=ALL,
+         old="    n = (s.position::IOPOS).charno\n",
+         new="    n = (s.position::IOPOS).byteno\n"),
+    # ── fill_buffer ──
+    dict(id="SA-F1 fill_buffer fills an unbuffered stream without the permission error (aimed by sa097)", file=F, targets=ALL,
+         old="        if (s.flags & SIO_NBUF) != 0\n            streamStatus(ld, s) || return FFALSE",
+         new="        if false\n            streamStatus(ld, s) || return FFALSE"),
+    dict(id="SA-F2 fill_buffer consumes the first character: the buffer pointer is not stepped back (aimed by sa095, sa099, sa101)",
+         file=F, targets=ALL,
+         old="            s.bufp -= 1\n        end\n        return streamStatus(ld, s) ? FTRUE : FFALSE              # PL_release_stream(s)\n    end\n",
+         new="            nothing\n        end\n        return streamStatus(ld, s) ? FTRUE : FFALSE              # PL_release_stream(s)\n    end\n"),
+    # ── copy_stream_data ──
+    dict(id="SA-D1 copy_stream_data/3 ignores the length: copies all (aimed by sa103, sa104, sa106)", file=F, targets=ALL,
+         old="    if len == 0\n        while (c = Sgetcode(i)) != EOF\n",
+         new="    if true\n        while (c = Sgetcode(i)) != EOF\n"),
+    dict(id="SA-D2 copy_stream_data/2 reads a length it does not have: the all-characters branch is never taken (aimed by sa102, sa109)",
+         file=F, targets=ALL,
+         old="    if len == 0\n        while (c = Sgetcode(i)) != EOF\n",
+         new="    if false\n        while (c = Sgetcode(i)) != EOF\n"),
+    dict(id="SA-D3 copy_stream_data/3 copies one character more than the length (aimed by sa103, sa104, sa117)", file=F, targets=ALL,
+         old="        while n > 0 && (c = Sgetcode(i)) != EOF\n",
+         new="        while n >= 0 && (c = Sgetcode(i)) != EOF\n"),
+    # ── peek_string ──
+    dict(id="SA-P1 peek_string answers one character fewer than asked (aimed by sa118, sa122, sa127)", file=F, targets=ALL,
+         old="                rc = PL_unify_text_range(ld, A3, text, 0, len, PL_STRING)\n",
+         new="                rc = PL_unify_text_range(ld, A3, text, 0, len - 1, PL_STRING)\n"),
+    dict(id="SA-P2 peek_string needs one character more than asked before answering from the buffer (aimed by sa118, sa129)",
+         file=F, targets=ALL,
+         old="            if text.length >= len\n",
+         new="            if text.length > len\n"),
+    dict(id="SA-P3 peek_string leaves the end-of-file flag set after the rest-of-stream answer (aimed by sa128, sa119)",
+         file=F, targets=ALL,
+         old="            s.flags &= ~SIO_FEOF\n\n            text = peek_pending_text(s)\n",
+         new="            nothing\n\n            text = peek_pending_text(s)\n"),
+    dict(id="SA-Q1 Sseek64 turns a current-relative seek into a position BEFORE it: pos -= Stell64 (aimed by sa159, sa146)", file=S, targets=ALL,
+         old="        pos += Stell64(s)\n        whence = SIO_SEEK_SET\n",
+         new="        pos -= Stell64(s)\n        whence = SIO_SEEK_SET\n"),
+    dict(id="SA-Q2 Sseek64's buffer fast path takes a target one byte before the buffer (aimed by sa209)", file=S, targets=ALL,
+         old="            if nbufp >= s.buffer && nbufp < s.limitp\n",
+         new="            if nbufp >= s.buffer - 1 && nbufp < s.limitp\n"),
+    dict(id="SA-Q3 Sseek64's buffer fast path takes a target two bytes past the buffer's end (aimed by sa211, sa147)", file=S, targets=ALL,
+         old="            if nbufp >= s.buffer && nbufp < s.limitp\n",
+         new="            if nbufp >= s.buffer && nbufp < s.limitp + 2\n"),
+    dict(id="SA-Q4 Sseek64's buffer fast path takes a current-relative seek as an absolute one (aimed by sa144, sa171)", file=S, targets=ALL,
+         old="                nbufp = s.bufp + pos\n                newpos = now + pos\n",
+         new="                nbufp = s.bufp + (pos - now)\n                newpos = pos\n"),
+    dict(id="SA-Q5 Sseek64 keeps the end-of-file flags after a seek (aimed by sa169)", file=S, targets=ALL,
+         old="    s.flags &= ~(SIO_FEOF | SIO_FEOF2)                             # not on eof of file anymore\n",
+         new="    nothing                                                        # not on eof of file anymore\n"),
+    dict(id="SA-Q6 S__seek_update records the byte position one too far (aimed by sa165, sa166)", file=S, targets=ALL,
+         old="        p.byteno = pos\n        p.charno = div(pos, Sunit_size(s))",
+         new="        p.byteno = pos + 1\n        p.charno = div(pos, Sunit_size(s))"),
+    dict(id="SA-Q7 S__seek_update divides the character position by 2 (aimed by sa166, sa165)", file=S, targets=ALL,
+         old="        p.charno = div(pos, Sunit_size(s))",
+         new="        p.charno = div(pos, 2)"),
+    dict(id="SA-Q8 S__seek_update leaves the line counters running: the NOLINENO/NOLINEPOS flags are unset (aimed by sa212)", file=S, targets=ALL,
+         old="        s.flags |= (SIO_NOLINENO | SIO_NOLINEPOS)                  # no update this\n",
+         new="        nothing                                                    # no update this\n"),
+    dict(id="SA-Q9 Stell64 adds the buffered-input bytes instead of taking them away, on a stream without position (aimed by sa213, sa214)",
+         file=S, targets=ALL,
+         old="            (s.flags & SIO_INPUT) != 0 && (off -= s.limitp - s.buffer)\n",
+         new="            (s.flags & SIO_INPUT) != 0 && (off += s.limitp - s.buffer)\n"),
+    dict(id="SA-Q10 Sunit_size answers 1 for a UTF-16 stream (aimed by sa215)", file=S, targets=ALL,
+         old="    (enc == ENC_UTF16BE || enc == ENC_UTF16LE) && return 2\n",
+         new="    (enc == ENC_UTF16BE || enc == ENC_UTF16LE) && return 1\n"),
+    dict(id="SA-Q11 Sseek_julia_io's end-relative target starts at the current position (aimed by sa145, sa149, sa161)", file=S, targets=ALL,
+         old="                target = size + pos\n",
+         new="                target = here + pos\n"),
+    dict(id="SA-Q12 Sseek_julia_io allows a negative target (aimed by sa148, sa209)", file=S, targets=ALL,
+         old="            if target < 0 || (io isa IOBuffer && target > size)\n",
+         new="            if io isa IOBuffer && target > size\n"),
+    dict(id="SA-Q13 Sseek_julia_io lets an IOBuffer be seeked past its end (aimed by sa216)", file=S, targets=ALL,
+         old="            if target < 0 || (io isa IOBuffer && target > size)\n",
+         new="            if target < 0\n"),
+    dict(id="SA-Q14 Scontrol_getsize reports a file's size one too large, so an empty file is not empty to open/4's BOM test (aimed by sa218, sa219)",
+         file=S, targets=ALL,
+         old="                return Int64(filesize(io))\n",
+         new="                return Int64(filesize(io)) + 1\n"),
+    dict(id="SA-Q15 Scontrol_getsize reports a file's size as 0, so a non-empty file gets a BOM on append (aimed by sa219)",
+         file=S, targets=ALL,
+         old="                return Int64(filesize(io))\n",
+         new="                return Int64(0)\n"),
+    dict(id="SA-Q16 Ssize sends a size of 0 through the seek fallback (aimed by no row: EQUIVALENT)",
+         file=S, targets=ALL,
+         old="    size >= 0 && return size\n",
+         new="    size > 0 && return size\n",
+         # candidate equivalent: src/os/pl-stream.jl:Ssize — read, not run: a size of 0 from Scontrol_getsize (an empty file, a terminal, a pipe) goes to the seek path, which answers the end position 0 of the same data (Sseek64 END then Stell64) and restores `here`; needs the widened run and the audit's ruling
+         ),
+    dict(id="SA-Q17 seek/4 maps `current` to the absolute whence (aimed by sa144, sa159)", file=F, targets=ALL,
+         old="    elseif _sym_is(m, :current)\n        whence = SIO_SEEK_CUR\n",
+         new="    elseif _sym_is(m, :current)\n        whence = SIO_SEEK_SET\n"),
+    dict(id="SA-Q18 seek/4 maps `eof` to the current position (aimed by sa145, sa149)", file=F, targets=ALL,
+         old="    elseif _sym_is(m, :eof)\n        whence = SIO_SEEK_END\n",
+         new="    elseif _sym_is(m, :eof)\n        whence = SIO_SEEK_CUR\n"),
+    dict(id="SA-Q19 seek/4 does not scale the offset by the unit size (aimed by sa215)", file=F, targets=ALL,
+         old="    off *= unit\n",
+         new="    off *= 1\n"),
+    dict(id="SA-Q20 seek/4 reports a failed seek by errno ESPIPE, not EINVAL: the range error is a permission error (aimed by sa148, sa147)",
+         file=F, targets=ALL,
+         old="        if s.io_errno == EINVAL\n            PL_error(\n                ld, \"seek\", 4, \"offset out of range\"",
+         new="        if s.io_errno == ESPIPE\n            PL_error(\n                ld, \"seek\", 4, \"offset out of range\""),
+    dict(id="SA-Q21 seek/4 answers the position in bytes, not units (aimed by sa215)", file=F, targets=ALL,
+         old="    new = Stell64(s)\n    new = div(new, unit)\n",
+         new="    new = Stell64(s)\n    new = div(new, 1)\n"),
+    dict(id="SA-Q22 seek/4 leaves the stream's error state after a failed seek (aimed by sa148, sa209)", file=F, targets=ALL,
+         old="        Sclearerr(s)\n        return FFALSE\n    end\n\n    new = Stell64(s)\n",
+         new="        return FFALSE\n    end\n\n    new = Stell64(s)\n"),
+    dict(id="SA-Q23 set_stream_position seeks relative to the current position (aimed by sa175, sa177)", file=F, targets=ALL,
+         old="    if Sseek64(s, Int64(byteno), SIO_SEEK_SET) != 0\n        PL_error(\n            ld, \"\", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :reposition),",
+         new="    if Sseek64(s, Int64(byteno), SIO_SEEK_CUR) != 0\n        PL_error(\n            ld, \"\", 0, MSG_ERRNO, ERR_FILE_OPERATION, mk_sym(T, :reposition),"),
+    dict(id="SA-Q24 set_stream_position leaves the character count of the seek (aimed by sa217)", file=F, targets=ALL,
+         old="    p.charno = charno\n    p.lineno = Int(lineno % Int32)\n",
+         new="    p.lineno = Int(lineno % Int32)\n"),
+    dict(id="SA-Q25 set_stream_position leaves the line number of the seek (aimed by sa176, sa217)", file=F, targets=ALL,
+         old="    p.lineno = Int(lineno % Int32)\n",
+         new="    nothing\n"),
+    dict(id="SA-Q26 set_stream_position zeroes the line position (aimed by sa176, sa217)", file=F, targets=ALL,
+         old="    p.linepos = Int(linepos % Int32)\n",
+         new="    p.linepos = 0\n"),
+    dict(id="SA-Q27 set_stream_position takes a position term of any arity (aimed by sa181)", file=F, targets=ALL,
+         old="mk_sym(T, Symbol(\"\\$stream_position\")), 4) &&\n        _PL_get_arg(ld, 1, pos, a)",
+         new="mk_sym(T, Symbol(\"\\$stream_position\")), 3) &&\n        _PL_get_arg(ld, 1, pos, a)"),
+    dict(id="SA-Q28 getRepositionableStream accepts a stream without a position (aimed by sa186, sa187)", file=F, targets=ALL,
+         old="    if s.position === nothing || !S_has_seek(s)\n",
+         new="    if !S_has_seek(s)\n"),
+    dict(id="SA-Q29 getRepositionableStream accepts a stream without a seek function (aimed by sa188)", file=F, targets=ALL,
+         old="    if s.position === nothing || !S_has_seek(s)\n",
+         new="    if s.position === nothing\n"),
+    dict(id="SA-Q30 set_end_of_stream skips the flush of the Julia IO (aimed by sa194, sa195)", file=F, targets=ALL,
+         old="                flush(io)\n                fdno = Cint(Base.fd(io).fd)\n",
+         new="                fdno = Cint(Base.fd(io).fd)\n"),
+    dict(id="SA-Q31 set_end_of_stream truncates at 0, not at the stream position (aimed by sa194, sa195, sa196)", file=F, targets=ALL,
+         old="(Cint, Int64), fdno, Stell64(s))",
+         new="(Cint, Int64), fdno, Int64(0))"),
+    dict(id="SA-Q32 set_end_of_stream answers true for a stream that is not a file (aimed by sa199)", file=F, targets=ALL,
+         old="    elseif errno < 0\n        rc = PL_error(\n            ld, \"\", 0, \"not a file\"",
+         new="    elseif errno < -1\n        rc = PL_error(\n            ld, \"\", 0, \"not a file\""),
+    dict(id="SA-Q33 set_end_of_stream takes an input stream (aimed by sa198)", file=F, targets=ALL,
+         old="SH_ERRORS | SH_ALIAS | SH_OUTPUT)\n    s === nothing && return FFALSE\n\n    errno = _ftruncate_stream(s)",
+         new="SH_ERRORS | SH_ALIAS)\n    s === nothing && return FFALSE\n\n    errno = _ftruncate_stream(s)"),
+    dict(id="SA-Q34 set_end_of_stream: a closed descriptor is reported as a non-file (aimed by no row: EQUIVALENT)", file=F, targets=ALL,
+         old="                return EBADF                                    # closed\n",
+         new="                return -1                                       # closed\n",
+         # candidate equivalent: src/os/pl-file.jl:_ftruncate_stream — read, not run: the catch is reached only by a Julia IO closed behind its IOSTREAM's back; a closed stream is refused by term_stream_handle before the IO is touched (sa201), so no Prolog goal reaches it; needs the widened run and the audit's ruling
+         ),
+    # ── STREAM-API4 (part): Sfgets and Sfputs (the testset "Sfgets, Sfputs, Sfree" of test/files/test_stream_swipl.jl; its rows are
+    #    not numbered, so "aimed by" names the @test groups). SA-R1..R10 (Sfread, Sfwrite, Spending) live on other branches. ──
+    dict(id="SA-R11 Sfgets reads one byte fewer than it is given room for (aimed by the Sfgets row with n = 2)", file=S, targets=ALL,
+         old="    while n > 0\n        n -= 1\n        c = Sgetc(s)\n",
+         new="    while n > 1\n        n -= 1\n        c = Sgetc(s)\n"),
+    dict(id="SA-R12 Sfgets ends a line at a carriage return, not a newline (aimed by the Sfgets rows on ab/cd and a/b)", file=S, targets=ALL,
+         old="            if c == Int('\\n')\n                n > 0 && (buf[q] = 0x00)\n",
+         new="            if c == Int('\\r')\n                n > 0 && (buf[q] = 0x00)\n"),
+    dict(id="SA-R13 Sfgets leaves out the NUL when one byte of room is left after the newline (aimed by the Sfgets row with n = 3)", file=S, targets=ALL,
+         old="                n > 0 && (buf[q] = 0x00)\n",
+         new="                n > 1 && (buf[q] = 0x00)\n"),
+    dict(id="SA-R14 Sfgets answers the buffer at the end of the file (aimed by the third Sfgets row of ab/cd)", file=S, targets=ALL,
+         old="            return q == 1 ? nothing : buf\n",
+         new="            return buf\n"),
+    dict(id="SA-R15 Sfputs writes on past the first NUL (aimed by the Sfputs row of a, NUL, b)", file=S, targets=ALL,
+         old="        b == 0x00 && break\n",
+         new=""),
+    dict(id="SA-R16 Sfgets writes the NUL after a newline even when no room is left (aimed by the Sfgets row with n = 2 on a/b: the byte past the newline stays)", file=S, targets=ALL,
+         old="                n > 0 && (buf[q] = 0x00)\n",
+         new="                buf[q] = 0x00\n"),
+]
+
+if __name__ == "__main__":
+    import sys
+    if "--check" in sys.argv:
+        import os
+        cache, bad = {}, 0
+        for m in MUTANTS:
+            src = cache.setdefault(m["file"], open(m["file"]).read())
+            n = src.count(m["old"])
+            ok = n == 1 and m["new"] != m["old"] and all(os.path.exists(x) for x in m.get("targets", TARGETS))
+            ok = ok and (m.get("equivalent") is None or len(m["equivalent"]) > 10)
+            bad += not ok
+            print(("ok  " if ok else "BAD ") + m["id"][:60] + ("" if n == 1 else "  count=%d" % n))
+        print("%d mutants, %d bad" % (len(MUTANTS), bad))
+        sys.exit(1 if bad else 0)

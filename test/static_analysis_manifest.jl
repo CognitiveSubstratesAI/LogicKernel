@@ -4103,6 +4103,7 @@ _index_entry_points(T) = (
         )
     ]...,
     (LK.getRepositionableStream, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK._ftruncate_stream, Tuple{LK.IOSTREAM}, false),       # set_end_of_stream/1's Sfileno + ftruncate
     (LK.unify_diff_list, Tuple{LK.PL_local_data{T}, Int, Int, Vector{Int}, Bool}, false),
     (LK.read_pending_input, Tuple{LK.PL_local_data{T}, Int, Int, Int, Bool}, false),
     (LK.copy_stream_data, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
@@ -6155,7 +6156,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
-    (LK.Ssize, Tuple{LK.IOSTREAM}, false),
+    (LK.Scontrol_getsize, Tuple{LK.IOSTREAM}, false), (LK.Ssize, Tuple{LK.IOSTREAM}, false),
     # STREAMX: the filter streams (pl-stream.c Sset_filter, the open function set); the callbacks' defaults are exempt
     (LK.Sfread, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
     (LK.Sfwrite, Tuple{Vector{UInt8}, Int64, Int64, LK.IOSTREAM}, false),
@@ -6170,12 +6171,18 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.Sclose_filter, Tuple{LK.IOSTREAM}, false),
     (LK.S_control, Tuple{LK.IOSTREAM, Int64, Nothing}, false),
     (LK.S_control, Tuple{LK.IOSTREAM, Int64, Base.RefValue{Int64}}, false),
-    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, Sseek64, Stell64
+    # R2 S2b — the seek layer (pl-stream.c): Sunit_size, S_has_seek, Sseek_julia_io, S_seek64, S__seek_update, Sseek64, Sseek, Stell64, Stell
     (LK.Sunit_size, Tuple{LK.IOSTREAM}, false), (LK.S_has_seek, Tuple{LK.IOSTREAM}, false),
-    (LK.Sseek_julia_io, Tuple{LK.Sjulia_io, Int64, Int}, false),
+    (LK.Sseek_julia_io, Tuple{LK.IOSTREAM, LK.Sjulia_io, Int64, Int}, false),
     (LK.S_seek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
+    (LK.S__seek_update, Tuple{LK.IOSTREAM, Int64}, false),
     (LK.Sseek64, Tuple{LK.IOSTREAM, Int64, Int}, false),
-    (LK.Stell64, Tuple{LK.IOSTREAM}, false),
+    (LK.Sseek, Tuple{LK.IOSTREAM, Int, Int}, false),
+    (LK.Stell64, Tuple{LK.IOSTREAM}, false), (LK.Stell, Tuple{LK.IOSTREAM}, false),
+    (LK.Sfgets, Tuple{Vector{UInt8}, Int64, LK.IOSTREAM}, false),
+    (LK.Sfputs, Tuple{Vector{UInt8}, LK.IOSTREAM}, false),
+    (LK.Sfputs, Tuple{String, LK.IOSTREAM}, false),
+    (LK.Sfree, Tuple{Any}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
     (LK._current_umask, Tuple{}, false),
     (LK._open_julia_file, Tuple{String, Char, Int64}, false),

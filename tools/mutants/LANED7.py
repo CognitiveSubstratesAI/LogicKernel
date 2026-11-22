@@ -94,7 +94,7 @@ MUTANTS = [
          old='    proc === nothing || wait(proc)',
          new='    proc === nothing || nothing'),
     dict(id="LD7-29 S_has_seek: a pipe seeks as a file (KILL: d336, d337, d340: ESPIPE becomes a Julia error)", file=G, targets=TL,
-         old='        return h isa Sjulia_io && h.io isa IOStream\n    end\n    return false\nend\n',
+         old='        return h isa Sjulia_io && h.proc === nothing\n    end\n    return false\nend\n',
          new='        return h isa Sjulia_io\n    end\n    return false\nend\n'),
     dict(id="LD7-30 open/4: a non-atom pipe command is not a type error (KILL: d326)", file=F, targets=TL,
          old='            PL_error(ld, ERR_TYPE, mk_sym(T, :atom), a)\n            return nothing\n        end\n        s, errno = Sopen_pipe',
