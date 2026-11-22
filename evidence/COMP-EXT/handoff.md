@@ -19,6 +19,17 @@ Commit 2 (54381a53, `TEST: COMP-EXT rows and mutants`) DONE, no julia run, nothi
 - Left: `warm.sh fmt` (the case tuples are written as the formatter writes them, not run), `warm.sh check`, the three-type run of the new file,
   `tools/pkgtest_way.sh test/core_lang/test_compext_swipl.jl`, test_type_discipline.jl, then push `mutants/COMP-EXT` and `gate/comp-ext` at one SHA.
 
+## DEC1 STATE (written by the DEC1 agent; no julia run, nothing formatted or compiled)
+- Commit 1: `unify_vmi(gd, ld, t, bp::Code{T}, procedures, crefs)` + `unify_functor(ld, t, name::T, arity, how)` (src/pl-comp.jl, before the
+  PL_predicates_from_comp table), manifest entries, owner row for the CA1_AFUNC refusal (AR1). The DIVERGES per operand kind are in its header comment.
+  Kinds: VAR/FVAR/CHP, INTEGER/JUMP (`*_SMALLINT` ops read the tagged word through `valInt`), FLOAT/MPZ/MPQ/STRING (literal index),
+  WORD, DATA (per instruction: packed atom_operand / literal index / atom word), FUNC (packed functor_operand / functor word), MODULE (index, 0 = unbound),
+  LPROC, PROC, CLAUSEREF (`clause(<dbref>)`), FOREIGN (dispatch index), TRIE_NODE (upstream's `default`: returns `nothing`), AFUNC (REFUSED BY NAME).
+  D_BREAK is not declared in the kernel: the `break(Instr)` branch is left out.
+- UNVERIFIED (needs the first run): JUMP operands (are they upstream's offsets?), the packed-atom/literal reading for every instruction that has CA1_DATA,
+  `functor_literal` name for `H_FUNCTOR`, the compile of the file. swipl 10.1.20 shows e.g. `h_smallint(1)`, `i_call(g/2)`, `i_departm(lists,lists:append/3)`,
+  `a_add_fc(1,0,1)`, `b_unify_exit`, `i_enter`, `i_exitfact`, `h_functor(foo/2)`, `h_var(1)`, `h_firstvar(2)`, `b_void`.
+
 ## PLAN (separate steps, NOT started): `$fetch_vm/4`, `$xr_member/2`, B_THROW
 Upstream: swipl-devel 18168e62, copies in the scratchpad `compext/` (pl-comp.c, pl-vmi.c). Both predicates need ONE shared piece first: an OPERAND DECODER
 for a clause's code (the kernel's operands are table INDEXES, src/pl-vmi.jl header "OPERANDS"; upstream's are pointers/words), and a walk by `stepPC`

@@ -4788,6 +4788,158 @@ function pl_compile_predicates1_va(
     return PL_get_nil_ex(ld, tail) ? FTRUE : FFALSE
 end
 
+# PORT: pl-comp.c unify_functor
+# DIVERGES: the functor is its name and arity (the kernel has no functor-word argument here: the operand decoder
+# `unify_vmi` reads a `H_FUNCTOR` operand's name from the clause's literal table); as the `Definition` method above,
+# `PL_unify_term(t, …divide2, PL_ATOM, PL_INT)` is written out as `PL_unify_functor` and its two arguments.
+"Unify term reference `t` with `Name/Arity` (`GP_NAMEARITY` in `how`), else with a compound of that name and arity (pl-comp.c)."
+function unify_functor(
+    ld::PL_local_data{T}, t::term_t, name::T, arity::Int, how::Int
+)::Bool where {T}
+    if (how & GP_NAMEARITY) != 0
+        PL_unify_functor(ld, t, mk_sym(T, :/), 2) || return false
+        a = PL_new_term_ref(ld)
+        return _PL_get_arg(ld, 1, t, a) && PL_unify_atom(ld, a, name) &&
+               _PL_get_arg(ld, 2, t, a) && PL_unify_integer(ld, a, arity)
+    end
+    return PL_unify_functor(ld, t, name, arity)
+end
+
+# PORT: pl-comp.c unify_vmi
+# (pl-comp.c:7889-8068 at the pin) the operand decoder of `'$fetch_vm'/4` and `'$xr_member'/2`: unify `t` with the
+# instruction at `bp` — the lower-case name atom of a zero-argument instruction, else `Name(Arg1, ...)` — and return the
+# position of the next instruction, `nothing` when the unification fails (upstream: NULL).
+# DIVERGES (the kernel's operands are table INDEXES, src/pl-vmi.jl header "OPERANDS"; each kind is read as upstream reads
+# its word and named here):
+#  - the clause's tables come as arguments: `procedures` (a `CA1_LPROC`/`CA1_PROC` operand is an index into it;
+#    upstream: the `Procedure` pointer) and `crefs` (a `CA1_CLAUSEREF` operand is an index into the supervisor's side table,
+#    `supervisor_crefs`, src/pl-wrap.jl; upstream: the `ClauseRef`); the literal table is `bp.literals`;
+#  - `CA1_DATA`: per instruction, as the compiler writes it: `H_ATOM`/`B_ATOM`/`L_ATOM` the packed `atom_operand` (its
+#    literal), `B_UNIFY_FC`/`B_UNIFY_VC`/`B_EQ_VC`/`B_NEQ_VC` the literal index, `T_ATOM`/`T_TRY_ATOM` and the two data
+#    operands of `S_CALLWRAPPER`/`S_TABLED` an atom word (upstream: `code2word(*bp)`);
+#  - `CA1_FUNC`: `H_FUNCTOR`/`H_RFUNCTOR`/`B_FUNCTOR`/`B_RFUNCTOR` the packed `functor_operand` (name from its literal, `$expr`
+#    when it is 0, the arity in the operand), `T_FUNCTOR`/`T_TRY_FUNCTOR` a functor word;
+#  - `CA1_FLOAT`/`CA1_MPZ`/`CA1_MPQ`/`CA1_STRING`: the operand is the literal index (upstream: `CODES_PER_DOUBLE` words, or
+#    `globalIndirectFromCode`'s block), unified as `PL_unify_atomic` as upstream does for the indirect kinds;
+#  - `CA1_INTEGER`: the signed word, except for the `*_SMALLINT` instructions, whose operand is the TAGGED word here
+#    (`valInt` reads it: upstream's is the plain integer);
+#  - `CA1_MODULE`: the module's INDEX in `gd.modules`, 0 (upstream NULL, `I_DEPARTAM`) leaves the cell unbound (c:8000-8006);
+#  - `CA1_CLAUSEREF`: `clause(Ref)` with the clause's database reference (`PL_unify_clref`) where upstream puts `PL_POINTER`
+#    of the clause: the kernel has no machine address;
+#  - `CA1_FOREIGN`: the operand is the built-in's dispatch-table index (no `dladdr`: no shared object, no symbol); the cell
+#    holds the index, as upstream's own fallback `PL_put_pointer` (c:8021-8024) holds the address;
+#  - `CA1_WORD`: one word (`CODES_PER_WORD == 1`), no instruction of the kernel's table has it;
+#  - `CA1_TRIE_NODE`: no case upstream either, so upstream's `default` branch (the diagnostic, then NULL) is here `nothing`
+#    without the `Sdprintf` line (no stderr diagnostic in the kernel);
+#  - `CA1_AFUNC`: no instruction of the kernel's table has it (arithmetic functions run through `ar_*`, not
+#    `functorArithFunction`): REFUSED BY NAME, `NotPortedError`;
+#  - `D_BREAK` is not declared (no debugger, so no `replacedBreak`): the `break(Instr)` branch is left out.
+"""
+    unify_vmi(gd, ld, t, bp, procedures, crefs) -> Union{Nothing, Code}
+
+Unify the term reference `t` with the instruction at `bp`: its name for a zero-argument instruction, else
+`Name(Arg1, ...)` with each operand read by its kind (pl-comp.c). Returns the next instruction's position, or `nothing`
+when the unification fails.
+"""
+function unify_vmi(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, bp::Code{T},
+    procedures::Vector{Procedure{T}}, crefs::Vector{ClauseRef{T}}
+)::Union{Nothing, Code{T}} where {T}
+    codes = bp.codes
+    lits = bp.literals
+    op = decode(bp)
+    ci = codeTable(op)
+    pc = bp.pc + 1                                              # bp++: skip the instruction
+    name = mk_sym(T, Symbol(lowercase(String(ci.name))))        # ci->name, lower-case as `lookup_vmi`
+    if ci.arguments == 0
+        PL_unify_atom(ld, t, name) || return nothing
+        return Code{T}(codes, lits, pc)
+    end
+    na = 0                                                      # strlen(VM_ARGTYPES)
+    for k in ci.argtype
+        k == 0x00 && break
+        na += 1
+    end
+    av = PL_new_term_refs(ld, na)
+    for an in 0:(na - 1)
+        at = ci.argtype[an + 1]
+        w = codes[pc]
+        pc += 1
+        a = av + an
+        rc = true
+        if at == CA1_VAR || at == CA1_FVAR || at == CA1_CHP
+            rc = PL_put_integer(ld, a, VARNUM(w))
+        elseif at == CA1_INTEGER || at == CA1_JUMP
+            i = if op == H_SMALLINT || op == B_SMALLINT || op == L_SMALLINT ||
+                op == T_SMALLINT || op == T_TRY_SMALLINT
+                valInt(w)
+            else
+                reinterpret(Int64, w)                           # (scode)*bp++
+            end
+            rc = PL_put_int64(ld, a, i)
+        elseif at == CA1_FLOAT || at == CA1_MPZ || at == CA1_MPQ || at == CA1_STRING
+            rc = PL_unify_atomic(ld, a, lits[Int(w)])
+        elseif at == CA1_WORD
+            rc = PL_put_int64(ld, a, reinterpret(Int64, w))     # code_get_word: one word
+        elseif at == CA1_DATA
+            v = if op == H_ATOM || op == B_ATOM || op == L_ATOM
+                lits[atom_literal(w)]
+            elseif op == B_UNIFY_FC || op == B_UNIFY_VC || op == B_EQ_VC ||
+                op == B_NEQ_VC
+                lits[Int(w)]
+            elseif op == T_ATOM || op == T_TRY_ATOM || op == S_CALLWRAPPER ||
+                op == S_TABLED
+                _atom_value(ld, w)
+            else
+                error("unify_vmi: no CA1_DATA decoder for ", name)   # an internal invariant
+            end
+            rc = PL_unify_atomic(ld, a, v)
+        elseif at == CA1_FUNC
+            if op == T_FUNCTOR || op == T_TRY_FUNCTOR
+                nm = _atom_value(ld, nameFunctor(ld.functors, w))
+                ar = arityFunctor(ld.functors, w)
+            else
+                li = functor_literal(w)
+                nm = li == 0 ? mk_sym(T, Symbol("\$expr")) : lits[li]
+                ar = functor_arity(w)
+            end
+            rc = unify_functor(ld, a, nm, ar, GP_NAMEARITY)
+        elseif at == CA1_MODULE
+            w == 0 || PL_put_atom(ld, a, gd.modules[Int(w)].atom)   # I_DEPARTAM can have a NULL module
+        elseif at == CA1_LPROC
+            def = procedures[Int(w)].definition
+            rc = unify_functor(ld, a, def, GP_NAMEARITY)
+        elseif at == CA1_PROC
+            def = procedures[Int(w)].definition
+            rc = unify_definition(
+                gd, ld, MODULE_user(gd), a, def, 0, GP_QUALIFY | GP_NAMEARITY
+            )
+        elseif at == CA1_CLAUSEREF
+            tmp = PL_new_term_ref(ld)
+            rc = PL_unify_functor(ld, a, mk_sym(T, :clause), 1) &&
+                 _PL_get_arg(ld, 1, a, tmp) &&
+                 PL_unify_clref(gd, ld, tmp, crefs[Int(w)].clause::Clause{T})
+        elseif at == CA1_FOREIGN
+            rc = PL_put_int64(ld, a, Int(w))
+        elseif at == CA1_AFUNC
+            throw(
+                NotPortedError{T}(
+                    name, "unify_vmi: CA1_AFUNC (functorArithFunction)", "COMP-EXT"
+                )
+            )
+        else                                                    # CA1_TRIE_NODE: upstream's `default` (NULL)
+            return nothing
+        end
+        rc || return nothing                                    # resource error
+    end
+    PL_unify_functor(ld, t, name, na) || return nothing         # PL_unify_term(t, PL_FUNCTOR_CHARS, …)
+    arg = PL_new_term_ref(ld)
+    for i in 1:na
+        (_PL_get_arg(ld, i, t, arg) && PL_unify(ld, arg, av + i - 1)) || return nothing
+    end
+    return Code{T}(codes, lits, pc)
+end
+
 # PORT: pl-comp.c ca1_name
 # (the `ca1_name` array, pl-comp.c:8077-8098: index `CA1_PROC` = 1 on; entry 6, `CA1_WORD`, is named `int64`)
 # a comment, not a docstring, as for every module-level constant the global-state lint reads

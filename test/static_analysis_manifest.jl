@@ -859,6 +859,8 @@ function _manifest_index(T)
         ]...,
         # f3b-4 — the definition's reference on term references
         (LK.unify_functor, Tuple{LD, Int, D, Int}, false),
+        (LK.unify_functor, Tuple{LD, Int, T, Int, Int}, false),
+        (LK.unify_vmi, Tuple{GD, LD, Int, PCd, Vector{PR}, Vector{CR}}, false),
         (LK.unify_definition, Tuple{GD, LD, MOD, Int, D, Int, Int}, false),
         # R1b — the operator tables (src/pl-op.jl) and the FLI getters op/3 uses (pl-fli.jl,
         # pl-error.jl)
