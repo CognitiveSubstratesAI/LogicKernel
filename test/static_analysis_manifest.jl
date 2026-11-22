@@ -5264,6 +5264,41 @@ _manifest_zip(T) = begin
 end
 _manifest_zip_plain() = ((LK.rc_strerror, Tuple{Int}, false),)
 
+# HASH1 — packages/clib/hash_stream.c (src/pl-hashstream.jl): open_hash_stream/3, stream_hash/2 and the filter record's callbacks.
+# Checked for every payload type; the digest size and the three state types' helpers carry no term type, once.
+_manifest_hashstream(T) = begin
+    LD, HC = LK.PL_local_data{T}, LK.HashContext{T}
+    (
+        (LK.hash_unify_digest, Tuple{LD, Int, Vector{UInt8}, Int}, false),
+        (LK.alloc_hash_context, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.free_hash_context, Tuple{HC}, false),
+        (LK.hash_append, Tuple{HC, Vector{UInt8}, Int}, false),
+        (LK.get_hash_algorithm, Tuple{LD, Int}, false),
+        (LK.install_hashstream, Tuple{LD}, false),
+        (LK.Sfilter_read, Tuple{HC, Vector{UInt8}, Int, Int}, false),
+        (LK.Sfilter_write, Tuple{HC, Vector{UInt8}, Int, Int}, false),
+        (LK.Sfilter_control, Tuple{HC, Int, Nothing}, false),
+        (LK.Sfilter_control, Tuple{HC, Int, Base.RefValue{Int}}, false),
+        (LK.Sfilter_close, Tuple{HC}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
+            (LK.pl_open_hash_stream3_va, LK.pl_stream_hash2_va)
+        ]...
+    )
+end
+_manifest_hashstream_plain() = (
+    (LK.hash_digest_size, Tuple{Int}, false),
+    (LK._hash_append, Tuple{LK.md5_state_t, Vector{UInt8}, Int}, false),
+    (LK._hash_append, Tuple{LK.sha1_ctx, Vector{UInt8}, Int}, false),
+    (LK._hash_append, Tuple{LK.sha2_ctx, Vector{UInt8}, Int}, false),
+    (LK._hash_copy_state, Tuple{LK.md5_state_t}, false),
+    (LK._hash_copy_state, Tuple{LK.sha1_ctx}, false),
+    (LK._hash_copy_state, Tuple{LK.sha2_ctx}, false),
+    (LK._hash_finish!, Tuple{LK.md5_state_t}, false),
+    (LK._hash_finish!, Tuple{LK.sha1_ctx}, false),
+    (LK._hash_finish!, Tuple{LK.sha2_ctx}, false)
+)
+
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -6146,6 +6181,10 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_zip(_M2)...,
     _manifest_zip(_M3)...,
     _manifest_zip_plain()...,
+    _manifest_hashstream(_M1)...,
+    _manifest_hashstream(_M2)...,
+    _manifest_hashstream(_M3)...,
+    _manifest_hashstream_plain()...,
     _MANIFEST_LB2B_FREE...,
     _MANIFEST_TR2_FREE...,
     _manifest_tx1(_M1)...,
@@ -7006,6 +7045,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_load)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_apple)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_thread)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_hashstream)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
