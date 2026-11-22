@@ -108,6 +108,12 @@ const PL_FA_TRANSPARENT = 0x02
 # PORT: SWI-Prolog.h PL_ATOM
 "Text type: an atom (SWI-Prolog.h)."
 const PL_ATOM = 2
+# PORT: SWI-Prolog.h PL_INTEGER
+"Term type: an integer (SWI-Prolog.h)."
+const PL_INTEGER = 3
+# PORT: SWI-Prolog.h PL_RATIONAL
+"Term type: a rational number (SWI-Prolog.h)."
+const PL_RATIONAL = 4
 # PORT: SWI-Prolog.h PL_LIST
 "`PL_skip_list`'s result: a proper list (SWI-Prolog.h)."
 const PL_LIST = 12
@@ -183,6 +189,9 @@ const CVT_ALL = CVT_ATOMIC | CVT_LIST
 # PORT: SWI-Prolog.h CVT_XINTEGER
 "Text conversion: an integer, in hexadecimal (SWI-Prolog.h)."
 const CVT_XINTEGER = 0x00000400 | CVT_INTEGER
+# PORT: SWI-Prolog.h CVT_MASK
+"The bits of the flags that say which types convert (SWI-Prolog.h)."
+const CVT_MASK = 0x00000fff
 # PORT: SWI-Prolog.h CVT_EXCEPTION
 "Text conversion: raise an error where the conversion fails (SWI-Prolog.h)."
 const CVT_EXCEPTION = 0x00001000

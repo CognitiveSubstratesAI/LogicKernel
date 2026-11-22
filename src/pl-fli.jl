@@ -1656,8 +1656,9 @@ function PL_call_predicate(
 end
 
 # PORT: pl-fli.c ucs_atom
-# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); NOT PORTED: its hooks
-# (`compareUCSAtom`, `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`).
+# DIVERGES: flags and name only (`PL_blob_t`, src/SWI-Prolog.jl); its hooks (`compareUCSAtom`,
+# `blob_write_usc_atom`, the qlf `saveUCSAtom`/`loadUCSAtom`) are the functions of FLI-API group D below,
+# not slots of this value.
 "The blob type of a wide-character text atom (pl-fli.c): unique, text, `pl_wchar_t` code points."
 const ucs_atom = PL_blob_t(PL_BLOB_UNIQUE | PL_BLOB_TEXT | PL_BLOB_WCHAR, "ucs_text")
 
@@ -1782,8 +1783,9 @@ function PL_functor_arity(ld::PL_local_data, f::word)::Int
     return arity
 end
 
-# ORIGINAL (FLI-API): pl-fli.c get_atom_ptr_text — the text of the atom `a`, `nothing` where it is no text atom.
-# The atom is an argument and the text a COPY of its name (upstream points into the atom): a wide text atom is
+# PORT: pl-fli.c get_atom_ptr_text
+# DIVERGES: the atom is an argument and the answer the text or `nothing` (upstream returns a Bool and fills a `PL_chars_t`
+# it is given); the text is a COPY of the atom's name (upstream points into the atom): a wide text atom is
 # `ENC_WCHAR` with its length in code points, any other text atom ISO Latin-1; both canonical.
 "The canonical text of the text atom `a`, `nothing` for a non-textual atom (pl-fli.c `get_atom_ptr_text`)."
 function get_atom_ptr_text(a::atom)::Union{Nothing, PL_chars_t}
@@ -1793,6 +1795,148 @@ function get_atom_ptr_text(a::atom)::Union{Nothing, PL_chars_t}
         return PL_chars_t(bytes, a.length ÷ sizeof(UInt32), ENC_WCHAR, true)
     end
     return PL_chars_t(bytes, a.length, ENC_ISO_LATIN_1, true)
+end
+
+# ── FLI-API group D (pl-fli.c): the wide-atom blob type's hooks and the text of atoms, strings and values ────────────
+
+# PORT: pl-fli.c blob_write_usc_atom
+# DIVERGES: the wide atom's text and the write options are the arguments (upstream's `atom_t a` and the `void *context`
+# that holds the options); the options are untyped here, as pl-write.jl is included after this file.
+"Write the wide atom with text `name` under `options` (`writeUCSAtom`): 1 for success, -1 for failure (pl-fli.c)."
+function blob_write_usc_atom(name::String, options)::Int
+    rc = writeUCSAtom(name, options)
+    return rc ? 1 : -1
+end
+
+# PORT: pl-fli.c initUCSAtoms
+# DIVERGES: the atom table is an argument (upstream registers the blob type once per process); registering is idempotent.
+"Register the blob type of wide text atoms `ucs_atom` in the atom table `atoms` (pl-fli.c)."
+function initUCSAtoms(atoms::atoms_t)::Nothing
+    PL_register_blob_type(atoms, ucs_atom)
+    return nothing
+end
+
+# PORT: pl-fli.c isUCSAtom
+# DIVERGES: the atom is a value (`atom`, src/pl-atom.jl), its type compared by identity.
+"Is the atom `a` of the blob type of wide text atoms (pl-fli.c)?"
+isUCSAtom(a::atom)::Bool = a.type === ucs_atom
+
+# PORT: pl-fli.c get_atom_text
+# DIVERGES: the atom table is an argument and the answer is the text or `nothing` (upstream returns a Bool and fills
+# the `PL_chars_t` it is given).
+"The canonical text of the atom with word `w`, `nothing` for a non-textual atom (pl-fli.c)."
+get_atom_text(atoms::atoms_t, w::word)::Union{Nothing, PL_chars_t} =
+    get_atom_ptr_text(atomValue(atoms, w))
+
+# PORT: pl-fli.c get_string_text
+# DIVERGES: the argument is the interface value of the string (upstream's string word); the answer is the text (upstream
+# fills a `PL_chars_t` and returns true); the bytes are a COPY (no `PL_CHARS_PROLOG_STACK`); a value that is no string
+# raises an error (upstream reads a cell it checked the caller for).
+"The canonical text of the string `s`: ISO Latin-1 where every character is below 0x100, else `ENC_WCHAR` (pl-fli.c)."
+function get_string_text(s::T)::PL_chars_t where {T}
+    isString(s) || error("get_string_text: not a string")
+    codes = UInt32[UInt32(c) for c in string_value(s)]
+    if all(c -> c < 0x00000100, codes)                        # isBString(w)
+        return PL_chars_t(UInt8[UInt8(c) for c in codes], length(codes), ENC_ISO_LATIN_1, true)
+    end
+    return PL_chars_t(Vector{UInt8}(reinterpret(UInt8, codes)), length(codes), ENC_WCHAR, true)
+end
+
+# PORT: pl-fli.c compareUCSAtom
+# DIVERGES: the atoms are values (`atom`); `get_wchar` is the plain dereference of a 32-bit `pl_wchar_t`.
+"The order of two wide text atoms by code point, then by length in bytes: -1, 0 or 1 (pl-fli.c)."
+function compareUCSAtom(a1::atom, a2::atom)::Int
+    s1 = reinterpret(UInt32, view(a1.name, 1:(a1.length)))
+    s2 = reinterpret(UInt32, view(a2.name, 1:(a2.length)))
+    for i in 1:min(length(s1), length(s2))
+        c1, c2 = Int(s1[i]), Int(s2[i])
+        c1 != c2 && return Int(c1 > c2) - Int(c1 < c2)                  # SCALAR_TO_CMP(c1, c2)
+    end
+    return Int(a1.length > a2.length) - Int(a1.length < a2.length)      # SCALAR_TO_CMP(a1->length, a2->length)
+end
+
+# PORT: pl-fli.c saveUCSAtom
+# DIVERGES: refused by name; owner LD2 (the QLF reader and writer, src/pl-qlf.jl, are refused by name: `qlfPutStringW`).
+"Refused by name: the QLF writer of a wide atom (pl-fli.c `saveUCSAtom`), owner LD2."
+function saveUCSAtom(a::atom, fd)::Bool
+    throw(
+        NotPortedError{Nothing}(
+            nothing, "saveUCSAtom (qlfPutStringW)", "LD2: the QLF writer is refused by name"
+        )
+    )
+end
+
+# PORT: pl-fli.c loadUCSAtom
+# DIVERGES: refused by name; owner LD2 (`qlfGetStringW`, as `saveUCSAtom`).
+"Refused by name: the QLF reader of a wide atom (pl-fli.c `loadUCSAtom`), owner LD2."
+function loadUCSAtom(fd)::UInt64
+    throw(
+        NotPortedError{Nothing}(
+            nothing, "loadUCSAtom (qlfGetStringW)", "LD2: the QLF reader is refused by name"
+        )
+    )
+end
+
+# PORT: pl-fli.c is_text_value
+# DIVERGES: the value's type is the argument (upstream reads it from the `pl_value_t`: `PL_get_arg_values` is owner
+# FLI1); `flags` is the `UInt32` of the `CVT_*` bits.
+"Is a value of type `type` (`PL_STRING`, `PL_ATOM`, `PL_INTEGER`, `PL_RATIONAL`) converted as text under `flags` (pl-fli.c)?"
+function is_text_value(type::Int, flags::UInt32)::Bool
+    if type == PL_STRING
+        return true
+    elseif type == PL_ATOM
+        return (flags & CVT_ATOM) != 0
+    elseif type == PL_INTEGER || type == PL_RATIONAL
+        return (flags & CVT_FLOAT) == 0
+    end
+    return false
+end
+
+# PORT: pl-fli.c get_value_text
+# DIVERGES: the local data is an argument; the answer is `(bytes, length)` or `nothing` (upstream writes `v->value.s` and
+# `v->length` of a `pl_value_t`, owner FLI1); no `PL_save_text` (Julia's GC owns the vector); as `PL_mb_text`, only
+# `REP_UTF8` is written: any other target raises `NotPortedError`.
+"The bytes and their count of the text the term reference `tmp` holds, converted by `cvt` where `flags` set the rest (pl-fli.c)."
+function get_value_text(
+    ld::PL_local_data{T}, tmp::term_t, cvt::UInt32, flags::UInt32
+)::Union{Nothing, Tuple{Vector{UInt8}, Int}} where {T}
+    flags = (flags & ~CVT_MASK) | cvt
+    text = PL_get_text(ld, tmp, flags)
+    text === nothing && return nothing
+    PL_mb_text(text, flags) || return nothing
+    return (Vector{UInt8}(text.text), length(text.text))
+end
+
+# ORIGINAL (FLI-API): the code points of the canonical text `text`, in order.
+"The code points of the canonical text `text`."
+function _fli_text_codes(text::PL_chars_t)::Vector{UInt32}
+    if text.encoding === ENC_WCHAR
+        return UInt32[reinterpret(UInt32, view(text.text, 1:(4 * text.length)))...]
+    end
+    return UInt32[text.text[j] for j in 1:(text.length)]
+end
+
+# ORIGINAL (FLI-API): whether the canonical text `text` holds the character 0 (an atom's symbol cannot).
+"Does the canonical text `text` hold a 0 character?"
+_fli_text_has_nul(text::PL_chars_t)::Bool = any(iszero, _fli_text_codes(text))
+
+# PORT: pl-fli.c PL_get_text_as_atom
+# DIVERGES: the local data is an argument; the answer is the atom's interface symbol or `nothing` (upstream writes `*a`);
+# a text with the character 0 raises `AtomNotRepresentableError` (a symbol cannot hold it); no `PL_STRINGS_MARK`, no
+# `valid_term_t` check.
+"The atom term reference `t` holds, else the atom of the text it holds as `flags` (`CVT_*`) allow, else `nothing` (pl-fli.c)."
+function PL_get_text_as_atom(
+    ld::PL_local_data{T}, t::term_t, flags::UInt32
+)::Union{Nothing, T} where {T}
+    a = PL_get_atom(ld, t)
+    a === nothing || return a                               # isAtom(w): *a = (atom_t) w
+    text = PL_get_text(ld, t, flags)
+    text === nothing && return nothing
+    PL_canonicalise_text(text) == 1 || return nothing       # textToAtom canonicalises first, 0 where it cannot
+    _fli_text_has_nul(text) && throw(AtomNotRepresentableError(_fli_text_codes(text)))
+    w = textToAtom(ld.atoms, text)                          # ta = textToAtom(&text)
+    w == 0 && return nothing
+    return _record_atom_symbol!(ld, w, text)
 end
 
 # PORT: pl-fli.c PL_atom_chars
