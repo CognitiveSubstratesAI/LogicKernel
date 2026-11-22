@@ -355,6 +355,9 @@ mutable struct PL_global_data{T}
     clauses_cgc_clause_factor::Float64                          # clauses.cgc_clause_factor: clause GC clause factor (pl-setup.c:182; default 1.0)
     const os_tmp_files::Set{String}                                   # os.tmp_files: the temporary files handed out, by name (pl-os.c TemporaryFile; W12-TMPFILES)
     os_temp_counter::Int                                        # (pl-os.c static `temp_counter`: the last number in a temporary name; W12-TMPFILES)
+    const message_queues::Dict{UInt64, message_queue{T}}        # thread.queueTable: the user message queues by the `sym_key` of their id (pl-thread.c; QUEUES; `message_queue_serial > 0` models `queueTable != NULL`)
+    message_queue_serial::Int                                   # the last creation number handed out to a queue (QUEUES; the payload of an anonymous queue's blob)
+    const thread_queues::Dict{Int, message_queue{T}}            # the queue every thread owns, by its `pl_tid` (QUEUES; upstream's `LD->thread.messages`, which an engine cannot reach for the main thread)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -421,6 +424,9 @@ end
 # Since W12-TMPFILES: `os_tmp_files` (`GD->os.tmp_files`, the names `TemporaryFile` handed out; `DeleteTemporaryFile`, `RemoveTemporaryFiles`,
 # src/os/pl-os.jl; its callers tmp_file/2, `$tmp_file_stream`/4) and `os_temp_counter`, pl-os.c's `static int temp_counter`
 # (one per database here: the kernel keeps no module-level mutable state).
+# Since QUEUES: `message_queues` and `message_queue_serial` (`GD->thread.queueTable` of pl-thread.c, the user queues), and `thread_queues` (the queue each
+# thread owns, by its `pl_tid`, made at its first use: DIVERGES, upstream keeps it in `LD->thread.messages` and an engine cannot reach the main
+# thread's local data); the local data holds `queue_enums`, the pool of `message_queue_property/2`'s REDO_PTR states.
 
 # PORT: pl-incl.h cleanup_status as CLN_NORMAL
 # DIVERGES: the enum's values as `Int` constants (`halt_cleaning` is an `Int`), pl-incl.h:1054-1060.
@@ -1053,6 +1059,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     cur_pred_enums::foreign_state_pool{cur_pred_enum}           # ('$c_current_predicate'/2's REDO_PTR states, R2 PR1)
     cur_enums::foreign_state_pool{cur_enum{T}}                  # (current_predicate/1's REDO_PTR states, R2 PR1)
     mutex_enums::foreign_state_pool{mutex_prop_enum{T}}         # (mutex_property/2's REDO_PTR states, MUTEX)
+    queue_enums::foreign_state_pool{qprop_enum{T}}              # (message_queue_property/2's REDO_PTR states, QUEUES)
     input_context_stack::Vector{input_context{T}}               # input_context_stack: see/seen's (R2 LB3)
     qlf_write_state::Nothing                                    # qlf.write_state: always NULL, no state file (R2 LB3, LD2)
     IO_output_stack::Vector{IOSTREAM}                           # IO.output_stack: the streams current_output was before each redirect (R2 O1B)
@@ -1195,6 +1202,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         foreign_state_pool{cur_pred_enum}(),    # '$c_current_predicate'/2's states: none
         foreign_state_pool{cur_enum{T}}(),      # current_predicate/1's states: none
         foreign_state_pool{mutex_prop_enum{T}}(),  # mutex_property/2's states: none
+        foreign_state_pool{qprop_enum{T}}(),    # message_queue_property/2's states: none
         input_context{T}[],                     # input_context_stack: empty (NULL)
         nothing,                                # qlf.write_state: NULL (LD2: the state is never written)
         IOSTREAM[],                             # output_stack: no redirect (R2 O1B)

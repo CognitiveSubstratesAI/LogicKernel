@@ -25,8 +25,9 @@
 #              `ld_table` (the local data a wrapped stream names, R2 TOP1b E) is of the same kind: an entry stands for an open
 #              wrapped stream, so the copy gets an empty table and a template with an entry is refused.
 #   :reset   — the field is not the template's state but the process's start-up state: the copy gets the value `GD_COPY_RESET`
-#              names for it, the value the constructor (`setupProlog`, src/pl-setup.jl) gives the field. `paths_CWDdir` is
-#              the one field: upstream sets `GD->paths.CWDdir = NULL` at start (pl-os.c:989-990, initExpand) and computes it at the first
+#              names for it, the value the constructor (`setupProlog`, src/pl-setup.jl) gives the field. `thread` and `thread_queues` (the
+#              queue of each thread by its `pl_tid`: a copy has no engine) are the two of TH1; `paths_CWDdir` is
+#              the one of the paths: upstream sets `GD->paths.CWDdir = NULL` at start (pl-os.c:989-990, initExpand) and computes it at the first
 #              `PL_cwd` (cwd_unlocked: `CWDlen == 0`, pl-os.c:1827; stored at :1860-1866), so a database made after the
 #              boot has no cached directory yet, and the template's (the directory the boot ran in) must not reach it.
 # Any field not named here is :deep.
@@ -37,13 +38,15 @@ const GD_COPY_POLICY = (
     stream_table=:streams,
     ld_table=:streams,
     paths_CWDdir=:reset,             # pl-os.c:989, :1864-1866 at cbf4e189
-    thread=:reset                    # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines); `copy_global_data` then registers the main thread
+    thread=:reset,                   # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines); `copy_global_data` then registers the main thread
+    thread_queues=:reset             # the queue of each thread, by its `pl_tid`: a copy has no engine, and a stale entry would hand the next engine of that tid the old messages (QUEUES)
 )
 
 "The start-up value of each `:reset` field of `GD_COPY_POLICY`, as `setupProlog` (src/pl-setup.jl) passes it to the constructor."
 # `thread` is an Expr, evaluated in the body of `copy_global_data` (`T` is its type parameter): a fresh `thread_state{T}()`, as the
 # constructor gives it (a mutable value must not be one literal shared by every copy).
-const GD_COPY_RESET = (paths_CWDdir="", thread=:(thread_state{T}()))   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
+# `thread_queues` likewise: a fresh empty table (the `message_queues` of the user queues are database state, DEEP like `mutexes`).
+const GD_COPY_RESET = (paths_CWDdir="", thread=:(thread_state{T}()), thread_queues=:(Dict{Int, message_queue{T}}()))   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
 
 # The copy of one stream table: empty, and the same shape. `x` is the template's field.
 function _copy_stream_free(x::AbstractVector)

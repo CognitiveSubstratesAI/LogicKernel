@@ -709,7 +709,10 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         0.03,                                   # clauses_cgc_stack_factor: pl-setup.c:181
         1.0,                                    # clauses_cgc_clause_factor: pl-setup.c:182
         Set{String}(),                          # os_tmp_files: no temporary file yet (pl-os.c TemporaryFile; W12-TMPFILES)
-        0                                       # os_temp_counter: no temporary name made (pl-os.c `temp_counter`; W12-TMPFILES)
+        0,                                      # os_temp_counter: no temporary name made (pl-os.c `temp_counter`; W12-TMPFILES)
+        Dict{UInt64, message_queue{T}}(),       # message_queues: no user queue (queueTable is NULL until the first message_queue_create; QUEUES)
+        0,                                      # message_queue_serial: none handed out
+        Dict{Int, message_queue{T}}()           # thread_queues: no thread has used its queue yet
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

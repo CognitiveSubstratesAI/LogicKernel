@@ -9019,3 +9019,14 @@ Mutants: tools/mutants/MUTEX.py (53, each id "aimed by <rows>"; four are candida
 the enumeration order, `mutex_trylock/1` registered with `mutex_lock/1`'s function). TARGETS follow D-0238: the blob-making mutants add test_blob.jl and test_compare_swipl.jl (both call
 `mutex_create(M)`), the registration mutants add test_builtins_swipl.jl.
 Mutants without a row to aim at (a row of its own is the next step's, not written here): the property index reset in `advance_mstate!` (needs `mutex_property(M, P)` over two mutexes) and a constant `mutex_serial`.
+
+## QUEUES — the message queues of pl-thread.c: `message_queue_create/1,2`, `message_queue_destroy/1`, `message_queue_property/2`, `message_queue_set/2`, `is_message_queue/1`, `thread_send_message/2,3`, `thread_get_message/1,2,3`, `thread_peek_message/1,2` (swipl-devel 18168e62; edit-only, the gate decides)
+
+Ported from pl-thread.c at 18168e62 in the single-thread form (src/pl-queue.jl; owner TH1). Registered as `PL_predicates_from_queue`, after mutex (src/pl-ext.jl).
+Storage: `gd.message_queues` (`queueTable`, by the `sym_key` of the queue's id), `gd.message_queue_serial` (`> 0` models `queueTable != NULL`), `gd.thread_queues` (the queue each thread owns, by `pl_tid`, made at first use:
+upstream keeps it in `LD->thread.messages`, which an engine cannot reach for the main thread's local data; dropped by `freePrologThread!`), `ld.queue_enums` (the pool of `message_queue_property/2`'s states).
+Messages are `record{T}` (`PL_record`/`PL_recorded`) in arrival order; `key`/`sequence_id` are omitted. An anonymous queue is a `message_queue` blob (payload: creation number), made as `mutexCreate` makes a mutex's.
+`aliasThread!` also refuses a name of the queue table. Single-thread semantics (named DIVERGES): a wait can only time out, so a call with `timeout`/`deadline` fails at once (no sleep); `thread_get_message` on a queue with no matching message and
+`thread_send_message` on a full queue, with no deadline, raise the refusal for TH1 (two rows in docs/r2_owners.tsv). `waiting` is always 0 (the property fails). `process_deadline_options` is a private scanner (`PL_scan_options` has no `OPT_DOUBLE`).
+QUIRK kept: `message_queue_property(main, alias(_))` succeeds with the argument unbound (a thread queue's `id` is 0). Unbound `Queue` enumerates only user queues, in creation order (upstream: hash order).
+Not run here; tests and mutants are the next step's (evidence/R2/queues1_handoff.md, B4-2 note).

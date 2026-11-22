@@ -522,8 +522,12 @@ end
     # 151 -> 150 (COV1, WIP wip/rec-cov1): `'$cov_start'/1` is ported (the VM's Coverage hooks, src/pl-wam.jl), so its refusal row and its owner
     # line (docs/r2_owners.tsv, COV1) went. TO BE MEASURED ON THE LANE with the generator's own r2_collect (841 rows less the refusal row; 150 owned expected).
     # allow-docstring-interp: the hook matches existing R2_REFUSAL_EXCEPTION lines elsewhere in this file, not this comment
+    # 150 -> 148 (INT-MERGE-11, wip/int-g1 + wip/queues-1), D-0083 disclosure: DERIVED from the diff of docs/r2_owners.tsv against the tip before this merge, NOT RUN (the gate's generator
+    # measures): 4 `pred:` owner lines went (message_queue_create/1, message_queue_destroy/1, thread_get_message/2, thread_send_message/2: ported by src/pl-queue.jl, so no longer owed) and 2
+    # refusal rows were added with an owner (the two blocking-wait refusals of src/pl-queue.jl, both sites present): -4 +2 = -2. The 150 itself is COV1's derivation and was not re-measured by the
+    # merges since (INT-MERGE-8 to 10 changed the owner rows too): the lane re-measures the whole figure.
     @test !isempty(r2_no_owner(res.rows, ow)) &&
-        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 150
+        count(r -> r2_owes(r) && !isempty(r2_owner_of(r, ow)), res.rows) >= 148
 end
 
 @testset "r2_status: the rendering (counts, per-file table, by-owner list, chart) from hand-built rows" begin

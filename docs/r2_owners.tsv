@@ -4,12 +4,8 @@
 # A missing or refused row without an owner prints NO OWNER in the status (information). An owner line whose key names no missing or refused row is R2-OWNER-STALE:
 # a finished feature's row leaves the table, its porter removes the line. SEED (R2GEN): predicate owners from evidence/R2/missing_c_preds.tsv column 5 (the step after `NEW `;
 # `Q10 stubs … rest NEW D3` → D3; `DEFER to LB5-LB7` → LB5-LB7; NONE → no owner); VM instructions by family; the QLF refusal sites → LB3; table_* flags → TAB1.
-pred:message_queue_create/1	TH1	seed: missing_c_preds.tsv
-pred:message_queue_destroy/1	TH1	seed: missing_c_preds.tsv
 pred:thread_create/3	TH1	seed: missing_c_preds.tsv
 pred:thread_exit/1	TH1	seed: missing_c_preds.tsv
-pred:thread_get_message/2	TH1	seed: missing_c_preds.tsv
-pred:thread_send_message/2	TH1	seed: missing_c_preds.tsv
 pred:thread_statistics/3	TH1	seed: missing_c_preds.tsv
 vmi:A_INTEGERW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3977 (compileArith) for an integer wider than `scode`; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets, where :3970-3971 emits A_INTEGER only); its body pl-vmi.c:3818-3832 is `#if CODES_PER_WORD > 1 ... #else assert(0)`; src/pl-vmi.jl:44
 vmi:B_SMALLINTW	REFUSED	never declared (refused by name, no step ports it): emitted by pl-comp.c:3032 for a body integer; only where a code word is narrower than a word (`CODES_PER_WORD > 1`; pl-incl.h:679 SIZEOF_WORD/SIZEOF_CODE, `code` = uintptr_t :888, so 1 on the build the kernel targets); src/pl-vmi.jl:42-44
@@ -33,6 +29,8 @@ refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: debug_mode(Bool) of the m
 refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: class(Class) of the main thread from an engine	TH1	set_thread/2 class(Class) of the main thread when the class changes, called from an engine (pl-thread.c:3049, update_debug_mode_from_class on the main thread's local data)
 refusal:src/pl-thread.jl::pl_set_thread::set_thread/2: class(Class) with a blob atom	TH1	set_thread/2 class(Class) with a blob atom (pl-thread.c:3049): the kernel keeps the class as a Symbol
 refusal:src/pl-thread.jl::pl_gc_wait::gc_wait/1: blocks for the GC thread (none)	TH1	`$gc_wait/1` waits for a request of the GC thread (pl-thread.c:7299), which the kernel does not have: it would block for ever, so it is refused by name
+refusal:src/pl-queue.jl::get_message!::thread_get_message/N: an empty queue, or one with no matchin	TH1	thread_get_message/1,2,3 and the wait loop of get_message (pl-thread.c:4963, dispatch_cond_wait): with no deadline the wait never ends because no other thread can send (the kernel runs one thread); with a deadline the call fails at once (DIVERGES: no sleep until the deadline)
+refusal:src/pl-queue.jl::thread_send_message::thread_send_message/N: a full queue with no other thread to 	TH1	thread_send_message/2,3 on a queue at max_size (pl-thread.c:4600, dispatch_cond_wait on the drain): with no deadline the wait never ends because no other thread can drain it; with a deadline the call fails at once (DIVERGES: no sleep)
 refusal:src/os/pl-files.jl::get_file_name::PL_get_file_name flag PL_FILE_SEARCH (system:absolute_file_n	LB4	the first boot: absolute_file_name/3 of init.pl runs through PL_get_file_name(PL_FILE_SEARCH)
 refusal:src/os/pl-files.jl::_iri_hook_refused::iri_hook $what (`\$iri`:iri_hook/4 of init.pl)	LB5-LB7	off the load path: serves http:// style IRIs; the library ring
 # refusal sites, assignments settled by an existing step list (D-0408 item 5, D-0414 item 3f): evidence/R2/refusal_owners.md has the upstream function of each
