@@ -5,13 +5,20 @@
 # the direct testset trace/tracing, ul01-ul07 '$unload_file'/1.
 # TARGETS (audit D-0238): the test files that exercise the mutated code: the choice/frame code is read by test_local_stack.jl, test_rules_swipl.jl,
 # test_builtins_swipl.jl, test_cont_boot_swipl.jl and test_attvar_wakeup.jl (prolog_current_choice/1); the notrace/trace functions by test_notrace_swipl.jl.
-# NOT COVERED (a row would need the measured pc): `PL_unify_int64(ld, A3, offset)` of the `pc` key (offset + 1 survives: ca09 checks `integer(P)` only).
+# C22 (QUEUE-1): PC1-PC2 (the pc offset, kill: MG ca14, pinned 15 as MEASURED against the pinned swipl), PG1-PG6 (put/1,2 and get/1,2, kill: MG pu/ge rows),
+# CN1-CN5 ('$call_no_catch'/1, kill: MG cn rows). TARGETS for the pl-file.jl and pl-pro.jl mutants add the files that exercise put_code and the
+# character input (test_lb5_swipl.jl, test_s2a_swipl.jl; audit D-0238). NOT COVERED: `return streamStatus(ld, s)` of get_nonblank (a stream error at EOF
+# needs an erroring stream: no row), `'$sig_unblock'` always true (not killable: nothing to observe).
 # Every `old` was counted EXACTLY once in its file (python3, src.count(old) == 1) at the tip of wip/miss-preds when this file was written (no Julia ran);
 # `new` != `old`. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 MG = "test/core_lang/test_miss_preds_swipl.jl"
 TARGETS_CA = [MG, "test/core_lang/test_local_stack.jl", "test/core_lang/test_rules_swipl.jl"]
 TARGETS_TR = [MG, "test/core_lang/test_notrace_swipl.jl"]
-TARGETS = TARGETS_CA + [t for t in TARGETS_TR if t not in TARGETS_CA]
+F = "src/os/pl-file.jl"
+P = "src/pl-pro.jl"
+TARGETS_PG = [MG, "test/core_lang/test_lb5_swipl.jl", "test/core_lang/test_s2a_swipl.jl"]
+TARGETS_CN = [MG]
+TARGETS = TARGETS_CA + [t for t in TARGETS_TR + TARGETS_PG if t not in TARGETS_CA]
 T = "src/pl-trace.jl"
 S = "src/pl-srcfile.jl"
 
@@ -73,4 +80,43 @@ MUTANTS = [
     # '$unload_file'/1: the public table is kept (kill: MG ul06 exports)
     m("MISS1-UL2", "                    empty!(m.public_)               # clearHTableWP(m->public)\n",
       "", [MG], file=S),
+    # the pc key's offset is off by one, either way (kill: MG ca14 pins 15)
+    m("MISS1-PC1", "return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE",
+      "return PL_unify_int64(ld, A3, offset + 1) ? FTRUE : FFALSE", TARGETS_CA),
+    m("MISS1-PC2", "return PL_unify_int64(ld, A3, offset) ? FTRUE : FFALSE",
+      "return PL_unify_int64(ld, A3, offset - 1) ? FTRUE : FFALSE", TARGETS_CA),
+    # put/2 ignores its stream (kill: MG pu07 existence_error, pu09 permission_error)
+    m("MISS1-PG1", "function pl_put2_va(\n    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}\n)::foreign_t where {T}\n    return put_code(ld, PL__t0, PL__t0 + 1)",
+      "function pl_put2_va(\n    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}\n)::foreign_t where {T}\n    return put_code(ld, 0, PL__t0 + 1)",
+      TARGETS_PG, file=F),
+    # put/1's truth value is inverted (kill: MG pu01, pu02, pu10)
+    m("MISS1-PG2", "    return put_code(ld, 0, PL__t0) ? FTRUE : FFALSE\nend\n\n# PORT: pl-file.c get_nonblank",
+      "    return put_code(ld, 0, PL__t0) ? FFALSE : FTRUE\nend\n\n# PORT: pl-file.c get_nonblank", TARGETS_PG, file=F),
+    # get_nonblank does not skip blanks (kill: MG ge01, ge03, ge14)
+    m("MISS1-PG3", "        isBlankW(c) || return PL_unify_integer(ld, chr, c)",
+      "        false || return PL_unify_integer(ld, chr, c)", TARGETS_PG, file=F),
+    # get_nonblank answers 0, not -1, at the end of the stream (kill: MG ge04, ge05, ge06, ge16)
+    m("MISS1-PG4", "            PL_unify_integer(ld, chr, -1) || return false     # TRY()",
+      "            PL_unify_integer(ld, chr, 0) || return false     # TRY()", TARGETS_PG, file=F),
+    # get/1 reads the second argument's stream slot: the stream is not the current input (kill: MG ge15, ge16)
+    m("MISS1-PG5", "    return get_nonblank(ld, 0, PL__t0) ? FTRUE : FFALSE",
+      "    return get_nonblank(ld, PL__t0, PL__t0) ? FTRUE : FFALSE", TARGETS_PG, file=F),
+    # get/2 reads the current input, not its stream (kill: MG ge01, ge02, ge11)
+    m("MISS1-PG6", "    return get_nonblank(ld, PL__t0, PL__t0 + 1) ? FTRUE : FFALSE",
+      "    return get_nonblank(ld, 0, PL__t0 + 1) ? FTRUE : FFALSE", TARGETS_PG, file=F),
+    # '$call_no_catch' takes the truth value of the goal (kill: MG cn02)
+    m("MISS1-CN1", "        PL_clear_exception(ld)\n    end\n\n    return FTRUE\n",
+      "        PL_clear_exception(ld)\n    end\n\n    return rc ? FTRUE : FFALSE\n", TARGETS_CN, file=P),
+    # '$call_no_catch' leaves the exception pending (kill: MG cn03: the row's catch/3 sees foo)
+    m("MISS1-CN2", "        PL_clear_exception(ld)\n    end\n\n    return FTRUE\n",
+      "    end\n\n    return FTRUE\n", TARGETS_CN, file=P),
+    # '$call_no_catch' never handles the exception (kill: MG cn03)
+    m("MISS1-CN3", "    if !rc && ex[] != 0\n        print_unhandled_exception",
+      "    if false\n        print_unhandled_exception", TARGETS_CN, file=P),
+    # '$call_no_catch' runs the goal as PL_Q_PASS_EXCEPTION: the ball propagates (kill: MG cn03)
+    m("MISS1-CN4", "    rc = callProlog(gd, ld, 0, A1, PL_Q_NORMAL, ex)",
+      "    rc = callProlog(gd, ld, 0, A1, PL_Q_PASS_EXCEPTION, ex)", TARGETS_CN, file=P),
+    # '$call_no_catch' does not print the uncaught ball (kill: MG cn07 through the program's message_hook/3 collector)
+    m("MISS1-CN5", "        print_unhandled_exception(gd, ld, ex[])     # printed by the VM at the throw upstream\n",
+      "", TARGETS_CN, file=P),
 ]

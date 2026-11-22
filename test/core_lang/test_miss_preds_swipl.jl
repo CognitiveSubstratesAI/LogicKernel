@@ -104,6 +104,11 @@ mg_c2(1).
 mg_c2(2).
 mg_or(R) :- ( prolog_current_choice(C), prolog_choice_attribute(C, type, T), ( prolog_choice_attribute(C, pc, P), integer(P) -> R = T-pc ; R = T-nopc ) ; R = none ).
 mg_cc(R) :- mg_c2(_), prolog_current_choice(C), prolog_choice_attribute(C, type, T), prolog_choice_attribute(C, clause, Cl), ( clause(mg_c2(X), true, Cl) -> R = T-X ; R = T-noclause ).
+mg_pc(P) :- ( prolog_current_choice(C), prolog_choice_attribute(C, pc, P) ; P = none ).
+:- dynamic mg_seen/1.
+:- multifile user:message_hook/3.
+:- dynamic user:message_hook/3.
+user:message_hook(unhandled_exception(B), error, _) :- assertz(mg_seen(B)).
 """
 
 # (id, goal, expected `enc` of R or `nothing` for "the goal failed"), run IN ORDER. Every expected value is derived from the C named in the header.
@@ -166,6 +171,13 @@ const _MG_CASES = [
     ),   # get(S, 98) reads `a`, the unification fails, `a` stays consumed
     ("ge09", raw"open_string(ab, S), get(S, a)", nothing),   # no type check of the second argument: plain failure (get_code/2 raises here)
     ("ge10", raw"open_string(ab, S), get(S, 97), R = ok", _mga("ok")),
+    # get/1 reads the CURRENT input (the same get_nonblank, stream 0): the row switches it to a string stream and back
+    (
+        "ge15",
+        raw"open_string('  ab', S), current_input(O), set_input(S), get(C), set_input(O), R = C",
+        _mgi(97)
+    ),
+    ("ge16", raw"open_string('', S), current_input(O), set_input(S), get(C), set_input(O), R = C", _mgi(-1)),
     (
         "ge11",
         raw"get(nosuch, _)",
@@ -190,6 +202,13 @@ const _MG_CASES = [
     ("cn04", raw"'$call_no_catch'(true), R = ok", _mga("ok")),
     ("cn05", raw"'$call_no_catch'(_), R = ok", _mga("ok")),   # callProlog's own instantiation error, also swallowed
     ("cn06", raw"'$call_no_catch'(user:(Y = a)), R = Y", _mga("a")),
+    # the uncaught ball is printed (print_message(error, unhandled_exception(Ball)), reaching user:message_hook/3 of the program above) and ignored:
+    # swipl's VM prints it at the throw, the kernel's print_unhandled_exception after the query (the MISS1 mutants CN5 kills this row)
+    (
+        "cn07",
+        raw"'$call_no_catch'(throw(mg_ball)), aggregate_all(count, mg_seen(mg_ball), N), R = N",
+        _mgi(1)
+    ),
     # '$unload_file'/1 (pl-srcfile.c:839-885, unloadFile :796-835, delAllModulesSourceFile__unlocked :492-530): PL_get_atom_ex(A1), then
     # lookupSourceFile(name, false): an unknown name is `true` (nothing happens); a known one has its clauses removed (unloadFile) and its
     # modules detached (m->file = NULL, public table cleared). `@DIR@` is the test's temp directory (miss_u.pl: mu_p/1 with 2 clauses and
@@ -307,6 +326,11 @@ const _MG_CASES = [
     # current one before any call (`catch`). MEASURE ON THE LANE: ca12 `swipl -g "between(1,3,_), prolog_current_choice(C), prolog_choice_attribute(C,type,T), print(T), nl" -t halt`
     ("ca12", raw"between(1, 3, _), prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("foreign")),
     ("ca13", raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("catch")),
+    # the `pc` key's OFFSET, pinned exactly (MISS1 mutants PC1/PC2): the code offset of mg_pc's `;` jump choice point inside its clause,
+    # MEASURED against the pinned swipl 18168e62: `swipl -q` on the program, `mg_pc(P), print(P)` prints 15. The kernel's `value_pc - 1`
+    # (in_clause_jump) equals it only while the kernel compiles to swipl's word layout: a kernel answer other than 15 is a layout difference
+    # to be reported, not a test fault.
+    ("ca14", raw"mg_pc(R)", _mgi(15)),
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -375,7 +399,7 @@ function _mg_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge14, cn01-cn06, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca13)" begin
+@testset "put/1,2, get/1,2, '\$call_no_catch'/1 and '\$unload_file'/1 as the C (pu01-pu10, ge01-ge16, cn01-cn07, ul01-ul07, sg01-sg02, ld01-ld06, vs01-vs04, tg01, ca01-ca14)" begin
     f, names = _mg_file(mktempdir())
     kl = _mg_kernel(f, names)
     ex = _mg_expected()
@@ -387,7 +411,7 @@ end
     # not vacuous: the expectation holds raised errors, `ok` and answers, and one failing row (ge09)
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), ex) == 17    # raised(…) (7 + ul04, ul05 + ld05, ld06, vs04 + ca04-ca08)
     @test count(l -> occursin(r"^t_\w+ *$", l), ex) == 1                   # ge09 fails
-    @test count(l -> occursin("i-1)", l), ex) == 5                         # -1 in an answer (pu04's character, the EOF answers)
+    @test count(l -> occursin("i-1)", l), ex) == 6                         # -1 in an answer (pu04's character, the EOF answers, ge16)
 end
 
 @testset "the expected lines are swipl's (live, when swipl is on PATH)" begin
