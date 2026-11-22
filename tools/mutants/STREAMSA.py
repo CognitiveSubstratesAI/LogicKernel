@@ -3,7 +3,7 @@
 # put_byte, get_byte, peek (the byte branch), set_input, set_output, byte_count, character_count, fill_buffer, copy_stream_data,
 # peek_string), run ONCE, in CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run). Format: tools/mutate_drive.py's (as
 # S2A.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`. "Aimed by": each id names the
-# rows of test/files/test_streams_a_swipl.jl (sa001-sa140) written to kill it. Verdicts: written by the battery, not yet run; the
+# rows of test/files/test_streams_a_swipl.jl (sa001-sa142) written to kill it. Verdicts: written by the battery, not yet run; the
 # rows themselves were never run either (the gate shows which kill).
 # The `old` strings are written in the repo's formatted style BEFORE `tools/warm.sh fmt` ran (the writing agent had no daemon):
 # RE-FIT any that fmt rewraps (mutate_drive.py refuses a string that does not occur exactly once). Every `old` was checked to occur
@@ -44,7 +44,7 @@ MUTANTS = [
     dict(id="SA-B5 get_byte(S, a) fails instead of raising the type error (aimed by sa054)", file=F, targets=ALL,
          old="        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n",
          new="        nothing                                     # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n"),
-    dict(id="SA-B6 get_byte(S, -1) before the end raises the type error: the eof branch is -2 (aimed by none yet: sa056 unifies -1 at the end; the battery decides)",
+    dict(id="SA-B6 get_byte(S, -1) before the end raises the type error: the eof branch is -2 (aimed by sa141: -1 offered before the end fails, the byte is consumed; sa142 pins the end_of_file atom half, which this mutant leaves in place)",
          file=F, targets=ALL,
          old="        (i == -1 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n            return false\n        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n",
          new="        (i == -2 || (a !== nothing && sym_key(a) == sym_key(mk_sym(T, :end_of_file)))) &&\n            return false\n        PL_get_char(ld, chr)                        # set type-error\n    end\n    return false\nend\n\n# PORT: pl-file.c get_byte2 as pl_get_byte2_va\n"),

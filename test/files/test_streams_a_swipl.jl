@@ -249,7 +249,9 @@ const _SA_CASES = [
     ("sa137", raw"str(ab, S), cerr(byte_count(S, _), R0), close(S), R = R0"),
     ("sa138", raw"ro(S), cerr(byte_count(S, a), R0), close(S), R = R0"),
     ("sa139", raw"ro(S), skip(S, 10), byte_count(S, B), character_count(S, C), line_count(S, L), close(S), R = [B, C, L]"),
-    ("sa140", raw"ro(S), close(S), cerr(character_count(S, _), R)")
+    ("sa140", raw"ro(S), close(S), cerr(character_count(S, _), R)"),
+    ("sa141", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, -1), R0), get_byte(S, B), close(S), R = R0-B"),
+    ("sa142", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B")
 ]
 
 # swipl 10.1.20 (pin 18168e62)'s answers to the program and cases above (the driver's lines; evidence/STREAMS-A/streams_a_rows.out)
@@ -394,7 +396,9 @@ const _SA_PINNED = [
     "t_sa137 c[116,95,115,97,49,51,55]/1(a[111,107])",
     "t_sa138 c[116,95,115,97,49,51,56]/1(a[102,97,105,108,101,100])",
     "t_sa139 c[116,95,115,97,49,51,57]/1(c[91,124,93]/2(i4,c[91,124,93]/2(i4,c[91,124,93]/2(i2,nil))))",
-    "t_sa140 c[116,95,115,97,49,52,48]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))"
+    "t_sa140 c[116,95,115,97,49,52,48]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[115,116,114,101,97,109],a[60,115,116,114,101,97,109,62])))",
+    "t_sa141 c[116,95,115,97,49,52,49]/1(c[45]/2(a[102,97,105,108,101,100],i6))",
+    "t_sa142 c[116,95,115,97,49,52,50]/1(c[45]/2(a[102,97,105,108,101,100],i6))"
 ]
 
 const _SA_DATA = "abc\nxyz\nlast line\n"
@@ -460,7 +464,7 @@ function _sa_kernel(path::String, names::Vector{String})
     return out
 end
 
-@testset "get/put/peek/get_byte/put_byte/set_input/set_output/fill_buffer/copy_stream_data/peek_string/byte_count as swipl's (sa001-sa140)" begin
+@testset "get/put/peek/get_byte/put_byte/set_input/set_output/fill_buffer/copy_stream_data/peek_string/byte_count as swipl's (sa001-sa142)" begin
     f, names = _sa_file(mktempdir())
     kl = _sa_kernel(f, names)
     @test length(kl) == length(_SA_PINNED)
