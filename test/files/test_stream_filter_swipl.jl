@@ -78,7 +78,12 @@ mutable struct NoControlFilter <: LK.AbstractSfilter
     parent::LK.IOSTREAM
 end
 LK.Sfilter_read(h::NoControlFilter, mem::Vector{UInt8}, from::Int, size::Int)::Int = 0
-LK.Sfilter_write(h::NoControlFilter, mem::Vector{UInt8}, from::Int, size::Int)::Int = size
+function LK.Sfilter_write(h::NoControlFilter, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    for i in 0:(size - 1)
+        LK.Sputc(Int(mem[from + i]), h.parent) < 0 && return -1
+    end
+    return size
+end
 LK.Sfilter_close(h::NoControlFilter)::Int = (LK.Sset_filter(h.parent, nothing); 0)
 
 "A record that supplies nothing: every callback is the default."
@@ -269,4 +274,229 @@ end
     @test LK.Ssetenc(f2, LK.ENC_UTF8) == 0 && f2.encoding == LK.ENC_UTF8
     @test LK.Sclose(filter) == 0                                   # closes the parent too
     @test parent.magic == LK.SIO_CMAGIC
+end
+
+# f07: Sflush writes the buffer to the write callback FIRST, then asks the control function for SIO_FLUSHOUTPUT (pl-stream.c Sflush)
+@testset "f07 Sflush: the buffer reaches the write callback, then control SIO_FLUSHOUTPUT" begin
+    parent, bufp, sizep = _sf_out()
+    impl = XorFilter(parent)
+    filter = _sf_filter(parent, impl)
+    @test LK.Sflush(filter) == 0 && isempty(impl.log)        # no buffer yet: nothing to write, no control call
+    LK.Sputc(Int('a'), filter)
+    LK.Sputc(Int('b'), filter)
+    @test LK.Sflush(filter) == 0
+    @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
+    @test LK.Sflush(filter) == 0                             # empty buffer: no write, but the control action is still asked
+    @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)", "control$(LK.SIO_FLUSHOUTPUT)"]
+    @test LK.Sclose(filter) == 0
+    @test impl.log[end] == "close"
+    @test _sf_bytes(bufp, sizep) == _sf_xor("ab")
+    # a filter with no control function: the flush works, the control is skipped
+    parent2, bufp2, sizep2 = _sf_out()
+    f2 = _sf_filter(parent2, NoControlFilter(parent2))
+    LK.Sputc(Int('z'), f2)
+    @test LK.Sflush(f2) == 0
+    @test LK.Sclose(f2) == 0
+    @test LK.Sclose(parent2) == 0
+    @test _sf_bytes(bufp2, sizep2) == UInt8['z']
+end
+
+# f08: a failing read callback is the stream's error; the message comes from the control function (SIO_LASTERROR, S__seterror)
+@testset "f08 a read failure: FERR and the SIO_LASTERROR message" begin
+    parent = _sf_in(UInt8[1, 2, 3])
+    impl = XorFilter(parent; close_parent=false)
+    impl.fail_read = true
+    filter = _sf_filter(parent, impl)
+    @test LK.Sgetcode(filter) == -1
+    @test impl.log == ["read", "control$(LK.SIO_LASTERROR)"]
+    @test LK.Sferror(filter) == 1
+    @test filter.message == "no good reason"
+    @test LK.Sferror(parent) == 0                            # the walk goes upstream only
+    @test LK.Sgetcode(filter) == -1                          # in error: no second read
+    @test count(==("read"), impl.log) == 1
+    # a record with no control function: the error has no message
+    f2 = LK.Snew(BareFilter(), LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+    @test LK.Sgetc(f2) == -1                                 # the default read callback answers -1
+    @test LK.Sferror(f2) == 1 && f2.message === nothing
+    LK.Sclearerr(filter)
+    @test LK.Sset_filter(parent, nothing) == 0
+    @test LK.Sclose(filter) == 0
+    @test LK.Sclose(parent) == 0
+end
+
+# f09: Ssize asks the control function (SIO_GETSIZE); -1 where there is none
+@testset "f09 Ssize through control SIO_GETSIZE" begin
+    parent = _sf_in(UInt8[])
+    impl = XorFilter(parent; close_parent=false)
+    filter = _sf_filter(parent, impl)
+    @test LK.Ssize(filter) == 1234
+    @test impl.log == ["control$(LK.SIO_GETSIZE)"]
+    impl.size = 7
+    @test LK.Ssize(filter) == 7
+    f2 = LK.Snew(NoControlFilter(parent), LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+    @test LK.Ssize(f2) == -1
+    @test LK.Ssize(parent) == -1                             # a memory stream has no size to give
+    @test LK.Sset_filter(parent, nothing) == 0
+    @test LK.Sclose(filter) == 0
+    @test LK.Sclose(parent) == 0
+end
+
+# f10: the filter's position counts what it delivers; the parent's counts what the filter pulled through Sgetc (which updates
+# the character, line and line position, not the byte count: get_byte does) or pushed through Sputc (put_byte counts bytes)
+@testset "f10 position counting" begin
+    pos(s) = (Int(s.position.charno), s.position.lineno, s.position.linepos, Int(s.position.byteno))
+    parent = _sf_in(collect(codeunits("ab\ncd")))
+    filter = _sf_filter(parent, XorFilter(parent, 0))
+    @test filter.position !== nothing && filter.position !== parent.position
+    @test pos(filter) == (0, 1, 0, 0)
+    @test LK.Sgetcode(filter) == Int('a')
+    @test pos(filter) == (1, 1, 1, 1)
+    @test pos(parent) == (5, 2, 2, 0)                         # the whole buffer was pulled at the first fill
+    for _ in 1:4
+        LK.Sgetcode(filter)
+    end
+    @test pos(filter) == (5, 2, 2, 5)
+    @test pos(parent) == (5, 2, 2, 0)
+    @test LK.Sclose(filter) == 0
+    # output: the filter counts what the application wrote, the parent what the flush pushed through
+    parent, bufp, sizep = _sf_out()
+    impl = XorFilter(parent, 0)
+    filter = _sf_filter(parent, impl)
+    for ch in "ab\ncd"
+        LK.Sputcode(Int(ch), filter)
+    end
+    @test pos(filter) == (5, 2, 2, 5)
+    @test pos(parent) == (0, 1, 0, 0)                         # nothing reached it yet
+    @test LK.Sflush(filter) == 0
+    @test pos(parent) == (5, 2, 2, 5)
+    @test LK.Sclose(filter) == 0
+    @test _sf_bytes(bufp, sizep) == collect(codeunits("ab\ncd"))
+end
+
+# f11: close propagation: the filter's close callback decides what happens to the parent (zlib4pl.c, hash_stream.c)
+@testset "f11 close propagation" begin
+    # close_parent = false: the parent stays open, unlinked, the counts back at zero
+    parent, bufp, sizep = _sf_out()
+    impl = XorFilter(parent; close_parent=false)
+    filter = _sf_filter(parent, impl)
+    LK.Sputc(Int('q'), filter)
+    @test LK.Sclose(filter) == 0
+    @test impl.log == ["write", "close"]
+    @test filter.magic == LK.SIO_CMAGIC && parent.magic == LK.SIO_MAGIC
+    @test parent.upstream === nothing && filter.downstream === nothing
+    @test parent.references == 0 && filter.references == 0
+    @test !filter.erased
+    @test LK.Sclose(parent) == 0
+    @test _sf_bytes(bufp, sizep) == _sf_xor("q")
+    # close_parent = true: both closed; closing the parent again is the usual -1 of a closed stream
+    parent, _, _ = _sf_out()
+    filter = _sf_filter(parent, XorFilter(parent))
+    @test LK.Sclose(filter) == 0
+    @test filter.magic == LK.SIO_CMAGIC && parent.magic == LK.SIO_CMAGIC
+    @test LK.Sclose(parent) == -1
+    # a reference taken by someone else keeps the closed filter alive: it is `erased` (freed when the last is released)
+    parent, _, _ = _sf_out()
+    filter = _sf_filter(parent, XorFilter(parent))
+    LK.Sacquire(filter)
+    @test filter.references == 2                              # the link and the acquire
+    @test LK.Sclose(filter) == 0
+    @test filter.references == 1 && filter.erased             # the callback's unlink took the link's reference
+    @test LK.Srelease(filter)                                 # the last: unallocStream would run
+    # the close callback fails (the parent is closed already): -1, and the filter is closed all the same
+    parent, _, _ = _sf_out()
+    filter = _sf_filter(parent, XorFilter(parent))
+    @test LK.Sset_filter(parent, nothing) == 0
+    @test LK.Sclose(parent) == 0
+    @test LK.Sclose(filter) == -1
+    @test filter.magic == LK.SIO_CMAGIC
+end
+
+# f12: the callers' errors: what the C asserts, and a filter stream with no record
+@testset "f12 refusals" begin
+    parent, _, _ = _sf_out()
+    @test_throws AssertionError LK.Snew(XorFilter(parent), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Siofunctions)
+    f1 = _sf_filter(parent, XorFilter(parent; close_parent=false))
+    f2 = LK.Snew(XorFilter(parent), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+    # a second filter on one parent: assert(parent->upstream==NULL && filter->downstream==NULL), pl-stream.c:3310
+    @test_throws AssertionError LK.Sset_filter(parent, f2)
+    # a filter function set without a record: the callbacks answer as a NULL control does (read -1, close 0)
+    s = LK.Snew(nothing, LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+    @test LK.Sread_filter(s, UInt8[0], 1, 1) == -1
+    @test LK.Swrite_filter(s, UInt8[0], 1, 1) == -1
+    @test LK.Sclose_filter(s) == 0
+    @test LK.S_control(s, LK.SIO_GETSIZE, nothing) == LK.SCONTROL_NONE
+    @test LK.Sclose(s) == 0
+end
+
+# f13: the defaults of a record that supplies nothing, and S_control of a stream that has no control function
+@testset "f13 the defaults of an AbstractSfilter, S_control without a filter" begin
+    b = BareFilter()
+    @test LK.Sfilter_read(b, UInt8[0], 1, 1) == -1
+    @test LK.Sfilter_write(b, UInt8[0], 1, 1) == -1
+    @test LK.Sfilter_close(b) == 0
+    @test LK.Sfilter_control(b, LK.SIO_GETSIZE, nothing) == LK.SCONTROL_NONE
+    @test LK.SCONTROL_NONE != 0 && LK.SCONTROL_NONE < 0
+    m = _sf_in(UInt8[])
+    @test LK.S_control(m, LK.SIO_GETSIZE, nothing) == LK.SCONTROL_NONE
+    @test LK.S_control(m, LK.SIO_LASTERROR, Ref{Union{Nothing, String}}(nothing)) == LK.SCONTROL_NONE
+    # a stream on a bare record: writing fails with -1 (the default), the error has no message
+    s = LK.Snew(b, LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+    LK.Sputc(Int('x'), s)
+    @test LK.Sflush(s) == -1
+    @test LK.Sferror(s) == 1 && s.message === nothing
+end
+
+# f14: Sfread and Sfwrite (pl-stream.c:1560, 1605): whole elements, on a stream with a position (byte by byte through Sgetc)
+# and without (the buffer by memcpy), and through a filter, as hash_stream.c uses them
+@testset "f14 Sfread, Sfwrite" begin
+    data = collect(codeunits("abcdefghij"))
+    for with_position in (true, false)
+        s = _sf_in(data)
+        with_position || (s.position = nothing)
+        buf = zeros(UInt8, 20)
+        @test LK.Sfread(buf, 1, 4, s) == 4
+        @test buf[1:4] == data[1:4]
+        @test LK.Sfread(buf, 2, 3, s) == 3                    # six bytes: all that is left
+        @test buf[1:6] == data[5:10]
+        @test LK.Sfread(buf, 1, 5, s) == 0                    # at the end
+        @test LK.Sclose(s) == 0
+        s = _sf_in(data[1:7])                                 # a partial element is not counted
+        with_position || (s.position = nothing)
+        buf = zeros(UInt8, 20)
+        @test LK.Sfread(buf, 2, 5, s) == 3
+        @test buf[1:7] == data[1:7]
+        @test LK.Sclose(s) == 0
+        s = _sf_in(data)
+        with_position || (s.position = nothing)
+        @test LK.Sfread(UInt8[], 0, 5, s) == 0                # size 0: nothing to read
+        @test LK.Sclose(s) == 0
+    end
+    big = UInt8[i % 251 for i in 1:10000]
+    for with_position in (true, false)
+        s = _sf_in(big)
+        with_position || (s.position = nothing)
+        buf = zeros(UInt8, 10000)
+        @test LK.Sfread(buf, 1, 10000, s) == 10000            # the 4096-byte buffer is refilled twice
+        @test buf == big
+        @test LK.Sclose(s) == 0
+    end
+    # Sfwrite
+    w, bufp, sizep = _sf_out()
+    @test LK.Sfwrite(collect(codeunits("hello world")), 1, 11, w) == 11
+    @test LK.Sfwrite(collect(codeunits("abcdefg")), 3, 2, w) == 2        # 6 bytes
+    @test LK.Sfwrite(UInt8[], 0, 3, w) == 0
+    @test LK.Sclose(w) == 0
+    @test String(_sf_bytes(bufp, sizep)) == "hello worldabcdef"
+    # through the xor filter, both ways
+    parent, bufp, sizep = _sf_out()
+    filter = _sf_filter(parent, XorFilter(parent))
+    @test LK.Sfwrite(data, 1, 10, filter) == 10
+    @test LK.Sclose(filter) == 0
+    @test _sf_bytes(bufp, sizep) == [b ⊻ _SF_KEY for b in data]
+    parent = _sf_in([b ⊻ _SF_KEY for b in data])
+    filter = _sf_filter(parent, XorFilter(parent))
+    buf = zeros(UInt8, 10)
+    @test LK.Sfread(buf, 5, 2, filter) == 2
+    @test buf == data
+    @test LK.Sclose(filter) == 0
 end
