@@ -1798,6 +1798,7 @@ function _manifest_index(T)
         (LK.PL_cut_query, Tuple{LD, Int}, false),
         (LK.PL_close_query, Tuple{LD, Int}, false),
         (LK.PL_exception, Tuple{LD, Int}, false), (LK.PL_current_query, Tuple{LD}, true),
+        (LK.PL_can_yield, Tuple{LD}, true), (LK.PL_yielded, Tuple{LD, Int}, true),
         (LK.PL_next_solution, Tuple{GD, LD, Int}, false),
         (LK.PL_next_solution_guarded, Tuple{GD, LD, Int, Bool}, false),
         (LK._abandon_query, Tuple{LD, Int}, false),
