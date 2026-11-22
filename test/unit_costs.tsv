@@ -32,6 +32,7 @@ core_lang/test_copyterm_swipl.jl	8.9
 core_lang/test_default_term.jl	2.1
 core_lang/test_det_swipl.jl	9.1
 core_lang/test_dict_set_swipl.jl	9.1
+core_lang/test_dictrec_swipl.jl	9.1
 core_lang/test_exception.jl	0.9
 core_lang/test_expr_functor.jl	8.8
 core_lang/test_findall_swipl.jl	8.8

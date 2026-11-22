@@ -57,6 +57,7 @@ core_lang/test_default_term.jl	2.3
 core_lang/test_det_swipl.jl	10.9
 core_lang/test_dict_preds_swipl.jl	3.9
 core_lang/test_dict_set_swipl.jl	3.9
+core_lang/test_dictrec_swipl.jl	3.9
 core_lang/test_dwim_swipl.jl	2.7
 core_lang/test_event_swipl.jl	3.3
 core_lang/test_exception.jl	1.6

@@ -1,0 +1,77 @@
+@testset "dict-record rows: the kernel's answers are swipl's (dr01-dr131)" begin
+    f, names = _dr_file()
+    kl, _, _ = _dr_kernel(f, names)
+    @test length(kl) == length(_DR_PINNED)
+    for (k, p) in zip(kl, _DR_PINNED)
+        k == p || println(stderr, "  ours  ", k, "\n  swipl ", p)
+        @test k == p
+    end
+end
+
+@testset "the dict-record rows are not vacuous (dr01-dr131)" begin
+    rows = _DR_PINNED[2:end]                                                       # the driver's first line is `ok`
+    @test _DR_PINNED[1] == "ok"
+    @test length(rows) == length(_DR_CASES) == 131
+    code(t) = "[" * join(Int.(collect(t)), ",") * "]"
+    @test count(l -> occursin(code("raised"), l), rows) == 37
+    @test count(l -> occursin(code("type_error") * "/2", l), rows) == 27
+    @test count(l -> occursin(code("instantiation_error"), l), rows) == 9
+    @test count(l -> occursin(code("representation_error") * "/1", l), rows) == 1
+    @test count(l -> occursin(code("btree"), l) && occursin(code("type_error"), l), rows) == 8
+    # rows that fail have no answer after the name; rows that answer `yes`
+    @test count(l -> occursin(r"^t_dr\d+$", l), rows) == 15
+    @test count(l -> endswith(l, "(a" * code("yes") * ")"), rows) == 12
+    # no answer holds a dict (a dict is a compound named `dict`)
+    @test !any(l -> occursin(code("dict") * "/", l), _DR_PINNED)
+    # the dict is checked before the key (dr129-dr131: a bad key and a non-dict raise type_error(dict, foo))
+    @test all(l -> occursin(code("dict") * ",a" * code("foo"), l), rows[129:131])
+    # the three setters differ in what they leave behind: b_set_dict undoes on backtracking (dr03), nb_set_dict keeps the new
+    # value (dr22), and a compound value is DUPLICATED by nb_set_dict (dr31: X unbound) but LINKED by nb_link_dict (dr47: X = 1)
+    @test endswith(_DR_PINNED[1 + 3], "c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))")
+    @test endswith(_DR_PINNED[1 + 22], "c[45]/2(a[97],i9),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))")
+    @test endswith(_DR_PINNED[1 + 31], "(V0)")
+    @test endswith(_DR_PINNED[1 + 47], "(i1)")
+    # '$btree_find_node'/5: the node a search ends at and the `=`, `<`, `>` it reports (dr51 root, dr54 left of a miss, dr55 right of a miss)
+    @test startswith(_DR_PINNED[1 + 51], "t_dr51 ") && occursin("c[45]/2(a[61],", _DR_PINNED[1 + 51])
+    @test occursin("c[45]/2(a[60],", _DR_PINNED[1 + 54])
+    @test occursin("c[45]/2(a[62],", _DR_PINNED[1 + 55])
+end
+
+# LK-ONLY rows (nothing to compare with swipl): the owner rows docs/r2_owners.tsv carries for the predicates the kernel REFUSES,
+# each with what it is and the step that refused it. swipl DEFINES the first two and wait_for_input/3 (and has no malloc_property/1
+# unless it runs on tcmalloc), so no pin could hold: the rows check the refusal is on the books and the kernel does not define them.
+const _DR_REFUSED = [
+    # (name, arity, what, step)
+    ("\$atom_references", 2, "atom reference counts: the kernel's atoms carry no count (atom-GC family)", "D-0634 D5"),
+    ("\$atom_completions", 2, "atom-table walk for console completion: the kernel's atoms are not an array (atom-GC family)", "D-0634 D5"),
+    ("malloc_property", 1, "registered only on a tcmalloc process (pl-alloc.c:1782)", "REFUSED (no tcmalloc)"),
+    ("wait_for_input", 3, "polls OS descriptors of streams (pl-file.c:2752): a kernel stream has none", "REFUSED (no descriptors)")
+]
+
+@testset "LK-ONLY: the REFUSED owner rows are on the books and the kernel does not define the predicates" begin
+    owners = Dict{String, String}()
+    for l in eachline(joinpath(@__DIR__, "..", "..", "docs", "r2_owners.tsv"))
+        (isempty(l) || startswith(l, '#')) && continue
+        cols = split(l, '\t')
+        length(cols) >= 2 && (owners[String(cols[1])] = String(cols[2]))
+    end
+    gd = LK.PL_global_data{_DR}()
+    for (name, arity, what, step) in _DR_REFUSED
+        @test !isempty(what) && !isempty(step)
+        @test get(owners, "pred:$name/$arity", "") == "REFUSED"
+        proc = LK.isCurrentProcedure(sym_key(_drs(name)), arity, LK.MODULE_user(gd))
+        @test proc === nothing || !LK.isDefinedProcedure(gd, proc)
+    end
+end
+
+@testset "the pins are swipl's (live, when swipl is on PATH)" begin
+    swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    # the pinned table is the driver's whole output (the inert-testset guard: an assertion either way)
+    @test length(_DR_PINNED) == length(_DR_CASES) + 1
+    if swipl === nothing
+        @info "DICT-REC LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
+    else
+        f, names = _dr_file()
+        @test _dr_swipl_lines(f, names) == _DR_PINNED
+    end
+end
