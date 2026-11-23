@@ -66,6 +66,7 @@ function _pc_val(ld, t::Int)
         while LK.PL_get_list(ld, tl, h, tl)
             push!(out, _pc_val(ld, h))
         end
+        LK.PL_get_nil(ld, tl) || push!(out, :partial_tail)          # a list that does not end in [] (the re_unify_match nil-start row)
         return out
     end
     na = LK.PL_get_name_arity(ld, t)
