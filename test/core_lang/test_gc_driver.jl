@@ -263,6 +263,11 @@ function _gd_top_only(explicit_bar::Bool)
         ld.slots[i] = gone
     end
     ld.tmp_cells = 0                                             # no base prefix to mark
+    # `garbageCollect` clears SIG_GC through `updateAlerted` (pl-gcdriver.jl:409 -> pl-gc.jl:1318 -> pl-wam.jl:215), which reads
+    # `gstack[unRef(slots[attvar_head + 1])]` whenever `attvar_head != 0`: the slot is now an atom word, so the position is garbage (probe v2:
+    # BoundsError index 7809). `attvar_head == 0` is the engine state "no stacks set up", which that guard skips; the collector reads no other
+    # field of the head (grep src/pl-gc*.jl: none), so the wakeup head cannot be a root here and nothing else changes.
+    ld.attvar_head = 0
     top = LK.PL_new_term_ref(ld)                                 # its own cell is the new top cell
     ld.mark_bar = explicit_bar ? ld.gTop : LK.NO_MARK_BAR
     return ld, top
