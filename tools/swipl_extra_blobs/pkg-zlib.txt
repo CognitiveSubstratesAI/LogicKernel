@@ -1,0 +1,16 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-zlib — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-zlib; the files are upstream's bytes, never edited.
+# source: sub packages/zlib 9f4be6fe8c63ae0784c6917ed26faa7ebd2bef20
+100644 blob 3e1338a8b67d0931be42f4903a6334c7886ef14d	packages/zlib/.gitignore
+100644 blob 14cab9b8fc9bb031f5f0f136d6f136601f2a258e	packages/zlib/CMakeLists.txt
+100644 blob 64b705222ac163b23976a82cd5002200fc81760c	packages/zlib/test_zlib.pl
+100644 blob b7cad4d75368224303b26da32b7e26dc94df0e02	packages/zlib/tests/ascii-file.gz
+100644 blob e03b073945f16a9cdd8a7a3b8c03df506f69f4d2	packages/zlib/tests/binary-file.gz
+100644 blob f94269bbc3f67fed0c8f77df10ed1320d76dcee8	packages/zlib/tests/empty-file.gz
+100644 blob 562848f773744242a14c952ce6d71740cb5678af	packages/zlib/tests/high-compression.gz
+100644 blob 1403c738a2738a4c07fb1c7559b65e13888e37b6	packages/zlib/tests/low-compression.gz
+100644 blob b3444dc3e4980d889113c285e857f983033c43b9	packages/zlib/tests/multipart-file.gz
+100644 blob bb8f19a1df1fc86047d1fe866ea4cdd92e30e867	packages/zlib/tests/utf8-file.gz
+100644 blob c68ca82d01e600f7b06ef2ee67b246bf2468538c	packages/zlib/zlib.pl
+100644 blob 07ff271872087558905de7dcedcf7ced1f35ecfa	packages/zlib/zlib.plx
+100644 blob 4c33a262ca0266d7c194ef4caeeb4b75710a969d	packages/zlib/zlib4pl.c
