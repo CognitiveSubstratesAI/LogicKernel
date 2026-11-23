@@ -1054,3 +1054,319 @@ function re_init_capture_map(ld::PL_local_data{T}, re::re_data)::Bool where {T}
     end
     return true
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# PCRE1 piece 10 (packages/pcre/pcre4pl.c, packages-pcre a5e4c885), second half (B2): CONFIG AND OPTION TEXT. `get_pcre2_info`, `write_option_str`,
+# `write_re_options`, `next_config`, `re_config_choice_` and `re_config_`. Nothing here has run (no Julia process was started).
+#
+# DIVERGES (piece 10, second half):
+#  22. `write_re_options` writes into an IO (the C's IOSTREAM) with the separator and the flag word as `Ref`s (the C's `const char **sep`, `uint32_t *flags`);
+#      the 30 + 6 + 17 `write_option_str` calls are a loop over the tables `re_argoption_names`, `re_extraoption_names`, `re_matchoption_names` in the C's
+#      order, the `#ifdef`ed rows (`MATCH_INVALID_UTF`, `EXTRA_ESCAPED_CR_IS_LF`, `EXTRA_ALT_BSUX`, `COPY_MATCHED_SUBJECT`) always present (the library of
+#      this build has them all). The C's `Sdprintf` + `assert(0)` defaults (BSR, NEWLINE: a value the library never gives) are a Julia `error`.
+#      `re_options_text(re)` (no C counterpart) runs it into a String from the empty separator.
+#  23. `re_config_` compares the option NAME text with the row's name (the C compares atoms, DIVERGES 14); the C's `pcre2_config_(o->id, &val)` is
+#      `pcre2_config(reinterpret(UInt32, id), buf)` (the C passes the `int` id to a `uint32_t` parameter: -1 becomes 0xFFFFFFFF, BADOPTION); `PL_unify_atom_chars`
+#      is `PL_unify_atom(mk_sym(T, Symbol(s)))`; the C's `Sdprintf` + `assert(0)` branches are a Julia `error`; the result is `FTRUE`/`FFALSE`.
+#  24. `re_config_choice_` has the C's context unchanged: the 0-based table index + 1 as the `PL_retry` integer (`re_next_config` takes the 0-based index of the
+#      C). The table row's lazily filled `atom`/`functor` are not cached (DIVERGES 14): the functor is `name/1` of the row.
+# ---------------------------------------------------------------------------------------------------------------------------------
+
+# PORT: packages/pcre/pcre4pl.c get_pcre2_info
+# DIVERGES: 22 (the IO instead of IOSTREAM, the value as the result, `nothing` for the C's false).
+"The `info_type` value of `re.code` as a UInt32, or `nothing`: silently when there is no code, with `<descr:ERROR_...>` written to `io` when libpcre2 refuses (pcre4pl.c `get_pcre2_info`)."
+function re_get_pcre2_info(io::IO, re::re_data, info_type::UInt32, descr::String)::Union{Nothing, UInt32}
+    re.code == C_NULL && return nothing                  # write_re_options() has already output a message
+    (rc, value) = pcre2_pattern_info(re.code, info_type, UInt32)
+    rc == 0 && return value
+    if rc == PCRE2_ERROR_NULL
+        print(io, "<", descr, ":ERROR_NULL>")
+    elseif rc == PCRE2_ERROR_BADMAGIC
+        print(io, "<", descr, ":ERROR_BADMAGIC>")
+    elseif rc == PCRE2_ERROR_BADOPTION
+        print(io, "<", descr, ":ERROR_BADOPTION>")
+    elseif rc == PCRE2_ERROR_UNSET
+        print(io, "<", descr, ":ERROR_UNSET>")
+    else
+        print(io, "<", descr, ":ERROR_[", rc, "]>")
+    end
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c write_option_str
+# DIVERGES: 22.
+"If `field_flag` is set in `flags[]`, write `sep[]` and `name` to `io`, make `sep[]` a space and clear the flag (pcre4pl.c `write_option_str`)."
+function re_write_option_str(io::IO, sep::Ref{String}, flags::Ref{UInt32}, field_flag::UInt32, name::String)::Nothing
+    if (flags[] & field_flag) != 0
+        print(io, sep[], name)
+        sep[] = " "
+        flags[] &= ~field_flag
+    end
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c write_re_options (the write_option_str rows of the three flag words, in the C's order)
+# DIVERGES: 22.
+const re_argoption_names = Tuple{UInt32, String}[
+    (PCRE2_ANCHORED, "compile-ANCHORED"),
+    (PCRE2_ENDANCHORED, "compile-ENDANCHORED"),
+    (PCRE2_ALLOW_EMPTY_CLASS, "ALLOW_EMPTY_CLASS"),
+    (PCRE2_ALT_BSUX, "ALT_BSUX"),
+    (PCRE2_AUTO_CALLOUT, "AUTO_CALLOUT"),
+    (PCRE2_CASELESS, "CASELESS"),
+    (PCRE2_DOLLAR_ENDONLY, "DOLLAR_ENDONLY"),
+    (PCRE2_DOTALL, "DOTALL"),
+    (PCRE2_DUPNAMES, "DUPNAMES"),
+    (PCRE2_EXTENDED, "EXTENDED"),
+    (PCRE2_FIRSTLINE, "FIRSTLINE"),
+    (PCRE2_MATCH_UNSET_BACKREF, "MATCH_UNSET_BACKREF"),
+    (PCRE2_MULTILINE, "MULTILINE"),
+    (PCRE2_NEVER_UCP, "NEVER_UCP"),
+    (PCRE2_NEVER_UTF, "NEVER_UTF"),
+    (PCRE2_NO_AUTO_CAPTURE, "NO_AUTO_CAPTURE"),
+    (PCRE2_NO_AUTO_POSSESS, "NO_AUTO_POSSESS"),
+    (PCRE2_NO_DOTSTAR_ANCHOR, "NO_DOTSTAR_ANCHOR"),
+    (PCRE2_NO_START_OPTIMIZE, "NO_START_OPTIMIZE"),
+    (PCRE2_UCP, "UCP"),
+    (PCRE2_UNGREEDY, "UNGREEDY"),
+    (PCRE2_NEVER_BACKSLASH_C, "NEVER_BACKSLASH_C"),
+    (PCRE2_ALT_CIRCUMFLEX, "ALT_CIRCUMFLEX"),
+    (PCRE2_ALT_VERBNAMES, "ALT_VERBNAMES"),
+    (PCRE2_USE_OFFSET_LIMIT, "USE_OFFSET_LIMIT"),
+    (PCRE2_EXTENDED_MORE, "EXTENDED_MORE"),
+    (PCRE2_LITERAL, "LITERAL"),
+    (PCRE2_MATCH_INVALID_UTF, "MATCH_INVALID_UTF"),
+]
+
+const re_extraoption_names = Tuple{UInt32, String}[
+    (PCRE2_EXTRA_ALLOW_SURROGATE_ESCAPES, "EXTRA_ALLOW_SURROGATE_ESCAPES"),
+    (PCRE2_EXTRA_BAD_ESCAPE_IS_LITERAL, "EXTRA_BAD_ESCAPE_IS_LITERAL"),
+    (PCRE2_EXTRA_MATCH_WORD, "EXTRA_MATCH_WORD"),
+    (PCRE2_EXTRA_MATCH_LINE, "EXTRA_MATCH_LINE"),
+    (PCRE2_EXTRA_ESCAPED_CR_IS_LF, "EXTRA_ESCAPED_CR_IS_LF"),
+    (PCRE2_EXTRA_ALT_BSUX, "EXTRA_ALT_BSUX"),
+]
+
+const re_matchoption_names = Tuple{UInt32, String}[
+    (PCRE2_ANCHORED, "match-ANCHORED"),
+    (PCRE2_ENDANCHORED, "match-ENDANCHORED"),
+    (PCRE2_NOTBOL, "NOTBOL"),
+    (PCRE2_NOTEOL, "NOTEOL"),
+    (PCRE2_NOTEMPTY, "NOTEMPTY"),
+    (PCRE2_NOTEMPTY_ATSTART, "NOTEMPTY_ATSTART"),
+    (PCRE2_PARTIAL_SOFT, "PARTIAL_SOFT"),
+    (PCRE2_PARTIAL_HARD, "PARTIAL_HARD"),
+    (PCRE2_DFA_RESTART, "DFA_RESTART"),
+    (PCRE2_DFA_SHORTEST, "DFA_SHORTEST"),
+    (PCRE2_SUBSTITUTE_GLOBAL, "SUBSTITUTE_GLOBAL"),
+    (PCRE2_SUBSTITUTE_EXTENDED, "SUBSTITUTE_EXTENDED"),
+    (PCRE2_SUBSTITUTE_UNSET_EMPTY, "SUBSTITUTE_UNSET_EMPTY"),
+    (PCRE2_SUBSTITUTE_UNKNOWN_UNSET, "SUBSTITUTE_UNKNOWN_UNSET"),
+    (PCRE2_SUBSTITUTE_OVERFLOW_LENGTH, "SUBSTITUTE_OVERFLOW_LENGTH"),
+    (PCRE2_NO_JIT, "NO_JIT"),
+    (PCRE2_COPY_MATCHED_SUBJECT, "COPY_MATCHED_SUBJECT"),
+]
+
+# the `<all:remainder:0x%08x>` tail of a flag word
+function _re_write_remainder(io::IO, sep::Ref{String}, flags::Ref{UInt32})::Nothing
+    if flags[] != 0
+        print(io, sep[], "<all:remainder:0x", string(flags[], base = 16, pad = 8), ">")
+        sep[] = " "
+    end
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c write_re_options
+# DIVERGES: 22. The NEWLINE branch does not set `sep[]` after printing, as the C (the C writes `NEWLINE_x` and leaves `sep` unchanged).
+"Write the options of `re` (the compile options of the code, its context options, `\\R` and newline conventions, the match options) to `io` as names separated by `sep[]` (pcre4pl.c `write_re_options`)."
+function re_write_re_options(io::IO, sep::Ref{String}, re::re_data)::Nothing
+    if re.code == C_NULL
+        print(io, sep[], "<no re_compiled>")
+        sep[] = " "
+    end
+
+    ui = re_get_pcre2_info(io, re, PCRE2_INFO_ARGOPTIONS, "INFO_ARGOPTIONS")
+    if ui !== nothing
+        flags = Ref(ui)
+        # PCRE2_NO_UTF_CHECK and PCRE2_UTF default to true
+        if (flags[] & PCRE2_NO_UTF_CHECK) == 0
+            print(io, sep[], "compile-~NO_UTF_CHECK")
+            sep[] = " "
+        end
+        flags[] &= ~PCRE2_NO_UTF_CHECK
+        if (flags[] & PCRE2_UTF) == 0
+            print(io, sep[], "compile-~UTF")
+            sep[] = " "
+        end
+        flags[] &= ~PCRE2_UTF
+        for (f, name) in re_argoption_names
+            re_write_option_str(io, sep, flags, f, name)
+        end
+        _re_write_remainder(io, sep, flags)
+    end
+
+    ui = re_get_pcre2_info(io, re, PCRE2_INFO_EXTRAOPTIONS, "INFO_EXTRAOPTIONS")
+    if ui !== nothing
+        flags = Ref(ui)
+        for (f, name) in re_extraoption_names
+            re_write_option_str(io, sep, flags, f, name)
+        end
+        _re_write_remainder(io, sep, flags)
+    end
+
+    ui = re_get_pcre2_info(io, re, PCRE2_INFO_BSR, "INFO_BSR")
+    if ui !== nothing
+        c = ui == PCRE2_BSR_ANYCRLF ? "BSR_ANYCRLF" :
+            ui == PCRE2_BSR_UNICODE ? "BSR_UNICODE" :
+            error("GET_PCRE2_INFO_BSR: 0x", string(ui, base = 16, pad = 8))    # the C: Sdprintf + assert(0)
+        print(io, sep[], c)
+        sep[] = " "
+    end
+
+    ui = re_get_pcre2_info(io, re, PCRE2_INFO_NEWLINE, "INFO_NEWLINE")
+    if ui !== nothing
+        buf = pcre2_config_buf()
+        rc_c = pcre2_config(PCRE2_CONFIG_NEWLINE, buf)
+        config_ui = pcre2_config_u32(buf)
+        if rc_c >= 0 && (
+                (config_ui == PCRE2_NEWLINE_CRLF && ui == PCRE2_NEWLINE_CRLF) ||
+                    (config_ui == PCRE2_NEWLINE_CR && ui == PCRE2_NEWLINE_CR) ||
+                    (config_ui == PCRE2_NEWLINE_LF && ui == PCRE2_NEWLINE_LF)
+            )
+            # do nothing: the newline convention is the build's default
+        else
+            c = ui == PCRE2_NEWLINE_CR ? "NEWLINE_CR" :
+                ui == PCRE2_NEWLINE_LF ? "NEWLINE_LF" :
+                ui == PCRE2_NEWLINE_CRLF ? "NEWLINE_CRLF" :
+                ui == PCRE2_NEWLINE_ANY ? "NEWLINE_ANY" :
+                ui == PCRE2_NEWLINE_ANYCRLF ? "NEWLINE_ANYCRLF" :
+                ui == PCRE2_NEWLINE_NUL ? "NEWLINE_NUL" :
+                error("GET_PCRE2_INFO_NEWLINE: 0x", string(ui, base = 16, pad = 8))    # the C: Sdprintf + assert(0)
+            print(io, sep[], c)
+        end
+    end
+
+    flags = Ref(re.match_options_flags.flags)
+    # PCRE2_NO_UTF_CHECK defaults to true
+    if (flags[] & PCRE2_NO_UTF_CHECK) == 0
+        print(io, sep[], "match-~NO_UTF_CHECK")
+        sep[] = " "
+    end
+    flags[] &= ~PCRE2_NO_UTF_CHECK
+    for (f, name) in re_matchoption_names
+        re_write_option_str(io, sep, flags, f, name)
+    end
+    _re_write_remainder(io, sep, flags)
+    return nothing
+end
+
+# DIVERGES: 22 (no C counterpart): the option text of `re` as a String, the separator starting empty (what `re_portray_match_options_`-like callers print).
+"The text `re_write_re_options` writes for `re`, starting from the empty separator."
+function re_options_text(re::re_data)::String
+    io = IOBuffer()
+    re_write_re_options(io, Ref(""), re)
+    return String(take!(io))
+end
+
+# PORT: packages/pcre/pcre4pl.c next_config
+# DIVERGES: 24. `i` is the 0-based table index of the C; the lazily filled atom and functor are not cached (14).
+"The 0-based index of the first row of `re_cfg_opts` at or after the 0-based index `i` that is not invalid or for PCRE1 compatibility, or -1 (pcre4pl.c `next_config`)."
+function re_next_config(i::Int)::Int
+    for j in i:(length(re_cfg_opts) - 1)
+        t = re_cfg_opts[j + 1].type_
+        if t == CFG_INVALID || t == CFG_BOOL_BKWD || t == CFG_INTEGER_BKWD || t == CFG_TRUE_BKWD || t == CFG_FALSE_BKWD
+            continue
+        end
+        return j
+    end
+    return -1
+end
+
+# PORT: packages/pcre/pcre4pl.c re_config_choice_
+# DIVERGES: 24. `PL_uninstantiation_error(choice)` is `PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, choice)` (as pl-rec.jl), false.
+"`re_config_choice_(-Choice)` is nondet: unify `Choice` with `Name(_)` for each option `re_config_` accepts, in table order (pcre4pl.c `re_config_choice_`)."
+function re_config_choice_(ld::PL_local_data{T}, choice::term_t, h::control_t{T})::foreign_t where {T}
+    ctl = PL_foreign_control(h)
+    if ctl == FRG_FIRST_CALL
+        index = 0
+    elseif ctl == FRG_REDO
+        index = PL_foreign_context(h)
+    elseif ctl == FRG_CUTTED
+        return FTRUE
+    else
+        error("re_config_choice_: control ", ctl)                         # the C: assert(0); PL_fail
+    end
+
+    if !PL_is_variable(ld, choice)
+        PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, choice)
+        return FFALSE
+    end
+
+    index = re_next_config(index)
+    if index >= 0 && PL_unify_functor(ld, choice, mk_sym(T, Symbol(re_cfg_opts[index + 1].name)), 1)
+        return PL_retry(index + 1)
+    end
+    return FFALSE
+end
+
+# the answer of `pcre2_config` for row `o` (rc >= 0 or not) as the C's two `switch`es
+function _re_config_answer(ld::PL_local_data{T}, o::re_config_opt, rc::Cint, buf::Vector{UInt8}, arg::term_t)::Bool where {T}
+    if rc >= 0
+        ty = o.type_
+        if ty == CFG_BOOL || ty == CFG_BOOL_BKWD
+            return PL_unify_bool(ld, arg, pcre2_config_i32(buf) != 0)
+        elseif ty == CFG_INTEGER || ty == CFG_INTEGER_BKWD
+            return PL_unify_integer(ld, arg, Int(pcre2_config_i32(buf)))
+        elseif ty == CFG_STRINGBUF || ty == CFG_STRINGBUF_OPT
+            return PL_unify_atom(ld, arg, mk_sym(T, Symbol(pcre2_config_str(buf))))
+        elseif ty == CFG_BSR
+            u = pcre2_config_u32(buf)
+            u == PCRE2_BSR_UNICODE && return PL_unify_atom(ld, arg, mk_sym(T, :unicode))
+            u == PCRE2_BSR_ANYCRLF && return PL_unify_atom(ld, arg, mk_sym(T, :anycrlf))
+            error("CFG_BSR: 0x", string(u, base = 16, pad = 8))                # the C: Sdprintf + assert(0)
+        elseif ty == CFG_NEWLINE
+            u = pcre2_config_u32(buf)
+            c = u == PCRE2_NEWLINE_CR ? :cr :
+                u == PCRE2_NEWLINE_LF ? :lf :
+                u == PCRE2_NEWLINE_CRLF ? :crlf :
+                u == PCRE2_NEWLINE_ANY ? :any :
+                u == PCRE2_NEWLINE_ANYCRLF ? :anycrlf :
+                u == PCRE2_NEWLINE_NUL ? :nul :
+                error("CFG_NEWLINE: 0x", string(u, base = 16, pad = 8))        # the C: Sdprintf + c = "???" + assert(0)
+            return PL_unify_atom(ld, arg, mk_sym(T, c))
+        elseif ty == CFG_INVALID
+            return false
+        elseif ty == CFG_TRUE_BKWD
+            return PL_unify_bool(ld, arg, true)
+        elseif ty == CFG_FALSE_BKWD
+            return PL_unify_bool(ld, arg, false)
+        end
+        error("PCRE2_CONFIG type(1): 0x", string(ty, base = 16, pad = 8))      # the C: Sdprintf + assert(0)
+    else
+        ty = o.type_
+        ty == CFG_TRUE_BKWD && return PL_unify_bool(ld, arg, true)
+        ty == CFG_FALSE_BKWD && return PL_unify_bool(ld, arg, false)
+        (ty == CFG_INVALID || ty == CFG_STRINGBUF_OPT) && return false
+        error("PCRE2_CONFIG type(2): 0x", string(ty, base = 16, pad = 8))      # the C: Sdprintf + assert(0)
+    end
+end
+
+# PORT: packages/pcre/pcre4pl.c re_config_
+# DIVERGES: 23.
+"`re_config_(+Term)`: `Term` is `Name(Value)`; unify `Value` with the build-time setting `Name` of libpcre2, false for an unknown name or a non-compound (pcre4pl.c `re_config_`)."
+function re_config_(ld::PL_local_data{T}, opt::term_t)::foreign_t where {T}
+    na = PL_get_name_arity(ld, opt)
+    na === nothing && return FFALSE                                       # was: PL_type_error("compound", opt)
+    (name, arity) = na
+    arity == 1 || return FFALSE
+    arg = PL_new_term_ref(ld)
+    _PL_get_arg(ld, 1, opt, arg)
+    nm = sym_text(name)
+    for o in re_cfg_opts
+        o.name == nm || continue
+        buf = pcre2_config_buf()
+        rc = pcre2_config(reinterpret(UInt32, o.id), buf)                 # -1 is 0xFFFFFFFF: BADOPTION
+        return _re_config_answer(ld, o, rc, buf, arg) ? FTRUE : FFALSE
+    end
+    return FFALSE                                                         # was: PL_existence_error("re_config", opt)
+end

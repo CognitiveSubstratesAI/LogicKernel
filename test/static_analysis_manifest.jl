@@ -5614,6 +5614,12 @@ _manifest_pkg2_plain() = (
     (LK.pcre2_get_error_message, Tuple{Int32, Int}, false),
     # PCRE1 piece 10 (B1) — the compile half; `re_free` takes no local data
     (LK.re_free, Tuple{LK.re_data}, false),
+    # PCRE1 piece 10 (B2) — config and option text (IO-taking; the writers call libpcre2 and print: no allocation claim)
+    (LK.re_next_config, Tuple{Int}, false),
+    (LK.re_options_text, Tuple{LK.re_data}, false),
+    (LK.re_get_pcre2_info, Tuple{IOBuffer, LK.re_data, UInt32, String}, false),
+    (LK.re_write_option_str, Tuple{IOBuffer, Base.RefValue{String}, Base.RefValue{UInt32}, UInt32, String}, false),
+    (LK.re_write_re_options, Tuple{IOBuffer, Base.RefValue{String}, LK.re_data}, false),
     # YAML1 piece 3 — the anchor table's pure functions
     (LK.yaml_new_anchor_table, Tuple{}, false),
     (LK.yaml_murmur_hash_aligned2, Tuple{Vector{UInt8}, Int, UInt32}, false),
@@ -5647,6 +5653,9 @@ _manifest_yaml_events(T) = begin
         (LK.re_verify_pats, Tuple{LD, Vector{UInt8}}, false),
         (LK.re_init_capture_map, Tuple{LD, LK.re_data}, false),
         (LK.re_set_capture_name_and_type, Tuple{LD, Vector{UInt8}, LK.re_data, Int}, false),
+        # PCRE1 piece 10 (B2) — the config predicates (the nondeterministic one takes the foreign-call context)
+        (LK.re_config_choice_, Tuple{LD, Int, LK.foreign_context{T}}, false),
+        (LK.re_config_, Tuple{LD, Int}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
