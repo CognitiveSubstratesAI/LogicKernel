@@ -913,3 +913,144 @@ function pcre2_get_error_message(code::Integer, buflen::Int = 256)::Union{Nothin
     rc < 0 && return nothing
     return GC.@preserve buf unsafe_string(pointer(buf), rc)
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# PCRE1 piece 10 (packages/pcre/pcre4pl.c, packages-pcre a5e4c885; evidence/R2/pkg2_handoff.md "PCRE-CODE-B"), first half (B1): COMPILE. `free_pcre`,
+# `ensure_compile_context`, `re_compile_impl`, `re_verify_pats`, `init_capture_map` and `set_capture_name_and_type`, over the piece 9 wrappers. Nothing here
+# has run (no Julia process was started). The second half (config, option text) is the next commit.
+#
+# DIVERGES (piece 10; 15 stays reserved for the `\K` guard of the match piece):
+#  19. `re_free` has no atom to unregister (no atom GC: `pattern` and the capture names are Strings): it frees the code, sets `code` to C_NULL and empties
+#      `capture_names`. The C's `re->pattern = 0` is NOT ported (the C's own TODO says clearing is not necessary): `pattern` keeps its text.
+#  20. `len` of the C is `length(pats)` (`pats` is a Vector{UInt8}); the C's `goto out` is a helper, `_re_compile_impl_try`, whose result the caller closes
+#      (`pcre2_compile_context_free`, `re_free` on a failure). The C's uninitialised `re_error_msg` (when `pcre2_get_error_message` fails) is "" here.
+#  21. `init_capture_map` has no `malloc` failure branch (a Vector); the C's `int name_count`/`name_entry_size` are UInt32 (piece 9, 17).
+#  Errors: `representation_error(Sym)` is `PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Sym))` (as pl-bisim.jl does), `existence_error(re_type_flag, X)` the
+#  `ERR_EXISTENCE` form with `X` an atom term; the C's `PL_put_atom_chars(ex, &fs[1])` (one Latin-1 byte) is `Char(byte)` here.
+# ---------------------------------------------------------------------------------------------------------------------------------
+
+# PORT: packages/pcre/pcre4pl.c free_pcre
+# DIVERGES: 19.
+"Free a regex's compiled code and capture names (pcre4pl.c `free_pcre`); always true. Safe to call twice."
+function re_free(re::re_data)::Bool
+    pcre2_code_free(re.code)
+    re.code = C_NULL
+    re.capture_names = re_cap_how[]
+    return true
+end
+
+# PORT: packages/pcre/pcre4pl.c ensure_compile_context
+"Make `ctx[]` a compile context if it is NULL (pcre4pl.c `ensure_compile_context`); a `resource_error(memory)` and false when libpcre2 cannot allocate one."
+function re_ensure_compile_context(ld::PL_local_data{T}, ctx::Ref{Ptr{Cvoid}})::Bool where {T}
+    ctx[] == C_NULL && (ctx[] = pcre2_compile_context_create())
+    ctx[] == C_NULL && return PL_resource_error(ld, "memory")
+    return true
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl (the body between the declarations and `out:`)
+# DIVERGES: 20. The `flags != 0` guards, the three `0 != pcre2_set_*` checks and the JIT/capture-map tail are as the C.
+function _re_compile_impl_try(ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8}, ctx::Ref{Ptr{Cvoid}})::Bool where {T}
+    if re.compile_bsr_flags.flags != 0
+        re_ensure_compile_context(ld, ctx) || return false
+        if 0 != pcre2_set_bsr(ctx[], re.compile_bsr_flags.flags)
+            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol("option:bsr")))
+        end
+    end
+    if re.compile_newline_flags.flags != 0
+        re_ensure_compile_context(ld, ctx) || return false
+        if 0 != pcre2_set_newline(ctx[], re.compile_newline_flags.flags)
+            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol("option:newline")))
+        end
+    end
+    if re.compile_ctx_flags.flags != 0
+        re_ensure_compile_context(ld, ctx) || return false
+        if 0 != pcre2_set_compile_extra_options(ctx[], re.compile_ctx_flags.flags)
+            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol("option:extra")))
+        end
+    end
+    (code, ec, _) = pcre2_compile(pats, re.compile_options_flags.flags, ctx[])
+    re.code = code
+    if code != C_NULL
+        if (re.optimise_flags.flags & RE_OPTIMISE) != 0
+            pcre2_jit_compile(code, re.jit_options_flags.flags)       # the result is ignored, as the C (TBD there)
+        end
+        return re_init_capture_map(ld, re)
+    end
+    msg = pcre2_get_error_message(ec, 255)                           # the C passes `sizeof re_error_msg - 1`
+    return PL_syntax_error(ld, msg === nothing ? "" : msg, nothing)
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl
+# DIVERGES: 20.
+"Compile `pats` (UTF-8 bytes, no NUL) with the options in `re` into `re.code` and fill the capture map (pcre4pl.c `re_compile_impl`); on a failure an error is pending, `re` is freed and false is returned."
+function re_compile_impl(ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8})::Bool where {T}
+    ctx = Ref{Ptr{Cvoid}}(C_NULL)
+    rc = _re_compile_impl_try(ld, re, pats, ctx)
+    pcre2_compile_context_free(ctx[])
+    rc || re_free(re)
+    return rc
+end
+
+# PORT: packages/pcre/pcre4pl.c re_verify_pats
+"True unless `pats` holds a NUL byte, then `representation_error(nul_byte)` and false (pcre4pl.c `re_verify_pats`: `strlen(pats) != len`)."
+function re_verify_pats(ld::PL_local_data{T}, pats::Vector{UInt8})::Bool where {T}
+    findfirst(iszero, pats) === nothing && return true
+    return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :nul_byte))
+end
+
+# PORT: packages/pcre/pcre4pl.c set_capture_name_and_type
+"Set the name and the type of capture `ci` (0-based) from the table name `s` (UTF-8 bytes, no NUL): `name_X` with exactly one byte `X` after the last `_` types it (pcre4pl.c `set_capture_name_and_type`)."
+function re_set_capture_name_and_type(ld::PL_local_data{T}, s::Vector{UInt8}, re::re_data, ci::Int)::Bool where {T}
+    @assert ci < Int(re.capture_size) + 1
+    n = length(s)
+    fs = findlast(==(UInt8('_')), s)
+    if fs !== nothing && fs + 1 == n                                  # C: `fs[1] && !fs[2]`
+        b = s[n]
+        ty = b == UInt8('S') ? CAP_STRING :
+            b == UInt8('A') ? CAP_ATOM :
+            b == UInt8('I') ? CAP_INTEGER :
+            b == UInt8('F') ? CAP_FLOAT :
+            b == UInt8('N') ? CAP_NUMBER :
+            b == UInt8('T') ? CAP_TERM :
+            b == UInt8('R') ? CAP_RANGE : -1
+        if ty < 0
+            ex = PL_new_term_ref(ld)
+            PL_put_atom(ld, ex, mk_sym(T, Symbol(Char(b))))
+            return PL_error(ld, ERR_EXISTENCE, mk_sym(T, :re_type_flag), ex)
+        end
+        re.capture_names[ci + 1].type = ty
+        re.capture_names[ci + 1].name = String(s[1:(fs - 1)])
+    else
+        re.capture_names[ci + 1].type = CAP_DEFAULT
+        re.capture_names[ci + 1].name = String(copy(s))
+    end
+    return true
+end
+
+# PORT: packages/pcre/pcre4pl.c init_capture_map
+# DIVERGES: 21.
+"Read the capture count and the name table of `re.code` into `re.capture_size` and `re.capture_names` (pcre4pl.c `init_capture_map`); `resource_error(pcre2_pattern_info)` and false when libpcre2 refuses."
+function re_init_capture_map(ld::PL_local_data{T}, re::re_data)::Bool where {T}
+    (rc, cs) = pcre2_pattern_info(re.code, PCRE2_INFO_CAPTURECOUNT, UInt32)
+    rc != 0 && return PL_resource_error(ld, "pcre2_pattern_info")
+    re.capture_size = cs
+    (rc, name_count) = pcre2_pattern_info(re.code, PCRE2_INFO_NAMECOUNT, UInt32)
+    rc != 0 && return PL_resource_error(ld, "pcre2_pattern_info")
+    (rc, entry_size) = pcre2_pattern_info(re.code, PCRE2_INFO_NAMEENTRYSIZE, UInt32)
+    rc != 0 && return PL_resource_error(ld, "pcre2_pattern_info")
+    (rc, table) = pcre2_pattern_info(re.code, PCRE2_INFO_NAMETABLE, Ptr{UInt8})
+    rc != 0 && return PL_resource_error(ld, "pcre2_pattern_info")
+    re.capture_names = [re_cap_how(nothing, CAP_DEFAULT) for _ in 0:Int(re.capture_size)]
+    for i in 0:(Int(name_count) - 1)
+        base = i * Int(entry_size)
+        ci = ((Int(unsafe_load(table, base + 1)) & 0xff) << 8) + (Int(unsafe_load(table, base + 2)) & 0xff)
+        name = UInt8[]
+        k = base + 3
+        while (b = unsafe_load(table, k)) != 0x00
+            push!(name, b)
+            k += 1
+        end
+        re_set_capture_name_and_type(ld, name, re, ci) || return false
+    end
+    return true
+end

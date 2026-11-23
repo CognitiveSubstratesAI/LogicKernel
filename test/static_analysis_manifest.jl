@@ -5612,6 +5612,8 @@ _manifest_pkg2_plain() = (
     (LK.pcre2_get_ovector_pointer, Tuple{Ptr{Cvoid}}, false),
     (LK.pcre2_ovector_copy, Tuple{Ptr{Cvoid}, Int}, false),
     (LK.pcre2_get_error_message, Tuple{Int32, Int}, false),
+    # PCRE1 piece 10 (B1) — the compile half; `re_free` takes no local data
+    (LK.re_free, Tuple{LK.re_data}, false),
     # YAML1 piece 3 — the anchor table's pure functions
     (LK.yaml_new_anchor_table, Tuple{}, false),
     (LK.yaml_murmur_hash_aligned2, Tuple{Vector{UInt8}, Int, UInt32}, false),
@@ -5639,6 +5641,12 @@ _manifest_yaml_events(T) = begin
         # PCRE1 piece 6 — the option-list reader
         (LK.re_get_options, Tuple{LD, Int, LK.re_data}, false),
         (LK.re_get_arg_1_if_any, Tuple{LD, Int}, false),
+        # PCRE1 piece 10 (B1) — compile, pattern check, capture map (the compiler calls libpcre2: no allocation claim)
+        (LK.re_ensure_compile_context, Tuple{LD, Base.RefValue{Ptr{Cvoid}}}, false),
+        (LK.re_compile_impl, Tuple{LD, LK.re_data, Vector{UInt8}}, false),
+        (LK.re_verify_pats, Tuple{LD, Vector{UInt8}}, false),
+        (LK.re_init_capture_map, Tuple{LD, LK.re_data}, false),
+        (LK.re_set_capture_name_and_type, Tuple{LD, Vector{UInt8}, LK.re_data, Int}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
