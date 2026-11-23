@@ -352,6 +352,27 @@ if grep -qxF -- "--channel" "$T/lw/vr_args.txt" && grep -qxF -- "$T/chan_agent.m
 else bad "verdicts: --channel argument" "$(cat "$T/lw/vr_args.txt")"; fi
 vd "$GOOD" "$T/vr_src.py"
 if grep -qxF -- "--channel" "$T/lw/vr_args.txt"; then bad "verdicts: --channel passed with LAND_CHANNEL unset"; else ok "verdicts: LAND_CHANNEL unset, no --channel argument (the reader's default)"; fi
+# LAND-TOOL-3: the answer of commits/<sha>/status (which may hold a `land/local/<ROW>` status) and the approvers file reach the reader as
+# --statuses / --approvers, and ONLY when the answer was read (gh failed, no approvers file: neither argument, the status route stays closed)
+LOCVER="LOCAL VERDICT G1GC3-T3 tree $(git rev-parse "$GOOD^{tree}") caught (hang) site pl-gc.c:1234"
+status_json "$GOOD" success "$LOCVER" AuditBot "land/local/G1GC3-T3" > "$T/loc.json"
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/loc.json"
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" && grep -qxF -- "$T/lw/release.json" "$T/lw/vr_args.txt" &&
+    grep -qxF -- "--approvers" "$T/lw/vr_args.txt" && grep -qxF -- "$W/evidence/land_approvers.txt" "$T/lw/vr_args.txt"; then ok "verdicts: the status answer and the approvers file reach the reader (--statuses, --approvers)"
+else bad "verdicts: --statuses/--approvers arguments" "$(cat "$T/lw/vr_args.txt")"; fi
+if grep -q 'land/local/G1GC3-T3' "$T/lw/release.json"; then ok "verdicts: the saved answer is the whole status answer (the land/local status is in it)"; else bad "verdicts: release.json lacks the land/local status"; fi
+vd "$GOOD" "$T/vr_src.py"
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" || grep -qxF -- "--approvers" "$T/lw/vr_args.txt"; then bad "verdicts: --statuses/--approvers passed though gh could not answer"; else ok "verdicts: gh cannot answer, no --statuses and no --approvers (the status route is closed)"; fi
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/loc.json" FAKE_GH_FAIL=1
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt"; then bad "verdicts: --statuses passed though gh failed"; else ok "verdicts: gh fails: no --statuses"; fi
+cp "$W/evidence/land_approvers.txt" "$T/ap.keep2"; : > "$W/evidence/land_approvers.txt"
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/loc.json"
+cp "$T/ap.keep2" "$W/evidence/land_approvers.txt"
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt"; then bad "verdicts: --statuses passed with an empty approvers file"; else ok "verdicts: an empty approvers file: no --statuses (fail closed)"; fi
+# a release.json left by an earlier run in the same LAND_WORK is never read as this run's answer (gh fails now: no --statuses)
+fresh; bash tools/land_check.sh gateset "$GOOD" > /dev/null 2>&1; printf 'stale' > "$LAND_WORK/release.json"
+env PATH="$FAKEBIN:$PATH" GITHUB_REPOSITORY=o/r FAKE_GH_JSON="$T/no_such_status.json" LAND_VERDICT_READ="$T/vr_src.py" bash tools/land_check.sh verdicts "$GOOD" > /dev/null 2>&1
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt"; then bad "verdicts: a stale release.json was handed to the reader"; else ok "verdicts: a stale release.json from an earlier run is not handed to the reader"; fi
 
 echo "== marker (c) =="
 MKSHA="$GOOD"
@@ -422,6 +443,25 @@ status_json "$GOOD" success "LAND $GOOD [ids: local: G1GC3-T3 @yesterday]" Audit
 status_json "$GOOD" success "LAND $GOOD [ids: local G1GC3-T3 @A-0123]" AuditBot > "$T/l7.json"; mk "$T/l7.json"; expect "marker local: no colon" marker FAIL "malformed local"
 status_json "$GOOD" success "LAND $GOOD [ids: $LOC,local: G1GC3-T3 @A-0123]" AuditBot > "$T/l8.json"; mk "$T/l8.json"; expect "marker local: one row named twice" marker FAIL "twice"
 status_json "$GOOD" success "LAND $GOOD [ids: $LOC]" stranger > "$T/l9.json"; mk "$T/l9.json"; expect "marker local: a stranger's release is still refused" marker FAIL "not in land_approvers"
+# LAND-TOOL-3: `tree-ruling D-NNNN` after a local item, and `stand: <list> @D-NNNN from <40 hex>`: form-checked here, no evidence-row ids
+OLDS="$(git rev-parse "$GOOD^")"
+LOCR="$LOC tree-ruling D-1010"
+STD="stand: TB5 @D-1012 from $OLDS"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOCR]" AuditBot > "$T/r1.json"; mk "$T/r1.json"; expect "marker local: a tree-ruling item passes" marker PASS "tree-ruling D-1010"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC tree-ruling]" AuditBot > "$T/r2.json"; mk "$T/r2.json"; expect "marker local: a tree-ruling with no D-entry" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC tree-ruling D-10]" AuditBot > "$T/r3.json"; mk "$T/r3.json"; expect "marker local: a tree-ruling with a short D id" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC ruling D-1010]" AuditBot > "$T/r4.json"; mk "$T/r4.json"; expect "marker local: the word must be tree-ruling" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOCR,local: G1GC3-T3 @A-0123 tree-ruling D-1010]" AuditBot > "$T/r5.json"; mk "$T/r5.json"; expect "marker local: a ruled row named twice" marker FAIL "twice"
+status_json "$GOOD" success "LAND $GOOD [ids: $STD]" AuditBot > "$T/r6.json"; mk "$T/r6.json"; expect "marker stand: a well-formed item passes" marker PASS "stand: TB5 @D-1012 from $OLDS"
+status_json "$GOOD" success "LAND $GOOD [ids: $STD,stand: TB7 @D-1012 from $OLDS,src-diff $HEX64,$LOCR]" AuditBot > "$T/r7.json"; mk "$T/r7.json"; expect "marker stand: several lists beside the other items" marker PASS "stand: TB7 @D-1012"
+status_json "$EQADD" success "LAND $EQADD [ids: D-0950:NEWMUT,$STD]" AuditBot > "$T/r8.json"; MKSHA="$EQADD"; mk "$T/r8.json"; expect "marker stand: beside an equivalents id passes" marker PASS "D-0950:NEWMUT"
+status_json "$EQADD" success "LAND $EQADD [ids: $STD]" AuditBot > "$T/r9.json"; mk "$T/r9.json"; expect "marker stand: the item names no evidence row" marker FAIL "not named"
+MKSHA="$GOOD"
+for bad in "stand: TB5 @D-1012" "stand: TB5 @D-1012 from ${OLDS:0:39}" "stand: TB5 @D-1012 from $(echo "$OLDS" | tr a-f A-F)" "stand: TB5 @D-12 from $OLDS" "stand: TB5 @A-0123 from $OLDS" "stand: TB5 D-1012 from $OLDS" "stand TB5 @D-1012 from $OLDS" "stand: @D-1012 from $OLDS"; do
+    status_json "$GOOD" success "LAND $GOOD [ids: $bad]" AuditBot > "$T/r10.json"; mk "$T/r10.json"; expect "marker stand: malformed item ($bad)" marker FAIL "malformed stand"
+done
+status_json "$GOOD" success "LAND $GOOD [ids: $STD,stand: TB5 @D-1011 from $OLDS]" AuditBot > "$T/r11.json"; mk "$T/r11.json"; expect "marker stand: one list named twice" marker FAIL "stand list twice"
+status_json "$GOOD" success "LAND $GOOD [ids: $STD]" stranger > "$T/r12.json"; mk "$T/r12.json"; expect "marker stand: a stranger's release is still refused" marker FAIL "not in land_approvers"
 
 echo "== decide =="
 fill() {   # fill ROW=STATUS... : write a full table with the given statuses (default PASS)
