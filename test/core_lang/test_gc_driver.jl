@@ -282,9 +282,11 @@ end
 function _gd_b1_probe()::String
     out = String[]
     for explicit in (true, false)
+        stage = "build"                                          # which call threw: the surgery or the collection
         try
             ld, top = _gd_top_only(explicit)
             g0 = ld.gTop
+            stage = "garbageCollect"
             rc = LK.garbageCollect(ld, _GD_GC)
             push!(
                 out,
@@ -292,10 +294,23 @@ function _gd_b1_probe()::String
             )
         catch e
             bt = catch_backtrace()
-            fr = join(map(string, first(stacktrace(bt), 4)), " <- ")
+            # the first 10 frames of the kernel or of this file (Base's `throw_boundserror`/`getindex` frames dropped), as `function@file:line`
+            kept = filter(
+                f -> (
+                    b=basename(string(f.file));
+                    startswith(b, "pl-") || b == "test_gc_driver.jl"
+                ),
+                stacktrace(bt)
+            )
+            fr = join(
+                map(
+                    f -> "$(f.func)@$(basename(string(f.file))):$(f.line)", first(kept, 10)
+                ),
+                " <- "
+            )
             push!(
                 out,
-                "bar=$(explicit ? "gTop" : "NO_MARK_BAR") THREW $(typeof(e)): $(first(sprint(showerror, e), 300)) AT $(fr)"
+                "bar=$(explicit ? "gTop" : "NO_MARK_BAR") THREW IN $(stage) $(typeof(e)): $(first(sprint(showerror, e), 120)) AT $(fr)"
             )
         end
     end
