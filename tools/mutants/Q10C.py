@@ -226,7 +226,6 @@ end
          old='''"current_blob", 2, pl_current_blob2_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS''',
          new='''"current_blob", 2, pl_current_blob2_va, PL_FA_VARARGS'''),
     dict(id="Q10-48 an unbound type is not unified with the type found (KILL cb17)", file=F, targets=TQ,
-         old='''                            PL_unify_atom(ld, type, mk_sym(T, Symbol(btype.name))) ||
-                                return FFALSE''',
-         new='''                            nothing'''),
+         old='PL_unify_atom(ld, type, mk_sym(T, Symbol(btype.name))) ||\n                                    return FFALSE',
+         new='nothing'),
 ]
