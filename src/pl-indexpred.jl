@@ -44,7 +44,7 @@ function _put_hints(ld::PL_local_data{T}, t::term_t, h::hash_hints)::Bool where 
     values = PL_new_term_refs(ld, 4)
     rc = PL_put_float(ld, values, Float64(h.speedup)) &&
         PL_put_integer(ld, values + 1, Int(h.ln_buckets)) &&
-        PL_put_atom(ld, values + 2, (h.list ? mk_sym(T, :true) : mk_sym(T, :false))) &&
+        PL_put_atom(ld, values + 2, (h.list ? mk_sym(T, Symbol("true")) : mk_sym(T, Symbol("false")))) &&
         _put_index_args(ld, values + 3, h.args) &&
         PL_put_dict(ld, t, mk_sym(T, :hash_info), 4, keys, values)
     rc && PL_reset_term_refs(ld, values)

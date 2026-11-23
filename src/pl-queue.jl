@@ -479,7 +479,7 @@ function process_deadline_options(ld::PL_local_data{T}, options::term_t)::Int wh
             elseif arity == 1
                 _PL_get_arg(ld, 1, head, val)
             elseif arity == 0
-                PL_put_atom(ld, val, mk_sym(T, :true))              # a bare name is `true`: a type error for the two floats
+                PL_put_atom(ld, val, mk_sym(T, Symbol("true")))              # a bare name is `true`: a type error for the two floats
             else
                 itemerror = true
             end
