@@ -35,8 +35,9 @@ queries and rule reasoning, not long-running loops.
 * **No module-level mutable state.** Anything belonging to one evaluation lives in a value the caller
   owns. Enforced by [`tools/lint_globals.jl`](tools/lint_globals.jl), which the suite runs.
 * **Standalone.** No dependency on any CognitiveSubstratesAI package; they depend on this one. The
-  suite checks the `[deps]` table against an allowlist of one — PrecompileTools, for the precompile
-  workload — and that no sibling package is loaded.
+  suite checks the `[deps]` table against an allowlist of two — PrecompileTools, for the precompile
+  workload, and Zlib_jll, the stdlib JLL that carries libz for `library(zlib)` (D-1002) — and that no
+  sibling package is loaded.
 * **No choice points, no trail.** Nondeterminism is the sink/continuation model.
 
 ## The term interface

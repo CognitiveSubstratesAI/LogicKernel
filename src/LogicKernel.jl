@@ -116,6 +116,7 @@ include("os/pl-locale.jl")    # swipl-devel src/os/pl-locale.c — locale_create
 include("pl-md5.jl")           # swipl-devel packages/clib/md5.c md54pl.c — the MD5 core and md5_hash/3 (CLIB1; needs the text, option and read pieces)
 include("pl-sha.jl")           # swipl-devel packages/clib/sha1/sha2.c sha4pl.c — the SHA-2 core, sha_hash/3, hmac (CLIB5; SHA-1 is pl-termhash.jl's)
 include("pl-hashstream.jl")    # swipl-devel packages/clib/hash_stream.c — open_hash_stream/3, stream_hash/2 over the stream filter (HASH1)
+include("pl-zlib.jl")          # packages/zlib/zlib4pl.c — the carrier binding: the typed ccall wrappers of libz (Zlib_jll), the z_stream/gz_header records (ZLIB1 piece Z1; reusable by the zip port; no UPSTREAM header: packages/zlib is a gitlink)
 include("pl-ext.jl")           # swipl-devel src/pl-ext.c — registering the built-ins; their dispatch
 include("gd_template.jl")       # ORIGINAL — the template database: a copy of a booted PL_global_data{T} per new database (LB4 b1, dormant)
 include("boot_image.jl")       # ORIGINAL — the readers of a booted database: T1 predicates, T3 source files (LB4 b1-3)

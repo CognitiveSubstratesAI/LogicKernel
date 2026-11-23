@@ -5464,6 +5464,40 @@ _manifest_hashstream_plain() = (
     (LK._hash_finish!, Tuple{LK.sha2_ctx}, false)
 )
 
+# ZLIB1 — the libz carrier binding of packages/zlib (src/pl-zlib.jl): plain functions on pointers and integers, no term type, checked once.
+_manifest_zlib_plain() = (
+    # ZLIB1 piece Z1 — the typed ccall wrappers of libz (Zlib_jll, D-1002) and the z_stream/gz_header records (src/pl-zlib.jl); no allocation claim
+    (LK.z_stream_alloc, Tuple{}, false),
+    (LK.z_stream_free, Tuple{Ptr{Cvoid}}, false),
+    (LK.gz_header_alloc, Tuple{}, false),
+    (LK.gz_header_free, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_next_in, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_set_next_in!, Tuple{Ptr{Cvoid}, Ptr{UInt8}}, false),
+    (LK.z_stream_avail_in, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_set_avail_in!, Tuple{Ptr{Cvoid}, UInt32}, false),
+    (LK.z_stream_total_in, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_next_out, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_set_next_out!, Tuple{Ptr{Cvoid}, Ptr{UInt8}}, false),
+    (LK.z_stream_avail_out, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_set_avail_out!, Tuple{Ptr{Cvoid}, UInt32}, false),
+    (LK.z_stream_total_out, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_adler, Tuple{Ptr{Cvoid}}, false),
+    (LK.z_stream_msg, Tuple{Ptr{Cvoid}}, false),
+    (LK.gz_header_done, Tuple{Ptr{Cvoid}}, false),
+    (LK.gz_header_os, Tuple{Ptr{Cvoid}}, false),
+    (LK.gz_header_xflags, Tuple{Ptr{Cvoid}}, false),
+    (LK.gz_header_time, Tuple{Ptr{Cvoid}}, false),
+    (LK.zlib_version, Tuple{}, false),
+    (LK.zlib_inflate_init!, Tuple{Ptr{Cvoid}}, false),
+    (LK.zlib_inflate_init2!, Tuple{Ptr{Cvoid}, Cint}, false),
+    (LK.zlib_inflate_get_header!, Tuple{Ptr{Cvoid}, Ptr{Cvoid}}, false),
+    (LK.zlib_inflate!, Tuple{Ptr{Cvoid}, Cint}, false),
+    (LK.zlib_inflate_end!, Tuple{Ptr{Cvoid}}, false),
+    (LK.zlib_deflate_init!, Tuple{Ptr{Cvoid}, Cint}, false),
+    (LK.zlib_deflate_init2!, Tuple{Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint}, false),
+    (LK.zlib_deflate!, Tuple{Ptr{Cvoid}, Cint}, false),
+    (LK.zlib_deflate_end!, Tuple{Ptr{Cvoid}}, false)
+)
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
 # checked for every payload type; the ones on plain strings, integers and byte vectors once, below.
@@ -6346,6 +6380,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_zip(_M2)...,
     _manifest_zip(_M3)...,
     _manifest_zip_plain()...,
+    _manifest_zlib_plain()...,
     _manifest_hashstream(_M1)...,
     _manifest_hashstream(_M2)...,
     _manifest_hashstream(_M3)...,
