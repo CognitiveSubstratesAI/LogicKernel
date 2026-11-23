@@ -124,8 +124,10 @@ MUTANTS = [
          old="            push!(di.argp, makeVarRef(codes[di.pc + 2]))\n            di.pc += 3\n            build_term!(di, mk_sym(T, :arg), 3)",
          new="            push!(di.argp, makeVarRef(codes[di.pc + 1]))\n            di.pc += 3\n            build_term!(di, mk_sym(T, :arg), 3)"),
     dict(id="ARGINL-D3 the decompiler's integer is one too big (KILL rb_00, rb_01, rb_02)", file=C, targets=DEC,
-         old="mk_gnd(T, reinterpret(Int64, codes[di.pc]))",
-         new="mk_gnd(T, reinterpret(Int64, codes[di.pc]) + 1)"),
+         old='''            else
+                push!(di.argp, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc]))))  # consInt(i)''',
+         new='''            else
+                push!(di.argp, _word_of!(ld, mk_gnd(T, reinterpret(Int64, codes[di.pc]) + 1)))  # consInt(i)'''),
     # ── pl-gc.c clearUninitialisedVarsFrame ──
     dict(id="ARGINL-G1 clearUninitialisedVarsFrame clears the second operand, not the third (KILL g_dgf1, g_dgf2, o_dgf1, o_dgf2)", file=G, targets=GC,
          old="            _setVar!(ld, base, Int(codes[pc + 3]))",

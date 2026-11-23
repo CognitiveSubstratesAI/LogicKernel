@@ -202,15 +202,27 @@ MUTANTS = [
          new="        if rc == NUM_OK && e == len\n",
          equivalent="src/pl-read.jl:4731-4738 (pl-read.c:7292): the number branch is an optimisation of the reader branch; `12`, `-7`, `2.5` and the bignum read as the same numbers through read_term"),
     dict(id="JSON1-P3 the last character need not be a digit (EQUIVALENT: every text str_number reads whole that does not end in a digit reads as the same number)", file=R, targets=T,
-         old=" && isDigit(Int(s[len]))\n",
-         new="\n",
+         old=''')::Bool where {T}
+    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))''',
+         new=''')::Bool where {T}
+    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-'))''',
          equivalent="src/pl-read.jl:4731 (pl-read.c:7292): with `e == len + 1` kept, the texts that change branch (0'a, 0x1f, 1r3) are read as the same number by the reader"),
     dict(id="JSON1-P4 the encoding is swapped: REP_UTF8 reads Latin-1 and the reverse (KILL the rows of the encodings, é bytes)", file=R, targets=T,
          old="enc = (flags & REP_UTF8) != 0 ? ENC_UTF8 : ENC_ISO_LATIN_1",
          new="enc = (flags & REP_UTF8) != 0 ? ENC_ISO_LATIN_1 : ENC_UTF8"),
     dict(id="JSON1-P5 an error is put into the term even under CVT_EXCEPTION (KILL the rows of foo( with and without CVT_EXCEPTION)", file=R, targets=T,
-         old="        if (flags & CVT_EXCEPTION) != 0\n            rval = PL_raise_exception(ld, rd.exception)",
-         new="        if (flags & CVT_EXCEPTION) == 0\n            rval = PL_raise_exception(ld, rd.exception)"),
+         old='''    stream === nothing && error("PL_put_term_from_chars: Sopen_text")
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0''',
+         new='''    stream === nothing && error("PL_put_term_from_chars: Sopen_text")
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) == 0'''),
     dict(id="JSON1-P6 the reader reads the whole vector, not `len` bytes (KILL the row of abcdef with len 3)", file=R, targets=T,
          old="txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, enc,",
          new="txt = PL_chars_t(Vector{UInt8}(s), len, enc,"),

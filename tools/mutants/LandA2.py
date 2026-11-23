@@ -29,8 +29,9 @@ MUTANTS = [
     # pushWordAsTermRef (pl-fli.c 405): each push its own handle
     dict(id="LA2 pushWordAsTermRef reuses one handle", file=FLI,
          targets=["test/foreign/test_exceptions_swipl.jl", "test/core_lang/test_occurs_cells.jl"],
-         old="    ld.tmp_top += 1\n",
-         new=""),
+         old='''    ld.tmp_top += 1
+    t = ld.tmp_h + i                                # term_t t = LD->tmp.h[i]''',
+         new='    t = ld.tmp_h + i                                # term_t t = LD->tmp.h[i]'),
     # failed_unify_with_occurs_check (pl-prims.c 676): Var = Term, the variable first
     dict(id="LA3 the occurs-check culprit is not swapped to Var = Term", file=PRIMS,
          targets=["test/core_lang/test_head_unify_swipl.jl", "test/core_lang/test_occurs_cells.jl"],

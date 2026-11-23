@@ -202,12 +202,16 @@ MUTANTS = [
       '        isnum = rc == NUM_OK            # e == ns+len\n',
       TARGETS_E),
     m('RD2b-E2 the last character need not be a digit (EQUIVALENT: the end check and the reader give the same number)',
-      '(isDigit(Int(s[1])) || s[1] == UInt8(\'-\')) && isDigit(Int(s[len]))',
-      '(isDigit(Int(s[1])) || s[1] == UInt8(\'-\'))',
+      '''    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))
+        ns = UInt8[view(s, 1:len); 0x00]''',
+      '''    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-'))
+        ns = UInt8[view(s, 1:len); 0x00]''',
       TARGETS_E, equivalent='the fast path is an optimisation: a text it would convert is read by the reader to the same number (pl-read.jl PL_put_term_from_chars)'),
     m('RD2b-E3 the sign test looks for a plus (EQUIVALENT: the reader reads -17 as the same integer)',
-      '(isDigit(Int(s[1])) || s[1] == UInt8(\'-\'))',
-      '(isDigit(Int(s[1])) || s[1] == UInt8(\'+\'))',
+      '''    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('-')) && isDigit(Int(s[len]))
+        ns = UInt8[view(s, 1:len); 0x00]''',
+      '''    if len >= 1 && (isDigit(Int(s[1])) || s[1] == UInt8('+')) && isDigit(Int(s[len]))
+        ns = UInt8[view(s, 1:len); 0x00]''',
       TARGETS_E, equivalent='the fast path is an optimisation: the reader gives the same number for a signed numeral'),
     m('RD2b-E4 len -1 is not strlen (KILL every :chars row)',
       '    if len == -1\n        z = findfirst(==(0x00), s)\n',
@@ -234,12 +238,36 @@ MUTANTS = [
       '    false && throw(\n',
       TARGETS_E),
     m('RD2b-E10 a syntax error is not put in t (KILL tf11, tf12)',
-      '    if !rval && rd.has_exception\n        if (flags & CVT_EXCEPTION) != 0\n',
-      '    if !rval && false\n        if (flags & CVT_EXCEPTION) != 0\n',
+      '''    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0''',
+      '''    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && false
+        if (flags & CVT_EXCEPTION) != 0''',
       TARGETS_E),
     m('RD2b-E11 CVT_EXCEPTION is tested the wrong way round (KILL tf11, tf32, the CVT_EXCEPTION testset)',
-      '        if (flags & CVT_EXCEPTION) != 0\n            rval = PL_raise_exception(ld, rd.exception)\n',
-      '        if (flags & CVT_EXCEPTION) == 0\n            rval = PL_raise_exception(ld, rd.exception)\n',
+      '''    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) != 0''',
+      '''    oldsrc = _copy_read_source(ld)
+
+    rd = init_read_data(gd, ld, stream)
+    PL_put_variable(ld, t)
+    rval = read_term(t, rd)
+    if !rval && rd.has_exception
+        if (flags & CVT_EXCEPTION) == 0''',
       TARGETS_E),
     m('RD2b-E12 LD->read_source is not restored by PL_put_term_from_chars (KILL the restored check)',
       '    ld.read_source = oldsrc\n\n    return rval\n',

@@ -30,8 +30,10 @@ TARGETS = NS                                                # the baseline job's
 MUTANTS = [
     # ---- '$source_file'/2 and '$source_file_predicates'/2
     dict(id="LB2-1 $source_file_predicates walks the oldest predicate first", file=SF, targets=S,
-         old='''Iterators.reverse(sf.procedures)''',
-         new='''sf.procedures'''),
+         old='''            rc = true
+            for proc in Iterators.reverse(sf.procedures)''',
+         new='''            rc = true
+            for proc in sf.procedures'''),
     dict(id="LB2-2 $source_file looks an unqualified head up in user", file=SF, targets=S,
          old='''get_procedure_findhere(gd, ld, descr, MODULE_system(gd))''',
          new='''get_procedure_findhere(gd, ld, descr, MODULE_user(gd))'''),
@@ -84,9 +86,11 @@ MUTANTS = [
          new='''    end
     nothing'''),   # INT-MERGE-12: widened, `$set_source_files` (WRAPPERS) has the same line after `releaseSourceFile(of)`
     dict(id="LB2-15 $set_source_file does not release its reference", file=SF, targets=S,
-         old='''        releaseSourceFile(sf)
+         old='''        end
+        releaseSourceFile(sf)
         return rc ? FTRUE : FFALSE''',
-         new='''        return rc ? FTRUE : FFALSE'''),
+         new='''        end
+        return rc ? FTRUE : FFALSE'''),
     # ---- '$start_consult'/2, '$end_consult'/1, '$fixup_reconsult'/1
     dict(id="LB2-16 $start_consult treats 0 as a time", file=SF, targets=S,
          old='''if i !== nothing && i == 0''',
