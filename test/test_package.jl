@@ -12,13 +12,15 @@
 # measured twice: PathMap CI #87 (`Random`), and LogicKernel `8f0bead` (`Random` again).
 using Test, LogicKernel
 
-# TWO allowed dependencies, and nothing else unless added deliberately, with a reason (no wildcard such
+# THREE allowed dependencies, and nothing else unless added deliberately, with a reason (no wildcard such
 # as `endswith("_jll")`: a further JLL needs its own D-entry):
 #   PrecompileTools (user, 2026-10-03) runs src/precompile_workload.jl at precompile time — a fresh
 #   process otherwise spent ~10 s compiling the hot paths before its first answer (measured);
 #   PCRE2_jll (D-1002, Shivaji) carries libpcre2-8, ccall'd by src/pl-pcre.jl for library(pcre);
-#   Zlib_jll (D-1002, Shivaji) carries libz, ccall'd by src/pl-zlib.jl for library(zlib).
-const ALLOWED_DEPS = ("PrecompileTools", "PCRE2_jll", "Zlib_jll")
+#   Zlib_jll (D-1002, Shivaji) carries libz, ccall'd by src/pl-zlib.jl for library(zlib);
+#   LibYAML_jll (D-1004, the audit's approval, same carrier rule as D-1002) carries libyaml, ccall'd by
+#   src/pl-yaml.jl for library(yaml): a REGISTRY JLL (not a stdlib), pinned `=0.2.5` in Project.toml.
+const ALLOWED_DEPS = ("PrecompileTools", "PCRE2_jll", "Zlib_jll", "LibYAML_jll")
 const SIBLINGS = ("MeTTaCore", "MORK", "PathMaps", "MorkSupercompiler")
 
 """Package names in the `[deps]` and `[extras]` tables of `file`, plus the `name`/`uuid` lines."""

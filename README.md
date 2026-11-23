@@ -35,9 +35,12 @@ queries and rule reasoning, not long-running loops.
 * **No module-level mutable state.** Anything belonging to one evaluation lives in a value the caller
   owns. Enforced by [`tools/lint_globals.jl`](tools/lint_globals.jl), which the suite runs.
 * **Standalone.** No dependency on any CognitiveSubstratesAI package; they depend on this one. The
-  suite checks the `[deps]` table against an allowlist of three — PrecompileTools, for the precompile
-  workload, PCRE2_jll, the stdlib JLL that carries libpcre2-8 for `library(pcre)`, and Zlib_jll, the
-  stdlib JLL that carries libz for `library(zlib)` (D-1002) — and that no sibling package is loaded.
+  suite checks the `[deps]` table against an allowlist of four, no wildcard — PrecompileTools, for the
+  precompile workload, PCRE2_jll, the stdlib JLL that carries libpcre2-8 for `library(pcre)` (D-1002),
+  Zlib_jll, the stdlib JLL that carries libz for `library(zlib)` (D-1002), and LibYAML_jll, the
+  registry JLL (pinned `=0.2.5`; the first resolve needs the network once) that carries libyaml for
+  `library(yaml)` (D-1004, the audit's approval, with the same carrier rule as D-1002) — and that no
+  sibling package is loaded.
 * **No choice points, no trail.** Nondeterminism is the sink/continuation model.
 
 ## The term interface
