@@ -345,6 +345,13 @@ vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rel.json"
 expect "verdicts: a release whose state is not success is no release" verdicts FAIL "landing checks failed: src diff"
 vd "$GOOD" "$T/vr_ok.py" FAKE_GH_JSON="$T/rel.json"
 expect "verdicts: an empty src diff row adds no src note" verdicts PASS "2 batteries read"
+# the channel of a `local:` release item (D-1009 (5)): LAND_CHANNEL is handed to the reader as --channel, and only when it is set
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rel.json"
+vd "$GOOD" "$T/vr_src.py" LAND_CHANNEL="$T/chan_agent.md"
+if grep -qxF -- "--channel" "$T/lw/vr_args.txt" && grep -qxF -- "$T/chan_agent.md" "$T/lw/vr_args.txt"; then ok "verdicts: LAND_CHANNEL reaches the reader as --channel"
+else bad "verdicts: --channel argument" "$(cat "$T/lw/vr_args.txt")"; fi
+vd "$GOOD" "$T/vr_src.py"
+if grep -qxF -- "--channel" "$T/lw/vr_args.txt"; then bad "verdicts: --channel passed with LAND_CHANNEL unset"; else ok "verdicts: LAND_CHANNEL unset, no --channel argument (the reader's default)"; fi
 
 echo "== marker (c) =="
 MKSHA="$GOOD"
@@ -401,6 +408,20 @@ status_json "$GOOD" success "LAND $GOOD [ids: src-diff $(echo "$HEX64" | tr a-f 
 status_json "$GOOD" success "LAND $GOOD [ids: src-diff]" AuditBot > "$T/q6.json"; mk "$T/q6.json"; expect "marker src-diff: no digest" marker FAIL "malformed src-diff"
 status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64,src-diff $(printf 'other' | sha256sum | cut -d' ' -f1)]" AuditBot > "$T/q7.json"; mk "$T/q7.json"; expect "marker src-diff: two different digests" marker FAIL "more than one"
 status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64]" stranger > "$T/q8.json"; mk "$T/q8.json"; expect "marker src-diff: a stranger's release is still refused" marker FAIL "not in land_approvers"
+# `local: <row id> @<A-entry ref>` in the ids list (D-1009 (5)): form-checked here (one item per row), the channel entry is read by
+# tools/verdict_read.py; never an id of an evidence row
+LOC="local: G1GC3-T3 @A-NEXT 2026-11-23 15:40Z"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC]" AuditBot > "$T/l1.json"; mk "$T/l1.json"; expect "marker local: a well-formed item, no rows added: passes" marker PASS "$LOC"
+status_json "$GOOD" success "LAND $GOOD [ids: local: G1GC3-T3 @A-0123]" AuditBot > "$T/l1b.json"; mk "$T/l1b.json"; expect "marker local: an @A-NNNN ref passes" marker PASS "@A-0123"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64,$LOC,local: B2-X @A-0456]" AuditBot > "$T/l2.json"; mk "$T/l2.json"; expect "marker local: beside src-diff, two rows: passes" marker PASS "local: B2-X @A-0456"
+status_json "$EQADD" success "LAND $EQADD [ids: D-0950:NEWMUT,$LOC]" AuditBot > "$T/l3.json"; MKSHA="$EQADD"; mk "$T/l3.json"; expect "marker local: beside an equivalents id: passes" marker PASS "D-0950:NEWMUT"
+status_json "$EQADD" success "LAND $EQADD [ids: $LOC]" AuditBot > "$T/l4.json"; mk "$T/l4.json"; expect "marker local: the item names no evidence row" marker FAIL "not named"
+MKSHA="$GOOD"
+status_json "$GOOD" success "LAND $GOOD [ids: local: G1GC3-T3]" AuditBot > "$T/l5.json"; mk "$T/l5.json"; expect "marker local: no ref" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: local: G1GC3-T3 @yesterday]" AuditBot > "$T/l6.json"; mk "$T/l6.json"; expect "marker local: a ref that is no A-entry heading" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: local G1GC3-T3 @A-0123]" AuditBot > "$T/l7.json"; mk "$T/l7.json"; expect "marker local: no colon" marker FAIL "malformed local"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC,local: G1GC3-T3 @A-0123]" AuditBot > "$T/l8.json"; mk "$T/l8.json"; expect "marker local: one row named twice" marker FAIL "twice"
+status_json "$GOOD" success "LAND $GOOD [ids: $LOC]" stranger > "$T/l9.json"; mk "$T/l9.json"; expect "marker local: a stranger's release is still refused" marker FAIL "not in land_approvers"
 
 echo "== decide =="
 fill() {   # fill ROW=STATUS... : write a full table with the given statuses (default PASS)

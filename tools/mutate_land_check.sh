@@ -83,6 +83,10 @@ M = [
  ("S5", "verdicts: the release is read from ANY creator, not only an approver", 'if s.get("state") == "success" and ((s.get("creator") or {}).get("login") or "").lower() in allowed:', 'if s.get("state") == "success":'),
  ("S6", "verdicts: the release is read whatever the state of the status", 'if s.get("state") == "success" and ((s.get("creator") or {}).get("login") or "").lower() in allowed:', 'if ((s.get("creator") or {}).get("login") or "").lower() in allowed:'),
  ("S7", "verdicts: the src diff text (numstat, sha256) is not shown in the row", 'detail + ("; " + src_note if src_note else "")', 'detail'),
+ ("S8", "marker: a malformed local item (no ref, a ref that is no A-entry heading) is accepted", 'if any(not re.fullmatch(LOCF, t) for t in locrel):', 'if False:'),
+ ("S9", "marker: a local item is counted as an evidence-row id (a release carrying one fails as unused)", 'named -= set(locrel)', 'pass'),
+ ("S10", "marker: one row named by two local items is accepted", 'if len({t.split(" ")[1] for t in locrel}) != len(locrel):', 'if False:'),
+ ("S11", "verdicts: LAND_CHANNEL is never handed to the reader", '${LAND_CHANNEL:+--channel "$LAND_CHANNEL"}', ''),
 ]
 # `old` occurs exactly once in tools/verdict_read.py (mutated COPY, checked by tools/test_verdict_read.py, D-1006 (2))
 VM = [
@@ -93,6 +97,19 @@ VM = [
  ("R5", "src release: an empty numstat is not recognised (every diff needs a release, the empty one too)", "elif not ns.stdout.strip():", "elif False:"),
  ("R6", "src release: a missing release passes the check (the digest is taken as the release)", "        elif not good:\n            out.append((\"src diff\", False, \"NON-EMPTY, no `src-diff <sha256>` release; %s\" % shown))\n", "        elif not good:\n            out.append((\"src diff\", True, \"NON-EMPTY, no release; %s\" % shown))\n"),
  ("R7", "src release: the row does not print the numstat's sha256 (the audit cannot compare)", '"sha256 %s; numstat (git diff --numstat %s..%s -- src): %s" % (digest, base, sha[:8], "; ".join(', '"numstat (git diff --numstat %s..%s -- src): %s" % (base, sha[:8], "; ".join('),
+ ("R8", "local release: the tree of the line is not compared with the landing SHA's tree (any tree releases)", "elif m.group(2) != tree:", "elif False:"),
+ ("R9", "local release: the verdict word is not checked (TIMEOUT, survived, anything releases)", 'elif m.group(3) != "caught (hang)":', "elif False:"),
+ ("R10", "local release: a NO VERDICT row whose job did NOT conclude cancelled (failed) is releasable", 'elif r.get("jconc") != "cancelled":', "elif False:"),
+ ("R11", "local release: a row that is not NO VERDICT (caught, SURVIVED, TIMEOUT, INVALID) is releasable", 'if r["kind"] != "nov":', "if False:"),
+ ("R12", "local release: a failed job with no row is releasable whatever it concluded", 'if f["conclusion"] != "cancelled":', "if False:"),
+ ("R13", "local release: a missing channel file is not refused (the file is read as empty)", "if not channel or not os.path.isfile(channel):", "if False:\n        pass\n    if not channel:"),
+ ("R14", "local release: a heading that merely STARTS with the ref matches (A-0123 matches A-01234)", 'head[len(ref)] in " \\t"', "True"),
+ ("R15", "local release: a line under another entry counts (the file is read as one body)", 'cur = [] if head.startswith(ref) and (len(head) == len(ref) or head[len(ref)] in " \\t") else None', 'cur = [] if head.startswith(ref) and (len(head) == len(ref) or head[len(ref)] in " \\t") else cur if cur is not None else None'),
+ ("R16", "local release: one row named twice is accepted", "        if row in seen:", "        if False:"),
+ ("R17", "local release: a malformed item is not refused as such", "    if bad:\n        out.append((\"local verdict\", False,", "    if False:\n        out.append((\"local verdict\", False,"),
+ ("R18", "local release: a verified release does not lift the failed-job blocker", 'if f["name"] not in nov and (b["name"], f["name"]) not in released:', 'if f["name"] not in nov:'),
+ ("R19", "local release: a verified release does not lift the NO VERDICT row (the battery stays blocked)", 'b["counts"]["decided"] + rel_n == b["counts"]["total"]', 'b["counts"]["decided"] == b["counts"]["total"]'),
+ ("R20", "local release: the same row id cancelled in TWO batteries is accepted (ambiguity)", "    if len(rel) != 1:", "    if len(rel) < 1:"),
 ]
 if __name__ == "__main__":
     cmd = sys.argv[1]
@@ -131,11 +148,15 @@ if ! LAND_CHECK_UNDER_TEST="$W/land_check.base.sh" bash "$TEST" > "$W/base.log" 
 fi
 echo "baseline: unmutated copy passes ($(tail -1 "$W/base.log"))"
 # the verdict_read.py mutants (src-diff release, D-1006 (2)): a COPY of the reader beside its helper module, run by the python test
-# (only the Landing cases: they hold every row of the release), the test pointed at the copy through VERDICT_READ_UNDER_TEST
+# (the Landing cases: they hold every row of the src-diff release; the LocalVerdict cases hold the local-verdict ones), the test pointed at the copy through VERDICT_READ_UNDER_TEST
 mkdir -p "$W/vr"; cp "$HERE/battery_table.py" "$W/vr/"; cp "$VSRC" "$W/vr/verdict_read.py"
-vtest() { VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" "Landing" > "$W/v.log" 2>&1; }
-if ! vtest; then echo "mutate_land_check: the UNMUTATED verdict_read copy fails the Landing tests"; tail -5 "$W/v.log"; exit 2; fi
-echo "baseline: unmutated verdict_read copy passes ($(grep -m1 '^Ran ' "$W/v.log"))"
+# R1-R7 (src-diff release) run the Landing class, R8 and up (local verdict, D-1009 (5)) the LocalVerdict class; both fail-fast
+vtest() { VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" -f "$1" > "$W/v.log" 2>&1; }
+vsel() { case "$1" in R[1-7]) echo Landing ;; *) echo LocalVerdict ;; esac; }
+for cls in Landing LocalVerdict; do
+    if ! vtest "$cls"; then echo "mutate_land_check: the UNMUTATED verdict_read copy fails the $cls tests"; tail -5 "$W/v.log"; exit 2; fi
+    echo "baseline: unmutated verdict_read copy passes $cls ($(grep -m1 '^Ran ' "$W/v.log"))"
+done
 
 killed=0 total=0
 for id in $ids; do
@@ -144,7 +165,7 @@ for id in $ids; do
         if ! python3 -I "$W/mutants.py" vapply "$VSRC" "$id" "$W/vr/verdict_read.py"; then echo "$id: DOES NOT APPLY"; continue; fi
         cmp -s "$VSRC" "$W/vr/verdict_read.py" && { echo "$id: NO CHANGE"; continue; }
         python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$W/vr/verdict_read.py" || { echo "$id: the mutant is not valid python"; continue; }
-        if vtest; then echo "$id: SURVIVED ($(python3 -I "$W/mutants.py" what "$id"))"
+        if vtest "$(vsel "$id")"; then echo "$id: SURVIVED ($(python3 -I "$W/mutants.py" what "$id"))"
         else
             killed=$((killed + 1))
             echo "$id: KILLED by [$(grep -m1 -E '^(FAIL|ERROR):' "$W/v.log" | cut -c1-110)]  ($(python3 -I "$W/mutants.py" what "$id"))"
