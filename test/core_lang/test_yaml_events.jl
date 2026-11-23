@@ -65,15 +65,15 @@ function _ye_decode(text::String)
         nothing
     else
         (
-        ev.type,
-        ev.anchor,
-        ev.tag,
-        ev.value,
-        ev.implicit,
-        ev.quoted_implicit,
-        ev.style,
-        ev.encoding
-    )
+            ev.type,
+            ev.anchor,
+            ev.tag,
+            ev.value,
+            ev.implicit,
+            ev.quoted_implicit,
+            ev.style,
+            ev.encoding
+        )
     end
     return (fields, exc)
 end

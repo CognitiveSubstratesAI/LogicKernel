@@ -83,7 +83,8 @@ end
                 if err isa _TL
                     f = child(err, 2)
                     @test sym_text(child(f, 1)) == "existence_error"
-                    @test sym_text(child(f, 2)) == kernel_ext[1] && sym_text(child(f, 3)) == kernel_ext[2]
+                    @test sym_text(child(f, 2)) == kernel_ext[1] &&
+                        sym_text(child(f, 3)) == kernel_ext[2]
                 end
             else
                 @test err isa LK.NotPortedError              # the kernel names the predicate (swipl: existence_error)
