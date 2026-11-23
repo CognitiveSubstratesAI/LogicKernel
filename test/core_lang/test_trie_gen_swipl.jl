@@ -5,7 +5,7 @@
 # `tN(R)`, the kernel enumerates every solution of every tN/1 and its lines are compared with test_trie_gen_swipl.out (swipl's own, printed by the
 # driver below); when `swipl` is on PATH the .out is checked against a live run as well.
 # NOT HERE, with the reason: attributed_query, stored_attvar_beside_constants (attributed variables in keys: TR3, a named refusal here);
-# stack_shift (no stack shift moves a position) and garbage_collection_between_answers (the epoch follows `ld.gc.stats.totals.collections` since G1, but no row here collects between two answers: TODO row; the replay path is exercised by ld.trie_gen_force_epoch below);
+# stack_shift (no stack shift moves a position); garbage_collection_between_answers is row t51 (the epoch follows `ld.gc.stats.totals.collections` since G1; the replay path is also exercised by ld.trie_gen_force_epoch below);
 # generated_shapes (random: the rows are a fixed list); the thread, tabling and compiled (trie_gen_compiled: TR4) tests; '$trie_property'
 # invalidated/reevaluated/idg_* (the IDG is TB6's: those names FAIL here, as swipl's do for a trie with no IDG, row t21);
 # trie_insert_insert/3, trie_lookup_gen/3, trie_lookup_delete/3 are not defined at the pin (O_NESTED_TRIES is defined nowhere).
@@ -240,6 +240,17 @@ end
     @test kl["t44"] == _row("t44", _ec("-", _el(_ei.(1:12)), _el(_ei.(1:2:11))))     # every second deleted
     @test kl["t46"] == _row("t46", _el(fill(_pc("node_count", 1), 3)))              # released after a cut, a throw, the end
     @test kl["t47"] == _row("t47", _ks(1:6))                                          # destroyed while enumerated
+end
+
+# TR2 kill rows of the PRUNED cursor (audit D-1014): the answers' ORDER shows whether the cursor still prunes at a block that holds a stored variable key
+# (CH_VARS: the equal constant first, then the variables; an unpruned cursor builds CH_ENUM, insertion order). The values are swipl's (the .out).
+@testset "TR2 kill rows: the pruned cursor (t48-t51)" begin
+    names = _trie_names()
+    kl = Dict(zip(["ok"; names], kernel_lines(_TRIE_PL, names)))
+    @test kl["t48"] == _row("t48", _el([_ei(2), _ei(1)]))   # a mixed block below a closed compound argument: pruning goes on after the POP
+    @test kl["t49"] == _row("t49", _el([_ei(2), _ei(1)]))   # the last nonvar argument keeps pruning going
+    @test kl["t50"] == _row("t50", _el([_ei(2), _ei(1), _ei(4), _ei(3)]))   # the descent below a backtrack still prunes
+    @test kl["t51"] == _row("t51", _ei(100))                # a collection between the answers: the kept cursors are rebuilt
 end
 
 # The replay path: with the epoch advancing at every call the kept cursors are rebuilt from the root; the answers must not change.

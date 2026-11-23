@@ -3,7 +3,7 @@
 % test/core_lang/test_trie_gen_swipl.pl - TR2's rows (pl-trie.c: trie_gen/2,3, '$trie_gen_node'/3, '$trie_property'/2). Each `tN(R)` is one row;
 % test_trie_gen_swipl.out holds swipl's answers (10.1.20, pin 18168e62), printed by the driver of the .jl (`ok`, then one line per row).
 % A row never encodes a trie (a blob) nor a node handle: an error that names a trie goes through scrub/3.
-% NOT HERE (the .jl says why): attributed_query and stored_attvar_beside_constants (TR3), stack_shift/garbage_collection (no collector),
+% NOT HERE (the .jl says why): attributed_query and stored_attvar_beside_constants (TR3), stack_shift (t51 is the garbage_collection_between_answers row),
 % the threads, tabling and compiled tests, '$trie_property' idg_* and invalidated (TB6).
 
 mk(Tr, Ks) :- trie_new(Tr), mkv(Ks, Tr).
@@ -141,3 +141,17 @@ t46(R) :- nk(8, T1), once(trie_gen(T1, _)), forall(between(1, 8, I), trie_delete
     R = [P1, P2, P3].
 % t47: the trie destroyed while it is enumerated: the enumeration goes on over the nodes it holds
 t47(R) :- nk(6, T), findall(K, ( trie_gen(T, K), ( K == k(2) -> trie_destroy(T) ; true ) ), R).
+% t48: a mixed block {variable key, b} BELOW a closed compound argument: the query f(g(a), b) keeps pruning after the POP (kills the cursor that stops there)
+t48(R) :- trie_new(T), trie_insert(T, f(g(a), _), 1), trie_insert(T, f(g(a), b), 2),
+    findall(V, trie_gen(T, f(g(a), b), V), R).
+% t49: the same block below the SECOND nonvar argument of a flat compound (the last nonvar argument keeps the pruning going)
+t49(R) :- trie_new(T), trie_insert(T, f(a, _), 1), trie_insert(T, f(a, b), 2),
+    findall(V, trie_gen(T, f(a, b), V), R).
+% t50: the descent BELOW A BACKTRACK still prunes: the mixed block under the second first-argument child
+t50(R) :- trie_new(T), trie_insert(T, f(a, _), 1), trie_insert(T, f(a, b), 2),
+    trie_insert(T, f(c, _), 3), trie_insert(T, f(c, b), 4),
+    findall(V, trie_gen(T, f(_, b), V), R).
+% t51: a garbage collection between the answers (dead cells below the query; upstream's garbage_collection_between_answers): the kept cursors are rebuilt
+mkgar :- numlist(1, 400, L), length(L, _).
+t51(R) :- mkgar, trie_new(T), forall(between(1, 100, I), trie_insert(T, p(I, f(a), _))),
+    findall(I, ( trie_gen(T, p(I, f(a), b)), garbage_collect ), Ids), length(Ids, R).

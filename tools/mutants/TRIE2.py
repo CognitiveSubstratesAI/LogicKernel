@@ -25,7 +25,9 @@
 #   * TR2-K1 (a stored variable key against a constant query, in a block without the scan bit) and TR2-K2 (the equal constant first, then the
 #     variables): rows t5 and t28 query with variables only, t13 reaches the scan path; a row `trie_insert(T, f(X, Y), 1), trie_insert(T, f(a, b), 2),
 #     trie_gen(T, f(a, b))` (swipl answers both) kills both.
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR2-C2, TR2-S7, TR2-Q1, TR2-Q3 .. TR2-Q8
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR2-Q1, TR2-Q6, TR2-Q7, TR2-Q8 (ratified, D-1013/D-1014).
+#   TR2-C2, TR2-S7, TR2-Q3, TR2-Q4 were declared too; the trace evidence/R2/trie2_equiv_trace.md (audit D-1014 (2)) REFUTED them: the pruned and the
+#   unpruned cursor give a different ORDER of answers (CH_VARS vs CH_ENUM, src/pl-trie.jl:2845-2890). They are kill rows now: t48-t51 of test_trie_gen_swipl.pl.
 #   (TR2-S8 and TR2-Q2 were declared too; CI run 43827841817 REFUTED both, they are killed mutants: audit D-0830).
 # Every `old` was counted EXACTLY once in its file by a python3 -I script (exec of this file, `src/pl-trie.jl`.count(old) == 1 for each of the 53
 #   mutants; no Julia ran) at the commit that adds this list; `new` != `old`; no duplicate id.
@@ -56,9 +58,8 @@ MUTANTS = [
     # ---- the pruning cursor: a mutant that prunes MORE (D: the .out rows; K: single rows)
     m("TR2-C1 skip_query! does not step the position (KILL D t29: after the first argument 1 matched, the cursor reads it again for the stored 5)",
       "    c.term = c.size != 0 ? c.term + 1 : 0\n", "    c.term = c.size != 0 ? c.term : 0\n"),
-    m("TR2-C2 skip_query! does not count the argument (output equivalent)",
-      "    c.size -= 1\n    c.term = c.size != 0", "    c.size -= 0\n    c.term = c.size != 0",
-      eq="src/pl-trie.jl:2304-2308 skip_query!: `size` feeds only the stop of the cursor. With `size` not reaching 0 the cursor reads a stale cell: concrete_ahead (:2353-2355) then needs `term <= last` or a frame with a rest, and peek_query at a stale cell differs from `Q_DONE` only where it gives a stop (peek_query :2367-2385, align_pruning_key! :2392-2457: the `@goto stop` branches set `prune = false`). The cursor prunes less, never more, and unify_trie_path! decides every answer (TR2-Q2). Probes: the whole TG file (D 49, K 14, R 40, L 39, white box 11) is green with the mutant; the 300-row fuzz at epochs 0 and 1 gives the unmutated output"),
+    m("TR2-C2 skip_query! does not count the argument (KILL TG t48: the cursor stops pruning after the POP of a closed compound: CH_ENUM, insertion order [1,2])",
+      "    c.size -= 1\n    c.term = c.size != 0", "    c.size -= 0\n    c.term = c.size != 0"),
     m("TR2-C3 a frame resumes at the argument just entered (KILL D t6: f(g(_), 2) reads g(_) again for the stored 2 and cuts f(g(1), 2))",
       "push!(st.frames, qframe(c.term + 1, c.size - 1, c.last, rest, c.frame))", "push!(st.frames, qframe(c.term, c.size - 1, c.last, rest, c.frame))"),
     m("TR2-C4 peek_query reads the functor of a compound query wrongly (KILL D t6, t7: every compound query key is cut)",
@@ -93,9 +94,8 @@ MUTANTS = [
       "            child = get_child(tr, node, k + 1)\n            if child == 0\n                pop_choice!(st, chi)\n                return 0\n            end\n            ch.child = child\n"),
     m("TR2-S6 next_choice! stops at a leaf without a value (KILL D t0: the test of the flags is inverted)",
       "ch != 0 && !st.resume && (tr.nodes[st.choices[ch].child].flags & st.vflags) == 0\n", "ch != 0 && !st.resume && (tr.nodes[st.choices[ch].child].flags & st.vflags) != 0\n"),
-    m("TR2-S7 next_choice0! does not restore the cursor before the node (output equivalent)",
-      "            restore_cursor!(ld, st, ch, st.before)\n", "",
-      eq="src/pl-trie.jl:2690-2696 next_choice0!: the restore result is read only through `st.before.prune` (:2693) and the cursor `cp`. Without the call `st.before` keeps its initial non-pruning value, so backtracking prunes less (align_key! :2459-2461 accepts every key of a non-pruning cursor), never more; a non-pruning kept cursor is restored to `prune = false` (restore_cursor! :2646-2649) which is that initial value. The det flag is read at the bound=true call (:2686-2688), which returns before the restore when the kept cursor prunes (:2686), so the restore cannot change it. Probes: TG file green with the mutant, fuzz equal"),
+    m("TR2-S7 next_choice0! does not restore the cursor before the node (KILL TG t50: the descent below a backtrack runs unpruned: CH_ENUM, [2,1,3,4])",
+      "            restore_cursor!(ld, st, ch, st.before)\n", ""),
     # TR2-S8 was declared EQUIVALENT (audit D-0830 (2)(3), CI run 43827841817 at 1cf52388: the declaration is REFUTED, the file fails with the
     # mutant at test_trie_gen_swipl.jl:180, the mutant is KILLED). The written argument rested on a probe in a warm daemon and on "nothing sets
     # tr.references or TN_PINNED"; E4's acquire_trie/release_trie set tr.references (the revisit condition the declaration itself named), and the
@@ -173,29 +173,27 @@ MUTANTS = [
       "        if br.novar != 0\n", "        if false\n"),
     m("TR2-Q1 skip of a nonvar query: the cut is a continuation (a cut that does not cut; output equivalent)",
       "        return false                                    # cut\n", "        @goto stepped                                   # cut\n",
-      eq="src/pl-trie.jl:2325 align_pruning_key! (`return false  # cut`): pruning less changes no answer: unify_trie_path! (:2596) decides every leaf, so a path that is not cut is found and refused there; only the work differs"),
+      eq="src/pl-trie.jl:2724 align_pruning_key! (`return false  # cut`): a stored key that differs from the query's nonvar key only adds candidate leaves whose path fails AT that key in unify_trie_path! (src/pl-trie.jl:3016, a mismatching constant or functor returns false before any answer); the order of the surviving leaves, the det flag (next_choice!(bound=true) returns before any align, :2963-2966) and the answers are unchanged; trace evidence/R2/trie2_equiv_trace.md, ratified D-1014 (1)"),
     # TR2-Q2 was declared EQUIVALENT (audit D-0830 (2)(3), CI run 43827841817 at 1cf52388: the declaration is REFUTED, the file fails with the
     # mutant at test_trie_gen_swipl.jl:180, the mutant is KILLED). The argument ("a longer prune cannot cut a path the query unifies with")
     # rested on a probe in a warm daemon; the fresh process of CI kills the mutant. It is a plain killed mutant now: KILL TG:180.
     m("TR2-Q2 concrete_ahead always true (the cursor never stops pruning; KILL TG:180)",
       "    return (c.size != 0 && c.last != 0 && c.term <= c.last) ||\n           (c.frame != 0 && st.frames[c.frame].rest)\n", "    return true\n"),
-    m("TR2-Q3 enter_query_compound!: `last` is the first nonvar argument (pruning stops earlier; output equivalent)",
-      "    for a in (f + arity):-1:(f + 1)\n", "    for a in (f + 1):1:(f + arity)\n",
-      eq="src/pl-trie.jl:2213 enter_query_compound!: `last` only feeds concrete_ahead (see TR2-Q2): an earlier `last` stops the pruning earlier, never cuts"),
-    m("TR2-Q4 enter_query_compound!: `rest` is false (pruning stops earlier; output equivalent)",
-      "        rest = (c.last != 0 && c.last > c.term) || (c.frame != 0 && st.frames[c.frame].rest)\n", "        rest = false\n",
-      eq="src/pl-trie.jl:2206 enter_query_compound!: `rest` only feeds concrete_ahead (see TR2-Q2)"),
+    m("TR2-Q3 enter_query_compound!: `last` is the first nonvar argument (KILL TG t49, t48: pruning stops before the later nonvar argument's mixed block: [1,2])",
+      "    for a in (f + arity):-1:(f + 1)\n", "    for a in (f + 1):1:(f + arity)\n"),
+    m("TR2-Q4 enter_query_compound!: `rest` is false (KILL TG t48: pruning stops after the closed compound argument: [1,2])",
+      "        rest = (c.last != 0 && c.last > c.term) || (c.frame != 0 && st.frames[c.frame].rest)\n", "        rest = false\n"),
     m("TR2-Q5 restore_cursor!: a kept cursor of an older epoch is used (the epoch never moves; output equivalent)",
       "    if ubr.epoch == st.epoch\n", "    if true\n",
       eq="src/pl-trie.jl check_epoch! and restore_cursor!: no collection runs in the rows of this file (test_trie_gen_swipl.jl holds no garbage_collection_between_answers row) and no stack shift moves a position, so a kept cursor stays valid in every epoch; the replay (the branch after) gives the same cursor (ld.trie_gen_force_epoch, testset R, checks that); only the work differs"),
     m("TR2-Q6 init_trie_state! does not reset the path and the frames (clear_trie_state! does it)",
       "    st.resume = false\n    st.nch = 0\n    st.nbr = 0\n    empty!(st.frames)\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
       "    st.resume = false\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
-      eq="src/pl-trie.jl:2151 clear_trie_state! (`st.nch = 0`, `st.nbr = 0`, `empty!(st.frames)`) runs before every release of a record, and a record never used has nch == nbr == 0 and no frames (the constructor, src/pl-incl.jl:1558 trie_gen_state{T}()); init_trie_state! sets them again"),
+      eq="src/pl-trie.jl:2544-2547 clear_trie_state! (`st.nch = 0`, `st.nbr = 0`, `empty!(st.frames)`, then free_foreign_state!) is the only free of the pool and runs the resets before it; the only alloc is trie_gen_raw :3064 and a never-used record is clean (src/pl-incl.jl:3581-3584, src/pl-fli.jl:1492-1497); init_trie_state! (:2492-2494) sets them again; trace evidence/R2/trie2_equiv_trace.md, ratified D-1014 (1)"),
     m("TR2-Q7 $trie_gen_node/3 passes data kind 0 (the argument is not read)",
       "PL__t0 + 1, 0, PL__t0 + 2, 1, PL__ctx)", "PL__t0 + 1, 0, PL__t0 + 2, 0, PL__ctx)",
-      eq="src/pl-trie.jl:2620-2715 trie_gen_raw: `data_kind` is an argument and is not read in the body (the handle is unified when `Data != 0`, which pl_trie_gen_node3_va sets by passing PL__t0 + 2)"),
+      eq="src/pl-trie.jl:3028-3033 trie_gen_unify_data: `data_kind` 0 and 1 both fall through the three delay kinds (2, 3, 4) to the node handle, so the row in `$trie_gen_node/3` (kind 1) and the mutant (kind 0) unify the same handle; ratified D-1013 (2)"),
     m("TR2-Q8 check_epoch! counts an epoch by 2 (the epoch is only compared for equality; output equivalent)",
       "        st.gc_seen = gcs\n        st.epoch += 1\n", "        st.gc_seen = gcs\n        st.epoch += 2\n",
-      eq="src/pl-trie.jl:2163-2170 check_epoch!: the epoch is compared for equality with a branch's (restore_cursor!), never ordered; a step of 2 instead of 1 changes nothing"),
+      eq="src/pl-trie.jl:2557-2564 check_epoch! (`st.epoch += 1` :2561): the epoch is compared for equality with a branch's (restore_cursor! :2927), never ordered; a step of 2 instead of 1 changes nothing; ratified D-1013 (2)"),
 ]
