@@ -9,30 +9,13 @@ LOAD = "src/pl-load.jl"
 APPLE = "src/os/pl-apple.jl"
 TARGETS = T                                                 # the baseline job's list: the union of every mutant's targets
 MUTANTS = [
-    dict(id="STATEXT-1 `$activate_static_extension/1` fails instead of refusing", file=LOAD, targets=T,
-         old='''    throw(
-        NotPortedError{T}(
-            mk_sym(T, :activate_static_extension),
-            "activate_static_extension/1: no static extensions in the kernel (pl-load.c:450-540)",
-            "LB5-LB7"
-        )
-    )''',
-         new='''    return FFALSE'''),
-    dict(id="STATEXT-2 the refusal of `$activate_static_extension/1` names another predicate", file=LOAD, targets=T,
-         old='''            mk_sym(T, :activate_static_extension),''',
-         new='''            mk_sym(T, :activate_static_extension_),'''),
-    dict(id="STATEXT-3 the refusal's pin lines are altered", file=LOAD, targets=T,
-         old='''no static extensions in the kernel (pl-load.c:450-540)",''',
-         new='''no static extensions in the kernel (pl-load.c:450-541)",'''),
-    dict(id="STATEXT-4 the refusal's owner step is altered", file=LOAD, targets=T,
-         old='''            "LB5-LB7"
-        )
-    )
-end''',
-         new='''            "LB4"
-        )
-    )
-end'''),
+    # STATEXT-1 .. STATEXT-4 are RETIRED WITH THE CODE (integration merge, INT-FIX-25): they mutated the NotPortedError refusal stub of
+    # src/pl-load.jl `$activate_static_extension/1` (STATEXT-1 the stub fails instead of refusing; -2 it names another predicate; -3 its
+    # pin lines "(pl-load.c:450-540)" altered; -4 its owner step "LB5-LB7" altered). The stub is gone: the merged function is pl-load.c's
+    # real `activate_static_extension` over the static_extensions table (json, pcre, zlib), and an unknown name raises
+    # `existence_error(foreign_extension, Name)` through PL_error. Kill meaning and where it went: the refusal's behaviour (an unknown
+    # name is an error, of that type, naming that extension) is pinned by test_platform_refusals_swipl.jl p01 (the existence_error row);
+    # STATEXT-3 and -4 mutated message strings that no longer exist and have no successor. No new row is written here (rows only).
     dict(id="STATEXT-5 `$activate_static_extension` is registered with arity 2", file=LOAD, targets=T,
          old='''        "\\$activate_static_extension", 1, pl_activate_static_extension1_va,''',
          new='''        "\\$activate_static_extension", 2, pl_activate_static_extension1_va,'''),
