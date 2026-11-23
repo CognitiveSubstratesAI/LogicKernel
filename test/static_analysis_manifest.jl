@@ -5800,12 +5800,7 @@ _manifest_lb7(T) = begin
         (LK.not_breakable, Tuple{LD, T, LK.Clause{T}, Int}, false),
         (LK._pc_add, Tuple{PCd, Int}, false),
         (LK._pc_word, Tuple{PCd, Int}, false),
-        # pl-load.c's `$activate_static_extension/1` (src/pl-load.jl) and pl-apple.c's apple_current_locale_identifier/1 (src/os/pl-apple.jl): refusals by name
-        (
-            LK.pl_activate_static_extension1_va,
-            Tuple{LD, Int, Int, LK.control_t{T}},
-            false
-        ),
+        # pl-apple.c's apple_current_locale_identifier/1 (src/os/pl-apple.jl): refusal by name (`$activate_static_extension/1` is in _manifest_json since JSON1)
         (
             LK.pl_apple_current_locale_identifier1_va,
             Tuple{LD, Int, Int, LK.control_t{T}},
