@@ -92,8 +92,8 @@ MUTANTS = [
          old="    vw = _link_val_loc!(ld, value)                          # (*value, or makeRefG(value) for an attvar)\n",
          new="    vw = value[2]\n"),
     dict(id="AV3-B1 bindConst assigns an attributed variable untrailed, with no wakeup", file=A, targets=T,
-         old="        bind_attvar_const(ld, p, c)                 # else return bind_attvar_const(p, c);\n",
-         new="        _bind_const!(ld, p, c)\n"),
+         old='        bind_attvar_const(ld, p, c, flags)          # else return bind_attvar_const(p, c);',
+         new='        _bind_const!(ld, p, c)'),
     # ── registerWakeup ──────────────────────────────────────────────────────────────────────────────────
     dict(id="AV3-R1 wake[2] is [] and not the value", file=A, targets=T,
          old="    ld.gstack[wake + 2] = vw                                # wake[2] = needsRef(*value) ? … : *value\n",

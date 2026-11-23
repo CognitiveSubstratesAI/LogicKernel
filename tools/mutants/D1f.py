@@ -317,9 +317,13 @@ end
          new='''                if true
                     tmp = head'''),
     dict(id="D1-85 the by-reference unify of the definition is unchecked", file=K, targets=T8,
-         old='''                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0) ||
+         old='''                    unify_definition(
+                        gd, ld, gd.modules[contextModule(gd, ld, fr)], head, def, tmp, 0
+                    ) ||
                         return FFALSE''',
-         new='''                    unify_definition(gd, ld, MODULE_user(gd), head, def, tmp, 0)'''),
+         new='''                    unify_definition(
+                        gd, ld, gd.modules[contextModule(gd, ld, fr)], head, def, tmp, 0
+                    )'''),
     dict(id="D1-86 the by-reference head unify is unchecked", file=K, targets=T8,
          old='''                unify_head(gd, ld, tmp, h2) || return FFALSE
 ''',

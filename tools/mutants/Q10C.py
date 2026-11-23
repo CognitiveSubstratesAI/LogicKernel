@@ -206,12 +206,8 @@ end
          new='''        return true
     end'''),
     dict(id="Q10-43 the type of an atom is not unified (KILL cb07, cb08)", file=F, targets=TQ,
-         old='''            return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
-        end
-        PL_is_variable(ld, a) || return FFALSE''',
-         new='''            return FTRUE
-        end
-        PL_is_variable(ld, a) || return FFALSE'''),
+         old='''                return PL_unify_atom(ld, type, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE''',
+         new='''                return FTRUE'''),
     dict(id="Q10-44 a bound non-atom is enumerated over (KILL cb21, cb22; a bound non-blob with a type that is no atom fails, the mutant raises type_error(atom, 1), cb03-cb05 have an unbound type and give false either way)", file=F, targets=TQ,
          old='''        PL_is_variable(ld, a) || return FFALSE
         index = 1''',

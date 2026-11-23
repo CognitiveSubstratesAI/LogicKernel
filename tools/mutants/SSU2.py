@@ -63,8 +63,10 @@ MUTANTS = [
          old="    ld.frames[FR].flags |= FR_SSU_DET               # setLocal(FR, FR_SSU_DET)\n",
          new="    nothing\n"),
     dict(id="SSU2-S2 the chain does not prepend S_SSU_DET (KILL s04, s11, a04; SSU1's v-rows)", file=S, targets=TS + TC,
-         old="    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
-         new="    if meta\n"),
+         old='''        if (def.flags & P_SSU_DET) != 0
+            push!(codes, S_SSU_DET)''',
+         new='''        if false
+            push!(codes, S_SSU_DET)'''),
     # ── pl-vmi.c I_CUT ──
     dict(id="SSU2-K1 I_CUT does not clear FR_SSU_DET: a body failing after the guard's cut raises the matching-rule error (KILL s65, s66; V6a's equivalent, retired; s16/s50/d04 do not kill it: their bodies never fail after the cut, so the flag is never read — gate run 1 SURVIVED, rows added)", file=W, targets=TS,
          old="    ld.frames[FR].flags &= ~FR_SSU_DET              # clear(FR, FR_SSU_DET)\n",

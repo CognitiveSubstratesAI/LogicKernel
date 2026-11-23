@@ -144,7 +144,7 @@ MUTANTS = [
          old='''            frameFailed(ld, FR)''',
          new='''            nothing'''),
     dict(id="MD9 S_STATIC pushes no CHP_DEBUG for a guarded frame no clause matches", file=W,
-         old='''            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging`: no debugger)''',
+         old='''            newChoice(ld, CHP_DEBUG, FR)            # (`debugstatus.debugging` is read only in S_TABLED: no debugger CHP_DEBUG branches)''',
          new='''            nothing'''),             # kill: `warning` — t21(c) reports twice
     dict(id="MD10 backtracking into a guarded frame's CHP_DEBUG reports nothing", file=W,
          old='''            db_rc = ssu_or_det_failed(ld, FR)''',
