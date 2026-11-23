@@ -1049,6 +1049,115 @@ class LocalVerdict(unittest.TestCase):
             self.assertEqual(rc, 1, (bad, out))
             self.assertIn("FAIL local verdict: malformed item(s)", out)
 
+    # ---- LAND-TOOL-3b (audit D-1013 (1)): a `land/ruling/D-NNNN` status stands for the D-entry heading ------------------------------
+    def rstatuses(self, w, *specs, name="rstatus.json"):
+        """The answer of commits/<sha>/status with the given (context, state, login, description) statuses, plus an unrelated one."""
+        path = os.path.join(w.dir, name)
+        with open(path, "w") as f:
+            json.dump({"state": "success", "sha": w.sha, "statuses": [
+                {"context": "other/thing", "state": "success", "description": "x", "creator": {"login": "AuditBot"}}] + [
+                {"context": c, "state": st, "description": d, "creator": {"login": lg}} for c, st, lg, d in specs]}, f)
+        return path
+
+    def rargs(self, w, ctx="land/ruling/D-1010", state="success", login="AuditBot", desc="D-1010 (audit): a ruling title", **kw):
+        return ["--statuses", self.rstatuses(w, (ctx, state, login, desc), **kw), "--approvers", self.approvers(w, "AuditBot", "Other-Approver")]
+
+    def test_a_land_ruling_status_releases_the_tree_ruling_without_an_audit_heading(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))                                       # the channel line, a foreign tree, no D heading anywhere
+        ruled = self.lrel(w, self.ITEM + " tree-ruling D-1010")
+        rc, out = w.run("--channel", ch, "--release", ruled)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no heading `## D-1010` and no usable land/ruling/D-1010 status", out)
+        rc, out = w.run("--channel", ch, "--release", ruled, *self.rargs(w))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("(ruling D-1010: landing tree %s)" % self.tree(w), out)
+        self.assertIn("(channel, %s)" % self.REF, out)
+        nochan = os.path.join(w.dir, "no_such_agent.md")                                         # both the verdict and the ruling by status
+        rc, out = w.run("--channel", nochan, "--release", ruled, *self.stat_args(w, self.lv(w, tree=self.FOREIGN)),
+                        "--statuses", self.rstatuses(w, ("land/local/G1GC3-T3", "success", "AuditBot", self.lv(w, tree=self.FOREIGN)),
+                                                     ("land/ruling/D-1010", "success", "AuditBot", "t"), name="both.json"))
+        self.assertEqual(rc, 0, out)                                                              # (the later --statuses wins; the approvers stay)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM + " tree-ruling D-1010"),   # an EQUAL tree, a ruling named: still needs one
+                        *self.rargs(w, ctx="land/ruling/D-1011"))
+        self.assertEqual(rc, 1, out)
+
+    def test_the_land_ruling_description_is_irrelevant(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))
+        ruled = self.lrel(w, self.ITEM + " tree-ruling D-1010")
+        for desc in ("", "x", "LOCAL VERDICT nonsense", "D-9999 something else entirely", "a" * 300):
+            rc, out = w.run("--channel", ch, "--release", ruled, *self.rargs(w, desc=desc))
+            self.assertEqual(rc, 0, (desc, out))
+
+    def test_a_land_ruling_status_of_a_stranger_or_not_success_or_missing_does_not_release(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))
+        ruled = self.lrel(w, self.ITEM + " tree-ruling D-1010")
+        for kw, want in (({"login": "stranger"}, "not in land_approvers.txt"), ({"state": "pending"}, "is pending, not success"),
+                         ({"state": "failure"}, "is failure, not success"), ({"state": "error"}, "is error, not success")):
+            rc, out = w.run("--channel", ch, "--release", ruled, *self.rargs(w, **kw))
+            self.assertEqual(rc, 1, (kw, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+            self.assertIn("names tree-ruling D-1010, but the channel has no heading `## D-1010` and no usable land/ruling/D-1010 status: ", out)
+            self.assertIn(want, out)
+        for ctx in ("land/ruling/D-1011", "land/ruling/D-10100", "land/ruling/", "land/local/D-1010", "land/approved", "land/ruling/d-1010"):
+            rc, out = w.run("--channel", ch, "--release", ruled, *self.rargs(w, ctx=ctx))
+            self.assertEqual(rc, 1, (ctx, out))
+        rc, out = w.run("--channel", ch, "--release", ruled,                                     # the creator check is case-blind as for land/approved
+                        "--statuses", self.rstatuses(w, ("land/ruling/D-1010", "success", "AUDITBOT", "t")),
+                        "--approvers", self.approvers(w, "auditbot"))
+        self.assertEqual(rc, 0, out)
+        rc, out = w.run("--channel", ch, "--release", ruled,                                     # a status with no creator at all
+                        "--statuses", self.rstatuses(w, ("land/ruling/D-1010", "success", "", "t")), "--approvers", self.approvers(w, "AuditBot"))
+        self.assertEqual(rc, 1, out)
+
+    def test_the_land_ruling_route_fails_closed_without_its_inputs(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))
+        ruled = self.lrel(w, self.ITEM + " tree-ruling D-1010")
+        path = self.rstatuses(w, ("land/ruling/D-1010", "success", "AuditBot", "t"))
+        ap = self.approvers(w, "AuditBot")
+        empty = self.approvers(w, name="empty_approvers.txt")
+        for args in ((), ("--statuses", path), ("--approvers", ap), ("--statuses", path, "--approvers", empty),
+                     ("--statuses", path, "--approvers", os.path.join(w.dir, "no_such_approvers.txt")),
+                     ("--statuses", os.path.join(w.dir, "no_such_status.json"), "--approvers", ap)):
+            rc, out = w.run("--channel", ch, "--release", ruled, *args)
+            self.assertEqual(rc, 1, (args, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+        bad = os.path.join(w.dir, "garbage.json")
+        with open(bad, "w") as f:
+            f.write("this is not json")
+        rc, out = w.run("--channel", ch, "--release", ruled, "--statuses", bad, "--approvers", ap)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("land/ruling/D-1010 status: the status route is closed: the statuses or the approvers file is unreadable", out)
+        notlist = os.path.join(w.dir, "notdict.json")                                            # valid JSON that is not the status answer
+        with open(notlist, "w") as f:
+            f.write("[1, 2]")
+        rc, out = w.run("--channel", ch, "--release", ruled, "--statuses", notlist, "--approvers", ap)
+        self.assertEqual(rc, 1, out)
+
+    def test_land_ruling_and_the_audit_heading_together(self):
+        w = self.local_world()
+        audit = self.auditfile(w, "D-1010")
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))
+        ruled = self.lrel(w, self.ITEM + " tree-ruling D-1010")
+        rc, out = w.run("--channel", ch, "--channel", audit, "--release", ruled, *self.rargs(w))                  # both present: released
+        self.assertEqual(rc, 0, out)
+        for kw in ({"login": "stranger"}, {"state": "failure"}, {"ctx": "land/ruling/D-1011"}):               # a refused status beside a heading: no disagreement
+            rc, out = w.run("--channel", ch, "--channel", audit, "--release", ruled, *self.rargs(w, **kw))
+            self.assertEqual(rc, 0, (kw, out))
+        rc, out = w.run("--channel", ch, "--channel", audit, "--release", ruled,                                # a ruling status never rescues the VERDICT's disagreement
+                        *self.stat_args(w, self.lv(w, word="TIMEOUT")))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("DISAGREE", out)
+        nochan = os.path.join(w.dir, "no_such_agent.md")                                                      # no verdict line anywhere: the ruling alone releases nothing
+        rc, out = w.run("--channel", nochan, "--release", ruled, *self.rargs(w))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("cannot be read", out)
+        rc, out = w.run("--channel", ch, "--release", ruled, *self.stat_args(w, self.lv(w, tree=self.FOREIGN, word="TIMEOUT")))   # a ruling excuses no other word
+        self.assertEqual(rc, 1, out)
+
 
 class StandItem(unittest.TestCase):
     """LAND-TOOL-3 (audit D-1012 (2)): `stand: <LIST> @D-NNNN from <old sha>` lets an old-SHA battery result stand at the landing SHA."""
@@ -1186,6 +1295,105 @@ class StandItem(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("FAIL stand TB5: TB5 has a battery run", out)
         self.assertIn("SURVIVED", out)
+
+    # ---- LAND-TOOL-3b (audit D-1013 (1)): a `land/ruling/D-NNNN` status stands for the D-entry heading -------------------------------
+    def rargs(self, w, did="D-1012", state="success", login="AuditBot", ctx=None, desc="a ruling title", approvers=True):
+        p = os.path.join(w.dir, "rstatus.json")
+        with open(p, "w") as f:
+            json.dump({"state": "success", "sha": w.sha, "statuses": [
+                {"context": "other/thing", "state": "success", "description": "x", "creator": {"login": "AuditBot"}},
+                {"context": ctx or "land/ruling/" + did, "state": state, "description": desc, "creator": {"login": login}}]}, f)
+        ap = os.path.join(w.dir, "land_approvers.txt")
+        with open(ap, "w") as f:
+            f.write("# the approvers\nAuditBot\nOther-Approver\n")
+        return ["--statuses", p] + (["--approvers", ap] if approvers else [])
+
+    def test_a_land_ruling_status_stands_for_the_d_entry_heading(self):
+        w = self.world()
+        rel = self.rel(w, self.item("TB5"), self.item("TB7"))
+        rc, out = self.go(w, rel, dids=())                                                        # no heading, no status: refused
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: the channel has no heading `## D-1012` and no usable land/ruling/D-1012 status", out)
+        rc, out = self.go(w, rel, dids=(), extra=self.rargs(w))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   stand TB5: TB5 stands: src and tools/mutants/TB5.py unchanged since %s, D-1012 exists (land/ruling/D-1012 status)" % self.old[:8], out)
+        self.assertIn("ok   stand TB7", out)
+        rc, js = w.run("--json", "--set", self.gate(w, "TB4", "TB5", "TB7"), "--channel", self.audit(w), "--release", rel, *self.rargs(w))
+        self.assertEqual(rc, 0, js)
+        d = json.loads(js)
+        self.assertEqual(d["stood"], {"TB5": ["D-1012", self.old], "TB7": ["D-1012", self.old]})
+        self.assertTrue(d["gate_complete"] and d["landable"])
+
+    def test_the_land_ruling_description_is_irrelevant_to_a_stand_item(self):
+        w = self.world()
+        rel = self.rel(w, self.item("TB5"), self.item("TB7"))
+        for desc in ("", "x", "LOCAL VERDICT nonsense", "D-1013 another title", "b" * 300):
+            rc, out = self.go(w, rel, dids=(), extra=self.rargs(w, desc=desc))
+            self.assertEqual(rc, 0, (desc, out))
+
+    def test_a_land_ruling_status_of_a_stranger_or_not_success_or_missing_does_not_stand(self):
+        w = self.world()
+        rel = self.rel(w, self.item("TB5"), self.item("TB7"))
+        for kw, want in (({"login": "stranger"}, "not in land_approvers.txt"), ({"state": "pending"}, "is pending, not success"),
+                         ({"state": "failure"}, "is failure, not success")):
+            rc, out = self.go(w, rel, dids=(), extra=self.rargs(w, **kw))
+            self.assertEqual(rc, 1, (kw, out))
+            self.assertIn("FAIL stand TB5: the channel has no heading `## D-1012` and no usable land/ruling/D-1012 status: ", out)
+            self.assertIn(want, out)
+            self.assertNotIn("ok   stand TB5", out)                                              # a refused D-entry leaves no ok row and no stood entry
+            rc, js = w.run("--json", "--set", self.gate(w, "TB4", "TB5", "TB7"), "--channel", self.audit(w), "--release", rel, *self.rargs(w, **kw))
+            self.assertEqual(json.loads(js)["stood"], {}, (kw, js))
+        for ctx in ("land/ruling/D-1011", "land/ruling/D-10120", "land/local/D-1012", "land/approved"):
+            rc, out = self.go(w, rel, dids=(), extra=self.rargs(w, ctx=ctx))
+            self.assertEqual(rc, 1, (ctx, out))
+
+    def test_the_land_ruling_route_fails_closed_offline(self):
+        w = self.world()
+        rel = self.rel(w, self.item("TB5"), self.item("TB7"))
+        good = self.rargs(w)
+        empty = os.path.join(w.dir, "empty_approvers.txt")
+        with open(empty, "w") as f:
+            f.write("# nobody\n")
+        bad = os.path.join(w.dir, "garbage.json")
+        with open(bad, "w") as f:
+            f.write("this is not json")
+        for extra in ((), good[:2], good[2:], ["--statuses", good[1], "--approvers", empty],
+                      ["--statuses", good[1], "--approvers", os.path.join(w.dir, "no_such_approvers.txt")],
+                      ["--statuses", os.path.join(w.dir, "no_such_status.json"), "--approvers", good[3]], ["--statuses", bad, "--approvers", good[3]]):
+            rc, out = self.go(w, rel, dids=(), extra=tuple(extra))
+            self.assertEqual(rc, 1, (extra, out))
+            self.assertIn("FAIL stand TB5: the channel has no heading", out)
+
+    def test_land_ruling_and_the_heading_together_and_mixed_per_list(self):
+        w = self.world()
+        rel = self.rel(w, self.item("TB5"), self.item("TB7"))
+        rc, out = self.go(w, rel, extra=self.rargs(w))                                            # both: released, the heading's wording
+        self.assertEqual(rc, 0, out)
+        self.assertIn("D-1012 exists\n", out.replace("\r", ""))
+        for kw in ({"login": "stranger"}, {"state": "failure"}, {"ctx": "land/ruling/D-1011"}):     # a refused status beside a heading is no disagreement
+            rc, out = self.go(w, rel, extra=self.rargs(w, **kw))
+            self.assertEqual(rc, 0, (kw, out))
+        rel2 = self.rel(w, self.item("TB5", "D-1012"), self.item("TB7", "D-1013"))                # TB5 by the heading, TB7 by the status
+        rc, out = self.go(w, rel2, dids=("D-1012",), extra=self.rargs(w, did="D-1013"))
+        self.assertEqual(rc, 0, out)
+        rc, out = self.go(w, rel2, dids=("D-1012",), extra=self.rargs(w, did="D-1011"))           # TB7's D-1013 has neither
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB7: the channel has no heading `## D-1013`", out)
+        self.assertIn("ok   stand TB5", out)
+
+    def test_a_land_ruling_status_does_not_mask_the_other_stand_checks(self):
+        w = self.world()
+        w.commit("src/a.jl", "a = 2\n", "CHANGED: src")
+        w.other_run("CI")
+        w.other_run("Evidence (three term types)")
+        w.battery("TB4", [("TB4-1", "caught", "one")])
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")), dids=(), extra=self.rargs(w) + ["--base", "main"])
+        self.assertEqual(rc, 1, out)                                                              # the status supplies the D-entry, not an empty diff
+        self.assertIn("FAIL stand TB5: git diff --stat", out)
+        w2 = self.world()
+        rc, out = self.go(w2, self.rel(w2, self.item("TB5", old="b" * 40), self.item("TB7")), dids=(), extra=self.rargs(w2))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("is not a commit", out)
 
 
 class Units(unittest.TestCase):

@@ -73,6 +73,13 @@
 # battery read at the landing SHA (an item never masks a run that is there: that run is read as it is). The item turns the gate-set
 # row `no run` into covered ("stands"); it does not read the old run (the old SHA is the audit's claim, as a `[last-clean-read-SHA]`
 # in the gate set is). Items are comma separated, one per list; a malformed item or a list twice FAILS.
+# LAND-TOOL-3b (audit D-1013 (1)), THE RULING STATUS: the D-entry of a `tree-ruling D-NNNN` or a `stand: <LIST> @D-NNNN` item is ALSO accepted
+# from a commit status on the landing SHA, context `land/ruling/D-NNNN`, state `success`, created by a login of --approvers (the same
+# reader rules as `land/local/<ROW>`; the description, the D-entry's title, is NOT read). Either the channel heading `## D-NNNN` or that
+# status releases. "Disagree" (the rule copied from land/local: both sources carry a payload and the status's is not among the channel's)
+# cannot arise: a ruling has no payload, only existence; a refused status (stranger, state not success) beside an existing heading is
+# ignored and the heading releases. No --statuses / --approvers / network, an unreadable file, no status: the status route yields
+# nothing (fail closed), so without the heading the item FAILS.
 # Exit status: 0 all clean, 1 a blocker or a failed landing check, 2 unreadable, 3 a run still pending, 64 usage.
 import argparse
 import hashlib
@@ -478,6 +485,41 @@ def d_entry_exists(channels, did):
     return bool(entries_of(channels, did))
 
 
+def ruling_status(statuses, approvers, did):
+    """The `land/ruling/<did>` status of the landing SHA -> (released, notes). LAND-TOOL-3b (audit D-1013 (1)): state `success`, creator in
+    the approvers file exactly as for `land/local/<row>` and `land/approved`; the description is NOT read (it is the D-entry's title). No
+    statuses file, no approvers, or any unreadable input: not released (fail closed)."""
+    if not statuses or not approvers:
+        return False, []
+    try:
+        d = json.load(open(statuses, encoding="utf-8"))
+        allowed = {l.strip().lower() for l in open(approvers, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")}
+    except (OSError, ValueError):
+        return False, ["the status route is closed: the statuses or the approvers file is unreadable"]
+    sts = [x for x in (d.get("statuses") or []) if x.get("context") == "land/ruling/" + did] if isinstance(d, dict) else []
+    if not sts:
+        return False, []
+    x = sts[0]                                         # the combined status answers the latest per context
+    who = ((x.get("creator") or {}).get("login") or "").lower()
+    if who not in allowed:
+        return False, ["the land/ruling/%s status was set by %r, who is not in land_approvers.txt (ignored)" % (did, who)]
+    if x.get("state") != "success":
+        return False, ["the land/ruling/%s status is %s, not success" % (did, x.get("state"))]
+    return True, []
+
+
+def ruling_source(channels, statuses, approvers, did):
+    """The D-entry DID of a `tree-ruling` or `stand:` item -> (how, notes): how = "channel" (the heading `## D-NNNN` exists), "status"
+    (the `land/ruling/D-NNNN` status releases), or "" (neither: not released). Either source releases. DISAGREEMENT cannot arise: the rule
+    for land/local (both carry a verdict and the status's (tree, word) is not among the channel's) compares a payload, and a ruling has
+    none (the status description is irrelevant, the heading is its existence); a status that exists but is refused (stranger, state)
+    while the heading exists is no disagreement either: the heading releases."""
+    if d_entry_exists(channels, did):
+        return "channel", []
+    ok, notes = ruling_status(statuses, approvers, did)
+    return ("status" if ok else ""), notes
+
+
 def status_candidates(statuses, approvers, row):
     """The `land/local/<row>` status of the landing SHA -> ([(tree, word, site)], notes). The creator must be in the approvers file exactly
     as for `land/approved` (tools/land_check.sh marker); no statuses file, no approvers, or any unreadable input: nothing (fail closed)."""
@@ -560,8 +602,11 @@ def local_release(batteries, row, ref, tree, channels, statuses=None, approvers=
     if chan and stat and not all((t, w) in {(c[0], c[1]) for c in chan} for t, w, _ in stat):
         return False, "the channel line(s) and the land/local/%s status DISAGREE (channel: %s; status: %s)" % (
             row, "; ".join("%s %s" % (t[:12], w) for t, w, _ in chan), "; ".join("%s %s" % (t[:12], w) for t, w, _ in stat)), None
-    if ruling is not None and not d_entry_exists(channels, ruling):
-        return False, "the item names tree-ruling %s, but the channel has no heading `## %s`" % (ruling, ruling), None
+    if ruling is not None:
+        how, rnotes = ruling_source(channels, statuses, approvers, ruling)
+        if not how:
+            return False, "the item names tree-ruling %s, but the channel has no heading `## %s` and no usable land/ruling/%s status%s" % (
+                ruling, ruling, ruling, ": " + "; ".join(rnotes) if rnotes else ""), None
     for src, cands in (("channel", chan), ("status", stat)):
         for t, w, site in cands:
             if t != tree and ruling is None:
@@ -614,7 +659,7 @@ def stand_items(text):
     return good, bad
 
 
-def stand_checks(root, sha, batteries, gate_set, release, channels):
+def stand_checks(root, sha, batteries, gate_set, release, channels, statuses=None, approvers=None):
     """The `stand:` items of the release -> (landing checks, {list: (d_id, old_sha)} that stand)."""
     items, bad = stand_items(release)
     out, stood = [], {}
@@ -643,10 +688,14 @@ def stand_checks(root, sha, batteries, gate_set, release, channels):
             elif d.strip():
                 out.append((name, False, "git diff --stat %s %s -- src tools/mutants/%s.py is NOT empty: %s" % (
                     old[:8], sha[:8], lst, bt.clip(" | ".join(x.strip() for x in d.strip().splitlines()), 200))))
-            elif not d_entry_exists(channels, did):
-                out.append((name, False, "the channel has no heading `## %s`" % did))
             else:
-                out.append((name, True, "%s stands: src and tools/mutants/%s.py unchanged since %s, %s exists" % (lst, lst, old[:8], did)))
+                how, rnotes = ruling_source(channels, statuses, approvers, did)
+                if not how:
+                    out.append((name, False, "the channel has no heading `## %s` and no usable land/ruling/%s status%s" % (
+                        did, did, ": " + "; ".join(rnotes) if rnotes else "")))
+                    continue
+                out.append((name, True, "%s stands: src and tools/mutants/%s.py unchanged since %s, %s exists%s" % (
+                    lst, lst, old[:8], did, "" if how == "channel" else " (land/ruling/%s status)" % did)))
                 stood[lst] = (did, old)
     return out, stood
 
@@ -919,7 +968,7 @@ def main(argv):
     if landing is not None:
         channels = a.channel or [os.path.expanduser("~/code/lk-channel/agent.md")]
         lc, released = local_checks(root, full, res["batteries"], a.release, channels, a.statuses, a.approvers)
-        sc, stood = stand_checks(root, full, res["batteries"], gate_set, a.release, channels)
+        sc, stood = stand_checks(root, full, res["batteries"], gate_set, a.release, channels, a.statuses, a.approvers)
         landing += lc + sc
     judge(res, eqs, ledger, gate_set, released, stood)
     res["caught_open"] = sorted({r["id"] for b in res["batteries"] for r in b["rows"]

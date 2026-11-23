@@ -361,6 +361,16 @@ if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" && grep -qxF -- "$T/lw/release.
     grep -qxF -- "--approvers" "$T/lw/vr_args.txt" && grep -qxF -- "$W/evidence/land_approvers.txt" "$T/lw/vr_args.txt"; then ok "verdicts: the status answer and the approvers file reach the reader (--statuses, --approvers)"
 else bad "verdicts: --statuses/--approvers arguments" "$(cat "$T/lw/vr_args.txt")"; fi
 if grep -q 'land/local/G1GC3-T3' "$T/lw/release.json"; then ok "verdicts: the saved answer is the whole status answer (the land/local status is in it)"; else bad "verdicts: release.json lacks the land/local status"; fi
+# LAND-TOOL-3b: a `land/ruling/D-NNNN` status rides in the same answer (no workflow or land_check.sh change: the reader reads it); the item's
+# D-entry is accepted from it by tools/verdict_read.py (tools/test_verdict_read.py), here only the plumbing: answer, --statuses, --approvers
+status_json "$GOOD" success "D-1010 (audit): a ruling title" AuditBot "land/ruling/D-1010" > "$T/rul.json"
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rul.json"
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" && grep -qxF -- "$T/lw/release.json" "$T/lw/vr_args.txt" &&
+    grep -qxF -- "--approvers" "$T/lw/vr_args.txt" && grep -q 'land/ruling/D-1010' "$T/lw/release.json"; then ok "verdicts: a land/ruling status reaches the reader in the saved answer (--statuses, --approvers)"
+else bad "verdicts: land/ruling status plumbing" "$(cat "$T/lw/vr_args.txt")"; fi
+if grep -qxF -- "--release" "$T/lw/vr_args.txt"; then bad "verdicts: a land/ruling status was handed over as a release (--release)"; else ok "verdicts: a land/ruling status is no land/approved release (no --release)"; fi
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rul.json" FAKE_GH_FAIL=1
+if grep -qxF -- "--statuses" "$T/lw/vr_args.txt"; then bad "verdicts: --statuses passed though gh failed (land/ruling)"; else ok "verdicts: gh fails: a land/ruling status is not read (no --statuses, the D-entry needs the heading)"; fi
 vd "$GOOD" "$T/vr_src.py"
 if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" || grep -qxF -- "--approvers" "$T/lw/vr_args.txt"; then bad "verdicts: --statuses/--approvers passed though gh could not answer"; else ok "verdicts: gh cannot answer, no --statuses and no --approvers (the status route is closed)"; fi
 vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/loc.json" FAKE_GH_FAIL=1
