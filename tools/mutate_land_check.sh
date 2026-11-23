@@ -87,6 +87,13 @@ M = [
  ("S9", "marker: a local item is counted as an evidence-row id (a release carrying one fails as unused)", 'named -= set(locrel)', 'pass'),
  ("S10", "marker: one row named by two local items is accepted", 'if len({t.split(" ")[1] for t in locrel}) != len(locrel):', 'if False:'),
  ("S11", "verdicts: LAND_CHANNEL is never handed to the reader", '${LAND_CHANNEL:+--channel "$LAND_CHANNEL"}', ''),
+ ("S12", "marker: a tree-ruling with no / a malformed D-entry id is accepted", r'( tree-ruling D-[0-9]{4})?"', r'( tree-ruling.*)?"'),
+ ("S13", "marker: a malformed stand item is accepted", 'if any(not re.fullmatch(STANDF, t) for t in standrel):', 'if False:'),
+ ("S14", "marker: one list named by two stand items is accepted", 'if len({t.split(" ")[1] for t in standrel}) != len(standrel):', 'if False:'),
+ ("S15", "marker: a stand item is counted as an evidence-row id (a release carrying one fails as unused)", 'named -= set(standrel)', 'pass'),
+ ("S16", "verdicts: the status answer and the approvers file are never handed to the reader (the land/local status route is dead)", '${stat:+--statuses "$stat" --approvers "$ROOT/evidence/land_approvers.txt"}', ''),
+ ("S17", "verdicts: --statuses is handed over even when gh could not answer (a stale or empty file is read)", 'local rel="" stat="" repo=', 'local rel="" stat="$LAND_WORK/release.json" repo='),
+ ("S18", "verdicts: --approvers is not handed over (the reader sees no approvers: only a closed route, never a wider one; this one widens nothing, so it must still be KILLED by the argument test)", ' --approvers "$ROOT/evidence/land_approvers.txt"}', '}'),
 ]
 # `old` occurs exactly once in tools/verdict_read.py (mutated COPY, checked by tools/test_verdict_read.py, D-1006 (2))
 VM = [
@@ -97,12 +104,12 @@ VM = [
  ("R5", "src release: an empty numstat is not recognised (every diff needs a release, the empty one too)", "elif not ns.stdout.strip():", "elif False:"),
  ("R6", "src release: a missing release passes the check (the digest is taken as the release)", "        elif not good:\n            out.append((\"src diff\", False, \"NON-EMPTY, no `src-diff <sha256>` release; %s\" % shown))\n", "        elif not good:\n            out.append((\"src diff\", True, \"NON-EMPTY, no release; %s\" % shown))\n"),
  ("R7", "src release: the row does not print the numstat's sha256 (the audit cannot compare)", '"sha256 %s; numstat (git diff --numstat %s..%s -- src): %s" % (digest, base, sha[:8], "; ".join(', '"numstat (git diff --numstat %s..%s -- src): %s" % (base, sha[:8], "; ".join('),
- ("R8", "local release: the tree of the line is not compared with the landing SHA's tree (any tree releases)", "elif m.group(2) != tree:", "elif False:"),
- ("R9", "local release: the verdict word is not checked (TIMEOUT, survived, anything releases)", 'elif m.group(3) != "caught (hang)":', "elif False:"),
+ ("R8", "local release: the tree of the line is not compared with the landing SHA's tree (any tree releases)", "if t != tree and ruling is None:", "if False:"),
+ ("R9", "local release: the verdict word is not checked (TIMEOUT, survived, anything releases)", 'elif w != "caught (hang)":', "elif False:"),
  ("R10", "local release: a NO VERDICT row whose job did NOT conclude cancelled (failed) is releasable", 'elif r.get("jconc") != "cancelled":', "elif False:"),
  ("R11", "local release: a row that is not NO VERDICT (caught, SURVIVED, TIMEOUT, INVALID) is releasable", 'if r["kind"] != "nov":', "if False:"),
  ("R12", "local release: a failed job with no row is releasable whatever it concluded", 'if f["conclusion"] != "cancelled":', "if False:"),
- ("R13", "local release: a missing channel file is not refused (the file is read as empty)", "if not channel or not os.path.isfile(channel):", "if False:\n        pass\n    if not channel:"),
+ ("R13", "local release: a missing channel file is not refused (the file is read as empty)", "    if not have_chan:\n        early =", "    if False:\n        early ="),
  ("R14", "local release: a heading that merely STARTS with the ref matches (A-0123 matches A-01234)", 'head[len(ref)] in " \\t"', "True"),
  ("R15", "local release: a line under another entry counts (the file is read as one body)", 'cur = [] if head.startswith(ref) and (len(head) == len(ref) or head[len(ref)] in " \\t") else None', 'cur = [] if head.startswith(ref) and (len(head) == len(ref) or head[len(ref)] in " \\t") else cur if cur is not None else None'),
  ("R16", "local release: one row named twice is accepted", "        if row in seen:", "        if False:"),
@@ -110,6 +117,31 @@ VM = [
  ("R18", "local release: a verified release does not lift the failed-job blocker", 'if f["name"] not in nov and (b["name"], f["name"]) not in released:', 'if f["name"] not in nov:'),
  ("R19", "local release: a verified release does not lift the NO VERDICT row (the battery stays blocked)", 'b["counts"]["decided"] + rel_n == b["counts"]["total"]', 'b["counts"]["decided"] == b["counts"]["total"]'),
  ("R20", "local release: the same row id cancelled in TWO batteries is accepted (ambiguity)", "    if len(rel) != 1:", "    if len(rel) < 1:"),
+ ("R21", "status route: the creator is not checked against the approvers (any login releases)", "    if who not in allowed:", "    if False:"),
+ ("R22", "status route: the state is not read (pending / failure releases)", '    if x.get("state") != "success":', "    if False:"),
+ ("R23", "tree-ruling: a ruling excuses nothing (the tree must always equal the landing SHA's)", "if t != tree and ruling is None:", "if t != tree:"),
+ ("R24", "two sources: a status that disagrees with the channel line(s) is not refused", "    if chan and stat and not all(", "    if False and not all("),
+ ("R25", "tree-ruling: the named D-entry need not exist as a heading", "    if ruling is not None and not d_entry_exists(channels, ruling):", "    if False:"),
+ ("R26", "status route: the row of the description is not compared with the context's row", "    if not m or m.group(1) != row:\n        return [], [", "    if not m:\n        return [], ["),
+ ("R27", "status route: the context is matched by its family (land/local/*), not by the row", 'x.get("context") == "land/local/" + row', 'x.get("context", "").startswith("land/local/")'),
+ ("R28", "status route: no approvers file is no refusal (the creator check is skipped when none is given)", "    if not statuses or not approvers:", "    if not statuses:"),
+ ("R29", "tree-ruling: the ruling is dropped on the way to the check (a ruled item is judged as a plain one)", "ok, text, bname = local_release(batteries, row, ref, tree, channels, statuses, approvers, ruling)", "ok, text, bname = local_release(batteries, row, ref, tree, channels, statuses, approvers)"),
+ ("R30", "tree-ruling: trailing text after the D id is accepted", r'(?: tree-ruling (D-\d{4}))?$")', r'(?: tree-ruling (D-\d{4}))?.*$")'),
+ ("R31", "channels: a `:`-joined value is read as ONE path", "out += [p for p in c.split(os.pathsep) if p and os.path.isfile(p)]", "out += [c] if os.path.isfile(c) else []"),
+ ("R32", "stand: the src diff is not part of the diff (only the list file is compared)", '"--", "src", "tools/mutants/%s.py" % lst)', '"--", "tools/mutants/%s.py" % lst)'),
+ ("R33", "stand: the list file is not part of the diff (only src is compared)", '"--", "src", "tools/mutants/%s.py" % lst)', '"--", "src")'),
+ ("R34", "stand: a non-empty diff is not refused", "            elif d.strip():", "            elif False:"),
+ ("R35", "stand: the D-entry need not exist as a heading", "            elif not d_entry_exists(channels, did):", "            elif False:"),
+ ("R36", "stand: a list file that exists at neither SHA gives a vacuously empty diff (accepted)", 'elif any(git(root, "cat-file", "-e", "%s:tools/mutants/%s.py" % (c, lst))[0] != 0 for c in (old, sha)):', "elif False:"),
+ ("R37", "stand: a list with a battery run at the landing SHA is accepted (the item masks the run)", "        elif lst in have:", "        elif False:"),
+ ("R38", "stand: a list outside the gate set is accepted", "if gate_set is not None and lst not in {n for n, _ in gate_set}:", "if False:"),
+ ("R39", "stand: a standing list is still `no run and no clean read` (the gate set is not covered)", 'and not g["last_clean"] and g["name"] not in stood]', 'and not g["last_clean"]]'),
+ ("R40", "stand: one list named twice is accepted", "        if lst in seen:", "        if False:"),
+ ("R41", "stand: a malformed item is not refused as such", '    if bad:\n        out.append(("stand", False,', '    if False:\n        out.append(("stand", False,'),
+ ("R42", "stand: an old SHA that is no commit is not refused as such", 'elif git(root, "cat-file", "-e", old + "^{commit}")[0] != 0:', "elif False:"),
+ ("R43", "stand: upper-case hex accepted in the old SHA", r'from ([0-9a-f]{40})$")', r'from ([0-9a-fA-F]{40})$")'),
+ ("R44", "stand: the checks are not part of the landing checks (never refuse)", "landing += lc + sc", "landing += lc"),
+ ("R45", "stand: what stands is not handed to the judge (the set stays uncovered)", "judge(res, eqs, ledger, gate_set, released, stood)", "judge(res, eqs, ledger, gate_set, released)"),
 ]
 if __name__ == "__main__":
     cmd = sys.argv[1]
@@ -152,8 +184,8 @@ echo "baseline: unmutated copy passes ($(tail -1 "$W/base.log"))"
 mkdir -p "$W/vr"; cp "$HERE/battery_table.py" "$W/vr/"; cp "$VSRC" "$W/vr/verdict_read.py"
 # R1-R7 (src-diff release) run the Landing class, R8 and up (local verdict, D-1009 (5)) the LocalVerdict class; both fail-fast
 vtest() { VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" -f "$1" > "$W/v.log" 2>&1; }
-vsel() { case "$1" in R[1-7]) echo Landing ;; *) echo LocalVerdict ;; esac; }
-for cls in Landing LocalVerdict; do
+vsel() { case "$1" in R[1-7]) echo Landing ;; R3[2-9] | R4[0-5]) echo StandItem ;; *) echo LocalVerdict ;; esac; }
+for cls in Landing LocalVerdict StandItem; do
     if ! vtest "$cls"; then echo "mutate_land_check: the UNMUTATED verdict_read copy fails the $cls tests"; tail -5 "$W/v.log"; exit 2; fi
     echo "baseline: unmutated verdict_read copy passes $cls ($(grep -m1 '^Ran ' "$W/v.log"))"
 done

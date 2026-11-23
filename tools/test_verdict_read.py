@@ -871,6 +871,322 @@ class LocalVerdict(unittest.TestCase):
         self.assertIn("NO VERDICT G1GC3 G1GC3-T3", out)
         self.assertNotIn("local verdict", out)                                              # no item, no check row
 
+    # ---- LAND-TOOL-3 (audit D-1012 (3)): the status route, the tree-ruling form, the two sources together ------------------------
+    def statuses(self, w, desc, login="AuditBot", state="success", ctx="land/local/G1GC3-T3", name="status.json"):
+        """The answer of commits/<sha>/status with one land/local status (and an unrelated one), as land_check.sh saves it."""
+        path = os.path.join(w.dir, name)
+        with open(path, "w") as f:
+            json.dump({"state": state, "sha": w.sha, "statuses": [
+                {"context": "other/thing", "state": "success", "description": "x", "creator": {"login": "AuditBot"}},
+                {"context": ctx, "state": state, "description": desc, "creator": {"login": login}}]}, f)
+        return path
+
+    def approvers(self, w, *logins, name="land_approvers.txt"):
+        path = os.path.join(w.dir, name)
+        with open(path, "w") as f:
+            f.write("# the approvers\n" + "".join(l + "\n" for l in logins))
+        return path
+
+    def auditfile(self, w, *dids, name="audit.md"):
+        path = os.path.join(w.dir, name)
+        with open(path, "w") as f:
+            f.write("# audit\n\n" + "".join("## %s (audit, scheduled) - a ruling\nbody mentions D-9999 here\n\n" % d for d in dids))
+        return path
+
+    FOREIGN = "a" * 40
+
+    def stat_args(self, w, desc, login="AuditBot", state="success", approvers=True, **kw):
+        a = ["--statuses", self.statuses(w, desc, login=login, state=state, **kw)]
+        return a + (["--approvers", self.approvers(w, "AuditBot", "Other-Approver")] if approvers else [])
+
+    def test_a_land_local_status_releases_a_cancelled_row_without_a_channel_line(self):
+        w = self.local_world()
+        nochan = os.path.join(w.dir, "no_such_agent.md")
+        st = self.stat_args(w, self.lv(w))
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM))              # no status given: the row blocks
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM), *st)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   local verdict G1GC3-T3: G1GC3-T3 released: cap-cancelled in G1GC3, local verdict caught (hang) at tree %s" % self.tree(w), out)
+        self.assertIn("(status, land/local/G1GC3-T3)", out)
+        rc, js = w.run("--json", "--channel", nochan, "--release", self.lrel(w, self.ITEM), *st)
+        self.assertEqual(rc, 0, js)
+        self.assertEqual(json.loads(js)["released"], ["G1GC3 G1GC3-T3"])
+        ch = self.channel(w, "nothing to see")                                                 # an entry with no line: the status releases
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM), *st)
+        self.assertEqual(rc, 0, out)
+
+    def test_either_source_alone_and_both_agreeing_release(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))                  # the channel alone (LAND-TOOL-2)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("(channel, %s)" % self.REF, out)
+        st = self.stat_args(w, self.lv(w))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM), *st)              # both, the same tree and word
+        self.assertEqual(rc, 0, out)
+        st2 = self.stat_args(w, self.lv(w, site="other.c:9"))                                    # another SITE is no disagreement
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM), *st2)
+        self.assertEqual(rc, 0, out)
+
+    def test_a_status_of_a_stranger_or_not_success_or_malformed_does_not_release(self):
+        w = self.local_world()
+        nochan = os.path.join(w.dir, "no_such_agent.md")
+        for kw, want in (({"login": "stranger"}, "not in land_approvers.txt"), ({"state": "pending"}, "is pending, not success"),
+                         ({"state": "failure"}, "is failure, not success")):
+            rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM), *self.stat_args(w, self.lv(w), **kw))
+            self.assertEqual(rc, 1, (kw, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+            self.assertIn(want, out)
+        for desc in ("LOCAL VERDICT G1GC3-T3 tree %s caught (hang)" % self.tree(w), "LOCAL VERDICT G1GC3-T1 tree %s caught (hang) site x" % self.tree(w),
+                     "verdict ok"):
+            rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM), *self.stat_args(w, desc))
+            self.assertEqual(rc, 1, (desc, out))
+            self.assertIn("description is malformed", out)
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM),              # the status of ANOTHER row's context
+                        *self.stat_args(w, self.lv(w), ctx="land/local/G1GC3-T1"))
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM),              # a status of another context family
+                        *self.stat_args(w, self.lv(w), ctx="land/approved"))
+        self.assertEqual(rc, 1, out)
+
+    def test_the_status_route_fails_closed_without_its_inputs(self):
+        w = self.local_world()
+        nochan = os.path.join(w.dir, "no_such_agent.md")
+        item = self.lrel(w, self.ITEM)
+        path = self.statuses(w, self.lv(w))
+        ap = self.approvers(w, "AuditBot")
+        empty = self.approvers(w, name="empty_approvers.txt")
+        for args in ((), ("--statuses", path), ("--approvers", ap), ("--statuses", path, "--approvers", empty),            # no approvers file / none named
+                     ("--statuses", path, "--approvers", os.path.join(w.dir, "no_such_approvers.txt")),
+                     ("--statuses", os.path.join(w.dir, "no_such_status.json"), "--approvers", ap)):
+            rc, out = w.run("--channel", nochan, "--release", item, *args)
+            self.assertEqual(rc, 1, (args, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+        bad = os.path.join(w.dir, "garbage.json")
+        with open(bad, "w") as f:
+            f.write("this is not json")
+        rc, out = w.run("--channel", nochan, "--release", item, "--statuses", bad, "--approvers", ap)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("unreadable", out)
+
+    def test_a_status_tree_that_differs_needs_a_tree_ruling_that_exists(self):
+        w = self.local_world()
+        nochan = os.path.join(w.dir, "no_such_agent.md")
+        foreign = self.stat_args(w, self.lv(w, tree=self.FOREIGN))
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM), *foreign)     # a wrong tree, no ruling
+        self.assertEqual(rc, 1, out)
+        self.assertIn("tree %s is not the landing SHA's %s" % (self.FOREIGN, self.tree(w)), out)
+        self.assertIn("no tree-ruling named", out)
+        ruled = self.ITEM + " tree-ruling D-1010"
+        audit = self.auditfile(w, "D-1010", "D-1011")
+        rc, out = w.run("--channel", nochan + os.pathsep + audit, "--release", self.lrel(w, ruled), *foreign)   # `:`-joined files
+        self.assertEqual(rc, 0, out)
+        self.assertIn("(ruling D-1010: landing tree %s)" % self.tree(w), out)
+        rc, out = w.run("--channel", nochan, "--channel", audit, "--release", self.lrel(w, ruled), *foreign)    # repeated flag
+        self.assertEqual(rc, 0, out)
+        other = self.auditfile(w, "D-1011", "D-9999", name="audit2.md")                             # D-9999 is only text in the body
+        rc, out = w.run("--channel", nochan, "--channel", other, "--release", self.lrel(w, ruled), *foreign)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("names tree-ruling D-1010, but the channel has no heading `## D-1010`", out)
+        rc, out = w.run("--channel", nochan, "--release", self.lrel(w, ruled), *foreign)           # no channel at all: no D-entry
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--channel", nochan, "--channel", other, "--release",                       # the ruling is named, the D-entry missing, the tree is EQUAL
+                        self.lrel(w, ruled), *self.stat_args(w, self.lv(w)))
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--channel", nochan, "--channel", audit, "--release",                       # equal tree plus an existing ruling: fine
+                        self.lrel(w, ruled), *self.stat_args(w, self.lv(w)))
+        self.assertEqual(rc, 0, out)
+        rc, out = w.run("--channel", nochan, "--channel", audit, "--release", self.lrel(w, ruled),  # a ruling does not excuse another verdict word
+                        *self.stat_args(w, self.lv(w, tree=self.FOREIGN, word="TIMEOUT")))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("not `caught (hang)`", out)
+
+    def test_the_channel_line_takes_the_same_ruling_form(self):
+        w = self.local_world()
+        audit = self.auditfile(w, "D-1010")
+        ch = self.channel(w, self.lv(w, tree=self.FOREIGN))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))                   # LAND-TOOL-2 behaviour kept: refused
+        self.assertEqual(rc, 1, out)
+        self.assertIn("not the landing SHA's", out)
+        rc, out = w.run("--channel", ch, "--channel", audit, "--release", self.lrel(w, self.ITEM + " tree-ruling D-1010"))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("(channel, %s)" % self.REF, out)
+
+    def test_sources_that_disagree_fail(self):
+        w = self.local_world()
+        audit = self.auditfile(w, "D-1010")
+        ch = self.channel(w, self.lv(w))
+        for desc, want in ((self.lv(w, word="TIMEOUT"), "DISAGREE"), (self.lv(w, tree=self.FOREIGN), "DISAGREE")):
+            rc, out = w.run("--channel", ch, "--channel", audit, "--release", self.lrel(w, self.ITEM + " tree-ruling D-1010"),
+                            *self.stat_args(w, desc))
+            self.assertEqual(rc, 1, (desc, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+            self.assertIn(want, out)
+        ch2 = self.channel(w, self.lv(w, word="TIMEOUT"), name="agent2.md")                                         # the channel bad, the status good: disagree too
+        rc, out = w.run("--channel", ch2, "--release", self.lrel(w, self.ITEM), *self.stat_args(w, self.lv(w)))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("DISAGREE", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM),                    # a stranger's status is ignored, not a disagreement
+                        *self.stat_args(w, self.lv(w, word="TIMEOUT"), login="stranger"))
+        self.assertEqual(rc, 0, out)
+
+    def test_a_status_verdict_word_other_than_caught_hang_fails(self):
+        w = self.local_world()
+        nochan = os.path.join(w.dir, "no_such_agent.md")
+        for word in ("TIMEOUT", "survived", "caught", "Caught (hang)"):
+            rc, out = w.run("--channel", nochan, "--release", self.lrel(w, self.ITEM), *self.stat_args(w, self.lv(w, word=word)))
+            self.assertEqual(rc, 1, (word, out))
+            self.assertIn("not `caught (hang)`", out)
+
+    def test_a_malformed_tree_ruling_item_fails(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w))
+        audit = self.auditfile(w, "D-1010")
+        for bad in (self.ITEM + " tree-ruling", self.ITEM + " tree-ruling D-10", self.ITEM + " tree-ruling d-1010", self.ITEM + " tree-ruling D-1010 x",
+                    self.ITEM + " ruling D-1010", self.ITEM + " tree-ruling D-10100"):
+            rc, out = w.run("--channel", ch, "--channel", audit, "--release", self.lrel(w, bad))
+            self.assertEqual(rc, 1, (bad, out))
+            self.assertIn("FAIL local verdict: malformed item(s)", out)
+
+
+class StandItem(unittest.TestCase):
+    """LAND-TOOL-3 (audit D-1012 (2)): `stand: <LIST> @D-NNNN from <old sha>` lets an old-SHA battery result stand at the landing SHA."""
+
+    def world(self, lists=("TB5", "TB7")):
+        """old = a commit holding src/a.jl and the mutant lists; the landing SHA = old + a tools-only commit, CI + Evidence + battery TB4 at it."""
+        w = World(self)
+        for n in lists:
+            w.commit("tools/mutants/%s.py" % n, "# list %s\n" % n, "ADDED: list " + n)
+        self.old = w.sha
+        w.commit("tools/x.txt", "x\n", "ADDED: a tools file")
+        w.other_run("CI")
+        w.other_run("Evidence (three term types)")
+        w.battery("TB4", [("TB4-1", "caught", "one")])
+        return w
+
+    def gate(self, w, *names):
+        p = os.path.join(w.dir, "gate_set.txt")
+        with open(p, "w") as f:
+            f.write("# the gate set\n" + "".join(n + "\n" for n in names))
+        return p
+
+    def audit(self, w, *dids):
+        p = os.path.join(w.dir, "audit.md")
+        with open(p, "w") as f:
+            f.write("# audit\n\n" + "".join("## %s (audit, scheduled) - a ruling\nthe body names D-9999 only as text\n\n" % d for d in dids))
+        return p
+
+    def rel(self, w, *items):
+        return "LAND %s [ids: %s]" % (w.sha, ",".join(items))
+
+    def item(self, lst="TB5", did="D-1012", old=None):
+        return "stand: %s @%s from %s" % (lst, did, old or self.old)
+
+    def go(self, w, rel, names=("TB4", "TB5", "TB7"), dids=("D-1012",), extra=()):
+        return w.run("--set", self.gate(w, *names), "--channel", self.audit(w, *dids), "--release", rel, *extra)
+
+    def test_an_unchanged_old_battery_stands_and_the_set_is_complete(self):
+        w = self.world()
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   stand TB5: TB5 stands: src and tools/mutants/TB5.py unchanged since %s, D-1012 exists" % self.old[:8], out)
+        self.assertIn("ok   stand TB7", out)
+        self.assertIn("STANDS by D-1012 from %s" % self.old, out)
+        rc, js = w.run("--json", "--set", self.gate(w, "TB4", "TB5", "TB7"), "--channel", self.audit(w, "D-1012"),
+                       "--release", self.rel(w, self.item("TB5"), self.item("TB7")))
+        self.assertEqual(rc, 0, js)
+        d = json.loads(js)
+        self.assertEqual(d["stood"], {"TB5": ["D-1012", self.old], "TB7": ["D-1012", self.old]})
+        self.assertTrue(d["gate_complete"] and d["landable"])
+
+    def test_without_an_item_the_old_battery_is_uncovered(self):
+        w = self.world()
+        rc, out = self.go(w, self.rel(w, self.item("TB5")))                                      # TB7 has no item
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no run and no clean read: TB7", out)
+        rc, out = self.go(w, "LAND %s" % w.sha)
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn("stand TB5", out)
+
+    def test_a_src_change_since_the_old_sha_refuses(self):
+        w = self.world()
+        w.commit("src/a.jl", "a = 2\n", "CHANGED: src")
+        w.other_run("CI")
+        w.other_run("Evidence (three term types)")
+        w.battery("TB4", [("TB4-1", "caught", "one")])
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")), extra=("--base", "main"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: git diff --stat %s %s -- src tools/mutants/TB5.py is NOT empty" % (self.old[:8], w.sha[:8]), out)
+        self.assertIn("src/a.jl", out)
+
+    def test_a_change_of_the_list_file_refuses_but_another_list_changing_does_not(self):
+        w = self.world()
+        w.commit("tools/mutants/TB7.py", "# list TB7 edited\n", "CHANGED: another list")
+        w.other_run("CI")
+        w.other_run("Evidence (three term types)")
+        w.battery("TB4", [("TB4-1", "caught", "one")])
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB7: git diff --stat", out)
+        self.assertIn("tools/mutants/TB7.py", out)
+        self.assertIn("ok   stand TB5", out)                                                      # TB5's own list file is untouched
+
+    def test_the_d_entry_must_exist_as_a_heading(self):
+        w = self.world()
+        rc, out = self.go(w, self.rel(w, self.item("TB5", "D-1013"), self.item("TB7", "D-1013")), dids=("D-1012",))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: the channel has no heading `## D-1013`", out)
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")), dids=("D-1011",))   # D-1012 appears only as text in no heading
+        self.assertEqual(rc, 1, out)
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")), dids=("D-10120",))    # a longer id is no heading match
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--set", self.gate(w, "TB4", "TB5", "TB7"), "--channel", os.path.join(w.dir, "nope.md"), "--release",
+                        self.rel(w, self.item("TB5"), self.item("TB7")))                           # no channel file: fail closed
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no heading", out)
+
+    def test_malformed_items_fail(self):
+        w = self.world()
+        good = self.item("TB5")
+        for bad in ("stand: TB5 @D-1012", "stand: TB5 @D-1012 from " + self.old[:39], "stand: TB5 @D-1012 from " + self.old.upper(),
+                    "stand: TB5 @D-12 from " + self.old, "stand: TB5 D-1012 from " + self.old, "stand TB5 @D-1012 from " + self.old,
+                    "stand: TB5 @A-0123 from " + self.old, "stand: TB5 @D-1012 from " + self.old + "0", "stand: @D-1012 from " + self.old):
+            rc, out = self.go(w, self.rel(w, bad, self.item("TB7")))
+            self.assertEqual(rc, 1, (bad, out))
+            self.assertIn("FAIL stand: malformed item(s)", out)
+            rc, out = self.go(w, self.rel(w, good, bad, self.item("TB7")))                          # a good item beside a bad one
+            self.assertEqual(rc, 1, (bad, out))
+
+    def test_a_list_twice_a_list_not_in_the_set_a_list_without_a_file_and_a_list_with_a_run_fail(self):
+        w = self.world()
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB5", "D-1011"), self.item("TB7")), dids=("D-1011", "D-1012"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: the release names TB5 twice", out)
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7"), self.item("TB9")))     # TB9 is in no gate set
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB9: TB9 is not in the gate set", out)
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7"), self.item("TB8")), names=("TB4", "TB5", "TB7", "TB8"))
+        self.assertEqual(rc, 1, out)                                                                # TB8 is in the set but tools/mutants/TB8.py exists nowhere
+        self.assertIn("FAIL stand TB8: tools/mutants/TB8.py does not exist", out)
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7"), self.item("TB4")))     # TB4 has a run at the landing SHA
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB4: TB4 has a battery run at the landing SHA", out)
+
+    def test_an_old_sha_that_is_no_commit_fails(self):
+        w = self.world()
+        rc, out = self.go(w, self.rel(w, self.item("TB5", old="b" * 40), self.item("TB7")))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: the old SHA bbbbbbbb is not a commit", out)
+
+    def test_a_stand_item_does_not_release_a_blocked_battery_or_a_src_diff(self):
+        w = self.world()
+        w.battery("TB5", [("TB5-1", "SURVIVED", "x")])                                              # TB5 HAS a run here, and it is blocked
+        rc, out = self.go(w, self.rel(w, self.item("TB5"), self.item("TB7")))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL stand TB5: TB5 has a battery run", out)
+        self.assertIn("SURVIVED", out)
+
 
 class Units(unittest.TestCase):
     def test_table_from_annotations_orders_the_parts_and_needs_the_summary(self):

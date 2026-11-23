@@ -31,7 +31,9 @@
 # GITHUB_TOKEN: read-only calls; handed to tools/ci_api.sh through a credential helper that reads the variable, never written
 # to a file or an argument), LAND_VERDICT_READ and LAND_BUDGET (test seams / API budget), LAND_CHANNEL (the channel file the reader
 # reads for a `local: <row id> @<A-entry ref>` release item of a cap-cancelled battery row, D-1009 (5); unset = the reader's default, and
-# a missing file fails that item closed; the item's format is in the header of tools/verdict_read.py).
+# a missing file fails that item closed; the item's format is in the header of tools/verdict_read.py; a `:`-separated list names several files,
+# the D-entry headings of a `tree-ruling` / `stand` item are read from them too). The verdicts step also hands the reader the answer of
+# `commits/<sha>/status` (--statuses) and evidence/land_approvers.txt (--approvers): a `land/local/<ROW>` status releases a `local:` item (LAND-TOOL-3).
 # A token is never printed. Only GET calls are made, apart from the final `git push`.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -236,10 +238,13 @@ step_verdicts() {
     fi
     # the audit's release text (an approver's success `land/approved` status): the reader needs its `src-diff <sha256>` token for a
     # non-empty src diff (D-1006 (2)); no readable release is no argument, and the reader then fails a non-empty src diff
-    local rel="" repo="${GITHUB_REPOSITORY:-}"
+    local rel="" stat="" repo="${GITHUB_REPOSITORY:-}"
     [ -n "$repo" ] || repo="$(repo_slug)"
     if [ -n "$repo" ] && [ -s "$ROOT/evidence/land_approvers.txt" ] && command -v gh > /dev/null 2>&1 &&
         gh api "repos/$repo/commits/$sha/status?per_page=100" > "$LAND_WORK/release.json" 2> /dev/null; then
+        # LAND-TOOL-3: the same answer also carries the `land/local/<ROW>` statuses; the reader checks their creator against the approvers
+        # file itself (no answer, no gh, no approvers file: no --statuses, and the status route of a `local:` item stays closed)
+        stat="$LAND_WORK/release.json"
         rel="$(python3 -I - "$LAND_WORK/release.json" "$ROOT/evidence/land_approvers.txt" << 'PY'
 import json, sys
 try:
@@ -254,7 +259,7 @@ except Exception:
 PY
 )"
     fi
-    python3 -I "$vr" "$sha" --base "$LAND_BASE" ${rel:+--release "$rel"} ${LAND_CHANNEL:+--channel "$LAND_CHANNEL"} --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
+    python3 -I "$vr" "$sha" --base "$LAND_BASE" ${rel:+--release "$rel"} ${LAND_CHANNEL:+--channel "$LAND_CHANNEL"} ${stat:+--statuses "$stat" --approvers "$ROOT/evidence/land_approvers.txt"} --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
         --survivors "$LAND_WORK/survivors.tsv" --json --budget "$LAND_BUDGET" --cache "$LAND_WORK/cache" --root "$ROOT" \
         > "$out" 2> "$LAND_WORK/verdicts.err"
     rc=$?
@@ -340,11 +345,20 @@ try:
         # channel entry; here only the form (and one item per row) is checked, and it is no id of an evidence row
         locrel = sorted(t for t in named if t.startswith("local"))
         named -= set(locrel)
-        LOCF = r"local: [A-Za-z0-9][A-Za-z0-9._-]* @(A-NEXT [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}Z|A-[0-9]{4,})"
+        LOCF = r"local: [A-Za-z0-9][A-Za-z0-9._-]* @(A-NEXT [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}Z|A-[0-9]{4,})( tree-ruling D-[0-9]{4})?"
         if any(not re.fullmatch(LOCF, t) for t in locrel):
-            print("FAIL\tthe release names a malformed local item (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`)"); sys.exit(0)
+            print("FAIL\tthe release names a malformed local item (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`, then optionally ` tree-ruling D-NNNN`)"); sys.exit(0)
         if len({t.split(" ")[1] for t in locrel}) != len(locrel):
             print("FAIL\tthe release names a local row twice"); sys.exit(0)
+        # `stand: <list> @D-NNNN from <old sha>` (D-1012 (2), LAND-TOOL-3) lets an old-SHA battery stand; tools/verdict_read.py checks the diff
+        # and the D-entry; here only the form (and one item per list) is checked, and it is no id of an evidence row
+        standrel = sorted(t for t in named if t.startswith("stand"))
+        named -= set(standrel)
+        STANDF = r"stand: [A-Za-z0-9][A-Za-z0-9._-]* @D-[0-9]{4} from [0-9a-f]{40}"
+        if any(not re.fullmatch(STANDF, t) for t in standrel):
+            print("FAIL\tthe release names a malformed stand item (wanted `stand: <list> @D-NNNN from <40 lower-case hex>`)"); sys.exit(0)
+        if len({t.split(" ")[1] for t in standrel}) != len(standrel):
+            print("FAIL\tthe release names a stand list twice"); sys.exit(0)
         uncovered = sorted(t for t in required if t not in named and t.split(":")[0] not in named)
         unused = sorted(t for t in named if t not in required and not any(r.split(":")[0] == t for r in required))
         if uncovered:
@@ -353,7 +367,7 @@ try:
             print("FAIL\tthe release names ids this commit does not add: %s" % ",".join(unused))
         else:
             print("PASS\tland/approved success, description LAND %s, set by %s, ids named: %s (rows added: %d)%s" % (
-                sha[:8], who, ",".join(sorted(named)) or "none", len(required), ("; " + srcrel[0]) if srcrel else "") + "".join("; " + t for t in locrel))
+                sha[:8], who, ",".join(sorted(named)) or "none", len(required), ("; " + srcrel[0]) if srcrel else "") + "".join("; " + t for t in locrel) + "".join("; " + t for t in standrel))
 except Exception as e:
     print("FAIL\tmarker unreadable (%s)" % type(e).__name__)
 PY
