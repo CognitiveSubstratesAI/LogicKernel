@@ -10,6 +10,8 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/land_check.sh"
+VSRC="$HERE/verdict_read.py"
+VTEST="$HERE/test_verdict_read.py"
 TEST="$HERE/test_land_check.sh"
 W="$(mktemp -d "${TMPDIR:-/tmp}/mutate_land_check.XXXXXX")"
 trap 'rm -rf "$W"' EXIT
@@ -74,33 +76,53 @@ M = [
  ("L11", "linear: the exit status of the range read is not read as a failure (inverted)", 'if ! ml="$(git log --merges', 'if ml="$(git log --merges'),
  ("L12", "linear: the FAIL does not name the merge commit", 'first: $(printf \'%s\\n\' "$ml" | head -1 | cut -c1-120)', 'first: (not named)'),
  ("L13", "linear: the FAIL does not cite the rule", '; main takes only linear history (A-0206)"', '"'),
+ ("S1", "marker: a malformed src-diff token (63 digits, upper case, no digest) is accepted", 'if any(not re.fullmatch(r"src-diff [0-9a-f]{64}", t) for t in srcrel):', 'if False:'),
+ ("S2", "marker: a src-diff token is counted as an evidence-row id (a release carrying one fails as unused)", 'named -= set(srcrel)', 'pass'),
+ ("S3", "marker: two src-diff tokens are accepted", 'if len(srcrel) > 1:', 'if False:'),
+ ("S4", "verdicts: the release is never handed to the reader", '${rel:+--release "$rel"}', ''),
+ ("S5", "verdicts: the release is read from ANY creator, not only an approver", 'if s.get("state") == "success" and ((s.get("creator") or {}).get("login") or "").lower() in allowed:', 'if s.get("state") == "success":'),
+ ("S6", "verdicts: the release is read whatever the state of the status", 'if s.get("state") == "success" and ((s.get("creator") or {}).get("login") or "").lower() in allowed:', 'if ((s.get("creator") or {}).get("login") or "").lower() in allowed:'),
+ ("S7", "verdicts: the src diff text (numstat, sha256) is not shown in the row", 'detail + ("; " + src_note if src_note else "")', 'detail'),
+]
+# `old` occurs exactly once in tools/verdict_read.py (mutated COPY, checked by tools/test_verdict_read.py, D-1006 (2))
+VM = [
+ ("R1", "src release: the released digest is not compared with the numstat's (any well-formed digest releases)", "elif good[0] != digest:", "elif False:"),
+ ("R2", "src release: the numstat hashed is not the raw bytes git prints (trailing newline stripped)", "digest = hashlib.sha256(ns.stdout).hexdigest()", "digest = hashlib.sha256(ns.stdout.strip()).hexdigest()"),
+ ("R3", "src release: a malformed token is not refused as such", "        if bad:\n", "        if False:\n"),
+ ("R4", "src release: a second src-diff token is accepted", "elif len(good) > 1:", "elif False:"),
+ ("R5", "src release: an empty numstat is not recognised (every diff needs a release, the empty one too)", "elif not ns.stdout.strip():", "elif False:"),
+ ("R6", "src release: a missing release passes the check (the digest is taken as the release)", "        elif not good:\n            out.append((\"src diff\", False, \"NON-EMPTY, no `src-diff <sha256>` release; %s\" % shown))\n", "        elif not good:\n            out.append((\"src diff\", True, \"NON-EMPTY, no release; %s\" % shown))\n"),
+ ("R7", "src release: the row does not print the numstat's sha256 (the audit cannot compare)", '"sha256 %s; numstat (git diff --numstat %s..%s -- src): %s" % (digest, base, sha[:8], "; ".join(', '"numstat (git diff --numstat %s..%s -- src): %s" % (base, sha[:8], "; ".join('),
 ]
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "ids":
         print("\n".join(m[0] for m in M))
+    elif cmd == "vids":
+        print("\n".join(m[0] for m in VM))
     elif cmd == "what":
-        print([m[1] for m in M if m[0] == sys.argv[2]][0])
-    elif cmd in ("apply", "check"):
+        print([m[1] for m in M + VM if m[0] == sys.argv[2]][0])
+    elif cmd in ("apply", "check", "vapply", "vcheck"):
         src = open(sys.argv[2]).read()
         bad = 0
-        for i, what, old, new in M:
-            if cmd == "check" or i == sys.argv[3]:
+        for i, what, old, new in (VM if cmd[0] == "v" else M):
+            if cmd in ("check", "vcheck") or i == sys.argv[3]:
                 n = src.count(old)
                 if n != 1:
                     print("mutant %s: `old` occurs %d times, not once" % (i, n), file=sys.stderr); bad += 1
-                elif cmd == "apply":
+                elif cmd in ("apply", "vapply"):
                     open(sys.argv[4], "w").write(src.replace(old, new)); break
         else:
-            if cmd == "apply":
+            if cmd in ("apply", "vapply"):
                 print("no mutant %s" % sys.argv[3], file=sys.stderr); bad += 1
         sys.exit(1 if bad else 0)
 PY
 
-if ! python3 -I "$W/mutants.py" check "$SRC"; then echo "mutate_land_check: a mutant does not apply (see above)"; exit 2; fi
-if [ "${1:-}" = "--check" ]; then echo "every mutant's old text occurs exactly once: $(python3 -I "$W/mutants.py" ids | wc -l) mutants"; exit 0; fi
+if ! python3 -I "$W/mutants.py" check "$SRC" || ! python3 -I "$W/mutants.py" vcheck "$VSRC"; then echo "mutate_land_check: a mutant does not apply (see above)"; exit 2; fi
+if [ "${1:-}" = "--check" ]; then echo "every mutant's old text occurs exactly once: $(python3 -I "$W/mutants.py" ids | wc -l) mutants of land_check.sh, $(python3 -I "$W/mutants.py" vids | wc -l) of verdict_read.py"; exit 0; fi
 
-if [ "$#" -gt 0 ]; then ids="$*"; else ids="$(python3 -I "$W/mutants.py" ids)"; fi
+if [ "$#" -gt 0 ]; then ids="$*"; else ids="$(python3 -I "$W/mutants.py" ids) $(python3 -I "$W/mutants.py" vids)"; fi
+vids=" $(python3 -I "$W/mutants.py" vids | tr '\n' ' ') "
 
 # the unmutated copy first: through the same seam, it must pass
 cp "$SRC" "$W/land_check.base.sh"
@@ -108,10 +130,28 @@ if ! LAND_CHECK_UNDER_TEST="$W/land_check.base.sh" bash "$TEST" > "$W/base.log" 
     echo "mutate_land_check: the UNMUTATED copy fails the test; no mutant result means anything"; grep '^  FAIL' "$W/base.log" | head -5; exit 2
 fi
 echo "baseline: unmutated copy passes ($(tail -1 "$W/base.log"))"
+# the verdict_read.py mutants (src-diff release, D-1006 (2)): a COPY of the reader beside its helper module, run by the python test
+# (only the Landing cases: they hold every row of the release), the test pointed at the copy through VERDICT_READ_UNDER_TEST
+mkdir -p "$W/vr"; cp "$HERE/battery_table.py" "$W/vr/"; cp "$VSRC" "$W/vr/verdict_read.py"
+vtest() { VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" "Landing" > "$W/v.log" 2>&1; }
+if ! vtest; then echo "mutate_land_check: the UNMUTATED verdict_read copy fails the Landing tests"; tail -5 "$W/v.log"; exit 2; fi
+echo "baseline: unmutated verdict_read copy passes ($(grep -m1 '^Ran ' "$W/v.log"))"
 
 killed=0 total=0
 for id in $ids; do
     total=$((total + 1))
+    if [[ "$vids" == *" $id "* ]]; then
+        if ! python3 -I "$W/mutants.py" vapply "$VSRC" "$id" "$W/vr/verdict_read.py"; then echo "$id: DOES NOT APPLY"; continue; fi
+        cmp -s "$VSRC" "$W/vr/verdict_read.py" && { echo "$id: NO CHANGE"; continue; }
+        python3 -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$W/vr/verdict_read.py" || { echo "$id: the mutant is not valid python"; continue; }
+        if vtest; then echo "$id: SURVIVED ($(python3 -I "$W/mutants.py" what "$id"))"
+        else
+            killed=$((killed + 1))
+            echo "$id: KILLED by [$(grep -m1 -E '^(FAIL|ERROR):' "$W/v.log" | cut -c1-110)]  ($(python3 -I "$W/mutants.py" what "$id"))"
+        fi
+        cp "$VSRC" "$W/vr/verdict_read.py"
+        continue
+    fi
     if ! python3 -I "$W/mutants.py" apply "$SRC" "$id" "$W/m.sh"; then echo "$id: DOES NOT APPLY"; continue; fi
     cmp -s "$SRC" "$W/m.sh" && { echo "$id: NO CHANGE"; continue; }
     bash -n "$W/m.sh" || { echo "$id: the mutant is not valid bash"; continue; }

@@ -10,6 +10,7 @@
 # through LOGICKERNEL_CI_FIXTURE_DIR and a fake `curl` on PATH leaves a mark that fails the run when it is called.
 # Both sides of every guard: a clean battery and a blocked one, an owner and none, a D-entry and none, each landing check
 # passing and failing. Strong terms of the D-0164 grep are assembled from pieces, so this file does not match its own grep.
+import hashlib
 import json
 import os
 import re
@@ -21,7 +22,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REAL = os.path.dirname(HERE)
-TOOL = os.path.join(HERE, "verdict_read.py")
+TOOL = os.environ.get("VERDICT_READ_UNDER_TEST") or os.path.join(HERE, "verdict_read.py")   # tools/mutate_land_check.sh points it at a mutated copy
 FIX = os.path.join(HERE, "fixtures", "verdict_read")
 REAL_SHA = "24ee66ab14cfc1e243b5a55ccc964dde96035222"
 TERM = "cra" "sh"
@@ -488,9 +489,78 @@ class Landing(unittest.TestCase):
         self.landed(w)
         rc, out = w.run()
         self.assertEqual(rc, 1, out)
-        self.assertRegex(out, r"FAIL src diff: NON-EMPTY: 1 file changed.*src/a.jl")
+        self.assertRegex(out, r"FAIL src diff: NON-EMPTY, no `src-diff <sha256>` release; sha256 [0-9a-f]{64}; numstat.*1 1 src/a.jl")
         rc, js = w.run("--json")
         self.assertFalse(json.loads(js)["landable"])
+
+    # --- D-1006 (2): a named src-diff release ------------------------------------------------------------------
+    def src_world(self):
+        w = World(self)
+        w.commit("src/a.jl", "a = 2\nb = 3\n", "CHANGED: src")
+        self.landed(w)
+        raw = subprocess.run(["git", "-C", w.repo, "diff", "--numstat", "main.." + w.sha, "--", "src"], capture_output=True).stdout
+        self.assertEqual(raw, b"2\t1\tsrc/a.jl\n")          # the bytes the dispatcher hashes: `git diff --numstat ... | sha256sum`
+        return w, hashlib.sha256(raw).hexdigest(), raw
+
+    def rel(self, w, *tokens):
+        return "LAND %s [ids: %s]" % (w.sha, ",".join(tokens))
+
+    def test_a_matching_src_diff_release_passes(self):
+        w, dig, _ = self.src_world()
+        rc, out = w.run("--release", self.rel(w, "src-diff " + dig))
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, r"ok   src diff: NON-EMPTY, released by src-diff " + dig)
+        self.assertIn("2 1 src/a.jl", out)                                         # the numstat is printed
+        self.assertIn("sha256 " + dig, out)
+        rc, js = w.run("--json", "--release", self.rel(w, "D-0950:X", "src-diff " + dig))   # beside an equivalents id
+        self.assertTrue(json.loads(js)["landable"])
+
+    def test_a_changed_numstat_fails_by_one_byte(self):
+        w, dig, raw = self.src_world()
+        other = hashlib.sha256(raw.replace(b"2\t1", b"3\t1")).hexdigest()           # one byte of the numstat differs
+        self.assertNotEqual(other, dig)
+        rc, out = w.run("--release", self.rel(w, "src-diff " + other))
+        self.assertEqual(rc, 1, out)
+        self.assertRegex(out, r"FAIL src diff: NON-EMPTY, the release names src-diff " + other)
+        self.assertIn("sha256 " + dig, out)                                         # the audit sees the tool's own digest
+        last = dig[:-1] + ("0" if dig[-1] != "0" else "1")                           # and one hex digit of the release
+        rc, out = w.run("--release", self.rel(w, "src-diff " + last))
+        self.assertEqual(rc, 1, out)
+        rc, js = w.run("--json", "--release", self.rel(w, "src-diff " + other))
+        self.assertFalse(json.loads(js)["landable"])
+
+    def test_a_missing_src_diff_release_fails(self):
+        w, dig, _ = self.src_world()
+        rc, out = w.run()
+        self.assertEqual(rc, 1, out)
+        self.assertRegex(out, r"FAIL src diff: NON-EMPTY, no `src-diff <sha256>` release; sha256 " + dig)
+        rc, out = w.run("--release", self.rel(w, "D-0950:X"))                         # a release that names ids only
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--release", "LAND %s" % w.sha)                               # a bare LAND
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--release", "src-diff " + dig)                               # the digest outside the ids list is no release
+        self.assertEqual(rc, 1, out)
+
+    def test_a_malformed_src_diff_release_fails(self):
+        w, dig, _ = self.src_world()
+        for bad in (dig.upper(), dig[:63], dig + "0", "zz" + dig[2:], ""):
+            rc, out = w.run("--release", self.rel(w, "src-diff " + bad))
+            self.assertEqual(rc, 1, (bad, out))
+            self.assertRegex(out, r"FAIL src diff: NON-EMPTY, malformed release token")
+        rc, out = w.run("--release", self.rel(w, "src-diff" + dig))                  # no space
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--release", self.rel(w, "src-diff " + dig, "src-diff " + dig))   # two tokens are one too many
+        self.assertEqual(rc, 1, out)
+        rc, out = w.run("--release", self.rel(w, "src-diff " + dig, "src-diff " + "0" * 64))
+        self.assertEqual(rc, 1, out)
+
+    def test_an_empty_src_diff_passes_without_a_release(self):
+        w = World(self)
+        w.commit("tools/t.txt", "x\n", "ADDED: a tools file")
+        self.landed(w)
+        rc, out = w.run()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   src diff: empty", out)
 
     def test_a_strong_term_in_a_message_or_an_added_line_fails(self):
         w = World(self)

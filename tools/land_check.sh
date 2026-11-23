@@ -56,6 +56,8 @@ row() {
 }
 
 valid_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]; }
+# OWNER/REPO of origin, used when GITHUB_REPOSITORY is unset (never printed raw: only the slug leaves the pipe)
+repo_slug() { git remote get-url origin 2> /dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##'; }
 
 step_input() {
     if valid_sha "$1"; then row input PASS "$1"; else row input FAIL "not 40 lower-case hex digits"; return 1; fi
@@ -230,7 +232,27 @@ step_verdicts() {
         # shellcheck disable=SC2016 # single quotes on purpose: the helper must expand $GH_TOKEN when git calls it, never here
         export GIT_CONFIG_VALUE_0='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
     fi
-    python3 -I "$vr" "$sha" --base "$LAND_BASE" --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
+    # the audit's release text (an approver's success `land/approved` status): the reader needs its `src-diff <sha256>` token for a
+    # non-empty src diff (D-1006 (2)); no readable release is no argument, and the reader then fails a non-empty src diff
+    local rel="" repo="${GITHUB_REPOSITORY:-}"
+    [ -n "$repo" ] || repo="$(repo_slug)"
+    if [ -n "$repo" ] && [ -s "$ROOT/evidence/land_approvers.txt" ] && command -v gh > /dev/null 2>&1 &&
+        gh api "repos/$repo/commits/$sha/status?per_page=100" > "$LAND_WORK/release.json" 2> /dev/null; then
+        rel="$(python3 -I - "$LAND_WORK/release.json" "$ROOT/evidence/land_approvers.txt" << 'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    allowed = {l.strip().lower() for l in open(sys.argv[2]) if l.strip() and not l.lstrip().startswith("#")}
+    sts = [s for s in d.get("statuses") or [] if s.get("context") == "land/approved"]
+    s = sts[0] if sts else {}
+    if s.get("state") == "success" and ((s.get("creator") or {}).get("login") or "").lower() in allowed:
+        print((s.get("description") or "").replace("\n", " "))
+except Exception:
+    pass
+PY
+)"
+    fi
+    python3 -I "$vr" "$sha" --base "$LAND_BASE" ${rel:+--release "$rel"} --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
         --survivors "$LAND_WORK/survivors.tsv" --json --budget "$LAND_BUDGET" --cache "$LAND_WORK/cache" --root "$ROOT" \
         > "$out" 2> "$LAND_WORK/verdicts.err"
     rc=$?
@@ -247,6 +269,8 @@ bats = r.get("batteries") or []
 blocked = [b.get("name", "?") for b in bats if not b.get("clean") and b.get("state") != "pending"]
 pending = [b.get("name", "?") for b in bats if b.get("state") == "pending"]
 land_fail = [c.get("check", "?") for c in r.get("landing") or [] if not c.get("ok")]
+src_note = "; ".join("src diff: " + (c.get("text") or "")[:600] for c in r.get("landing") or []
+                     if c.get("check") == "src diff" and c.get("text") != "empty")
 ok = rc == 0 and r.get("landable") is True and bool(bats)
 detail = "exit %d, landable=%s, CI=%s, Evidence=%s, %d batteries read" % (
     rc, r.get("landable"), "ok" if r.get("ci_ok") else "NOT ok", "ok" if r.get("ev_ok") else "NOT ok", len(bats))
@@ -256,7 +280,7 @@ if not ok:
     if land_fail: detail += "; landing checks failed: " + ",".join(land_fail)
     if r.get("gate_why"): detail += "; set: " + r["gate_why"]
     if not bats: detail += "; no battery read"
-print("%s\t%s" % ("PASS" if ok else "FAIL", detail))
+print("%s\t%s" % ("PASS" if ok else "FAIL", detail + ("; " + src_note if src_note else "")))
 PY
     IFS=$'\t' read -r st detail < "$LAND_WORK/verdicts.row"
     row verdicts "${st:-FAIL}" "${detail:-reader summary unreadable}"
@@ -268,7 +292,7 @@ PY
 # Replacing this function (a tag `land/<sha>`, a repository variable) changes nothing else.
 step_marker() {
     local sha="$1" repo="${GITHUB_REPOSITORY:-}" ap="$ROOT/evidence/land_approvers.txt" json="$LAND_WORK/marker.json" res
-    if [ -z "$repo" ]; then repo="$(git remote get-url origin 2> /dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"; fi
+    [ -n "$repo" ] || repo="$(repo_slug)"
     if [ ! -s "$ap" ] || ! grep -qvE '^[[:space:]]*(#|$)' "$ap"; then
         row marker FAIL "evidence/land_approvers.txt names no approver (fail closed)"; return 0
     fi
@@ -302,6 +326,14 @@ try:
         except OSError:
             print("FAIL\tno record of the added equivalents rows (the gateset step did not run): fail closed"); sys.exit(0)
         named = {t.strip() for t in (m.group(2) or "").split(",") if t.strip()}
+        # `src-diff <sha256>` (D-1006 (2)) is the release of the src diff, read and compared by tools/verdict_read.py; here only its
+        # form is checked (one token, 64 lower-case hex digits) and it is no id of an evidence row
+        srcrel = sorted(t for t in named if t.startswith("src-diff"))
+        named -= set(srcrel)
+        if any(not re.fullmatch(r"src-diff [0-9a-f]{64}", t) for t in srcrel):
+            print("FAIL\tthe release names a malformed src-diff (wanted `src-diff <64 lower-case hex digits>`)"); sys.exit(0)
+        if len(srcrel) > 1:
+            print("FAIL\tthe release names more than one src-diff"); sys.exit(0)
         uncovered = sorted(t for t in required if t not in named and t.split(":")[0] not in named)
         unused = sorted(t for t in named if t not in required and not any(r.split(":")[0] == t for r in required))
         if uncovered:
@@ -309,8 +341,8 @@ try:
         elif unused:
             print("FAIL\tthe release names ids this commit does not add: %s" % ",".join(unused))
         else:
-            print("PASS\tland/approved success, description LAND %s, set by %s, ids named: %s (rows added: %d)" % (
-                sha[:8], who, ",".join(sorted(named)) or "none", len(required)))
+            print("PASS\tland/approved success, description LAND %s, set by %s, ids named: %s (rows added: %d)%s" % (
+                sha[:8], who, ",".join(sorted(named)) or "none", len(required), ("; " + srcrel[0]) if srcrel else ""))
 except Exception as e:
     print("FAIL\tmarker unreadable (%s)" % type(e).__name__)
 PY
