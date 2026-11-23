@@ -36,3 +36,8 @@ SSU1-T1	D-0994	src/pl-proc.jl:2450
 G1GC3-E2	D-0994	src/pl-gcmark.jl:246
 G1GC2-E4	D-0996	src/pl-alloc.jl:184
 G1GC6C-B3	D-0997	src/pl-gcsweep.jl:342
+TB1-R5	D-1011	src/pl-tabling.jl:3531-3535
+TB1-L3	D-1011	src/pl-tabling.jl:3224-3292
+TB8-T8	D-1011	src/pl-tabling.jl:2390-2397 and :10445
+TB8-E1	D-1011	src/os/pl-prologflag.jl:471-472 and src/pl-tabling.jl:10153-10177
+TB8-E3	D-1011	src/pl-tabling.jl:10143-10146 and :10214-10218

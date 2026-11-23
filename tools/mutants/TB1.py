@@ -17,7 +17,7 @@
 #   `$tbl_trienode` rows: it does not call a TB1 function, listed for `is_tabled` whose flag its attribute rows set), TB = test/db/test_boot_image_swipl.jl
 #   (TB:161, the count of the foreign predicates the kernel lacks: a changed registration changes the count).
 # DEFKILL3 (2026-11-14, nothing run): R2, V5, G3, G9, T3, F5, F6, L1, L4, N2, N3 are KILL by the white-box testsets "TB1 white-box rows: ..." at the end of TV
-# (their premises asserted in the rows); P10 stays DEFERRED KILL (blocker in its entry); P7 is KILL since DEFKILL5 (tvw01-tvw04, pinned from swipl 18168e62). The notes below that name an owner are the history.
+# (their premises asserted in the rows); P10 is KILL since D-1011 (the direct call of pl_tbl_table_pi2_va after the release, the same testset); P7 is KILL since DEFKILL5 (tvw01-tvw04, pinned from swipl 18168e62). The notes below that name an owner are the history.
 # DEFERRED KILL (audit D-0374 item 2, as PIN1.py): a row declared `equivalent="DEFERRED KILL: owner ..."` has no killing assertion yet: no test file reads
 # what the mutant changes. It must SURVIVE the battery; when the owner step adds the row, the declaration goes. The deferred ones and the row each owner adds:
 #   * the node cache of start nodes (`start_node_id`, `get_start_node`, `set_start_node`): its user is `tbl_complete_answer_clause` (pl-tabling.c) = TB3; no row
@@ -43,7 +43,9 @@ TV = "test/core_lang/test_tabling_variant_swipl.jl"
 TT = "test/core_lang/test_tabling_state_swipl.jl"
 TM = "test/core_lang/test_tabling_min_swipl.jl"
 TB = "test/db/test_boot_image_swipl.jl"
-TARGETS = [TV, TT, TM, TB]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TI = "test/core_lang/test_tabling_idg_swipl.jl"                       # TB6: t_idg14 reads unify_complete_or_invalid (TB1-F3)
+TD = "test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl"   # incremental re-evaluation (assert + tabled call): the second witness of TB1-F3
+TARGETS = [TV, TT, TM, TB, TI, TD]                # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 TAB = "src/pl-tabling.jl"
 # the first lines of the two predicates whose body is the same text, told apart by the function name
 HDR1 = ("(\n    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}\n)::foreign_t where {T}\n"
@@ -162,12 +164,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old='\n    return mk_sym(T, :complete)\n',
          new='\n    return mk_sym(T, :invalid)\n'),
-    dict(id="TB1-F3 unify_complete_or_invalid answers a fresh status only without `create` (EQUIVALENT: the status is never `fresh`)",
-         file=TAB, targets=[TV],
+    dict(id="TB1-F3 unify_complete_or_invalid answers a fresh status only without `create` (KILL TI the row t_idg14 (D-1011): after `$tbl_reeval_prepare_top` the table is COMPLETE with `reevaluating` set, the create=true call of `$tbl_variant_table` answers fresh(SCC, WL) and clears COMPLETE; the mutant answers the bare atom `fresh` and leaves COMPLETE; TD re-evaluates after an assert)",
+         file=TAB, targets=[TV, TI, TD],
          old="    if sym_key(status) == sym_key(mk_sym(T, :fresh)) && create\n",
-         new="    if sym_key(status) == sym_key(mk_sym(T, :fresh)) && !create\n",
-         equivalent="src/pl-tabling.jl:775-779: complete_or_invalid_status returns `complete` (the IDG that makes `invalid` or `fresh` is refused by name, TB6, :776), so the first "
-                    "conjunct `sym_key(status) == sym_key(:fresh)` of :787 is false for every table and the second is not read"),
+         new="    if sym_key(status) == sym_key(mk_sym(T, :fresh)) && !create\n"),
     dict(id="TB1-F4 unify_table_status asks `TRIE_COMPLETE` unset (KILL tvs01, tvs02, tvv01: a complete table is answered `fresh`; tvs08: the variant table is answered `complete`)",
          file=TAB, targets=[TV],
          old="    if (atrie.flags & TRIE_COMPLETE) != 0\n        return unify_complete_or_invalid(ld, t, atrie, def, create)\n",
@@ -226,13 +226,10 @@ MUTANTS = [
          file=TAB, targets=[TV],
          old="    PL_put_integer(ld, r + 1, arity)\n",
          new="    PL_put_integer(ld, r + 1, arity + 1)\n"),
-    dict(id="TB1-P10 `$tbl_table_pi/2` goes on for a table with no variant node (no row: the variant table's own indicator has no pinned answer)",
+    dict(id="TB1-P10 `$tbl_table_pi/2` goes on for a table with no variant node (KILL TV the testset \"TB1 white-box rows: the release of a variant table node (DEFKILL3: L1, L4)\", `pl_tbl_table_pi2_va` called directly on a released trie answers FFALSE (kernel pl-tabling.jl:4097; upstream NULL is undefined, a deliberate divergence))",
          file=TAB, targets=[TV],
          old="    atrie.variant == 0 && return FFALSE\n\n    av = PL_new_term_refs(ld, 3)\n",
-         new="    av = PL_new_term_refs(ld, 3)\n",
-         equivalent="DEFERRED KILL: no owner step (the pin of swipl 10.1.20 gives no answer for `'$tbl_table_pi'(VT, _)` with VT the variant table, handoff3 left the row out: "
-                    "pl-tabling.c reads a NULL `atrie->data.variant`); the only answer trie with `variant == 0` is a table whose variant node was released (TB5: "
-                    "`release_variant_table_node` sets it, src/pl-tabling.jl:569-570): row for TB5 after an abolish that keeps the trie; DEFKILL3: still open, the blocker is no engine piece but no oracle: upstream pl-tabling.c:6194 hands `atrie->data.variant` NULL to unify_trie_term (undefined there), the kernel's FFALSE (src/pl-tabling.jl:4027, :4036) is a deliberate divergence, so a row can only be a direct call of pl_tbl_table_pi2_va (src/pl-tabling.jl:4029) with a trie handle term `get_trie` (src/pl-trie.jl:1611) accepts, after release_variant_table_node (the TB1 L4 row makes that state)"),
+         new="    av = PL_new_term_refs(ld, 3)\n"),
     dict(id="TB1-P11 `$is_answer_trie/2` answers `dynamic` for a normal table (KILL tvt02: the pin is `normal`)",
          file=TAB, targets=[TV],
          old="            return PL_unify_atom(ld, A2, mk_sym(T, :normal)) ? FTRUE : FFALSE\n",

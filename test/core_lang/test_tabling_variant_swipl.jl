@@ -521,6 +521,22 @@ end
         @test atrie.worklist === nothing
         @test atrie.variant == 0                             # TB1-L4
     end
+
+    # TB1-P10: `'$tbl_table_pi'(ATrie, _)` on an answer trie whose variant node is released (`variant == 0`). Upstream pl-tabling.c:6194
+    # hands `atrie->data.variant` NULL on (undefined there); the kernel's guard `atrie.variant == 0 && return FFALSE`
+    # (src/pl-tabling.jl:4097) is a deliberate divergence, so the pin is the kernel's own FFALSE, no swipl answer.
+    # The handle is one `get_trie` accepts (the trie is not destroyed: its magic stays TRIE_MAGIC).
+    for atrie in atries
+        @test atrie.variant == 0 && atrie.magic == LK.TRIE_MAGIC
+        fid = LK.PL_open_foreign_frame(ld)
+        t = LK.PL_new_term_refs(ld, 2)
+        @test LK.unify_trie(gd, ld, t, atrie)
+        @test LK.get_trie(gd, ld, t) === atrie
+        ctx = LK.foreign_context{_TV}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+        @test LK.pl_tbl_table_pi2_va(ld, t, 2, ctx) == LK.FFALSE
+        @test LK.PL_is_variable(ld, t + 1)                   # nothing was unified into the indicator
+        LK.PL_close_foreign_frame(ld, fid)
+    end
 end
 
 @testset "TB1 white-box rows: the start node cache (DEFKILL3: N2, N3)" begin

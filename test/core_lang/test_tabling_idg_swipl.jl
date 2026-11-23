@@ -61,6 +61,21 @@ t_idg11(R) :- ti_p(_), ti_tab(T),
     '$idg_set_falsecount'(T, 0), R = r(R0, F0, F1).
 t_idg12(R) :- current_prolog_flag(table_space, Old), catch(ti_v5(_), error(E, _), true),
     set_prolog_flag(table_space, Old), ( var(E) -> R = none ; R = raised(E) ).
+:- table ti_rp/1 as incremental.
+:- dynamic([ti_rd/1], [incremental(true)]).
+ti_rd(1).
+ti_rp(X) :- ti_rd(X).
+ti_rtab(T) :- '$tbl_existing_variant_table'(0, user:ti_rp(_), T, _, _).
+t_idg14(R) :- ti_rp(_), ti_rtab(T), assertz(ti_rd(2)),
+    '$tbl_table_status'(T, S0), '$tbl_reeval_prepare_top'(T, Cl),
+    ( '$tbl_is_answer_completed'(T) -> C1 = complete ; C1 = incomplete ),
+    '$tbl_table_status'(T, S1, _, _),
+    '$tbl_variant_table'(0, user:ti_rp(_), T2, S2, _, _),
+    ( S2 = fresh(SCC, WL) -> ( integer(SCC), integer(WL) -> S2o = fresh(int, int) ; S2o = fresh(other) ) ; S2o = S2 ),
+    ( T == T2 -> Same = same ; Same = other ),
+    ( '$tbl_is_answer_completed'(T) -> C2 = complete ; C2 = incomplete ),
+    ( var(Cl) -> Clo = unbound ; Clo = bound ),
+    R = r(S0, Clo, C1, S1, S2o, Same, C2).
 """
 
 const _TI_CASES = [
@@ -76,7 +91,8 @@ const _TI_CASES = [
     "t_idg10",
     "t_idg11",
     "t_idg12",
-    "t_idg13"
+    "t_idg13",
+    "t_idg14"
 ]
 
 # swipl 10.1.20 (`ti_q(t_idg<NN>, A)`, in the order of `_TI_CASES`), two identical runs (md5 equal), 2026-11-10
@@ -93,7 +109,8 @@ const _TI_PINNED = [
     "r(invalid,complete,same)",             # idg10 (TB7M5): falsecount back to 0: the same table is `complete` again
     "r(raised(representation_error(falsecount)),0,4294967295)",   # idg11 (DEFKILL2, TB6-P14): pl-tabling.c:9864 `fc > UINT_MAX`; UINT_MAX itself is stored
     "raised(resource_error(private_table_space))",                # idg12 (DEFKILL2, TB6-V5): the dyncall edge of a full pool: pl-vmi.c:3547-3548 THROW_EXCEPTION
-    "r(1,0)"                              # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
+    "r(1,0)",                             # idg13 (DEFKILL2, TB6-N19): an incremental dynamic predicate with abstract(0) under a tabled one; swipl writes no warning
+    "r(invalid,unbound,complete,fresh,fresh(int,int),same,incomplete)"   # idg14 (D-1011, TB1-F3): after `\$tbl_reeval_prepare_top` the table is COMPLETE with reevaluating set; the create=true call answers fresh(SCC, WL) and clears COMPLETE; from swipl 10.1.20
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
