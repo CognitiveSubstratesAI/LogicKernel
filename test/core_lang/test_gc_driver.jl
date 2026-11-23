@@ -264,9 +264,8 @@ function _gd_top_only(explicit_bar::Bool)
     end
     ld.tmp_cells = 0                                             # no base prefix to mark
     top = LK.PL_new_term_ref(ld)                                 # its own cell is the new top cell
-    @test (ld.slots[top + 1] & LK.VALUE_MASK) == LK.makeRefG(ld.gTop)
     ld.mark_bar = explicit_bar ? ld.gTop : LK.NO_MARK_BAR
-    return ld
+    return ld, top
 end
 
 function _gd_sweep_counts(ld)
@@ -278,16 +277,48 @@ function _gd_sweep_counts(ld)
     )
 end
 
+# The result of the two collections as ONE line of text (an exception is caught and named with its first frames): the driver of the CI battery
+# shows only the summary rows of the testsets that PASS, not the failure details, so the probe testset below carries the line in its NAME.
+function _gd_b1_probe()::String
+    out = String[]
+    for explicit in (true, false)
+        try
+            ld, top = _gd_top_only(explicit)
+            g0 = ld.gTop
+            rc = LK.garbageCollect(ld, _GD_GC)
+            push!(
+                out,
+                "bar=$(explicit ? "gTop" : "NO_MARK_BAR") gTop $(g0)->$(ld.gTop) rc=$(rc) $(_gd_sweep_counts(ld)) bar_after=$(ld.mark_bar == LK.NO_MARK_BAR ? "NO_MARK_BAR" : ld.mark_bar)"
+            )
+        catch e
+            bt = catch_backtrace()
+            fr = join(map(string, first(stacktrace(bt), 4)), " <- ")
+            push!(
+                out,
+                "bar=$(explicit ? "gTop" : "NO_MARK_BAR") THREW $(typeof(e)): $(first(sprint(showerror, e), 300)) AT $(fr)"
+            )
+        end
+    end
+    return replace(join(out, " || "), r"\s+" => " ")
+end
+
+const _GD_B1_PROBE = _gd_b1_probe()
+
+@testset "G1GC6C-B1 probe (the name is the result): $(_GD_B1_PROBE)" begin
+    @test !isempty(_GD_B1_PROBE)
+end
+
 @testset "G1GC6C-B1: NO_MARK_BAR is collected with the bar at the old top (the same counters as an explicit bar at the top)" begin
-    ld_bar = _gd_top_only(true)                                  # the bar `gTop`, set by hand: the driver leaves it alone
+    ld_bar, top_bar = _gd_top_only(true)                         # the bar `gTop`, set by hand: the driver leaves it alone
     gtop0 = ld_bar.gTop
+    @test (ld_bar.slots[top_bar + 1] & LK.VALUE_MASK) == LK.makeRefG(gtop0)   # the one live root names the top cell
     @test gtop0 >= 10
     @test ld_bar.mark_bar == gtop0
     @test LK.garbageCollect(ld_bar, _GD_GC) == LK.BOOLEX_TRUE
     c_bar = _gd_sweep_counts(ld_bar)
     @test ld_bar.gTop == 1 && c_bar.total_marked == 1            # the premise: the top cell was the only live cell, so no cell at or below gTop - 1 was marked
     @test c_bar.alien_relocations >= 1 && c_bar.needs_relocation >= 1   # the bar's own alien relocation is among them (the counts are not empty)
-    ld_nb = _gd_top_only(false)                                  # NO_MARK_BAR: the driver gives the bar the value `gTop`
+    ld_nb, top_nb = _gd_top_only(false)                          # NO_MARK_BAR: the driver gives the bar the value `gTop`
     @test ld_nb.gTop == gtop0 && ld_nb.mark_bar == LK.NO_MARK_BAR
     @test LK.garbageCollect(ld_nb, _GD_GC) == LK.BOOLEX_TRUE
     @test ld_nb.mark_bar == LK.NO_MARK_BAR                       # restored
