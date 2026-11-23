@@ -117,37 +117,43 @@ end
 # PORT: packages/zlib/zlib4pl.c sync_stream (112-121), zread (140-147), zwrite4 (264-277): the next_in/avail_in/next_out/avail_out/total_*/msg/adler fields
 # DIVERGES: 4. The field readers and writers; the writers take the pointer (`next_*`) or the count (`avail_*`).
 "`strm->next_in`."
-z_stream_next_in(strm::Ptr{Cvoid})::Ptr{UInt8} = unsafe_load(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_IN))
+z_stream_next_in(strm::Ptr{Cvoid})::Ptr{UInt8} =
+    unsafe_load(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_IN))
 "Set `strm->next_in`."
 function z_stream_set_next_in!(strm::Ptr{Cvoid}, p::Ptr{UInt8})::Nothing
     unsafe_store!(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_IN), p)
     return nothing
 end
 "`strm->avail_in`."
-z_stream_avail_in(strm::Ptr{Cvoid})::UInt32 = unsafe_load(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_IN))
+z_stream_avail_in(strm::Ptr{Cvoid})::UInt32 =
+    unsafe_load(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_IN))
 "Set `strm->avail_in`."
 function z_stream_set_avail_in!(strm::Ptr{Cvoid}, n::UInt32)::Nothing
     unsafe_store!(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_IN), n)
     return nothing
 end
 "`strm->total_in`."
-z_stream_total_in(strm::Ptr{Cvoid})::UInt = unsafe_load(Ptr{UInt}(strm + Z_STREAM_OFF_TOTAL_IN))
+z_stream_total_in(strm::Ptr{Cvoid})::UInt =
+    unsafe_load(Ptr{UInt}(strm + Z_STREAM_OFF_TOTAL_IN))
 "`strm->next_out`."
-z_stream_next_out(strm::Ptr{Cvoid})::Ptr{UInt8} = unsafe_load(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_OUT))
+z_stream_next_out(strm::Ptr{Cvoid})::Ptr{UInt8} =
+    unsafe_load(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_OUT))
 "Set `strm->next_out`."
 function z_stream_set_next_out!(strm::Ptr{Cvoid}, p::Ptr{UInt8})::Nothing
     unsafe_store!(Ptr{Ptr{UInt8}}(strm + Z_STREAM_OFF_NEXT_OUT), p)
     return nothing
 end
 "`strm->avail_out`."
-z_stream_avail_out(strm::Ptr{Cvoid})::UInt32 = unsafe_load(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_OUT))
+z_stream_avail_out(strm::Ptr{Cvoid})::UInt32 =
+    unsafe_load(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_OUT))
 "Set `strm->avail_out`."
 function z_stream_set_avail_out!(strm::Ptr{Cvoid}, n::UInt32)::Nothing
     unsafe_store!(Ptr{UInt32}(strm + Z_STREAM_OFF_AVAIL_OUT), n)
     return nothing
 end
 "`strm->total_out`."
-z_stream_total_out(strm::Ptr{Cvoid})::UInt = unsafe_load(Ptr{UInt}(strm + Z_STREAM_OFF_TOTAL_OUT))
+z_stream_total_out(strm::Ptr{Cvoid})::UInt =
+    unsafe_load(Ptr{UInt}(strm + Z_STREAM_OFF_TOTAL_OUT))
 "`strm->adler`: the Adler-32 (zlib wrapper) or CRC-32 (gzip wrapper) of the data so far."
 z_stream_adler(strm::Ptr{Cvoid})::UInt = unsafe_load(Ptr{UInt}(strm + Z_STREAM_OFF_ADLER))
 
@@ -164,7 +170,8 @@ gz_header_done(head::Ptr{Cvoid})::Cint = unsafe_load(Ptr{Cint}(head + GZ_HEADER_
 "`head->os`, the operating-system byte of the gzip header."
 gz_header_os(head::Ptr{Cvoid})::Cint = unsafe_load(Ptr{Cint}(head + GZ_HEADER_OFF_OS))
 "`head->xflags`, the extra-flags byte of the gzip header."
-gz_header_xflags(head::Ptr{Cvoid})::Cint = unsafe_load(Ptr{Cint}(head + GZ_HEADER_OFF_XFLAGS))
+gz_header_xflags(head::Ptr{Cvoid})::Cint =
+    unsafe_load(Ptr{Cint}(head + GZ_HEADER_OFF_XFLAGS))
 "`head->time`, the modification time of the gzip header."
 gz_header_time(head::Ptr{Cvoid})::UInt = unsafe_load(Ptr{UInt}(head + GZ_HEADER_OFF_TIME))
 
@@ -229,10 +236,12 @@ end
 # DIVERGES: 3.
 "`deflateInit2`: start a deflater with `method` (`Z_DEFLATED`), `windowBits` (`MAX_WBITS+16` gzip, `-MAX_WBITS` raw deflate), `memLevel` and `strategy`; `Z_OK` or an error code."
 function zlib_deflate_init2!(
-        strm::Ptr{Cvoid}, level::Cint, method::Cint, window_bits::Cint, mem_level::Cint, strategy::Cint
-    )::Cint
+    strm::Ptr{Cvoid}, level::Cint, method::Cint, window_bits::Cint, mem_level::Cint,
+    strategy::Cint
+)::Cint
     return ccall(
-        (:deflateInit2_, libz), Cint, (Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint, Ptr{UInt8}, Cint),
+        (:deflateInit2_, libz), Cint,
+        (Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint, Ptr{UInt8}, Cint),
         strm, level, method, window_bits, mem_level, strategy,
         _zlib_version_ptr(), Cint(Z_STREAM_SIZE)
     )
@@ -319,7 +328,8 @@ end
 "A zeroed context over the parent `s`, `close_parent` true (zlib4pl.c)."
 function alloc_zcontext(ld::PL_local_data{T}, s::IOSTREAM)::ZContext{T} where {T}
     return ZContext{T}(
-        s, nothing, true, false, 0, false, Z_F_UNKNOWN, z_stream_alloc(), gz_header_alloc(), ld
+        s, nothing, true, false, 0, false, Z_F_UNKNOWN, z_stream_alloc(), gz_header_alloc(),
+        ld
     )
 end
 
@@ -419,8 +429,11 @@ function Sfilter_read(ctx::ZContext, mem::Vector{UInt8}, from::Int, size::Int)::
                     if irc != Z_OK                          # 171
                         _zseterr(
                             ctx,
-                            irc == Z_MEM_ERROR ? "zlib: not enough memory" :
+                            if irc == Z_MEM_ERROR
+                                "zlib: not enough memory"
+                            else
                                 "zlib: initialization failed"
+                            end
                         )                                   # 172-174
                         return -1                           # 175
                     end
@@ -494,7 +507,7 @@ function zwrite4(ctx::ZContext, mem::Vector{UInt8}, from::Int, size::Int, flush:
                     Sfwrite(buffer, 1, n, ctx.stream) != n && return -1   # 293-294
                 end
             elseif rc == Z_BUF_ERROR                        # 299-301
-                # nothing to do
+            # nothing to do
             else
                 return -1                                   # 302-305 Z_STREAM_ERROR and default
             end
@@ -599,7 +612,8 @@ const zlib_debuglevel = Ref{Int}(0)
 
 # PORT: packages/zlib/zlib4pl.c COPY_FLAGS (412-415)
 "The flags of the parent stream the zlib stream copies (zlib4pl.c `COPY_FLAGS`)."
-const ZLIB_COPY_FLAGS = SIO_INPUT | SIO_OUTPUT | SIO_TEXT | SIO_REPXML | SIO_REPPL | SIO_RECORDPOS
+const ZLIB_COPY_FLAGS =
+    SIO_INPUT | SIO_OUTPUT | SIO_TEXT | SIO_REPXML | SIO_REPPL | SIO_RECORDPOS
 
 # PORT: packages/zlib/zlib4pl.c zopen_options (417-423)
 # (PL_OPTION("format", OPT_TERM), PL_OPTION("level", OPT_TERM), PL_OPTION("close_parent", OPT_BOOL), PL_OPTION("multi_part", OPT_BOOL))
@@ -612,8 +626,8 @@ const zopen_option_specs = (
 # DIVERGES: 12, 13.
 "`zopen(+OrgStream, -ZStream, +Options)`: a (de)compressing filter stream on OrgStream; options `format`, `level`, `close_parent`, `multi_part` (zlib4pl.c)."
 function pl_zopen3_va(
-        ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
-    )::foreign_t where {T}
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
     fmt = Z_F_UNKNOWN                                           # 426
     level = Int(Z_DEFAULT_COMPRESSION)                          # 427
@@ -661,7 +675,8 @@ function pl_zopen3_va(
     if (s.flags & SIO_OUTPUT) != 0                              # 467
         rc = if fmt == Z_F_GZIP                                 # 469
             zlib_deflate_init2!(
-                ctx.zstate, Cint(level), Z_DEFLATED, MAX_WBITS + Cint(16), MAX_MEM_LEVEL,
+                ctx.zstate, Cint(level), Z_DEFLATED, MAX_WBITS + Cint(16),
+                MAX_MEM_LEVEL,
                 Z_DEFAULT_STRATEGY
             )
         elseif fmt == Z_F_RAW_DEFLATE                           # 471
@@ -699,8 +714,8 @@ end
 # DIVERGES: 14.
 "`zdebug(+Level)`: set the debug level (zlib4pl.c; the debug output itself is not ported)."
 function pl_zdebug1_va(
-        ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
-    )::foreign_t where {T}
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     v = PL_get_integer(ld, PL__t0)                              # 509
     v === nothing && return FFALSE
     zlib_debuglevel[] = v

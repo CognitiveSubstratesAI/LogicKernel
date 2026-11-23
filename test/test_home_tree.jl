@@ -20,20 +20,55 @@ const _HT_EXTRA = joinpath(_HT_ROOT, "vendor", "swipl-devel-extra")
 # generated files (chr_translate.pl, guard_entailment.pl: bootstrapped by swipl, not vendored).
 const _HT_PKGS = [
     ("clpqr", "", "", "clpr.pl clpq.pl"),
-    ("clpqr", "clpq", "clpq", "bb_q.pl bv_q.pl fourmotz_q.pl ineq_q.pl itf_q.pl nf_q.pl store_q.pl"),
-    ("clpqr", "clpr", "clpr", "bb_r.pl bv_r.pl fourmotz_r.pl ineq_r.pl itf_r.pl nf_r.pl store_r.pl"),
-    ("clpqr", "clpqr", "clpqr", "class.pl dump.pl geler.pl itf.pl ordering.pl project.pl redund.pl highlight.pl"),
+    (
+        "clpqr",
+        "clpq",
+        "clpq",
+        "bb_q.pl bv_q.pl fourmotz_q.pl ineq_q.pl itf_q.pl nf_q.pl store_q.pl"
+    ),
+    (
+        "clpqr",
+        "clpr",
+        "clpr",
+        "bb_r.pl bv_r.pl fourmotz_r.pl ineq_r.pl itf_r.pl nf_r.pl store_r.pl"
+    ),
+    (
+        "clpqr",
+        "clpqr",
+        "clpqr",
+        "class.pl dump.pl geler.pl itf.pl ordering.pl project.pl redund.pl highlight.pl"
+    ),
     ("paxos", "", "", "paxos.pl"),
     ("chr", "", "", "chr.pl=chr_swi.pl"),
-    ("chr", "chr", "", "chr_runtime.pl chr_op.pl chr_debug.pl chr_messages.pl pairlist.pl clean_code.pl find.pl a_star.pl binomialheap.pl builtins.pl chr_hashtable_store.pl listmap.pl chr_compiler_options.pl chr_compiler_utility.pl chr_compiler_errors.pl chr_integertable_store.pl"),
-    ("cql", "cql", "", "cql.pl sql_parser.pl sql_tokenizer.pl sql_write.pl sql_keywords.pl cql_database.pl cql_autoschema.pl cql_hooks.pl"),
+    (
+        "chr",
+        "chr",
+        "",
+        "chr_runtime.pl chr_op.pl chr_debug.pl chr_messages.pl pairlist.pl clean_code.pl find.pl a_star.pl binomialheap.pl builtins.pl chr_hashtable_store.pl listmap.pl chr_compiler_options.pl chr_compiler_utility.pl chr_compiler_errors.pl chr_integertable_store.pl"
+    ),
+    (
+        "cql",
+        "cql",
+        "",
+        "cql.pl sql_parser.pl sql_tokenizer.pl sql_write.pl sql_keywords.pl cql_database.pl cql_autoschema.pl cql_hooks.pl"
+    ),
     ("pldoc", "", "", "pldoc.pl doc_latex.pl doc_files.pl doc_markdown.pl doc_http.pl"),
-    ("pldoc", "pldoc", "", "doc_html.pl doc_wiki.pl doc_modes.pl doc_register.pl doc_process.pl doc_index.pl doc_search.pl doc_man.pl doc_library.pl hooks.pl doc_htmlsrc.pl doc_colour.pl doc_util.pl doc_access.pl doc_pack.pl man_index.pl doc_words.pl pldoc.css pldoc.js pllisting.css pldoc.sty edit.png private.png public.png reload.png favicon.ico up.gif source.png h1-bg.png pub-bg.png multi-bg.png priv-bg.png h2-bg.png editpred.png"),
-    ("json", "", "", "json.pl json_convert.pl json_grammar.pl json_rpc_common.pl json_schema.pl json_rpc_server.pl json_rpc_client.pl"),
+    (
+        "pldoc",
+        "pldoc",
+        "",
+        "doc_html.pl doc_wiki.pl doc_modes.pl doc_register.pl doc_process.pl doc_index.pl doc_search.pl doc_man.pl doc_library.pl hooks.pl doc_htmlsrc.pl doc_colour.pl doc_util.pl doc_access.pl doc_pack.pl man_index.pl doc_words.pl pldoc.css pldoc.js pllisting.css pldoc.sty edit.png private.png public.png reload.png favicon.ico up.gif source.png h1-bg.png pub-bg.png multi-bg.png priv-bg.png h2-bg.png editpred.png"
+    ),
+    (
+        "json",
+        "",
+        "",
+        "json.pl json_convert.pl json_grammar.pl json_rpc_common.pl json_schema.pl json_rpc_server.pl json_rpc_client.pl"
+    ),
     ("json", "http", "", "http_json.pl"),
     ("json", "http", "compat", "json.pl json_convert.pl js_grammar.pl"),
     ("pcre", "", "", "pcre.pl"),
-    ("zlib", "", "", "zlib.pl"),
+    ("zlib", "", "", "zlib.pl")
 ]
 
 "The links of `_HT_PKGS` relative to `home`, `link path => (package, source path under packages/<pkg>)`."
@@ -100,7 +135,8 @@ mktempdir() do tmp
             elseif haskey(pkgs, rel)
                 pkg, src = pkgs[rel]
                 @test isfile(target)
-                @test realpath(target) == realpath(joinpath(_HT_EXTRA, "packages", pkg, src))
+                @test realpath(target) ==
+                    realpath(joinpath(_HT_EXTRA, "packages", pkg, src))
             else
                 @test isfile(target)                    # the link resolves
                 @test realpath(target) == realpath(joinpath(_HT_VENDOR, rel))
@@ -149,7 +185,8 @@ mktempdir() do tmp
             @test isfile(joinpath(_HT_EXTRA, "packages", pkg, srcdir, src))
             sub == "" || @test occursin(sub, cmake)
         end
-        @test sort!(unique([r[1] for r in _HT_PKGS])) == ["chr", "clpqr", "cql", "json", "paxos", "pcre", "pldoc", "zlib"]
+        @test sort!(unique([r[1] for r in _HT_PKGS])) ==
+            ["chr", "clpqr", "cql", "json", "paxos", "pcre", "pldoc", "zlib"]
     end
 
     @testset "a second build changes nothing" begin
@@ -191,7 +228,8 @@ mktempdir() do tmp
         @test build_home(home) == home
         @test _ht_links(home) == good
         @test !ispath(joinpath(home, "library", "stale"))      # the directory left empty is gone too
-        @test isfile(init) && isfile(lists) && isdir(plunit) && isfile(paxos) && isfile(doc_html)
+        @test isfile(init) && isfile(lists) && isdir(plunit) && isfile(paxos) &&
+            isfile(doc_html)
         @test realpath(lists) == realpath(joinpath(_HT_VENDOR, "library", "lists.pl"))
     end
 

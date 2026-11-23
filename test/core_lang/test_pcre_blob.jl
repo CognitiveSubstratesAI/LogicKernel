@@ -25,7 +25,8 @@ const _PC_LD = _PF_DB.ld
 function _pc_term(ld, text::String)::Int
     t = LK.PL_new_term_ref(ld)
     b = Vector{UInt8}(codeunits(text))
-    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) || error("the text does not read: $text")
+    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) ||
+        error("the text does not read: $text")
     return t
 end
 
@@ -57,7 +58,8 @@ function _pc_val(ld, t::Int)
     LK.PL_is_variable(ld, t) && return :var
     LK.PL_get_nil(ld, t) && return :nil
     LK.PL_is_string(ld, t) && return LK.text_string(LK.PL_get_text(ld, t, LK.CVT_STRING))
-    LK.PL_is_atom(ld, t) && return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
+    LK.PL_is_atom(ld, t) &&
+        return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
     LK.PL_is_integer(ld, t) && return LK.PL_get_int64(ld, t)
     LK.PL_is_float(ld, t) && return LK.PL_get_float(ld, t)
     if LK.PL_is_pair(ld, t)
@@ -105,7 +107,7 @@ function _ps_get_atom(fd)::Union{Nothing, String}
     end
     return String(out)
 end
-function _ps_save(re; put_atom = _ps_put_atom)
+function _ps_save(re; put_atom=_ps_put_atom)
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
     w = LK.Sopenmem(bufp, sizep, "w")
@@ -115,10 +117,12 @@ function _ps_save(re; put_atom = _ps_put_atom)
     LK.Sclose(w)
     return (ok, out)
 end
-_ps_reader(bytes::Vector{UInt8}) = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
+_ps_reader(bytes::Vector{UInt8}) =
+    LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
 const _PS_GROUPS = (
-    :compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags, :compile_ctx_flags,
-    :compile_bsr_flags, :compile_newline_flags, :match_options_flags, :start_flags,
+    :compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags,
+    :compile_ctx_flags,
+    :compile_bsr_flags, :compile_newline_flags, :match_options_flags, :start_flags
 )
 _ps_state(re) = [(getfield(re, g).seen, getfield(re, g).flags) for g in _PS_GROUPS]
 
@@ -135,7 +139,13 @@ _pb_fresh_ref() = ld -> LK.PL_new_term_ref(ld)
 function _pb_string(s::String)
     return function (ld)
         t = LK.PL_new_term_ref(ld)
-        LK.PL_unify_text(ld, t, 0, LK.PL_chars_t(_pc_bytes(s), ncodeunits(s), LK.ENC_UTF8, false), LK.PL_STRING) || error("no string term")
+        LK.PL_unify_text(
+            ld,
+            t,
+            0,
+            LK.PL_chars_t(_pc_bytes(s), ncodeunits(s), LK.ENC_UTF8, false),
+            LK.PL_STRING
+        ) || error("no string term")
         return t
     end
 end
@@ -148,7 +158,7 @@ function _pb_blobref(ld0, w)
 end
 
 # re_compile_(Pattern, Regex, Options): (the result, the blob word or nothing, the pending error); `reb` = a maker for the second argument (default fresh)
-function _pb_compile(ld, mk::Function; opts::String = "[]", reb::Function = _pb_fresh_ref())
+function _pb_compile(ld, mk::Function; opts::String="[]", reb::Function=_pb_fresh_ref())
     fid = LK.PL_open_foreign_frame(ld)
     pt = mk(ld)
     rt = reb(ld)
@@ -163,10 +173,10 @@ function _pb_compile(ld, mk::Function; opts::String = "[]", reb::Function = _pb_
     LK.PL_discard_foreign_frame(ld, fid)
     return (rc, w, exc)
 end
-_pb_compile(ld, pat::String; opts::String = "[]") = _pb_compile(ld, _pb_atom(pat); opts)
+_pb_compile(ld, pat::String; opts::String="[]") = _pb_compile(ld, _pb_atom(pat); opts)
 
 # re_get_re / re_get_re_copy of the term the maker makes: (the regex or nothing, the pending error)
-function _pb_get(ld, mk::Function; copy::Bool = false)
+function _pb_get(ld, mk::Function; copy::Bool=false)
     fid = LK.PL_open_foreign_frame(ld)
     t = mk(ld)
     re = copy ? LK.re_get_re_copy(ld, t) : LK.re_get_re(ld, t)
@@ -183,7 +193,12 @@ function _pb_val(ld, r::Int)
     a !== nothing && LK.is_blob(a) && return :blob
     return _pc_val(ld, r)
 end
-function _pb_wrap(fn, mks::Function...; ctx = LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing), after::Function = () -> nothing)
+function _pb_wrap(
+    fn,
+    mks::Function...;
+    ctx=LK.foreign_context{_R}(LK.FRG_FIRST_CALL, UInt(0), nothing),
+    after::Function=() -> nothing
+)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     refs = Int[mk(ld) for mk in mks]
@@ -211,12 +226,18 @@ function _pb_stream_wrap(fn, extra::Function...)
         return t
     end
     text = Ref("")
-    rc, _, exc = _pb_wrap(fn, mks, extra...; after = () -> (LK.Sflush(w); text[] = bufp[] === nothing ? "" : String(bufp[][1:bufsize[]])))
+    rc, _, exc = _pb_wrap(
+        fn,
+        mks,
+        extra...;
+        after=() ->
+            (LK.Sflush(w); text[]=bufp[] === nothing ? "" : String(bufp[][1:bufsize[]]))
+    )
     return (rc, text[], exc)
 end
 
 # write the blob word `w` through PL_write_term onto user_output: (the result, the text)
-function _pb_write(ld, w; flags = 0)
+function _pb_write(ld, w; flags=0)
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_refs(ld, 1)
     LK.PL_put_atom(ld, t, _pb_term(ld, w))
@@ -230,8 +251,13 @@ function _pb_write(ld, w; flags = 0)
 end
 
 # re_matchsub_ of `re` on the Prolog text `subj`: (the result, the value of the result term)
-function _pb_matchsub(re, subj::String; opts::String = "[]")
-    rc, vals, _ = _pb_wrap((ld, t0, n, ctx) -> LK.re_matchsub_(ld, re, t0, t0 + 1, t0 + 2), _pb_text(subj), _pb_fresh_ref(), _pb_text(opts))
+function _pb_matchsub(re, subj::String; opts::String="[]")
+    rc, vals, _ = _pb_wrap(
+        (ld, t0, n, ctx) -> LK.re_matchsub_(ld, re, t0, t0 + 1, t0 + 2),
+        _pb_text(subj),
+        _pb_fresh_ref(),
+        _pb_text(opts)
+    )
     return (rc, vals[2])
 end
 
@@ -240,7 +266,14 @@ const _PF_PCRE = LK.lookupModule(_PF_DB.gd, LK.mk_sym(_R, :pcre))
 let
     pr = LK.lookupProcedure(LK.mk_sym(_R, :re_call_folder), 4, _PF_PCRE)
     head = _rf("re_call_folder", _rs("count"), _rv(1), _rv(2), _rv(3))
-    cl = LK.compileClause(_PF_DB.gd, _PF_DB.ld, head, _rf("is", _rv(3), _rf("+", _rv(2), _rg(1))), pr, _PF_PCRE)
+    cl = LK.compileClause(
+        _PF_DB.gd,
+        _PF_DB.ld,
+        head,
+        _rf("is", _rv(3), _rf("+", _rv(2), _rg(1))),
+        pr,
+        _PF_PCRE
+    )
     LK.assertDefinition!(_PF_DB.gd, pr.definition, cl, LK.CL_END)
 end
 
@@ -281,7 +314,8 @@ const _PB_NOWRITE = LK.PL_blob_t(UInt32(0), "pcre_test_nowrite")
     r3 = LK.PL_register_blob_type(ld3.atoms, LK.pcre2_blob, UInt64(0))
     @test r3.hooks === nothing
     @test LK.re_register_blob(ld3.atoms) === r3
-    @test r3.hooks !== nothing && r3.hooks.write === LK.re_write_text && r3.hooks.load === LK.re_load_pcre
+    @test r3.hooks !== nothing && r3.hooks.write === LK.re_write_text &&
+        r3.hooks.load === LK.re_load_pcre
     # the acquire hook of the C stores the symbol in a field nobody reads: here it does nothing (doc-only, DIVERGES 32)
     @test LK.re_acquire_pcre(LK.re_init_data("a"), UInt64(1)) === nothing
 end
@@ -290,13 +324,16 @@ end
 # (b) the kernel's hook table (kernel-pinned: there is no upstream counterpart)
 @testset "blob_hooks: the keyword constructor leaves every slot out and the object table empty" begin
     h = LK.blob_hooks()
-    @test h.acquire === nothing && h.release === nothing && h.write === nothing && h.save === nothing && h.load === nothing
+    @test h.acquire === nothing && h.release === nothing && h.write === nothing &&
+        h.save === nothing && h.load === nothing
     @test h.objects isa Vector{Any} && isempty(h.objects)
     f = x -> x
-    h2 = LK.blob_hooks(write = f)
-    @test h2.write === f && h2.acquire === nothing && h2.release === nothing && h2.save === nothing && h2.load === nothing
-    h3 = LK.blob_hooks(acquire = f, release = f, save = f, load = f)
-    @test h3.acquire === f && h3.release === f && h3.save === f && h3.load === f && h3.write === nothing
+    h2 = LK.blob_hooks(write=f)
+    @test h2.write === f && h2.acquire === nothing && h2.release === nothing &&
+        h2.save === nothing && h2.load === nothing
+    h3 = LK.blob_hooks(acquire=f, release=f, save=f, load=f)
+    @test h3.acquire === f && h3.release === f && h3.save === f && h3.load === f &&
+        h3.write === nothing
     @test h2.objects !== h3.objects                              # one table per hooks value
 end
 
@@ -304,7 +341,7 @@ end
     ld = _pb_fresh()
     atoms = ld.atoms
     acq = Any[]
-    hooks = LK.blob_hooks(acquire = (o, w) -> push!(acq, (o, w)))
+    hooks = LK.blob_hooks(acquire=(o, w) -> push!(acq, (o, w)))
     reg = LK.PL_register_blob_type(atoms, _PB_HOOKED, UInt64(0), hooks)
     @test reg.hooks === hooks && reg.type === _PB_HOOKED
     obj = "payload"
@@ -354,7 +391,9 @@ end
     @test LK.PL_register_blob_type(atoms, _PB_LOOK, UInt64(0), hl) === rl
     @test rl.hooks === hl
     # the kernel's own types are registered by the 3-argument form and have no hooks
-    @test all(r -> r.type === _PB_LATE || r.type === _PB_LOOK || r.hooks === nothing, atoms.types)
+    @test all(
+        r -> r.type === _PB_LATE || r.type === _PB_LOOK || r.hooks === nothing, atoms.types
+    )
 end
 
 # ======================================================================================================================
@@ -362,7 +401,9 @@ end
 @testset "writeAtom: a hooked type with a write hook is written as the hook's text, one without as <type>(0x..)" begin
     ld = _pb_fresh()
     atoms = ld.atoms
-    LK.PL_register_blob_type(atoms, _PB_HOOKED, UInt64(0), LK.blob_hooks(write = o -> "W:" * o))
+    LK.PL_register_blob_type(
+        atoms, _PB_HOOKED, UInt64(0), LK.blob_hooks(write=o -> "W:" * o)
+    )
     LK.PL_register_blob_type(atoms, _PB_NOWRITE, UInt64(0), LK.blob_hooks())
     LK.PL_register_blob_type(atoms, _PB_PLAIN, UInt64(0))
     w = LK.blob_new!(atoms, _PB_HOOKED, "hello")
@@ -390,14 +431,15 @@ end
     rc, w, exc = _pb_compile(ld, "a.c")
     @test rc == LK.FTRUE && exc === nothing
     re = _pb_re(ld, w)
-    expect = string("<regex>(0x", string(re.serial, base = 16), ", a.c)")
+    expect = string("<regex>(0x", string(re.serial, base=16), ", a.c)")
     for flags in (0, LK.PL_WRT_QUOTED)
         @test _pb_write(ld, w; flags) == (true, expect)
     end
     # the text is the object's own: a second regex writes its own pattern and serial
     rc, w2, _ = _pb_compile(ld, "x(y)")
     re2 = _pb_re(ld, w2)
-    @test _pb_write(ld, w2) == (true, string("<regex>(0x", string(re2.serial, base = 16), ", x(y))"))
+    @test _pb_write(ld, w2) ==
+        (true, string("<regex>(0x", string(re2.serial, base=16), ", x(y))"))
     @test _pb_write(ld, w) == (true, expect)
 end
 
@@ -419,11 +461,13 @@ end
     LK.PL_register_blob_type(ld.atoms, _PB_HOOKED, UInt64(0), LK.blob_hooks())
     wh = LK.blob_new!(ld.atoms, _PB_HOOKED, re)                  # even one that names a re_data
     got, exc = _pb_get(ld, _pb_blobref(ld, wh))
-    @test got === nothing && exc !== nothing && exc[1] == "type_error" && exc[2][1] == "regex"
+    @test got === nothing && exc !== nothing && exc[1] == "type_error" &&
+        exc[2][1] == "regex"
     LK.PL_register_blob_type(ld.atoms, _PB_PLAIN, UInt64(0))
     wp, _ = LK.lookupBlob(ld.atoms, collect(reinterpret(UInt8, Int64[1])), 8, _PB_PLAIN)
     got, exc = _pb_get(ld, _pb_blobref(ld, wp))
-    @test got === nothing && exc !== nothing && exc[1] == "type_error" && exc[2][1] == "regex"
+    @test got === nothing && exc !== nothing && exc[1] == "type_error" &&
+        exc[2][1] == "regex"
     # a second regex blob names its own regex
     rc, w2, _ = _pb_compile(ld, "zz")
     got2, _ = _pb_get(ld, _pb_blobref(ld, w2))
@@ -438,16 +482,18 @@ end
     re.match_options_flags.flags = UInt32(0x77)
     re.start_flags.seen = UInt32(3)
     re.start_flags.flags = UInt32(9)
-    cp, exc = _pb_get(ld, _pb_blobref(ld, w); copy = true)
+    cp, exc = _pb_get(ld, _pb_blobref(ld, w); copy=true)
     @test exc === nothing && cp !== nothing
-    @test cp !== re && cp.code == re.code && cp.pattern == re.pattern && cp.capture_size == re.capture_size
-    @test (cp.match_options_flags.seen, cp.match_options_flags.flags) == (0, LK.PCRE2_NO_UTF_CHECK)
+    @test cp !== re && cp.code == re.code && cp.pattern == re.pattern &&
+        cp.capture_size == re.capture_size
+    @test (cp.match_options_flags.seen, cp.match_options_flags.flags) ==
+        (0, LK.PCRE2_NO_UTF_CHECK)
     @test (cp.start_flags.seen, cp.start_flags.flags) == (0, 0)
     @test cp.match_options_flags !== re.match_options_flags
     @test (re.match_options_flags.seen, re.match_options_flags.flags) == (5, 0x77)      # the original keeps its flags
     @test (re.start_flags.seen, re.start_flags.flags) == (3, 9)
     @test _ps_state(cp)[[1, 2, 3, 4, 5, 6, 7]] == _ps_state(re)[[1, 2, 3, 4, 5, 6, 7]]  # the compile-side groups are copied
-    cpn, exc = _pb_get(ld, _pb_atom("foo"); copy = true)
+    cpn, exc = _pb_get(ld, _pb_atom("foo"); copy=true)
     @test cpn === nothing && exc == ("type_error", ["regex", "foo"])
 end
 
@@ -458,9 +504,10 @@ end
     reg = nothing
     words = UInt64[]
     for (mk, pat) in (
-            (_pb_atom("a(b)c"), "a(b)c"), (_pb_string("a(b)c"), "a(b)c"), (_pb_text("[97,40,98,41,99]"), "a(b)c"),
-            (_pb_atom("é+"), "é+"),
-        )
+        (_pb_atom("a(b)c"), "a(b)c"), (_pb_string("a(b)c"), "a(b)c"),
+        (_pb_text("[97,40,98,41,99]"), "a(b)c"),
+        (_pb_atom("é+"), "é+")
+    )
         rc, w, exc = _pb_compile(ld, mk)
         @test rc == LK.FTRUE && exc === nothing
         reg === nothing && (reg = LK._blob_registration(ld.atoms, LK.pcre2_blob))     # compiled, never installed: the compile registers the type
@@ -502,20 +549,20 @@ end
     re0 = _pb_re(ld, w0)
     @test re0.compile_options_flags.flags & LK.PCRE2_CASELESS == 0
     @test re0.capture_type.flags == UInt32(LK.CAP_STRING)
-    rc, wc, exc = _pb_compile(ld, "abc"; opts = "[caseless(true)]")
+    rc, wc, exc = _pb_compile(ld, "abc"; opts="[caseless(true)]")
     @test rc == LK.FTRUE && exc === nothing
     rec = _pb_re(ld, wc)
     @test rec.compile_options_flags.flags & LK.PCRE2_CASELESS != 0
     @test _pb_matchsub(rec, "'xABCx'") == (LK.FTRUE, _ex((0, "ABC")))      # caseless in the compiled code
     @test _pb_matchsub(re0, "'xABCx'")[1] == LK.FFALSE
-    rc, wa, _ = _pb_compile(ld, "(a)"; opts = "[capture_type(atom)]")
+    rc, wa, _ = _pb_compile(ld, "(a)"; opts="[capture_type(atom)]")
     @test rc == LK.FTRUE
     @test _pb_re(ld, wa).capture_type.flags == UInt32(LK.CAP_ATOM)
     # the compile flags are those of re_compile_'s own options, not the matcher's: a bad option stops the compile
     n = length(LK._blob_registration(ld.atoms, LK.pcre2_blob).hooks.objects)
-    rc, w, exc = _pb_compile(ld, "abc"; opts = "[caseless(foo)]")
+    rc, w, exc = _pb_compile(ld, "abc"; opts="[caseless(foo)]")
     @test rc == LK.FFALSE && w === nothing && exc !== nothing
-    rc, w, exc = _pb_compile(ld, "abc"; opts = "foo")             # not a list
+    rc, w, exc = _pb_compile(ld, "abc"; opts="foo")             # not a list
     @test rc == LK.FFALSE && w === nothing && exc !== nothing
     @test length(LK._blob_registration(ld.atoms, LK.pcre2_blob).hooks.objects) == n    # no blob was made
 end
@@ -534,7 +581,7 @@ end
     rc, w, exc = _pb_compile(ld, _pb_text("f(x)"))
     @test rc == LK.FFALSE && w === nothing && exc !== nothing
     # the second argument is already a different atom: no unification, no error
-    rc, w, exc = _pb_compile(ld, _pb_atom("a"); reb = _pb_atom("foo"))
+    rc, w, exc = _pb_compile(ld, _pb_atom("a"); reb=_pb_atom("foo"))
     @test rc == LK.FFALSE && exc === nothing
 end
 
@@ -543,7 +590,7 @@ end
 @testset "re_load_pcre: a saved regex loads as a new blob with the same fields and a fresh compile" begin
     ld = _pb_fresh()
     LK.install_pcre4pl(ld)
-    rc, w, _ = _pb_compile(ld, "a(b)c"; opts = "[caseless(true)]")
+    rc, w, _ = _pb_compile(ld, "a(b)c"; opts="[caseless(true)]")
     @test rc == LK.FTRUE
     re = _pb_re(ld, w)
     hooks = LK._blob_registration(ld.atoms, LK.pcre2_blob).hooks
@@ -560,7 +607,8 @@ end
     @test re2.serial != re.serial
     @test length(hooks.objects) == 2
     @test _pb_matchsub(re2, "'xABCx'") == (LK.FTRUE, _ex((0, "ABC"), (1, "B")))
-    @test _pb_write(ld, w2) == (true, string("<regex>(0x", string(re2.serial, base = 16), ", a(b)c)"))
+    @test _pb_write(ld, w2) ==
+        (true, string("<regex>(0x", string(re2.serial, base=16), ", a(b)c)"))
     LK.Sclose(r)
     # the save hook is re_save_fields
     ok2, bytes2 = _ps_save(re2)
@@ -594,7 +642,9 @@ end
     @test rc == LK.FTRUE
     blob = _pb_blobref(ld, w)
     re = _pb_re(ld, w)
-    rc, vals, exc = _pb_wrap(LK.pl_re_matchsub_4_va, blob, _pb_atom("xabcx"), _pb_fresh_ref(), _pb_text("[]"))
+    rc, vals, exc = _pb_wrap(
+        LK.pl_re_matchsub_4_va, blob, _pb_atom("xabcx"), _pb_fresh_ref(), _pb_text("[]")
+    )
     @test rc == LK.FTRUE && exc === nothing
     @test Set(v[3] for v in vals[3]) == Set(["abc", "b"])
     direct = _pb_matchsub(re, "'xabcx'")
@@ -604,25 +654,40 @@ end
     rc, _, exc = _pb_wrap(LK.pl_re_match_3_va, blob, _pb_atom("xyz"), _pb_text("[]"))
     @test rc == LK.FFALSE && exc === nothing
     # a non-regex first argument: the type error, no match
-    rc, _, exc = _pb_wrap(LK.pl_re_match_3_va, _pb_atom("foo"), _pb_atom("xabcx"), _pb_text("[]"))
+    rc, _, exc = _pb_wrap(
+        LK.pl_re_match_3_va, _pb_atom("foo"), _pb_atom("xabcx"), _pb_text("[]")
+    )
     @test rc == LK.FFALSE && exc == ("type_error", ["regex", "foo"])
-    rc, _, exc = _pb_wrap(LK.pl_re_matchsub_4_va, _pb_atom("foo"), _pb_atom("xabcx"), _pb_fresh_ref(), _pb_text("[]"))
+    rc, _, exc = _pb_wrap(
+        LK.pl_re_matchsub_4_va,
+        _pb_atom("foo"),
+        _pb_atom("xabcx"),
+        _pb_fresh_ref(),
+        _pb_text("[]")
+    )
     @test rc == LK.FFALSE && exc == ("type_error", ["regex", "foo"])
 end
 
 @testset "the wrappers: re_compile/3" begin
     ld = _PC_LD
-    rc, vals, exc = _pb_wrap(LK.pl_re_compile3_va, _pb_atom("a.c"), _pb_fresh_ref(), _pb_text("[]"))
+    rc, vals, exc = _pb_wrap(
+        LK.pl_re_compile3_va, _pb_atom("a.c"), _pb_fresh_ref(), _pb_text("[]")
+    )
     @test rc == LK.FTRUE && exc === nothing
     @test vals[2] == :blob                                        # the second argument is bound to a blob
-    rc, _, exc = _pb_wrap(LK.pl_re_compile3_va, _pb_atom("("), _pb_fresh_ref(), _pb_text("[]"))
+    rc, _, exc = _pb_wrap(
+        LK.pl_re_compile3_va, _pb_atom("("), _pb_fresh_ref(), _pb_text("[]")
+    )
     @test rc == LK.FFALSE && exc !== nothing && exc[1] == "syntax_error"
     # the options are the third argument and the blob the second
-    rc, vals, _ = _pb_wrap(LK.pl_re_compile3_va, _pb_atom("abc"), _pb_fresh_ref(), _pb_text("[caseless(true)]"))
+    rc, vals, _ = _pb_wrap(
+        LK.pl_re_compile3_va, _pb_atom("abc"), _pb_fresh_ref(), _pb_text("[caseless(true)]")
+    )
     @test rc == LK.FTRUE
     t = LK.PL_new_term_ref(ld)
     rc, vals2, _ = _pb_wrap(
-        LK.pl_re_compile3_va, _pb_atom("abc"), (l -> (LK.PL_put_variable(l, t); t)), _pb_text("[caseless(true)]")
+        LK.pl_re_compile3_va, _pb_atom("abc"), (l -> (LK.PL_put_variable(l, t); t)),
+        _pb_text("[caseless(true)]")
     )
     @test rc == LK.FTRUE
     a = LK.PL_get_atom(ld, t)
@@ -637,12 +702,14 @@ end
     @test rc == LK.FTRUE
     blob = _pb_blobref(ld, w)
     rc, vals, exc = _pb_wrap(
-        LK.pl_re_foldl_6_va, blob, _pb_atom("abab"), _pb_text("count"), _pb_text("0"), _pb_fresh_ref(), _pb_text("[]")
+        LK.pl_re_foldl_6_va, blob, _pb_atom("abab"), _pb_text("count"), _pb_text("0"),
+        _pb_fresh_ref(), _pb_text("[]")
     )
     @test rc == LK.FTRUE && exc === nothing
     @test vals[5] == 2
     rc, _, exc = _pb_wrap(
-        LK.pl_re_foldl_6_va, _pb_atom("foo"), _pb_atom("abab"), _pb_text("count"), _pb_text("0"), _pb_fresh_ref(), _pb_text("[]")
+        LK.pl_re_foldl_6_va, _pb_atom("foo"), _pb_atom("abab"), _pb_text("count"),
+        _pb_text("0"), _pb_fresh_ref(), _pb_text("[]")
     )
     @test rc == LK.FFALSE && exc == ("type_error", ["regex", "foo"])
 end
@@ -662,21 +729,30 @@ end
     rcw, viaw, excw = _pb_stream_wrap(LK.pl_re_portray_2_va, _pb_atom("foo"))
     @test rcw == LK.FFALSE && excw == ("type_error", ["regex", "foo"]) && viaw == ""
     # the match options: the same text through the wrapper (the second argument is the option list)
-    rcd, directo, excd = _pb_stream_wrap((l, t0, n, ctx) -> LK.re_portray_match_options_(l, t0, t0 + 1), _pb_text("[anchored(true)]"))
+    rcd, directo, excd = _pb_stream_wrap(
+        (l, t0, n, ctx) -> LK.re_portray_match_options_(l, t0, t0 + 1),
+        _pb_text("[anchored(true)]")
+    )
     @test rcd == LK.FTRUE && excd === nothing
-    rcw, viao, excw = _pb_stream_wrap(LK.pl_re_portray_match_options2_va, _pb_text("[anchored(true)]"))
+    rcw, viao, excw = _pb_stream_wrap(
+        LK.pl_re_portray_match_options2_va, _pb_text("[anchored(true)]")
+    )
     @test rcw == LK.FTRUE && excw === nothing && viao == directo
 end
 
 @testset "the wrappers: re_config_ and re_config_choice" begin
     ld = _PC_LD
-    rcd, valsd, excd = _pb_wrap((l, t0, n, ctx) -> LK.re_config_(l, t0), _pb_text("version(_)"))
+    rcd, valsd, excd = _pb_wrap(
+        (l, t0, n, ctx) -> LK.re_config_(l, t0), _pb_text("version(_)")
+    )
     @test rcd == LK.FTRUE && excd === nothing
     rcw, valsw, excw = _pb_wrap(LK.pl_re_config_1_va, _pb_text("version(_)"))
     @test rcw == LK.FTRUE && excw === nothing
     @test valsw == valsd && valsw[1][1] == "version" && valsw[1][2] != :var
     # the nondeterministic one: the first answer is the first row, the retry value the direct function's
-    rcd, valsd, _ = _pb_wrap((l, t0, n, ctx) -> LK.re_config_choice_(l, t0, ctx), _pb_fresh_ref())
+    rcd, valsd, _ = _pb_wrap(
+        (l, t0, n, ctx) -> LK.re_config_choice_(l, t0, ctx), _pb_fresh_ref()
+    )
     rcw, valsw, excw = _pb_wrap(LK.pl_re_config_choice1_va, _pb_fresh_ref())
     @test rcw == rcd && rcw != LK.FFALSE && rcw != LK.FTRUE && excw === nothing
     @test valsw == valsd && valsw[1][1] == "bsr2"
@@ -687,22 +763,28 @@ end
 @testset "PL_predicates_from_pcre: the eight predicates in the C's order, registered in system" begin
     tab = LK.PL_predicates_from_pcre
     @test [(e.predicate_name, e.arity) for e in tab] == [
-        ("re_config_", 1), ("re_compile", 3), ("re_match_", 3), ("re_matchsub_", 4), ("re_foldl_", 6),
-        ("re_config_choice", 1), ("re_portray", 2), ("re_portray_match_options", 2),
+        ("re_config_", 1), ("re_compile", 3), ("re_match_", 3), ("re_matchsub_", 4),
+        ("re_foldl_", 6),
+        ("re_config_choice", 1), ("re_portray", 2), ("re_portray_match_options", 2)
     ]
     @test [e.function_ for e in tab] == Any[
-        LK.pl_re_config_1_va, LK.pl_re_compile3_va, LK.pl_re_match_3_va, LK.pl_re_matchsub_4_va, LK.pl_re_foldl_6_va,
-        LK.pl_re_config_choice1_va, LK.pl_re_portray_2_va, LK.pl_re_portray_match_options2_va,
+        LK.pl_re_config_1_va, LK.pl_re_compile3_va, LK.pl_re_match_3_va,
+        LK.pl_re_matchsub_4_va, LK.pl_re_foldl_6_va,
+        LK.pl_re_config_choice1_va, LK.pl_re_portray_2_va,
+        LK.pl_re_portray_match_options2_va
     ]
     @test [e.flags for e in tab] == [
-        LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS,
-        LK.PL_FA_NONDETERMINISTIC | LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS,
+        LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS,
+        LK.PL_FA_VARARGS,
+        LK.PL_FA_NONDETERMINISTIC | LK.PL_FA_VARARGS, LK.PL_FA_VARARGS, LK.PL_FA_VARARGS
     ]
     @test LK.PL_predicates_from_pcre in LK._PRED_TABLES
     gd = LK.PL_global_data{_R}()
     m = LK.MODULE_system(gd)
     for e in tab
-        proc = LK.isCurrentProcedure(sym_key(lk_sym(_R, Symbol(e.predicate_name))), e.arity, m)
+        proc = LK.isCurrentProcedure(
+            sym_key(lk_sym(_R, Symbol(e.predicate_name))), e.arity, m
+        )
         @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
     end
 end

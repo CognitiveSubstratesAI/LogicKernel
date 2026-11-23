@@ -23,12 +23,17 @@ const LK = LogicKernel
         ("CFG_NEWLINE", "E", "7"),
         ("CFG_TRUE_BKWD", "E", "8"),
         ("CFG_FALSE_BKWD", "E", "9"),
-        ("CFG_INVALID", "E", "10"),
+        ("CFG_INVALID", "E", "10")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -36,13 +41,47 @@ const LK = LogicKernel
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -58,9 +97,15 @@ const LK = LogicKernel
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -70,8 +115,27 @@ const LK = LogicKernel
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -79,7 +143,7 @@ const LK = LogicKernel
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 11 name(s); each must exist in LK and carry the C value
     @test !isempty(rows) && length(rows) == 11 && allunique(first.(rows))
     for (nm, k, c) in rows
@@ -120,12 +184,17 @@ end
         ("unicode_properties", "-1", "CFG_TRUE_BKWD"),
         ("unicode_version", "PCRE2_CONFIG_UNICODE_VERSION", "CFG_STRINGBUF"),
         ("utf8", "PCRE2_CONFIG_UNICODE", "CFG_BOOL_BKWD"),
-        ("version", "PCRE2_CONFIG_VERSION", "CFG_STRINGBUF"),
+        ("version", "PCRE2_CONFIG_VERSION", "CFG_STRINGBUF")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -133,13 +202,47 @@ end
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -155,9 +258,15 @@ end
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -167,8 +276,27 @@ end
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -176,25 +304,35 @@ end
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 22 row(s); the Julia table must have the same count, neither side empty
-    @test !isempty(rows) && !isempty(LK.re_cfg_opts) && length(rows) == 22 && length(LK.re_cfg_opts) == 22
+    @test !isempty(rows) && !isempty(LK.re_cfg_opts) && length(rows) == 22 &&
+        length(LK.re_cfg_opts) == 22
     for (i, r) in enumerate(rows)
         i <= length(LK.re_cfg_opts) || break
         x = LK.re_cfg_opts[i]
         for (j, f) in enumerate(fields)
             v = getfield(x, f)
             c = r[j]
-            ok = c === nothing ? v === nothing : kinds[j] == 'S' ? v == c : ceq(v, ceval(LK, c))
-            ok || @info "row mismatch" table = "re_cfg_opts" row = i field = f julia = v c_text = c
+            ok = if c === nothing
+                v === nothing
+            elseif kinds[j] == 'S'
+                v == c
+            else
+                ceq(v, ceval(LK, c))
+            end
+            ok ||
+                @info "row mismatch" table = "re_cfg_opts" row = i field = f julia = v c_text =
+                    c
             @test ok
         end
     end
 end
 
 @testset "the PCRE2_CONFIG_* ids are those of pcre2.h (Base.PCRE); row types; a row names a distinct option" begin
-    names = ("BSR", "COMPILED_WIDTHS", "DEPTHLIMIT", "HEAPLIMIT", "JIT", "JITTARGET", "LINKSIZE", "MATCHLIMIT", "NEVER_BACKSLASH_C",
-             "NEWLINE", "PARENSLIMIT", "STACKRECURSE", "UNICODE", "UNICODE_VERSION", "VERSION")
+    names = ("BSR", "COMPILED_WIDTHS", "DEPTHLIMIT", "HEAPLIMIT", "JIT", "JITTARGET",
+        "LINKSIZE", "MATCHLIMIT", "NEVER_BACKSLASH_C",
+        "NEWLINE", "PARENSLIMIT", "STACKRECURSE", "UNICODE", "UNICODE_VERSION", "VERSION")
     @test length(names) == 15 && allunique(names)
     for n in names
         mine = getfield(LK, Symbol("PCRE2_CONFIG_", n))
@@ -204,7 +342,14 @@ end
     @test fieldtypes(LK.re_config_opt) == (String, Int32, Int)
     @test allunique(r.name for r in LK.re_cfg_opts)
     @test count(r -> r.id == -1, LK.re_cfg_opts) == 3                 # the three PCRE1-only rows
-    @test all(r -> (r.id == -1) == (r.type_ in (LK.CFG_INVALID, LK.CFG_TRUE_BKWD, LK.CFG_FALSE_BKWD)), LK.re_cfg_opts)
-    @test [r.name for r in LK.re_cfg_opts if r.type_ in (LK.CFG_INTEGER_BKWD, LK.CFG_BOOL_BKWD)] == ["link_size", "match_limit", "parens_limit", "utf8"]
+    @test all(
+        r ->
+            (r.id == -1) ==
+            (r.type_ in (LK.CFG_INVALID, LK.CFG_TRUE_BKWD, LK.CFG_FALSE_BKWD)),
+        LK.re_cfg_opts
+    )
+    @test [
+        r.name for r in LK.re_cfg_opts if r.type_ in (LK.CFG_INTEGER_BKWD, LK.CFG_BOOL_BKWD)
+    ] == ["link_size", "match_limit", "parens_limit", "utf8"]
     @test count(r -> r.type_ == LK.CFG_FALSE_BKWD, LK.re_cfg_opts) == 0  # the enumerator exists, no row uses it
 end

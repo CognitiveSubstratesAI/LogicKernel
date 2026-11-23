@@ -23,7 +23,8 @@ const _PC_LD = _PF_DB.ld
 function _pc_term(ld, text::String)::Int
     t = LK.PL_new_term_ref(ld)
     b = Vector{UInt8}(codeunits(text))
-    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) || error("the text does not read: $text")
+    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) ||
+        error("the text does not read: $text")
     return t
 end
 
@@ -55,7 +56,8 @@ function _pc_val(ld, t::Int)
     LK.PL_is_variable(ld, t) && return :var
     LK.PL_get_nil(ld, t) && return :nil
     LK.PL_is_string(ld, t) && return LK.text_string(LK.PL_get_text(ld, t, LK.CVT_STRING))
-    LK.PL_is_atom(ld, t) && return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
+    LK.PL_is_atom(ld, t) &&
+        return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
     LK.PL_is_integer(ld, t) && return LK.PL_get_int64(ld, t)
     LK.PL_is_float(ld, t) && return LK.PL_get_float(ld, t)
     if LK.PL_is_pair(ld, t)
@@ -84,7 +86,7 @@ _q(s::String) = "'" * s * "'"                         # the Prolog text of the a
 _ex(ps...) = Any[("-", n, v) for (n, v) in ps]       # the expected Name-Value list
 
 # compile `pat` into a fresh re_data (after `setup(re)`): (ok, re, the pending error); the frame is discarded, the compiled code is NOT freed (the caller does)
-function _pc_compile(pat::String; setup = re -> nothing)
+function _pc_compile(pat::String; setup=re -> nothing)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     re = LK.re_init_data(pat)
@@ -96,7 +98,7 @@ function _pc_compile(pat::String; setup = re -> nothing)
 end
 
 # A compiled regex for a pipeline row; the pattern must compile.
-function _pc_re(pat::String; setup = re -> nothing)
+function _pc_re(pat::String; setup=re -> nothing)
     ok, re, exc = _pc_compile(pat; setup)
     ok || error("the pattern does not compile: $pat ($exc)")
     return re
@@ -111,14 +113,16 @@ end
 
 # ---- the folder: `pcre:re_call_folder(Closure, Match, V0, V1)`, one clause per closure atom ----
 const _PF_PCRE = LK.lookupModule(_PF_DB.gd, LK.mk_sym(_R, :pcre))
-function _pf_add!(head::_R, body::Union{Nothing, _R} = nothing)
+function _pf_add!(head::_R, body::Union{Nothing, _R}=nothing)
     pr = LK.lookupProcedure(LK.mk_sym(_R, :re_call_folder), 4, _PF_PCRE)
     cl = LK.compileClause(_PF_DB.gd, _PF_DB.ld, head, body, pr, _PF_PCRE)
     LK.assertDefinition!(_PF_DB.gd, pr.definition, cl, LK.CL_END)
 end
 _pf_head(name::String, a2, a3, a4) = _rf("re_call_folder", _rs(name), a2, a3, a4)
 # count: V1 is V0 + 1
-_pf_add!(_pf_head("count", _rv(1), _rv(2), _rv(3)), _rf("is", _rv(3), _rf("+", _rv(2), _rg(1))))
+_pf_add!(
+    _pf_head("count", _rv(1), _rv(2), _rv(3)), _rf("is", _rv(3), _rf("+", _rv(2), _rg(1)))
+)
 # collect: V1 = [Match|V0]
 _pf_add!(_pf_head("collect", _rv(1), _rv(2), _rcons(_rv(1), _rv(2))))
 # keep: V1 = Match (the last match survives)
@@ -140,12 +144,26 @@ end
 
 # re_foldl_ of `re` on the subject (Prolog text `subj`), closure atom `clos`, start value `v0` (Prolog text), the unified-with term `v` (Prolog text, "" = fresh) and options:
 # (the foreign result, the value of V, the pending exception); the frame is discarded.
-function _pf_fold(re, subj::String; clos::String = "count", v0::String = "0", v::String = "", opts::String = "[]", str::Bool = false)
+function _pf_fold(
+    re,
+    subj::String;
+    clos::String="count",
+    v0::String="0",
+    v::String="",
+    opts::String="[]",
+    str::Bool=false
+)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     on = if str
         t = LK.PL_new_term_ref(ld)
-        LK.PL_unify_text(ld, t, 0, LK.PL_chars_t(_pc_bytes(subj), ncodeunits(subj), LK.ENC_UTF8, false), LK.PL_STRING) || error("no string term")
+        LK.PL_unify_text(
+            ld,
+            t,
+            0,
+            LK.PL_chars_t(_pc_bytes(subj), ncodeunits(subj), LK.ENC_UTF8, false),
+            LK.PL_STRING
+        ) || error("no string term")
         t
     else
         _pc_term(ld, subj)
@@ -176,7 +194,7 @@ function _pf_written(w, bufp, bufsize)::String
 end
 
 # (the foreign result, the text written, the pending error) of re_portray_(stream, re); `stream` = "" is a fresh memory stream, else the Prolog text of the stream term
-function _pf_portray(re; stream::String = "")
+function _pf_portray(re; stream::String="")
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_ref(ld)
@@ -194,7 +212,7 @@ function _pf_portray(re; stream::String = "")
 end
 
 # the same for re_portray_match_options_(stream, options)
-function _pf_portray_mo(opts::String; stream::String = "")
+function _pf_portray_mo(opts::String; stream::String="")
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     t = LK.PL_new_term_ref(ld)
@@ -223,7 +241,18 @@ end
 # The text re_portray_ must write for `re` over `capname` (the C's `cap_type_str` of the regex capture type), with `tail` = the part after `$capture=N`
 function _pf_expect(re, pat::String, ctype::String, tail::String)
     otext, sep = _pf_opts(re)
-    return string("<regex>(/", pat, "/ [", otext, sep, ctype, "] \$capture=", Int(re.capture_size), tail, ")")
+    return string(
+        "<regex>(/",
+        pat,
+        "/ [",
+        otext,
+        sep,
+        ctype,
+        "] \$capture=",
+        Int(re.capture_size),
+        tail,
+        ")"
+    )
 end
 
 @testset "re_foldl_: a count over every match, against Julia's eachmatch" begin
@@ -232,11 +261,11 @@ end
     rc, val, exc = _pf_fold(re, _q(s))
     @test rc == LK.FTRUE && exc === nothing
     @test val == length(collect(eachmatch(r"a", s)))
-    rc, val, _ = _pf_fold(re, _q(s); v0 = "10")                                    # the fold starts from V0
+    rc, val, _ = _pf_fold(re, _q(s); v0="10")                                    # the fold starts from V0
     @test rc == LK.FTRUE && val == 13
     rc, val, _ = _pf_fold(re, _q("xyz"))                                          # no match: V is V0
     @test rc == LK.FTRUE && val == 0
-    rc, val, _ = _pf_fold(re, _q("xyz"); v0 = "7")
+    rc, val, _ = _pf_fold(re, _q("xyz"); v0="7")
     @test rc == LK.FTRUE && val == 7
     LK.re_free(re)
 end
@@ -244,16 +273,16 @@ end
 @testset "re_foldl_: the folder sees each match as the Name-Value list, newest first in a collect" begin
     s = "a1b22c333"
     re = _pc_re("(\\d+)")
-    rc, val, exc = _pf_fold(re, _q(s); clos = "collect", v0 = "[]")
+    rc, val, exc = _pf_fold(re, _q(s); clos="collect", v0="[]")
     @test rc == LK.FTRUE && exc === nothing
     want = [_ex((0, m.match), (1, m.captures[1])) for m in eachmatch(r"(\d+)", s)]
     @test val == reverse(want)
     @test length(val) == 3
     # `keep` leaves the last match as V
-    rc, val, _ = _pf_fold(re, _q(s); clos = "keep", v0 = "none")
+    rc, val, _ = _pf_fold(re, _q(s); clos="keep", v0="none")
     @test rc == LK.FTRUE && val == _ex((0, "333"), (1, "333"))
     # the accumulator's start reaches the first call: collect onto [x] keeps x at the end
-    rc, val, _ = _pf_fold(re, _q("1"); clos = "collect", v0 = "[x]")
+    rc, val, _ = _pf_fold(re, _q("1"); clos="collect", v0="[x]")
     @test rc == LK.FTRUE && val == Any[_ex((0, "1"), (1, "1")), :x]
     LK.re_free(re)
 end
@@ -270,7 +299,7 @@ end
     # the empty matches' character positions (a range capture counts characters: the advance skips a whole UTF-8 character)
     s = "éa😀"
     re = _pc_re("(?<r_R>x*)")
-    rc, val, _ = _pf_fold(re, _q(s); clos = "collect", v0 = "[]")
+    rc, val, _ = _pf_fold(re, _q(s); clos="collect", v0="[]")
     @test rc == LK.FTRUE
     starts = [first(_pc_crange(s, m, 1)) for m in eachmatch(r"(?<r>x*)", s)]
     @test [v[2][3] for v in reverse(val)] == [("-", st, 0) for st in starts]
@@ -279,14 +308,14 @@ end
     # a non-empty match is followed from its end: `a*` on "aaa" is "aaa" then the empty match at the end
     s = "aaa"
     re = _pc_re("a*")
-    rc, val, _ = _pf_fold(re, _q(s); clos = "collect", v0 = "[]")
+    rc, val, _ = _pf_fold(re, _q(s); clos="collect", v0="[]")
     @test rc == LK.FTRUE && val == reverse([_ex((0, m.match)) for m in eachmatch(r"a*", s)])
     @test length(val) == 2
     LK.re_free(re)
     # `a*` on "baab": the empty match at 0, "aa" at 1, the empty match at 3 (after "aa"), the empty match at 4
     s = "baab"
     re = _pc_re("a*")
-    rc, val, _ = _pf_fold(re, _q(s); clos = "collect", v0 = "[]")
+    rc, val, _ = _pf_fold(re, _q(s); clos="collect", v0="[]")
     @test rc == LK.FTRUE && val == reverse([_ex((0, m.match)) for m in eachmatch(r"a*", s)])
     LK.re_free(re)
 end
@@ -294,25 +323,27 @@ end
 @testset "re_foldl_: the start option and the match options reach the loop" begin
     s = "banana"
     re = _pc_re("a")
-    rc, val, _ = _pf_fold(re, _q(s); opts = "[start(2)]")
+    rc, val, _ = _pf_fold(re, _q(s); opts="[start(2)]")
     @test rc == LK.FTRUE && val == length(collect(eachmatch(r"a", s[3:end])))
     @test re.start_flags.flags == 0 && re.start_flags.seen == 0                      # the loop works on a copy: the source regex is untouched
-    rc, val, _ = _pf_fold(re, _q(s); opts = "[start(6)]")
+    rc, val, _ = _pf_fold(re, _q(s); opts="[start(6)]")
     @test rc == LK.FTRUE && val == 0
     # a start beyond the subject: domain_error(offset, 99); no fold ran
-    rc, val, exc = _pf_fold(re, _q(s); opts = "[start(99)]")
+    rc, val, exc = _pf_fold(re, _q(s); opts="[start(99)]")
     @test rc == LK.FFALSE && exc == ("domain_error", ["offset", "99"])
     # the start is in characters
-    rc, val, _ = _pf_fold(_pc_re("é"), _q("ééé"); opts = "[start(1)]")
+    rc, val, _ = _pf_fold(_pc_re("é"), _q("ééé"); opts="[start(1)]")
     @test rc == LK.FTRUE && val == 2
     # anchored: every attempt must start exactly where the previous match ended (PCRE2 ANCHORED, doc-only)
-    rc, val, _ = _pf_fold(re, _q("aab"); opts = "[anchored(true)]")
+    rc, val, _ = _pf_fold(re, _q("aab"); opts="[anchored(true)]")
     @test rc == LK.FTRUE && val == 2
-    rc, val, _ = _pf_fold(re, _q("baa"); opts = "[anchored(true)]")
+    rc, val, _ = _pf_fold(re, _q("baa"); opts="[anchored(true)]")
     @test rc == LK.FTRUE && val == 0
     # capture_type reaches unify_match
     rcap = _pc_re("(\\w)")
-    rc, val, _ = _pf_fold(rcap, _q("ab"); clos = "keep", v0 = "none", opts = "[capture_type(atom)]")
+    rc, val, _ = _pf_fold(
+        rcap, _q("ab"); clos="keep", v0="none", opts="[capture_type(atom)]"
+    )
     @test rc == LK.FTRUE && val == _ex((0, :b), (1, :b))
     @test rcap.capture_type.flags == LK.CAP_DEFAULT                                  # the option went to the copy, not the source
     LK.re_free(rcap)
@@ -321,20 +352,20 @@ end
 
 @testset "re_foldl_: a result bound beforehand is unified, not overwritten" begin
     re = _pc_re("a")
-    rc, val, _ = _pf_fold(re, _q("aaa"); v = "3")
+    rc, val, _ = _pf_fold(re, _q("aaa"); v="3")
     @test rc == LK.FTRUE && val == 3
-    rc, _, exc = _pf_fold(re, _q("aaa"); v = "4")                                   # 3 matches, not 4: plain failure
+    rc, _, exc = _pf_fold(re, _q("aaa"); v="4")                                   # 3 matches, not 4: plain failure
     @test rc == LK.FFALSE && exc === nothing
-    rc, _, exc = _pf_fold(re, _q("xyz"); v0 = "5", v = "6")                         # the no-match branch unifies too
+    rc, _, exc = _pf_fold(re, _q("xyz"); v0="5", v="6")                         # the no-match branch unifies too
     @test rc == LK.FFALSE && exc === nothing
-    rc, val, _ = _pf_fold(re, _q("xyz"); v0 = "5", v = "5")
+    rc, val, _ = _pf_fold(re, _q("xyz"); v0="5", v="5")
     @test rc == LK.FTRUE && val == 5
     LK.re_free(re)
     # the loop that ends on the empty match at the end of the subject unifies too: `x*` on "ab" has 3 matches
     rex = _pc_re("x*")
-    rc, val, _ = _pf_fold(rex, _q("ab"); v = "3")
+    rc, val, _ = _pf_fold(rex, _q("ab"); v="3")
     @test rc == LK.FTRUE && val == 3
-    rc, _, exc = _pf_fold(rex, _q("ab"); v = "4")
+    rc, _, exc = _pf_fold(rex, _q("ab"); v="4")
     @test rc == LK.FFALSE && exc === nothing
     LK.re_free(rex)
 end
@@ -343,19 +374,19 @@ end
     re = _pc_re("é")
     rc, val, _ = _pf_fold(re, "[104, 233, 106, 233]")                               # "héjé" as codes
     @test rc == LK.FTRUE && val == 2
-    rc, val, _ = _pf_fold(re, "héjé"; str = true)
+    rc, val, _ = _pf_fold(re, "héjé"; str=true)
     @test rc == LK.FTRUE && val == 2
     rc, _, exc = _pf_fold(re, "f(x)")
     @test rc == LK.FFALSE && exc !== nothing && exc[1] == "type_error"
-    rc, _, exc = _pf_fold(re, _q("é"); opts = "foo")                                  # the options are read after the subject
+    rc, _, exc = _pf_fold(re, _q("é"); opts="foo")                                  # the options are read after the subject
     @test rc == LK.FFALSE && exc !== nothing && exc[1] == "type_error"
-    rc, _, exc = _pf_fold(re, "f(x)"; opts = "foo")                                   # both bad: the subject's error comes first
+    rc, _, exc = _pf_fold(re, "f(x)"; opts="foo")                                   # both bad: the subject's error comes first
     @test rc == LK.FFALSE && exc !== nothing && exc[2][1] == "string"
     # a failed read stops before any call of the folder: the pattern `x*` would match the empty subject and `boom` would raise foldexc
     rex = _pc_re("x*")
-    rc, _, exc = _pf_fold(rex, "f(x)"; clos = "boom")
+    rc, _, exc = _pf_fold(rex, "f(x)"; clos="boom")
     @test rc == LK.FFALSE && exc !== nothing && exc != :foldexc
-    rc, _, exc = _pf_fold(rex, _q("a"); clos = "boom", opts = "foo")
+    rc, _, exc = _pf_fold(rex, _q("a"); clos="boom", opts="foo")
     @test rc == LK.FFALSE && exc !== nothing && exc != :foldexc
     LK.re_free(rex)
     LK.re_free(re)
@@ -363,15 +394,15 @@ end
 
 @testset "re_foldl_: the folder's failure and exception end the fold" begin
     re = _pc_re("a")
-    rc, _, exc = _pf_fold(re, _q("banana"); clos = "never")
+    rc, _, exc = _pf_fold(re, _q("banana"); clos="never")
     @test rc == LK.FFALSE && exc === nothing
-    rc, _, exc = _pf_fold(re, _q("banana"); clos = "boom")
+    rc, _, exc = _pf_fold(re, _q("banana"); clos="boom")
     @test rc == LK.FFALSE && exc == :foldexc                                        # PL_Q_PASS_EXCEPTION: the ball reaches the caller
     # a closure with no clause: existence_error of the procedure, passed on
-    rc, _, exc = _pf_fold(re, _q("banana"); clos = "nosuchclosure")
+    rc, _, exc = _pf_fold(re, _q("banana"); clos="nosuchclosure")
     @test rc == LK.FFALSE
     # no match, no call: the failing folder is never reached, V is V0
-    rc, val, exc = _pf_fold(re, _q("xyz"); clos = "boom", v0 = "7")
+    rc, val, exc = _pf_fold(re, _q("xyz"); clos="boom", v0="7")
     @test rc == LK.FTRUE && val == 7 && exc === nothing
     LK.re_free(re)
 end
@@ -389,21 +420,30 @@ end
     rc, out, exc = _pf_portray(re)
     @test rc == LK.FTRUE && exc === nothing
     @test out == _pf_expect(re, "(a)b", "CAP_DEFAULT", " {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
-    @test startswith(out, "<regex>(/(a)b/ [") && endswith(out, "] \$capture=1 {1 0:CAP_DEFAULT 1:CAP_DEFAULT})")
+    @test startswith(out, "<regex>(/(a)b/ [") &&
+        endswith(out, "] \$capture=1 {1 0:CAP_DEFAULT 1:CAP_DEFAULT})")
     LK.re_free(re)
 
     # no groups: no `{...}` table
     re = _pc_re("ab")
     rc, out, _ = _pf_portray(re)
-    @test rc == LK.FTRUE && out == _pf_expect(re, "ab", "CAP_DEFAULT", "") && endswith(out, "\$capture=0)")
+    @test rc == LK.FTRUE && out == _pf_expect(re, "ab", "CAP_DEFAULT", "") &&
+        endswith(out, "\$capture=0)")
     LK.re_free(re)
 
     # named and typed groups: the name between the number and the type, an unnamed group by number and type
     re = _pc_re("(?<z>a)(?<b_I>b)(c)")
     rc, out, _ = _pf_portray(re)
     @test rc == LK.FTRUE
-    @test endswith(out, "\$capture=3 {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT})")
-    @test out == _pf_expect(re, "(?<z>a)(?<b_I>b)(c)", "CAP_DEFAULT", " {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT}")
+    @test endswith(
+        out, "\$capture=3 {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT})"
+    )
+    @test out == _pf_expect(
+        re,
+        "(?<z>a)(?<b_I>b)(c)",
+        "CAP_DEFAULT",
+        " {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT}"
+    )
     LK.re_free(re)
 
     # an unnamed group's own type is printed (the entry is set by hand: no pattern gives an unnamed group a type)
@@ -414,29 +454,34 @@ end
     LK.re_free(re)
 
     # the regex capture type is printed by name
-    re = _pc_re("ab"; setup = re -> (re.capture_type.flags = UInt32(LK.CAP_ATOM)))
+    re = _pc_re("ab"; setup=re -> (re.capture_type.flags = UInt32(LK.CAP_ATOM)))
     rc, out, _ = _pf_portray(re)
-    @test rc == LK.FTRUE && out == _pf_expect(re, "ab", "CAP_ATOM", "") && occursin("CAP_ATOM] \$capture=0)", out)
+    @test rc == LK.FTRUE && out == _pf_expect(re, "ab", "CAP_ATOM", "") &&
+        occursin("CAP_ATOM] \$capture=0)", out)
     LK.re_free(re)
 
     # the optimise flag adds ` $optimise` (after the capture count, before the table)
-    re = _pc_re("(a)b"; setup = re -> (re.optimise_flags.flags = LK.RE_OPTIMISE))
+    re = _pc_re("(a)b"; setup=re -> (re.optimise_flags.flags = LK.RE_OPTIMISE))
     rc, out, _ = _pf_portray(re)
     @test rc == LK.FTRUE
-    @test out == _pf_expect(re, "(a)b", "CAP_DEFAULT", " \$optimise {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
+    @test out == _pf_expect(
+        re, "(a)b", "CAP_DEFAULT", " \$optimise {1 0:CAP_DEFAULT 1:CAP_DEFAULT}"
+    )
     @test occursin("\$capture=1 \$optimise {1 ", out)
     LK.re_free(re)
 
     # a pattern with non-ASCII characters is written as its characters on a UTF-8 stream
     re = _pc_re("é(a)")
     rc, out, _ = _pf_portray(re)
-    @test rc == LK.FTRUE && startswith(out, "<regex>(/é(a)/ [") && out == _pf_expect(re, "é(a)", "CAP_DEFAULT", " {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
+    @test rc == LK.FTRUE && startswith(out, "<regex>(/é(a)/ [") &&
+        out == _pf_expect(re, "é(a)", "CAP_DEFAULT", " {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
     LK.re_free(re)
 
     # the options come from re_write_re_options: a changed compile option shows in the text
-    re = _pc_re("(a)b"; setup = re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS))
+    re = _pc_re("(a)b"; setup=re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS))
     rc, out, _ = _pf_portray(re)
-    @test rc == LK.FTRUE && occursin("CASELESS", out) && out == _pf_expect(re, "(a)b", "CAP_DEFAULT", " {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
+    @test rc == LK.FTRUE && occursin("CASELESS", out) &&
+        out == _pf_expect(re, "(a)b", "CAP_DEFAULT", " {1 0:CAP_DEFAULT 1:CAP_DEFAULT}")
     LK.re_free(re)
 end
 
@@ -448,7 +493,7 @@ end
     @test rc == LK.FTRUE && rc2 == LK.FTRUE && out1 == out2
     @test re.start_flags.flags == 5
     # not a stream: the error of PL_get_stream, nothing written, the regex untouched
-    rc, out, exc = _pf_portray(re; stream = "no_such_stream_alias")
+    rc, out, exc = _pf_portray(re; stream="no_such_stream_alias")
     @test rc == LK.FFALSE && exc !== nothing
     LK.re_free(re)
 end
@@ -476,6 +521,6 @@ end
     rc, out, exc = _pf_portray_mo("[start(-1)]")
     @test rc == LK.FFALSE && out == "" && exc !== nothing
     # not a stream
-    rc, out, exc = _pf_portray_mo("[]"; stream = "no_such_stream_alias")
+    rc, out, exc = _pf_portray_mo("[]"; stream="no_such_stream_alias")
     @test rc == LK.FFALSE && exc !== nothing
 end

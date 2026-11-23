@@ -29,7 +29,10 @@ function _ya_found(ld, t::LK.yaml_htable, name::String)
 end
 
 @testset "yaml_murmur_hash_aligned2 (yaml4pl.c MurmurHashAligned2, seed 0x6263533a)" begin
-    h(s) = (b = Vector{UInt8}(codeunits(s)); LK.yaml_murmur_hash_aligned2(b, length(b), LK.YAML_ANCHOR_SEED))
+    h(s) = (
+        b=Vector{UInt8}(codeunits(s));
+        LK.yaml_murmur_hash_aligned2(b, length(b), LK.YAML_ANCHOR_SEED)
+    )
     @test LK.YAML_ANCHOR_SEED === UInt32(0x6263533a)
     # every length class of the tail switch (0, 1, 2, 3 bytes) and of the 4-byte loop (4, 5, 7 bytes), a multi-byte character
     @test h("") === UInt32(2525192100)
@@ -43,12 +46,16 @@ end
     @test h("a1") === UInt32(2816423136)
     @test h("café") === UInt32(4141220229)            # 5 bytes, the last two >= 0x80 (the byte is never sign extended)
     # `len` limits the hash, not the vector
-    @test LK.yaml_murmur_hash_aligned2(Vector{UInt8}(codeunits("abcdef")), 3, LK.YAML_ANCHOR_SEED) === h("abc")
+    @test LK.yaml_murmur_hash_aligned2(
+        Vector{UInt8}(codeunits("abcdef")), 3, LK.YAML_ANCHOR_SEED
+    ) === h("abc")
     # seed 0 and an empty key hash to 0 (h = 0 ^ 0, no tail, the final mixes keep 0)
     @test LK.yaml_murmur_hash_aligned2(UInt8[], 0, UInt32(0)) === UInt32(0)
     # the bucket: hash % size, 1-based (sim: mod16 / mod32 / mod64)
-    for (s, b16, b32, b64) in (("", 4, 4, 36), ("a", 10, 26, 26), ("ab", 14, 14, 14), ("abc", 15, 31, 63), ("abcd", 7, 7, 7),
-                               ("abcde", 5, 5, 37), ("anchor1", 1, 1, 33), ("x", 1, 1, 1), ("a1", 0, 0, 32))
+    for (s, b16, b32, b64) in
+        (("", 4, 4, 36), ("a", 10, 26, 26), ("ab", 14, 14, 14), ("abc", 15, 31, 63),
+        ("abcd", 7, 7, 7),
+        ("abcde", 5, 5, 37), ("anchor1", 1, 1, 33), ("x", 1, 1, 1), ("a1", 0, 0, 32))
         @test LK._yaml_anchor_bucket(s, 16) == b16 + 1
         @test LK._yaml_anchor_bucket(s, 32) == b32 + 1
         @test LK._yaml_anchor_bucket(s, 64) == b64 + 1

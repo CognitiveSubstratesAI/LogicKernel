@@ -22,7 +22,7 @@ function _env(::Type{T}) where {T}
 end
 
 _zbytes(s::String) = Vector{UInt8}(codeunits(s))
-function _lcg_bytes(n::Int, seed::UInt32 = 0x1234abcd)
+function _lcg_bytes(n::Int, seed::UInt32=0x1234abcd)
     x = seed
     out = Vector{UInt8}(undef, n)
     for i in 1:n
@@ -31,10 +31,12 @@ function _lcg_bytes(n::Int, seed::UInt32 = 0x1234abcd)
     end
     return out
 end
-_text(n::Int) = repeat(_zbytes("the quick brown fox jumps over the lazy dog. "), cld(n, 45))[1:n]
+_text(n::Int) =
+    repeat(_zbytes("the quick brown fox jumps over the lazy dog. "), cld(n, 45))[1:n]
 
 const _INPUTS = Pair{String, Vector{UInt8}}[
-    "empty" => UInt8[], "1 byte" => UInt8[0x41], "text 5000" => _text(5000), "random 20000" => _lcg_bytes(20000),
+    "empty" => UInt8[], "1 byte" => UInt8[0x41], "text 5000" => _text(5000),
+    "random 20000" => _lcg_bytes(20000)
 ]
 const _FORMATS = (LK.Z_F_GZIP, LK.Z_F_DEFLATE, LK.Z_F_RAW_DEFLATE)
 
@@ -48,10 +50,18 @@ end
 _sf_bytes(bufp, sizep) = sizep[] == 0 ? UInt8[] : copy(bufp[][1:sizep[]])
 
 # zlib4pl.c COPY_FLAGS (412-415), without SIO_TEXT
-const _COPY_FLAGS = LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_REPXML | LK.SIO_REPPL | LK.SIO_RECORDPOS
+const _COPY_FLAGS =
+    LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_REPXML | LK.SIO_REPPL | LK.SIO_RECORDPOS
 
 # STAND-IN for pl_zopen (piece Z3, C 455-505)
-function _zopen(ld, parent::LK.IOSTREAM; format::Int, level::Integer = -1, close_parent::Bool = true, multi_part::Int = -1)
+function _zopen(
+    ld,
+    parent::LK.IOSTREAM;
+    format::Int,
+    level::Integer=-1,
+    close_parent::Bool=true,
+    multi_part::Int=-1
+)
     ctx = LK.alloc_zcontext(ld, parent)
     ctx.close_parent = close_parent
     ctx.multi_part = multi_part
@@ -59,9 +69,23 @@ function _zopen(ld, parent::LK.IOSTREAM; format::Int, level::Integer = -1, close
     if (parent.flags & LK.SIO_OUTPUT) != 0
         zs = ctx.zstate
         rc = if format == LK.Z_F_GZIP
-            LK.zlib_deflate_init2!(zs, Cint(level), LK.Z_DEFLATED, Cint(LK.MAX_WBITS + 16), LK.MAX_MEM_LEVEL, Cint(0))
+            LK.zlib_deflate_init2!(
+                zs,
+                Cint(level),
+                LK.Z_DEFLATED,
+                Cint(LK.MAX_WBITS + 16),
+                LK.MAX_MEM_LEVEL,
+                Cint(0)
+            )
         elseif format == LK.Z_F_RAW_DEFLATE
-            LK.zlib_deflate_init2!(zs, Cint(level), LK.Z_DEFLATED, Cint(-LK.MAX_WBITS), LK.MAX_MEM_LEVEL, Cint(0))
+            LK.zlib_deflate_init2!(
+                zs,
+                Cint(level),
+                LK.Z_DEFLATED,
+                Cint(-LK.MAX_WBITS),
+                LK.MAX_MEM_LEVEL,
+                Cint(0)
+            )
         else
             LK.zlib_deflate_init!(zs, Cint(level))
         end
@@ -74,9 +98,9 @@ function _zopen(ld, parent::LK.IOSTREAM; format::Int, level::Integer = -1, close
     return s2, ctx
 end
 
-function _compress(ld, data::Vector{UInt8}; format::Int, level::Integer = -1)
+function _compress(ld, data::Vector{UInt8}; format::Int, level::Integer=-1)
     parent, bufp, sizep = _sf_out()
-    zs, ctx = _zopen(ld, parent; format, level, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format, level, close_parent=false)
     @test LK.Sfwrite(data, 1, length(data), zs) == length(data)
     @test LK.closeStream(ld, zs)
     @test parent.upstream === nothing
@@ -84,7 +108,7 @@ function _compress(ld, data::Vector{UInt8}; format::Int, level::Integer = -1)
     return _sf_bytes(bufp, sizep)
 end
 
-function _read_all(zs::LK.IOSTREAM; chunk::Int = 1000)
+function _read_all(zs::LK.IOSTREAM; chunk::Int=1000)
     out = UInt8[]
     buf = Vector{UInt8}(undef, chunk)
     while true
@@ -136,16 +160,18 @@ end
     @test ctx.zstate == C_NULL && ctx.zhead == C_NULL
     @test parent.magic == LK.SIO_MAGIC
     LK.free_zcontext(ctx)                                                                # a second call frees nothing
-    zs, ctx2 = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false)
+    zs, ctx2 = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false)
     @test parent.upstream === zs
     LK.free_zcontext(ctx2)                                                               # a filter: unlink (C 98-99)
     @test parent.upstream === nothing && ctx2.zstate == C_NULL
     @test LK.Sclose(parent) == 0
 end
 
-@testset "z02 round trip: $fname through format $fmt" for (fname, data) in _INPUTS, fmt in _FORMATS
+@testset "z02 round trip: $fname through format $fmt" for (fname, data) in _INPUTS,
+    fmt in _FORMATS
+
     gd, ld = _env(_TL)
-    comp = _compress(ld, data; format = fmt)
+    comp = _compress(ld, data; format=fmt)
     if fmt == LK.Z_F_GZIP
         @test comp[1:2] == UInt8[0x1f, 0x8b]                                              # RFC 1952
     elseif fmt == LK.Z_F_DEFLATE
@@ -153,7 +179,7 @@ end
     end
     @test !isempty(comp)
     parent = _sf_in(comp)
-    zs, ctx = _zopen(ld, parent; format = fmt)
+    zs, ctx = _zopen(ld, parent; format=fmt)
     @test _read_all(zs) == data
     @test LK.Sferror(zs) == 0                                                            # Z_FINISH was sent
     @test ctx.z_stream_end                                                                # C 206
@@ -162,11 +188,13 @@ end
     @test ctx.zstate == C_NULL
 end
 
-@testset "z03 auto-detect (F_UNKNOWN): $fname, format $fmt" for (fname, data) in _INPUTS, fmt in (LK.Z_F_GZIP, LK.Z_F_DEFLATE)
+@testset "z03 auto-detect (F_UNKNOWN): $fname, format $fmt" for (fname, data) in _INPUTS,
+    fmt in (LK.Z_F_GZIP, LK.Z_F_DEFLATE)
+
     gd, ld = _env(_TL)
-    comp = _compress(ld, data; format = fmt)
+    comp = _compress(ld, data; format=fmt)
     parent = _sf_in(comp)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_UNKNOWN)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_UNKNOWN)
     @test _read_all(zs) == data
     @test LK.Sferror(zs) == 0
     @test LK.closeStream(ld, zs)
@@ -175,10 +203,10 @@ end
 @testset "z04 the parent's unread bytes and position after the end of the stream" begin
     gd, ld = _env(_TL)
     data = _text(3000)
-    comp = _compress(ld, data; format = LK.Z_F_DEFLATE)
+    comp = _compress(ld, data; format=LK.Z_F_DEFLATE)
     tail = _zbytes("TAIL")
     parent = _sf_in(vcat(comp, tail))
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false, multi_part = 0)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false, multi_part=0)
     @test _read_all(zs) == data
     @test ctx.z_stream_end && ctx.initialized
     if parent.position !== nothing
@@ -194,49 +222,51 @@ end
 @testset "z05 multi_part" begin
     gd, ld = _env(_TL)
     a, b = _text(2000), _lcg_bytes(900, 0x00c0ffee)
-    gza = _compress(ld, a; format = LK.Z_F_GZIP)
-    gzb = _compress(ld, b; format = LK.Z_F_GZIP)
+    gza = _compress(ld, a; format=LK.Z_F_GZIP)
+    gzb = _compress(ld, b; format=LK.Z_F_GZIP)
     parent = _sf_in(vcat(gza, gzb))                                                      # gzip, default -1: done is 0, not < 0 (C 214-215)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_GZIP, multi_part = -1)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_GZIP, multi_part=-1)
     @test _read_all(zs) == vcat(a, b)
     @test LK.Sferror(zs) == 0
     @test LK.closeStream(ld, zs)
     parent = _sf_in(vcat(gza, gzb))                                                      # multi_part false: stops at the first
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_GZIP, multi_part = 0, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_GZIP, multi_part=0, close_parent=false)
     @test _read_all(zs) == a
     @test LK.closeStream(ld, zs)
     rest = Vector{UInt8}(undef, length(gzb))
     @test LK.Sfread(rest, 1, length(gzb), parent) == length(gzb) && rest == gzb
     @test LK.Sclose(parent) == 0
     parent = _sf_in(vcat(gza, gzb))                                                      # auto-detect of gzip: done > 0, continues
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_UNKNOWN, multi_part = -1)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_UNKNOWN, multi_part=-1)
     @test _read_all(zs) == vcat(a, b)
     @test LK.gz_header_done(ctx.zhead) > 0
     @test LK.closeStream(ld, zs)
-    za = _compress(ld, a; format = LK.Z_F_DEFLATE)                                       # auto-detect of zlib: done < 0, ONE stream (C 214-216)
-    zb = _compress(ld, b; format = LK.Z_F_DEFLATE)
+    za = _compress(ld, a; format=LK.Z_F_DEFLATE)                                       # auto-detect of zlib: done < 0, ONE stream (C 214-216)
+    zb = _compress(ld, b; format=LK.Z_F_DEFLATE)
     parent = _sf_in(vcat(za, zb))
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_UNKNOWN, multi_part = -1)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_UNKNOWN, multi_part=-1)
     @test _read_all(zs) == a
     @test LK.gz_header_done(ctx.zhead) < 0
     @test LK.closeStream(ld, zs)
     parent = _sf_in(vcat(za, zb))                                                        # explicit multi_part true continues (C 213, 214)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_UNKNOWN, multi_part = 1)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_UNKNOWN, multi_part=1)
     @test _read_all(zs) == vcat(a, b)
     @test LK.closeStream(ld, zs)
     parent = _sf_in(vcat(gza, _zbytes("TAIL")))                                          # a member then non-gzip: the restart fails (C 218-225)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_GZIP, multi_part = -1)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_GZIP, multi_part=-1)
     @test _read_all(zs) == a
     @test LK.Sferror(zs) != 0
     @test zs.message isa String && !isempty(zs.message)                                  # zlib's msg (C 253-256)
 end
 
-@testset "z06 one byte per parent read" for fmt in (LK.Z_F_DEFLATE, LK.Z_F_GZIP, LK.Z_F_RAW_DEFLATE)
+@testset "z06 one byte per parent read" for fmt in (
+    LK.Z_F_DEFLATE, LK.Z_F_GZIP, LK.Z_F_RAW_DEFLATE
+)
     gd, ld = _env(_TL)
     data = _text(3000)
-    comp = _compress(ld, data; format = fmt)
+    comp = _compress(ld, data; format=fmt)
     parent = LK.Snew(Dribble(comp, 1), LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
-    zs, ctx = _zopen(ld, parent; format = fmt)                                           # the n == 0 retry (C 190-198), parent re-read (C 139-145)
+    zs, ctx = _zopen(ld, parent; format=fmt)                                           # the n == 0 retry (C 190-198), parent re-read (C 139-145)
     @test _read_all(zs) == data
     @test LK.Sferror(zs) == 0
     @test LK.closeStream(ld, zs)
@@ -245,12 +275,13 @@ end
 @testset "z07 the read function: count, end of file, error" begin
     gd, ld = _env(_TL)
     data = _text(300)
-    comp = _compress(ld, data; format = LK.Z_F_DEFLATE)
+    comp = _compress(ld, data; format=LK.Z_F_DEFLATE)
     parent = _sf_in(comp)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false)
     mem = zeros(UInt8, 64 + 10)
     n = LK.Sfilter_read(ctx, mem, 6, 64)                                                 # fills mem[6:69]
-    @test n == 64 && mem[6:(5 + n)] == data[1:64] && all(==(0x00), mem[1:5]) && all(==(0x00), mem[70:end])
+    @test n == 64 && mem[6:(5 + n)] == data[1:64] && all(==(0x00), mem[1:5]) &&
+        all(==(0x00), mem[70:end])
     big = zeros(UInt8, 1000)
     n2 = LK.Sfilter_read(ctx, big, 1, 1000)
     @test n2 == length(data) - 64 && big[1:n2] == data[65:end]
@@ -258,7 +289,7 @@ end
     @test LK.closeStream(ld, zs)
     @test LK.Sclose(parent) == 0
     parent = _sf_in(_zbytes("this is not a compressed stream"))                         # corrupt data: -1
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_GZIP, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_GZIP, close_parent=false)
     @test LK.Sfilter_read(ctx, big, 1, 1000) == -1
     @test zs.message isa String && !isempty(zs.message) && LK.Sferror(zs) != 0
     @test zs.message == LK.z_stream_msg(ctx.zstate)                                      # zlib's own text wins over the C one (C 253-254)
@@ -271,7 +302,7 @@ end
     gd, ld = _env(_TL)
     for fmt in (LK.Z_F_DEFLATE, LK.Z_F_UNKNOWN)
         parent = _sf_in(UInt8[])
-        zs, ctx = _zopen(ld, parent; format = fmt)
+        zs, ctx = _zopen(ld, parent; format=fmt)
         buf = Vector{UInt8}(undef, 10)
         @test LK.Sfread(buf, 1, 10, zs) == 0
         @test LK.Sferror(zs) != 0 && zs.message == "zlib: unexpected end-of-file"       # Z_BUF_ERROR, C 246-249
@@ -280,9 +311,9 @@ end
         @test parent.magic == LK.SIO_CMAGIC
     end
     data = _lcg_bytes(3000)
-    comp = _compress(ld, data; format = LK.Z_F_DEFLATE)
+    comp = _compress(ld, data; format=LK.Z_F_DEFLATE)
     parent = _sf_in(comp[1:(length(comp) ÷ 2)])
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false)
     out = _read_all(zs)
     @test length(out) < length(data) && out == data[1:length(out)]
     @test LK.Sferror(zs) != 0 && zs.message == "zlib: unexpected end-of-file"
@@ -295,7 +326,7 @@ end
 @testset "z09 control: flush output, set encoding, the parent's control" begin
     gd, ld = _env(_TL)
     parent, bufp, sizep = _sf_out()
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false)
     @test LK.Sfilter_control(ctx, LK.SIO_SETENCODING, nothing) == 0                      # C 331-332
     data = _text(300)
     @test LK.Sfwrite(data, 1, length(data), zs) == length(data)
@@ -303,7 +334,7 @@ end
     prefix = _sf_bytes(bufp, sizep)
     @test !isempty(prefix)
     pin = _sf_in(prefix)
-    zin, cin = _zopen(ld, pin; format = LK.Z_F_DEFLATE)
+    zin, cin = _zopen(ld, pin; format=LK.Z_F_DEFLATE)
     got = Vector{UInt8}(undef, length(data))
     @test LK.Sfread(got, 1, length(data), zin) == length(data) && got == data
     @test LK.Sferror(zin) == 0 && !cin.z_stream_end
@@ -314,17 +345,17 @@ end
     @test LK.closeStream(ld, zs)
     @test LK.Sclose(parent) == 0
     pin = _sf_in(_sf_bytes(bufp, sizep))
-    zin, cin = _zopen(ld, pin; format = LK.Z_F_DEFLATE)
+    zin, cin = _zopen(ld, pin; format=LK.Z_F_DEFLATE)
     @test _read_all(zin) == vcat(data, more) && LK.Sferror(zin) == 0
     @test LK.closeStream(ld, zin)
     pc = LK.Snew(CtlParent(1234), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions)      # the default arm (C 333-343)
-    zc, cc = _zopen(ld, pc; format = LK.Z_F_DEFLATE, close_parent = false)
+    zc, cc = _zopen(ld, pc; format=LK.Z_F_DEFLATE, close_parent=false)
     size = Ref(0)
     @test LK.Sfilter_control(cc, LK.SIO_GETSIZE, size) == 0 && size[] == 1234
     @test LK.Sfilter_control(cc, 999, nothing) == LK.SCONTROL_NONE
     @test LK.closeStream(ld, zc)
     pm, _, _ = _sf_out()                                                                 # a memory parent has no control function: -1
-    zm, cm = _zopen(ld, pm; format = LK.Z_F_DEFLATE, close_parent = false)
+    zm, cm = _zopen(ld, pm; format=LK.Z_F_DEFLATE, close_parent=false)
     @test LK.Sfilter_control(cm, LK.SIO_GETSIZE, Ref(0)) == -1
     @test LK.closeStream(ld, zm)
     @test LK.Sclose(pm) == 0
@@ -340,7 +371,7 @@ end
     gd, ld = _env(_TL)
     data = _text(500)
     parent, bufp, sizep = _sf_out()
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE, close_parent=false)
     @test LK.Sfilter_write(ctx, data, 1, 500) == 500                                     # C 319
     @test sizep[] == 0                                                                   # Z_NO_FLUSH: no Sflush(parent) (C 310); blind: the memory stream publishes its size at Sflush
     @test LK.zwrite4(ctx, data, 101, 200, LK.Z_NO_FLUSH) == 200                          # the slice at `from`
@@ -351,11 +382,11 @@ end
     LK.free_zcontext(ctx)                                                                # (the stream layer's close would run zclose: this is by hand)
     @test LK.Sclose(parent) == 0
     pin = _sf_in(_sf_bytes(bufp, sizep))
-    zin, cin = _zopen(ld, pin; format = LK.Z_F_DEFLATE)
+    zin, cin = _zopen(ld, pin; format=LK.Z_F_DEFLATE)
     @test _read_all(zin) == vcat(data, data[101:300])
     @test LK.closeStream(ld, zin)
     sink = LK.Snew(FailSink(), LK.SIO_OUTPUT | LK.SIO_NBUF, LK.Sfilterfunctions)
-    zf, cf = _zopen(ld, sink; format = LK.Z_F_DEFLATE, close_parent = true)
+    zf, cf = _zopen(ld, sink; format=LK.Z_F_DEFLATE, close_parent=true)
     @test LK.zwrite4(cf, data, 1, 100, LK.Z_SYNC_FLUSH) == -1                            # C 293-294
     @test LK.Sclose(zf) == -1                                                            # C 362-366, 385-389
     @test cf.zstate == C_NULL && cf.zhead == C_NULL
@@ -365,12 +396,13 @@ end
 @testset "z11 close: close_parent, the parent's state, the records" begin
     gd, ld = _env(_TL)
     parent = _sf_in(_zbytes("whatever"))                                                 # never read: initialized false, Z_OK (C 359-360)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_GZIP)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_GZIP)
     @test !ctx.initialized
     @test LK.closeStream(ld, zs)
-    @test parent.magic == LK.SIO_CMAGIC && parent.upstream === nothing && ctx.zstate == C_NULL
+    @test parent.magic == LK.SIO_CMAGIC && parent.upstream === nothing &&
+        ctx.zstate == C_NULL
     parent, bufp, sizep = _sf_out()                                                      # close_parent false (C 378-380)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_RAW_DEFLATE, close_parent = false)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_RAW_DEFLATE, close_parent=false)
     @test LK.Sfwrite(_text(100), 1, 100, zs) == 100
     @test LK.closeStream(ld, zs)
     @test parent.magic == LK.SIO_MAGIC && parent.upstream === nothing
@@ -378,9 +410,9 @@ end
     @test LK.Sfwrite(UInt8[0x2a], 1, 1, parent) == 1
     @test LK.Sclose(parent) == 0
     @test sizep[] == n0 + 1 && _sf_bytes(bufp, sizep)[end] == 0x2a
-    comp = _compress(ld, _text(100); format = LK.Z_F_DEFLATE)                            # read to the end: inflateEnd (C 358)
+    comp = _compress(ld, _text(100); format=LK.Z_F_DEFLATE)                            # read to the end: inflateEnd (C 358)
     parent = _sf_in(comp)
-    zs, ctx = _zopen(ld, parent; format = LK.Z_F_DEFLATE)
+    zs, ctx = _zopen(ld, parent; format=LK.Z_F_DEFLATE)
     @test _read_all(zs) == _text(100)
     @test ctx.initialized
     @test LK.closeStream(ld, zs)

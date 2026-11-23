@@ -63,7 +63,8 @@ function _instream(ld, t::Int, text::String)
 end
 
 _put!(ld, t::Int, ::Nothing) = true
-_put!(ld::LK.PL_local_data{T}, t::Int, x::Symbol) where {T} = LK.PL_put_atom(ld, t, lk_sym(T, x))
+_put!(ld::LK.PL_local_data{T}, t::Int, x::Symbol) where {T} =
+    LK.PL_put_atom(ld, t, lk_sym(T, x))
 _put!(ld, t::Int, x::Integer) = LK.PL_put_int64(ld, t, Int(x))
 _put!(ld, t::Int, x::Float64) = LK.PL_put_float(ld, t, x)
 
@@ -95,8 +96,8 @@ function _run(::Type{T}, f, specs...) where {T}
     rc = f(ld, t, n, _ctx(T))
     exc = _exc(ld)
     return (
-        rc = rc, out = out === nothing ? "" : _written(out...), exc = exc,
-        formal = exc ? _exc_formal(ld) : "", ld = ld, t = t, ins = ins,
+        rc=rc, out=out === nothing ? "" : _written(out...), exc=exc,
+        formal=exc ? _exc_formal(ld) : "", ld=ld, t=t, ins=ins
     )
 end
 # the value of argument `k` (1-based) after the call, as an integer or a float; `nothing` when it holds anything else
@@ -134,7 +135,7 @@ const _WS_ROWS = [
     ("\u00e9\u20ac\U0001F600", "$(Q)\u00e9\u20ac\U0001F600$(Q)"),                # raw UTF-8 on a UTF-8 stream
     ("\u2028\u2029", "$(Q)$(BS)u2028$(BS)u2029$(Q)"),                            # JavaScript line terminators
     ("\u2027\u202a", "$(Q)\u2027\u202a$(Q)"),                                    # their neighbours are not
-    ("\u0080", "$(Q)\u0080$(Q)"),                                                # the first code >= 128 is raw
+    ("\u0080", "$(Q)\u0080$(Q)")                                                # the first code >= 128 is raw
 ]
 
 @testset "json_write_string/2: the C-derived rows" begin
@@ -202,12 +203,12 @@ end
 @testset "json_write_indent/3: the C-derived rows" begin
     # (indent, tab, output after `x`): n = indent / tab tabs, then indent % tab spaces
     for (i, t, want) in [
-            (17, 8, "x\n\t\t "), (16, 8, "x\n\t\t"), (8, 8, "x\n\t"), (7, 8, "x\n       "),
-            (0, 8, "x\n"), (3, 1, "x\n\t\t\t"), (5, 2, "x\n\t\t "), (9, 4, "x\n\t\t "),
-            (-3, 8, "x\n"),                                          # a negative count loops zero times (n = -3/8 = 0, -3 % 8 = -3)
-            (-9, 4, "x\n"),                                          # -9/4 = -2 (truncating), -9 % 4 = -1: both loops run zero times
-            (3, -1, "x\n"),                                          # 3 / -1 = -3, 3 % -1 = 0
-        ]
+        (17, 8, "x\n\t\t "), (16, 8, "x\n\t\t"), (8, 8, "x\n\t"), (7, 8, "x\n       "),
+        (0, 8, "x\n"), (3, 1, "x\n\t\t\t"), (5, 2, "x\n\t\t "), (9, 4, "x\n\t\t "),
+        (-3, 8, "x\n"),                                          # a negative count loops zero times (n = -3/8 = 0, -3 % 8 = -3)
+        (-9, 4, "x\n"),                                          # -9/4 = -2 (truncating), -9 % 4 = -1: both loops run zero times
+        (3, -1, "x\n")                                          # 3 / -1 = -3, 3 % -1 = 0
+    ]
         @test _wi_ok(_TL, "x", i, t, want)
     end
     # line start: no newline (json.c:351-352, `position && linepos == 0`)
@@ -286,21 +287,21 @@ end
 @testset "json_skip_ws/3: the C-derived rows" begin
     # (text, c0, Next, the code after Next)
     for (text, c0, want, after) in [
-            ("  \t\n\r xy", 32, Int('x'), Int('y')),                 # all four white space characters, then x is consumed
-            ("xy", 10, Int('x'), Int('y')),                          # c0 white space, the stream starts with other
-            ("xy", 13, Int('x'), Int('y')),                          # \r is white space
-            ("xy", 9, Int('x'), Int('y')),                           # \t is white space
-            ("  ", 32, -1, -1),                                      # end of file inside the white space: -1
-            ("", 9, -1, -1),
-            ("   z", Int('a'), Int('a'), 32),                        # c0 is not white space: Next = c0 and the stream is untouched
-            ("   z", -1, -1, 32),                                    # the integer -1 is end of file: untouched
-            ("   z", :end_of_file, -1, 32),                          # so is the atom end_of_file
-            ("  q", Symbol(" "), Int('q'), -1),                      # a one-character atom is its code: white space
-            ("  z", 11, 11, 32),                                     # \v (11) is NOT white space
-            ("\x0bq", 32, 11, Int('q')),                             # nor is it skipped from the stream
-            ("", 0x20ac, 0x20ac, -1),                                # a wide c0 that is not white space
-            ("\u00a0x", 32, 0xa0, Int('x')),                         # U+00A0 stops the skipping
-        ]
+        ("  \t\n\r xy", 32, Int('x'), Int('y')),                 # all four white space characters, then x is consumed
+        ("xy", 10, Int('x'), Int('y')),                          # c0 white space, the stream starts with other
+        ("xy", 13, Int('x'), Int('y')),                          # \r is white space
+        ("xy", 9, Int('x'), Int('y')),                           # \t is white space
+        ("  ", 32, -1, -1),                                      # end of file inside the white space: -1
+        ("", 9, -1, -1),
+        ("   z", Int('a'), Int('a'), 32),                        # c0 is not white space: Next = c0 and the stream is untouched
+        ("   z", -1, -1, 32),                                    # the integer -1 is end of file: untouched
+        ("   z", :end_of_file, -1, 32),                          # so is the atom end_of_file
+        ("  q", Symbol(" "), Int('q'), -1),                      # a one-character atom is its code: white space
+        ("  z", 11, 11, 32),                                     # \v (11) is NOT white space
+        ("\x0bq", 32, 11, Int('q')),                             # nor is it skipped from the stream
+        ("", 0x20ac, 0x20ac, -1),                                # a wide c0 that is not white space
+        ("\u00a0x", 32, 0xa0, Int('x'))                         # U+00A0 stops the skipping
+    ]
         @test _sk_ok(_TL, text, c0, want, after)
     end
     # a right preset Next: the unification succeeds; a wrong one fails with no error (json.c:191 returns PL_unify_integer(next, c))
@@ -338,7 +339,8 @@ end
 # character that is none of them is only PEEKED. Not a number: syntax_error(illegal_number) with the stream's position (json.c:140-143).
 
 # (text, c0, the number, the next code of the stream), `preset` the third argument (nothing: unbound)
-_rn(::Type{T}, text::String, c0, preset=nothing) where {T} = _run(T, LK.pl_json_read_number3_va, In(text), c0, preset)
+_rn(::Type{T}, text::String, c0, preset=nothing) where {T} =
+    _run(T, LK.pl_json_read_number3_va, In(text), c0, preset)
 _rn_ok(::Type{T}, text::String, c0, want, after::Integer) where {T} = begin
     r = _rn(T, text, c0)
     r.rc == LK.FTRUE && !r.exc && _val(r, 3) == want && LK.Speekcode(r.ins[1]) == after
@@ -351,16 +353,16 @@ end
 
 @testset "json_read_number/3: the C-derived rows" begin
     for (text, c0, want, after) in [
-            ("2,x", Int('1'), 12, Int(',')),                         # the digits join, the comma is peeked
-            ("5 ", Int('-'), -5, 32),                                # a leading -
-            ("", Int('5'), 5, -1),                                   # end of file ends the number
-            ("0}", Int('3'), 30, Int('}')),
-            (".25}", Int('0'), 0.25, Int('}')),                      # a float
-            ("2.5e3,x", Int('1'), 12500.0, Int(',')),                # an exponent
-            ("e5,", Int('1'), 100000.0, Int(',')),                   # the `e` joins the text (1e5 reads as a float)
-            ("e-5,", Int('1'), 1.0e-5, Int(',')),                    # so does a `-` inside the text
-            ("9,", Int('1'), 19, Int(',')),                          # 9 is the last digit that joins
-        ]
+        ("2,x", Int('1'), 12, Int(',')),                         # the digits join, the comma is peeked
+        ("5 ", Int('-'), -5, 32),                                # a leading -
+        ("", Int('5'), 5, -1),                                   # end of file ends the number
+        ("0}", Int('3'), 30, Int('}')),
+        (".25}", Int('0'), 0.25, Int('}')),                      # a float
+        ("2.5e3,x", Int('1'), 12500.0, Int(',')),                # an exponent
+        ("e5,", Int('1'), 100000.0, Int(',')),                   # the `e` joins the text (1e5 reads as a float)
+        ("e-5,", Int('1'), 1.0e-5, Int(',')),                    # so does a `-` inside the text
+        ("9,", Int('1'), 19, Int(','))                          # 9 is the last digit that joins
+    ]
         @test _rn_ok(_TL, text, c0, want, after)
     end
     # json.c:133: `put_byte(&t, c)` keeps the LOW byte of c0 as a char: 0x0631's is '1' (0x31), 0x0663's is 'c' (0x63)
@@ -399,7 +401,8 @@ end
     # MEASURE ON THE LANE: swipl -g "term_to_atom(T,'1.'),print(T),nl" -t halt  -> 1 (the first character is a digit, the last is not: the reader
     # branch reads `1.` as the integer 1 followed by the end `.`); the `}` is only peeked
     r = _rn(_TL, ".}", Int('1'))
-    @test r.rc == LK.FTRUE && !r.exc && _val(r, 3) == 1 && LK.Speekcode(r.ins[1]) == Int('}')
+    @test r.rc == LK.FTRUE && !r.exc && _val(r, 3) == 1 &&
+        LK.Speekcode(r.ins[1]) == Int('}')
     # MEASURE ON THE LANE: term_to_atom(T,'-') -> T = (-), an atom: PL_is_number fails, then the stream's syntax_error(illegal_number)
     @test _rn_error(_TL, "x", Int('-'), "syntax_error")
     # MEASURE ON THE LANE: term_to_atom(T,'1.5.3') -> a syntax error (the reader's: the number branch stops at `1.5`, e != len+1)
@@ -437,7 +440,7 @@ function _ptfc(::Type{T}, bytes::Vector{UInt8}, len::Int, flags::Integer) where 
     gd, ld = _env(T)
     t = LK.PL_new_term_refs(ld, 1)
     rc = LK.PL_put_term_from_chars(ld, t, UInt32(flags), bytes, len)
-    return (rc = rc, exc = _exc(ld), ld = ld, t = t)
+    return (rc=rc, exc=_exc(ld), ld=ld, t=t)
 end
 _ptfc(::Type{T}, s::String; len::Int=sizeof(s), flags::Integer=LK.CVT_EXCEPTION) where {T} =
     _ptfc(T, Vector{UInt8}(codeunits(s)), len, flags)
@@ -445,7 +448,7 @@ _ptfc_answer(r) = lk_answer(r.ld, r.t)
 
 # the text reads as the number `want`: the call succeeds, raises nothing and the reference holds a number equal to `want`
 _num_ok(::Type{T}, s::String, want; len::Int=sizeof(s)) where {T} = begin
-    r = _ptfc(T, s; len = len)
+    r = _ptfc(T, s; len=len)
     a = _ptfc_answer(r)
     r.rc && !r.exc && kind(a) === GND && lk_value(a) == want
 end
@@ -461,10 +464,14 @@ end
     @test _num_ok(_TL, "-7", -7)
     @test _num_ok(_TL, "2.5", 2.5)
     @test _num_ok(_TL, "0.25", 0.25)
-    @test _num_ok(_TL, "123456789012345678901234567890", parse(BigInt, "123456789012345678901234567890"))
-    @test _num_ok(_TL, "12345", 123; len = 3)                        # only the first `len` bytes are read
-    @test _num_ok(_TL, "12345", 12345; len = 5)
-    let r = _ptfc(_TL, "abcdef"; len = 3), a = _ptfc_answer(r)         # the reader branch reads `len` bytes too
+    @test _num_ok(
+        _TL,
+        "123456789012345678901234567890",
+        parse(BigInt, "123456789012345678901234567890")
+    )
+    @test _num_ok(_TL, "12345", 123; len=3)                        # only the first `len` bytes are read
+    @test _num_ok(_TL, "12345", 12345; len=5)
+    let r = _ptfc(_TL, "abcdef"; len=3), a = _ptfc_answer(r)         # the reader branch reads `len` bytes too
         @test r.rc && !r.exc && kind(a) === SYM && sym_text(a) == "abc"
     end
     @test _atom_ok(_TL, Vector{UInt8}(codeunits("abc")), LK.CVT_EXCEPTION, "abc")
@@ -475,15 +482,17 @@ end
         @test sym_text(child(a, 1)) == name && nchildren(a) == 3
     end
     # an encoding: REP_UTF8 reads the bytes of \u00e9 as one character; without it a byte is a Latin-1 character
-    @test _atom_ok(_TL, Vector{UInt8}(codeunits("\u00e9")), LK.CVT_EXCEPTION | LK.REP_UTF8, "\u00e9")
+    @test _atom_ok(
+        _TL, Vector{UInt8}(codeunits("\u00e9")), LK.CVT_EXCEPTION | LK.REP_UTF8, "\u00e9"
+    )
     @test _atom_ok(_TL, UInt8[0xe9], LK.CVT_EXCEPTION, "\u00e9")
 end
 
 @testset "PL_put_term_from_chars: a syntax error is raised under CVT_EXCEPTION, put into the term otherwise" begin
-    r = _ptfc(_TL, "foo("; flags = LK.CVT_EXCEPTION)
+    r = _ptfc(_TL, "foo("; flags=LK.CVT_EXCEPTION)
     @test !r.rc && r.exc
     @test sym_text(child(_exc_term(r.ld), 1)) == "error"
-    r = _ptfc(_TL, "foo("; flags = 0)
+    r = _ptfc(_TL, "foo("; flags=0)
     @test !r.rc && !r.exc
     a = _ptfc_answer(r)
     @test kind(a) !== GND && kind(a) !== SYM && sym_text(child(a, 1)) == "error"      # t holds the error term
@@ -492,7 +501,7 @@ end
 
 @testset "PL_put_term_from_chars: MUST-FAIL (the checker reports a wrong expectation)" begin
     @test !_num_ok(_TL, "12", 13)
-    @test !_num_ok(_TL, "12345", 12345; len = 3)
+    @test !_num_ok(_TL, "12345", 12345; len=3)
     @test !_num_ok(_TL, "foo(", 1)
     @test !_num_ok(_TL, "abc", 1)                                    # an atom is no number
     @test !_atom_ok(_TL, UInt8[0xe9], LK.CVT_EXCEPTION | LK.REP_UTF8, "\u00e9")   # a lone 0xe9 is no UTF-8
@@ -524,20 +533,28 @@ end
 @testset "the json tables and the procedures in system" begin
     tab = LK.PL_predicates_from_json
     @test [(e.predicate_name, e.arity) for e in tab] ==
-        [("json_read_number", 3), ("json_skip_ws", 3), ("json_write_string", 2), ("json_write_indent", 3)]
+        [
+        ("json_read_number", 3),
+        ("json_skip_ws", 3),
+        ("json_write_string", 2),
+        ("json_write_indent", 3)
+    ]
     @test all(e -> e.flags == LK.PL_FA_VARARGS, tab)
     @test [e.function_ for e in tab] == Any[
-        LK.pl_json_read_number3_va, LK.pl_json_skip_ws3_va, LK.pl_json_write_string2_va, LK.pl_json_write_indent3_va,
+        LK.pl_json_read_number3_va, LK.pl_json_skip_ws3_va, LK.pl_json_write_string2_va,
+        LK.pl_json_write_indent3_va
     ]
     ld_tab = LK.PL_predicates_from_load
-    @test [(e.predicate_name, e.arity) for e in ld_tab] == [("\$activate_static_extension", 1)]
+    @test [(e.predicate_name, e.arity) for e in ld_tab] ==
+        [("\$activate_static_extension", 1)]
     @test ld_tab[1].flags == (LK.PL_FA_TRANSPARENT | LK.PL_FA_VARARGS)
     gd = LK.PL_global_data{_TL}()
     m = LK.MODULE_system(gd)
     for (name, ar) in [
-            ("json_read_number", 3), ("json_skip_ws", 3), ("json_write_string", 2), ("json_write_indent", 3),
-            ("\$activate_static_extension", 1),
-        ]
+        ("json_read_number", 3), ("json_skip_ws", 3), ("json_write_string", 2),
+        ("json_write_indent", 3),
+        ("\$activate_static_extension", 1)
+    ]
         proc = LK.isCurrentProcedure(sym_key(lk_sym(_TL, Symbol(name))), ar, m)
         @test proc !== nothing && LK.isDefinedProcedure(gd, proc)
     end

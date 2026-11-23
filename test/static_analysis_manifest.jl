@@ -5623,7 +5623,11 @@ _manifest_pkg2_plain() = (
     (LK.re_next_config, Tuple{Int}, false),
     (LK.re_options_text, Tuple{LK.re_data}, false),
     (LK.re_get_pcre2_info, Tuple{IOBuffer, LK.re_data, UInt32, String}, false),
-    (LK.re_write_option_str, Tuple{IOBuffer, Base.RefValue{String}, Base.RefValue{UInt32}, UInt32, String}, false),
+    (
+        LK.re_write_option_str,
+        Tuple{IOBuffer, Base.RefValue{String}, Base.RefValue{UInt32}, UInt32, String},
+        false
+    ),
     (LK.re_write_re_options, Tuple{IOBuffer, Base.RefValue{String}, LK.re_data}, false),
     # YAML1 piece 3 — the anchor table's pure functions
     (LK.yaml_new_anchor_table, Tuple{}, false),
@@ -5647,8 +5651,16 @@ _manifest_yaml_events(T) = begin
         # PCRE1 piece 2 — the option flags (these take the local data)
         (LK.re_effective_bool, Tuple{LD, Int}, false),
         (LK.re_set_flag, Tuple{LD, Int, LK.re_options_flags, UInt32, UInt32, Bool}, false),
-        (LK.re_lookup_and_apply_optdef, Tuple{LD, Vector{LK.re_optdef}, String, Int, Int, UInt32, LK.re_options_flags}, false),
-        (LK.re_lookup_and_apply_optdef_arg, Tuple{LD, Vector{LK.re_optdef}, Int, Int, Int, UInt32, LK.re_options_flags}, false),
+        (
+            LK.re_lookup_and_apply_optdef,
+            Tuple{LD, Vector{LK.re_optdef}, String, Int, Int, UInt32, LK.re_options_flags},
+            false
+        ),
+        (
+            LK.re_lookup_and_apply_optdef_arg,
+            Tuple{LD, Vector{LK.re_optdef}, Int, Int, Int, UInt32, LK.re_options_flags},
+            false
+        ),
         # PCRE1 piece 6 — the option-list reader
         (LK.re_get_options, Tuple{LD, Int, LK.re_data}, false),
         (LK.re_get_arg_1_if_any, Tuple{LD, Int}, false),
@@ -5664,11 +5676,29 @@ _manifest_yaml_events(T) = begin
         # PCRE1 piece 11 (C) — the match half (the matcher calls libpcre2 and builds terms: no allocation claim)
         (LK.re_get_subject, Tuple{LD, Int, LK.re_subject}, false),
         (LK.re_representation_error, Tuple{LD, String}, false),
-        (LK.re_put_chars, Tuple{LD, Int, Int, Int, SubArray{UInt8, 1, Vector{UInt8}, Tuple{UnitRange{Int}}, true}}, false),
+        (
+            LK.re_put_chars,
+            Tuple{
+                LD,
+                Int,
+                Int,
+                Int,
+                SubArray{UInt8, 1, Vector{UInt8}, Tuple{UnitRange{Int}}, true}
+            },
+            false
+        ),
         (LK.re_out_of_range, Tuple{LD, Int}, false),
         (LK.re_put_capname, Tuple{LD, Int, LK.re_data, Int}, false),
-        (LK.re_put_capval, Tuple{LD, Int, LK.re_data, LK.re_subject, Int, Vector{UInt}}, false),
-        (LK.re_unify_match, Tuple{LD, Int, LK.re_data, LK.re_subject, Int, Vector{UInt}}, false),
+        (
+            LK.re_put_capval,
+            Tuple{LD, Int, LK.re_data, LK.re_subject, Int, Vector{UInt}},
+            false
+        ),
+        (
+            LK.re_unify_match,
+            Tuple{LD, Int, LK.re_data, LK.re_subject, Int, Vector{UInt}},
+            false
+        ),
         (LK.re_error, Tuple{LD, Int32}, false),
         (LK.re_matchsub_, Tuple{LD, LK.re_data, Int, Int, Int}, false),
         (LK.re_match_, Tuple{LD, LK.re_data, Int, Int}, false),
@@ -5684,8 +5714,10 @@ _manifest_yaml_events(T) = begin
         (LK.install_pcre4pl, Tuple{LD}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_re_compile3_va, LK.pl_re_match_3_va, LK.pl_re_matchsub_4_va, LK.pl_re_foldl_6_va,
-                LK.pl_re_portray_2_va, LK.pl_re_portray_match_options2_va, LK.pl_re_config_1_va, LK.pl_re_config_choice1_va
+                LK.pl_re_compile3_va, LK.pl_re_match_3_va, LK.pl_re_matchsub_4_va,
+                LK.pl_re_foldl_6_va,
+                LK.pl_re_portray_2_va, LK.pl_re_portray_match_options2_va,
+                LK.pl_re_config_1_va, LK.pl_re_config_choice1_va
             )
         ]...,
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
@@ -7296,7 +7328,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.global_atom, Tuple{LK.atoms_t, LK.atom}, false),                    # ATOM-API ($complete_atom/3)
     (LK.extendAtom, Tuple{LK.atoms_t, Vector{UInt8}}, false),               # ATOM-API ($complete_atom/3)
     (LK.ATOM_REF_COUNT, Tuple{UInt32}, true),                               # ATOM-API
-    (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t, UInt64, LK.blob_hooks}, false),   # PCRE1 E1
+    (
+        LK.PL_register_blob_type,
+        Tuple{LK.atoms_t, LK.PL_blob_t, UInt64, LK.blob_hooks},
+        false
+    ),   # PCRE1 E1
     (LK.blob_new!, Tuple{LK.atoms_t, LK.PL_blob_t, LK.re_data}, false),                          # PCRE1 E1
     (LK.blob_object, Tuple{LK.atoms_t, UInt64, LK.PL_blob_t}, false),                            # PCRE1 E1
     (LK.initDBRef!, Tuple{LK.atoms_t}, false),                          # R2 D1 (pl-dbref.c)

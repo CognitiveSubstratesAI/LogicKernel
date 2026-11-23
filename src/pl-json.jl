@@ -36,7 +36,7 @@
 "The `u` and the hex digits of `c` (at least four, lowercase) after a backslash (`Sfprintf(out, \"u%04x\", c)`); 0, or -1."
 function _json_put_u(out::IOSTREAM, c::Int)::Int
     Sputcode(Int('u'), out) < 0 && return -1
-    for ch in string(c; base = 16, pad = 4)
+    for ch in string(c; base=16, pad=4)
         Sputcode(Int(ch), out) < 0 && return -1
     end
     return 0
@@ -108,13 +108,15 @@ function pl_json_read_number3_va(
     while true
         c = Speekcode(inp)
         if (c >= Int('0') && c <= Int('9')) ||
-                c == Int('.') || c == Int('-') || c == Int('+') || c == Int('e') || c == Int('E')
+            c == Int('.') || c == Int('-') || c == Int('+') || c == Int('e') ||
+            c == Int('E')
             push!(buf, UInt8(c))
             Sgetcode(inp)
             continue
         end
         tmp = PL_new_term_ref(ld)
-        rc = PL_put_term_from_chars(ld, tmp, CVT_EXCEPTION, buf, length(buf)) &&
+        rc =
+            PL_put_term_from_chars(ld, tmp, CVT_EXCEPTION, buf, length(buf)) &&
             PL_is_number(ld, tmp) &&
             PL_unify(ld, tmp, A3)
         break
@@ -170,7 +172,9 @@ function pl_json_write_string2_va(
     out === nothing && return FFALSE
 
     rc = true
-    txt = PL_get_text(ld, A2, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_INTEGER | CVT_EXCEPTION)
+    txt = PL_get_text(
+        ld, A2, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_INTEGER | CVT_EXCEPTION
+    )
     if txt !== nothing
         codes = _text_code_points(txt)
         pc = 0

@@ -14,17 +14,21 @@ const PC = Base.PCRE
 _bytes(s::String) = Vector{UInt8}(codeunits(s))
 
 # compile `pat` (a String) with `opts` and the compile context `ctx`: (code, errcode, erroffset)
-_cc_compile(pat::String, opts::UInt32 = UInt32(0), ctx::Ptr{Cvoid} = Ptr{Cvoid}(C_NULL)) = LK.pcre2_compile(_bytes(pat), opts, ctx)
+_cc_compile(pat::String, opts::UInt32=UInt32(0), ctx::Ptr{Cvoid}=Ptr{Cvoid}(C_NULL)) =
+    LK.pcre2_compile(_bytes(pat), opts, ctx)
 
 # match `code` against the bytes `b` from byte `start`: (rc, the copied ovector); the match data is freed
-function _cc_match_bytes(code::Ptr{Cvoid}, b::Vector{UInt8}, start::Int = 0, opts::UInt32 = UInt32(0))
+function _cc_match_bytes(
+    code::Ptr{Cvoid}, b::Vector{UInt8}, start::Int=0, opts::UInt32=UInt32(0)
+)
     md = LK.pcre2_match_data_create_from_pattern(code)
     rc = LK.pcre2_match(code, b, length(b), start, opts, md)
     ov = rc > 0 ? LK.pcre2_ovector_copy(md, Int(rc)) : Csize_t[]
     LK.pcre2_match_data_free(md)
     return (rc, ov)
 end
-_cc_match(code::Ptr{Cvoid}, s::String, start::Int = 0, opts::UInt32 = UInt32(0)) = _cc_match_bytes(code, _bytes(s), start, opts)
+_cc_match(code::Ptr{Cvoid}, s::String, start::Int=0, opts::UInt32=UInt32(0)) =
+    _cc_match_bytes(code, _bytes(s), start, opts)
 
 # the ovector of a Julia `RegexMatch` (the same libpcre2): 0-based byte offsets, PCRE2_UNSET for a group that did not take part
 function _regex_ovec(m::RegexMatch)
@@ -56,7 +60,9 @@ end
     @test rc isa Cint
     v = LK.pcre2_config_str(buf)
     pb = zeros(UInt8, 100)
-    prc = ccall((:pcre2_config_8, PC.PCRE_LIB), Cint, (UInt32, Ptr{Cvoid}), PC.CONFIG_VERSION, pb)
+    prc = ccall(
+        (:pcre2_config_8, PC.PCRE_LIB), Cint, (UInt32, Ptr{Cvoid}), PC.CONFIG_VERSION, pb
+    )
     @test prc == rc
     @test GC.@preserve(pb, unsafe_string(pointer(pb))) == v
     @test occursin(r"^\d+\.\d+", v)
@@ -65,10 +71,20 @@ end
 
 @testset "PCRE2_ERROR_*, PCRE2_INFO_*, PCRE2_UNSET are Base.PCRE's values" begin
     errs = (
-        :NOMATCH, :PARTIAL, :UTF8_ERR1, :UTF8_ERR21, :NOMEMORY, :MATCHLIMIT, :DEPTHLIMIT, :HEAPLIMIT, :JIT_STACKLIMIT, :BADOFFSET, :NULL,
-        :BADOPTION, :BADMAGIC, :UNSET,
+        :NOMATCH, :PARTIAL, :UTF8_ERR1, :UTF8_ERR21, :NOMEMORY, :MATCHLIMIT, :DEPTHLIMIT,
+        :HEAPLIMIT, :JIT_STACKLIMIT, :BADOFFSET, :NULL,
+        :BADOPTION, :BADMAGIC, :UNSET
     )
-    infos = (:ARGOPTIONS, :BSR, :CAPTURECOUNT, :EXTRAOPTIONS, :NAMECOUNT, :NAMEENTRYSIZE, :NAMETABLE, :NEWLINE)
+    infos = (
+        :ARGOPTIONS,
+        :BSR,
+        :CAPTURECOUNT,
+        :EXTRAOPTIONS,
+        :NAMECOUNT,
+        :NAMEENTRYSIZE,
+        :NAMETABLE,
+        :NEWLINE
+    )
     @test length(errs) == 14 && length(infos) == 8
     for n in errs
         mine = getproperty(LK, Symbol("PCRE2_ERROR_", n))
@@ -110,11 +126,11 @@ end
 
 @testset "compile, capture count, match, ovector (the same answers as Julia's Regex on the same library)" begin
     for (pat, subj) in (
-            ("(\\w)(\\d)", "xa1y"),
-            ("(a)?(b)", "b"),
-            ("a(b)c", "zzabcz"),
-            ("(?<year>\\d+)-(?<m>\\w)", "on 2023-N."),
-        )
+        ("(\\w)(\\d)", "xa1y"),
+        ("(a)?(b)", "b"),
+        ("a(b)c", "zzabcz"),
+        ("(?<year>\\d+)-(?<m>\\w)", "on 2023-N.")
+    )
         code, _, _ = _cc_compile(pat)
         @test code != C_NULL
         rc, ov = _cc_match(code, subj)
@@ -135,7 +151,8 @@ end
 
     # hand rows (the numbers follow from the pattern and the subject)
     code, _, _ = _cc_compile("(a)?(b)")
-    @test _cc_match(code, "b") == (Cint(3), Csize_t[0, 1, LK.PCRE2_UNSET, LK.PCRE2_UNSET, 0, 1])      # group 1 did not take part
+    @test _cc_match(code, "b") ==
+        (Cint(3), Csize_t[0, 1, LK.PCRE2_UNSET, LK.PCRE2_UNSET, 0, 1])      # group 1 did not take part
     LK.pcre2_code_free(code)
     code, _, _ = _cc_compile("a(b)?")
     @test _cc_match(code, "a") == (Cint(1), Csize_t[0, 1])    # a trailing unset group is not counted in rc (pcre2api: "highest numbered capture + 1")
@@ -225,9 +242,17 @@ end
     end
     # the C passes sizeof-1 for the compile error text and sizeof for the match error text: both lengths work
     _, ec, _ = _cc_compile("(")
-    @test LK.pcre2_get_error_message(ec, 255) == LK.pcre2_get_error_message(ec, 256) == LK.pcre2_get_error_message(ec)
+    @test LK.pcre2_get_error_message(ec, 255) == LK.pcre2_get_error_message(ec, 256) ==
+        LK.pcre2_get_error_message(ec)
     # texts of match results (re_error's default branch asks for these)
-    for rc in (LK.PCRE2_ERROR_NOMATCH, LK.PCRE2_ERROR_PARTIAL, LK.PCRE2_ERROR_BADOFFSET, LK.PCRE2_ERROR_MATCHLIMIT, LK.PCRE2_ERROR_NULL, LK.PCRE2_ERROR_BADOPTION)
+    for rc in (
+        LK.PCRE2_ERROR_NOMATCH,
+        LK.PCRE2_ERROR_PARTIAL,
+        LK.PCRE2_ERROR_BADOFFSET,
+        LK.PCRE2_ERROR_MATCHLIMIT,
+        LK.PCRE2_ERROR_NULL,
+        LK.PCRE2_ERROR_BADOPTION
+    )
         @test LK.pcre2_get_error_message(rc) == PC.err_message(rc)
     end
     # an unknown code: libpcre2 answers BADDATA (Base.PCRE errors on it), the wrapper `nothing` (the C: "regex")
@@ -271,10 +296,13 @@ end
     LK.pcre2_code_free(code)
 
     # get_pcre2_info's error branches: a NULL code and an unknown `what` (values: the C names ERROR_NULL and ERROR_BADOPTION)
-    @test LK.pcre2_pattern_info(Ptr{Cvoid}(C_NULL), LK.PCRE2_INFO_CAPTURECOUNT, UInt32) == (LK.PCRE2_ERROR_NULL, UInt32(0))
+    @test LK.pcre2_pattern_info(Ptr{Cvoid}(C_NULL), LK.PCRE2_INFO_CAPTURECOUNT, UInt32) ==
+        (LK.PCRE2_ERROR_NULL, UInt32(0))
     code, _, _ = _cc_compile("a")
-    @test LK.pcre2_pattern_info(code, UInt32(9999), UInt32) == (LK.PCRE2_ERROR_BADOPTION, UInt32(0))
-    @test LK.pcre2_pattern_info(code, UInt32(9999), Ptr{UInt8}) == (LK.PCRE2_ERROR_BADOPTION, Ptr{UInt8}(0))
+    @test LK.pcre2_pattern_info(code, UInt32(9999), UInt32) ==
+        (LK.PCRE2_ERROR_BADOPTION, UInt32(0))
+    @test LK.pcre2_pattern_info(code, UInt32(9999), Ptr{UInt8}) ==
+        (LK.PCRE2_ERROR_BADOPTION, Ptr{UInt8}(0))
     LK.pcre2_code_free(code)
 end
 
@@ -292,9 +320,9 @@ end
 
     # newline convention: `.` does not match the convention's newline
     for (nl, subj, hit) in (
-            (LK.PCRE2_NEWLINE_LF, "a\nb", false), (LK.PCRE2_NEWLINE_CR, "a\nb", true),
-            (LK.PCRE2_NEWLINE_CR, "a\rb", false), (LK.PCRE2_NEWLINE_LF, "a\rb", true),
-        )
+        (LK.PCRE2_NEWLINE_LF, "a\nb", false), (LK.PCRE2_NEWLINE_CR, "a\nb", true),
+        (LK.PCRE2_NEWLINE_CR, "a\rb", false), (LK.PCRE2_NEWLINE_LF, "a\rb", true)
+    )
         ctx = LK.pcre2_compile_context_create()
         @test LK.pcre2_set_newline(ctx, nl) == 0
         code, _, _ = _cc_compile("a.b", UInt32(0), ctx)
@@ -363,7 +391,13 @@ end
 
 @testset "pcre2_config: ints, strings, the error answer" begin
     # an int answer: 0, the value in the buffer; it equals what Base.PCRE's library name answers
-    for what in (LK.PCRE2_CONFIG_JIT, LK.PCRE2_CONFIG_NEWLINE, LK.PCRE2_CONFIG_BSR, LK.PCRE2_CONFIG_PARENSLIMIT, LK.PCRE2_CONFIG_UNICODE)
+    for what in (
+        LK.PCRE2_CONFIG_JIT,
+        LK.PCRE2_CONFIG_NEWLINE,
+        LK.PCRE2_CONFIG_BSR,
+        LK.PCRE2_CONFIG_PARENSLIMIT,
+        LK.PCRE2_CONFIG_UNICODE
+    )
         buf = LK.pcre2_config_buf()
         rc = LK.pcre2_config(what, buf)
         pb = zeros(UInt8, 100)
@@ -389,6 +423,12 @@ end
     uv = LK.pcre2_config_str(buf)
     @test rc > 0 && occursin(r"^\d+\.\d+", uv)
     pb = zeros(UInt8, 100)
-    ccall((:pcre2_config_8, PC.PCRE_LIB), Cint, (UInt32, Ptr{Cvoid}), PC.CONFIG_UNICODE_VERSION, pb)
+    ccall(
+        (:pcre2_config_8, PC.PCRE_LIB),
+        Cint,
+        (UInt32, Ptr{Cvoid}),
+        PC.CONFIG_UNICODE_VERSION,
+        pb
+    )
     @test GC.@preserve(pb, unsafe_string(pointer(pb))) == uv
 end

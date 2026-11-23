@@ -46,7 +46,8 @@ end
 # PORT: packages/pcre/pcre4pl.c utf8_skip_char
 # DIVERGES: see the file header, 1 and 3.
 "The 0-based offset after the character that starts at the 0-based offset `o` of `b` (pcre4pl.c `utf8_skip_char`)."
-@inline re_utf8_skip_char(b::AbstractVector{UInt8}, o::Int)::Int = utf8_skip_char(b, o + 1) - 1
+@inline re_utf8_skip_char(b::AbstractVector{UInt8}, o::Int)::Int =
+    utf8_skip_char(b, o + 1) - 1
 
 # PORT: packages/pcre/pcre4pl.c utf8_seek
 # DIVERGES: see the file header, 1, 2 and 3.
@@ -232,9 +233,14 @@ const RE_MATCH_START = UInt32(0x2000)
 const RE_SUBS_BOOL = UInt32(0x4000)
 const OPTSTART_MASK = typemax(UInt32)
 const OPTBSR_MASK = PCRE2_BSR_ANYCRLF | PCRE2_BSR_UNICODE
-const OPTNEWLINE_MASK = PCRE2_NEWLINE_CR | PCRE2_NEWLINE_LF | PCRE2_NEWLINE_CRLF | PCRE2_NEWLINE_ANY | PCRE2_NEWLINE_ANYCRLF
+const OPTNEWLINE_MASK =
+    PCRE2_NEWLINE_CR | PCRE2_NEWLINE_LF | PCRE2_NEWLINE_CRLF | PCRE2_NEWLINE_ANY |
+    PCRE2_NEWLINE_ANYCRLF
 const OPTCOMPAT_MASK = UInt32(0)
-const OPTCAPTURE_MASK = UInt32(CAP_ATOM | CAP_FLOAT | CAP_INTEGER | CAP_NUMBER | CAP_RANGE | CAP_STRING | CAP_TERM | CAP_DEFAULT)
+const OPTCAPTURE_MASK = UInt32(
+    CAP_ATOM | CAP_FLOAT | CAP_INTEGER | CAP_NUMBER | CAP_RANGE | CAP_STRING | CAP_TERM |
+    CAP_DEFAULT
+)
 
 # PORT: packages/pcre/pcre4pl.c re_options_flags
 "The flags of one option group and the bits already set by an option (pcre4pl.c `re_options_flags`): only the first value of a flag counts."
@@ -277,10 +283,12 @@ mutable struct re_data
 end
 
 "A regex's option fields as `init_re_data` leaves them: utf and no UTF check to compile, no UTF check to match, the string capture type (pcre4pl.c)."
-function re_init_data(pattern::String = "")::re_data
+function re_init_data(pattern::String="")::re_data
     re = re_data(
-        pattern, Threads.atomic_add!(_re_serial, 1) + 1, re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
-        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), UInt32(0),
+        pattern, Threads.atomic_add!(_re_serial, 1) + 1, re_options_flags(),
+        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
+        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
+        UInt32(0),
         re_cap_how[], C_NULL
     )
     re.compile_options_flags.flags = PCRE2_UTF | PCRE2_NO_UTF_CHECK
@@ -311,7 +319,8 @@ end
 # PORT: packages/pcre/pcre4pl.c set_flag
 "Set (or, `invert`, clear) the bits `value` in `of.flags` from the Boolean `arg`, once per `mask` (a repeated option is ignored); false after an error (pcre4pl.c)."
 function re_set_flag(
-    ld::PL_local_data{T}, arg::term_t, of::re_options_flags, mask::UInt32, value::UInt32, invert::Bool
+    ld::PL_local_data{T}, arg::term_t, of::re_options_flags, mask::UInt32, value::UInt32,
+    invert::Bool
 )::Bool where {T}
     (of.seen & mask) != 0 && return true                    # repeated option - ignore
     of.seen |= mask
@@ -388,8 +397,14 @@ const re_optdefs = re_optdef[
     re_optdef("extended_more", PCRE2_EXTENDED_MORE, RE_COMP_BOOL),
     re_optdef("literal", PCRE2_LITERAL, RE_COMP_BOOL),
     re_optdef("match_invalid_utf", PCRE2_MATCH_INVALID_UTF, RE_COMP_BOOL),
-    re_optdef("extra_allow_surrogate_escapes", PCRE2_EXTRA_ALLOW_SURROGATE_ESCAPES, RE_COMPCTX_BOOL),
-    re_optdef("extra_bad_escape_is_literal", PCRE2_EXTRA_BAD_ESCAPE_IS_LITERAL, RE_COMPCTX_BOOL),
+    re_optdef(
+        "extra_allow_surrogate_escapes",
+        PCRE2_EXTRA_ALLOW_SURROGATE_ESCAPES,
+        RE_COMPCTX_BOOL
+    ),
+    re_optdef(
+        "extra_bad_escape_is_literal", PCRE2_EXTRA_BAD_ESCAPE_IS_LITERAL, RE_COMPCTX_BOOL
+    ),
     re_optdef("extra_match_word", PCRE2_EXTRA_MATCH_WORD, RE_COMPCTX_BOOL),
     re_optdef("extra_match_line", PCRE2_EXTRA_MATCH_LINE, RE_COMPCTX_BOOL),
     re_optdef("extra_escaped_cr_is_lf", PCRE2_EXTRA_ESCAPED_CR_IS_LF, RE_COMPCTX_BOOL),
@@ -411,14 +426,16 @@ const re_optdefs = re_optdef[
     re_optdef("substitute_extended", PCRE2_SUBSTITUTE_EXTENDED, RE_MATCH_BOOL),
     re_optdef("substitute_unset_empty", PCRE2_SUBSTITUTE_UNSET_EMPTY, RE_MATCH_BOOL),
     re_optdef("substitute_unknown_unset", PCRE2_SUBSTITUTE_UNKNOWN_UNSET, RE_MATCH_BOOL),
-    re_optdef("substitute_overflow_length", PCRE2_SUBSTITUTE_OVERFLOW_LENGTH, RE_MATCH_BOOL),
+    re_optdef(
+        "substitute_overflow_length", PCRE2_SUBSTITUTE_OVERFLOW_LENGTH, RE_MATCH_BOOL
+    ),
     re_optdef("jit", PCRE2_NO_JIT, RE_MATCH_BOOL | RE_NEG),
-    re_optdef("copy_matched_subject", PCRE2_COPY_MATCHED_SUBJECT, RE_MATCH_BOOL),
+    re_optdef("copy_matched_subject", PCRE2_COPY_MATCHED_SUBJECT, RE_MATCH_BOOL)
 ]
 
 const re_optbsrs = re_optdef[
     re_optdef("anycrlf", PCRE2_BSR_ANYCRLF, RE_COMP_BSR),
-    re_optdef("unicode", PCRE2_BSR_UNICODE, RE_COMP_BSR),
+    re_optdef("unicode", PCRE2_BSR_UNICODE, RE_COMP_BSR)
 ]
 
 const re_optnewlines = re_optdef[
@@ -427,7 +444,7 @@ const re_optnewlines = re_optdef[
     re_optdef("crlf", PCRE2_NEWLINE_CRLF, RE_COMP_NEWLINE),
     re_optdef("any", PCRE2_NEWLINE_ANY, RE_COMP_NEWLINE),
     re_optdef("anycrlf", PCRE2_NEWLINE_ANYCRLF, RE_COMP_NEWLINE),
-    re_optdef("nul", PCRE2_NEWLINE_NUL, RE_COMP_NEWLINE),
+    re_optdef("nul", PCRE2_NEWLINE_NUL, RE_COMP_NEWLINE)
 ]
 
 # upstream: "This had "javascript" for PCRE1; the option doesn't exist in PCRE2, so this empty array causes an error for compat(javascript)."
@@ -440,7 +457,7 @@ const re_optcaptures = re_optdef[
     re_optdef("number", UInt32(CAP_NUMBER), RE_COMP_CAPTURE),
     re_optdef("range", UInt32(CAP_RANGE), RE_COMP_CAPTURE),
     re_optdef("string", UInt32(CAP_STRING), RE_COMP_CAPTURE),
-    re_optdef("term", UInt32(CAP_TERM), RE_COMP_CAPTURE),
+    re_optdef("term", UInt32(CAP_TERM), RE_COMP_CAPTURE)
 ]
 
 # PCRE1 piece 8 (pcre4pl.c a5e4c885, lines 854-906): the TABLES of `re_config`: the enum `re_config_type` and the `cfg_opts` rows, written by tool
@@ -500,14 +517,16 @@ const re_cfg_opts = re_config_opt[
     re_config_opt("unicode_properties", -1, CFG_TRUE_BKWD),
     re_config_opt("unicode_version", PCRE2_CONFIG_UNICODE_VERSION, CFG_STRINGBUF),  # PCRE2
     re_config_opt("utf8", PCRE2_CONFIG_UNICODE, CFG_BOOL_BKWD),
-    re_config_opt("version", PCRE2_CONFIG_VERSION, CFG_STRINGBUF),  # PCRE2
+    re_config_opt("version", PCRE2_CONFIG_VERSION, CFG_STRINGBUF)  # PCRE2
 ]
 # pcre4pl.c, after the last row: PCRE2_CONFIG_RECURSIONLIMIT is an obsolete synonym (no row).
 
 # PORT: packages/pcre/pcre4pl.c lookup_optdef
 # DIVERGES: see the piece 2 header, 5. The first row of `opt_defs` named `name`, `nothing` when there is none.
 "The first row of the table `opt_defs` whose name is `name` (pcre4pl.c `lookup_optdef`), `nothing` if none."
-function re_lookup_optdef(opt_defs::Vector{re_optdef}, name::String)::Union{Nothing, re_optdef}
+function re_lookup_optdef(
+    opt_defs::Vector{re_optdef}, name::String
+)::Union{Nothing, re_optdef}
     for def in opt_defs
         def.name == name && return def
     end
@@ -517,7 +536,8 @@ end
 # PORT: packages/pcre/pcre4pl.c lookup_and_apply_optdef
 "Apply the table row named `name` to `options_flags` under `mask`, or raise `type_error(option, OptionTerm)`; false after an error (pcre4pl.c)."
 function re_lookup_and_apply_optdef(
-    ld::PL_local_data{T}, opt_defs::Vector{re_optdef}, name::String, option_term::term_t, arg::term_t,
+    ld::PL_local_data{T}, opt_defs::Vector{re_optdef}, name::String, option_term::term_t,
+    arg::term_t,
     mask::UInt32, options_flags::re_options_flags
 )::Bool where {T}
     def = re_lookup_optdef(opt_defs, name)
@@ -530,19 +550,29 @@ end
 # PORT: packages/pcre/pcre4pl.c lookup_and_apply_optdef_arg
 "As `re_lookup_and_apply_optdef` with the option's name read from the term `name` (an atom, else `type_error(atom, Name)`) (pcre4pl.c)."
 function re_lookup_and_apply_optdef_arg(
-    ld::PL_local_data{T}, opt_defs::Vector{re_optdef}, name::term_t, option_term::term_t, arg::term_t,
+    ld::PL_local_data{T}, opt_defs::Vector{re_optdef}, name::term_t, option_term::term_t,
+    arg::term_t,
     mask::UInt32, options_flags::re_options_flags
 )::Bool where {T}
     a = PL_get_atom_ex(ld, name)
     a === nothing && return false
-    return re_lookup_and_apply_optdef(ld, opt_defs, sym_text(a), option_term, arg, mask, options_flags)
+    return re_lookup_and_apply_optdef(
+        ld, opt_defs, sym_text(a), option_term, arg, mask, options_flags
+    )
 end
 
 # PORT: packages/pcre/pcre4pl.c compare_pcres, CMP_FIELD
 # DIVERGES: 10. The blob's address is the field `serial` (a counter at creation, stable and unique); the answer is the sign (-1, 0, 1) where
 # `wcscmp` answers any number of that sign; `pattern` is the atom's text, compared as code points (`wcscmp`; the UTF-8 bytes order the same).
 # CMP_FIELD: -1, 1 by the `flags` of the two groups, else 0.
-_re_cmp_flags(x::re_options_flags, y::re_options_flags)::Int = x.flags < y.flags ? -1 : x.flags > y.flags ? 1 : 0
+_re_cmp_flags(x::re_options_flags, y::re_options_flags)::Int =
+    if x.flags < y.flags
+        -1
+    elseif x.flags > y.flags
+        1
+    else
+        0
+    end
 
 "Order two regexes (pcre4pl.c `compare_pcres`): by pattern, then the `flags` of each option group in struct order (not `seen`), then the creation serial."
 function re_compare(a::re_data, b::re_data)::Int
@@ -560,7 +590,13 @@ function re_compare(a::re_data, b::re_data)::Int
     c == 0 && (c = _re_cmp_flags(a.start_flags, b.start_flags))
     c != 0 && return c
     # No need to compare capture_names: they are derived from the patterns. Equal so far: the serial (the C: the address) breaks the tie.
-    return a.serial > b.serial ? 1 : a.serial < b.serial ? -1 : 0
+    return if a.serial > b.serial
+        1
+    elseif a.serial < b.serial
+        -1
+    else
+        0
+    end
 end
 
 # ---------------------------------------------------------------------------------------------------------------------------------
@@ -573,7 +609,9 @@ end
 # DIVERGES: returns `(name, arity, arg)` (the name an atom term, `arg` 0 when the option has no argument), or `nothing` after
 # `type_error(option, Head)`, where the C returns the Bool and writes the three through pointers.
 "The name, arity (0 or 1) and argument term reference (0 for none) of the option `head`, or `nothing` after raising `type_error(option, Head)` (pcre4pl.c)."
-function re_get_arg_1_if_any(ld::PL_local_data{T}, head::term_t)::Union{Nothing, Tuple{T, Int, term_t}} where {T}
+function re_get_arg_1_if_any(
+    ld::PL_local_data{T}, head::term_t
+)::Union{Nothing, Tuple{T, Int, term_t}} where {T}
     na = PL_get_name_arity(ld, head)
     if na !== nothing && na[2] <= 1
         arg = term_t(0)
@@ -603,31 +641,62 @@ function re_get_options(ld::PL_local_data{T}, options::term_t, re::re_data)::Boo
         if def !== nothing
             neg = (def.mode & RE_NEG) != 0
             if (def.mode & RE_COMP_BOOL) != 0
-                re_set_flag(ld, arg, re.compile_options_flags, def.flag, def.flag, neg) || return false
+                re_set_flag(ld, arg, re.compile_options_flags, def.flag, def.flag, neg) ||
+                    return false
             end
             if (def.mode & RE_MATCH_BOOL) != 0
-                re_set_flag(ld, arg, re.match_options_flags, def.flag, def.flag, neg) || return false
+                re_set_flag(ld, arg, re.match_options_flags, def.flag, def.flag, neg) ||
+                    return false
             end
             if (def.mode & RE_COMP_BSR) != 0
-                re_lookup_and_apply_optdef_arg(ld, re_optbsrs, arg, head, term_t(0), OPTBSR_MASK, re.compile_bsr_flags) || return false
+                re_lookup_and_apply_optdef_arg(
+                    ld, re_optbsrs, arg, head, term_t(0), OPTBSR_MASK, re.compile_bsr_flags
+                ) || return false
             end
             if (def.mode & RE_COMP_NEWLINE) != 0
-                re_lookup_and_apply_optdef_arg(ld, re_optnewlines, arg, head, term_t(0), OPTNEWLINE_MASK, re.compile_newline_flags) || return false
+                re_lookup_and_apply_optdef_arg(
+                    ld,
+                    re_optnewlines,
+                    arg,
+                    head,
+                    term_t(0),
+                    OPTNEWLINE_MASK,
+                    re.compile_newline_flags
+                ) || return false
             end
             if (def.mode & RE_COMP_COMPAT) != 0
-                re_lookup_and_apply_optdef_arg(ld, re_optcompats, arg, head, term_t(0), OPTCOMPAT_MASK, re.compile_options_flags) || return false
+                re_lookup_and_apply_optdef_arg(
+                    ld,
+                    re_optcompats,
+                    arg,
+                    head,
+                    term_t(0),
+                    OPTCOMPAT_MASK,
+                    re.compile_options_flags
+                ) || return false
             end
             if (def.mode & RE_COMP_CAPTURE) != 0
-                re_lookup_and_apply_optdef_arg(ld, re_optcaptures, arg, head, term_t(0), OPTCAPTURE_MASK, re.capture_type) || return false
+                re_lookup_and_apply_optdef_arg(
+                    ld,
+                    re_optcaptures,
+                    arg,
+                    head,
+                    term_t(0),
+                    OPTCAPTURE_MASK,
+                    re.capture_type
+                ) || return false
             end
             if (def.mode & RE_COMP_OPTIMISE) != 0
-                re_set_flag(ld, arg, re.optimise_flags, RE_OPTIMISE, RE_OPTIMISE, neg) || return false
+                re_set_flag(ld, arg, re.optimise_flags, RE_OPTIMISE, RE_OPTIMISE, neg) ||
+                    return false
             end
             if (def.mode & RE_COMPCTX_BOOL) != 0
-                re_set_flag(ld, arg, re.compile_ctx_flags, def.flag, def.flag, neg) || return false
+                re_set_flag(ld, arg, re.compile_ctx_flags, def.flag, def.flag, neg) ||
+                    return false
             end
             if (def.mode & RE_COMPJIT_BOOL) != 0
-                re_set_flag(ld, arg, re.jit_options_flags, def.flag, def.flag, neg) || return false
+                re_set_flag(ld, arg, re.jit_options_flags, def.flag, def.flag, neg) ||
+                    return false
             end
             if (def.mode & RE_MATCH_START) != 0
                 if arg == 0                                     # DIVERGES 11
@@ -636,7 +705,8 @@ function re_get_options(ld::PL_local_data{T}, options::term_t, re::re_data)::Boo
                 end
                 start_value = PL_get_uint64_ex(ld, arg)
                 start_value === nothing && return false
-                start_value > UInt64(OPTSTART_MASK) && return PL_domain_error(ld, "int32", arg)
+                start_value > UInt64(OPTSTART_MASK) &&
+                    return PL_domain_error(ld, "int32", arg)
                 # TODO (upstream): use set_flags() style of checking "seen"; allow 64-bit sizes
                 if re.start_flags.seen == 0
                     re.start_flags.seen = UInt32(1)
@@ -659,7 +729,8 @@ end
 # DIVERGES: 12. `%p` prints the blob's address; the stand-in is the regex's creation serial in the same `0x<hex>` form (`re_compare`, 10). The result is the
 # text; the C writes it to a stream with `SfprintfX` and answers whether that worked.
 "The text `write_pcre` prints for `re`: `<regex>(0x<serial in hex>, <pattern>)` (pcre4pl.c)."
-re_write_text(re::re_data)::String = string("<regex>(0x", string(re.serial, base = 16), ", ", re.pattern, ")")
+re_write_text(re::re_data)::String =
+    string("<regex>(0x", string(re.serial; base=16), ", ", re.pattern, ")")
 
 # PORT: packages/pcre/pcre4pl.c save_pcre_options_flag
 "Write one flag pair as two state-file unsigned integers (pcre4pl.c `save_pcre_options_flag`)."
@@ -685,16 +756,16 @@ end
 "Write `re` to a state file: version 1, the pattern atom, then the nine flag pairs (pcre4pl.c `save_pcre`); true if every write succeeded."
 function re_save_fields(re::re_data, fd::IOSTREAM, put_atom::Function)::Bool
     return PL_qlf_put_uint32(UInt32(1), fd) &&
-        put_atom(re.pattern, fd) &&
-        re_save_options_flag(re.compile_options_flags, fd) &&
-        re_save_options_flag(re.capture_type, fd) &&
-        re_save_options_flag(re.optimise_flags, fd) &&
-        re_save_options_flag(re.jit_options_flags, fd) &&
-        re_save_options_flag(re.compile_ctx_flags, fd) &&
-        re_save_options_flag(re.compile_bsr_flags, fd) &&
-        re_save_options_flag(re.compile_newline_flags, fd) &&
-        re_save_options_flag(re.match_options_flags, fd) &&
-        re_save_options_flag(re.start_flags, fd)
+           put_atom(re.pattern, fd) &&
+           re_save_options_flag(re.compile_options_flags, fd) &&
+           re_save_options_flag(re.capture_type, fd) &&
+           re_save_options_flag(re.optimise_flags, fd) &&
+           re_save_options_flag(re.jit_options_flags, fd) &&
+           re_save_options_flag(re.compile_ctx_flags, fd) &&
+           re_save_options_flag(re.compile_bsr_flags, fd) &&
+           re_save_options_flag(re.compile_newline_flags, fd) &&
+           re_save_options_flag(re.match_options_flags, fd) &&
+           re_save_options_flag(re.start_flags, fd)
 end
 
 # PORT: packages/pcre/pcre4pl.c load_pcre (up to the recompile)
@@ -712,14 +783,14 @@ function re_load_fields(fd::IOSTREAM, get_atom::Function)::Union{Nothing, re_dat
     pattern === nothing && return nothing
     re = re_init_data(pattern)
     if !re_load_options_flag(fd, re.compile_options_flags) ||
-            !re_load_options_flag(fd, re.capture_type) ||
-            !re_load_options_flag(fd, re.optimise_flags) ||
-            !re_load_options_flag(fd, re.jit_options_flags) ||
-            !re_load_options_flag(fd, re.compile_ctx_flags) ||
-            !re_load_options_flag(fd, re.compile_bsr_flags) ||
-            !re_load_options_flag(fd, re.compile_newline_flags) ||
-            !re_load_options_flag(fd, re.match_options_flags) ||
-            !re_load_options_flag(fd, re.start_flags)
+        !re_load_options_flag(fd, re.capture_type) ||
+        !re_load_options_flag(fd, re.optimise_flags) ||
+        !re_load_options_flag(fd, re.jit_options_flags) ||
+        !re_load_options_flag(fd, re.compile_ctx_flags) ||
+        !re_load_options_flag(fd, re.compile_bsr_flags) ||
+        !re_load_options_flag(fd, re.compile_newline_flags) ||
+        !re_load_options_flag(fd, re.match_options_flags) ||
+        !re_load_options_flag(fd, re.start_flags)
         return nothing
     end
     return re
@@ -783,7 +854,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_compile_impl (1451): pcre2_compile
 # DIVERGES: 17. The C passes `(PCRE2_SPTR)pats, len`; `len` is `length(pat)` here. C_NULL `ctx` = no compile context.
 "Compile `pat` (UTF-8 bytes) with `options` and the compile context `ctx` (or C_NULL): `(code, errcode, erroff)`; `code` is C_NULL on an error (pcre4pl.c `re_compile_impl`)."
-function pcre2_compile(pat::Vector{UInt8}, options::UInt32, ctx::Ptr{Cvoid})::Tuple{Ptr{Cvoid}, Cint, Csize_t}
+function pcre2_compile(
+    pat::Vector{UInt8}, options::UInt32, ctx::Ptr{Cvoid}
+)::Tuple{Ptr{Cvoid}, Cint, Csize_t}
     errcode = Ref{Cint}(0)
     erroff = Ref{Csize_t}(0)
     code = ccall(
@@ -797,13 +870,17 @@ end
 # PORT: packages/pcre/pcre4pl.c re_compile_impl (1454): pcre2_jit_compile
 "JIT-compile `code` with `flags` (the C ignores the result): 0, or a negative PCRE2 error (pcre4pl.c `re_compile_impl`)."
 function pcre2_jit_compile(code::Ptr{Cvoid}, flags::UInt32)::Cint
-    return ccall((:pcre2_jit_compile_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), code, flags)
+    return ccall(
+        (:pcre2_jit_compile_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), code, flags
+    )
 end
 
 # PORT: packages/pcre/pcre4pl.c ensure_compile_context (757), re_compile_impl (1470), re_portray_match_options_ (1544): pcre2_compile_context_create/_free
 "A new compile context with the default general context (pcre4pl.c `ensure_compile_context`); C_NULL when out of memory."
 function pcre2_compile_context_create()::Ptr{Cvoid}
-    return ccall((:pcre2_compile_context_create_8, libpcre2_8), Ptr{Cvoid}, (Ptr{Cvoid},), C_NULL)
+    return ccall(
+        (:pcre2_compile_context_create_8, libpcre2_8), Ptr{Cvoid}, (Ptr{Cvoid},), C_NULL
+    )
 end
 
 "Free a compile context (pcre4pl.c `re_compile_impl`, `re_portray_match_options_`); a NULL `ctx` is a no-op."
@@ -825,16 +902,31 @@ end
 
 "Set the compile context's extra options (pcre4pl.c `re_compile_impl`): 0 (libpcre2 never fails here)."
 function pcre2_set_compile_extra_options(ctx::Ptr{Cvoid}, value::UInt32)::Cint
-    return ccall((:pcre2_set_compile_extra_options_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), ctx, value)
+    return ccall(
+        (:pcre2_set_compile_extra_options_8, libpcre2_8),
+        Cint,
+        (Ptr{Cvoid}, UInt32),
+        ctx,
+        value
+    )
 end
 
 # PORT: packages/pcre/pcre4pl.c init_capture_map (1139-1142), get_pcre2_info (1164, with what = ARGOPTIONS 1209, EXTRAOPTIONS 1256, BSR 1281, NEWLINE 1296): pcre2_pattern_info
 # DIVERGES: 17. `T` is UInt32 for CAPTURECOUNT, NAMECOUNT, NAMEENTRYSIZE, ARGOPTIONS, EXTRAOPTIONS, BSR and NEWLINE (the C declares `int name_count`,
 # `int name_entry_size`: the library writes 32 bits), `Ptr{UInt8}` for NAMETABLE. The value is `T(0)` when `rc != 0`.
 "Ask `code` for `what` (a `PCRE2_INFO_*`): `(rc, value::T)`, `rc` 0 when the library wrote `value` (pcre4pl.c `init_capture_map`, `get_pcre2_info`)."
-function pcre2_pattern_info(code::Ptr{Cvoid}, what::UInt32, ::Type{T})::Tuple{Cint, T} where {T}
+function pcre2_pattern_info(
+    code::Ptr{Cvoid}, what::UInt32, ::Type{T}
+)::Tuple{Cint, T} where {T}
     r = Ref{T}(T(0))
-    rc = ccall((:pcre2_pattern_info_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32, Ptr{Cvoid}), code, what, r)
+    rc = ccall(
+        (:pcre2_pattern_info_8, libpcre2_8),
+        Cint,
+        (Ptr{Cvoid}, UInt32, Ptr{Cvoid}),
+        code,
+        what,
+        r
+    )
     return (rc, r[])
 end
 
@@ -866,7 +958,13 @@ end
 # PORT: packages/pcre/pcre4pl.c re_matchsub_ (1712), re_foldl_ (1786): pcre2_match_data_create_from_pattern; re_matchsub_ (1737), re_foldl_ (1829): pcre2_match_data_free
 "A match data block sized for `code` with the default general context (pcre4pl.c `re_matchsub_`, `re_foldl_`); C_NULL when out of memory."
 function pcre2_match_data_create_from_pattern(code::Ptr{Cvoid})::Ptr{Cvoid}
-    return ccall((:pcre2_match_data_create_from_pattern_8, libpcre2_8), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), code, C_NULL)
+    return ccall(
+        (:pcre2_match_data_create_from_pattern_8, libpcre2_8),
+        Ptr{Cvoid},
+        (Ptr{Cvoid}, Ptr{Cvoid}),
+        code,
+        C_NULL
+    )
 end
 
 "Free a match data block (pcre4pl.c `re_matchsub_`, `re_foldl_`); a NULL `md` is a no-op."
@@ -878,7 +976,14 @@ end
 # PORT: packages/pcre/pcre4pl.c re_matchsub_ (1720), re_foldl_ (1796): pcre2_match
 # DIVERGES: 17. `len` is the byte length the C passes (`subject.length`), `start` the byte offset (`utf8_start`); the match context is NULL, as the C.
 "Match `code` against the first `len` bytes of `subject` from byte `start` with `options`, into `md`: the highest captured group + 1, or a negative PCRE2 error (pcre4pl.c)."
-function pcre2_match(code::Ptr{Cvoid}, subject::Vector{UInt8}, len::Int, start::Int, options::UInt32, md::Ptr{Cvoid})::Cint
+function pcre2_match(
+    code::Ptr{Cvoid},
+    subject::Vector{UInt8},
+    len::Int,
+    start::Int,
+    options::UInt32,
+    md::Ptr{Cvoid}
+)::Cint
     return ccall(
         (:pcre2_match_8, libpcre2_8), Cint,
         (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Csize_t, UInt32, Ptr{Cvoid}, Ptr{Cvoid}),
@@ -889,7 +994,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_matchsub_ (1728), re_foldl_ (1801): pcre2_get_ovector_pointer
 "The ovector of `md` (valid until `md` is freed): pairs of start and end byte offsets (pcre4pl.c `re_matchsub_`, `re_foldl_`)."
 function pcre2_get_ovector_pointer(md::Ptr{Cvoid})::Ptr{Csize_t}
-    return ccall((:pcre2_get_ovector_pointer_8, libpcre2_8), Ptr{Csize_t}, (Ptr{Cvoid},), md)
+    return ccall(
+        (:pcre2_get_ovector_pointer_8, libpcre2_8), Ptr{Csize_t}, (Ptr{Cvoid},), md
+    )
 end
 
 # DIVERGES: 17. The C reads `ovector[0 .. 2*rc-1]` in place; the copy outlives `md`.
@@ -907,9 +1014,16 @@ end
 # PORT: packages/pcre/pcre4pl.c re_compile_impl (1464), re_error (1682): pcre2_get_error_message
 # DIVERGES: 17. The C's buffer is 256 bytes and it passes `sizeof - 1` (compile) or `sizeof` (match) as the length: `buflen` is that length and the buffer is as long.
 "The text of the PCRE2 error `code` (a compile `errcode` or a match result), or `nothing` when libpcre2 answers a negative (unknown code, buffer too small) (pcre4pl.c)."
-function pcre2_get_error_message(code::Integer, buflen::Int = 256)::Union{Nothing, String}
+function pcre2_get_error_message(code::Integer, buflen::Int=256)::Union{Nothing, String}
     buf = Vector{UInt8}(undef, max(buflen, 0))
-    rc = ccall((:pcre2_get_error_message_8, libpcre2_8), Cint, (Cint, Ptr{UInt8}, Csize_t), code, buf, buflen)
+    rc = ccall(
+        (:pcre2_get_error_message_8, libpcre2_8),
+        Cint,
+        (Cint, Ptr{UInt8}, Csize_t),
+        code,
+        buf,
+        buflen
+    )
     rc < 0 && return nothing
     return GC.@preserve buf unsafe_string(pointer(buf), rc)
 end
@@ -941,7 +1055,9 @@ end
 
 # PORT: packages/pcre/pcre4pl.c ensure_compile_context
 "Make `ctx[]` a compile context if it is NULL (pcre4pl.c `ensure_compile_context`); a `resource_error(memory)` and false when libpcre2 cannot allocate one."
-function re_ensure_compile_context(ld::PL_local_data{T}, ctx::Ref{Ptr{Cvoid}})::Bool where {T}
+function re_ensure_compile_context(
+    ld::PL_local_data{T}, ctx::Ref{Ptr{Cvoid}}
+)::Bool where {T}
     ctx[] == C_NULL && (ctx[] = pcre2_compile_context_create())
     ctx[] == C_NULL && return PL_resource_error(ld, "memory")
     return true
@@ -949,7 +1065,9 @@ end
 
 # PORT: packages/pcre/pcre4pl.c re_compile_impl (the body between the declarations and `out:`)
 # DIVERGES: 20. The `flags != 0` guards, the three `0 != pcre2_set_*` checks and the JIT/capture-map tail are as the C.
-function _re_compile_impl_try(ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8}, ctx::Ref{Ptr{Cvoid}})::Bool where {T}
+function _re_compile_impl_try(
+    ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8}, ctx::Ref{Ptr{Cvoid}}
+)::Bool where {T}
     if re.compile_bsr_flags.flags != 0
         re_ensure_compile_context(ld, ctx) || return false
         if 0 != pcre2_set_bsr(ctx[], re.compile_bsr_flags.flags)
@@ -983,7 +1101,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_compile_impl
 # DIVERGES: 20.
 "Compile `pats` (UTF-8 bytes, no NUL) with the options in `re` into `re.code` and fill the capture map (pcre4pl.c `re_compile_impl`); on a failure an error is pending, `re` is freed and false is returned."
-function re_compile_impl(ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8})::Bool where {T}
+function re_compile_impl(
+    ld::PL_local_data{T}, re::re_data, pats::Vector{UInt8}
+)::Bool where {T}
     ctx = Ref{Ptr{Cvoid}}(C_NULL)
     rc = _re_compile_impl_try(ld, re, pats, ctx)
     pcre2_compile_context_free(ctx[])
@@ -1000,19 +1120,31 @@ end
 
 # PORT: packages/pcre/pcre4pl.c set_capture_name_and_type
 "Set the name and the type of capture `ci` (0-based) from the table name `s` (UTF-8 bytes, no NUL): `name_X` with exactly one byte `X` after the last `_` types it (pcre4pl.c `set_capture_name_and_type`)."
-function re_set_capture_name_and_type(ld::PL_local_data{T}, s::Vector{UInt8}, re::re_data, ci::Int)::Bool where {T}
+function re_set_capture_name_and_type(
+    ld::PL_local_data{T}, s::Vector{UInt8}, re::re_data, ci::Int
+)::Bool where {T}
     @assert ci < Int(re.capture_size) + 1
     n = length(s)
     fs = findlast(==(UInt8('_')), s)
     if fs !== nothing && fs + 1 == n                                  # C: `fs[1] && !fs[2]`
         b = s[n]
-        ty = b == UInt8('S') ? CAP_STRING :
-            b == UInt8('A') ? CAP_ATOM :
-            b == UInt8('I') ? CAP_INTEGER :
-            b == UInt8('F') ? CAP_FLOAT :
-            b == UInt8('N') ? CAP_NUMBER :
-            b == UInt8('T') ? CAP_TERM :
-            b == UInt8('R') ? CAP_RANGE : -1
+        ty = if b == UInt8('S')
+            CAP_STRING
+        elseif b == UInt8('A')
+            CAP_ATOM
+        elseif b == UInt8('I')
+            CAP_INTEGER
+        elseif b == UInt8('F')
+            CAP_FLOAT
+        elseif b == UInt8('N')
+            CAP_NUMBER
+        elseif b == UInt8('T')
+            CAP_TERM
+        elseif b == UInt8('R')
+            CAP_RANGE
+        else
+            -1
+        end
         if ty < 0
             ex = PL_new_term_ref(ld)
             PL_put_atom(ld, ex, mk_sym(T, Symbol(Char(b))))
@@ -1043,7 +1175,9 @@ function re_init_capture_map(ld::PL_local_data{T}, re::re_data)::Bool where {T}
     re.capture_names = [re_cap_how(nothing, CAP_DEFAULT) for _ in 0:Int(re.capture_size)]
     for i in 0:(Int(name_count) - 1)
         base = i * Int(entry_size)
-        ci = ((Int(unsafe_load(table, base + 1)) & 0xff) << 8) + (Int(unsafe_load(table, base + 2)) & 0xff)
+        ci =
+            ((Int(unsafe_load(table, base + 1)) & 0xff) << 8) +
+            (Int(unsafe_load(table, base + 2)) & 0xff)
         name = UInt8[]
         k = base + 3
         while (b = unsafe_load(table, k)) != 0x00
@@ -1075,7 +1209,9 @@ end
 # PORT: packages/pcre/pcre4pl.c get_pcre2_info
 # DIVERGES: 22 (the IO instead of IOSTREAM, the value as the result, `nothing` for the C's false).
 "The `info_type` value of `re.code` as a UInt32, or `nothing`: silently when there is no code, with `<descr:ERROR_...>` written to `io` when libpcre2 refuses (pcre4pl.c `get_pcre2_info`)."
-function re_get_pcre2_info(io::IO, re::re_data, info_type::UInt32, descr::String)::Union{Nothing, UInt32}
+function re_get_pcre2_info(
+    io::IO, re::re_data, info_type::UInt32, descr::String
+)::Union{Nothing, UInt32}
     re.code == C_NULL && return nothing                  # write_re_options() has already output a message
     (rc, value) = pcre2_pattern_info(re.code, info_type, UInt32)
     rc == 0 && return value
@@ -1096,7 +1232,9 @@ end
 # PORT: packages/pcre/pcre4pl.c write_option_str
 # DIVERGES: 22.
 "If `field_flag` is set in `flags[]`, write `sep[]` and `name` to `io`, make `sep[]` a space and clear the flag (pcre4pl.c `write_option_str`)."
-function re_write_option_str(io::IO, sep::Ref{String}, flags::Ref{UInt32}, field_flag::UInt32, name::String)::Nothing
+function re_write_option_str(
+    io::IO, sep::Ref{String}, flags::Ref{UInt32}, field_flag::UInt32, name::String
+)::Nothing
     if (flags[] & field_flag) != 0
         print(io, sep[], name)
         sep[] = " "
@@ -1135,7 +1273,7 @@ const re_argoption_names = Tuple{UInt32, String}[
     (PCRE2_USE_OFFSET_LIMIT, "USE_OFFSET_LIMIT"),
     (PCRE2_EXTENDED_MORE, "EXTENDED_MORE"),
     (PCRE2_LITERAL, "LITERAL"),
-    (PCRE2_MATCH_INVALID_UTF, "MATCH_INVALID_UTF"),
+    (PCRE2_MATCH_INVALID_UTF, "MATCH_INVALID_UTF")
 ]
 
 const re_extraoption_names = Tuple{UInt32, String}[
@@ -1144,7 +1282,7 @@ const re_extraoption_names = Tuple{UInt32, String}[
     (PCRE2_EXTRA_MATCH_WORD, "EXTRA_MATCH_WORD"),
     (PCRE2_EXTRA_MATCH_LINE, "EXTRA_MATCH_LINE"),
     (PCRE2_EXTRA_ESCAPED_CR_IS_LF, "EXTRA_ESCAPED_CR_IS_LF"),
-    (PCRE2_EXTRA_ALT_BSUX, "EXTRA_ALT_BSUX"),
+    (PCRE2_EXTRA_ALT_BSUX, "EXTRA_ALT_BSUX")
 ]
 
 const re_matchoption_names = Tuple{UInt32, String}[
@@ -1164,13 +1302,13 @@ const re_matchoption_names = Tuple{UInt32, String}[
     (PCRE2_SUBSTITUTE_UNKNOWN_UNSET, "SUBSTITUTE_UNKNOWN_UNSET"),
     (PCRE2_SUBSTITUTE_OVERFLOW_LENGTH, "SUBSTITUTE_OVERFLOW_LENGTH"),
     (PCRE2_NO_JIT, "NO_JIT"),
-    (PCRE2_COPY_MATCHED_SUBJECT, "COPY_MATCHED_SUBJECT"),
+    (PCRE2_COPY_MATCHED_SUBJECT, "COPY_MATCHED_SUBJECT")
 ]
 
 # the `<all:remainder:0x%08x>` tail of a flag word
 function _re_write_remainder(io::IO, sep::Ref{String}, flags::Ref{UInt32})::Nothing
     if flags[] != 0
-        print(io, sep[], "<all:remainder:0x", string(flags[], base = 16, pad = 8), ">")
+        print(io, sep[], "<all:remainder:0x", string(flags[]; base=16, pad=8), ">")
         sep[] = " "
     end
     return nothing
@@ -1216,9 +1354,13 @@ function re_write_re_options(io::IO, sep::Ref{String}, re::re_data)::Nothing
 
     ui = re_get_pcre2_info(io, re, PCRE2_INFO_BSR, "INFO_BSR")
     if ui !== nothing
-        c = ui == PCRE2_BSR_ANYCRLF ? "BSR_ANYCRLF" :
-            ui == PCRE2_BSR_UNICODE ? "BSR_UNICODE" :
-            error("GET_PCRE2_INFO_BSR: 0x", string(ui, base = 16, pad = 8))    # the C: Sdprintf + assert(0)
+        c = if ui == PCRE2_BSR_ANYCRLF
+            "BSR_ANYCRLF"
+        elseif ui == PCRE2_BSR_UNICODE
+            "BSR_UNICODE"
+        else
+            error("GET_PCRE2_INFO_BSR: 0x", string(ui; base=16, pad=8))
+        end    # the C: Sdprintf + assert(0)
         print(io, sep[], c)
         sep[] = " "
     end
@@ -1229,19 +1371,27 @@ function re_write_re_options(io::IO, sep::Ref{String}, re::re_data)::Nothing
         rc_c = pcre2_config(PCRE2_CONFIG_NEWLINE, buf)
         config_ui = pcre2_config_u32(buf)
         if rc_c >= 0 && (
-                (config_ui == PCRE2_NEWLINE_CRLF && ui == PCRE2_NEWLINE_CRLF) ||
-                    (config_ui == PCRE2_NEWLINE_CR && ui == PCRE2_NEWLINE_CR) ||
-                    (config_ui == PCRE2_NEWLINE_LF && ui == PCRE2_NEWLINE_LF)
-            )
+            (config_ui == PCRE2_NEWLINE_CRLF && ui == PCRE2_NEWLINE_CRLF) ||
+            (config_ui == PCRE2_NEWLINE_CR && ui == PCRE2_NEWLINE_CR) ||
+            (config_ui == PCRE2_NEWLINE_LF && ui == PCRE2_NEWLINE_LF)
+        )
             # do nothing: the newline convention is the build's default
         else
-            c = ui == PCRE2_NEWLINE_CR ? "NEWLINE_CR" :
-                ui == PCRE2_NEWLINE_LF ? "NEWLINE_LF" :
-                ui == PCRE2_NEWLINE_CRLF ? "NEWLINE_CRLF" :
-                ui == PCRE2_NEWLINE_ANY ? "NEWLINE_ANY" :
-                ui == PCRE2_NEWLINE_ANYCRLF ? "NEWLINE_ANYCRLF" :
-                ui == PCRE2_NEWLINE_NUL ? "NEWLINE_NUL" :
-                error("GET_PCRE2_INFO_NEWLINE: 0x", string(ui, base = 16, pad = 8))    # the C: Sdprintf + assert(0)
+            c = if ui == PCRE2_NEWLINE_CR
+                "NEWLINE_CR"
+            elseif ui == PCRE2_NEWLINE_LF
+                "NEWLINE_LF"
+            elseif ui == PCRE2_NEWLINE_CRLF
+                "NEWLINE_CRLF"
+            elseif ui == PCRE2_NEWLINE_ANY
+                "NEWLINE_ANY"
+            elseif ui == PCRE2_NEWLINE_ANYCRLF
+                "NEWLINE_ANYCRLF"
+            elseif ui == PCRE2_NEWLINE_NUL
+                "NEWLINE_NUL"
+            else
+                error("GET_PCRE2_INFO_NEWLINE: 0x", string(ui; base=16, pad=8))
+            end    # the C: Sdprintf + assert(0)
             print(io, sep[], c)
         end
     end
@@ -1274,7 +1424,8 @@ end
 function re_next_config(i::Int)::Int
     for j in i:(length(re_cfg_opts) - 1)
         t = re_cfg_opts[j + 1].type_
-        if t == CFG_INVALID || t == CFG_BOOL_BKWD || t == CFG_INTEGER_BKWD || t == CFG_TRUE_BKWD || t == CFG_FALSE_BKWD
+        if t == CFG_INVALID || t == CFG_BOOL_BKWD || t == CFG_INTEGER_BKWD ||
+            t == CFG_TRUE_BKWD || t == CFG_FALSE_BKWD
             continue
         end
         return j
@@ -1285,7 +1436,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_config_choice_
 # DIVERGES: 24. `PL_uninstantiation_error(choice)` is `PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 0, choice)` (as pl-rec.jl), false.
 "`re_config_choice_(-Choice)` is nondet: unify `Choice` with `Name(_)` for each option `re_config_` accepts, in table order (pcre4pl.c `re_config_choice_`)."
-function re_config_choice_(ld::PL_local_data{T}, choice::term_t, h::control_t{T})::foreign_t where {T}
+function re_config_choice_(
+    ld::PL_local_data{T}, choice::term_t, h::control_t{T}
+)::foreign_t where {T}
     ctl = PL_foreign_control(h)
     if ctl == FRG_FIRST_CALL
         index = 0
@@ -1303,14 +1456,17 @@ function re_config_choice_(ld::PL_local_data{T}, choice::term_t, h::control_t{T}
     end
 
     index = re_next_config(index)
-    if index >= 0 && PL_unify_functor(ld, choice, mk_sym(T, Symbol(re_cfg_opts[index + 1].name)), 1)
+    if index >= 0 &&
+        PL_unify_functor(ld, choice, mk_sym(T, Symbol(re_cfg_opts[index + 1].name)), 1)
         return PL_retry(index + 1)
     end
     return FFALSE
 end
 
 # the answer of `pcre2_config` for row `o` (rc >= 0 or not) as the C's two `switch`es
-function _re_config_answer(ld::PL_local_data{T}, o::re_config_opt, rc::Cint, buf::Vector{UInt8}, arg::term_t)::Bool where {T}
+function _re_config_answer(
+    ld::PL_local_data{T}, o::re_config_opt, rc::Cint, buf::Vector{UInt8}, arg::term_t
+)::Bool where {T}
     if rc >= 0
         ty = o.type_
         if ty == CFG_BOOL || ty == CFG_BOOL_BKWD
@@ -1323,16 +1479,24 @@ function _re_config_answer(ld::PL_local_data{T}, o::re_config_opt, rc::Cint, buf
             u = pcre2_config_u32(buf)
             u == PCRE2_BSR_UNICODE && return PL_unify_atom(ld, arg, mk_sym(T, :unicode))
             u == PCRE2_BSR_ANYCRLF && return PL_unify_atom(ld, arg, mk_sym(T, :anycrlf))
-            error("CFG_BSR: 0x", string(u, base = 16, pad = 8))                # the C: Sdprintf + assert(0)
+            error("CFG_BSR: 0x", string(u; base=16, pad=8))                # the C: Sdprintf + assert(0)
         elseif ty == CFG_NEWLINE
             u = pcre2_config_u32(buf)
-            c = u == PCRE2_NEWLINE_CR ? :cr :
-                u == PCRE2_NEWLINE_LF ? :lf :
-                u == PCRE2_NEWLINE_CRLF ? :crlf :
-                u == PCRE2_NEWLINE_ANY ? :any :
-                u == PCRE2_NEWLINE_ANYCRLF ? :anycrlf :
-                u == PCRE2_NEWLINE_NUL ? :nul :
-                error("CFG_NEWLINE: 0x", string(u, base = 16, pad = 8))        # the C: Sdprintf + c = "???" + assert(0)
+            c = if u == PCRE2_NEWLINE_CR
+                :cr
+            elseif u == PCRE2_NEWLINE_LF
+                :lf
+            elseif u == PCRE2_NEWLINE_CRLF
+                :crlf
+            elseif u == PCRE2_NEWLINE_ANY
+                :any
+            elseif u == PCRE2_NEWLINE_ANYCRLF
+                :anycrlf
+            elseif u == PCRE2_NEWLINE_NUL
+                :nul
+            else
+                error("CFG_NEWLINE: 0x", string(u; base=16, pad=8))
+            end        # the C: Sdprintf + c = "???" + assert(0)
             return PL_unify_atom(ld, arg, mk_sym(T, c))
         elseif ty == CFG_INVALID
             return false
@@ -1341,13 +1505,13 @@ function _re_config_answer(ld::PL_local_data{T}, o::re_config_opt, rc::Cint, buf
         elseif ty == CFG_FALSE_BKWD
             return PL_unify_bool(ld, arg, false)
         end
-        error("PCRE2_CONFIG type(1): 0x", string(ty, base = 16, pad = 8))      # the C: Sdprintf + assert(0)
+        error("PCRE2_CONFIG type(1): 0x", string(ty; base=16, pad=8))      # the C: Sdprintf + assert(0)
     else
         ty = o.type_
         ty == CFG_TRUE_BKWD && return PL_unify_bool(ld, arg, true)
         ty == CFG_FALSE_BKWD && return PL_unify_bool(ld, arg, false)
         (ty == CFG_INVALID || ty == CFG_STRINGBUF_OPT) && return false
-        error("PCRE2_CONFIG type(2): 0x", string(ty, base = 16, pad = 8))      # the C: Sdprintf + assert(0)
+        error("PCRE2_CONFIG type(2): 0x", string(ty; base=16, pad=8))      # the C: Sdprintf + assert(0)
     end
 end
 
@@ -1410,12 +1574,15 @@ end
 # PORT: packages/pcre/pcre4pl.c re_error (PL_representation_error), unify_match (PL_representation_error)
 # DIVERGES: 26.
 "Raise `representation_error(Msg)` with `Msg` the atom of `msg` (kernel stand-in for `PL_representation_error`); false."
-re_representation_error(ld::PL_local_data{T}, msg::String) where {T} = PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol(msg)))
+re_representation_error(ld::PL_local_data{T}, msg::String) where {T} =
+    PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol(msg)))
 
 # PORT: packages/pcre/pcre4pl.c PL_put_chars (as pcre4pl.c's put_capval uses it)
 # DIVERGES: 26.
 "Put the first `len` bytes of `s` (UTF-8) into `t` as `type` (`PL_ATOM` or `PL_STRING`) (kernel stand-in for `PL_put_chars(t, REP_UTF8|type, len, s)`)."
-function re_put_chars(ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8})::Bool where {T}
+function re_put_chars(
+    ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
     txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, ENC_UTF8, false)
     PL_put_variable(ld, t)
     return PL_unify_text(ld, t, 0, txt, type)
@@ -1431,7 +1598,9 @@ end
 # PORT: packages/pcre/pcre4pl.c put_capname
 # DIVERGES: 27 (`i` is the 0-based group, the name table entry `i + 1`).
 "Put the name of capture `i` into `t`: its atom, or the integer `i` for an unnamed capture (pcre4pl.c `put_capname`)."
-function re_put_capname(ld::PL_local_data{T}, t::term_t, re::re_data, i::Int)::Bool where {T}
+function re_put_capname(
+    ld::PL_local_data{T}, t::term_t, re::re_data, i::Int
+)::Bool where {T}
     if !isempty(re.capture_names)
         name = re.capture_names[i + 1].name
         name !== nothing && return PL_put_atom(ld, t, mk_sym(T, Symbol(name)))
@@ -1442,7 +1611,14 @@ end
 # PORT: packages/pcre/pcre4pl.c put_capval
 # DIVERGES: 26, 27.
 "Put the value of capture `i` of the match `ovector` over `subject` into `t`, as the capture's type says (pcre4pl.c `put_capval`)."
-function re_put_capval(ld::PL_local_data{T}, t::term_t, re::re_data, subject::re_subject, i::Int, ovector::AbstractVector{Csize_t})::Bool where {T}
+function re_put_capval(
+    ld::PL_local_data{T},
+    t::term_t,
+    re::re_data,
+    subject::re_subject,
+    i::Int,
+    ovector::AbstractVector{Csize_t}
+)::Bool where {T}
     cstart = ovector[i * 2 + 1]
     cend = ovector[i * 2 + 2]
     ctype = Int(re.capture_type.flags)
@@ -1462,25 +1638,34 @@ function re_put_capval(ld::PL_local_data{T}, t::term_t, re::re_data, subject::re
         return re_put_chars(ld, t, PL_ATOM, len, s)
     elseif ctype == CAP_STRING
         return re_put_chars(ld, t, PL_STRING, len, s)
-    elseif ctype == CAP_INTEGER || ctype == CAP_FLOAT || ctype == CAP_NUMBER || ctype == CAP_TERM
+    elseif ctype == CAP_INTEGER || ctype == CAP_FLOAT || ctype == CAP_NUMBER ||
+        ctype == CAP_TERM
         return PL_put_term_from_chars(ld, t, REP_UTF8, s, len)
     elseif ctype == CAP_RANGE
         av = PL_new_term_refs(ld, 2)
         cs = re_bytep_to_charp(subject, Int(cstart))
         ce = re_bytep_to_charp(subject, Int(cend))
-        rc = av != 0 && PL_put_int64(ld, av + 0, cs) && PL_put_int64(ld, av + 1, ce - cs) &&
+        rc =
+            av != 0 && PL_put_int64(ld, av + 0, cs) && PL_put_int64(ld, av + 1, ce - cs) &&
             PL_cons_functor_v(ld, t, _err_functor(ld, Symbol("-"), 2), av)        # FUNCTOR_pair2
         av != 0 && PL_reset_term_refs(ld, av)
         return rc
     else
-        error("PUT_CAPVAL ctype: ", string(ctype, base = 16, pad = 8))
+        error("PUT_CAPVAL ctype: ", string(ctype; base=16, pad=8))
     end
 end
 
 # PORT: packages/pcre/pcre4pl.c unify_match
 # DIVERGES: 15, 26, 27.
 "Unify `t` with the list `Name-Value` of the first `ovsize` captures of the match `ovector` (pcre4pl.c `unify_match`); false with an error for a `\\K` that moved the start past the end."
-function re_unify_match(ld::PL_local_data{T}, t::term_t, re::re_data, subject::re_subject, ovsize::Int, ovector::AbstractVector{Csize_t})::Bool where {T}
+function re_unify_match(
+    ld::PL_local_data{T},
+    t::term_t,
+    re::re_data,
+    subject::re_subject,
+    ovsize::Int,
+    ovector::AbstractVector{Csize_t}
+)::Bool where {T}
     av = PL_new_term_refs(ld, 4)
     capn = av + 0
     caps = av + 1
@@ -1488,13 +1673,16 @@ function re_unify_match(ld::PL_local_data{T}, t::term_t, re::re_data, subject::r
     list = av + 3
     # Must guard against patterns such as /(?=.\K)/ that use \K in an assertion to set the start of a match later than its end.
     if ovector[1] > ovector[2]
-        return re_representation_error(ld, "\\K used assertion to set the match start after its end")
+        return re_representation_error(
+            ld, "\\K used assertion to set the match start after its end"
+        )
     end
 
     fd = _err_functor(ld, Symbol("-"), 2)                                         # FUNCTOR_pair2
     PL_put_nil(ld, list)
     for i in (ovsize - 1):-1:0
-        rc = re_put_capname(ld, capn, re, i) &&
+        rc =
+            re_put_capname(ld, capn, re, i) &&
             re_put_capval(ld, caps, re, subject, i, ovector) &&
             PL_cons_functor(ld, pair, fd, capn, caps) &&
             PL_cons_list(ld, list, pair, list)
@@ -1540,8 +1728,10 @@ end
 function re_copy_for_match(re::re_data)::re_data
     cp(f::re_options_flags) = re_options_flags(f.seen, f.flags)
     c = re_data(
-        re.pattern, re.serial, cp(re.compile_options_flags), cp(re.capture_type), cp(re.optimise_flags), cp(re.jit_options_flags),
-        cp(re.compile_ctx_flags), cp(re.compile_bsr_flags), cp(re.compile_newline_flags), cp(re.match_options_flags), cp(re.start_flags),
+        re.pattern, re.serial, cp(re.compile_options_flags), cp(re.capture_type),
+        cp(re.optimise_flags), cp(re.jit_options_flags),
+        cp(re.compile_ctx_flags), cp(re.compile_bsr_flags), cp(re.compile_newline_flags),
+        cp(re.match_options_flags), cp(re.start_flags),
         re.capture_size, re.capture_names, re.code
     )
     re_reset_match_flags!(c)
@@ -1551,7 +1741,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_matchsub_
 # DIVERGES: 25, 26, 27.
 "`re_matchsub_(+Regex, +String, -Sub, +Options)` over the compiled `src` (`result == 0`: no `Sub`, as `re_match_`); `FTRUE`, or `FFALSE` with or without an error (pcre4pl.c `re_matchsub_`)."
-function re_matchsub_(ld::PL_local_data{T}, src::re_data, on::term_t, result::term_t, options::term_t)::foreign_t where {T}
+function re_matchsub_(
+    ld::PL_local_data{T}, src::re_data, on::term_t, result::term_t, options::term_t
+)::foreign_t where {T}
     re = re_copy_for_match(src)                                         # get_re_copy(regex, &re)
     subject = re_subject()
     re_get_subject(ld, on, subject) || return FFALSE
@@ -1562,14 +1754,30 @@ function re_matchsub_(ld::PL_local_data{T}, src::re_data, on::term_t, result::te
     local rc::Bool
     try
         # utf8_seek() returns size_t; pcre2_match() takes int. re_get_options() ensured that the value isn't greater than INT_MAX
-        utf8_start = re_utf8_seek(subject.subject, subject.length, Int(re.start_flags.flags))
+        utf8_start = re_utf8_seek(
+            subject.subject, subject.length, Int(re.start_flags.flags)
+        )
         if utf8_start == -1
             rc = re_out_of_range(ld, Int(re.start_flags.flags))
         else
-            re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)
+            re_rc = pcre2_match(
+                re.code,
+                subject.subject,
+                subject.length,
+                utf8_start,
+                re.match_options_flags.flags,
+                match_data
+            )
             if re_rc > 0                                                # match
                 if result != 0
-                    rc = re_unify_match(ld, result, re, subject, Int(re_rc), pcre2_ovector_copy(match_data, Int(re_rc)))
+                    rc = re_unify_match(
+                        ld,
+                        result,
+                        re,
+                        subject,
+                        Int(re_rc),
+                        pcre2_ovector_copy(match_data, Int(re_rc))
+                    )
                 else
                     rc = true
                 end
@@ -1586,7 +1794,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_match_
 # DIVERGES: 25.
 "`re_match_(+Regex, +String, +Options)`: `re_matchsub_` without a result (pcre4pl.c `re_match_`)."
-re_match_(ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t)::foreign_t where {T} = re_matchsub_(ld, src, on, term_t(0), options)
+re_match_(
+    ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t
+)::foreign_t where {T} = re_matchsub_(ld, src, on, term_t(0), options)
 
 # PCRE1 piece 12 (packages/pcre/pcre4pl.c re_foldl_, re_portray_, re_portray_match_options_; C 1368-1410, 1518-1546, 1758-1830). Nothing here has run.
 #
@@ -1605,7 +1815,9 @@ re_match_(ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t)::fore
 # PORT: packages/pcre/pcre4pl.c re_portray_
 # DIVERGES: 25, 28.
 "`re_portray_(+Stream, +Regex)` over the compiled `src`: write the debug text `<regex>(/Pattern/ [Options] \$capture=N ...)` to the stream (pcre4pl.c `re_portray_`)."
-function re_portray_(ld::PL_local_data{T}, stream::term_t, src::re_data)::foreign_t where {T}
+function re_portray_(
+    ld::PL_local_data{T}, stream::term_t, src::re_data
+)::foreign_t where {T}
     fd = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_OUTPUT)   # PL_get_stream(stream, &fd, SIO_OUTPUT) + PL_acquire_stream
     fd === nothing && return FFALSE
     re = re_copy_for_match(src)                                             # get_re_copy(regex, &re)
@@ -1613,7 +1825,13 @@ function re_portray_(ld::PL_local_data{T}, stream::term_t, src::re_data)::foreig
     sep = Ref("")
     print(io, "<regex>(/", re.pattern, "/ [")                              # SfprintfX(fd, "<regex>(/%.*Ws/ [", plen, ps)
     re_write_re_options(io, sep, re)
-    print(io, sep[], re_cap_type_str(Int(re.capture_type.flags)), "] \$capture=", Int(re.capture_size))
+    print(
+        io,
+        sep[],
+        re_cap_type_str(Int(re.capture_type.flags)),
+        "] \$capture=",
+        Int(re.capture_size)
+    )
     sep[] = " "
     if (re.optimise_flags.flags & RE_OPTIMISE) != 0
         print(io, sep[], "\$optimise")
@@ -1643,7 +1861,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_portray_match_options_
 # DIVERGES: 28.
 "`re_portray_match_options_(+Stream, +Options)`: write the match options of `options` and `\$start=N` to the stream (pcre4pl.c `re_portray_match_options_`)."
-function re_portray_match_options_(ld::PL_local_data{T}, stream::term_t, options::term_t)::foreign_t where {T}
+function re_portray_match_options_(
+    ld::PL_local_data{T}, stream::term_t, options::term_t
+)::foreign_t where {T}
     re = re_init_data()                                                     # init_re_data(&re)
     sep = Ref("")
     fd = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_OUTPUT)   # PL_get_stream(stream, &fd, SIO_OUTPUT) + PL_acquire_stream
@@ -1664,9 +1884,19 @@ end
 # PORT: packages/pcre/pcre4pl.c re_foldl_
 # DIVERGES: 25, 29, 30.
 "`re_foldl_(+Regex, +On, +Closure, +V0, -V, +Options)` over the compiled `src`: call `pcre:re_call_folder(Closure, Match, V0, V1)` for every match, then unify the last value with `v` (pcre4pl.c `re_foldl_`)."
-function re_foldl_(ld::PL_local_data{T}, src::re_data, on::term_t, closure::term_t, v0::term_t, v::term_t, options::term_t)::foreign_t where {T}
+function re_foldl_(
+    ld::PL_local_data{T},
+    src::re_data,
+    on::term_t,
+    closure::term_t,
+    v0::term_t,
+    v::term_t,
+    options::term_t
+)::foreign_t where {T}
     gd = _query_gd(ld)
-    pred = lookupProcedure(mk_sym(T, :re_call_folder), 4, lookupModule(gd, mk_sym(T, :pcre)))   # PL_predicate("re_call_folder", 4, "pcre")
+    pred = lookupProcedure(
+        mk_sym(T, :re_call_folder), 4, lookupModule(gd, mk_sym(T, :pcre))
+    )   # PL_predicate("re_call_folder", 4, "pcre")
     av = PL_new_term_refs(ld, 4)
     subject = re_subject()                                                  # init_subject(&subject)
 
@@ -1684,19 +1914,30 @@ function re_foldl_(ld::PL_local_data{T}, src::re_data, on::term_t, closure::term
     local rc::Bool
     try
         # utf8_seek() returns size_t; pcre2_match() takes int. re_get_options() ensured that the value isn't greater than INT_MAX
-        utf8_start = re_utf8_seek(subject.subject, subject.length, Int(re.start_flags.flags))
+        utf8_start = re_utf8_seek(
+            subject.subject, subject.length, Int(re.start_flags.flags)
+        )
         if utf8_start == -1
             rc = re_out_of_range(ld, Int(re.start_flags.flags))
         else
             while true
-                re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)
+                re_rc = pcre2_match(
+                    re.code,
+                    subject.subject,
+                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
                 if re_rc > 0
                     ovector = pcre2_ovector_copy(match_data, Int(re_rc))
                     PL_put_variable(ld, av + 1)
                     if !re_unify_match(ld, av + 1, re, subject, Int(re_rc), ovector) ||
-                       !PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av) ||
-                       !PL_put_term(ld, av + 2, av + 3) ||
-                       !PL_put_variable(ld, av + 3)
+                        !PL_call_predicate(
+                            gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av
+                        ) ||
+                        !PL_put_term(ld, av + 2, av + 3) ||
+                        !PL_put_variable(ld, av + 3)
                         rc = false
                         break
                     end
@@ -1760,7 +2001,9 @@ end
 # PORT: packages/pcre/pcre4pl.c load_pcre (the recompile and the blob)
 # DIVERGES: 13, 32.
 "The `load` hook: read the fields `save_pcre` wrote, recompile the pattern and make the blob; its atom word, or 0 after a failed read or compile (pcre4pl.c `load_pcre`)."
-function re_load_pcre(ld::PL_local_data{T}, fd::IOSTREAM, get_atom::Function)::word where {T}
+function re_load_pcre(
+    ld::PL_local_data{T}, fd::IOSTREAM, get_atom::Function
+)::word where {T}
     re = re_load_fields(fd, get_atom)
     re === nothing && return word(0)
     pats = Vector{UInt8}(codeunits(re.pattern))
@@ -1772,8 +2015,9 @@ end
 # DIVERGES: 31, 32.
 "The hooks of the regex blob type: acquire, release (`re_free`), write (`re_write_text`), save (`re_save_fields`) and load (`re_load_pcre`)."
 function re_blob_hooks()::blob_hooks
-    return blob_hooks(
-        acquire = re_acquire_pcre, release = re_free, write = re_write_text, save = re_save_fields, load = re_load_pcre
+    return blob_hooks(;
+        acquire=re_acquire_pcre, release=re_free, write=re_write_text, save=re_save_fields,
+        load=re_load_pcre
     )
 end
 
@@ -1811,7 +2055,9 @@ end
 # PORT: packages/pcre/pcre4pl.c re_compile_
 # DIVERGES: 31. `re_set_pat` is `re.pattern = String(copy(pats))` (the pattern is a `String`, DIVERGES 20: no atom, nothing to register); the blob is `blob_new!` + `PL_unify_atomic`.
 "`re_compile(+Pattern, -Regex, +Options)`: compile the pattern text with the options and unify `Regex` with a new regex blob (pcre4pl.c `re_compile_`)."
-function re_compile_(ld::PL_local_data{T}, pat::term_t, reb::term_t, options::term_t)::foreign_t where {T}
+function re_compile_(
+    ld::PL_local_data{T}, pat::term_t, reb::term_t, options::term_t
+)::foreign_t where {T}
     re = re_init_data()
     re_get_options(ld, options, re) || return FFALSE
     subj = re_subject()
@@ -1837,50 +2083,66 @@ end
 # PORT: packages/pcre/pcre4pl.c install_pcre4pl (the PL_register_foreign calls, as the functions `PL_register_foreign` is given)
 # DIVERGES: 34. Each wrapper reads the regex argument (`get_re`) and calls the term-level function of the pieces above.
 "`re_compile/3` (pcre4pl.c `re_compile_`)."
-function pl_re_compile3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_compile3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return re_compile_(ld, PL__t0, PL__t0 + 1, PL__t0 + 2)
 end
 
 "`re_match_/3`: `(Regex, On, Options)` (pcre4pl.c `re_match_`)."
-function pl_re_match_3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_match_3_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     re = re_get_re(ld, PL__t0)
     re === nothing && return FFALSE
     return re_match_(ld, re, PL__t0 + 1, PL__t0 + 2)
 end
 
 "`re_matchsub_/4`: `(Regex, On, Result, Options)` (pcre4pl.c `re_matchsub_`)."
-function pl_re_matchsub_4_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_matchsub_4_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     re = re_get_re(ld, PL__t0)
     re === nothing && return FFALSE
     return re_matchsub_(ld, re, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3)
 end
 
 "`re_foldl_/6`: `(Regex, On, Closure, V0, V, Options)` (pcre4pl.c `re_foldl_`)."
-function pl_re_foldl_6_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_foldl_6_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     re = re_get_re(ld, PL__t0)
     re === nothing && return FFALSE
     return re_foldl_(ld, re, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5)
 end
 
 "`re_portray/2`: `(Stream, Regex)` (pcre4pl.c `re_portray_`)."
-function pl_re_portray_2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_portray_2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     re = re_get_re(ld, PL__t0 + 1)
     re === nothing && return FFALSE
     return re_portray_(ld, PL__t0, re)
 end
 
 "`re_portray_match_options/2`: `(Stream, Options)` (pcre4pl.c `re_portray_match_options_`)."
-function pl_re_portray_match_options2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_portray_match_options2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return re_portray_match_options_(ld, PL__t0, PL__t0 + 1)
 end
 
 "`re_config_/1` (pcre4pl.c `re_config_`)."
-function pl_re_config_1_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_config_1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return re_config_(ld, PL__t0)
 end
 
 "`re_config_choice/1`, nondeterministic (pcre4pl.c `re_config_choice_`)."
-function pl_re_config_choice1_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+function pl_re_config_choice1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
     return re_config_choice_(ld, PL__t0, PL__ctx)
 end
 
@@ -1892,7 +2154,14 @@ const PL_predicates_from_pcre = (
     PL_extension("re_match_", 3, pl_re_match_3_va, PL_FA_VARARGS),
     PL_extension("re_matchsub_", 4, pl_re_matchsub_4_va, PL_FA_VARARGS),
     PL_extension("re_foldl_", 6, pl_re_foldl_6_va, PL_FA_VARARGS),
-    PL_extension("re_config_choice", 1, pl_re_config_choice1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension(
+        "re_config_choice",
+        1,
+        pl_re_config_choice1_va,
+        PL_FA_NONDETERMINISTIC | PL_FA_VARARGS
+    ),
     PL_extension("re_portray", 2, pl_re_portray_2_va, PL_FA_VARARGS),
-    PL_extension("re_portray_match_options", 2, pl_re_portray_match_options2_va, PL_FA_VARARGS)
+    PL_extension(
+        "re_portray_match_options", 2, pl_re_portray_match_options2_va, PL_FA_VARARGS
+    )
 )

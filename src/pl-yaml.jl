@@ -308,7 +308,7 @@ function yaml_get_value(
         elseif PL_is_string(ld, t)
             txt = PL_get_text(ld, t, CVT_STRING | CVT_EXCEPTION)
             if txt !== nothing && tag === nothing &&
-                    yaml_implicit_tag(codeunits(text_string(txt))) !== nothing
+                yaml_implicit_tag(codeunits(text_string(txt))) !== nothing
                 tag = "tag:yaml.org,2002:str"
             end
         elseif PL_is_atom(ld, t)
@@ -342,7 +342,9 @@ end
 # (`yaml_emit_error`) are the carrier's. The order of the reads and of the errors is the C's: a `scalar/4` reads Tag (arg 2),
 # Value (arg 1, which may set the tag), Anchor (arg 3), then the style.
 "The `yaml_event` the event term `Event` stands for, or `nothing` with the exception raised: `domain_error(yaml_event, Event)` for an unknown event (yaml4pl.c)."
-function yaml_decode_event(ld::PL_local_data{T}, Event::term_t)::Union{Nothing, yaml_event} where {T}
+function yaml_decode_event(
+    ld::PL_local_data{T}, Event::term_t
+)::Union{Nothing, yaml_event} where {T}
     na = PL_get_name_arity(ld, Event)
     na === nothing && (PL_domain_error(ld, "yaml_event", Event); return nothing)
     name = sym_text(na[1])
@@ -458,10 +460,10 @@ function yaml_emit_error(ld::PL_local_data{T}, code::Int, problem::String)::Bool
     a = PL_new_term_ref(ld)
     b = PL_new_term_ref(ld)
     if PL_unify_functor(ld, ex, mk_sym(T, :error), 2) &&
-            PL_unify_arg(ld, 1, ex, a) &&
-            PL_unify_functor(ld, a, mk_sym(T, :yaml_error), 2) &&
-            PL_unify_arg(ld, 1, a, b) && PL_unify_integer(ld, b, code) &&
-            PL_unify_arg(ld, 2, a, b) && PL_unify_atomic(ld, b, mk_gnd(T, problem))
+        PL_unify_arg(ld, 1, ex, a) &&
+        PL_unify_functor(ld, a, mk_sym(T, :yaml_error), 2) &&
+        PL_unify_arg(ld, 1, a, b) && PL_unify_integer(ld, b, code) &&
+        PL_unify_arg(ld, 2, a, b) && PL_unify_atomic(ld, b, mk_gnd(T, problem))
         PL_raise_exception(ld, ex)
     end
     return false
@@ -517,13 +519,17 @@ end
 # DIVERGES: `key[1:len]` for C's `(key, len)`; every `unsigned int` is a UInt32 (wrapping), C's `data[i] << n` (an `int` shift of an
 # unsigned char) is the same bits as the UInt32 shift. `len` is cut to 32 bits where C casts `(unsigned int)len`.
 "MurmurHashAligned2 of the first `len` bytes of `key` (yaml4pl.c, the seed `seed`)."
-function yaml_murmur_hash_aligned2(key::AbstractVector{UInt8}, len::Int, seed::UInt32)::UInt32
+function yaml_murmur_hash_aligned2(
+    key::AbstractVector{UInt8}, len::Int, seed::UInt32
+)::UInt32
     m = 0x5bd1e995
     r = 24
     h = seed ⊻ (len % UInt32)
     i = 1
     while len >= 4
-        k = UInt32(key[i]) | (UInt32(key[i + 1]) << 8) | (UInt32(key[i + 2]) << 16) | (UInt32(key[i + 3]) << 24)
+        k =
+            UInt32(key[i]) | (UInt32(key[i + 1]) << 8) | (UInt32(key[i + 2]) << 16) |
+            (UInt32(key[i + 3]) << 24)
         k *= m
         k ⊻= k >> r
         k *= m
@@ -579,7 +585,9 @@ end
 # DIVERGES: see the piece 3 header, 8, 9 and 10. UPSTREAM AS IS: when `count > size` the table is rehashed and the function then
 # returns false WITHOUT adding the cell (the C reads rehash's false as a failure), whatever rehash answered; the next add finds room.
 "Add the anchor `name` for the node `value` (a copy of the reference) to `t`; false when `t` was rehashed instead (yaml4pl.c)."
-function yaml_add_anchor(ld::PL_local_data{T}, t::yaml_htable, name::String, value::term_t)::Bool where {T}
+function yaml_add_anchor(
+    ld::PL_local_data{T}, t::yaml_htable, name::String, value::term_t
+)::Bool where {T}
     s = _yaml_cstring(name)
     if t.count > t.size
         if !yaml_rehash(t)
@@ -610,7 +618,8 @@ end
 # result's second element is its new value; `anchor` is the event's `data.alias.anchor` (the same field of a sequence or mapping start).
 "`(ok, anchors)`: store the node `node` under the event's `anchor` (when it has one), creating the table on the first (yaml4pl.c)."
 function yaml_store_anchor(
-    ld::PL_local_data{T}, anchors::Union{Nothing, yaml_htable}, node::term_t, anchor::Union{Nothing, String}
+    ld::PL_local_data{T}, anchors::Union{Nothing, yaml_htable}, node::term_t,
+    anchor::Union{Nothing, String}
 )::Tuple{Bool, Union{Nothing, yaml_htable}} where {T}
     anchor === nothing && return (true, anchors)
     anchors === nothing && (anchors = yaml_new_anchor_table())

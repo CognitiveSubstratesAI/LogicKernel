@@ -12,14 +12,22 @@ const _NUMBER_ROWS = Tuple{String, Int, String}[
     ("0", LK.YAML_N_INT, "0 alone"),
     ("-0", LK.YAML_N_INT, "sign, then 0"),
     ("123", LK.YAML_N_INT, "[1-9] [0-9]*"),
-    ("9", LK.YAML_N_INT, "the digit 9 as the first digit (the upper bound of is_digit / is_nonzero_digit)"),
+    (
+        "9",
+        LK.YAML_N_INT,
+        "the digit 9 as the first digit (the upper bound of is_digit / is_nonzero_digit)"
+    ),
     ("1239", LK.YAML_N_INT, "the digit 9 inside the digit loop"),
     ("0.9", LK.YAML_N_FLOAT, "the digit 9 after the dot"),
     ("1e9", LK.YAML_N_FLOAT, "the digit 9 in the exponent"),
     ("-123", LK.YAML_N_INT, "sign, digits"),
     ("-1", LK.YAML_N_INT, "sign, one digit (e-s < 3: the 0o/0x test is skipped)"),
     ("0o17", LK.YAML_N_INT, "0o octal"),
-    ("0o", LK.YAML_N_NONE, "0o with no digit (e-s == 2: falls to the plain branch, '0' then 'o')"),
+    (
+        "0o",
+        LK.YAML_N_NONE,
+        "0o with no digit (e-s == 2: falls to the plain branch, '0' then 'o')"
+    ),
     ("0o8", LK.YAML_N_NONE, "0o with a non-octal digit"),
     ("0x1F", LK.YAML_N_INT, "0x hex"),
     ("0xg", LK.YAML_N_NONE, "0x with a non-hex digit"),
@@ -27,7 +35,11 @@ const _NUMBER_ROWS = Tuple{String, Int, String}[
     ("0b1", LK.YAML_N_NONE, "0b is not a YAML 1.2 core integer"),
     ("1.5", LK.YAML_N_FLOAT, "fraction"),
     ("0.5", LK.YAML_N_FLOAT, "0 then fraction"),
-    ("1.", LK.YAML_N_NONE, "'1.' is refused (upstream's comment: official YAML allows it, we do not)"),
+    (
+        "1.",
+        LK.YAML_N_NONE,
+        "'1.' is refused (upstream's comment: official YAML allows it, we do not)"
+    ),
     (".5", LK.YAML_N_NONE, "no integer part"),
     ("-.5", LK.YAML_N_NONE, "sign, no integer part"),
     ("1e5", LK.YAML_N_FLOAT, "exponent"),
@@ -46,7 +58,7 @@ const _NUMBER_ROWS = Tuple{String, Int, String}[
     ("abc", LK.YAML_N_NONE, "letters"),
     ("12a", LK.YAML_N_NONE, "trailing letter"),
     ("1 ", LK.YAML_N_NONE, "trailing blank"),
-    ("1_000", LK.YAML_N_NONE, "underscore"),
+    ("1_000", LK.YAML_N_NONE, "underscore")
 ]
 
 @testset "yaml_is_number (yaml4pl.c is_number)" begin
@@ -108,14 +120,17 @@ end
 
 @testset "yaml_implicit_tag (yaml4pl.c implicit_tag)" begin
     for (t, want) in (
-            ("12", "int"), ("-7", "int"), ("0x1f", "int"), ("1.5", "float"), ("1e3", "float"),
-            ("null", "null"), ("~", "null"), ("true", "bool"), ("False", "bool"),
-            (".inf", "float"), ("-.INF", "float"), (".nan", "float"),
-            ("abc", nothing), ("", nothing), ("yes", nothing), ("+.nan", nothing), ("1.", nothing)
-        )
+        ("12", "int"), ("-7", "int"), ("0x1f", "int"), ("1.5", "float"), ("1e3", "float"),
+        ("null", "null"), ("~", "null"), ("true", "bool"), ("False", "bool"),
+        (".inf", "float"), ("-.INF", "float"), (".nan", "float"),
+        ("abc", nothing), ("", nothing), ("yes", nothing), ("+.nan", nothing),
+        ("1.", nothing)
+    )
         @test LK.yaml_implicit_tag(_b(t)) === want
     end
     # strlen: the text ends at the first NUL (the C argument is a NUL-terminated string)
-    @test LK.yaml_implicit_tag(UInt8[UInt8('1'), UInt8('2'), 0x00, UInt8('a'), UInt8('b')]) === "int"
+    @test LK.yaml_implicit_tag(
+        UInt8[UInt8('1'), UInt8('2'), 0x00, UInt8('a'), UInt8('b')]
+    ) === "int"
     @test LK.yaml_implicit_tag(UInt8[0x00, UInt8('1')]) === nothing
 end

@@ -2244,7 +2244,7 @@ mutable struct blob_hooks
     load::Union{Nothing, Function}
     const objects::Vector{Any}
 end
-blob_hooks(; acquire = nothing, release = nothing, write = nothing, save = nothing, load = nothing) =
+blob_hooks(; acquire=nothing, release=nothing, write=nothing, save=nothing, load=nothing) =
     blob_hooks(acquire, release, write, save, load, Any[])
 
 # ORIGINAL: what upstream's `PL_register_blob_type` writes into the type itself (`registered`,
@@ -2442,7 +2442,9 @@ end
 function blob_new!(atoms::atoms_t, type::PL_blob_t, object)::word
     reg = _blob_registration(atoms, type)
     (reg === nothing || reg.hooks === nothing) &&
-        throw(ArgumentError("blob_new!: the blob type $(type.name) has no hooks registered"))
+        throw(
+            ArgumentError("blob_new!: the blob type $(type.name) has no hooks registered")
+        )
     hooks = reg.hooks::blob_hooks
     push!(hooks.objects, object)
     bytes = collect(reinterpret(UInt8, Int64[length(hooks.objects)]))

@@ -16,7 +16,8 @@ function _q32_bytes(f)::Vector{UInt8}
     return out
 end
 
-_q32_reader(bytes::Vector{UInt8}) = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
+_q32_reader(bytes::Vector{UInt8}) =
+    LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
 
 const _Q32_ROWS = [
     (0x00000000, UInt8[0x80]),
@@ -40,7 +41,7 @@ const _Q32_ROWS = [
     (0xfffffffe, UInt8[0x7e, 0x7f, 0x7f, 0x7f, 0x8f]),
     (0xffffffff, UInt8[0x7f, 0x7f, 0x7f, 0x7f, 0x8f]),
     (0x12345678, UInt8[0x78, 0x2c, 0x51, 0x11, 0x81]),
-    (0xdeadbeef, UInt8[0x6f, 0x7d, 0x36, 0x75, 0x8d]),
+    (0xdeadbeef, UInt8[0x6f, 0x7d, 0x36, 0x75, 0x8d])
 ]
 
 @testset "qlfPutUInt32: the bytes (7-bit groups, low first, 0x80 on the last)" begin
@@ -68,7 +69,24 @@ end
 @testset "several numbers in one stream, in order" begin
     vs = UInt32[0, 5, 128, 300, 0xffffffff, 1, 16384, 0]
     bytes = _q32_bytes(w -> foreach(v -> LK.qlfPutUInt32(v, w), vs))
-    @test bytes == UInt8[0x80, 0x85, 0x00, 0x81, 0x2c, 0x82, 0x7f, 0x7f, 0x7f, 0x7f, 0x8f, 0x81, 0x00, 0x00, 0x81, 0x80]
+    @test bytes == UInt8[
+        0x80,
+        0x85,
+        0x00,
+        0x81,
+        0x2c,
+        0x82,
+        0x7f,
+        0x7f,
+        0x7f,
+        0x7f,
+        0x8f,
+        0x81,
+        0x00,
+        0x00,
+        0x81,
+        0x80
+    ]
     r = _q32_reader(bytes)
     @test [LK.qlfGetUInt32(r) for _ in vs] == vs
     LK.Sclose(r)

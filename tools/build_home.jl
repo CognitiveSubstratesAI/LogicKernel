@@ -40,20 +40,156 @@ pcre's CMakeLists.txt installs `pcre.pl` (`PL_LIBS`, no subdirectory; guarded by
 """
 const _BH_PKG_LIBS = Tuple{String, String, String, Vector{Pair{String, String}}}[
     ("clpqr", "", "", _bh_same("clpr.pl", "clpq.pl")),
-    ("clpqr", "clpq", "clpq", _bh_same("bb_q.pl", "bv_q.pl", "fourmotz_q.pl", "ineq_q.pl", "itf_q.pl", "nf_q.pl", "store_q.pl")),
-    ("clpqr", "clpr", "clpr", _bh_same("bb_r.pl", "bv_r.pl", "fourmotz_r.pl", "ineq_r.pl", "itf_r.pl", "nf_r.pl", "store_r.pl")),
-    ("clpqr", "clpqr", "clpqr", _bh_same("class.pl", "dump.pl", "geler.pl", "itf.pl", "ordering.pl", "project.pl", "redund.pl", "highlight.pl")),
+    (
+        "clpqr",
+        "clpq",
+        "clpq",
+        _bh_same(
+            "bb_q.pl",
+            "bv_q.pl",
+            "fourmotz_q.pl",
+            "ineq_q.pl",
+            "itf_q.pl",
+            "nf_q.pl",
+            "store_q.pl"
+        )
+    ),
+    (
+        "clpqr",
+        "clpr",
+        "clpr",
+        _bh_same(
+            "bb_r.pl",
+            "bv_r.pl",
+            "fourmotz_r.pl",
+            "ineq_r.pl",
+            "itf_r.pl",
+            "nf_r.pl",
+            "store_r.pl"
+        )
+    ),
+    (
+        "clpqr",
+        "clpqr",
+        "clpqr",
+        _bh_same(
+            "class.pl",
+            "dump.pl",
+            "geler.pl",
+            "itf.pl",
+            "ordering.pl",
+            "project.pl",
+            "redund.pl",
+            "highlight.pl"
+        )
+    ),
     ("paxos", "", "", _bh_same("paxos.pl")),
     ("chr", "", "", ["chr.pl" => "chr_swi.pl"]),
-    ("chr", "chr", "", _bh_same("chr_runtime.pl", "chr_op.pl", "chr_debug.pl", "chr_messages.pl", "pairlist.pl", "clean_code.pl", "find.pl", "a_star.pl", "binomialheap.pl", "builtins.pl", "chr_hashtable_store.pl", "listmap.pl", "chr_compiler_options.pl", "chr_compiler_utility.pl", "chr_compiler_errors.pl", "chr_integertable_store.pl")),
-    ("cql", "cql", "", _bh_same("cql.pl", "sql_parser.pl", "sql_tokenizer.pl", "sql_write.pl", "sql_keywords.pl", "cql_database.pl", "cql_autoschema.pl", "cql_hooks.pl")),
-    ("pldoc", "", "", _bh_same("pldoc.pl", "doc_latex.pl", "doc_files.pl", "doc_markdown.pl", "doc_http.pl")),
-    ("pldoc", "pldoc", "", _bh_same("doc_html.pl", "doc_wiki.pl", "doc_modes.pl", "doc_register.pl", "doc_process.pl", "doc_index.pl", "doc_search.pl", "doc_man.pl", "doc_library.pl", "hooks.pl", "doc_htmlsrc.pl", "doc_colour.pl", "doc_util.pl", "doc_access.pl", "doc_pack.pl", "man_index.pl", "doc_words.pl", "pldoc.css", "pldoc.js", "pllisting.css", "pldoc.sty", "edit.png", "private.png", "public.png", "reload.png", "favicon.ico", "up.gif", "source.png", "h1-bg.png", "pub-bg.png", "multi-bg.png", "priv-bg.png", "h2-bg.png", "editpred.png")),
-    ("json", "", "", _bh_same("json.pl", "json_convert.pl", "json_grammar.pl", "json_rpc_common.pl", "json_schema.pl", "json_rpc_server.pl", "json_rpc_client.pl")),
+    (
+        "chr",
+        "chr",
+        "",
+        _bh_same(
+            "chr_runtime.pl",
+            "chr_op.pl",
+            "chr_debug.pl",
+            "chr_messages.pl",
+            "pairlist.pl",
+            "clean_code.pl",
+            "find.pl",
+            "a_star.pl",
+            "binomialheap.pl",
+            "builtins.pl",
+            "chr_hashtable_store.pl",
+            "listmap.pl",
+            "chr_compiler_options.pl",
+            "chr_compiler_utility.pl",
+            "chr_compiler_errors.pl",
+            "chr_integertable_store.pl"
+        )
+    ),
+    (
+        "cql",
+        "cql",
+        "",
+        _bh_same(
+            "cql.pl",
+            "sql_parser.pl",
+            "sql_tokenizer.pl",
+            "sql_write.pl",
+            "sql_keywords.pl",
+            "cql_database.pl",
+            "cql_autoschema.pl",
+            "cql_hooks.pl"
+        )
+    ),
+    (
+        "pldoc",
+        "",
+        "",
+        _bh_same(
+            "pldoc.pl", "doc_latex.pl", "doc_files.pl", "doc_markdown.pl", "doc_http.pl"
+        )
+    ),
+    (
+        "pldoc",
+        "pldoc",
+        "",
+        _bh_same(
+            "doc_html.pl",
+            "doc_wiki.pl",
+            "doc_modes.pl",
+            "doc_register.pl",
+            "doc_process.pl",
+            "doc_index.pl",
+            "doc_search.pl",
+            "doc_man.pl",
+            "doc_library.pl",
+            "hooks.pl",
+            "doc_htmlsrc.pl",
+            "doc_colour.pl",
+            "doc_util.pl",
+            "doc_access.pl",
+            "doc_pack.pl",
+            "man_index.pl",
+            "doc_words.pl",
+            "pldoc.css",
+            "pldoc.js",
+            "pllisting.css",
+            "pldoc.sty",
+            "edit.png",
+            "private.png",
+            "public.png",
+            "reload.png",
+            "favicon.ico",
+            "up.gif",
+            "source.png",
+            "h1-bg.png",
+            "pub-bg.png",
+            "multi-bg.png",
+            "priv-bg.png",
+            "h2-bg.png",
+            "editpred.png"
+        )
+    ),
+    (
+        "json",
+        "",
+        "",
+        _bh_same(
+            "json.pl",
+            "json_convert.pl",
+            "json_grammar.pl",
+            "json_rpc_common.pl",
+            "json_schema.pl",
+            "json_rpc_server.pl",
+            "json_rpc_client.pl"
+        )
+    ),
     ("json", "http", "", _bh_same("http_json.pl")),
     ("json", "http", "compat", _bh_same("json.pl", "json_convert.pl", "js_grammar.pl")),
     ("pcre", "", "", _bh_same("pcre.pl")),
-    ("zlib", "", "", _bh_same("zlib.pl")),
+    ("zlib", "", "", _bh_same("zlib.pl"))
 ]
 
 "The home tree's default place: `home` in the package directory (src/os/pl-prologflag.jl's `home` flag names the same path)."
@@ -105,7 +241,8 @@ function build_home(
     isdir(joinpath(vendor, "boot")) ||
         error("build_home: no $vendor/boot (the vendored swipl-devel is not there)")
     isdir(plunit) || error("build_home: no $plunit (the vendored plunit is not there)")
-    isdir(extra) || error("build_home: no $extra (the vendored swipl-devel-extra is not there)")
+    isdir(extra) ||
+        error("build_home: no $extra (the vendored swipl-devel-extra is not there)")
     home = String(rstrip(abspath(home), '/'))
     want = home_links(home; vendor, plunit, extra)
     dirs = Set{String}([home])

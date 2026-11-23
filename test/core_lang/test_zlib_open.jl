@@ -31,7 +31,7 @@ end
 # ---------------------------------------------------------------------------------------------------------------------
 # data
 _zbytes(s::String) = Vector{UInt8}(codeunits(s))
-function _lcg_bytes(n::Int, seed::UInt32 = 0x1234abcd)
+function _lcg_bytes(n::Int, seed::UInt32=0x1234abcd)
     x = seed
     out = Vector{UInt8}(undef, n)
     for i in 1:n
@@ -40,10 +40,12 @@ function _lcg_bytes(n::Int, seed::UInt32 = 0x1234abcd)
     end
     return out
 end
-_text(n::Int) = repeat(_zbytes("the quick brown fox jumps over the lazy dog. "), cld(n, 45))[1:n]
+_text(n::Int) =
+    repeat(_zbytes("the quick brown fox jumps over the lazy dog. "), cld(n, 45))[1:n]
 
 const _INPUTS = Pair{String, Vector{UInt8}}[
-    "empty" => UInt8[], "1 byte" => UInt8[0x41], "text 5000" => _text(5000), "random 20000" => _lcg_bytes(20000),
+    "empty" => UInt8[], "1 byte" => UInt8[0x41], "text 5000" => _text(5000),
+    "random 20000" => _lcg_bytes(20000)
 ]
 const _FMTS = (:gzip, :deflate, :raw_deflate)
 
@@ -82,9 +84,13 @@ function _opts(ld, items...)::Int
 end
 
 # the stream helpers of test/files/test_stream_filter_swipl.jl; the parents are binary (no SIO_TEXT, octet): the bytes written are the bytes stored
-_octet!(s::LK.IOSTREAM) = (s.flags &= ~LK.SIO_TEXT; s.encoding = LK.ENC_OCTET; s)
+_octet!(s::LK.IOSTREAM) = (s.flags &= ~LK.SIO_TEXT; s.encoding=LK.ENC_OCTET; s)
 _sf_in(bytes::Vector{UInt8}) =
-    _octet!(LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r"))
+    _octet!(
+        LK.Sopenmem(
+            Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r"
+        )
+    )
 function _sf_out()
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
@@ -92,7 +98,7 @@ function _sf_out()
 end
 _sf_bytes(bufp, sizep) = sizep[] == 0 ? UInt8[] : copy(bufp[][1:sizep[]])
 
-function _read_all(zs::LK.IOSTREAM; chunk::Int = 1000)
+function _read_all(zs::LK.IOSTREAM; chunk::Int=1000)
     out = UInt8[]
     buf = Vector{UInt8}(undef, chunk)
     while true
@@ -137,7 +143,7 @@ _exc_arg(ld, i::Int) = child(child(_exc_term(ld), 2), i + 1)
 
 # ---------------------------------------------------------------------------------------------------------------------
 # zopen(Org, Z, Options) on fresh term references: `org` is the term reference of the first argument, `second` is what the second argument holds before the call
-function _call(ld, org::Int, opts::Int; second = nothing)
+function _call(ld, org::Int, opts::Int; second=nothing)
     t = LK.PL_new_term_refs(ld, 3)
     LK.PL_put_term(ld, t, org)
     _put_val!(ld, t + 1, second) || error("_put_val!")
@@ -151,8 +157,13 @@ function _stream_ref(ld, s::LK.IOSTREAM)::Int
     return t
 end
 # `parent` is an IOSTREAM, a symbol, an integer or `nothing` (unbound)
-_open(ld, parent, opts::Int; second = nothing) =
-    _call(ld, parent isa LK.IOSTREAM ? _stream_ref(ld, parent) : _atomref(ld, parent), opts; second)
+_open(ld, parent, opts::Int; second=nothing) =
+    _call(
+        ld,
+        parent isa LK.IOSTREAM ? _stream_ref(ld, parent) : _atomref(ld, parent),
+        opts;
+        second
+    )
 # the zlib stream of a call that must succeed
 function _zopen_ok(ld, parent, items...)
     rc, t = _open(ld, parent, _opts(ld, items...))
@@ -162,11 +173,13 @@ function _zopen_ok(ld, parent, items...)
     return zs
 end
 # a call that must fail: the answer, and the formal and arguments of the error if there is one
-function _fails(ld, parent, items...; second = nothing)
+function _fails(ld, parent, items...; second=nothing)
     LK.PL_clear_exception(ld)
     rc, t = _open(ld, parent, _opts(ld, items...); second)
     exc = _exc(ld)
-    return (; rc, exc, formal = exc ? _exc_formal(ld) : "", args = exc ? _exc_args(ld) : ("", ""))
+    return (;
+        rc, exc, formal=exc ? _exc_formal(ld) : "", args=exc ? _exc_args(ld) : ("", "")
+    )
 end
 
 # compress `data` through zopen/3 over a memory stream; the bytes
@@ -187,14 +200,16 @@ end
     parent, _, _ = _sf_out()
     # the format: an atom of the three, else type_error(atom, X) / domain_error(compression_format, X)  (C 442-451)
     r = _fails(ld, parent, :format => :foo)
-    @test r.rc == LK.FFALSE && r.formal == "domain_error" && r.args == ("compression_format", "foo")
+    @test r.rc == LK.FFALSE && r.formal == "domain_error" &&
+        r.args == ("compression_format", "foo")
     r = _fails(ld, parent, :format => 1)
     @test r.rc == LK.FFALSE && r.formal == "type_error" && r.args[1] == "atom"
     @test lk_eq(_exc_arg(ld, 2), lk_answer(ld, _atomref(ld, 1)))
     # the level: an integer 0..9, else type_error(integer, X) / domain_error(compression_level, X)  (C 453-459)
     for bad in (10, -1, 100, -5)
         r = _fails(ld, parent, :level => bad)
-        @test r.rc == LK.FFALSE && r.formal == "domain_error" && r.args[1] == "compression_level"
+        @test r.rc == LK.FFALSE && r.formal == "domain_error" &&
+            r.args[1] == "compression_level"
         @test lk_eq(_exc_arg(ld, 2), lk_answer(ld, _atomref(ld, bad)))
     end
     r = _fails(ld, parent, :level => :a)
@@ -203,7 +218,8 @@ end
     r = _fails(ld, nothing)
     @test r.rc == LK.FFALSE && r.formal == "instantiation_error"
     r = _fails(ld, :nostream)
-    @test r.rc == LK.FFALSE && r.formal == "existence_error" && r.args == ("stream", "nostream")
+    @test r.rc == LK.FFALSE && r.formal == "existence_error" &&
+        r.args == ("stream", "nostream")
     r = _fails(ld, 1)
     @test r.rc == LK.FFALSE && r.formal == "domain_error" && r.args[1] == "stream_or_alias"
     # the ORDER: the options are checked before the stream, the format before the level
@@ -234,7 +250,8 @@ end
     @test LK.closeStream(ld, zs)
     @test LK.Sclose(parent) == 0
     # the bool options: a bare atom or true/false, close_parent and multi_part
-    for items in ((:close_parent,), (:multi_part,), (:multi_part => :true, :close_parent => :false))
+    for items in
+        ((:close_parent,), (:multi_part,), (:multi_part => :true, :close_parent => :false))
         parent, _, _ = _sf_out()
         zs = _zopen_ok(ld, parent, items...)
         @test LK.closeStream(ld, zs)
@@ -255,7 +272,9 @@ end
     @test LK.closeStream(ld, zs)
     @test parent.magic == LK.SIO_CMAGIC                                             # close_parent(true) is the default: the parent is closed
     # the format
-    for (fmt, want) in ((:gzip, LK.Z_F_GZIP), (:deflate, LK.Z_F_DEFLATE), (:raw_deflate, LK.Z_F_RAW_DEFLATE))
+    for (fmt, want) in (
+        (:gzip, LK.Z_F_GZIP), (:deflate, LK.Z_F_DEFLATE), (:raw_deflate, LK.Z_F_RAW_DEFLATE)
+    )
         parent, _, _ = _sf_out()
         zs = _zopen_ok(ld, parent, :format => fmt, :close_parent => :false)
         @test zs.filter[].format == want && zs.filter[].close_parent === false
@@ -273,8 +292,16 @@ end
     end
     # the order of the option list does not matter
     parent, _, _ = _sf_out()
-    zs = _zopen_ok(ld, parent, :multi_part => :false, :close_parent => :false, :format => :gzip, :level => 3)
-    @test zs.filter[].format == LK.Z_F_GZIP && zs.filter[].multi_part == 0 && zs.filter[].close_parent === false
+    zs = _zopen_ok(
+        ld,
+        parent,
+        :multi_part => :false,
+        :close_parent => :false,
+        :format => :gzip,
+        :level => 3
+    )
+    @test zs.filter[].format == LK.Z_F_GZIP && zs.filter[].multi_part == 0 &&
+        zs.filter[].close_parent === false
     @test LK.closeStream(ld, zs)
     @test LK.Sclose(parent) == 0
 end
@@ -289,7 +316,8 @@ end
     zs = _zopen_ok(ld, parent, :format => :gzip, :close_parent => :false)
     @test zs.encoding == LK.ENC_ISO_LATIN_1                                         # C 490
     @test (zs.flags & LK.ZLIB_COPY_FLAGS) == (parent.flags & LK.ZLIB_COPY_FLAGS)
-    @test (zs.flags & LK.SIO_TEXT) != 0 && (zs.flags & LK.SIO_REPXML) != 0 && (zs.flags & LK.SIO_REPPL) != 0
+    @test (zs.flags & LK.SIO_TEXT) != 0 && (zs.flags & LK.SIO_REPXML) != 0 &&
+        (zs.flags & LK.SIO_REPPL) != 0
     @test (zs.flags & LK.SIO_FBUF) != 0                                             # C 485
     @test (zs.flags & LK.SIO_OUTPUT) != 0 && (zs.flags & LK.SIO_INPUT) == 0
     @test (zs.flags & LK.SIO_RECORDPOS) == (parent.flags & LK.SIO_RECORDPOS)
@@ -301,19 +329,26 @@ end
     # an input parent
     parent = _sf_in(UInt8[0x00])
     zs = _zopen_ok(ld, parent, :close_parent => :false)
-    @test (zs.flags & LK.SIO_INPUT) != 0 && (zs.flags & LK.SIO_OUTPUT) == 0 && (zs.flags & LK.SIO_FBUF) != 0
+    @test (zs.flags & LK.SIO_INPUT) != 0 && (zs.flags & LK.SIO_OUTPUT) == 0 &&
+        (zs.flags & LK.SIO_FBUF) != 0
     @test zs.encoding == parent.encoding
     @test LK.closeStream(ld, zs)
     @test LK.Sclose(parent) == 0
     # the flags are the ones in COPY_FLAGS, the same as the C's
     @test LK.ZLIB_COPY_FLAGS ==
-        (LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_REPXML | LK.SIO_REPPL | LK.SIO_RECORDPOS)
+        (
+        LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_REPXML | LK.SIO_REPPL |
+        LK.SIO_RECORDPOS
+    )
 end
 
 # o05: round trips through zopen/3 (write, then read) - the property, never the bytes
 @testset "o05 zopen/3 round trip: format, level, input" begin
     gd, ld = _env(_TL)
-    for (fname, data) in _INPUTS, fmt in _FMTS, lvl in (fname == "text 5000" ? (0, 1, 6, 9) : (6,))
+    for (fname, data) in _INPUTS,
+        fmt in _FMTS,
+        lvl in (fname == "text 5000" ? (0, 1, 6, 9) : (6,))
+
         comp = _compress(ld, data, :format => fmt, :level => lvl)
         @test !isempty(comp)
         if fmt == :gzip
@@ -395,7 +430,9 @@ end
         @test LK.closeStream(ld, zs)
         # multi_part(false): the first member only, the rest stays in the parent
         parent = _sf_in(comp)
-        zs = _zopen_ok(ld, parent, :format => fmt, :multi_part => :false, :close_parent => :false)
+        zs = _zopen_ok(
+            ld, parent, :format => fmt, :multi_part => :false, :close_parent => :false
+        )
         @test _read_all(zs) == a
         @test LK.closeStream(ld, zs)
         rest = Vector{UInt8}(undef, 1)
@@ -445,7 +482,7 @@ end
     pref = _stream_ref(ld, parent)
     before = _live(gd, ld)
     LK.PL_clear_exception(ld)
-    rc, t = _call(ld, pref, _opts(ld, :format => :gzip); second = :foo)
+    rc, t = _call(ld, pref, _opts(ld, :format => :gzip); second=:foo)
     @test rc == LK.FFALSE
     @test _exc(ld) && _exc_formal(ld) == "instantiation_error"
     @test parent.magic == LK.SIO_MAGIC && parent.upstream === nothing
@@ -458,7 +495,7 @@ end
     parent, bufp, sizep = _sf_out()
     pref = _stream_ref(ld, parent)
     before = _live(gd, ld)
-    rc, t = _call(ld, pref, _opts(ld, :format => :gzip); second = :foo)
+    rc, t = _call(ld, pref, _opts(ld, :format => :gzip); second=:foo)
     @test rc == LK.FFALSE
     @test _exc(ld) && _exc_formal(ld) == "instantiation_error"
     @test parent.magic == LK.SIO_MAGIC && parent.upstream === nothing

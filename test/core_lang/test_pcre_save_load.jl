@@ -6,13 +6,24 @@ using Test, LogicKernel
 const LK = LogicKernel
 
 const _PS_GROUPS = (
-    :compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags, :compile_ctx_flags,
-    :compile_bsr_flags, :compile_newline_flags, :match_options_flags, :start_flags,
+    :compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags,
+    :compile_ctx_flags,
+    :compile_bsr_flags, :compile_newline_flags, :match_options_flags, :start_flags
 )
 # one (seen, flags) per group in the C's save order: all distinct, one with the 32-bit maximum
-const _PS_PAIRS = [(1, 0x000003ef), (2, 0x000007d7), (3, 0x00000bbf), (4, 0xffffffff), (5, 0x0000138f), (6, 0x00001777), (7, 0x00001b5f), (8, 0x00001f47), (9, 0x0000232f)]
+const _PS_PAIRS = [
+    (1, 0x000003ef),
+    (2, 0x000007d7),
+    (3, 0x00000bbf),
+    (4, 0xffffffff),
+    (5, 0x0000138f),
+    (6, 0x00001777),
+    (7, 0x00001b5f),
+    (8, 0x00001f47),
+    (9, 0x0000232f)
+]
 
-function _ps_regex(pattern::String = "a.c")
+function _ps_regex(pattern::String="a.c")
     re = LK.re_init_data(pattern)
     for (g, (s, f)) in zip(_PS_GROUPS, _PS_PAIRS)
         of = getfield(re, g)
@@ -46,7 +57,7 @@ function _ps_get_atom(fd)::Union{Nothing, String}
     return String(out)
 end
 
-function _ps_save(re; put_atom = _ps_put_atom)
+function _ps_save(re; put_atom=_ps_put_atom)
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
     w = LK.Sopenmem(bufp, sizep, "w")
@@ -57,23 +68,61 @@ function _ps_save(re; put_atom = _ps_put_atom)
     return (ok, out)
 end
 
-_ps_reader(bytes::Vector{UInt8}) = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
+_ps_reader(bytes::Vector{UInt8}) =
+    LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
 
 # the C's layout for _ps_regex("a.c"): version 1, the atom (3, 'a', '.', 'c' by the stand-in), nine (seen, flags) pairs
-const _PS_BYTES = UInt8[0x81, 0x83, 0x61, 0x2e, 0x63, 0x81, 0x6f, 0x87, 0x82, 0x57, 0x8f, 0x83, 0x3f, 0x97, 0x84, 0x7f, 0x7f, 0x7f, 0x7f, 0x8f, 0x85, 0x0f, 0xa7, 0x86, 0x77, 0xae, 0x87, 0x5f, 0xb6, 0x88, 0x47, 0xbe, 0x89, 0x2f, 0xc6]
+const _PS_BYTES = UInt8[
+    0x81,
+    0x83,
+    0x61,
+    0x2e,
+    0x63,
+    0x81,
+    0x6f,
+    0x87,
+    0x82,
+    0x57,
+    0x8f,
+    0x83,
+    0x3f,
+    0x97,
+    0x84,
+    0x7f,
+    0x7f,
+    0x7f,
+    0x7f,
+    0x8f,
+    0x85,
+    0x0f,
+    0xa7,
+    0x86,
+    0x77,
+    0xae,
+    0x87,
+    0x5f,
+    0xb6,
+    0x88,
+    0x47,
+    0xbe,
+    0x89,
+    0x2f,
+    0xc6
+]
 
 @testset "re_write_text: <regex>(0x<serial>, <pattern>)" begin
     re = LK.re_init_data("a.c")
-    @test LK.re_write_text(re) == string("<regex>(0x", string(re.serial, base = 16), ", a.c)")
+    @test LK.re_write_text(re) == string("<regex>(0x", string(re.serial, base=16), ", a.c)")
     re.serial = 255
     @test LK.re_write_text(re) == "<regex>(0xff, a.c)"
     re.serial = 16
     @test LK.re_write_text(re) == "<regex>(0x10, a.c)"
     # a pattern with ')' or a quote is written as it is (the C's %.*WAs)
     q = LK.re_init_data("a)\"b")
-    @test LK.re_write_text(q) == string("<regex>(0x", string(q.serial, base = 16), ", a)\"b)")
+    @test LK.re_write_text(q) == string("<regex>(0x", string(q.serial, base=16), ", a)\"b)")
     e = LK.re_init_data("")
-    @test startswith(LK.re_write_text(e), "<regex>(0x") && endswith(LK.re_write_text(e), ", )")
+    @test startswith(LK.re_write_text(e), "<regex>(0x") &&
+        endswith(LK.re_write_text(e), ", )")
 end
 
 @testset "re_save_fields: the bytes in the C's order" begin
@@ -87,7 +136,7 @@ end
 
 @testset "re_save_fields: a failing write ends the sequence (&&)" begin
     # the atom writer fails: the pairs are not written, the version is
-    ok, bytes = _ps_save(_ps_regex(); put_atom = (p, fd) -> false)
+    ok, bytes = _ps_save(_ps_regex(); put_atom=(p, fd) -> false)
     @test !ok && bytes == UInt8[0x81]
 end
 

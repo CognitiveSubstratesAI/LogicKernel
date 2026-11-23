@@ -886,7 +886,9 @@ end
 The `uint64_t` term reference `t` holds, or `nothing`; with `ex` also the error raised: `domain_error(not_less_than_zero, T)`,
 `representation_error(uint64_t)` or `type_error(integer, T)` (pl-error.c `pl_get_uint64`).
 """
-function pl_get_uint64(ld::PL_local_data{T}, t::term_t, ex::Bool)::Union{Nothing, UInt64} where {T}
+function pl_get_uint64(
+    ld::PL_local_data{T}, t::term_t, ex::Bool
+)::Union{Nothing, UInt64} where {T}
     k, x, _ = _deref_loc(ld, -(t + 1))                      # Word p = valTermRef(t); deRef(p)
     if k == DU_VALUE && isTaggedIntW(x)                     # if ( isTaggedInt(*p) )
         valInt(x) >= 0 && return UInt64(valInt(x))          # *i = v

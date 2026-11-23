@@ -27,7 +27,9 @@
 # ORIGINAL (JSON1): upstream's `static_extensions`, the generated `static_packages.h`.
 # DIVERGES: see the file header, 1.
 "The static extensions, `(name, install function)` (pl-load.c `static_extensions`, generated `static_packages.h`)."
-const static_extensions = (("json", install_json), ("pcre4pl", install_pcre4pl), ("zlib4pl", install_zlib4pl))
+const static_extensions = (
+    ("json", install_json), ("pcre4pl", install_pcre4pl), ("zlib4pl", install_zlib4pl)
+)
 
 # PORT: pl-load.c activate_static_extension
 # DIVERGES: the extension is looked up by name in `static_extensions`, as the `USE_DLOPEN_SELF` == 0 branch does

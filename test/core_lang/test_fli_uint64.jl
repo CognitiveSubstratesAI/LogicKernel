@@ -38,7 +38,9 @@ function _u6_exc(ld)
                     push!(args, LK.text_string(txt))
                 else
                     nb = LK.PL_get_name_arity(ld, a)
-                    push!(args, nb === nothing ? "?" : string(LK.sym_text(nb[1]), "/", nb[2]))
+                    push!(
+                        args, nb === nothing ? "?" : string(LK.sym_text(nb[1]), "/", nb[2])
+                    )
                 end
             end
             r = (LK.sym_text(na[1]), args)
@@ -63,13 +65,13 @@ end
 
 @testset "PL_get_uint64(_ex): integers in range (pl-error.c: the tagged-int and V_INTEGER branches, V_MPZ status 0)" begin
     for (txt, v) in (
-            ("0", UInt64(0)),                              # tagged int, v >= 0
-            ("1", UInt64(1)),
-            ("42", UInt64(42)),
-            ("9223372036854775807", UInt64(typemax(Int64))),     # V_INTEGER or tagged, the largest
-            ("9223372036854775808", UInt64(1) << 63),            # V_MPZ, status 0: first past Int64
-            ("18446744073709551615", typemax(UInt64)),           # V_MPZ, status 0: the largest uint64
-        )
+        ("0", UInt64(0)),                              # tagged int, v >= 0
+        ("1", UInt64(1)),
+        ("42", UInt64(42)),
+        ("9223372036854775807", UInt64(typemax(Int64))),     # V_INTEGER or tagged, the largest
+        ("9223372036854775808", UInt64(1) << 63),            # V_MPZ, status 0: first past Int64
+        ("18446744073709551615", typemax(UInt64))           # V_MPZ, status 0: the largest uint64
+    )
         r = _u6_read(txt)
         @test r == (v, nothing, v, nothing)
         @test r[1] isa UInt64 && r[3] isa UInt64
@@ -77,7 +79,9 @@ end
 end
 
 @testset "PL_get_uint64(_ex): negative integers (domain_error(not_less_than_zero, T); plain: fails, no error)" begin
-    for txt in ("-1", "-5", "-9223372036854775808", "-9223372036854775809", "-18446744073709551616")
+    for txt in (
+        "-1", "-5", "-9223372036854775808", "-9223372036854775809", "-18446744073709551616"
+    )
         v, e, vp, ep = _u6_read(txt)
         @test v === nothing
         @test e == ("domain_error", ["not_less_than_zero", txt])

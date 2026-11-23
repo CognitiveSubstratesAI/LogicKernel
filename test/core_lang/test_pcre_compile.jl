@@ -44,7 +44,7 @@ end
 _pc_bytes(s::String) = Vector{UInt8}(codeunits(s))
 
 # compile `pat` into a fresh re_data (after `setup(re)`): (ok, re, the pending error); the frame is discarded, the compiled code is NOT freed (the caller does)
-function _pc_compile(pat::String; setup = re -> nothing)
+function _pc_compile(pat::String; setup=re -> nothing)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     re = LK.re_init_data(pat)
@@ -58,7 +58,7 @@ end
 _pc_caps(re) = [(c.name, c.type) for c in re.capture_names]
 
 # the first match of `code` in `s` (default options): (rc, the copied ovector)
-function _pc_match(code, s::String, opts::UInt32 = UInt32(0))
+function _pc_match(code, s::String, opts::UInt32=UInt32(0))
     md = LK.pcre2_match_data_create_from_pattern(code)
     b = _pc_bytes(s)
     rc = LK.pcre2_match(code, b, length(b), 0, opts, md)
@@ -74,7 +74,8 @@ _pc_info(code, what::UInt32, ::Type{T}) where {T} = LK.pcre2_pattern_info(code, 
     @test ok && exc === nothing
     @test re.code != C_NULL
     @test re.capture_size == 2
-    @test _pc_caps(re) == [(nothing, LK.CAP_DEFAULT), (nothing, LK.CAP_DEFAULT), (nothing, LK.CAP_DEFAULT)]
+    @test _pc_caps(re) ==
+        [(nothing, LK.CAP_DEFAULT), (nothing, LK.CAP_DEFAULT), (nothing, LK.CAP_DEFAULT)]
     @test _pc_match(re.code, "xab")[1] == 3                 # the compiled code is the pattern's
     @test re.pattern == "(a)(b)"
     LK.re_free(re)
@@ -84,7 +85,9 @@ _pc_info(code, what::UInt32, ::Type{T}) where {T} = LK.pcre2_pattern_info(code, 
 end
 
 @testset "re_compile_impl: the compile options of the regex reach pcre2_compile" begin
-    ok, re, _ = _pc_compile("a"; setup = re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS))
+    ok, re, _ = _pc_compile(
+        "a"; setup=re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS)
+    )
     @test ok && _pc_match(re.code, "A")[1] == 1
     LK.re_free(re)
     ok, re, _ = _pc_compile("a")                           # no caseless: "A" does not match
@@ -96,7 +99,9 @@ end
     rc, ov = _pc_match(re.code, "é")
     @test rc == 1 && ov == Csize_t[0, 2]
     LK.re_free(re)
-    ok, re, _ = _pc_compile("."; setup = re -> (re.compile_options_flags.flags = LK.PCRE2_NO_UTF_CHECK))
+    ok, re, _ = _pc_compile(
+        "."; setup=re -> (re.compile_options_flags.flags = LK.PCRE2_NO_UTF_CHECK)
+    )
     @test ok
     rc, ov = _pc_match(re.code, "é")
     @test rc == 1 && ov == Csize_t[0, 1]
@@ -115,19 +120,31 @@ end
         ("a_b", LK.CAP_STRING),                            # only the LAST underscore counts (strrchr)
         ("a_bc", LK.CAP_DEFAULT),                          # more than one byte after the underscore: untyped, the whole name
         ("a_", LK.CAP_DEFAULT),                            # nothing after the underscore: untyped (the C's `fs[1]` is NUL)
-        (nothing, LK.CAP_DEFAULT),                         # an unnamed group
+        (nothing, LK.CAP_DEFAULT)                         # an unnamed group
     ]
     LK.re_free(re)
     # every type letter of the switch, in the order of the C
-    ok, re, _ = _pc_compile("(?<s_S>a)(?<a_A>a)(?<i_I>a)(?<f_F>a)(?<n_N>a)(?<t_T>a)(?<r_R>a)")
+    ok, re, _ = _pc_compile(
+        "(?<s_S>a)(?<a_A>a)(?<i_I>a)(?<f_F>a)(?<n_N>a)(?<t_T>a)(?<r_R>a)"
+    )
     @test ok
     @test [c.type for c in re.capture_names[2:end]] ==
-        [LK.CAP_STRING, LK.CAP_ATOM, LK.CAP_INTEGER, LK.CAP_FLOAT, LK.CAP_NUMBER, LK.CAP_TERM, LK.CAP_RANGE]
+        [
+        LK.CAP_STRING,
+        LK.CAP_ATOM,
+        LK.CAP_INTEGER,
+        LK.CAP_FLOAT,
+        LK.CAP_NUMBER,
+        LK.CAP_TERM,
+        LK.CAP_RANGE
+    ]
     @test [c.name for c in re.capture_names[2:end]] == ["s", "a", "i", "f", "n", "t", "r"]
     LK.re_free(re)
     # the entry of a name is that of its group NUMBER, not its place in the (sorted) name table
     ok, re, _ = _pc_compile("(?<z>a)(?<b_I>b)")
-    @test ok && _pc_caps(re) == [(nothing, LK.CAP_DEFAULT), ("z", LK.CAP_DEFAULT), ("b", LK.CAP_INTEGER)]
+    @test ok &&
+        _pc_caps(re) ==
+          [(nothing, LK.CAP_DEFAULT), ("z", LK.CAP_DEFAULT), ("b", LK.CAP_INTEGER)]
     LK.re_free(re)
     # a UTF-8 name keeps its text
     ok, re, _ = _pc_compile("(?<né_A>a)")
@@ -136,7 +153,8 @@ end
 end
 
 @testset "set_capture_name_and_type: an unknown type letter is existence_error(re_type_flag, Letter) and the regex is freed" begin
-    for (pat, letter) in (("(?<q_Q>d)", "Q"), ("(?<q_s>d)", "s"), ("(?<ok_I>a)(?<bad_X>b)", "X"))
+    for (pat, letter) in
+        (("(?<q_Q>d)", "Q"), ("(?<q_s>d)", "s"), ("(?<ok_I>a)(?<bad_X>b)", "X"))
         ok, re, exc = _pc_compile(pat)
         @test !ok
         @test exc == ("existence_error", ["re_type_flag", letter])
@@ -148,7 +166,9 @@ end
 @testset "re_compile_impl: a bad pattern is syntax_error(the library's message) and the regex is freed" begin
     ok, re, exc = _pc_compile("(")
     @test !ok
-    (code, ec, _) = LK.pcre2_compile(_pc_bytes("("), LK.PCRE2_UTF | LK.PCRE2_NO_UTF_CHECK, Ptr{Cvoid}(C_NULL))
+    (code, ec, _) = LK.pcre2_compile(
+        _pc_bytes("("), LK.PCRE2_UTF | LK.PCRE2_NO_UTF_CHECK, Ptr{Cvoid}(C_NULL)
+    )
     @test code == C_NULL && ec != 0
     msg = PC.err_message(ec)                                 # Base.PCRE: the same library's text for the same code
     @test !isempty(msg)
@@ -161,8 +181,9 @@ end
 @testset "re_verify_pats: a NUL byte is representation_error(nul_byte)" begin
     ld = _PC_LD
     for (bytes, good) in (
-            (_pc_bytes("ab"), true), (UInt8[], true), (UInt8[0x61, 0x00, 0x62], false), (UInt8[0x00], false), (UInt8[0x61, 0x62, 0x00], false),
-        )
+        (_pc_bytes("ab"), true), (UInt8[], true), (UInt8[0x61, 0x00, 0x62], false),
+        (UInt8[0x00], false), (UInt8[0x61, 0x62, 0x00], false)
+    )
         fid = LK.PL_open_foreign_frame(ld)
         r = LK.re_verify_pats(ld, bytes)
         exc = _pc_exc(ld)
@@ -174,19 +195,29 @@ end
 
 @testset "re_compile_impl: the bsr, newline and extra options go through the compile context (read back with pcre2_pattern_info)" begin
     for v in (PC.BSR_UNICODE, PC.BSR_ANYCRLF)
-        ok, re, _ = _pc_compile("a"; setup = re -> (re.compile_bsr_flags.flags = v))
+        ok, re, _ = _pc_compile("a"; setup=re -> (re.compile_bsr_flags.flags = v))
         @test ok && _pc_info(re.code, PC.INFO_BSR, UInt32) == (Cint(0), v)
         LK.re_free(re)
     end
-    for v in (PC.NEWLINE_CR, PC.NEWLINE_LF, PC.NEWLINE_CRLF, PC.NEWLINE_ANY, PC.NEWLINE_ANYCRLF, PC.NEWLINE_NUL)
-        ok, re, _ = _pc_compile("a"; setup = re -> (re.compile_newline_flags.flags = v))
+    for v in (
+        PC.NEWLINE_CR,
+        PC.NEWLINE_LF,
+        PC.NEWLINE_CRLF,
+        PC.NEWLINE_ANY,
+        PC.NEWLINE_ANYCRLF,
+        PC.NEWLINE_NUL
+    )
+        ok, re, _ = _pc_compile("a"; setup=re -> (re.compile_newline_flags.flags = v))
         @test ok && _pc_info(re.code, PC.INFO_NEWLINE, UInt32) == (Cint(0), v)
         LK.re_free(re)
     end
     # extra options: MATCH_WORD wraps the pattern in \b...\b
-    ok, re, _ = _pc_compile("a"; setup = re -> (re.compile_ctx_flags.flags = LK.PCRE2_EXTRA_MATCH_WORD))
+    ok, re, _ = _pc_compile(
+        "a"; setup=re -> (re.compile_ctx_flags.flags = LK.PCRE2_EXTRA_MATCH_WORD)
+    )
     @test ok
-    @test _pc_info(re.code, PC.INFO_EXTRAOPTIONS, UInt32) == (Cint(0), LK.PCRE2_EXTRA_MATCH_WORD)
+    @test _pc_info(re.code, PC.INFO_EXTRAOPTIONS, UInt32) ==
+        (Cint(0), LK.PCRE2_EXTRA_MATCH_WORD)
     @test _pc_match(re.code, "ab")[1] == LK.PCRE2_ERROR_NOMATCH
     @test _pc_match(re.code, "b a")[1] == 1
     LK.re_free(re)
@@ -195,22 +226,40 @@ end
     @test _pc_info(re.code, PC.INFO_EXTRAOPTIONS, UInt32) == (Cint(0), UInt32(0))
     LK.re_free(re)
     # the newline convention is the compiled one: `^` after "\r" matches under CR, not under LF (multiline)
-    ok, re, _ = _pc_compile("^b"; setup = re -> (re.compile_options_flags.flags |= LK.PCRE2_MULTILINE; re.compile_newline_flags.flags = PC.NEWLINE_CR))
+    ok, re, _ = _pc_compile(
+        "^b";
+        setup=re -> (
+            re.compile_options_flags.flags |= LK.PCRE2_MULTILINE;
+            re.compile_newline_flags.flags=PC.NEWLINE_CR
+        )
+    )
     @test ok && _pc_match(re.code, "a\rb")[1] == 1
     LK.re_free(re)
-    ok, re, _ = _pc_compile("^b"; setup = re -> (re.compile_options_flags.flags |= LK.PCRE2_MULTILINE; re.compile_newline_flags.flags = PC.NEWLINE_LF))
+    ok, re, _ = _pc_compile(
+        "^b";
+        setup=re -> (
+            re.compile_options_flags.flags |= LK.PCRE2_MULTILINE;
+            re.compile_newline_flags.flags=PC.NEWLINE_LF
+        )
+    )
     @test ok && _pc_match(re.code, "a\rb")[1] == LK.PCRE2_ERROR_NOMATCH
     LK.re_free(re)
 end
 
 @testset "re_compile_impl: an invalid bsr or newline value is representation_error and frees the regex" begin
-    ok, re, exc = _pc_compile("a"; setup = re -> (re.compile_bsr_flags.flags = UInt32(99)))
+    ok, re, exc = _pc_compile("a"; setup=re -> (re.compile_bsr_flags.flags = UInt32(99)))
     @test !ok && exc == ("representation_error", ["option:bsr"]) && re.code == C_NULL
-    ok, re, exc = _pc_compile("a"; setup = re -> (re.compile_newline_flags.flags = UInt32(99)))
+    ok, re, exc = _pc_compile(
+        "a"; setup=re -> (re.compile_newline_flags.flags = UInt32(99))
+    )
     @test !ok && exc == ("representation_error", ["option:newline"]) && re.code == C_NULL
     # the bsr check comes before the newline check: both invalid names the bsr (the C's order)
     ok, re, exc = _pc_compile(
-        "a"; setup = re -> (re.compile_bsr_flags.flags = UInt32(99); re.compile_newline_flags.flags = UInt32(99))
+        "a";
+        setup=re -> (
+            re.compile_bsr_flags.flags=UInt32(99);
+            re.compile_newline_flags.flags=UInt32(99)
+        )
     )
     @test !ok && exc == ("representation_error", ["option:bsr"])
     # no row for "option:extra": pcre2_set_compile_extra_options returns 0 for every value (pcre2api, doc-only), so the C's error branch is unreachable
@@ -219,19 +268,25 @@ end
 @testset "re_compile_impl: optimise runs the JIT with the regex's JIT options (the result is ignored)" begin
     buf = LK.pcre2_config_buf()
     jit = LK.pcre2_config(PC.CONFIG_JIT, buf) == 0 && LK.pcre2_config_u32(buf) == 1
-    on = re -> (re.optimise_flags.flags = LK.RE_OPTIMISE; re.jit_options_flags.flags = LK.PCRE2_JIT_COMPLETE)
-    ok, re, _ = _pc_compile("(a)b"; setup = on)
+    on =
+        re -> (
+            re.optimise_flags.flags=LK.RE_OPTIMISE;
+            re.jit_options_flags.flags=LK.PCRE2_JIT_COMPLETE
+        )
+    ok, re, _ = _pc_compile("(a)b"; setup=on)
     @test ok && _pc_match(re.code, "ab")[1] == 2
     jit && @test _pc_info(re.code, PC.INFO_JITSIZE, UInt)[2] > 0
     LK.re_free(re)
     # JIT options without optimise: not JIT-compiled
-    ok, re, _ = _pc_compile("(a)b"; setup = re -> (re.jit_options_flags.flags = LK.PCRE2_JIT_COMPLETE))
+    ok, re, _ = _pc_compile(
+        "(a)b"; setup=re -> (re.jit_options_flags.flags = LK.PCRE2_JIT_COMPLETE)
+    )
     @test ok
     jit && @test _pc_info(re.code, PC.INFO_JITSIZE, UInt) == (Cint(0), UInt(0))
     LK.re_free(re)
     # optimise with JIT options 0: the C ignores the library's refusal and the regex stays usable; doc-only (pcre2api: pcre2_jit_compile needs one of
     # COMPLETE / PARTIAL_SOFT / PARTIAL_HARD, else PCRE2_ERROR_JIT_BADOPTION): the code is not JIT-compiled
-    ok, re, _ = _pc_compile("(a)b"; setup = re -> (re.optimise_flags.flags = LK.RE_OPTIMISE))
+    ok, re, _ = _pc_compile("(a)b"; setup=re -> (re.optimise_flags.flags = LK.RE_OPTIMISE))
     @test ok && _pc_match(re.code, "ab")[1] == 2
     jit && @test _pc_info(re.code, PC.INFO_JITSIZE, UInt) == (Cint(0), UInt(0))
     LK.re_free(re)

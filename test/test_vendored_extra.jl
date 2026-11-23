@@ -18,7 +18,8 @@ const _VE_MANIFESTS = joinpath(_VE_ROOT, "tools", "swipl_extra_blobs")
 
 "The classes the tree must carry (a manifest deleted together with its files is a failure)."
 const _VE_CLASSES = [
-    "bench", "pkg-chr", "pkg-clpqr", "pkg-cql", "pkg-json", "pkg-paxos", "pkg-pcre", "pkg-pldoc", "pkg-zlib", "tests", "top",
+    "bench", "pkg-chr", "pkg-clpqr", "pkg-cql", "pkg-json", "pkg-paxos", "pkg-pcre",
+    "pkg-pldoc", "pkg-zlib", "tests", "top"
 ]
 
 "The pin file's value for `key`, or `\"\"`."
@@ -67,8 +68,8 @@ function _ve_blobs(files::Vector{String})::Vector{String}
         close(io)
         readlines(
             pipeline(
-                Cmd(`git hash-object --no-filters --stdin-paths`; dir = _VE_ROOT);
-                stdin = list
+                Cmd(`git hash-object --no-filters --stdin-paths`; dir=_VE_ROOT);
+                stdin=list
             )
         )
     end
@@ -94,12 +95,21 @@ function _ve_problems(manifest::String, dir::String, pin::String)::Vector{String
         roots = String[]
     else
         want =
-            cls == "tests" ? (:super, ["tests"]) :
-            cls == "top" ? (:super, ["app", "customize", "demo"]) :
-            cls == "bench" ? (:sub, ["bench"]) :
-            startswith(cls, "pkg-") ? (:sub, ["packages/" * cls[5:end]]) : (:none, String[])
+            if cls == "tests"
+                (:super, ["tests"])
+            elseif cls == "top"
+                (:super, ["app", "customize", "demo"])
+            elseif cls == "bench"
+                (:sub, ["bench"])
+            elseif startswith(cls, "pkg-")
+                (:sub, ["packages/" * cls[5:end]])
+            else
+                (:none, String[])
+            end
         (Symbol(m.source[1]), roots) == want ||
-            push!(probs, "class $cls does not match its source line: $(join(m.source, ' '))")
+            push!(
+                probs, "class $cls does not match its source line: $(join(m.source, ' '))"
+            )
         m.source[1] == "super" && m.source[2] != pin &&
             push!(probs, "source commit $(m.source[2]) is not the pin $pin")
         for r in m.rows
@@ -120,7 +130,10 @@ function _ve_problems(manifest::String, dir::String, pin::String)::Vector{String
         got[p] == id || push!(probs, "DIFFERS: $p ($(got[p]), manifest $id)")
         exe = (stat(joinpath(dir, p)).mode & 0o111) != 0
         (mode == "100755") == exe ||
-            push!(probs, "MODE: $p is $(exe ? "executable" : "not executable"), manifest $mode")
+            push!(
+                probs,
+                "MODE: $p is $(exe ? "executable" : "not executable"), manifest $mode"
+            )
     end
     present = String[]
     for r in roots, (d, _, files) in walkdir(joinpath(dir, r)), f in files
@@ -133,7 +146,8 @@ function _ve_problems(manifest::String, dir::String, pin::String)::Vector{String
 end
 
 "The manifest paths of every class and every file present under the extra tree."
-_ve_all_manifests() = sort!(filter(f -> endswith(f, ".txt"), readdir(_VE_MANIFESTS; join = true)))
+_ve_all_manifests() =
+    sort!(filter(f -> endswith(f, ".txt"), readdir(_VE_MANIFESTS; join=true)))
 
 @testset "vendor/swipl-devel-extra is swipl-devel at the pin, unchanged: every class" begin
     pin = _ve_pin("commit")
@@ -175,7 +189,7 @@ end
     wrong = "0123456789abcdef0123456789abcdef01234567"
     @test broken(identity) == String[]
     # a wrong blob id
-    p = broken(ls -> (ls[rows[1]] = "100644 blob $wrong\t$(first_row[2])"; ls))
+    p = broken(ls -> (ls[rows[1]]="100644 blob $wrong\t$(first_row[2])"; ls))
     @test length(p) == 1 && startswith(p[1], "DIFFERS: $(first_row[2]) ")
     # a file the manifest does not list: ADDED
     p = broken(ls -> (deleteat!(ls, rows[1]); ls))
@@ -184,16 +198,18 @@ end
     p = broken(ls -> (push!(ls, "100644 blob $wrong\tpackages/paxos/zz_missing.pl"); ls))
     @test p == ["MISSING: packages/paxos/zz_missing.pl"]
     # a mode that is not the file's
-    p = broken(ls -> (ls[rows[1]] = "100755 blob $(split(first_row[1])[3])\t$(first_row[2])"; ls))
+    p = broken(
+        ls -> (ls[rows[1]]="100755 blob $(split(first_row[1])[3])\t$(first_row[2])"; ls)
+    )
     @test length(p) == 1 && startswith(p[1], "MODE: $(first_row[2]) ")
     # another commit in the header
-    p = broken(ls -> (ls[1] = replace(ls[1], pin => wrong); ls))
+    p = broken(ls -> (ls[1]=replace(ls[1], pin => wrong); ls))
     @test any(startswith("header commit"), p)
     # a line that is no manifest row
     p = broken(ls -> (push!(ls, "not a row"); ls))
     @test p == ["unexpected manifest line: not a row"]
     # a source line that does not match the class
-    p = broken(ls -> (ls[3] = replace(ls[3], "packages/paxos" => "packages/chr"); ls))
+    p = broken(ls -> (ls[3]=replace(ls[3], "packages/paxos" => "packages/chr"); ls))
     @test any(startswith("class pkg-paxos does not match"), p)
 end
 
@@ -209,8 +225,11 @@ const _VE_CI = get(ENV, "CI", "") == "true"
 
 "The git command prefix of submodule `sub` of the checkout `up` holding commit `sha`, or `nothing`."
 function _ve_subgit(up::String, sub::String, sha::String)::Union{Nothing, Cmd}
-    for g in (`git --git-dir=$(joinpath(up, ".git", "modules", sub))`, `git -C $(joinpath(up, sub))`)
-        success(pipeline(`$g cat-file -e $(sha * "^{commit}")`; stderr = devnull)) && return g
+    for g in (
+        `git --git-dir=$(joinpath(up, ".git", "modules", sub))`,
+        `git -C $(joinpath(up, sub))`
+    )
+        success(pipeline(`$g cat-file -e $(sha * "^{commit}")`; stderr=devnull)) && return g
     end
     return nothing
 end
@@ -239,8 +258,8 @@ if _VE_CI || isdir(joinpath(_VE_UP, ".git"))
                     g = _ve_subgit(up, sub, sha)
                     if g !== nothing
                         listed = [
-                            replace(l, '\t' => "\t$sub/"; count = 1) for
-                                l in readlines(`$g ls-tree -r $sha`)
+                            replace(l, '\t' => "\t$sub/"; count=1) for
+                            l in readlines(`$g ls-tree -r $sha`)
                         ]
                         @test sort!(listed) == sort!(rows)
                     elseif _VE_CI

@@ -41,7 +41,9 @@ function _ye_exc(ld)
                     push!(args, LK.text_string(txt))
                 else
                     nb = LK.PL_get_name_arity(ld, a)
-                    push!(args, nb === nothing ? "?" : string(LK.sym_text(nb[1]), "/", nb[2]))
+                    push!(
+                        args, nb === nothing ? "?" : string(LK.sym_text(nb[1]), "/", nb[2])
+                    )
                 end
             end
             r = (LK.sym_text(na[1]), args)
@@ -59,8 +61,20 @@ function _ye_decode(text::String)
     ev = LK.yaml_decode_event(ld, t)
     exc = _ye_exc(ld)
     LK.PL_discard_foreign_frame(ld, fid)
-    fields = ev === nothing ? nothing :
-        (ev.type, ev.anchor, ev.tag, ev.value, ev.implicit, ev.quoted_implicit, ev.style, ev.encoding)
+    fields = if ev === nothing
+        nothing
+    else
+        (
+        ev.type,
+        ev.anchor,
+        ev.tag,
+        ev.value,
+        ev.implicit,
+        ev.quoted_implicit,
+        ev.style,
+        ev.encoding
+    )
+    end
     return (fields, exc)
 end
 
@@ -69,26 +83,54 @@ const _YE_N = nothing
 const _YE_STR_TAG = "tag:yaml.org,2002:str"
 
 @testset "yaml_decode_event: the structure events (yaml4pl.c emit_event)" begin
-    @test _ye_decode("stream_start") == ((LK.YAML_STREAM_START_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, LK.YAML_UTF8_ENCODING), _YE_N)
-    @test _ye_decode("stream_end") == ((LK.YAML_STREAM_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
-    @test _ye_decode("mapping_end") == ((LK.YAML_MAPPING_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
-    @test _ye_decode("sequence_end") == ((LK.YAML_SEQUENCE_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+    @test _ye_decode("stream_start") == (
+        (
+            LK.YAML_STREAM_START_EVENT,
+            _YE_N,
+            _YE_N,
+            _YE_N,
+            false,
+            false,
+            0,
+            LK.YAML_UTF8_ENCODING
+        ),
+        _YE_N
+    )
+    @test _ye_decode("stream_end") ==
+        ((LK.YAML_STREAM_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+    @test _ye_decode("mapping_end") ==
+        ((LK.YAML_MAPPING_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+    @test _ye_decode("sequence_end") ==
+        ((LK.YAML_SEQUENCE_END_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
     # document_start / document_end: arity 0 or 1, the argument a Boolean, `implicit` false when absent
-    for (nm, ty) in (("document_start", LK.YAML_DOCUMENT_START_EVENT), ("document_end", LK.YAML_DOCUMENT_END_EVENT))
+    for (nm, ty) in (
+        ("document_start", LK.YAML_DOCUMENT_START_EVENT),
+        ("document_end", LK.YAML_DOCUMENT_END_EVENT)
+    )
         @test _ye_decode(nm) == ((ty, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
-        @test _ye_decode("$nm(true)") == ((ty, _YE_N, _YE_N, _YE_N, true, false, 0, 0), _YE_N)
-        @test _ye_decode("$nm(false)") == ((ty, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+        @test _ye_decode("$nm(true)") ==
+            ((ty, _YE_N, _YE_N, _YE_N, true, false, 0, 0), _YE_N)
+        @test _ye_decode("$nm(false)") ==
+            ((ty, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
         # a non-Boolean: PL_get_bool_ex raises (the kernel's type_error(bool, maybe)), the decoding fails
         r = _ye_decode("$nm(maybe)")
         @test r[1] === nothing && r[2] == ("type_error", ["bool", "maybe"])
         # arity 2 is no event of this name
-        @test _ye_decode("$nm(true, false)") == (_YE_N, ("domain_error", ["yaml_event", "$nm/2"]))
+        @test _ye_decode("$nm(true, false)") ==
+            (_YE_N, ("domain_error", ["yaml_event", "$nm/2"]))
     end
     # mapping_start / sequence_start: arity 2 (Anchor, Tag), variables are NULL, atomics are text, block style, implicit 0
-    for (nm, ty) in (("mapping_start", LK.YAML_MAPPING_START_EVENT), ("sequence_start", LK.YAML_SEQUENCE_START_EVENT))
-        @test _ye_decode("$nm(_, _)") == ((ty, _YE_N, _YE_N, _YE_N, false, false, LK.YAML_BLOCK_MAPPING_STYLE, 0), _YE_N)
-        @test _ye_decode("$nm(a1, 'tag:x')") == ((ty, "a1", "tag:x", _YE_N, false, false, 1, 0), _YE_N)
-        @test _ye_decode("$nm(1, 2.5)") == ((ty, "1", "2.5", _YE_N, false, false, 1, 0), _YE_N)   # CVT_ATOMIC: numbers are text (2.5: the kernel's float text)
+    for (nm, ty) in (
+        ("mapping_start", LK.YAML_MAPPING_START_EVENT),
+        ("sequence_start", LK.YAML_SEQUENCE_START_EVENT)
+    )
+        @test _ye_decode("$nm(_, _)") == (
+            (ty, _YE_N, _YE_N, _YE_N, false, false, LK.YAML_BLOCK_MAPPING_STYLE, 0), _YE_N
+        )
+        @test _ye_decode("$nm(a1, 'tag:x')") ==
+            ((ty, "a1", "tag:x", _YE_N, false, false, 1, 0), _YE_N)
+        @test _ye_decode("$nm(1, 2.5)") ==
+            ((ty, "1", "2.5", _YE_N, false, false, 1, 0), _YE_N)   # CVT_ATOMIC: numbers are text (2.5: the kernel's float text)
         @test _ye_decode("$nm(a1)") == (_YE_N, ("domain_error", ["yaml_event", "$nm/1"]))
         # a C string ends at its first NUL: get_string_arg reads the atom a<NUL>b as "a" (no strlen check there, unlike get_value)
         @test _ye_decode("$nm('a\\x0\\b', _)")[1][2] == "a"
@@ -100,11 +142,24 @@ end
 
 @testset "yaml_decode_event: scalar/4 (yaml4pl.c get_value, the styles, the implicit flags)" begin
     # a plain atom: its text, no tag, implicit both ways
-    @test _ye_decode("scalar(hello, _, _, plain)") == ((LK.YAML_SCALAR_EVENT, _YE_N, _YE_N, "hello", true, true, LK.YAML_PLAIN_SCALAR_STYLE, 0), _YE_N)
+    @test _ye_decode("scalar(hello, _, _, plain)") == (
+        (
+            LK.YAML_SCALAR_EVENT,
+            _YE_N,
+            _YE_N,
+            "hello",
+            true,
+            true,
+            LK.YAML_PLAIN_SCALAR_STYLE,
+            0
+        ),
+        _YE_N
+    )
     # integers (CVT_INTEGER) and floats (CVT_FLOAT: the kernel's float text)
     @test _ye_decode("scalar(42, _, _, plain)")[1][4] == "42"
     @test _ye_decode("scalar(-7, _, _, plain)")[1][4] == "-7"
-    @test _ye_decode("scalar(123456789012345678901234567890, _, _, plain)")[1][4] == "123456789012345678901234567890"
+    @test _ye_decode("scalar(123456789012345678901234567890, _, _, plain)")[1][4] ==
+        "123456789012345678901234567890"
     @test _ye_decode("scalar(1.5, _, _, plain)")[1][4] == "1.5"
     # the special floats are fixed texts, whatever the kernel would print
     @test _ye_decode("scalar(1.0Inf, _, _, plain)")[1][4] == ".inf"
@@ -112,7 +167,8 @@ end
     @test _ye_decode("scalar(1.5NaN, _, _, plain)")[1][4] == ".nan"
     # a STRING that would read as another type gets the str tag (when no tag was given), so the emitter quotes it; implicit false then
     for s in ("true", "12", "null", "1.5", ".inf", "0x1F", "False")
-        @test _ye_decode("scalar(\"$s\", _, _, plain)") == ((LK.YAML_SCALAR_EVENT, _YE_N, _YE_STR_TAG, s, false, false, 1, 0), _YE_N)
+        @test _ye_decode("scalar(\"$s\", _, _, plain)") ==
+            ((LK.YAML_SCALAR_EVENT, _YE_N, _YE_STR_TAG, s, false, false, 1, 0), _YE_N)
     end
     # a string that does not: no tag. (BLIND: double_quotes is `string` in the kernel's default as in swipl's)
     @test _ye_decode("scalar(\"hello\", _, _, plain)")[1][3] === nothing
@@ -123,33 +179,49 @@ end
     @test _ye_decode("scalar('12', _, _, plain)")[1][3] === nothing
     @test _ye_decode("scalar('true', _, _, plain)")[1][4] == "true"
     # tag, anchor and the five styles
-    for (st, want) in (("plain", 1), ("single_quoted", 2), ("double_quoted", 3), ("literal", 4), ("folded", 5))
+    for (st, want) in (
+        ("plain", 1),
+        ("single_quoted", 2),
+        ("double_quoted", 3),
+        ("literal", 4),
+        ("folded", 5)
+    )
         r = _ye_decode("scalar(foo, 'my:tag', a1, $st)")
-        @test r == ((LK.YAML_SCALAR_EVENT, "a1", "my:tag", "foo", false, false, want, 0), _YE_N)
+        @test r ==
+            ((LK.YAML_SCALAR_EVENT, "a1", "my:tag", "foo", false, false, want, 0), _YE_N)
     end
-    @test (LK.YAML_PLAIN_SCALAR_STYLE, LK.YAML_SINGLE_QUOTED_SCALAR_STYLE, LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-           LK.YAML_LITERAL_SCALAR_STYLE, LK.YAML_FOLDED_SCALAR_STYLE) == (1, 2, 3, 4, 5)
+    @test (LK.YAML_PLAIN_SCALAR_STYLE, LK.YAML_SINGLE_QUOTED_SCALAR_STYLE,
+        LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE,
+        LK.YAML_LITERAL_SCALAR_STYLE, LK.YAML_FOLDED_SCALAR_STYLE) == (1, 2, 3, 4, 5)
     # errors: an unknown style, a style that is no atom, a compound value, a value with a NUL
-    @test _ye_decode("scalar(foo, _, _, fancy)") == (_YE_N, ("domain_error", ["yaml_scalar_style", "fancy"]))
+    @test _ye_decode("scalar(foo, _, _, fancy)") ==
+        (_YE_N, ("domain_error", ["yaml_scalar_style", "fancy"]))
     r = _ye_decode("scalar(foo, _, _, 1)")
     @test r[1] === nothing && r[2] !== nothing                  # PL_get_atom_ex: the kernel's type_error(atom, 1)
-    @test _ye_decode("scalar(f(x), _, _, plain)") == (_YE_N, ("type_error", ["yaml_scalar", "f/1"]))
+    @test _ye_decode("scalar(f(x), _, _, plain)") ==
+        (_YE_N, ("type_error", ["yaml_scalar", "f/1"]))
     @test _ye_decode("scalar(\"a\\x0\\b\", _, _, plain)")[2] !== nothing   # strlen(s) < len: domain_error(string_without_nul, _)
     # the ORDER of the reads: Tag (arg 2) first, so a bad Tag is reported before a bad Value
     r = _ye_decode("scalar(f(x), g(y), _, plain)")
     @test r[1] === nothing && r[2] !== nothing && r[2][2][end] == "g/1"
     # alias(Anchor)
-    @test _ye_decode("alias(a1)") == ((LK.YAML_ALIAS_EVENT, "a1", _YE_N, _YE_N, false, false, 0, 0), _YE_N)
-    @test _ye_decode("alias(_)") == ((LK.YAML_ALIAS_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+    @test _ye_decode("alias(a1)") ==
+        ((LK.YAML_ALIAS_EVENT, "a1", _YE_N, _YE_N, false, false, 0, 0), _YE_N)
+    @test _ye_decode("alias(_)") ==
+        ((LK.YAML_ALIAS_EVENT, _YE_N, _YE_N, _YE_N, false, false, 0, 0), _YE_N)
 end
 
 @testset "yaml_decode_event: unknown events (domain_error(yaml_event, Event))" begin
     @test _ye_decode("foo") == (_YE_N, ("domain_error", ["yaml_event", "foo"]))
-    @test _ye_decode("scalar(a, b, c)") == (_YE_N, ("domain_error", ["yaml_event", "scalar/3"]))
-    @test _ye_decode("stream_start(1)") == (_YE_N, ("domain_error", ["yaml_event", "stream_start/1"]))
-    @test _ye_decode("stream_end(1)") == (_YE_N, ("domain_error", ["yaml_event", "stream_end/1"]))
+    @test _ye_decode("scalar(a, b, c)") ==
+        (_YE_N, ("domain_error", ["yaml_event", "scalar/3"]))
+    @test _ye_decode("stream_start(1)") ==
+        (_YE_N, ("domain_error", ["yaml_event", "stream_start/1"]))
+    @test _ye_decode("stream_end(1)") ==
+        (_YE_N, ("domain_error", ["yaml_event", "stream_end/1"]))
     @test _ye_decode("alias") == (_YE_N, ("domain_error", ["yaml_event", "alias"]))           # alias needs arity 1
-    @test _ye_decode("mapping_end(1)") == (_YE_N, ("domain_error", ["yaml_event", "mapping_end/1"]))
+    @test _ye_decode("mapping_end(1)") ==
+        (_YE_N, ("domain_error", ["yaml_event", "mapping_end/1"]))
     @test _ye_decode("42") == (_YE_N, ("domain_error", ["yaml_event", "42"]))                # PL_get_name_arity fails on a number
 end
 

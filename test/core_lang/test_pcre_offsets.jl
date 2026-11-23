@@ -19,14 +19,18 @@ const _PCRE_TRUNC = UInt8[0xe2, 0x82]         # a lead byte with one of its two 
     @test length(_PCRE_S) == 11
     # offset -> next offset
     for (o, want, why) in (
-            (0, 1, "ASCII: one byte"),
-            (1, 3, "two-byte character"),
-            (3, 6, "three-byte character"),
-            (6, 10, "four-byte character"),
-            (10, 11, "ASCII at the last byte"),
-            (11, 12, "at the end: the NUL terminator is ASCII, one byte (C reads it)"),
-            (2, 3, "inside a character, at its continuation byte: that is a byte >= 0x80, so the continuation loop runs"),
+        (0, 1, "ASCII: one byte"),
+        (1, 3, "two-byte character"),
+        (3, 6, "three-byte character"),
+        (6, 10, "four-byte character"),
+        (10, 11, "ASCII at the last byte"),
+        (11, 12, "at the end: the NUL terminator is ASCII, one byte (C reads it)"),
+        (
+            2,
+            3,
+            "inside a character, at its continuation byte: that is a byte >= 0x80, so the continuation loop runs"
         )
+    )
         @test LK.re_utf8_skip_char(_PCRE_S, o) == want  # the row's `why` names its branch
     end
     @test LK.re_utf8_skip_char(_PCRE_LONE, 0) == 2      # stray continuation bytes are all skipped
@@ -108,7 +112,8 @@ end
     @test (s.charp, s.bytep) == (0, 0)
     # the whole sequence of one subject, as the python simulation printed it: [3, 4, 5, 2, 2, 0, 2, 3, 6, 2]
     s = subj(_PCRE_S)
-    @test [LK.re_bytep_to_charp(s, b) for b in (6, 10, 11, 3, 3, 0, 2, 3, 11, 2)] == [3, 4, 5, 2, 2, 0, 2, 3, 6, 2]
+    @test [LK.re_bytep_to_charp(s, b) for b in (6, 10, 11, 3, 3, 0, 2, 3, 11, 2)] ==
+        [3, 4, 5, 2, 2, 0, 2, 3, 6, 2]
     # KNOWN QUIRK, pinned as the C's: a position in the middle of a character is cached, and the next step counts from there,
     # where it skips the rest of that character's continuation bytes as a FULL character: byte 2 (mid "é") -> 2, then byte 3 -> 3,
     # while a fresh subject asked for byte 3 gives 2.

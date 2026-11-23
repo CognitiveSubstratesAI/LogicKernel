@@ -940,7 +940,9 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
             return PutToken(str, options.out, 0) != 0 && Sferror(options.out) == 0 ? 1 : 0
         end
         # PCRE1 piece E1: a package type's `write` hook (`blob_hooks`, src/pl-atom.jl) gives the text, written through `PutToken` as the closure's.
-        reg = _blob_registration(options.gd.atoms, atomValue(options.gd.atoms, blob_handle(a)).type)
+        reg = _blob_registration(
+            options.gd.atoms, atomValue(options.gd.atoms, blob_handle(a)).type
+        )
         if reg !== nothing && reg.hooks !== nothing && reg.hooks.write !== nothing
             obj = blob_object(options.gd.atoms, blob_handle(a), reg.type)
             obj === nothing && return 0

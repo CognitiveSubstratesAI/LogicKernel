@@ -24,7 +24,8 @@ const _PC_LD = _rdb(Tuple{_R, Union{Nothing, _R}}[]).ld
 function _pc_term(ld, text::String)::Int
     t = LK.PL_new_term_ref(ld)
     b = Vector{UInt8}(codeunits(text))
-    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) || error("the text does not read: $text")
+    LK.PL_put_term_from_chars(ld, t, LK.CVT_EXCEPTION | LK.REP_UTF8, b, length(b)) ||
+        error("the text does not read: $text")
     return t
 end
 
@@ -56,7 +57,8 @@ function _pc_val(ld, t::Int)
     LK.PL_is_variable(ld, t) && return :var
     LK.PL_get_nil(ld, t) && return :nil
     LK.PL_is_string(ld, t) && return LK.text_string(LK.PL_get_text(ld, t, LK.CVT_STRING))
-    LK.PL_is_atom(ld, t) && return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
+    LK.PL_is_atom(ld, t) &&
+        return Symbol(LK.text_string(LK.PL_get_text(ld, t, LK.CVT_ATOM)))
     LK.PL_is_integer(ld, t) && return LK.PL_get_int64(ld, t)
     LK.PL_is_float(ld, t) && return LK.PL_get_float(ld, t)
     if LK.PL_is_pair(ld, t)
@@ -85,14 +87,20 @@ _pc_bytes(s::String) = Vector{UInt8}(codeunits(s))
 # a fresh term reference holding the STRING `s` (the kernel's own PL_unify_text, not the code under test)
 function _pc_string_term(ld, s::String)::Int
     t = LK.PL_new_term_ref(ld)
-    LK.PL_unify_text(ld, t, 0, LK.PL_chars_t(_pc_bytes(s), ncodeunits(s), LK.ENC_UTF8, false), LK.PL_STRING) || error("no string term")
+    LK.PL_unify_text(
+        ld,
+        t,
+        0,
+        LK.PL_chars_t(_pc_bytes(s), ncodeunits(s), LK.ENC_UTF8, false),
+        LK.PL_STRING
+    ) || error("no string term")
     return t
 end
 _q(s::String) = "'" * s * "'"                         # the Prolog text of the atom `s` (no quote or backslash in `s`)
 _ex(ps...) = Any[("-", n, v) for (n, v) in ps]       # the expected Name-Value list
 
 # compile `pat` into a fresh re_data (after `setup(re)`): (ok, re, the pending error); the frame is discarded, the compiled code is NOT freed (the caller does)
-function _pc_compile(pat::String; setup = re -> nothing)
+function _pc_compile(pat::String; setup=re -> nothing)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     re = LK.re_init_data(pat)
@@ -104,7 +112,7 @@ function _pc_compile(pat::String; setup = re -> nothing)
 end
 
 # A compiled regex for a pipeline row; the pattern must compile.
-function _pc_re(pat::String; setup = re -> nothing)
+function _pc_re(pat::String; setup=re -> nothing)
     ok, re, exc = _pc_compile(pat; setup)
     ok || error("the pattern does not compile: $pat ($exc)")
     return re
@@ -112,7 +120,7 @@ end
 
 # re_matchsub_ (fn = :matchsub, with a result) or re_match_ (fn = :match) of `re` on the subject term `subj` (Prolog text) and the option list text `opts`:
 # (the foreign result, the Julia value of the result term or nothing, the pending error); the frame is discarded.
-function _pc_run(re, subj::String; opts::String = "[]", fn::Symbol = :matchsub, str::Bool = false)
+function _pc_run(re, subj::String; opts::String="[]", fn::Symbol=:matchsub, str::Bool=false)
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     on = str ? _pc_string_term(ld, subj) : _pc_term(ld, subj)
@@ -163,7 +171,7 @@ function _pc_capname(re, i::Int)
 end
 
 # (the result of re_unify_match onto the term `target` (Prolog text, "" = a fresh variable), the value of the target, the pending error)
-function _pc_unify(re, text::String, ovsize::Int, ov::Vector{Csize_t}; target::String = "")
+function _pc_unify(re, text::String, ovsize::Int, ov::Vector{Csize_t}; target::String="")
     ld = _PC_LD
     fid = LK.PL_open_foreign_frame(ld)
     subj = LK.re_subject(_pc_bytes(text), ncodeunits(text), 0, 0)
@@ -187,24 +195,28 @@ end
 
 @testset "re_get_subject: an atom, a code list, and what is not text" begin
     ld = _PC_LD
-    function gs(text; str = false)
+    function gs(text; str=false)
         fid = LK.PL_open_foreign_frame(ld)
         subj = LK.re_subject(UInt8[1, 2], 2, 5, 7)           # init_subject must reset all four fields
-        ok = LK.re_get_subject(ld, str ? _pc_string_term(ld, text) : _pc_term(ld, text), subj)
+        ok = LK.re_get_subject(
+            ld, str ? _pc_string_term(ld, text) : _pc_term(ld, text), subj
+        )
         exc = _pc_exc(ld)
         LK.PL_discard_foreign_frame(ld, fid)
         return (ok, subj, exc)
     end
     ok, subj, exc = gs(_q("abc"))
     @test ok && exc === nothing
-    @test subj.subject == _pc_bytes("abc") && subj.length == 3 && subj.charp == 0 && subj.bytep == 0
+    @test subj.subject == _pc_bytes("abc") && subj.length == 3 && subj.charp == 0 &&
+        subj.bytep == 0
     ok, subj, _ = gs(_q("héllo"))                           # UTF-8 bytes, the length in BYTES
-    @test ok && subj.subject == _pc_bytes("héllo") && subj.length == ncodeunits("héllo") && subj.length == 6
+    @test ok && subj.subject == _pc_bytes("héllo") && subj.length == ncodeunits("héllo") &&
+        subj.length == 6
     ok, subj, _ = gs(_q(""))
     @test ok && isempty(subj.subject) && subj.length == 0
     ok, subj, _ = gs("[104, 233, 0x1F600]")                 # a code list: h, é (2 bytes), one 4-byte code
     @test ok && subj.subject == _pc_bytes("hé\U1F600") && subj.length == 7
-    ok, subj, exc = gs("héllo"; str = true)                  # a string
+    ok, subj, exc = gs("héllo"; str=true)                  # a string
     @test ok && exc === nothing && subj.subject == _pc_bytes("héllo") && subj.length == 6
     ok, subj, exc = gs("f(x)")                              # CVT_EXCEPTION: not text
     @test !ok && exc !== nothing && exc[1] == "type_error" && exc[2][1] == "string"
@@ -225,7 +237,11 @@ end
 @testset "re_put_capname: the name's atom, the number for an unnamed or no name table" begin
     re = LK.re_init_data("")
     @test _pc_capname(re, 0) == 0 && _pc_capname(re, 3) == 3                       # no table: the integer
-    re.capture_names = [LK.re_cap_how(nothing, LK.CAP_DEFAULT), LK.re_cap_how("n", LK.CAP_DEFAULT), LK.re_cap_how("é", LK.CAP_INTEGER)]
+    re.capture_names = [
+        LK.re_cap_how(nothing, LK.CAP_DEFAULT),
+        LK.re_cap_how("n", LK.CAP_DEFAULT),
+        LK.re_cap_how("é", LK.CAP_INTEGER)
+    ]
     @test _pc_capname(re, 0) == 0                                                  # an unnamed entry: its number
     @test _pc_capname(re, 1) === :n
     @test _pc_capname(re, 2) === Symbol("é")
@@ -236,14 +252,20 @@ end
     s = "xéy"
     ov = Csize_t[0, 4, 1, 3, 3, 4]
     re = LK.re_init_data("")                                                      # capture_type: string
-    @test _pc_capval(re, s, 0, ov) == "xéy" && _pc_capval(re, s, 1, ov) == "é" && _pc_capval(re, s, 2, ov) == "y"
+    @test _pc_capval(re, s, 0, ov) == "xéy" && _pc_capval(re, s, 1, ov) == "é" &&
+        _pc_capval(re, s, 2, ov) == "y"
     re.capture_type.flags = UInt32(LK.CAP_ATOM)
     @test _pc_capval(re, s, 1, ov) === Symbol("é") && _pc_capval(re, s, 2, ov) === :y
     re.capture_type.flags = UInt32(LK.CAP_RANGE)                                   # (character start) - (character length)
-    @test _pc_capval(re, s, 0, ov) == ("-", 0, 3) && _pc_capval(re, s, 1, ov) == ("-", 1, 1) && _pc_capval(re, s, 2, ov) == ("-", 2, 1)
+    @test _pc_capval(re, s, 0, ov) == ("-", 0, 3) &&
+        _pc_capval(re, s, 1, ov) == ("-", 1, 1) && _pc_capval(re, s, 2, ov) == ("-", 2, 1)
     # a name table's type wins over the regex's capture type, unless it is the default
     re.capture_type.flags = UInt32(LK.CAP_STRING)
-    re.capture_names = [LK.re_cap_how(nothing, LK.CAP_DEFAULT), LK.re_cap_how("g", LK.CAP_ATOM), LK.re_cap_how("h", LK.CAP_RANGE)]
+    re.capture_names = [
+        LK.re_cap_how(nothing, LK.CAP_DEFAULT),
+        LK.re_cap_how("g", LK.CAP_ATOM),
+        LK.re_cap_how("h", LK.CAP_RANGE)
+    ]
     @test _pc_capval(re, s, 0, ov) == "xéy"
     @test _pc_capval(re, s, 1, ov) === Symbol("é")
     @test _pc_capval(re, s, 2, ov) == ("-", 2, 1)
@@ -259,9 +281,10 @@ end
     t = "42 1.5 f(x)"
     ovt = Csize_t[0, 11, 0, 2, 3, 6, 7, 11]
     for (ty, i, expect) in (
-            (LK.CAP_INTEGER, 1, parse(Int, "42")), (LK.CAP_NUMBER, 1, parse(Int, "42")), (LK.CAP_FLOAT, 2, parse(Float64, "1.5")),
-            (LK.CAP_TERM, 3, ("f", :x)), (LK.CAP_TERM, 1, parse(Int, "42")),
-        )
+        (LK.CAP_INTEGER, 1, parse(Int, "42")), (LK.CAP_NUMBER, 1, parse(Int, "42")),
+        (LK.CAP_FLOAT, 2, parse(Float64, "1.5")),
+        (LK.CAP_TERM, 3, ("f", :x)), (LK.CAP_TERM, 1, parse(Int, "42"))
+    )
         re = LK.re_init_data("")
         re.capture_type.flags = UInt32(ty)
         @test _pc_capval(re, t, i, ovt) == expect
@@ -278,14 +301,16 @@ end
 
 @testset "re_unify_match: the Name-Value list, in group order" begin
     re = LK.re_init_data("")
-    re.capture_names = [LK.re_cap_how(nothing, LK.CAP_DEFAULT), LK.re_cap_how("a", LK.CAP_DEFAULT)]
+    re.capture_names = [
+        LK.re_cap_how(nothing, LK.CAP_DEFAULT), LK.re_cap_how("a", LK.CAP_DEFAULT)
+    ]
     ok, val, exc = _pc_unify(re, "abc", 2, Csize_t[0, 3, 1, 2])
     @test ok && exc === nothing
     @test val == _ex((0, "abc"), (:a, "b"))
     ok, val, _ = _pc_unify(re, "abc", 1, Csize_t[1, 3, 1, 2])                      # only ovsize pairs are read
     @test ok && val == _ex((0, "bc"))
     # the target is unified, not overwritten
-    ok, val, exc = _pc_unify(re, "abc", 1, Csize_t[0, 3]; target = "foo")
+    ok, val, exc = _pc_unify(re, "abc", 1, Csize_t[0, 3]; target="foo")
     @test !ok && exc === nothing
     # an empty match at the end of the subject (start == end): the guard is a strict `>`
     ok, val, exc = _pc_unify(re, "abc", 1, Csize_t[3, 3])
@@ -300,7 +325,9 @@ end
     # the \K guard (C 1625-1633): a start after the end is a representation error (hand-built ovector; DIVERGES 15: 10.47 never produces one)
     ok, val, exc = _pc_unify(re, "abc", 2, Csize_t[2, 1, 0, 3])
     @test !ok && val === nothing
-    @test exc == ("representation_error", ["\\K used assertion to set the match start after its end"])
+    @test exc == (
+        "representation_error", ["\\K used assertion to set the match start after its end"]
+    )
     ok, _, exc = _pc_unify(re, "abc", 1, Csize_t[3, 0])
     @test !ok && exc !== nothing && exc[1] == "representation_error"
 end
@@ -310,18 +337,22 @@ end
     @test _pc_error(LK.PCRE2_ERROR_NOMATCH) == (false, nothing)
     @test _pc_error(LK.PCRE2_ERROR_PARTIAL) == (false, nothing)
     for (ec, what) in (
-            (LK.PCRE2_ERROR_NOMEMORY, "memory"), (LK.PCRE2_ERROR_MATCHLIMIT, "match_limit"), (LK.PCRE2_ERROR_DEPTHLIMIT, "depth_limit"),
-            (LK.PCRE2_ERROR_HEAPLIMIT, "heap_limit"), (LK.PCRE2_ERROR_JIT_STACKLIMIT, "jit_stack"),
-        )
+        (LK.PCRE2_ERROR_NOMEMORY, "memory"), (LK.PCRE2_ERROR_MATCHLIMIT, "match_limit"),
+        (LK.PCRE2_ERROR_DEPTHLIMIT, "depth_limit"),
+        (LK.PCRE2_ERROR_HEAPLIMIT, "heap_limit"),
+        (LK.PCRE2_ERROR_JIT_STACKLIMIT, "jit_stack")
+    )
         @test _pc_error(ec) == (false, ("resource_error", [what]))
     end
-    @test _pc_error(LK.PCRE2_ERROR_BADOFFSET) == (false, ("representation_error", ["regex-offset"]))
+    @test _pc_error(LK.PCRE2_ERROR_BADOFFSET) ==
+        (false, ("representation_error", ["regex-offset"]))
     # the UTF-8 error range -3 .. -23 is representation_error(utf8), both ends and the middle; -24 is outside it
     for ec in (LK.PCRE2_ERROR_UTF8_ERR1, Cint(-10), LK.PCRE2_ERROR_UTF8_ERR21)
         @test _pc_error(ec) == (false, ("representation_error", ["utf8"]))
     end
     # NULL, BADOPTION, BADMAGIC and the default: the library's own text of the code (Base.PCRE on the same library)
-    for ec in (LK.PCRE2_ERROR_NULL, LK.PCRE2_ERROR_BADOPTION, LK.PCRE2_ERROR_BADMAGIC, Cint(-24))
+    for ec in
+        (LK.PCRE2_ERROR_NULL, LK.PCRE2_ERROR_BADOPTION, LK.PCRE2_ERROR_BADMAGIC, Cint(-24))
         @test _pc_error(ec) == (false, ("representation_error", [PC.err_message(ec)]))
     end
     # doc-only (pcre2api: an unknown error number makes pcre2_get_error_message fail): the text is "regex"
@@ -335,18 +366,39 @@ end
     re.start_flags.seen = UInt32(1)
     re.start_flags.flags = UInt32(4)
     re.compile_options_flags.flags |= LK.PCRE2_CASELESS
-    for (k, g) in enumerate((:compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags, :compile_ctx_flags, :compile_bsr_flags, :compile_newline_flags))
+    for (k, g) in enumerate((
+        :compile_options_flags,
+        :capture_type,
+        :optimise_flags,
+        :jit_options_flags,
+        :compile_ctx_flags,
+        :compile_bsr_flags,
+        :compile_newline_flags
+    ))
         getfield(re, g).seen |= UInt32(k)                      # distinct, nonzero seen and flags in every non-match group
         getfield(re, g).flags |= UInt32(0x100 * k)
     end
     c = LK.re_copy_for_match(re)
-    for g in (:compile_options_flags, :capture_type, :optimise_flags, :jit_options_flags, :compile_ctx_flags, :compile_bsr_flags, :compile_newline_flags)
-        @test (getfield(c, g).seen, getfield(c, g).flags) == (getfield(re, g).seen, getfield(re, g).flags) && getfield(c, g) !== getfield(re, g)
+    for g in (
+        :compile_options_flags,
+        :capture_type,
+        :optimise_flags,
+        :jit_options_flags,
+        :compile_ctx_flags,
+        :compile_bsr_flags,
+        :compile_newline_flags
+    )
+        @test (getfield(c, g).seen, getfield(c, g).flags) ==
+              (getfield(re, g).seen, getfield(re, g).flags) &&
+            getfield(c, g) !== getfield(re, g)
     end
-    @test c.match_options_flags.seen == 0 && c.match_options_flags.flags == LK.PCRE2_NO_UTF_CHECK
+    @test c.match_options_flags.seen == 0 &&
+        c.match_options_flags.flags == LK.PCRE2_NO_UTF_CHECK
     @test c.start_flags.seen == 0 && c.start_flags.flags == 0
-    @test c.compile_options_flags !== re.compile_options_flags && c.match_options_flags !== re.match_options_flags && c.start_flags !== re.start_flags
-    @test c.pattern == re.pattern && c.serial == re.serial && c.capture_size == re.capture_size && c.code == re.code && c.code != C_NULL
+    @test c.compile_options_flags !== re.compile_options_flags &&
+        c.match_options_flags !== re.match_options_flags && c.start_flags !== re.start_flags
+    @test c.pattern == re.pattern && c.serial == re.serial &&
+        c.capture_size == re.capture_size && c.code == re.code && c.code != C_NULL
     @test c.capture_names === re.capture_names
     c.compile_options_flags.flags = UInt32(0)                                      # the copy is its own
     @test re.compile_options_flags.flags & LK.PCRE2_CASELESS != 0
@@ -367,18 +419,24 @@ end
     re = _pc_re("(?<y_I>\\d+)-(?<m_A>\\w+)")
     m = match(r"(?<y>\d+)-(?<m>\w+)", s)
     rc, val, _ = _pc_run(re, _q(s))
-    @test rc == LK.FTRUE && val == _ex((0, m.match), (:y, parse(Int, m[:y])), (:m, Symbol(m[:m])))
+    @test rc == LK.FTRUE &&
+        val == _ex((0, m.match), (:y, parse(Int, m[:y])), (:m, Symbol(m[:m])))
     LK.re_free(re)
 
     # all seven type letters
     subj = "12 1.5 7 f(x) zz q w"
-    re = _pc_re("(?<i_I>\\d+) (?<f_F>[\\d.]+) (?<n_N>\\d+) (?<t_T>f\\(x\\)) (?<r_R>z+) (?<s_S>q) (?<a_A>w)")
-    m = match(r"(?<i>\d+) (?<f>[\d.]+) (?<n>\d+) (?<t>f\(x\)) (?<r>z+) (?<s>q) (?<a>w)", subj)
+    re = _pc_re(
+        "(?<i_I>\\d+) (?<f_F>[\\d.]+) (?<n_N>\\d+) (?<t_T>f\\(x\\)) (?<r_R>z+) (?<s_S>q) (?<a_A>w)"
+    )
+    m = match(
+        r"(?<i>\d+) (?<f>[\d.]+) (?<n>\d+) (?<t>f\(x\)) (?<r>z+) (?<s>q) (?<a>w)", subj
+    )
     rc, val, _ = _pc_run(re, _q(subj))
     zz = findfirst("zz", subj)
     @test rc == LK.FTRUE
     @test val == _ex(
-        (0, subj), (:i, parse(Int, m[:i])), (:f, parse(Float64, m[:f])), (:n, parse(Int, m[:n])), (:t, ("f", :x)),
+        (0, subj), (:i, parse(Int, m[:i])), (:f, parse(Float64, m[:f])),
+        (:n, parse(Int, m[:n])), (:t, ("f", :x)),
         (:r, ("-", first(zz) - 1, length(zz))), (:s, m[:s]), (:a, Symbol(m[:a]))
     )
     LK.re_free(re)
@@ -400,11 +458,15 @@ end
 
 @testset "re_matchsub_: capture ranges count characters, in descending group order with the cached position" begin
     s = "aébbbc"
-    re = _pc_re("(é)(b+)"; setup = re -> (re.capture_type.flags = UInt32(LK.CAP_RANGE)))
+    re = _pc_re("(é)(b+)"; setup=re -> (re.capture_type.flags = UInt32(LK.CAP_RANGE)))
     m = match(r"(é)(b+)", s)
     rc, val, _ = _pc_run(re, _q(s))
     @test rc == LK.FTRUE
-    @test val == _ex(((0, ("-", _pc_crange(s, m, 0)...))), (1, ("-", _pc_crange(s, m, 1)...)), (2, ("-", _pc_crange(s, m, 2)...)))
+    @test val == _ex(
+        ((0, ("-", _pc_crange(s, m, 0)...))),
+        (1, ("-", _pc_crange(s, m, 1)...)),
+        (2, ("-", _pc_crange(s, m, 2)...))
+    )
     @test _pc_crange(s, m, 2) == (2, 3)
     LK.re_free(re)
 end
@@ -412,10 +474,11 @@ end
 @testset "re_matchsub_: the options reach the copy and the source regex is untouched" begin
     s = "2023-Nov"
     re = _pc_re("(\\d+)-(\\w+)")
-    rc, val, _ = _pc_run(re, _q(s); opts = "[capture_type(atom)]")
-    @test rc == LK.FTRUE && val == _ex((0, Symbol("2023-Nov")), (1, Symbol("2023")), (2, :Nov))
+    rc, val, _ = _pc_run(re, _q(s); opts="[capture_type(atom)]")
+    @test rc == LK.FTRUE &&
+        val == _ex((0, Symbol("2023-Nov")), (1, Symbol("2023")), (2, :Nov))
     @test re.capture_type.flags == LK.CAP_STRING               # the copy took the option
-    rc, val, _ = _pc_run(re, _q("12-34"); opts = "[capture_type(term)]")
+    rc, val, _ = _pc_run(re, _q("12-34"); opts="[capture_type(term)]")
     @test rc == LK.FTRUE && val == _ex((0, ("-", 12, 34)), (1, 12), (2, 34))
     # the start option is in characters; the copy's start is reset first, so a stale source value does not count
     re.start_flags.flags = UInt32(99)
@@ -427,16 +490,16 @@ end
 
 @testset "re_matchsub_: the start option, in characters" begin
     re = _pc_re("b")
-    rc, val, exc = _pc_run(re, _q("éb"); opts = "[start(1)]")
+    rc, val, exc = _pc_run(re, _q("éb"); opts="[start(1)]")
     @test rc == LK.FTRUE && val == _ex((0, "b")) && exc === nothing
-    rc, val, exc = _pc_run(re, _q("éb"); opts = "[start(2)]")                    # at the end: allowed, no match
+    rc, val, exc = _pc_run(re, _q("éb"); opts="[start(2)]")                    # at the end: allowed, no match
     @test rc == LK.FFALSE && exc === nothing
-    rc, val, exc = _pc_run(re, _q("éb"); opts = "[start(3)]")                    # past the end: out_of_range
+    rc, val, exc = _pc_run(re, _q("éb"); opts="[start(3)]")                    # past the end: out_of_range
     @test rc == LK.FFALSE && exc == ("domain_error", ["offset", "3"])
     LK.re_free(re)
     re = _pc_re("^b")                                                            # Julia: ^ does not match at a non-zero start
     @test match(r"^b", "ab", 2) === nothing
-    rc, _, exc = _pc_run(re, _q("ab"); opts = "[start(1)]")
+    rc, _, exc = _pc_run(re, _q("ab"); opts="[start(1)]")
     @test rc == LK.FFALSE && exc === nothing
     rc, _, _ = _pc_run(re, _q("b"))
     @test rc == LK.FTRUE
@@ -445,21 +508,25 @@ end
 
 @testset "re_match_: no result term, options, and a failed match" begin
     re = _pc_re("a.c")
-    rc, val, exc = _pc_run(re, _q("xabcx"); fn = :match)
+    rc, val, exc = _pc_run(re, _q("xabcx"); fn=:match)
     @test rc == LK.FTRUE && val === nothing && exc === nothing
     @test occursin(r"a.c", "xabcx")
-    rc, _, exc = _pc_run(re, _q("xAbCx"); fn = :match)
+    rc, _, exc = _pc_run(re, _q("xAbCx"); fn=:match)
     @test rc == LK.FFALSE && exc === nothing                                     # no match: false, no error
-    rc, _, _ = _pc_run(_pc_re("a.c"; setup = re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS)), _q("xAbCx"); fn = :match)
+    rc, _, _ = _pc_run(
+        _pc_re("a.c"; setup=re -> (re.compile_options_flags.flags |= LK.PCRE2_CASELESS)),
+        _q("xAbCx");
+        fn=:match
+    )
     @test rc == LK.FTRUE
-    rc, _, _ = _pc_run(re, _q("abcd"); opts = "[anchored(true)]", fn = :match)
+    rc, _, _ = _pc_run(re, _q("abcd"); opts="[anchored(true)]", fn=:match)
     @test rc == LK.FTRUE
-    rc, _, _ = _pc_run(re, _q("zabc"); opts = "[anchored(true)]", fn = :match)
+    rc, _, _ = _pc_run(re, _q("zabc"); opts="[anchored(true)]", fn=:match)
     @test rc == LK.FFALSE
     LK.re_free(re)
     # doc-only (pcre2api): a partial match is reported as PCRE2_ERROR_PARTIAL, which re_error maps to false
     re = _pc_re("abc")
-    rc, _, exc = _pc_run(re, _q("ab"); opts = "[partial_soft(true)]", fn = :match)
+    rc, _, exc = _pc_run(re, _q("ab"); opts="[partial_soft(true)]", fn=:match)
     @test rc == LK.FFALSE && exc === nothing
     LK.re_free(re)
 end
@@ -470,37 +537,37 @@ end
     @test rc == LK.FTRUE && val == _ex((0, "é"))
     rc, val, exc = _pc_run(re, "f(x)")
     @test rc == LK.FFALSE && exc !== nothing && exc[1] == "type_error"
-    rc, val, exc = _pc_run(re, _q("é"); opts = "foo")                             # the options are read after the subject
+    rc, val, exc = _pc_run(re, _q("é"); opts="foo")                             # the options are read after the subject
     @test rc == LK.FFALSE && exc !== nothing && exc[1] == "type_error"
-    rc, val, exc = _pc_run(re, "f(x)"; opts = "foo")                              # both bad: the subject's error comes first
+    rc, val, exc = _pc_run(re, "f(x)"; opts="foo")                              # both bad: the subject's error comes first
     @test rc == LK.FFALSE && exc !== nothing && exc[2][1] == "string"
     LK.re_free(re)
     # a failed subject or option read stops the match: the pattern `x*` would match the empty subject
     rex = _pc_re("x*")
     rc, _, exc = _pc_run(rex, "f(x)")
     @test rc == LK.FFALSE && exc !== nothing
-    rc, _, exc = _pc_run(rex, _q("a"); opts = "foo")
+    rc, _, exc = _pc_run(rex, _q("a"); opts="foo")
     @test rc == LK.FFALSE && exc !== nothing
     rc, val, _ = _pc_run(rex, _q("a"))                                            # control: it does match
     @test rc == LK.FTRUE && val == _ex((0, ""))
     LK.re_free(rex)
     # a STRING subject
     re = _pc_re("é+")
-    rc, val, _ = _pc_run(re, "aééb"; str = true)
+    rc, val, _ = _pc_run(re, "aééb"; str=true)
     @test rc == LK.FTRUE && val == _ex((0, "éé"))
     LK.re_free(re)
 end
 
 @testset "re_matchsub_: the start offset is where the search begins; a match error is raised" begin
     re = _pc_re("a")
-    rc, _, exc = _pc_run(re, _q("ab"); opts = "[start(1)]")                       # `a` is only at character 0
+    rc, _, exc = _pc_run(re, _q("ab"); opts="[start(1)]")                       # `a` is only at character 0
     @test rc == LK.FFALSE && exc === nothing
-    rc, _, _ = _pc_run(re, _q("ab"); opts = "[start(0)]")
+    rc, _, _ = _pc_run(re, _q("ab"); opts="[start(0)]")
     @test rc == LK.FTRUE
     LK.re_free(re)
     # the library's default match limit is hit by nested quantifiers with no way to match (blind: relies on the default limit, no JIT here)
     re = _pc_re(string("^(a+)+", '$'))
-    rc, _, exc = _pc_run(re, _q("a"^30 * "b"); fn = :match)
+    rc, _, exc = _pc_run(re, _q("a"^30 * "b"); fn=:match)
     @test rc == LK.FFALSE && exc == ("resource_error", ["match_limit"])
     LK.re_free(re)
 end
