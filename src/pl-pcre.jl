@@ -1723,3 +1723,176 @@ function re_foldl_(ld::PL_local_data{T}, src::re_data, on::term_t, closure::term
     end
     return rc ? FTRUE : FFALSE
 end
+
+# PCRE1 piece 13 (packages/pcre/pcre4pl.c get_re, get_re_copy, re_compile_, acquire_pcre, release_pcre, install_pcre4pl and the blob type `pcre2_blob`;
+# C 105-139, 205-221, 469-500, 1493-1516, 1832-1849; evidence/R2/pkg2_handoff.md "PCRE-CODE-E1"). Nothing here has run.
+#
+# DIVERGES (piece 13):
+#   31. THE BLOB. Audit D-1003 (4) Q2, option (b) of evidence/R2/pkg2_blob_design.md: `pcre2_blob` is a plain `PL_blob_t(0, "regex")` (not unique, not text; the C's
+#       `.magic` is not a field) and its hooks live in the database's registration (`blob_hooks`, src/pl-atom.jl). `PL_unify_blob(reb, &re, sizeof re, &pcre2_blob)` is
+#       `blob_new!` (the OBJECT goes into the type's table, its serial is the 8-byte payload) + `PL_unify_atomic`; `PL_get_blob` + the type test is `blob_object`. The blob
+#       names the `re_data` itself, where the C copies `sizeof re` bytes into the atom: the registered predicates never mutate it (the matchers copy, `re_copy_for_match`).
+#       `get_re_copy` is `re_get_re` + `re_copy_for_match` (DIVERGES 25); the registered wrappers call `re_get_re` and the matcher copies by itself, so `re_get_re_copy`
+#       has no caller of its own. `compare` is no hook slot (blobs compare by creation serial, D-0200; `re_compare` stays a function).
+#   32. THE HOOKS. `acquire_pcre` stores the symbol in `re->symbol`, which no code reads (every use in the C is a TODO): `re_data` has no `symbol`, the hook is a no-op.
+#       `release_pcre` is `re_free`, and never runs (no atom GC). `write_pcre` is `re_write_text` (DIVERGES 12), written through `PutToken` as a closure's text. `save_pcre` is
+#       `re_save_fields` and `load_pcre` is `re_load_pcre`: both take the qlf layer's atom callbacks (`put_atom`, `get_atom`, DIVERGES 13), nothing calls them yet (no qlf).
+#       `re_load_pcre` ends in the recompile and the blob, answering the atom word (0 = the C's `(atom_t)0`).
+#   33. `install_pcre4pl` registers the blob type with its hooks in the calling database and nothing else: the predicates of `PL_predicates_from_pcre` are registered in `system`
+#       at boot (pl-json.jl header, 1), `FUNCTOR_pair2` is not a global (DIVERGES 26). The type is also registered, with its hooks, by the first `re_compile` (the predicates exist
+#       before `use_foreign_library(foreign(pcre4pl))` runs). The `static_extensions` row `("pcre4pl", install_pcre4pl)` of src/pl-load.jl is NOT added here.
+#   34. The eight registered functions are the `pl_re_*_va` wrappers over the term-level functions: `get_re` runs in the wrapper (the matchers take a `re_data`, DIVERGES 25), so
+#       `re_portray` with a bad stream AND a bad regex raises the regex's type error where the C raises the stream's (the C reads the stream first). `re_config_choice/1` is
+#       registered `PL_FA_NONDETERMINISTIC` as the C.
+
+# PORT: packages/pcre/pcre4pl.c pcre2_blob
+# DIVERGES: 31.
+"The blob type of a compiled pattern (pcre4pl.c `pcre2_blob`): flags 0, named `regex`."
+const pcre2_blob = PL_blob_t(UInt32(0), "regex")
+
+# PORT: packages/pcre/pcre4pl.c acquire_pcre
+# DIVERGES: 32.
+"The `acquire` hook: the C stores the blob's atom in `re->symbol`, which nothing reads; no field here, so nothing to do (pcre4pl.c `acquire_pcre`)."
+function re_acquire_pcre(re::re_data, w::word)::Nothing
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c load_pcre (the recompile and the blob)
+# DIVERGES: 13, 32.
+"The `load` hook: read the fields `save_pcre` wrote, recompile the pattern and make the blob; its atom word, or 0 after a failed read or compile (pcre4pl.c `load_pcre`)."
+function re_load_pcre(ld::PL_local_data{T}, fd::IOSTREAM, get_atom::Function)::word where {T}
+    re = re_load_fields(fd, get_atom)
+    re === nothing && return word(0)
+    pats = Vector{UInt8}(codeunits(re.pattern))
+    re_compile_impl(ld, re, pats) || return word(0)                     # frees `re` on a failure, as the C's `free_pcre`
+    return blob_new!(ld.atoms, pcre2_blob, re)
+end
+
+# PORT: packages/pcre/pcre4pl.c pcre2_blob (the hook slots)
+# DIVERGES: 31, 32.
+"The hooks of the regex blob type: acquire, release (`re_free`), write (`re_write_text`), save (`re_save_fields`) and load (`re_load_pcre`)."
+function re_blob_hooks()::blob_hooks
+    return blob_hooks(
+        acquire = re_acquire_pcre, release = re_free, write = re_write_text, save = re_save_fields, load = re_load_pcre
+    )
+end
+
+# PORT: packages/pcre/pcre4pl.c install_pcre4pl (PL_register_blob_type(&pcre2_blob))
+# DIVERGES: 31, 33.
+"Register the regex blob type with its hooks in the database `atoms` unless it is (pcre4pl.c `PL_register_blob_type(&pcre2_blob)`); the registration."
+function re_register_blob(atoms::atoms_t)::blob_registration
+    reg = _blob_registration(atoms, pcre2_blob)
+    (reg === nothing || reg.hooks === nothing) || return reg
+    return PL_register_blob_type(atoms, pcre2_blob, UInt64(0), re_blob_hooks())
+end
+
+# PORT: packages/pcre/pcre4pl.c get_re
+# DIVERGES: 31. The regex is returned (`nothing` for the C's NULL after the `type_error(regex, T)`).
+"The compiled regex the blob in `t` names; else raise `type_error(regex, T)` and return `nothing` (pcre4pl.c `get_re`)."
+function re_get_re(ld::PL_local_data{T}, t::term_t)::Union{Nothing, re_data} where {T}
+    a = PL_get_atom(ld, t)
+    if a !== nothing && is_blob(a)
+        re = blob_object(ld.atoms, blob_handle(a), pcre2_blob)
+        re === nothing || return re::re_data
+    end
+    PL_type_error(ld, "regex", t)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c get_re_copy
+# DIVERGES: 31 (the copy is `re_copy_for_match`, DIVERGES 25).
+"A copy of the regex in `t` with the match and start flags reset, or `nothing` after the error `get_re` raised (pcre4pl.c `get_re_copy`)."
+function re_get_re_copy(ld::PL_local_data{T}, t::term_t)::Union{Nothing, re_data} where {T}
+    re = re_get_re(ld, t)
+    re === nothing && return nothing
+    return re_copy_for_match(re)
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_
+# DIVERGES: 31. `re_set_pat` is `re.pattern = String(copy(pats))` (the pattern is a `String`, DIVERGES 20: no atom, nothing to register); the blob is `blob_new!` + `PL_unify_atomic`.
+"`re_compile(+Pattern, -Regex, +Options)`: compile the pattern text with the options and unify `Regex` with a new regex blob (pcre4pl.c `re_compile_`)."
+function re_compile_(ld::PL_local_data{T}, pat::term_t, reb::term_t, options::term_t)::foreign_t where {T}
+    re = re_init_data()
+    re_get_options(ld, options, re) || return FFALSE
+    subj = re_subject()
+    re_get_subject(ld, pat, subj) || return FFALSE                      # PL_get_nchars(pat, &len, &pats, GET_NCHARS_FLAGS)
+    pats = subj.subject[1:subj.length]
+    re_verify_pats(ld, pats) || return FFALSE
+    re.pattern = String(copy(pats))                                     # re_set_pat
+    re_compile_impl(ld, re, pats) || return FFALSE
+    re_register_blob(ld.atoms)
+    w = blob_new!(ld.atoms, pcre2_blob, re)                             # PL_unify_blob(reb, &re, sizeof re, &pcre2_blob)
+    a = _blob_term!(ld.atoms, ld.atom_symbols, T, w)
+    return PL_unify_atomic(ld, reb, a) ? FTRUE : FFALSE
+end
+
+# PORT: packages/pcre/pcre4pl.c install_pcre4pl
+# DIVERGES: 33.
+"The install function of the static extension `pcre4pl`: register the blob type with its hooks (pcre4pl.c `install_pcre4pl`); the predicates exist already."
+function install_pcre4pl(ld::PL_local_data{T})::Nothing where {T}
+    re_register_blob(ld.atoms)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c install_pcre4pl (the PL_register_foreign calls, as the functions `PL_register_foreign` is given)
+# DIVERGES: 34. Each wrapper reads the regex argument (`get_re`) and calls the term-level function of the pieces above.
+"`re_compile/3` (pcre4pl.c `re_compile_`)."
+function pl_re_compile3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return re_compile_(ld, PL__t0, PL__t0 + 1, PL__t0 + 2)
+end
+
+"`re_match_/3`: `(Regex, On, Options)` (pcre4pl.c `re_match_`)."
+function pl_re_match_3_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    re = re_get_re(ld, PL__t0)
+    re === nothing && return FFALSE
+    return re_match_(ld, re, PL__t0 + 1, PL__t0 + 2)
+end
+
+"`re_matchsub_/4`: `(Regex, On, Result, Options)` (pcre4pl.c `re_matchsub_`)."
+function pl_re_matchsub_4_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    re = re_get_re(ld, PL__t0)
+    re === nothing && return FFALSE
+    return re_matchsub_(ld, re, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3)
+end
+
+"`re_foldl_/6`: `(Regex, On, Closure, V0, V, Options)` (pcre4pl.c `re_foldl_`)."
+function pl_re_foldl_6_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    re = re_get_re(ld, PL__t0)
+    re === nothing && return FFALSE
+    return re_foldl_(ld, re, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4, PL__t0 + 5)
+end
+
+"`re_portray/2`: `(Stream, Regex)` (pcre4pl.c `re_portray_`)."
+function pl_re_portray_2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    re = re_get_re(ld, PL__t0 + 1)
+    re === nothing && return FFALSE
+    return re_portray_(ld, PL__t0, re)
+end
+
+"`re_portray_match_options/2`: `(Stream, Options)` (pcre4pl.c `re_portray_match_options_`)."
+function pl_re_portray_match_options2_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return re_portray_match_options_(ld, PL__t0, PL__t0 + 1)
+end
+
+"`re_config_/1` (pcre4pl.c `re_config_`)."
+function pl_re_config_1_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return re_config_(ld, PL__t0)
+end
+
+"`re_config_choice/1`, nondeterministic (pcre4pl.c `re_config_choice_`)."
+function pl_re_config_choice1_va(ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T})::foreign_t where {T}
+    return re_config_choice_(ld, PL__t0, PL__ctx)
+end
+
+# PORT: packages/pcre/pcre4pl.c install_pcre4pl as PL_predicates_from_pcre
+# DIVERGES: 33, 34: the registration is the boot table of module `system`, in the order of the C's `PL_register_foreign` calls.
+const PL_predicates_from_pcre = (
+    PL_extension("re_config_", 1, pl_re_config_1_va, PL_FA_VARARGS),
+    PL_extension("re_compile", 3, pl_re_compile3_va, PL_FA_VARARGS),
+    PL_extension("re_match_", 3, pl_re_match_3_va, PL_FA_VARARGS),
+    PL_extension("re_matchsub_", 4, pl_re_matchsub_4_va, PL_FA_VARARGS),
+    PL_extension("re_foldl_", 6, pl_re_foldl_6_va, PL_FA_VARARGS),
+    PL_extension("re_config_choice", 1, pl_re_config_choice1_va, PL_FA_NONDETERMINISTIC | PL_FA_VARARGS),
+    PL_extension("re_portray", 2, pl_re_portray_2_va, PL_FA_VARARGS),
+    PL_extension("re_portray_match_options", 2, pl_re_portray_match_options2_va, PL_FA_VARARGS)
+)

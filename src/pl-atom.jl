@@ -2231,13 +2231,30 @@ mutable struct atom_table
     table::Vector{Union{Nothing, atom}}
 end
 
+# ORIGINAL (PCRE1 piece E1; audit D-1003 (4) Q2, option (b) of evidence/R2/pkg2_blob_design.md): upstream's `PL_blob_t` carries the
+# hook slots `acquire`, `release`, `compare`, `write`, `save` and `load`; here the type stays an immutable value of flags and name and a
+# package declares its hooks in the database's registration of the type, with the objects its blobs name: the payload of such a blob is
+# the object's 8-byte serial in `objects` (as `gd.tries`, `gd.closure_refs`). `compare` is not a slot: blobs compare by creation serial (D-0200).
+"The hooks of a package's blob type in one database, and the objects its blobs name by serial: `acquire(object, w)`, `release(object)::Bool`, `write(object)::String` (the text the blob is written as), `save(object, fd, put_atom)::Bool`, `load(ld, fd, get_atom)::word` (0 on a failure); `nothing` is no hook."
+mutable struct blob_hooks
+    acquire::Union{Nothing, Function}
+    release::Union{Nothing, Function}
+    write::Union{Nothing, Function}
+    save::Union{Nothing, Function}
+    load::Union{Nothing, Function}
+    const objects::Vector{Any}
+end
+blob_hooks(; acquire = nothing, release = nothing, write = nothing, save = nothing, load = nothing) =
+    blob_hooks(acquire, release, write, save, load, Any[])
+
 # ORIGINAL: what upstream's `PL_register_blob_type` writes into the type itself (`registered`,
 # `rank`, `padding`, `atom_name`, the `next` chain) and the statistics fields of the type
 # (`gc_margin`, `unregistered`, `non_garbage`, `live`, `space`; `unregistered` and `non_garbage` are
 # the atom GC's bookkeeping and stay 0 here, DIVERGES: nothing unregisters an atom), kept per database: the kernel keeps no
 # mutable state at module level (tools/lint_globals.jl), so a blob type is an immutable value and
 # its registration lives in `atoms_t.types`, in registration order (upstream's `next` chain).
-"A blob type's registration in one database: its rank, padding, name atom and statistics."
+# `hooks` is `nothing` for the kernel's own types (they call their hook-shaped functions by hand).
+"A blob type's registration in one database: its rank, padding, name atom, statistics and (a package type's) hooks."
 mutable struct blob_registration
     const type::PL_blob_t
     rank::Int
@@ -2248,12 +2265,18 @@ mutable struct blob_registration
     non_garbage::Int
     live::Int
     space::Int
+    hooks::Union{Nothing, blob_hooks}
 end
 
 # ORIGINAL: a registration whose statistics start at 0, as upstream's zeroed type.
 "A registration of `type` with rank, padding and name atom given, every statistic 0."
 blob_registration(type::PL_blob_t, rank::Int, padding::Int, atom_name::UInt64) =
-    blob_registration(type, rank, padding, atom_name, 0, 0, 0, 0, 0)
+    blob_registration(type, rank, padding, atom_name, 0, 0, 0, 0, 0, nothing)
+# ORIGINAL (PCRE1 E1): the same with the hooks of a package's blob type (or `nothing`).
+blob_registration(
+    type::PL_blob_t, rank::Int, padding::Int, atom_name::UInt64,
+    hooks::Union{Nothing, blob_hooks}
+) = blob_registration(type, rank, padding, atom_name, 0, 0, 0, 0, 0, hooks)
 
 # ORIGINAL: upstream's `GD->atoms` (pl-global.h) is an anonymous struct member of `GD`; here a
 # named struct of its own, held by `PL_global_data`; its fields keep upstream's names.
@@ -2388,7 +2411,7 @@ function PL_register_blob_type(
 )::blob_registration
     r = _blob_registration(atoms, type)
     r === nothing || return r
-    r = blob_registration(type, 0, 0, atom_name)
+    r = blob_registration(type, 0, 0, atom_name, nothing)
     push!(atoms.types, r)                               # the `next` chain: at its end
     if type.flags & PL_BLOB_TEXT != 0
         r.rank = (atoms.text_rank += 1)
@@ -2400,6 +2423,43 @@ function PL_register_blob_type(
         r.atom_name = lookupAtom(atoms, Vector{UInt8}(codeunits(type.name)))
     end
     return r
+end
+
+# ORIGINAL (PCRE1 piece E1): the registration of a package's blob type with its hooks (option (b), see `blob_hooks`). A type already registered
+# without hooks (`lookupBlob` registers an unknown type) gets them; a type registered with hooks keeps them.
+"Register blob type `type` with `hooks` (pl-atom.c `PL_register_blob_type`, the hook slots of upstream's type): the registration."
+function PL_register_blob_type(
+    atoms::atoms_t, type::PL_blob_t, atom_name::UInt64, hooks::blob_hooks
+)::blob_registration
+    r = PL_register_blob_type(atoms, type, atom_name)
+    r.hooks === nothing && (r.hooks = hooks)
+    return r
+end
+
+# ORIGINAL (PCRE1 piece E1): upstream's `PL_new_blob`/`PL_unify_blob` data copy, for a type with hooks: the object goes into the type's table, its
+# serial is the 8-byte payload of a new atom of the type (the type is not unique: one atom per call), and the `acquire` hook runs on it.
+"The atom word of a new blob of the hooked type `type` naming `object`; `acquire` is called with the object and the word."
+function blob_new!(atoms::atoms_t, type::PL_blob_t, object)::word
+    reg = _blob_registration(atoms, type)
+    (reg === nothing || reg.hooks === nothing) &&
+        throw(ArgumentError("blob_new!: the blob type $(type.name) has no hooks registered"))
+    hooks = reg.hooks::blob_hooks
+    push!(hooks.objects, object)
+    bytes = collect(reinterpret(UInt8, Int64[length(hooks.objects)]))
+    w, _ = lookupBlob(atoms, bytes, length(bytes), type)
+    hooks.acquire === nothing || hooks.acquire(object, w)
+    return w
+end
+
+# ORIGINAL (PCRE1 piece E1): upstream's `PL_blob_data(symbol, NULL, &type)` with its type test, for a hooked type (as `trie_of_word`).
+"The object the blob atom word `w` of the hooked type `type` names, or `nothing` when `w` is a blob of another type (or the type has no hooks)."
+function blob_object(atoms::atoms_t, w::word, type::PL_blob_t)
+    at = atomValue(atoms, w)
+    at.type === type || return nothing
+    reg = _blob_registration(atoms, type)
+    (reg === nothing || reg.hooks === nothing) && return nothing
+    serial = reinterpret(Int64, at.name[1:8])[1]
+    return reg.hooks.objects[Int(serial)]
 end
 
 # PORT: pl-atom.c allocateAtomBlock

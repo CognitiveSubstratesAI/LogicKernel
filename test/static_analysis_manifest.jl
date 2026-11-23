@@ -5615,6 +5615,10 @@ _manifest_pkg2_plain() = (
     # PCRE1 piece 10 (B1) — the compile half; `re_free` takes no local data
     (LK.re_free, Tuple{LK.re_data}, false),
     (LK.re_copy_for_match, Tuple{LK.re_data}, false),
+    # PCRE1 piece 13 (E1) — the blob hooks that name no term type (the registration and the table of the kernel's `blob_hooks` are in the atom-table rows)
+    (LK.re_acquire_pcre, Tuple{LK.re_data, UInt64}, false),
+    (LK.re_blob_hooks, Tuple{}, false),
+    (LK.re_register_blob, Tuple{LK.atoms_t}, false),
     # PCRE1 piece 10 (B2) — config and option text (IO-taking; the writers call libpcre2 and print: no allocation claim)
     (LK.re_next_config, Tuple{Int}, false),
     (LK.re_options_text, Tuple{LK.re_data}, false),
@@ -5672,6 +5676,18 @@ _manifest_yaml_events(T) = begin
         (LK.re_portray_, Tuple{LD, Int, LK.re_data}, false),
         (LK.re_portray_match_options_, Tuple{LD, Int, Int}, false),
         (LK.re_foldl_, Tuple{LD, LK.re_data, Int, Int, Int, Int, Int}, false),
+        # PCRE1 piece 13 (E1) — the blob, get_re, re_compile_, the install function and the eight registered wrappers
+        (LK.re_load_pcre, Tuple{LD, LK.IOSTREAM, Function}, false),
+        (LK.re_get_re, Tuple{LD, Int}, false),
+        (LK.re_get_re_copy, Tuple{LD, Int}, false),
+        (LK.re_compile_, Tuple{LD, Int, Int, Int}, false),
+        (LK.install_pcre4pl, Tuple{LD}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
+                LK.pl_re_compile3_va, LK.pl_re_match_3_va, LK.pl_re_matchsub_4_va, LK.pl_re_foldl_6_va,
+                LK.pl_re_portray_2_va, LK.pl_re_portray_match_options2_va, LK.pl_re_config_1_va, LK.pl_re_config_choice1_va
+            )
+        ]...,
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
@@ -7285,6 +7301,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.global_atom, Tuple{LK.atoms_t, LK.atom}, false),                    # ATOM-API ($complete_atom/3)
     (LK.extendAtom, Tuple{LK.atoms_t, Vector{UInt8}}, false),               # ATOM-API ($complete_atom/3)
     (LK.ATOM_REF_COUNT, Tuple{UInt32}, true),                               # ATOM-API
+    (LK.PL_register_blob_type, Tuple{LK.atoms_t, LK.PL_blob_t, UInt64, LK.blob_hooks}, false),   # PCRE1 E1
+    (LK.blob_new!, Tuple{LK.atoms_t, LK.PL_blob_t, LK.re_data}, false),                          # PCRE1 E1
+    (LK.blob_object, Tuple{LK.atoms_t, UInt64, LK.PL_blob_t}, false),                            # PCRE1 E1
     (LK.initDBRef!, Tuple{LK.atoms_t}, false),                          # R2 D1 (pl-dbref.c)
     (LK._clref_bytes, Tuple{Int}, false),
     (LK.allocateAtomBlock, Tuple{LK.atoms_t, Int}, false),
@@ -7447,6 +7466,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_hashstream)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zlib4pl)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_json)}, false),   # JSON1
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_pcre)}, false),   # PCRE1 E1
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type

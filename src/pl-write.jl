@@ -939,6 +939,14 @@ function writeAtom(a::T, options::write_options{T})::Int where {T}
             str = write_closure(options.gd, wc)
             return PutToken(str, options.out, 0) != 0 && Sferror(options.out) == 0 ? 1 : 0
         end
+        # PCRE1 piece E1: a package type's `write` hook (`blob_hooks`, src/pl-atom.jl) gives the text, written through `PutToken` as the closure's.
+        reg = _blob_registration(options.gd.atoms, atomValue(options.gd.atoms, blob_handle(a)).type)
+        if reg !== nothing && reg.hooks !== nothing && reg.hooks.write !== nothing
+            obj = blob_object(options.gd.atoms, blob_handle(a), reg.type)
+            obj === nothing && return 0
+            str = reg.hooks.write(obj)::String
+            return PutToken(str, options.out, 0) != 0 && Sferror(options.out) == 0 ? 1 : 0
+        end
         # DIVERGES: no payload and no per-type `write` hook: `<type>(0x<handle>)`, the shape of a
         # stream's `write` (pl-file.c `write_stream_ref`); upstream's default (`writeBlob`) prints the
         # payload as `<#hex>`.
