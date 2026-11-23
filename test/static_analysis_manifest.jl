@@ -5464,6 +5464,24 @@ _manifest_hashstream_plain() = (
     (LK._hash_finish!, Tuple{LK.sha2_ctx}, false)
 )
 
+# ZLIB1 piece Z2 — packages/zlib/zlib4pl.c's filter (src/pl-zlib.jl): the context record and its read, write, control and close functions.
+# Checked for every payload type (the record holds the local data); the zeroing of a header record carries no term type, once.
+_manifest_zlib(T) = begin
+    LD, ZC = LK.PL_local_data{T}, LK.ZContext{T}
+    (
+        (LK.alloc_zcontext, Tuple{LD, LK.IOSTREAM}, false),
+        (LK.free_zcontext, Tuple{ZC}, false),
+        (LK.sync_stream, Tuple{ZC, Vector{UInt8}}, false),
+        (LK._zseterr, Tuple{ZC, String}, false),
+        (LK._zread_init, Tuple{ZC}, false),
+        (LK.zwrite4, Tuple{ZC, Vector{UInt8}, Int, Int, Cint}, false),
+        (LK.Sfilter_read, Tuple{ZC, Vector{UInt8}, Int, Int}, false),
+        (LK.Sfilter_write, Tuple{ZC, Vector{UInt8}, Int, Int}, false),
+        (LK.Sfilter_control, Tuple{ZC, Int, Nothing}, false),
+        (LK.Sfilter_control, Tuple{ZC, Int, Base.RefValue{Int}}, false),
+        (LK.Sfilter_close, Tuple{ZC}, false)
+    )
+end
 # ZLIB1 — the libz carrier binding of packages/zlib (src/pl-zlib.jl): plain functions on pointers and integers, no term type, checked once.
 _manifest_zlib_plain() = (
     # ZLIB1 piece Z1 — the typed ccall wrappers of libz (Zlib_jll, D-1002) and the z_stream/gz_header records (src/pl-zlib.jl); no allocation claim
@@ -5496,7 +5514,9 @@ _manifest_zlib_plain() = (
     (LK.zlib_deflate_init!, Tuple{Ptr{Cvoid}, Cint}, false),
     (LK.zlib_deflate_init2!, Tuple{Ptr{Cvoid}, Cint, Cint, Cint, Cint, Cint}, false),
     (LK.zlib_deflate!, Tuple{Ptr{Cvoid}, Cint}, false),
-    (LK.zlib_deflate_end!, Tuple{Ptr{Cvoid}}, false)
+    (LK.zlib_deflate_end!, Tuple{Ptr{Cvoid}}, false),
+    # ZLIB1 piece Z2
+    (LK.gz_header_zero!, Tuple{Ptr{Cvoid}}, false)
 )
 # LB2b — locating files: os/pl-files.c, os/pl-glob.c and the file-name helpers of os/pl-os.c
 # (src/os/pl-files.jl, src/os/pl-glob.jl, src/os/pl-os.jl). The methods that take the local data (`ld`) are
@@ -6380,6 +6400,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     _manifest_zip(_M2)...,
     _manifest_zip(_M3)...,
     _manifest_zip_plain()...,
+    _manifest_zlib(_M1)...,
+    _manifest_zlib(_M2)...,
+    _manifest_zlib(_M3)...,
     _manifest_zlib_plain()...,
     _manifest_hashstream(_M1)...,
     _manifest_hashstream(_M2)...,

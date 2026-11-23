@@ -4,8 +4,8 @@
 #
 # ZLIB1 piece Z1 (packages/zlib/zlib4pl.c, packages-zlib 9f4be6fe at swipl-devel af9e2e7e; the file is not vendored yet, read from the
 # submodule's object store; evidence/R2/zlib_plan.md sections 1-3 and 6 Z1): THE CARRIER BINDING. D-1002 (Shivaji): the foreign C libraries of the
-# packages are implemented as `ccall`s to the Julia JLLs; Project.toml allows exactly Zlib_jll (the stdlib JLL carrying libz), PCRE2_jll and
-# PrecompileTools. Below: the Z_* and window constants the C uses (values read from zlib.h / zconf.h, checked by behaviour in
+# packages are implemented as `ccall`s to the Julia JLLs; Project.toml allows exactly Zlib_jll (the stdlib JLL carrying libz) and
+# PrecompileTools (the PCRE branch adds PCRE2_jll beside them at integration). Below: the Z_* and window constants the C uses (values read from zlib.h / zconf.h, checked by behaviour in
 # test/core_lang/test_zlib_ccall.jl), the layout of `z_stream` (112 bytes) and `gz_header` (80 bytes) as offsets (x86-64, measured by a C `offsetof`
 # probe, zlib_plan.md section 1), `calloc`'ed records with typed field accessors, and the 9 library entry points zlib4pl.c calls as typed
 # wrappers (C line numbers in each comment). NO `# UPSTREAM:` header line: `packages/zlib` is a gitlink at the pin, not a blob of
@@ -248,4 +248,328 @@ end
 "`deflateEnd`: release the deflater's state; `Z_OK`, or `Z_STREAM_ERROR` for a stream that is not initialised."
 function zlib_deflate_end!(strm::Ptr{Cvoid})::Cint
     return ccall((:deflateEnd, libz), Cint, (Ptr{Cvoid},), strm)
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ZLIB1 piece Z2 (packages/zlib/zlib4pl.c lines 62-396): THE FILTER. The `z_context` record, `alloc_zcontext`/`free_zcontext`/
+# `sync_stream`, the stream functions `zread`, `zwrite`/`zwrite4`, `zcontrol` and `zclose`, over Z1's wrappers and the stream
+# filter of STREAMX (src/os/pl-stream.jl `AbstractSfilter`, `Snew(::AbstractSfilter, ...)`, `Sset_filter`, `Sfread`, `Sfwrite`; the model
+# is src/pl-hashstream.jl). NOT registered, no `zopen/3` yet (piece Z3: the option scan, the `deflateInit*` calls, `Snew`, `Sset_filter`).
+# BLIND-CODED: no Julia process ran when this was written.
+#
+# DIVERGES (the Z2 part of the file-wide list; 1-4 are in the header of the file):
+#   5. THE RECORD. upstream's `IOFUNCTIONS zfunctions` table and the C context `z_context` are one Julia type, `ZContext{T}` (an
+#      `AbstractSfilter`): the callbacks are the methods `Sfilter_read/write/close/control` on it. `zstate` and `zhead` (embedded structs in C)
+#      are the `Ptr{Cvoid}` of the calloc'ed records of Z1 (DIVERGES 2): allocated by `alloc_zcontext`, freed (and set to NULL) by
+#      `free_zcontext`, which is also upstream's `PL_free(ctx)`. `zformat` is four `Int` constants `Z_F_*` (a new `@enum` would need an `_enum_hash`
+#      manifest entry), `close_parent`, `initialized` and `z_stream_end` are `Bool` (C `int` used as a flag), `multi_part` an `Int`
+#      (0, 1 or -1: it has three values). `ld` is the local data the close hook needs (as `HashContext`, DIVERGES 5 of src/pl-hashstream.jl).
+#   6. THE BUFFERS. the C callbacks get `char *buf, size_t size`; the kernel's get the array and the index (`mem`, `from`, `size`). zwrite4's
+#      `zwrite4(handle, NULL, 0, flush)` of `zcontrol` and `zclose` is `zwrite4(ctx, UInt8[], 1, 0, flush)`: `next_in` is NULL when `size` is 0.
+#      The output scratch `Bytef buffer[SIO_BUFSIZE]` is a local `Vector{UInt8}`; `Sfwrite(buffer, 1, n, ctx->stream)` writes its first `n` bytes.
+#   7. THE INPUT POINTER (zlib_plan.md section 4, the one new design point). C keeps `zstate.next_in` pointing INTO the parent's buffer across
+#      calls and `sync_stream` sets `parent->bufp = next_in`. The kernel's buffer is `parent.mem`, indexed by `parent.bufp`, and can be replaced by
+#      `S__setbuf` (an empty `mem` of an unbuffered parent is replaced by `Sfeof`): so `next_in` is RE-DERIVED from `pointer(parent.mem, parent.bufp)`
+#      at every `zread` entry, under `GC.@preserve`, and `sync_stream` adds what zlib consumed (`next_in` minus the derived pointer) to
+#      `parent.bufp`. Equivalent to C, where `sync_stream` keeps `bufp == next_in` at every return; `avail_in` is still zlib's own count (set from
+#      `limitp - bufp` when the parent is read, C 145). One consequence: C, on a parent at end of file whose input was never fetched, sets
+#      `parent->bufp = NULL` (`next_in` still NULL after the first init: undefined position arithmetic); here `bufp` stays.
+#   8. NOT PORTED: the `DEBUG(n, ...)`/`zdebug/1` lines (no `Sdprintf` in the kernel, O_DEBUG off in a release build), and the two `Sdprintf` of
+#      diagnostics ("inflateGetHeader() failed" C 169, "ERROR: zwrite(): msg" C 304): the failures themselves are handled as C does. A NULL `zstream`
+#      (a record not yet attached to its stream, C would dereference it) makes `Sseterr` a no-op.
+#   9. THE GOTOS. `again:` and `end_seen:` of `zread` are a `while true` with `continue` and an `end_seen` flag; control flow and the order of
+#      the tests are the C's.
+#  10. THE CLOSE. As src/pl-hashstream.jl (DIVERGES 5 there): `zclose` closes the PARENT itself, which no kernel closer sees, so `Sclose(parent)`
+#      is followed by `freeStream(ctx.ld, parent)`. `zcontrol`'s default arm asks the parent's control function through `S_control`, whose
+#      `SCONTROL_NONE` is upstream's NULL `control` (-1).
+
+# PORT: packages/zlib/zlib4pl.c BUFSIZE (62)
+"The scratch size of `zwrite4` (zlib4pl.c `BUFSIZE` = `SIO_BUFSIZE`)."
+const Z_BUFSIZE = SIO_BUFSIZE
+
+# PORT: packages/zlib/zlib4pl.c zformat (64-69)
+# DIVERGES: 5. constants, not an `enum`.
+"zlib4pl.c `F_UNKNOWN`: an input stream's format is detected (gzip or zlib) from the data."
+const Z_F_UNKNOWN = 0
+"zlib4pl.c `F_GZIP`."
+const Z_F_GZIP = 1
+"zlib4pl.c `F_DEFLATE`: the zlib wrapper."
+const Z_F_DEFLATE = 2
+"zlib4pl.c `F_RAW_DEFLATE`."
+const Z_F_RAW_DEFLATE = 3
+
+# PORT: packages/zlib/zlib4pl.c z_context (71-81)
+# DIVERGES: 5.
+"The context of a zlib stream (zlib4pl.c `z_context`): the parent `stream`, the compressed stream `zstream`, the options, the flags, the format, the `z_stream` and `gz_header` records."
+mutable struct ZContext{T} <: AbstractSfilter
+    stream::IOSTREAM                    # Original stream
+    zstream::Union{Nothing, IOSTREAM}   # Compressed stream (I'm handle of)
+    close_parent::Bool                  # close parent on close
+    initialized::Bool                   # did inflateInit()?
+    multi_part::Int                     # Multipart gzip file
+    z_stream_end::Bool                  # Seen Z_STREAM_END
+    format::Int                         # current format (Z_F_*)
+    zstate::Ptr{Cvoid}                  # Zlib state (112 bytes, calloc'ed)
+    zhead::Ptr{Cvoid}                   # Header (80 bytes, calloc'ed)
+    ld::PL_local_data{T}                # for the close hook (DIVERGES 10)
+end
+
+# PORT: packages/zlib/zlib4pl.c alloc_zcontext (84-93)
+# DIVERGES: 5. `PL_malloc` + `memset` are the record constructor and Z1's `calloc`ed records.
+"A zeroed context over the parent `s`, `close_parent` true (zlib4pl.c)."
+function alloc_zcontext(ld::PL_local_data{T}, s::IOSTREAM)::ZContext{T} where {T}
+    return ZContext{T}(
+        s, nothing, true, false, 0, false, Z_F_UNKNOWN, z_stream_alloc(), gz_header_alloc(), ld
+    )
+end
+
+# PORT: packages/zlib/zlib4pl.c free_zcontext (96-104)
+# DIVERGES: 5. `PL_free(ctx)` frees the two records and leaves NULL in the context (a second call frees nothing).
+"Unlink the filter from its parent, or release the parent, and free the records (zlib4pl.c)."
+function free_zcontext(ctx::ZContext)::Nothing
+    if ctx.stream.upstream !== nothing
+        Sset_filter(ctx.stream, nothing)
+    else
+        PL_release_stream(ctx.ld, ctx.stream)
+    end
+    if ctx.zstate != C_NULL
+        z_stream_free(ctx.zstate)
+        ctx.zstate = C_NULL
+    end
+    if ctx.zhead != C_NULL
+        gz_header_free(ctx.zhead)
+        ctx.zhead = C_NULL
+    end
+    return nothing
+end
+
+# PORT: packages/zlib/zlib4pl.c zread (166): memset(&ctx->zhead, 0, sizeof(ctx->zhead))
+"Zero the `gz_header` record `head`."
+function gz_header_zero!(head::Ptr{Cvoid})::Nothing
+    fill!(unsafe_wrap(Vector{UInt8}, Ptr{UInt8}(head), GZ_HEADER_SIZE), 0x00)
+    return nothing
+end
+
+# PORT: packages/zlib/zlib4pl.c sync_stream (111-121)
+# DIVERGES: 7. `pm` is the parent's buffer, preserved by the caller; `bufp` advances by what zlib consumed since `next_in` was derived.
+"Make the parent's `bufp` (and its byte position) follow the `next_in` of the inflater (zlib4pl.c)."
+function sync_stream(ctx::ZContext, pm::Vector{UInt8})::Nothing
+    parent = ctx.stream
+    bytes = Int(z_stream_next_in(ctx.zstate)) - Int(pointer(pm, parent.bufp))
+    pos = parent.position
+    if pos !== nothing
+        pos.byteno += bytes
+    end
+    parent.bufp += bytes
+    return nothing
+end
+
+# the `Sseterr(ctx->zstream, SIO_FERR, msg)` of zread
+# DIVERGES: 8 (a NULL `zstream`).
+function _zseterr(ctx::ZContext, msg::String)::Nothing
+    zs = ctx.zstream
+    zs === nothing || Sseterr(zs, SIO_FERR, msg)
+    return nothing
+end
+
+# PORT: packages/zlib/zlib4pl.c zread (158-176): the `initialized == false` arm
+# DIVERGES: 8 (the "inflateGetHeader() failed" line).
+"Start the inflater for `ctx.format`: `Z_OK` or an error code (zlib4pl.c)."
+function _zread_init(ctx::ZContext)::Cint
+    zs = ctx.zstate
+    fmt = ctx.format
+    if fmt == Z_F_GZIP
+        return zlib_inflate_init2!(zs, Cint(MAX_WBITS + 16))
+    elseif fmt == Z_F_DEFLATE
+        return zlib_inflate_init!(zs)
+    elseif fmt == Z_F_RAW_DEFLATE
+        return zlib_inflate_init2!(zs, Cint(-MAX_WBITS))
+    end
+    gz_header_zero!(ctx.zhead)
+    rc = zlib_inflate_init2!(zs, Cint(MAX_WBITS + 32))
+    rc == Z_OK && zlib_inflate_get_header!(zs, ctx.zhead)
+    return rc
+end
+
+# PORT: packages/zlib/zlib4pl.c zread (124-258)
+# DIVERGES: 5, 6, 7, 8, 9.
+"Read up to `size` decompressed bytes into `mem` at `from`: the count, 0 at end of file, -1 on error (zlib4pl.c `zread`)."
+function Sfilter_read(ctx::ZContext, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    zs = ctx.zstate
+    parent = ctx.stream
+    while true                                              # again: (135)
+        z_stream_set_next_out!(zs, pointer(mem, from))      # 136-137
+        z_stream_set_avail_out!(zs, UInt32(size))
+        end_seen = false
+
+        if z_stream_avail_in(zs) == 0                       # 139
+            if ctx.z_stream_end                             # 140-141
+                end_seen = true
+            elseif Sfeof(parent) == 0                       # 143
+                z_stream_set_avail_in!(zs, UInt32(parent.limitp - parent.bufp))   # 144-145 (next_in: DIVERGES 7)
+            end
+        end
+
+        if !end_seen
+            pm = parent.mem                                 # after Sfeof: it may have made the buffer
+            rc = GC.@preserve mem pm begin
+                z_stream_set_next_in!(zs, pointer(pm, parent.bufp))   # DIVERGES 7
+                if !ctx.initialized                         # 158
+                    irc = _zread_init(ctx)                  # 159-170
+                    if irc != Z_OK                          # 171
+                        _zseterr(
+                            ctx,
+                            irc == Z_MEM_ERROR ? "zlib: not enough memory" :
+                                "zlib: initialization failed"
+                        )                                   # 172-174
+                        return -1                           # 175
+                    end
+                    ctx.initialized = true                  # 177
+                    sync_stream(ctx, pm)                    # 178
+                end
+                r = zlib_inflate!(zs, Z_NO_FLUSH)           # 181
+                sync_stream(ctx, pm)                        # 182
+                r
+            end
+
+            if rc == Z_OK                                   # 185
+                n = size - Int(z_stream_avail_out(zs))      # 186
+                n == 0 && continue                          # 190-198: not enough data to decode: goto again
+                return n                                    # 201
+            elseif rc == Z_STREAM_END                       # 203
+                ctx.z_stream_end = true                     # 206
+                end_seen = true                             # falls into end_seen:
+            else
+                msg = if rc == Z_NEED_DICT                  # 230-233
+                    "zlib: need dictionary"
+                elseif rc == Z_DATA_ERROR                   # 234-237
+                    "zlib: corrupt input data"
+                elseif rc == Z_STREAM_ERROR                 # 238-241
+                    "zlib: inconsistent state"
+                elseif rc == Z_MEM_ERROR                    # 242-245
+                    "zlib: not enough memory"
+                elseif rc == Z_BUF_ERROR                    # 246-249
+                    "zlib: unexpected end-of-file"
+                else
+                    nothing                                 # 250-251 default
+                end
+                zm = z_stream_msg(zs)                       # 253-254
+                zm === nothing || (msg = zm)
+                msg === nothing || _zseterr(ctx, msg)       # 255-256
+                return -1                                   # 257
+            end
+        end
+
+        # end_seen: (208)
+        n = size - Int(z_stream_avail_out(zs))              # 209
+        if n == 0 && ctx.multi_part != 0                    # 213
+            ctx.multi_part == -1 && gz_header_done(ctx.zhead) < 0 && return n   # 214-216: default multi_part and deflate
+            Sfeof(parent) != 0 && return n                  # 218-219
+            ctx.z_stream_end = false                        # 222
+            ctx.initialized = false                         # 223: multiple zips
+            zlib_inflate_end!(zs)                           # 224
+            continue                                        # 225: goto again
+        end
+        return n                                            # 228
+    end
+end
+
+# PORT: packages/zlib/zlib4pl.c zwrite4 (261-314)
+# DIVERGES: 6, 8 (the "ERROR: zwrite()" line).
+"Compress the `size` bytes of `mem` at `from` with `flush` (`Z_NO_FLUSH`, `Z_SYNC_FLUSH`, `Z_FINISH`) and write the output to the parent: `size`, or -1 on error (zlib4pl.c)."
+function zwrite4(ctx::ZContext, mem::Vector{UInt8}, from::Int, size::Int, flush::Cint)::Int
+    zs = ctx.zstate
+    buffer = Vector{UInt8}(undef, Z_BUFSIZE)                # 264
+    GC.@preserve mem buffer begin
+        z_stream_set_next_in!(zs, size > 0 ? pointer(mem, from) : Ptr{UInt8}(C_NULL))   # 268
+        z_stream_set_avail_in!(zs, UInt32(size))            # 269
+        while true                                          # 272
+            z_stream_set_next_out!(zs, pointer(buffer))     # 274
+            z_stream_set_avail_out!(zs, UInt32(Z_BUFSIZE))  # 275
+
+            rc = zlib_deflate!(zs, flush)                   # 277
+            if rc == Z_OK || rc == Z_STREAM_END             # 278-279
+                n = Z_BUFSIZE - Int(z_stream_avail_out(zs)) # 280
+                if n > 0                                    # 285
+                    Sfwrite(buffer, 1, n, ctx.stream) != n && return -1   # 293-294
+                end
+            elseif rc == Z_BUF_ERROR                        # 299-301
+                # nothing to do
+            else
+                return -1                                   # 302-305 Z_STREAM_ERROR and default
+            end
+            # 307-308: while ( avail_in > 0 || (flush != Z_NO_FLUSH && rc == Z_OK) )
+            (z_stream_avail_in(zs) > 0 || (flush != Z_NO_FLUSH && rc == Z_OK)) || break
+        end
+    end
+
+    flush != Z_NO_FLUSH && Sflush(ctx.stream) < 0 && return -1   # 310-311
+    return size                                             # 313
+end
+
+# PORT: packages/zlib/zlib4pl.c zwrite (317-320)
+# DIVERGES: 6.
+"Compress and write the `size` bytes of `mem` at `from` (`zwrite4` with `Z_NO_FLUSH`): `size`, or -1 on error (zlib4pl.c)."
+function Sfilter_write(ctx::ZContext, mem::Vector{UInt8}, from::Int, size::Int)::Int
+    return zwrite4(ctx, mem, from, size, Z_NO_FLUSH)
+end
+
+# PORT: packages/zlib/zlib4pl.c zcontrol (323-346)
+# DIVERGES: 6, 10.
+"Control: `SIO_FLUSHOUTPUT` is a sync flush, the encoding may be switched, everything else is the parent's (zlib4pl.c)."
+function Sfilter_control(ctx::ZContext, op::Int, arg)::Int
+    if op == SIO_FLUSHOUTPUT                                # 328
+        return zwrite4(ctx, UInt8[], 1, 0, Z_SYNC_FLUSH)    # 330
+    elseif op == SIO_SETENCODING                            # 331
+        return 0                                            # 332: allow switching encoding
+    end
+    parent = ctx.stream                                     # 334
+    if parent.magic == SIO_MAGIC                            # 335
+        rc = S_control(parent, op, arg)                     # 339-341: funcs->control, if any
+        rc != SCONTROL_NONE && return rc
+    end
+    return -1                                               # 343
+end
+
+# PORT: packages/zlib/zlib4pl.c zclose (349-395)
+# DIVERGES: 5, 10.
+"Close the zlib stream: end the (de)compressor, finish the output, free the context, close the parent if asked to (zlib4pl.c)."
+function Sfilter_close(ctx::ZContext)::Int
+    parent = ctx.stream
+    rc::Int
+    if (parent.flags & SIO_INPUT) != 0                      # 356
+        if ctx.initialized                                  # 357
+            rc = zlib_inflate_end!(ctx.zstate)              # 358
+        else
+            rc = Z_OK                                       # 360
+        end
+    else
+        rc = zwrite4(ctx, UInt8[], 1, 0, Z_FINISH)          # 362: flush
+        if rc == 0                                          # 363
+            rc = zlib_deflate_end!(ctx.zstate)              # 364
+        else
+            zlib_deflate_end!(ctx.zstate)                   # 366
+        end
+    end
+
+    if rc == Z_OK                                           # 370
+        if ctx.close_parent                                 # 374
+            free_zcontext(ctx)                              # 376
+            r = Sclose(parent)                              # 377
+            freeStream(ctx.ld, parent)                      # DIVERGES 10
+            return r
+        else
+            free_zcontext(ctx)                              # 379
+            return 0                                        # 380
+        end
+    end
+    # 382-384: Z_STREAM_ERROR, Z_DATA_ERROR and the default
+    if ctx.close_parent                                     # 385
+        free_zcontext(ctx)                                  # 387
+        Sclose(parent)                                      # 388
+        freeStream(ctx.ld, parent)                          # DIVERGES 10
+        return -1                                           # 389
+    end
+    free_zcontext(ctx)                                      # 392
+    return -1                                               # 393
 end
