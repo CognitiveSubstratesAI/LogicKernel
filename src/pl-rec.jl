@@ -597,6 +597,18 @@ function compile_external_record(
     return true
 end
 
+# PORT: pl-rec.c copy_info
+# DIVERGES: `data` an index into the record's code; `vars` the variable cells' positions, 0 for not
+# met yet. NOT KEPT: `base`, `version_map`, `dicts`, `avars`, `vars_buf` (no external records, no
+# `avars`: no attributed variable's value is stored apart; the vector is the buffer).
+"The state of one `copy_record` (pl-rec.c `copy_info`)."
+mutable struct copy_info
+    data::Int                           # the next byte of the code
+    const vars::Vector{Int}             # variable cells (0: not met)
+    gbase::Int                          # base of term on global stack
+    gstore::Int                         # current storage location
+end
+
 # PORT: pl-rec.c skipSizeInt
 "Advance the copy past the size at its position (pl-rec.c)."
 function skipSizeInt(code::Vector{UInt8}, b::copy_info)::Nothing
@@ -679,18 +691,6 @@ function pl_fast_term_serialized2_va(
     tmp == 0 && return FFALSE
     PL_recorded_external(ld, rec, tmp) || return FFALSE
     return PL_unify(ld, term, tmp) ? FTRUE : FFALSE
-end
-
-# PORT: pl-rec.c copy_info
-# DIVERGES: `data` an index into the record's code; `vars` the variable cells' positions, 0 for not
-# met yet. NOT KEPT: `base`, `version_map`, `dicts`, `avars`, `vars_buf` (no external records, no
-# `avars`: no attributed variable's value is stored apart; the vector is the buffer).
-"The state of one `copy_record` (pl-rec.c `copy_info`)."
-mutable struct copy_info
-    data::Int                           # the next byte of the code
-    const vars::Vector{Int}             # variable cells (0: not met)
-    gbase::Int                          # base of term on global stack
-    gstore::Int                         # current storage location
 end
 
 # PORT: pl-rec.c fetchSizeInt
