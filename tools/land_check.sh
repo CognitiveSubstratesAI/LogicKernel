@@ -29,7 +29,9 @@
 # Environment: LAND_WORK (scratch dir, default $RUNNER_TEMP/land_work), LAND_BASE (default origin/main), LAND_IDENTITY
 # (default: the repo's one configured identity), LAND_BRANCH_GLOB (default refs/heads/gate/*), GH_TOKEN (the default
 # GITHUB_TOKEN: read-only calls; handed to tools/ci_api.sh through a credential helper that reads the variable, never written
-# to a file or an argument), LAND_VERDICT_READ and LAND_BUDGET (test seams / API budget).
+# to a file or an argument), LAND_VERDICT_READ and LAND_BUDGET (test seams / API budget), LAND_CHANNEL (the channel file the reader
+# reads for a `local: <row id> @<A-entry ref>` release item of a cap-cancelled battery row, D-1009 (5); unset = the reader's default, and
+# a missing file fails that item closed; the item's format is in the header of tools/verdict_read.py).
 # A token is never printed. Only GET calls are made, apart from the final `git push`.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -252,7 +254,7 @@ except Exception:
 PY
 )"
     fi
-    python3 -I "$vr" "$sha" --base "$LAND_BASE" ${rel:+--release "$rel"} --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
+    python3 -I "$vr" "$sha" --base "$LAND_BASE" ${rel:+--release "$rel"} ${LAND_CHANNEL:+--channel "$LAND_CHANNEL"} --set "$LAND_WORK/gate_set.txt" --equivalents "$LAND_WORK/equivalents.tsv" \
         --survivors "$LAND_WORK/survivors.tsv" --json --budget "$LAND_BUDGET" --cache "$LAND_WORK/cache" --root "$ROOT" \
         > "$out" 2> "$LAND_WORK/verdicts.err"
     rc=$?
@@ -334,6 +336,15 @@ try:
             print("FAIL\tthe release names a malformed src-diff (wanted `src-diff <64 lower-case hex digits>`)"); sys.exit(0)
         if len(srcrel) > 1:
             print("FAIL\tthe release names more than one src-diff"); sys.exit(0)
+        # `local: <row id> @<A-entry ref>` (D-1009 (5), LAND-TOOL-2) releases a cap-cancelled battery row; tools/verdict_read.py checks the
+        # channel entry; here only the form (and one item per row) is checked, and it is no id of an evidence row
+        locrel = sorted(t for t in named if t.startswith("local"))
+        named -= set(locrel)
+        LOCF = r"local: [A-Za-z0-9][A-Za-z0-9._-]* @(A-NEXT [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}Z|A-[0-9]{4,})"
+        if any(not re.fullmatch(LOCF, t) for t in locrel):
+            print("FAIL\tthe release names a malformed local item (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`)"); sys.exit(0)
+        if len({t.split(" ")[1] for t in locrel}) != len(locrel):
+            print("FAIL\tthe release names a local row twice"); sys.exit(0)
         uncovered = sorted(t for t in required if t not in named and t.split(":")[0] not in named)
         unused = sorted(t for t in named if t not in required and not any(r.split(":")[0] == t for r in required))
         if uncovered:
@@ -342,7 +353,7 @@ try:
             print("FAIL\tthe release names ids this commit does not add: %s" % ",".join(unused))
         else:
             print("PASS\tland/approved success, description LAND %s, set by %s, ids named: %s (rows added: %d)%s" % (
-                sha[:8], who, ",".join(sorted(named)) or "none", len(required), ("; " + srcrel[0]) if srcrel else ""))
+                sha[:8], who, ",".join(sorted(named)) or "none", len(required), ("; " + srcrel[0]) if srcrel else "") + "".join("; " + t for t in locrel))
 except Exception as e:
     print("FAIL\tmarker unreadable (%s)" % type(e).__name__)
 PY

@@ -13,6 +13,7 @@
 #   --ledger       write evidence/survivors.tsv: every survivor of the batteries read here is merged in (a row is never lost,
 #                  an owner/status/D-entry a human set is never overwritten, first_seen stays, last_seen moves)
 #   --set-row M F=V  with --ledger: set a field (owner, status, d_entry) of the ledger row of mutant M
+#   --channel PATH the audit channel file (default ~/code/lk-channel/agent.md) read for `local:` release items (LAND-TOOL-2)
 #   --json         the same facts as one JSON object, `landable` included (for the auto-land workflow)
 #   --budget N     at most N API requests (default 40; the anonymous API allows 60 an hour for everyone on this address)
 #   --cache DIR    responses of COMPLETED runs and jobs are kept here (default $TMPDIR/lk-verdict-read-cache)
@@ -32,6 +33,22 @@
 # --release TEXT carrying `src-diff <sha256>` (the audit's release, `LAND <sha> [ids: ...,src-diff <sha256>]`) where <sha256> is the
 # sha256 of the numstat bytes as git prints them; the row prints the numstat and its sha256 either way. No release, a malformed or
 # a second token, or one differing digest fails; an empty diff passes as before.
+# A LOCAL VERDICT (audit D-1009 (5), LAND-TOOL-2): a battery job CANCELLED AT ITS JOB CAP (a job with conclusion `cancelled`: a NO VERDICT
+# row, or a failed job with no row) blocks the landing. The release may name one such row, in the SAME ids bracket, by an item
+#     local: <ROW ID> @<A-ENTRY REF>          e.g.  LAND <sha> [ids: src-diff <sha256>, local: G1GC3-T3 @A-NEXT 2026-11-23 15:40Z]
+# <ROW ID> is the mutant's job/row id (letters, digits, . _ -); <A-ENTRY REF> is `A-NEXT YYYY-MM-DD HH:MMZ` or `A-<4+ digits>`: the
+# heading of an entry of the channel file (`## <REF> — ...`; the text after the ref starts with whitespace or ends). Items are comma
+# separated, so the ref holds no comma. The item turns the row into a landable one ONLY IF all of these hold (each item on its own):
+#   (a) the row id is exactly one currently BLOCKING cap-cancelled NO VERDICT row (a battery read to the end; a NO VERDICT row whose job
+#       conclusion is `cancelled`, or no row but a failed job of that name concluded `cancelled`): a caught, SURVIVED, ERROR, TIMEOUT
+#       (a verdict), or INVALID row, a NO VERDICT row of a job that FAILED, a row that does not exist: FAIL;
+#   (b) the entry of the channel file holds a line (leading blanks allowed), the exact form, one line per verdict:
+#         LOCAL VERDICT <ROW ID> tree <40 lower-case hex> caught (hang) site <identifier>
+#       whose tree is `git rev-parse <SHA>^{tree}` of the landing SHA (the tool computes it) and whose verdict word is exactly
+#       `caught (hang)` (<identifier> = letters, digits, . _ : / -, the mutated site); a missing channel file, entry or line, another
+#       tree, another verdict word (TIMEOUT, survived, ...), a malformed line: FAIL, the text names which;
+#   (c) several `local:` items are allowed, each checked alone; an item that is malformed or names a row twice FAILS.
+# Each item is one landing check `local verdict <ROW ID>` (ok / FAIL); a released row no longer blocks (the battery reads clean).
 # Exit status: 0 all clean, 1 a blocker or a failed landing check, 2 unreadable, 3 a run still pending, 64 usage.
 import argparse
 import hashlib
@@ -257,6 +274,7 @@ def read_battery(api, run):
             j = jobs_by_name.get(r["id"])
             r["job"] = ("job %s %s %s" % (j["id"], j.get("conclusion") or j.get("status"), step_record(j)) if j
                         else "no job named %s" % r["id"]).strip()
+            r["jconc"] = j.get("conclusion") if j else None
     m = SUMMARY.search(summary or "")
     if m and int(m.group(2)) != len(rows):
         b["notes"].append("summary says %s of %s, %d rows read (table cut)" % (m.group(1), m.group(2), len(rows)))
@@ -380,6 +398,117 @@ def src_release(text):
     return good, bad
 
 
+LOCAL_ITEM = re.compile(r"^local: ([A-Za-z0-9][A-Za-z0-9._-]*) @(A-NEXT \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z|A-\d{4,})$")
+LOCAL_LINE = re.compile(r"^LOCAL VERDICT (\S+) tree ([0-9a-f]{40}) (.+?) site ([A-Za-z0-9._:/-]+)$")
+
+
+def local_items(text):
+    """The `local: <row> @<ref>` items of a release text's ids bracket: ([(row, ref)], malformed items)."""
+    good, bad = [], []
+    m = re.search(r"\[ids: ([^\]]*)\]", text or "")
+    for t in (x.strip() for x in (m.group(1) if m else "").split(",")):
+        if t.startswith("local"):
+            k = LOCAL_ITEM.match(t)
+            if k:
+                good.append((k.group(1), k.group(2)))
+            else:
+                bad.append(t)
+    return good, bad
+
+
+def channel_entries(path, ref):
+    """The bodies (lists of lines) of the `## ` entries of the channel file whose heading is REF, or REF then whitespace."""
+    out, cur = [], None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            ln = ln.rstrip("\n")
+            if ln.startswith("## "):
+                head = ln[3:]
+                cur = [] if head.startswith(ref) and (len(head) == len(ref) or head[len(ref)] in " \t") else None
+                if cur is not None:
+                    out.append(cur)
+            elif cur is not None:
+                cur.append(ln)
+    return out
+
+
+def local_release(batteries, row, ref, tree, channel):
+    """One `local:` item -> (ok, text, battery name or None). (a) the row is one blocking cap-cancelled NO VERDICT row, (b) the channel
+    entry REF holds `LOCAL VERDICT <row> tree <tree> caught (hang) site <id>`."""
+    found = []                                         # (battery, releasable, why)
+    for b in batteries:
+        rows = [r for r in b["rows"] if r["id"] == row]
+        for r in rows:
+            if r["kind"] != "nov":
+                found.append((b["name"], False, "the row is %s, not NO VERDICT" % bt.clip(r["verdict"], 30)))
+            elif r.get("jconc") != "cancelled":
+                found.append((b["name"], False, "NO VERDICT, but its job concluded %s, not cancelled" % r.get("jconc")))
+            elif b["state"] != "done":
+                found.append((b["name"], False, "the battery is %s" % b["state"]))
+            else:
+                found.append((b["name"], True, ""))
+        if not rows:
+            for f in b["failed"]:
+                if f["name"] == row:
+                    if f["conclusion"] != "cancelled":
+                        found.append((b["name"], False, "the job concluded %s, not cancelled" % f["conclusion"]))
+                    else:
+                        found.append((b["name"], b["state"] == "done", "the battery is %s" % b["state"]))
+    rel = [x for x in found if x[1]]
+    if not found:
+        return False, "%s is no blocking row or job of any battery read here" % row, None
+    if len(rel) != 1:
+        return False, "%s is not exactly one blocking cap-cancelled NO VERDICT row: %s" % (
+            row, "; ".join("%s: %s" % (n, w) for n, ok, w in found if not ok) or "%d such rows" % len(rel)), None
+    if not channel or not os.path.isfile(channel):
+        return False, "the channel file %s cannot be read (fail closed)" % (channel or "(none)"), None
+    entries = channel_entries(channel, ref)
+    if not entries:
+        return False, "the channel file has no entry headed `%s`" % ref, None
+    notes = []
+    for body in entries:
+        for ln in body:
+            s = ln.strip()
+            if not s.startswith("LOCAL VERDICT %s " % row):
+                continue
+            m = LOCAL_LINE.match(s)
+            if not m or m.group(1) != row:
+                notes.append("malformed line %r" % bt.clip(s, 80))
+            elif m.group(2) != tree:
+                notes.append("tree %s is not the landing SHA's %s" % (m.group(2), tree))
+            elif m.group(3) != "caught (hang)":
+                notes.append("verdict `%s`, not `caught (hang)`" % bt.clip(m.group(3), 30))
+            else:
+                return True, "%s released: cap-cancelled in %s, local verdict caught (hang) at tree %s, site %s (%s)" % (
+                    row, rel[0][0], tree, m.group(4), ref), rel[0][0]
+    return False, "no usable `LOCAL VERDICT %s tree %s caught (hang) site <id>` line under `%s`: %s" % (
+        row, tree, ref, "; ".join(notes) or "no such line"), None
+
+
+def local_checks(root, sha, batteries, release, channel):
+    """The `local:` items of the release -> (landing checks, set of (battery, row) released)."""
+    items, bad = local_items(release)
+    out, released = [], set()
+    if bad:
+        out.append(("local verdict", False, "malformed item(s) %s (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`)" % ", ".join(bad)))
+    seen = set()
+    rc, tree = git(root, "rev-parse", "--verify", "--quiet", sha + "^{tree}")
+    tree = tree.strip()
+    for row, ref in items:
+        if row in seen:
+            out.append(("local verdict %s" % row, False, "the release names %s twice" % row))
+            continue
+        seen.add(row)
+        if rc != 0:
+            out.append(("local verdict %s" % row, False, "the tree of %s cannot be read" % sha[:8]))
+            continue
+        ok, text, bname = local_release(batteries, row, ref, tree, channel)
+        out.append(("local verdict %s" % row, ok, text))
+        if ok:
+            released.add((bname, row))
+    return out, released
+
+
 def landing_checks(root, sha, base, release=None):
     """The D-0915 (1) checks as a list of (name, ok, text). `release` is the text of the audit's release of this SHA (or None):
     a non-empty src diff passes ONLY if it carries `src-diff <sha256 of git diff --numstat base..sha -- src>` and the tool's own
@@ -466,9 +595,12 @@ def build(api, sha, base, gate_set, eqs, ledger, root):
     return res
 
 
-def judge(res, eqs, ledger, gate_set):
-    """Fills the blockers: ownerless survivors, equivalents with no D-entry, failed jobs, the gate set."""
+def judge(res, eqs, ledger, gate_set, released=()):
+    """Fills the blockers: ownerless survivors, equivalents with no D-entry, failed jobs, the gate set. `released`: the
+    (battery, row) pairs a verified `local:` release item lifts (cap-cancelled NO VERDICT rows only)."""
     own, noent, jobs, bad = [], [], [], []
+    res["released"] = sorted("%s %s" % x for x in released)
+    res["_released"] = set(released)
     for b in res["batteries"]:
         b["counts"] = counts(b) if b["rows"] else None
         b["eqv_ok"] = 0
@@ -480,14 +612,18 @@ def judge(res, eqs, ledger, gate_set):
                 else:
                     noent.append((b["name"], r["id"], eq_path(r["what"])))
             elif r["kind"] != "caught":
+                if r["kind"] == "nov" and (b["name"], r["id"]) in released:
+                    continue
                 row = ledger.get((b["name"], r["id"]))
                 if row is None or (not row["owner"] and row["status"] in OPEN_STATES):
                     own.append((b["name"], r["id"], r["verdict"]))
         nov = {r["id"] for r in b["rows"] if r["kind"] == "nov"}
         for f in b["failed"]:
-            if f["name"] not in nov:                   # a NO VERDICT row carries its own job record
+            if f["name"] not in nov and (b["name"], f["name"]) not in released:   # a NO VERDICT row carries its own job record
                 jobs.append((b["name"], f))
-        b["clean"] = (b["state"] == "done" and b["counts"]["total"] > 0 and b["counts"]["decided"] == b["counts"]["total"]
+        rel_n = sum(1 for r in b["rows"] if r["kind"] == "nov" and (b["name"], r["id"]) in released)
+        b["released"] = rel_n
+        b["clean"] = (b["state"] == "done" and b["counts"]["total"] > 0 and b["counts"]["decided"] + rel_n == b["counts"]["total"]
                       and b["eqv_ok"] == b["counts"]["eqv"])
         if b["state"] in ("void", "plan failed", "unreadable"):
             bad.append(b["name"])
@@ -531,7 +667,7 @@ def render(res, landing):
         elif b["state"] in ("unreadable", "plan failed", "not read"):
             bl.append("%s %s run %s: %s" % (b["state"].upper(), b["name"], b["run"], "; ".join(b["notes"]) or "-"))
         for r in b["rows"]:
-            if r["kind"] == "nov":
+            if r["kind"] == "nov" and (b["name"], r["id"]) not in res.get("_released", ()):
                 bl.append("NO VERDICT %s %s: %s" % (b["name"], r["id"], r.get("job", "")))
     L.append("BLOCKERS (first):" if bl else "BLOCKERS: none")
     L += ["  " + x for x in bl]
@@ -553,6 +689,9 @@ def render(res, landing):
         for r in b["rows"]:
             if r["kind"] in ("surv", "tmo", "inv", "err"):
                 L.append("    %s %s: %s" % (r["verdict"], r["id"], bt.clip(r["what"], 80)))
+        for r in b["rows"]:
+            if r["kind"] == "nov" and (b["name"], r["id"]) in res.get("_released", ()):
+                L.append("    note: NO VERDICT %s released by a local verdict (landing check `local verdict %s`)" % (r["id"], r["id"]))
         for n in b["notes"]:
             if not n.startswith("Baseline"):
                 L.append("    note: " + n)
@@ -599,6 +738,8 @@ def main(argv):
     ap.add_argument("--survivors", default=None)
     ap.add_argument("--equivalents", default=None)
     ap.add_argument("--no-landing", action="store_true")
+    ap.add_argument("--channel", default=os.path.expanduser("~/code/lk-channel/agent.md"),
+                    help="the audit channel file holding the LOCAL VERDICT lines of `local:` release items")
     ap.add_argument("--release", default=None, help="the text of the audit's release of this SHA (land/approved description)")
     try:
         a = ap.parse_args(argv[1:])
@@ -625,10 +766,14 @@ def main(argv):
     if res.get("error"):
         print("\n".join(render(res, None)))
         return 2
-    judge(res, eqs, ledger, gate_set)
+    landing = None if a.no_landing else landing_checks(root, full, a.base, a.release)
+    released = set()
+    if landing is not None:
+        lc, released = local_checks(root, full, res["batteries"], a.release, a.channel)
+        landing += lc
+    judge(res, eqs, ledger, gate_set, released)
     res["caught_open"] = sorted({r["id"] for b in res["batteries"] for r in b["rows"]
                                  if r["kind"] == "caught" and ledger.get((b["name"], r["id"]), {}).get("status") in OPEN_STATES})
-    landing = None if a.no_landing else landing_checks(root, full, a.base, a.release)
     if gate_set is not None:
         res["gate_complete"] = not res["set_uncovered"] and not res["set_not_clean"]
         res["gate_why"] = "; ".join(x for x in (
@@ -657,7 +802,7 @@ def main(argv):
     res["landable"] = bool(landing_ok and (res["ci_ok"] and res["ev_ok"] or not need_ci) and not blockers
                            and not res["pending"])
     if a.json:
-        out = {k: v for k, v in res.items() if k != "_eqs"}
+        out = {k: v for k, v in res.items() if not k.startswith("_")}
         out["landing"] = [{"check": n, "ok": ok, "text": t} for n, ok, t in landing or []]
         print(json.dumps(out, indent=1, sort_keys=True))
     else:
