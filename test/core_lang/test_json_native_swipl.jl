@@ -502,7 +502,7 @@ end
 # `$activate_static_extension/1` (pl-load.c, the static form) and the tables that register the four predicates
 
 @testset "\$activate_static_extension/1" begin
-    @test [n for (n, _) in LK.static_extensions] == ["json"]
+    @test [n for (n, _) in LK.static_extensions] == ["json", "pcre4pl", "zlib4pl"]
     gd, ld = _env(_TL)
     t = LK.PL_new_term_refs(ld, 1)
     _put!(ld, t, :json)

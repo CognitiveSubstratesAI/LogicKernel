@@ -7,7 +7,7 @@
 #     home/library/ext/plunit   -> packages/plunit                        (the directory itself: library(plunit) resolves through boot/init.pl's
 #                                                                          '$ext_library_directory', no file_search_path/2 clause of ours)
 #
-#     home/library/ext/<pkg>/<f> -> vendor/swipl-devel-extra/packages/<pkg>/<f>   (the vendored packages clpqr, paxos, chr, cql, pldoc, json:
+#     home/library/ext/<pkg>/<f> -> vendor/swipl-devel-extra/packages/<pkg>/<f>   (the vendored packages clpqr, paxos, chr, cql, pldoc, json, pcre, zlib:
 #     home/library/ext/<pkg>/<sub>/<f> -> .../packages/<pkg>/<srcdir>/<f>         one link per file, as the package's CMakeLists.txt
 #                                                                          `swipl_plugin(... PL_LIB_SUBDIR <sub> PL_LIBS <files>)` installs it)
 #
@@ -34,6 +34,9 @@ pldoc's `doc_changes.pl`/`git_extract_changes.pl` belong to the CHANGELOG option
 json's CMakeLists.txt makes three lists conditional (`HAVE_PCRE_PACKAGE`: json_schema.pl and json_rpc_server.pl; `MULTI_THREADED`:
 json_rpc_client.pl; `HAVE_HTTP_PACKAGE` and not EMSCRIPTEN: the `http` subdirectory with http_json.pl and the compat copies): the table is the
 full build's (pcre, clib, http present, threads on), as swipl-devel's own build is. json.plx (the LaTeX manual source) is not installed.
+pcre's CMakeLists.txt installs `pcre.pl` (`PL_LIBS`, no subdirectory; guarded by `PCRE_FOUND`: the full build's table); pcre.plx is the manual source,
+`input/` is for the install tests only, and pcre4pl.so is the foreign half (a static extension here), not a library file. zlib's installs `zlib.pl`
+(guarded by `ZLIB_FOUND`: zlib1g-dev is present in the full build); zlib.plx is the manual source and zlib4pl.so the foreign half.
 """
 const _BH_PKG_LIBS = Tuple{String, String, String, Vector{Pair{String, String}}}[
     ("clpqr", "", "", _bh_same("clpr.pl", "clpq.pl")),
@@ -49,6 +52,8 @@ const _BH_PKG_LIBS = Tuple{String, String, String, Vector{Pair{String, String}}}
     ("json", "", "", _bh_same("json.pl", "json_convert.pl", "json_grammar.pl", "json_rpc_common.pl", "json_schema.pl", "json_rpc_server.pl", "json_rpc_client.pl")),
     ("json", "http", "", _bh_same("http_json.pl")),
     ("json", "http", "compat", _bh_same("json.pl", "json_convert.pl", "js_grammar.pl")),
+    ("pcre", "", "", _bh_same("pcre.pl")),
+    ("zlib", "", "", _bh_same("zlib.pl")),
 ]
 
 "The home tree's default place: `home` in the package directory (src/os/pl-prologflag.jl's `home` flag names the same path)."

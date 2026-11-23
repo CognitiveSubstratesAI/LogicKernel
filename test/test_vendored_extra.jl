@@ -18,7 +18,7 @@ const _VE_MANIFESTS = joinpath(_VE_ROOT, "tools", "swipl_extra_blobs")
 
 "The classes the tree must carry (a manifest deleted together with its files is a failure)."
 const _VE_CLASSES = [
-    "bench", "pkg-chr", "pkg-clpqr", "pkg-cql", "pkg-json", "pkg-paxos", "pkg-pldoc", "tests", "top",
+    "bench", "pkg-chr", "pkg-clpqr", "pkg-cql", "pkg-json", "pkg-paxos", "pkg-pcre", "pkg-pldoc", "pkg-zlib", "tests", "top",
 ]
 
 "The pin file's value for `key`, or `\"\"`."
