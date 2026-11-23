@@ -5668,6 +5668,10 @@ _manifest_yaml_events(T) = begin
         (LK.re_error, Tuple{LD, Int32}, false),
         (LK.re_matchsub_, Tuple{LD, LK.re_data, Int, Int, Int}, false),
         (LK.re_match_, Tuple{LD, LK.re_data, Int, Int}, false),
+        # PCRE1 piece 12 (D) — fold and portray (the fold calls a Prolog predicate; the portray writes a stream: no allocation claim)
+        (LK.re_portray_, Tuple{LD, Int, LK.re_data}, false),
+        (LK.re_portray_match_options_, Tuple{LD, Int, Int}, false),
+        (LK.re_foldl_, Tuple{LD, LK.re_data, Int, Int, Int, Int, Int}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),

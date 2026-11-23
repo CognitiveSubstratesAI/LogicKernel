@@ -1587,3 +1587,139 @@ end
 # DIVERGES: 25.
 "`re_match_(+Regex, +String, +Options)`: `re_matchsub_` without a result (pcre4pl.c `re_match_`)."
 re_match_(ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t)::foreign_t where {T} = re_matchsub_(ld, src, on, term_t(0), options)
+
+# PCRE1 piece 12 (packages/pcre/pcre4pl.c re_foldl_, re_portray_, re_portray_match_options_; C 1368-1410, 1518-1546, 1758-1830). Nothing here has run.
+#
+# DIVERGES (piece 12):
+#   28. The two portray predicates write into an `IOBuffer` (what `re_write_re_options(io, sep, re)` takes) and put the text on the stream with
+#       `Sputcode` once, at the end (the C's `Sfprintf`/`SfprintfX` write piecewise; a stream error is read by `PL_release_stream` either way).
+#       `PL_get_stream(stream, &fd, SIO_OUTPUT)` is `term_stream_handle(ld, t, SH_ERRORS|SH_ALIAS|SH_OUTPUT)` as pl-json.jl does (no locks, so no
+#       `PL_acquire_stream`); `PL_atom_wchars(re.pattern)` is the `String` `re.pattern` (always text, so the C's `if` has no else); the capture
+#       names are `String`s printed whole (`PL_atom_chars`). `re_portray_match_options_`'s `pcre2_compile_context_free(compile_ctx)` is dropped:
+#       `compile_ctx` is NULL on every path.
+#   29. The kernel has no `PL_predicate`: the foldl's `pcre:re_call_folder/4` is `lookupProcedure(:re_call_folder, 4, lookupModule(gd, :pcre))` as
+#       src/pl-gvar.jl does for `exception/3`; `PL_call_predicate` is the kernel's (src/pl-fli.jl) with a NULL (`nothing`) context.
+#   30. `re_foldl_` takes the compiled `re_data` (get_re_copy is piece E, as DIVERGES 25) and reads the match as a `Vector{Csize_t}` copy
+#       (`pcre2_ovector_copy`, DIVERGES 27): `ovector[1]` of the C is `ovector[2]` here. `re_get_subject` has no `BUF_STACK` (DIVERGES 26).
+
+# PORT: packages/pcre/pcre4pl.c re_portray_
+# DIVERGES: 25, 28.
+"`re_portray_(+Stream, +Regex)` over the compiled `src`: write the debug text `<regex>(/Pattern/ [Options] \$capture=N ...)` to the stream (pcre4pl.c `re_portray_`)."
+function re_portray_(ld::PL_local_data{T}, stream::term_t, src::re_data)::foreign_t where {T}
+    fd = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_OUTPUT)   # PL_get_stream(stream, &fd, SIO_OUTPUT) + PL_acquire_stream
+    fd === nothing && return FFALSE
+    re = re_copy_for_match(src)                                             # get_re_copy(regex, &re)
+    io = IOBuffer()
+    sep = Ref("")
+    print(io, "<regex>(/", re.pattern, "/ [")                              # SfprintfX(fd, "<regex>(/%.*Ws/ [", plen, ps)
+    re_write_re_options(io, sep, re)
+    print(io, sep[], re_cap_type_str(Int(re.capture_type.flags)), "] \$capture=", Int(re.capture_size))
+    sep[] = " "
+    if (re.optimise_flags.flags & RE_OPTIMISE) != 0
+        print(io, sep[], "\$optimise")
+    end
+    if re.capture_size != 0 && !isempty(re.capture_names)
+        sep2 = " "
+        print(io, sep[], "{", Int(re.capture_size))
+        for i in 0:Int(re.capture_size)
+            cn = re.capture_names[i + 1]
+            if cn.name !== nothing
+                print(io, sep2, i, ":", cn.name, ":", re_cap_type_str(cn.type))
+                sep2 = " "
+            else
+                print(io, sep2, i, ":", re_cap_type_str(cn.type))
+                sep2 = " "
+            end
+        end
+        print(io, "}")
+    end
+    print(io, ")")
+    for c in String(take!(io))
+        Sputcode(Int(c), fd)
+    end
+    return PL_release_stream(ld, fd) ? FTRUE : FFALSE
+end
+
+# PORT: packages/pcre/pcre4pl.c re_portray_match_options_
+# DIVERGES: 28.
+"`re_portray_match_options_(+Stream, +Options)`: write the match options of `options` and `\$start=N` to the stream (pcre4pl.c `re_portray_match_options_`)."
+function re_portray_match_options_(ld::PL_local_data{T}, stream::term_t, options::term_t)::foreign_t where {T}
+    re = re_init_data()                                                     # init_re_data(&re)
+    sep = Ref("")
+    fd = term_stream_handle(ld, stream, SH_ERRORS | SH_ALIAS | SH_OUTPUT)   # PL_get_stream(stream, &fd, SIO_OUTPUT) + PL_acquire_stream
+    fd === nothing && return FFALSE
+
+    re_get_options(ld, options, re) || return FFALSE                        # rc = false; goto out (the stream is not released, as the C)
+
+    io = IOBuffer()
+    re_write_re_options(io, sep, re)
+    print(io, sep[], "\$start=", Int(re.start_flags.flags))
+    sep[] = " "
+    for c in String(take!(io))
+        Sputcode(Int(c), fd)
+    end
+    return PL_release_stream(ld, fd) ? FTRUE : FFALSE
+end
+
+# PORT: packages/pcre/pcre4pl.c re_foldl_
+# DIVERGES: 25, 29, 30.
+"`re_foldl_(+Regex, +On, +Closure, +V0, -V, +Options)` over the compiled `src`: call `pcre:re_call_folder(Closure, Match, V0, V1)` for every match, then unify the last value with `v` (pcre4pl.c `re_foldl_`)."
+function re_foldl_(ld::PL_local_data{T}, src::re_data, on::term_t, closure::term_t, v0::term_t, v::term_t, options::term_t)::foreign_t where {T}
+    gd = _query_gd(ld)
+    pred = lookupProcedure(mk_sym(T, :re_call_folder), 4, lookupModule(gd, mk_sym(T, :pcre)))   # PL_predicate("re_call_folder", 4, "pcre")
+    av = PL_new_term_refs(ld, 4)
+    subject = re_subject()                                                  # init_subject(&subject)
+
+    PL_put_term(ld, av + 0, closure) || return FFALSE
+    # av+1 is match
+    PL_put_term(ld, av + 2, v0) || return FFALSE
+    # av+3 = v1
+
+    re = re_copy_for_match(src)                                             # get_re_copy(regex, &re)
+    re_get_subject(ld, on, subject) || return FFALSE                        # Different from re_matchsub_(): BUF_STACK (DIVERGES 26)
+    re_get_options(ld, options, re) || return FFALSE
+
+    # From here on, all errors must do "rc = xxx; go to out"
+    match_data = pcre2_match_data_create_from_pattern(re.code)
+    local rc::Bool
+    try
+        # utf8_seek() returns size_t; pcre2_match() takes int. re_get_options() ensured that the value isn't greater than INT_MAX
+        utf8_start = re_utf8_seek(subject.subject, subject.length, Int(re.start_flags.flags))
+        if utf8_start == -1
+            rc = re_out_of_range(ld, Int(re.start_flags.flags))
+        else
+            while true
+                re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)
+                if re_rc > 0
+                    ovector = pcre2_ovector_copy(match_data, Int(re_rc))
+                    PL_put_variable(ld, av + 1)
+                    if !re_unify_match(ld, av + 1, re, subject, Int(re_rc), ovector) ||
+                       !PL_call_predicate(gd, ld, nothing, PL_Q_PASS_EXCEPTION, pred, av) ||
+                       !PL_put_term(ld, av + 2, av + 3) ||
+                       !PL_put_variable(ld, av + 3)
+                        rc = false
+                        break
+                    end
+                    if Int(ovector[2]) == utf8_start                        # empty match: advance a character
+                        if utf8_start >= subject.length
+                            rc = PL_unify(ld, av + 2, v)
+                            break
+                        end
+                        utf8_start = re_utf8_skip_char(subject.subject, utf8_start)
+                    else
+                        utf8_start = Int(ovector[2])
+                    end
+                elseif re_rc == PCRE2_ERROR_NOMATCH                         # TODO: also PCRE2_ERROR_PARTIAL?
+                    rc = PL_unify(ld, av + 2, v)
+                    break
+                else
+                    rc = re_error(ld, re_rc)
+                    break
+                end
+            end
+        end
+    finally
+        pcre2_match_data_free(match_data)
+    end
+    return rc ? FTRUE : FFALSE
+end
