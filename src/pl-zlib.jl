@@ -9,8 +9,8 @@
 # test/core_lang/test_zlib_ccall.jl), the layout of `z_stream` (112 bytes) and `gz_header` (80 bytes) as offsets (x86-64, measured by a C `offsetof`
 # probe, zlib_plan.md section 1), `calloc`'ed records with typed field accessors, and the 9 library entry points zlib4pl.c calls as typed
 # wrappers (C line numbers in each comment). NO `# UPSTREAM:` header line: `packages/zlib` is a gitlink at the pin, not a blob of
-# swipl-devel (as src/pl-json.jl). NOT registered anywhere; nothing calls these yet. The filter (`zread`, `zwrite4`, `zclose`) and `zopen/3` are the
-# next pieces (Z2, Z3). The wrappers carry generic names (`zlib_inflate!`, `zlib_deflate!`) so that the zip port (pl-zip.c, minizip) can reuse
+# swipl-devel (as src/pl-json.jl). Z1 is the wrappers; the filter (Z2) and `zopen/3` with the registration (Z3) follow
+# in this file. The wrappers carry generic names (`zlib_inflate!`, `zlib_deflate!`) so that the zip port (pl-zip.c, minizip) can reuse
 # this file. Nothing here has run (no Julia process was started).
 #
 # DIVERGES (file-wide):
@@ -254,7 +254,7 @@ end
 # ZLIB1 piece Z2 (packages/zlib/zlib4pl.c lines 62-396): THE FILTER. The `z_context` record, `alloc_zcontext`/`free_zcontext`/
 # `sync_stream`, the stream functions `zread`, `zwrite`/`zwrite4`, `zcontrol` and `zclose`, over Z1's wrappers and the stream
 # filter of STREAMX (src/os/pl-stream.jl `AbstractSfilter`, `Snew(::AbstractSfilter, ...)`, `Sset_filter`, `Sfread`, `Sfwrite`; the model
-# is src/pl-hashstream.jl). NOT registered, no `zopen/3` yet (piece Z3: the option scan, the `deflateInit*` calls, `Snew`, `Sset_filter`).
+# is src/pl-hashstream.jl). `zopen/3` and the registration are the Z3 part at the end of the file.
 # BLIND-CODED: no Julia process ran when this was written.
 #
 # DIVERGES (the Z2 part of the file-wide list; 1-4 are in the header of the file):
@@ -573,3 +573,150 @@ function Sfilter_close(ctx::ZContext)::Int
     free_zcontext(ctx)                                      # 392
     return -1                                               # 393
 end
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ZLIB1 piece Z3 (packages/zlib/zlib4pl.c lines 398-527): `zopen/3`, `zdebug/1` and the install function, over the filter of Z2.
+# BLIND-CODED: no Julia process ran when this was written.
+#
+# DIVERGES (the Z3 part of the file-wide list; 1-4 are in the header of the file, 5-10 in the Z2 part above):
+#  11. REGISTERED IN `system` AT BOOT, as src/pl-hashstream.jl (DIVERGES 1 there): `PL_predicates_from_zlib4pl` is in `_PRED_TABLES` and `_FOREIGN_VA`
+#      (src/pl-ext.jl), and `install_zlib4pl` is the empty function (its atoms are `mk_sym(T, :gzip)`, `:deflate` and `:raw_deflate`).
+#      `use_foreign_library(foreign(zlib4pl))` (library(zlib), zlib.pl:55) looks the NAME `zlib4pl` up in the `static_extensions` table of
+#      src/pl-load.jl; that table (JSON1) is NOT in this branch's base, so the row `("zlib4pl", install_zlib4pl)` is left to integration
+#      (zlib_plan.md Z3, Q1).
+#  12. THE OPTIONS. `PL_scan_options` returns the values (src/os/pl-option.jl DIVERGES): the C's `close_parent = true` and `multi_part = -1`
+#      defaults apply to `nothing`; an `OPT_BOOL` given is `1` or `0` for `multi_part`.
+#  13. THE NEW STREAM. `Snew` does not call `initStreamLocale` (src/os/pl-stream.jl, it needs the database): `pl_zopen` calls it, as upstream's `Snew`
+#      does. The failure arm of `PL_unify_stream` closes the filter with `Sclose` and then runs the kernel's close hook `freeStream` (DIVERGES 10), as
+#      src/pl-hashstream.jl. `PL_instantiation_error(new)` is the kernel's `PL_error(ld, ERR_INSTANTIATION)` (no culprit argument).
+#  14. `zdebug/1` (registered because zlib4pl.c defines O_DEBUG, line 36) sets `zlib_debuglevel`, a module-level `Ref{Int}`; nothing reads it: the
+#      `DEBUG(n, ...)` bodies are not ported (DIVERGES 8, no `Sdprintf` in the kernel).
+
+# PORT: packages/zlib/zlib4pl.c debuglevel (41)
+# DIVERGES: 14.
+"The `zdebug/1` level (zlib4pl.c `static int debuglevel`); no code reads it (DIVERGES 14)."
+const zlib_debuglevel = Ref{Int}(0)
+
+# PORT: packages/zlib/zlib4pl.c COPY_FLAGS (412-415)
+"The flags of the parent stream the zlib stream copies (zlib4pl.c `COPY_FLAGS`)."
+const ZLIB_COPY_FLAGS = SIO_INPUT | SIO_OUTPUT | SIO_TEXT | SIO_REPXML | SIO_REPPL | SIO_RECORDPOS
+
+# PORT: packages/zlib/zlib4pl.c zopen_options (417-423)
+# (PL_OPTION("format", OPT_TERM), PL_OPTION("level", OPT_TERM), PL_OPTION("close_parent", OPT_BOOL), PL_OPTION("multi_part", OPT_BOOL))
+const zopen_option_specs = (
+    PL_option_t(:format, OPT_TERM), PL_option_t(:level, OPT_TERM),
+    PL_option_t(:close_parent, OPT_BOOL), PL_option_t(:multi_part, OPT_BOOL)
+)
+
+# PORT: packages/zlib/zlib4pl.c pl_zopen (425-480)
+# DIVERGES: 12, 13.
+"`zopen(+OrgStream, -ZStream, +Options)`: a (de)compressing filter stream on OrgStream; options `format`, `level`, `close_parent`, `multi_part` (zlib4pl.c)."
+function pl_zopen3_va(
+        ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+    )::foreign_t where {T}
+    A1, A2, A3 = PL__t0, PL__t0 + 1, PL__t0 + 2
+    fmt = Z_F_UNKNOWN                                           # 426
+    level = Int(Z_DEFAULT_COMPRESSION)                          # 427
+
+    vals = PL_scan_options(ld, A3, 0, "zoption", zopen_option_specs)   # 436-438
+    vals === nothing && return FFALSE
+    fmt_opt = vals[1]
+    level_opt = vals[2]
+    cp = vals[3]
+    close_parent = cp isa Bool ? cp : true                      # 429: true
+    mp = vals[4]
+    multi_part = mp isa Bool ? (mp ? 1 : 0) : -1                # 430: -1 (default)
+
+    if fmt_opt isa Int                                          # 439
+        a = PL_get_atom_ex(ld, fmt_opt)                         # 442
+        a === nothing && return FFALSE
+        k = sym_key(a)
+        if k == sym_key(mk_sym(T, :gzip))                       # 444
+            fmt = Z_F_GZIP
+        elseif k == sym_key(mk_sym(T, :deflate))                # 446
+            fmt = Z_F_DEFLATE
+        elseif k == sym_key(mk_sym(T, :raw_deflate))            # 448
+            fmt = Z_F_RAW_DEFLATE
+        else
+            PL_domain_error(ld, "compression_format", fmt_opt)  # 451
+            return FFALSE
+        end
+    end
+    if level_opt isa Int                                        # 453
+        lv = PL_get_integer_ex(ld, level_opt)                   # 455
+        lv === nothing && return FFALSE
+        level = lv
+        if level < 0 || level > 9                               # 457
+            PL_domain_error(ld, "compression_level", level_opt) # 458
+            return FFALSE
+        end
+    end
+
+    s = term_stream_handle(ld, A1, SH_ERRORS | SH_ALIAS)        # 461: PL_get_stream_handle
+    s === nothing && return FFALSE                              # Error
+    ctx = alloc_zcontext(ld, s)                                 # 463
+    ctx.close_parent = close_parent
+    ctx.multi_part = multi_part
+    ctx.format = fmt
+    if (s.flags & SIO_OUTPUT) != 0                              # 467
+        rc = if fmt == Z_F_GZIP                                 # 469
+            zlib_deflate_init2!(
+                ctx.zstate, Cint(level), Z_DEFLATED, MAX_WBITS + Cint(16), MAX_MEM_LEVEL,
+                Z_DEFAULT_STRATEGY
+            )
+        elseif fmt == Z_F_RAW_DEFLATE                           # 471
+            zlib_deflate_init2!(
+                ctx.zstate, Cint(level), Z_DEFLATED, -MAX_WBITS, MAX_MEM_LEVEL,
+                Z_DEFAULT_STRATEGY
+            )
+        else
+            zlib_deflate_init!(ctx.zstate, Cint(level))         # 473
+        end
+
+        if rc != Z_OK                                           # 476
+            free_zcontext(ctx)
+            return FFALSE                                       # TBD: Error
+        end
+    end
+
+    s2 = Snew(ctx, (s.flags & ZLIB_COPY_FLAGS) | SIO_FBUF, Sfilterfunctions)   # 483-485 (no memory: DIVERGES, as hashstream 6)
+    initStreamLocale(_query_gd(ld), s2)                         # Snew's initStreamLocale (DIVERGES 13)
+    s2.encoding = s.encoding                                    # 490
+    ctx.zstream = s2                                            # 491
+    Sset_filter(s, s2)                                          # 492
+    PL_release_stream(ld, s)                                    # 493
+    if PL_unify_stream(ld, A2, s2)                              # 494
+        return FTRUE
+    end
+    ctx.close_parent = false                                    # 498
+    Sclose(s2)                                                  # 499
+    freeStream(ld, s2)                                          # DIVERGES 13
+    PL_error(ld, ERR_INSTANTIATION)                             # 500: PL_instantiation_error(new), actually over instantiation
+    return FFALSE
+end
+
+# PORT: packages/zlib/zlib4pl.c zdebug (505-510)
+# DIVERGES: 14.
+"`zdebug(+Level)`: set the debug level (zlib4pl.c; the debug output itself is not ported)."
+function pl_zdebug1_va(
+        ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+    )::foreign_t where {T}
+    v = PL_get_integer(ld, PL__t0)                              # 509
+    v === nothing && return FFALSE
+    zlib_debuglevel[] = v
+    return FTRUE
+end
+
+# PORT: packages/zlib/zlib4pl.c install_zlib4pl (518-527)
+# DIVERGES: 11.
+"The install function of the static extension `zlib4pl` (zlib4pl.c `install_zlib4pl`): the predicates exist already."
+function install_zlib4pl(ld::PL_local_data{T})::Nothing where {T}
+    return nothing
+end
+
+# PORT: packages/zlib/zlib4pl.c install_zlib4pl as PL_predicates_from_zlib4pl
+# DIVERGES: 11.
+const PL_predicates_from_zlib4pl = (
+    PL_extension("zopen", 3, pl_zopen3_va, PL_FA_VARARGS),
+    PL_extension("zdebug", 1, pl_zdebug1_va, PL_FA_VARARGS)
+)

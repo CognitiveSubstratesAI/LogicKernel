@@ -151,7 +151,8 @@ const _PRED_TABLES = (
     PL_predicates_from_gc,
     PL_predicates_from_load, PL_predicates_from_apple, PL_predicates_from_flag,
     PL_predicates_from_thread,
-    PL_predicates_from_hashstream
+    PL_predicates_from_hashstream,
+    PL_predicates_from_zlib4pl
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -186,7 +187,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_gc...,
     PL_predicates_from_load..., PL_predicates_from_apple..., PL_predicates_from_flag...,
     PL_predicates_from_thread...,
-    PL_predicates_from_hashstream...
+    PL_predicates_from_hashstream...,
+    PL_predicates_from_zlib4pl...
 )
 const _FOREIGN_DET = foreigns
 

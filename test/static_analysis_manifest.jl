@@ -5479,7 +5479,13 @@ _manifest_zlib(T) = begin
         (LK.Sfilter_write, Tuple{ZC, Vector{UInt8}, Int, Int}, false),
         (LK.Sfilter_control, Tuple{ZC, Int, Nothing}, false),
         (LK.Sfilter_control, Tuple{ZC, Int, Base.RefValue{Int}}, false),
-        (LK.Sfilter_close, Tuple{ZC}, false)
+        (LK.Sfilter_close, Tuple{ZC}, false),
+        # ZLIB1 piece Z3 — zopen/3, zdebug/1 and the install function
+        (LK.install_zlib4pl, Tuple{LD}, false),
+        [
+            (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in
+            (LK.pl_zopen3_va, LK.pl_zdebug1_va)
+        ]...
     )
 end
 # ZLIB1 — the libz carrier binding of packages/zlib (src/pl-zlib.jl): plain functions on pointers and integers, no term type, checked once.
@@ -7276,6 +7282,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_apple)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_thread)}, false),
     (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_hashstream)}, false),
+    (LK._extension_sigs, Tuple{typeof(LK.PL_predicates_from_zlib4pl)}, false),
     (LK.table_props, Tuple{}, false),
     (LK.clear_table_props!, Tuple{LK.table_props}, false),
     # TAB1 TB5: the sort of the taken table values (src/pl-tabling.jl); it names no term type
