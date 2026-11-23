@@ -13,7 +13,11 @@
 #   --ledger       write evidence/survivors.tsv: every survivor of the batteries read here is merged in (a row is never lost,
 #                  an owner/status/D-entry a human set is never overwritten, first_seen stays, last_seen moves)
 #   --set-row M F=V  with --ledger: set a field (owner, status, d_entry) of the ledger row of mutant M
-#   --channel PATH the audit channel file (default ~/code/lk-channel/agent.md) read for `local:` release items (LAND-TOOL-2)
+#   --channel PATH the audit channel file (default ~/code/lk-channel/agent.md) read for `local:` and `stand:` release items; repeatable,
+#                  and a value may hold several files separated by `:` (the D-entry of a ruling lives in audit.md, the LOCAL VERDICT
+#                  lines in agent.md); a line or heading found in any readable file counts
+#   --statuses FILE  the GitHub answer of `commits/<sha>/status` (LAND-TOOL-3: a `land/local/<ROW>` status releases a `local:` item)
+#   --approvers FILE the creator logins allowed to set that status (evidence/land_approvers.txt); none = the status route is closed
 #   --json         the same facts as one JSON object, `landable` included (for the auto-land workflow)
 #   --budget N     at most N API requests (default 40; the anonymous API allows 60 an hour for everyone on this address)
 #   --cache DIR    responses of COMPLETED runs and jobs are kept here (default $TMPDIR/lk-verdict-read-cache)
@@ -49,6 +53,26 @@
 #       tree, another verdict word (TIMEOUT, survived, ...), a malformed line: FAIL, the text names which;
 #   (c) several `local:` items are allowed, each checked alone; an item that is malformed or names a row twice FAILS.
 # Each item is one landing check `local verdict <ROW ID>` (ok / FAIL); a released row no longer blocks (the battery reads clean).
+# LAND-TOOL-3 (audit D-1012 (3)), THE STATUS ROUTE: the same release item is ALSO released by a commit status on the landing SHA, context
+# `land/local/<ROW ID>`, state `success`, description (the same line as the channel's, < 140 characters)
+#       LOCAL VERDICT <ROW ID> tree <40 lower-case hex> caught (hang) site <identifier>
+# created by a login of --approvers (exactly the `land/approved` check of tools/land_check.sh); read from --statuses (the workflow's own
+# token reads it). Either source releases the item; if BOTH carry a verdict and the status's (tree, verdict word) is not one the
+# channel's lines carry, the item FAILS (the sources disagree). No --statuses, no --approvers, an unreadable file, a stranger's or a
+# non-success status: the status route yields nothing (fail closed; a stranger's status is ignored, not an error).
+# THE TREE. A verdict whose tree differs from the landing SHA's tree releases the item ONLY with a ruling named in the item:
+#     local: <ROW ID> @<A-ENTRY REF> tree-ruling D-NNNN       e.g.  local: G1GC3-T3 @A-NEXT 2026-11-23 15:40Z tree-ruling D-1010
+# the D-entry must exist as a heading `## D-NNNN ...` of a --channel file (the audit's ruling that the equal-src reading holds: the
+# tool does NOT recompute that diff; the D-entry carries it); a ruling named for a D-entry that does not exist FAILS even when the
+# trees are equal. The channel line and the status take the SAME item form.
+# A STANDING BATTERY (LAND-TOOL-3, D-1012 (2)): a list whose battery has NO run at the landing SHA (only an earlier one) stands by
+#     stand: <LIST> @D-NNNN from <OLD SHA, 40 lower-case hex>     e.g.  stand: TB5 @D-1012 from 9f3a...(40 hex)
+# ONLY IF (i) `git diff --stat <old-sha> <landing-sha> -- src tools/mutants/<LIST>.py` is EMPTY (the tool computes it; both
+# `tools/mutants/<LIST>.py` exist at the old and at the landing SHA, so a mistyped name cannot make the diff vacuously empty), and
+# (ii) the heading `## D-NNNN` exists in a --channel file; and (iii) the list is in the gate set (when --set is given) and has NO
+# battery read at the landing SHA (an item never masks a run that is there: that run is read as it is). The item turns the gate-set
+# row `no run` into covered ("stands"); it does not read the old run (the old SHA is the audit's claim, as a `[last-clean-read-SHA]`
+# in the gate set is). Items are comma separated, one per list; a malformed item or a list twice FAILS.
 # Exit status: 0 all clean, 1 a blocker or a failed landing check, 2 unreadable, 3 a run still pending, 64 usage.
 import argparse
 import hashlib
@@ -398,19 +422,20 @@ def src_release(text):
     return good, bad
 
 
-LOCAL_ITEM = re.compile(r"^local: ([A-Za-z0-9][A-Za-z0-9._-]*) @(A-NEXT \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z|A-\d{4,})$")
+LOCAL_ITEM = re.compile(r"^local: ([A-Za-z0-9][A-Za-z0-9._-]*) @(A-NEXT \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z|A-\d{4,})(?: tree-ruling (D-\d{4}))?$")
+STAND_ITEM = re.compile(r"^stand: ([A-Za-z0-9][A-Za-z0-9._-]*) @(D-\d{4}) from ([0-9a-f]{40})$")
 LOCAL_LINE = re.compile(r"^LOCAL VERDICT (\S+) tree ([0-9a-f]{40}) (.+?) site ([A-Za-z0-9._:/-]+)$")
 
 
 def local_items(text):
-    """The `local: <row> @<ref>` items of a release text's ids bracket: ([(row, ref)], malformed items)."""
+    """The `local: <row> @<ref> [tree-ruling D-NNNN]` items of a release text's ids bracket: ([(row, ref, ruling or None)], malformed items)."""
     good, bad = [], []
     m = re.search(r"\[ids: ([^\]]*)\]", text or "")
     for t in (x.strip() for x in (m.group(1) if m else "").split(",")):
         if t.startswith("local"):
             k = LOCAL_ITEM.match(t)
             if k:
-                good.append((k.group(1), k.group(2)))
+                good.append((k.group(1), k.group(2), k.group(3)))
             else:
                 bad.append(t)
     return good, bad
@@ -432,9 +457,56 @@ def channel_entries(path, ref):
     return out
 
 
-def local_release(batteries, row, ref, tree, channel):
+def channel_files(channels):
+    """The readable files among the --channel values (each value may hold several paths separated by `:`)."""
+    out = []
+    for c in channels or []:
+        out += [p for p in c.split(os.pathsep) if p and os.path.isfile(p)]
+    return out
+
+
+def entries_of(channels, ref):
+    """The bodies of every entry headed REF in every readable channel file."""
+    out = []
+    for p in channel_files(channels):
+        out += channel_entries(p, ref)
+    return out
+
+
+def d_entry_exists(channels, did):
+    """The heading `## D-NNNN` exists in a readable channel file."""
+    return bool(entries_of(channels, did))
+
+
+def status_candidates(statuses, approvers, row):
+    """The `land/local/<row>` status of the landing SHA -> ([(tree, word, site)], notes). The creator must be in the approvers file exactly
+    as for `land/approved` (tools/land_check.sh marker); no statuses file, no approvers, or any unreadable input: nothing (fail closed)."""
+    if not statuses or not approvers:
+        return [], []
+    try:
+        d = json.load(open(statuses, encoding="utf-8"))
+        allowed = {l.strip().lower() for l in open(approvers, encoding="utf-8") if l.strip() and not l.lstrip().startswith("#")}
+    except (OSError, ValueError):
+        return [], ["the status route is closed: the statuses or the approvers file is unreadable"]
+    sts = [x for x in (d.get("statuses") or []) if x.get("context") == "land/local/" + row] if isinstance(d, dict) else []
+    if not sts:
+        return [], []
+    x = sts[0]                                         # the combined status answers the latest per context
+    who = ((x.get("creator") or {}).get("login") or "").lower()
+    if who not in allowed:
+        return [], ["the land/local/%s status was set by %r, who is not in land_approvers.txt (ignored)" % (row, who)]
+    if x.get("state") != "success":
+        return [], ["the land/local/%s status is %s, not success" % (row, x.get("state"))]
+    m = LOCAL_LINE.match((x.get("description") or "").strip())
+    if not m or m.group(1) != row:
+        return [], ["the land/local/%s status description is malformed %r" % (row, bt.clip(x.get("description") or "", 80))]
+    return [(m.group(2), m.group(3), m.group(4))], []
+
+
+def local_release(batteries, row, ref, tree, channels, statuses=None, approvers=None, ruling=None):
     """One `local:` item -> (ok, text, battery name or None). (a) the row is one blocking cap-cancelled NO VERDICT row, (b) the channel
-    entry REF holds `LOCAL VERDICT <row> tree <tree> caught (hang) site <id>`."""
+    entry REF holds `LOCAL VERDICT <row> tree <tree> caught (hang) site <id>` or the `land/local/<row>` status carries it; a tree that
+    is not the landing SHA's needs RULING (a D-entry that exists); the two sources must agree when both speak."""
     found = []                                         # (battery, releasable, why)
     for b in batteries:
         rows = [r for r in b["rows"] if r["id"] == row]
@@ -460,12 +532,15 @@ def local_release(batteries, row, ref, tree, channel):
     if len(rel) != 1:
         return False, "%s is not exactly one blocking cap-cancelled NO VERDICT row: %s" % (
             row, "; ".join("%s: %s" % (n, w) for n, ok, w in found if not ok) or "%d such rows" % len(rel)), None
-    if not channel or not os.path.isfile(channel):
-        return False, "the channel file %s cannot be read (fail closed)" % (channel or "(none)"), None
-    entries = channel_entries(channel, ref)
-    if not entries:
-        return False, "the channel file has no entry headed `%s`" % ref, None
     notes = []
+    chan, stat = [], []                                # (tree, word, site)
+    have_chan = bool(channel_files(channels))
+    entries = entries_of(channels, ref) if have_chan else []
+    early = None                                       # the channel cannot speak: the wording of LAND-TOOL-2, unless the status does
+    if not have_chan:
+        early = "the channel file %s cannot be read (fail closed)" % (":".join(channels or []) or "(none)")
+    elif not entries:
+        early = "the channel file has no entry headed `%s`" % ref
     for body in entries:
         for ln in body:
             s = ln.strip()
@@ -474,27 +549,43 @@ def local_release(batteries, row, ref, tree, channel):
             m = LOCAL_LINE.match(s)
             if not m or m.group(1) != row:
                 notes.append("malformed line %r" % bt.clip(s, 80))
-            elif m.group(2) != tree:
-                notes.append("tree %s is not the landing SHA's %s" % (m.group(2), tree))
-            elif m.group(3) != "caught (hang)":
-                notes.append("verdict `%s`, not `caught (hang)`" % bt.clip(m.group(3), 30))
             else:
-                return True, "%s released: cap-cancelled in %s, local verdict caught (hang) at tree %s, site %s (%s)" % (
-                    row, rel[0][0], tree, m.group(4), ref), rel[0][0]
-    return False, "no usable `LOCAL VERDICT %s tree %s caught (hang) site <id>` line under `%s`: %s" % (
-        row, tree, ref, "; ".join(notes) or "no such line"), None
+                chan.append((m.group(2), m.group(3), m.group(4)))
+    stat, snotes = status_candidates(statuses, approvers, row)
+    notes += snotes
+    if early and not stat:
+        return False, early + ("; " + "; ".join(snotes) if snotes else ""), None
+    if early:
+        notes.append(early)
+    if chan and stat and not all((t, w) in {(c[0], c[1]) for c in chan} for t, w, _ in stat):
+        return False, "the channel line(s) and the land/local/%s status DISAGREE (channel: %s; status: %s)" % (
+            row, "; ".join("%s %s" % (t[:12], w) for t, w, _ in chan), "; ".join("%s %s" % (t[:12], w) for t, w, _ in stat)), None
+    if ruling is not None and not d_entry_exists(channels, ruling):
+        return False, "the item names tree-ruling %s, but the channel has no heading `## %s`" % (ruling, ruling), None
+    for src, cands in (("channel", chan), ("status", stat)):
+        for t, w, site in cands:
+            if t != tree and ruling is None:
+                notes.append("tree %s is not the landing SHA's %s (%s, no tree-ruling named)" % (t, tree, src))
+            elif w != "caught (hang)":
+                notes.append("verdict `%s`, not `caught (hang)` (%s)" % (bt.clip(w, 30), src))
+            else:
+                return True, "%s released: cap-cancelled in %s, local verdict caught (hang) at tree %s%s, site %s (%s, %s)" % (
+                    row, rel[0][0], t, "" if t == tree else " (ruling %s: landing tree %s)" % (ruling, tree), site, src,
+                    ref if src == "channel" else "land/local/" + row), rel[0][0]
+    return False, "no usable `LOCAL VERDICT %s tree %s caught (hang) site <id>` under `%s` or in the land/local/%s status: %s" % (
+        row, tree, ref, row, "; ".join(notes) or "no such line"), None
 
 
-def local_checks(root, sha, batteries, release, channel):
+def local_checks(root, sha, batteries, release, channels, statuses=None, approvers=None):
     """The `local:` items of the release -> (landing checks, set of (battery, row) released)."""
     items, bad = local_items(release)
     out, released = [], set()
     if bad:
-        out.append(("local verdict", False, "malformed item(s) %s (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`)" % ", ".join(bad)))
+        out.append(("local verdict", False, "malformed item(s) %s (wanted `local: <row id> @A-NEXT YYYY-MM-DD HH:MMZ` or `@A-NNNN`, then optionally ` tree-ruling D-NNNN`)" % ", ".join(bad)))
     seen = set()
     rc, tree = git(root, "rev-parse", "--verify", "--quiet", sha + "^{tree}")
     tree = tree.strip()
-    for row, ref in items:
+    for row, ref, ruling in items:
         if row in seen:
             out.append(("local verdict %s" % row, False, "the release names %s twice" % row))
             continue
@@ -502,11 +593,62 @@ def local_checks(root, sha, batteries, release, channel):
         if rc != 0:
             out.append(("local verdict %s" % row, False, "the tree of %s cannot be read" % sha[:8]))
             continue
-        ok, text, bname = local_release(batteries, row, ref, tree, channel)
+        ok, text, bname = local_release(batteries, row, ref, tree, channels, statuses, approvers, ruling)
         out.append(("local verdict %s" % row, ok, text))
         if ok:
             released.add((bname, row))
     return out, released
+
+
+def stand_items(text):
+    """The `stand: <list> @D-NNNN from <old sha>` items of a release text's ids bracket: ([(list, d_id, old_sha)], malformed items)."""
+    good, bad = [], []
+    m = re.search(r"\[ids: ([^\]]*)\]", text or "")
+    for t in (x.strip() for x in (m.group(1) if m else "").split(",")):
+        if t.startswith("stand"):
+            k = STAND_ITEM.match(t)
+            if k:
+                good.append((k.group(1), k.group(2), k.group(3)))
+            else:
+                bad.append(t)
+    return good, bad
+
+
+def stand_checks(root, sha, batteries, gate_set, release, channels):
+    """The `stand:` items of the release -> (landing checks, {list: (d_id, old_sha)} that stand)."""
+    items, bad = stand_items(release)
+    out, stood = [], {}
+    if bad:
+        out.append(("stand", False, "malformed item(s) %s (wanted `stand: <list> @D-NNNN from <40 lower-case hex>`)" % ", ".join(bad)))
+    seen = set()
+    have = {b["name"] for b in batteries}
+    for lst, did, old in items:
+        name = "stand %s" % lst
+        if lst in seen:
+            out.append((name, False, "the release names %s twice" % lst))
+            continue
+        seen.add(lst)
+        if gate_set is not None and lst not in {n for n, _ in gate_set}:
+            out.append((name, False, "%s is not in the gate set" % lst))
+        elif lst in have:
+            out.append((name, False, "%s has a battery run at the landing SHA %s: that run is read as it is, a stand item does not replace it" % (lst, sha[:8])))
+        elif git(root, "cat-file", "-e", old + "^{commit}")[0] != 0:
+            out.append((name, False, "the old SHA %s is not a commit of this repository" % old[:8]))
+        elif any(git(root, "cat-file", "-e", "%s:tools/mutants/%s.py" % (c, lst))[0] != 0 for c in (old, sha)):
+            out.append((name, False, "tools/mutants/%s.py does not exist at the old or at the landing SHA (no list, no stand)" % lst))
+        else:
+            rc, d = git(root, "diff", "--stat", old, sha, "--", "src", "tools/mutants/%s.py" % lst)
+            if rc != 0:
+                out.append((name, False, "git diff --stat %s %s could not be read" % (old[:8], sha[:8])))
+            elif d.strip():
+                out.append((name, False, "git diff --stat %s %s -- src tools/mutants/%s.py is NOT empty: %s" % (
+                    old[:8], sha[:8], lst, bt.clip(" | ".join(x.strip() for x in d.strip().splitlines()), 200))))
+            elif not d_entry_exists(channels, did):
+                out.append((name, False, "the channel has no heading `## %s`" % did))
+            else:
+                out.append((name, True, "%s stands: src and tools/mutants/%s.py unchanged since %s, %s exists" % (lst, lst, old[:8], did)))
+                stood[lst] = (did, old)
+    return out, stood
 
 
 def landing_checks(root, sha, base, release=None):
@@ -595,10 +737,12 @@ def build(api, sha, base, gate_set, eqs, ledger, root):
     return res
 
 
-def judge(res, eqs, ledger, gate_set, released=()):
+def judge(res, eqs, ledger, gate_set, released=(), stood=None):
     """Fills the blockers: ownerless survivors, equivalents with no D-entry, failed jobs, the gate set. `released`: the
     (battery, row) pairs a verified `local:` release item lifts (cap-cancelled NO VERDICT rows only)."""
     own, noent, jobs, bad = [], [], [], []
+    stood = stood or {}
+    res["stood"] = {k: list(v) for k, v in stood.items()}
     res["released"] = sorted("%s %s" % x for x in released)
     res["_released"] = set(released)
     for b in res["batteries"]:
@@ -641,7 +785,7 @@ def judge(res, eqs, ledger, gate_set, released=()):
                 gs.append({"name": name, "state": "clean" if b["clean"] else b["state"] if b["state"] != "done" else "BLOCKED",
                            "last_clean": clean})
         res["gate_set"] = gs
-        res["set_uncovered"] = [g["name"] for g in gs if g["state"] == "no run" and not g["last_clean"]]
+        res["set_uncovered"] = [g["name"] for g in gs if g["state"] == "no run" and not g["last_clean"] and g["name"] not in stood]
         res["set_not_clean"] = [g["name"] for g in gs if g["state"] not in ("clean", "no run")]
     res["ci_ok"] = any(o["name"] == "CI" and o["conclusion"] == "success" for o in res["other"])
     res["ev_ok"] = any(o["name"].startswith("Evidence") and o["conclusion"] == "success" for o in res["other"])
@@ -717,7 +861,8 @@ def render(res, landing):
         L.append("GATE SET (%d batteries):" % len(res["gate_set"]))
         for g in res["gate_set"]:
             if g["state"] == "no run":
-                L.append("  %-10s no run at SHA; last clean read at %s" % (g["name"], g["last_clean"] or "none"))
+                L.append("  %-10s no run at SHA; last clean read at %s%s" % (g["name"], g["last_clean"] or "none",
+                         "; STANDS by %s from %s" % tuple(res["stood"][g["name"]]) if g["name"] in res.get("stood", {}) else ""))
             else:
                 L.append("  %-10s %s at SHA" % (g["name"], g["state"]))
         L.append("  set complete at the SHA: %s" % ("yes" if res["gate_complete"] else "NO (%s)" % res["gate_why"]))
@@ -738,8 +883,11 @@ def main(argv):
     ap.add_argument("--survivors", default=None)
     ap.add_argument("--equivalents", default=None)
     ap.add_argument("--no-landing", action="store_true")
-    ap.add_argument("--channel", default=os.path.expanduser("~/code/lk-channel/agent.md"),
-                    help="the audit channel file holding the LOCAL VERDICT lines of `local:` release items")
+    ap.add_argument("--channel", action="append", default=None,
+                    help="the audit channel file(s) holding the LOCAL VERDICT lines and D-entry headings (repeatable; `:` separates paths); "
+                         "default ~/code/lk-channel/agent.md")
+    ap.add_argument("--statuses", default=None, help="the answer of commits/<sha>/status (a land/local/<ROW> status releases a `local:` item)")
+    ap.add_argument("--approvers", default=None, help="the logins allowed to set that status (evidence/land_approvers.txt)")
     ap.add_argument("--release", default=None, help="the text of the audit's release of this SHA (land/approved description)")
     try:
         a = ap.parse_args(argv[1:])
@@ -767,11 +915,13 @@ def main(argv):
         print("\n".join(render(res, None)))
         return 2
     landing = None if a.no_landing else landing_checks(root, full, a.base, a.release)
-    released = set()
+    released, stood = set(), {}
     if landing is not None:
-        lc, released = local_checks(root, full, res["batteries"], a.release, a.channel)
-        landing += lc
-    judge(res, eqs, ledger, gate_set, released)
+        channels = a.channel or [os.path.expanduser("~/code/lk-channel/agent.md")]
+        lc, released = local_checks(root, full, res["batteries"], a.release, channels, a.statuses, a.approvers)
+        sc, stood = stand_checks(root, full, res["batteries"], gate_set, a.release, channels)
+        landing += lc + sc
+    judge(res, eqs, ledger, gate_set, released, stood)
     res["caught_open"] = sorted({r["id"] for b in res["batteries"] for r in b["rows"]
                                  if r["kind"] == "caught" and ledger.get((b["name"], r["id"]), {}).get("status") in OPEN_STATES})
     if gate_set is not None:
