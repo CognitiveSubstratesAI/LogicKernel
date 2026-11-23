@@ -11,7 +11,6 @@
 #   * `trim_stack_requested` (pl-alloc.c:695, pl-setup.c:1715, pl-gc.c:4549): set by an overflow, cleared by `trimStacks!`, read by the driver, where a
 #     set flag shrinks a grown local stack and a clear one leaves it;
 #   * the upstream rows (below): `t_<id>(R)`, R = ok / failed / raised(E), each pinned on the pinned swipl AND equal to the plunit expectation.
-#     KNOWN DIFFERENCE (G1-FIX-7, `_UP_KNOWN_DIFF`): t_gc12-t_gc14 call succ/2 (AR1 owns it; the kernel answers failed, swipl ok).
 # Every comparison reads both sides through ONE extractor, both non-empty; every must-fail arm is a corrupted pin or a changed premise.
 using Test, LogicKernel
 const LK = LogicKernel
@@ -559,20 +558,12 @@ const _UP_PINNED = [
 ]
 
 """
-KNOWN DIFFERENCE (premise, owner AR1; G1-FIX-7): `t_gc12`, `t_gc13`, `t_gc14` (the `gexcept`, `lexcept`, `texcept` tests of test_cleanup_shift.pl). Each runs
-`t_except(Cleanup)`, whose goal `catch(setup_call_cleanup(true, succ(_, -1), Cleanup), E, true)` calls `succ/2`; the kernel does not define it at this base
-(`succ/2` is AR1's: docs/r2_owners.tsv `pred:succ/2 AR1`, pl-arith.c `succ`). The call is resolved in the unit's module, so the unit prints
-`Wrong error: error(existence_error(procedure,pu_cleanup_shift:succ/2),context(system:setup_call_cleanup/3,_))` (the test's own `format(user_error, ...)` for an error
-that is not the expected `domain_error`) and fails. Kernel: `failed`; swipl: `ok` (the pinned `_UP_PINNED`). `Cleanup` (gshift/lshift/tshift) still runs when the unknown-procedure error unwinds the setup_call_cleanup, but the row's verdict is the error check, which
-the missing `succ/2` decides: the three rows say nothing about the shifters until AR1 lands.
-CHECKLIST (AR1): when `succ/2` lands, delete the three entries; the rows must then answer `ok` (the subsumes_term of the error and the shifts run after it: untested).
-The swipl pins in `_UP_PINNED` stay swipl's (the live check compares them to swipl); only the kernel comparison reads this table.
+The known-difference table is EMPTY: `t_gc12`, `t_gc13`, `t_gc14` (the `gexcept`, `lexcept`, `texcept` tests of test_cleanup_shift.pl; each runs `t_except(Cleanup)`
+with `catch(setup_call_cleanup(true, succ(_, -1), Cleanup), E, true)`, which needs `succ/2` to raise `domain_error(not_less_than_zero, -1)`) were its only entries until
+AR1 landed `succ/2`, so every row is compared with swipl's pin (`_UP_PINNED`, the live check compares them to swipl). A row that differs again is added here at the
+kernel's EXACT answer, with swipl's in a comment and a checklist item.
 """
-const _UP_KNOWN_DIFF = Dict{String, String}(
-    "t_gc12" => "t_gc12 c[116,95,103,99,49,50]/1(a[102,97,105,108,101,100])",
-    "t_gc13" => "t_gc13 c[116,95,103,99,49,51]/1(a[102,97,105,108,101,100])",
-    "t_gc14" => "t_gc14 c[116,95,103,99,49,52]/1(a[102,97,105,108,101,100])"
-)
+const _UP_KNOWN_DIFF = Dict{String, String}()
 
 "The answer plunit expects of every row: the test passes (the fail-option tests fail as the file expects), so `R = ok`."
 const _UP_UPSTREAM = [
