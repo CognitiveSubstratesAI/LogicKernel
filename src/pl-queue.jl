@@ -36,8 +36,9 @@ _queue_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[seri
 
 # PORT: pl-thread.c unify_queue
 "Unify `t` with the identifier of the queue `q`: its name or its blob (pl-thread.c)."
-unify_queue(ld::PL_local_data{T}, t::term_t, q::message_queue{T})::Bool where {T} =
+function unify_queue(ld::PL_local_data{T}, t::term_t, q::message_queue{T})::Bool where {T}
     PL_unify_atom(ld, t, q.id::T)
+end
 
 # PORT: pl-thread.c init_message_queue
 # DIVERGES: the queue is the record `message_queue{T}`; `id` is `nothing` until the caller gives it a name or a blob (upstream: 0).

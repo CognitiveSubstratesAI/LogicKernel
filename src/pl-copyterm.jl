@@ -642,9 +642,11 @@ end
 
 # PORT: pl-copyterm.c copy_term_refs
 "`copy_term_refs` without `vars` (every caller but `copy_term/4`)."
-copy_term_refs(
+function copy_term_refs(
     ld::PL_local_data{T}, from::term_t, to::term_t, options::cp_options
-)::Bool where {T} = copy_term_refs(ld, from, to, _CP_NO_VARS, options)
+)::Bool where {T}
+    copy_term_refs(ld, from, to, _CP_NO_VARS, options)
+end
 
 # PORT: pl-copyterm.c copy_term as pl_copy_term2_va
 # (PRED_IMPL("copy_term", 2, copy_term, 0)); the table's flag is `PL_FA_ISO`.

@@ -38,8 +38,9 @@ _mutex_bytes(serial::Int)::Vector{UInt8} = collect(reinterpret(UInt8, Int64[seri
 
 # PORT: pl-mutex.c unify_mutex
 "Unify `t` with the identifier of the mutex `m`: its name or its blob (pl-mutex.c)."
-unify_mutex(ld::PL_local_data{T}, t::term_t, m::pl_mutex{T})::Bool where {T} =
+function unify_mutex(ld::PL_local_data{T}, t::term_t, m::pl_mutex{T})::Bool where {T}
     PL_unify_atom(ld, t, m.id)
+end
 
 # PORT: pl-mutex.c unify_mutex_owner
 # DIVERGES: `unify_thread_id(t, GD->thread.threads[owner])` of the one thread, the main thread: its alias (`main_thread_alias`).

@@ -4773,8 +4773,9 @@ function pl_statistics_ld(
 end
 
 "`statistics/2` on the calling thread: `pl_statistics_ld` with the statistics of `ld` itself (pl-prims.c `pl_statistics_ld(A1, A2, LD)`)."
-pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T} =
+function pl_statistics_ld(ld::PL_local_data{T}, k::term_t, value::term_t)::Bool where {T}
     pl_statistics_ld(ld, k, value, ld)
+end
 
 # PORT: pl-prims.c statistics as pl_statistics2_va
 # (PRED_IMPL("statistics", 2, statistics, 0))

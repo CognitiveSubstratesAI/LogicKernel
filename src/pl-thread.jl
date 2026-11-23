@@ -1305,7 +1305,9 @@ end
 # DIVERGES: `$debug_thread_class/4`, the only writer of `GD->thread.debug_classes`, is not ported, so the table is always empty and no
 # class is a debug class.
 "Whether the thread class `class` is a debug class (pl-thread.c)."
-debug_thread_class(::PL_global_data{T}, ::Symbol)::Bool where {T} = false
+function debug_thread_class(::PL_global_data{T}, ::Symbol)::Bool where {T}
+    false
+end
 
 # PORT: pl-thread.c update_debug_mode_from_class
 # DIVERGES: the local data's thread is read from `ld.thread_info` (`nothing`: the main thread, whose class is `main_class`).

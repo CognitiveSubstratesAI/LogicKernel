@@ -2140,8 +2140,9 @@ end
 # PORT: pl-fli.c PL_new_functor_sz
 # DIVERGES: the local data is an argument (`DECL_LD`); the name is an interface symbol, the answer a functor word.
 "The functor word of the name `f` and `arity` (pl-fli.c `PL_new_functor_sz`), created if new."
-PL_new_functor_sz(ld::PL_local_data{T}, f::T, arity::Int)::word where {T} =
+function PL_new_functor_sz(ld::PL_local_data{T}, f::T, arity::Int)::word where {T}
     lookupFunctorDef(ld.functors, _atom_word!(ld, f), arity)
+end
 
 # PORT: pl-fli.c PL_new_functor
 # DIVERGES: the local data is an argument; the name is an interface symbol; upstream's `fatalError("Arity out of
@@ -2829,7 +2830,9 @@ end
 # DIVERGES: the database is an argument; the name is an interface symbol, the answer the module's index; no
 # `valid_atom_t` check (`O_VALIDATE_API`, owner FLI1).
 "The index of the module named `name`, created if there is none (pl-fli.c)."
-PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T} = lookupModule(gd, name).index
+function PL_new_module(gd::PL_global_data{T}, name::T)::Int where {T}
+    lookupModule(gd, name).index
+end
 
 # PORT: pl-fli.c PL_pred
 # DIVERGES: the database and the local data are arguments; the module is an index (0 for upstream's NULL, the

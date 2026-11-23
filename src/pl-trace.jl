@@ -234,8 +234,9 @@ _context_copy(c::pl_context_t{T}) where {T} = pl_context_t{T}(c.ld, c.qf, c.fr, 
 # ORIGINAL (PROC-TRACE): upstream's `onStack(local, fr)` (pl-incl.h), as `PL_unify_frame` tests it: `fr` is a live frame record, its
 # position below `lTop`.
 "True when the frame index `fr` is a frame on the local stack."
-_onStackLocal(ld::PL_local_data{T}, fr::Int)::Bool where {T} =
+function _onStackLocal(ld::PL_local_data{T}, fr::Int)::Bool where {T}
     1 <= fr <= length(ld.frames) && 0 <= ld.frames[fr].base < ld.lTop
+end
 
 # PORT: pl-trace.c PL_get_context
 # DIVERGES: the context is returned (upstream fills `*c` and returns `HAS_LD`, which is always true here: the engine is `ld`);
@@ -922,8 +923,9 @@ end
 
 # ORIGINAL (PROC-TRACE): upstream's `SHOW_FRAME(fr)` macro of `_PL_backtrace` (pl-trace.c:1366).
 "True when the backtrace shows frame `fr`: a debug frame, or any frame unless `PL_BT_USER` is in `flags`."
-_show_frame(ld::PL_local_data{T}, fr::Int, flags::Int)::Bool where {T} =
+function _show_frame(ld::PL_local_data{T}, fr::Int, flags::Int)::Bool where {T}
     isDebugFrame(ld, fr, 0) || (flags & PL_BT_USER) == 0
+end
 
 # PORT: pl-trace.c _PL_backtrace
 # DIVERGES: `gc_status.active` is not kept (no collection runs while a backtrace is taken, so the flags stay as given), and
