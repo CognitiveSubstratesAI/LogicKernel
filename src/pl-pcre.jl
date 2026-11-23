@@ -1794,9 +1794,11 @@ end
 # PORT: packages/pcre/pcre4pl.c re_match_
 # DIVERGES: 25.
 "`re_match_(+Regex, +String, +Options)`: `re_matchsub_` without a result (pcre4pl.c `re_match_`)."
-re_match_(
+function re_match_(
     ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t
-)::foreign_t where {T} = re_matchsub_(ld, src, on, term_t(0), options)
+)::foreign_t where {T}
+    return re_matchsub_(ld, src, on, term_t(0), options)
+end
 
 # PCRE1 piece 12 (packages/pcre/pcre4pl.c re_foldl_, re_portray_, re_portray_match_options_; C 1368-1410, 1518-1546, 1758-1830). Nothing here has run.
 #
