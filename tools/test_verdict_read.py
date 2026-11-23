@@ -627,6 +627,251 @@ class Landing(unittest.TestCase):
         self.assertFalse(json.loads(js)["landable"])
 
 
+class LocalVerdict(unittest.TestCase):
+    """D-1009 (5), LAND-TOOL-2: `local: <row id> @<A-entry ref>` in the release lifts a cap-cancelled battery row."""
+
+    def landed(self, w):
+        w.other_run("CI")
+        w.other_run("Evidence (three term types)")
+
+    REF = "A-NEXT 2026-11-23 15:40Z"
+
+    def local_world(self, rows=None, conclusion="cancelled", job_only=False, extra_jobs=()):
+        """A landable commit whose battery G1GC3 has a job G1GC3-T3 that concluded `conclusion` (a NO VERDICT row of it, or no row)."""
+        w = World(self)
+        w.commit("tools/t.txt", "x\n", "ADDED: a tools file")
+        self.landed(w)
+        steps = [dict(number=1, name="Set up job", status="completed", conclusion="success"),
+                 dict(number=12, name="Apply the mutant and run the targets", status="in_progress", conclusion=None)]
+        jobs = [dict(id=w.nid(), name="G1GC3-T3", status="completed", conclusion=conclusion, steps=steps)] + list(extra_jobs)
+        if rows is None:
+            rows = [("G1GC3-T1", "caught", "one")] + ([] if job_only else [("G1GC3-T3", "NO VERDICT (no failing test)", "hung")])
+        w.battery("G1GC3", rows, mutant_jobs=jobs)
+        return w
+
+    def tree(self, w):
+        return sh(w.repo, "rev-parse", w.sha + "^{tree}")
+
+    def lv(self, w, row="G1GC3-T3", tree=None, word="caught (hang)", site="pl-gc.c:1234"):
+        return "LOCAL VERDICT %s tree %s %s site %s" % (row, tree or self.tree(w), word, site)
+
+    def channel(self, w, *lines, head=None, name="agent.md"):
+        """A channel file: an earlier entry, then the entry headed `head` (default REF + a title) holding `lines`, then a later one."""
+        path = os.path.join(w.dir, name)
+        with open(path, "w") as f:
+            f.write("# agent\n\n## A-NEXT 2026-11-23 13:00Z - earlier\nno verdict here\n\n## %s\n%s\n\n## A-NEXT 2026-11-23 16:00Z - later\n" % (
+                head or (self.REF + " \u2014 local verdict"), "\n".join(lines)))
+        return path
+
+    def lrel(self, w, *items):
+        return "LAND %s [ids: %s]" % (w.sha, ",".join(items))
+
+    ITEM = "local: G1GC3-T3 @" + REF
+
+    def test_a_matching_local_verdict_releases_a_cancelled_row(self):
+        w = self.local_world()
+        ch = self.channel(w, "  " + self.lv(w))                                        # leading blanks allowed
+        rc, out = w.run("--channel", ch)                                               # no release: the row blocks
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NO VERDICT G1GC3 G1GC3-T3", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, r"ok   local verdict G1GC3-T3: G1GC3-T3 released: cap-cancelled in G1GC3, local verdict caught \(hang\) at tree "
+                              + self.tree(w) + r", site pl-gc.c:1234")
+        self.assertNotIn("NO VERDICT G1GC3 G1GC3-T3:", out)
+        self.assertIn("released by a local verdict", out)
+        rc, js = w.run("--json", "--channel", ch, "--release", self.lrel(w, self.ITEM))
+        d = json.loads(js)
+        self.assertTrue(d["landable"])
+        self.assertEqual(d["released"], ["G1GC3 G1GC3-T3"])
+        self.assertEqual([x["check"] for x in d["landing"]][-1], "local verdict G1GC3-T3")
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "local: G1GC3-T3 @A-NEXT 2026-11-23 15:40Z"))  # the same, spelled out
+        self.assertEqual(rc, 0, out)
+        # beside a D-entry id and an A-NNNN ref
+        ch2 = self.channel(w, self.lv(w), head="A-0777 \u2014 x", name="agent2.md")
+        rc, out = w.run("--channel", ch2, "--release", self.lrel(w, "D-0950:X", "local: G1GC3-T3 @A-0777"))
+        self.assertEqual(rc, 0, out)
+        ch3 = self.channel(w, self.lv(w), head="A-0777", name="agent3.md")             # a heading that is the ref alone
+        rc, out = w.run("--channel", ch3, "--release", self.lrel(w, "local: G1GC3-T3 @A-0777"))
+        self.assertEqual(rc, 0, out)
+
+    def test_a_failed_job_with_no_row_is_released_the_same_way(self):
+        w = self.local_world(job_only=True)
+        ch = self.channel(w, self.lv(w))
+        rc, out = w.run("--channel", ch)
+        self.assertEqual(rc, 1, out)
+        self.assertRegex(out, r"JOB G1GC3: G1GC3-T3 \d+ conclusion cancelled step 12 'Apply the mutant and run the targets'")
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("JOB G1GC3", out)
+        self.assertIn("ok   local verdict G1GC3-T3", out)
+
+    def test_a_wrong_tree_fails(self):
+        w = self.local_world()
+        tr = self.tree(w)
+        other = tr[:-1] + ("0" if tr[-1] != "0" else "1")                              # one hex digit off
+        ch = self.channel(w, self.lv(w, tree=other))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertRegex(out, r"FAIL local verdict G1GC3-T3: no usable `LOCAL VERDICT G1GC3-T3 tree " + tr)
+        self.assertIn("tree %s is not the landing SHA's %s" % (other, tr), out)
+        self.assertIn("NO VERDICT G1GC3 G1GC3-T3", out)                                # the row still blocks
+        ch = self.channel(w, self.lv(w, tree=w.sha))                                   # the COMMIT sha is not the tree sha
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        rc, js = w.run("--json", "--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertFalse(json.loads(js)["landable"])
+
+    def test_a_missing_channel_entry_or_line_fails(self):
+        w = self.local_world()
+        rc, out = w.run("--channel", os.path.join(w.dir, "no_such_agent.md"), "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertRegex(out, r"FAIL local verdict G1GC3-T3: the channel file .*no_such_agent.md cannot be read \(fail closed\)")
+        ch = self.channel(w, self.lv(w), head="A-NEXT 2026-11-23 15:41Z - other minute")
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL local verdict G1GC3-T3: the channel file has no entry headed `%s`" % self.REF, out)
+        ch = self.channel(w, "nothing to see")                                         # the entry exists, no line
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no such line", out)
+        ch = self.channel(w, self.lv(w, row="G1GC3-T4"))                               # a line for another row
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        ch = self.channel(w, "x", head="A-01234 \u2014 x")                              # A-0123 is no prefix match of A-01234
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "local: G1GC3-T3 @A-0123"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no entry headed `A-0123`", out)
+        path = os.path.join(w.dir, "scoped.md")                                        # the line sits under a LATER entry
+        with open(path, "w") as f:
+            f.write("## %s \u2014 x\nnothing\n\n## A-NEXT 2026-11-23 16:00Z - later\n%s\n" % (self.REF, self.lv(w)))
+        rc, out = w.run("--channel", path, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("no such line", out)
+
+    def test_a_verdict_word_other_than_caught_hang_fails(self):
+        w = self.local_world()
+        for word in ("TIMEOUT", "SURVIVED", "caught", "caught (hang", "Caught (hang)", "caught (error)"):
+            ch = self.channel(w, self.lv(w, word=word))
+            rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+            self.assertEqual(rc, 1, (word, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+            self.assertIn("not `caught (hang)`", out)
+        ch = self.channel(w, self.lv(w, word="TIMEOUT"), self.lv(w))                    # one good line beside a bad one releases
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 0, out)
+
+    def test_only_a_blocking_cap_cancelled_row_can_be_released(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w, row="G1GC3-T1"), self.lv(w, row="G1GC3-T9"))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "local: G1GC3-T1 @" + self.REF))   # a caught row: not blocked
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL local verdict G1GC3-T1: G1GC3-T1 is not exactly one blocking cap-cancelled NO VERDICT row: G1GC3: the row is caught", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "local: G1GC3-T9 @" + self.REF))   # a row that does not exist
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL local verdict G1GC3-T9: G1GC3-T9 is no blocking row or job of any battery read here", out)
+        # SURVIVED (and TIMEOUT) rows, whatever their job concluded, even `cancelled`: a verdict is not a cap cancellation
+        for verdict in ("SURVIVED", "TIMEOUT", "INVALID"):
+            w = self.local_world(rows=[("G1GC3-T1", "caught", "one"), ("G1GC3-T3", verdict, "x")])
+            ch = self.channel(w, self.lv(w))
+            rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+            self.assertEqual(rc, 1, (verdict, out))
+            self.assertIn("FAIL local verdict G1GC3-T3: G1GC3-T3 is not exactly one blocking cap-cancelled NO VERDICT row: G1GC3: the row is %s, not NO VERDICT" % verdict, out)
+        # a NO VERDICT row of a job that FAILED (not cancelled), with a row and without
+        for kw in ({}, {"job_only": True}):
+            w = self.local_world(conclusion="failure", **kw)
+            ch = self.channel(w, self.lv(w))
+            rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+            self.assertEqual(rc, 1, (kw, out))
+            self.assertRegex(out, r"FAIL local verdict G1GC3-T3: .*not cancelled")
+
+    def test_two_local_items_are_each_checked(self):
+        t4 = dict(id=9100001, name="G1GC3-T4", status="completed", conclusion="cancelled", steps=[])
+        w = self.local_world(rows=[("G1GC3-T1", "caught", "one"), ("G1GC3-T3", "NO VERDICT (x)", "h"), ("G1GC3-T4", "NO VERDICT (x)", "h")],
+                             extra_jobs=[t4])
+        both = self.channel(w, self.lv(w), self.lv(w, row="G1GC3-T4", site="pl-gc.c:99"))
+        two = self.lrel(w, self.ITEM, "local: G1GC3-T4 @" + self.REF)
+        rc, out = w.run("--channel", both, "--release", two)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   local verdict G1GC3-T3", out)
+        self.assertIn("ok   local verdict G1GC3-T4", out)
+        rc, out = w.run("--channel", both, "--release", self.lrel(w, self.ITEM))        # one named: the other still blocks
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NO VERDICT G1GC3 G1GC3-T4", out)
+        self.assertNotIn("NO VERDICT G1GC3 G1GC3-T3:", out)
+        only3 = self.channel(w, self.lv(w))                                            # both named, one line missing: one ok, one FAIL
+        rc, out = w.run("--channel", only3, "--release", two)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("ok   local verdict G1GC3-T3", out)
+        self.assertIn("FAIL local verdict G1GC3-T4", out)
+        self.assertIn("NO VERDICT G1GC3 G1GC3-T4", out)
+        self.assertNotIn("NO VERDICT G1GC3 G1GC3-T3:", out)
+        bad4 = self.channel(w, self.lv(w), self.lv(w, row="G1GC3-T4", word="TIMEOUT"))  # the other way: T4's word is wrong
+        rc, out = w.run("--channel", bad4, "--release", two)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("ok   local verdict G1GC3-T3", out)
+        self.assertIn("FAIL local verdict G1GC3-T4", out)
+
+    def test_a_row_id_cancelled_in_two_batteries_is_ambiguous(self):
+        w = self.local_world()
+        steps = [dict(number=12, name="Apply the mutant and run the targets", status="in_progress", conclusion=None)]
+        w.battery("G1GC4", [("G1GC3-T3", "NO VERDICT (x)", "h")],
+                  mutant_jobs=[dict(id=w.nid(), name="G1GC3-T3", status="completed", conclusion="cancelled", steps=steps)])
+        ch = self.channel(w, self.lv(w))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL local verdict G1GC3-T3: G1GC3-T3 is not exactly one blocking cap-cancelled NO VERDICT row: 2 such rows", out)
+
+    def test_a_malformed_local_item_or_line_fails(self):
+        w = self.local_world()
+        ch = self.channel(w, self.lv(w))
+        for bad in ("local: G1GC3-T3", "local: G1GC3-T3 @", "local: G1GC3-T3 @bogus", "local:G1GC3-T3 @A-0123", "local G1GC3-T3 @A-0123",
+                    "local: G1GC3-T3 @A-NEXT 2026-11-23", "local: G1GC3-T3 @A-12", "local: @A-0123", "local: G1GC3-T3 @A-NEXT 2026-11-23 15:40"):
+            rc, out = w.run("--channel", ch, "--release", self.lrel(w, bad))
+            self.assertEqual(rc, 1, (bad, out))
+            self.assertIn("FAIL local verdict: malformed item(s) " + bad, out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM, "local: G1GC3-T3 @A-0123"))   # one row twice
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL local verdict G1GC3-T3: the release names G1GC3-T3 twice", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM, "local: oops"))              # a good item and a bad one
+        self.assertEqual(rc, 1, out)
+        self.assertIn("malformed item(s) local: oops", out)
+        tr = self.tree(w)
+        for line in ("LOCAL VERDICT G1GC3-T3 tree %s caught (hang)" % tr,                 # no site
+                     "LOCAL VERDICT G1GC3-T3 tree %s caught (hang) site " % tr,           # empty site
+                     "LOCAL VERDICT G1GC3-T3 tree %s site pl.c:1" % tr,                   # no verdict word
+                     "LOCAL VERDICT G1GC3-T3 tree %s caught (hang) site a b" % tr,        # the site is one identifier
+                     "LOCAL VERDICT G1GC3-T3 tree %s caught (hang) site pl.c:1" % tr[:39],   # a 39-digit tree
+                     "LOCAL VERDICT G1GC3-T3 tree %s caught (hang) site pl.c:1" % tr.upper(),
+                     "LOCAL VERDICT G1GC3-T3 %s caught (hang) site pl.c:1" % tr):         # no `tree` word
+            ch = self.channel(w, line)
+            rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))
+            self.assertEqual(rc, 1, (line, out))
+            self.assertIn("FAIL local verdict G1GC3-T3", out)
+
+    def test_local_and_src_diff_releases_work_together_and_alone(self):
+        w = World(self)
+        w.commit("src/a.jl", "a = 2\nb = 3\n", "CHANGED: src")
+        self.landed(w)
+        raw = subprocess.run(["git", "-C", w.repo, "diff", "--numstat", "main.." + w.sha, "--", "src"], capture_output=True).stdout
+        dig = hashlib.sha256(raw).hexdigest()
+        steps = [dict(number=12, name="Apply the mutant and run the targets", status="in_progress", conclusion=None)]
+        w.battery("G1GC3", [("G1GC3-T3", "NO VERDICT (x)", "h")],
+                  mutant_jobs=[dict(id=w.nid(), name="G1GC3-T3", status="completed", conclusion="cancelled", steps=steps)])
+        ch = self.channel(w, self.lv(w))
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "src-diff " + dig, self.ITEM))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("ok   src diff: NON-EMPTY, released by src-diff " + dig, out)
+        self.assertIn("ok   local verdict G1GC3-T3", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, self.ITEM))              # the local item does not release the src diff
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAIL src diff: NON-EMPTY, no `src-diff <sha256>` release", out)
+        rc, out = w.run("--channel", ch, "--release", self.lrel(w, "src-diff " + dig))      # nor the src-diff the cancelled row
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NO VERDICT G1GC3 G1GC3-T3", out)
+        self.assertNotIn("local verdict", out)                                              # no item, no check row
+
+
 class Units(unittest.TestCase):
     def test_table_from_annotations_orders_the_parts_and_needs_the_summary(self):
         import verdict_read as vr
