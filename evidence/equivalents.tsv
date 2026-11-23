@@ -41,3 +41,10 @@ TB1-L3	D-1011	src/pl-tabling.jl:3224-3292
 TB8-T8	D-1011	src/pl-tabling.jl:2390-2397 and :10445
 TB8-E1	D-1011	src/os/pl-prologflag.jl:471-472 and src/pl-tabling.jl:10153-10177
 TB8-E3	D-1011	src/pl-tabling.jl:10143-10146 and :10214-10218
+TR2-Q7	D-1013	src/pl-trie.jl:3028-3033
+TR2-Q8	D-1013	src/pl-trie.jl:2557-2564
+TR2-Q1	D-1014	src/pl-trie.jl:3016
+TR2-Q6	D-1014	src/pl-trie.jl:2544-2547
+EV1-C3	D-0384	src/pl-event.jl:471
+LB2-30	D-0280	src/pl-wam.jl:1410
+LB2-63	D-0280	src/pl-comp.jl:3955 (TEMPORARY, D-0280 (4): revisit when transactions are ported; first accepted D-0256 (1))
