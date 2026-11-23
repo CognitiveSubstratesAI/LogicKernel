@@ -28,6 +28,7 @@
 # EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR2-Q1, TR2-Q6, TR2-Q7, TR2-Q8 (ratified, D-1013/D-1014).
 #   TR2-C2, TR2-S7, TR2-Q3, TR2-Q4 were declared too; the trace evidence/R2/trie2_equiv_trace.md (audit D-1014 (2)) REFUTED them: the pruned and the
 #   unpruned cursor give a different ORDER of answers (CH_VARS vs CH_ENUM, src/pl-trie.jl:2845-2890). They are kill rows now: t48-t51 of test_trie_gen_swipl.pl.
+#   TR2-Q5 (epoch guard) was declared too; audit D-1014 (3): reachable through a collection between the answers, killed by t51 (the run of 2026-11-23: 1 answer, not 100).
 #   (TR2-S8 and TR2-Q2 were declared too; CI run 43827841817 REFUTED both, they are killed mutants: audit D-0830).
 # Every `old` was counted EXACTLY once in its file by a python3 -I script (exec of this file, `src/pl-trie.jl`.count(old) == 1 for each of the 53
 #   mutants; no Julia ran) at the commit that adds this list; `new` != `old`; no duplicate id.
@@ -183,9 +184,8 @@ MUTANTS = [
       "    for a in (f + arity):-1:(f + 1)\n", "    for a in (f + 1):1:(f + arity)\n"),
     m("TR2-Q4 enter_query_compound!: `rest` is false (KILL TG t48: pruning stops after the closed compound argument: [1,2])",
       "        rest = (c.last != 0 && c.last > c.term) || (c.frame != 0 && st.frames[c.frame].rest)\n", "        rest = false\n"),
-    m("TR2-Q5 restore_cursor!: a kept cursor of an older epoch is used (the epoch never moves; output equivalent)",
-      "    if ubr.epoch == st.epoch\n", "    if true\n",
-      eq="src/pl-trie.jl check_epoch! and restore_cursor!: no collection runs in the rows of this file (test_trie_gen_swipl.jl holds no garbage_collection_between_answers row) and no stack shift moves a position, so a kept cursor stays valid in every epoch; the replay (the branch after) gives the same cursor (ld.trie_gen_force_epoch, testset R, checks that); only the work differs"),
+    m("TR2-Q5 restore_cursor!: a kept cursor of an older epoch is used (the epoch never moves; KILL TG t51: a collection between the answers moves the cells under the kept cursor, 1 answer instead of 100)",
+      "    if ubr.epoch == st.epoch\n", "    if true\n"),
     m("TR2-Q6 init_trie_state! does not reset the path and the frames (clear_trie_state! does it)",
       "    st.resume = false\n    st.nch = 0\n    st.nbr = 0\n    empty!(st.frames)\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
       "    st.resume = false\n    return nothing\nend\n\n# PORT: pl-trie.c add_branch\n",
