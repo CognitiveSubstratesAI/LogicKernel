@@ -276,6 +276,12 @@ const _PB_NOWRITE = LK.PL_blob_t(UInt32(0), "pcre_test_nowrite")
     LK.install_pcre4pl(ld2)
     reg2 = LK._blob_registration(ld2.atoms, LK.pcre2_blob)
     @test reg2 !== reg && reg2.hooks !== h && isempty(reg2.hooks.objects)
+    # a database that registered the type without hooks (the 3-argument form) gets them from re_register_blob, in the same registration
+    ld3 = _pb_fresh()
+    r3 = LK.PL_register_blob_type(ld3.atoms, LK.pcre2_blob, UInt64(0))
+    @test r3.hooks === nothing
+    @test LK.re_register_blob(ld3.atoms) === r3
+    @test r3.hooks !== nothing && r3.hooks.write === LK.re_write_text && r3.hooks.load === LK.re_load_pcre
     # the acquire hook of the C stores the symbol in a field nobody reads: here it does nothing (doc-only, DIVERGES 32)
     @test LK.re_acquire_pcre(LK.re_init_data("a"), UInt64(1)) === nothing
 end
@@ -320,7 +326,8 @@ end
     LK.PL_register_blob_type(atoms, _PB_PLAIN, UInt64(0))
     wp, _ = LK.lookupBlob(atoms, collect(reinterpret(UInt8, Int64[1])), 8, _PB_PLAIN)
     @test LK.blob_object(atoms, wp, _PB_HOOKED) === nothing
-    @test LK.blob_object(atoms, w1, _PB_PLAIN) === nothing       # the type is registered but has no hooks
+    @test LK.blob_object(atoms, w1, _PB_PLAIN) === nothing       # the word is of another type
+    @test LK.blob_object(atoms, wp, _PB_PLAIN) === nothing       # the type is registered but has no hooks
     # a type without hooks cannot make hooked blobs
     @test_throws ArgumentError LK.blob_new!(atoms, _PB_PLAIN, "x")
     @test_throws ArgumentError LK.blob_new!(atoms, _PB_LATE, "x")      # not registered at all
