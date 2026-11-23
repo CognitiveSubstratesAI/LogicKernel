@@ -1,0 +1,13 @@
+# SWI-Prolog/swipl-devel af9e2e7ed0be4e80d2b60b70bb09e91fa087d116 class pkg-pcre — every file vendored at vendor/swipl-devel-extra, as `git ls-tree -r` lists it: mode, type, blob id,
+# path (upstream's own path). Written by tools/vendor_swipl.sh extra pkg-pcre; the files are upstream's bytes, never edited.
+# source: sub packages/pcre a5e4c885e372f434868ea827b155427360381124
+100644 blob 7b9375f30ab21f1ac796d44c9c70ba84f20cda59	packages/pcre/.gitignore
+100644 blob ed009c9b06b0857badecefe5cfa7ff984bc3ff9d	packages/pcre/CMakeLists.txt
+100644 blob 0340b07baf97ec5f006a68abd406b219b64d7a1d	packages/pcre/README.md
+100644 blob 49b272e169891b376ff83c6f33441831e1f97df9	packages/pcre/TODO.md
+100644 blob dab8f31de042847b850357fd3b8984431d89b326	packages/pcre/cmake/FindPCRE.cmake
+100644 blob 75764a7670672c7f7a7fc474a9f5b6e1d2828c0c	packages/pcre/input/pcre_load.pl
+100644 blob 92f5cc6bbdfeb2eb48ac2e87538b42bd04a400d4	packages/pcre/pcre.pl
+100644 blob 0318f7469ba3d7f0c07522b3a27dee6cac8bbba2	packages/pcre/pcre.plx
+100644 blob 7a4f3e2bf95b3b23d780d3711ac2cbd4a5e87e68	packages/pcre/pcre4pl.c
+100644 blob 08d6c68ee609ad41599158e7235ddc16fe39abba	packages/pcre/test_pcre.pl
