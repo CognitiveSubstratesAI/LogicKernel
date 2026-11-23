@@ -127,6 +127,14 @@ end
     write(f, _BL_LOOP)
     st, _ = LK.load_file!(gd, ld, f)
     @test st === :ok
+    # G1 chunk 8 (the collector runs at the ALLOW_GC sites): A-0029's baseline is the cost of the ball WITHOUT a collection, so it is
+    # measured with the flag `gc` off (the pattern of test_gc_driver.jl), above a stack the loader's dead cells no longer fill (the first
+    # collection frees them: gTop 1270 -> 20, a `during` negative otherwise). The same program with the collector ON is the next row.
+    @test LK.garbageCollect(ld, Int(LK.GC_USER); vmi_state_of=LK.get_vmi_state) ==
+        LK.BOOLEX_TRUE
+    gc_flags = ld.prolog_flag_mask
+    ld.prolog_flag_mask &= ~LK.prologFlagMask(LK.PLFLAG_GC)
+    c_off = ld.gc.stats.totals.collections
     for (goal, n, want_during) in
         ((:bl_rec, 100, 4000), (:bl_rec, 1000, 40000), (:bl_bt, 100, nothing),
         (:bl_bt, 1000, nothing))
@@ -139,6 +147,18 @@ end
         @test after <= 0                                            # back at the base after the close
         @test fb == 0                                               # the frozen bar released
     end
+    @test ld.gc.stats.totals.collections == c_off                   # flag `gc` off: none ran in any of the four
+    ld.prolog_flag_mask = gc_flags
+    # The collector ON (what a program now gets): the loop's dead balls are reclaimed INSIDE the query (upstream's frozen_bar is
+    # a root the compaction relocates, not a floor under the garbage: pl-gc.c gvars_to_term_refs / sweep_frozen_bar), so far fewer
+    # than 40 cells/iteration are left at the answer; the close still releases everything (`after`, `fb`).
+    c0 = ld.gc.stats.totals.collections
+    rc, during, after, fb = _bl_run(gd, ld, :bl_rec, 1000)
+    @test rc == LK.PL_S_TRUE
+    @test ld.gc.stats.totals.collections > c0
+    @test during < 40000 ÷ 4
+    @test after <= 0
+    @test fb == 0
 end
 
 # ENG2a (audit D-0411): on the booted copy global variables live on the global stack (`gvar_grefs > 0` after a load). The

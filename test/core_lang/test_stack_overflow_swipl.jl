@@ -149,7 +149,7 @@ end
     gd, ld = _sodb()
     rc, _, _ = _sorun(gd, ld, "local_overflow", nothing)
     @test rc == LK.PL_S_EXCEPTION
-    @test !ld.outofstack && !ld.exception_processing && ld.exception_term == 0
+    @test ld.outofstack === nothing && !ld.exception_processing && ld.exception_term == 0
     @test ld.local_spare == ld.local_def_spare
     # trimStacks(resize) shrank the local stack the overflow grew (GROW_TRIM, D-0049): back below half the
     # limit it hit, the global and trail spares whole
@@ -167,7 +167,7 @@ end
     gd, ld = _sodb()
     # the first overflow's flag still set, as when a handler overflows again before the error is
     # recovered from (no catch/3 runs one until V9)
-    ld.outofstack = true
+    ld.outofstack = :local                          # LD->outofstack = (Stack)&LD->stacks.local
     err = try
         _sorun(gd, ld, "local_overflow", nothing)
         nothing

@@ -37,8 +37,8 @@ MUTANTS = [
          old="        return (true, SSU_CHOICE_CLAUSE)\n",
          new="        return (true, UInt32(0))\n"),
     dict(id="SSU1-N3 assert_term! drops the clause flags: an SSU clause compiles as `:-` (KILL a02, a03, a13r, c15)", file=C, targets=TA + TB,
-         old="    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)\n",
-         new="    clause = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, UInt32(0); ex=ex)\n"),
+         old="        rc = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, hflags; ex=ex)\n",
+         new="        rc = compileClause(gd, ld, h, b, proc, gd.modules[module_], warnings, UInt32(0); ex=ex)\n"),
     # ── pl-comp.c compileClause ──
     dict(id="SSU1-H1 head_unify without the SSU_CHOICE term: a dynamic `?=>` does not move (KILL a13c, a13r)", file=C, targets=TA,
          old="        (flags & SSU_CHOICE_CLAUSE) != 0 || (\n",
@@ -112,7 +112,7 @@ MUTANTS = [
     # flags, so the neck test is implied by the flags equality above it (tools/mutants/BP2r.py, BP2-Q9c/Q9d).
     # ── pl-supervisor.c chainPredicateSupervisor ──
     dict(id="SSU1-S1 `S_SSU_DET` not prepended (KILL the v-rows' supervisors, the call's refusal)", file=S, targets=TA + TB,
-         old="    if meta || (def.flags & P_SSU_DET) != 0         # ison(def, P_SSU_DET|P_DET) (P_DET: see above)\n",
+         old="    if meta || (def.flags & (P_SSU_DET | P_DET)) != 0   # ison(def, P_SSU_DET|P_DET)\n",
          new="    if meta\n"),
     # ── boot/init.pl's guard rewrite (the consult stand-in, D7) ──
     # SSU1-D1 removed with the code it mutated (d6faa3f7); ledger: evidence/MUTREFIT/deleted_mutants.tsv

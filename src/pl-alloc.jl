@@ -1,5 +1,6 @@
 # UPSTREAM: swipl-devel src/pl-alloc.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -69,8 +70,8 @@ end
 push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_overflow)
 
 # PORT: pl-alloc.c outOfStack as outOfStack!
-# DIVERGES: the local stack's, the only one that overflows here.
-#   * A SECOND overflow before the first is recovered from (`LD->outofstack` still set): upstream
+# DIVERGES: the stacks that overflow here are the local and the global one (`stack`, the name `LD->outofstack` keeps since G1-C).
+#   * A SECOND overflow OF THE SAME STACK before the first is recovered from (`LD->outofstack` still set): upstream
 #     prints a backtrace and ENDS THE PROCESS (`fatalError`), because it can no longer trust its
 #     state. A library must not end its host, so the kernel marks the local data `unusable` —
 #     `PL_open_query` refuses every later query on it — and throws a Julia error with upstream's
@@ -81,7 +82,7 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 #     until f3b-1 it was a value in `exception_bin`'s side entry (`SLOT_VALUE`). The frozen region is
 #     released when the outermost query ends (`_release_frozen!`, audit D-0029 (b)), as for every ball.
 # NOT PORTED: the backtraces and the low-spare message (the kernel prints nothing, decision 1);
-# `trim_stack_requested` (its readers are the stack garbage collector's, G1); the "no room for
+# the "no room for
 # exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled
 # first, so the five cells are always laid); the longjmp
 # of `STACK_OVERFLOW_THROW` — every caller that throws a local-stack overflow sets `LD->outofstack`
@@ -96,13 +97,18 @@ first is recovered from makes `ld` unusable and throws.
 function outOfStack!(
     ld::PL_local_data{T}, how::stack_overflow_action, stack::Symbol=:local
 )::Bool where {T}
-    if ld.outofstack                                # LD->outofstack == stack
+    if ld.outofstack === stack                      # LD->outofstack == stack (G1-C: the stack, no longer a flag)
         ld.unusable = true                          # (see above: no fatalError)
-        error("[Thread 1]: failed to recover from local-overflow: Sorry, cannot continue")
+        error(
+            "[Thread 1]: failed to recover from ",
+            stack,
+            "-overflow: Sorry, cannot continue"
+        )   # s->name
     end
     enableSpareStacks!(ld)
+    ld.trim_stack_requested = true                  # LD->trim_stack_requested = true (pl-alloc.c:695)
     ld.exception_processing = true
-    ld.outofstack = true
+    ld.outofstack = stack                           # LD->outofstack = stack
     ctx = push_overflow_context(T, stack)           # word ctx = push_overflow_context(s, 6)
     p = allocGlobalCells!(ld, 5)                    # Word p = gTop; … gTop += 5 (see (*) upstream)
     ld.gstack[p] = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :error)), 2)   # p[0] = FUNCTOR_error2
@@ -144,17 +150,43 @@ end
     (ld.lMax + ld.local_spare) + (ld.gTop + g + ld.global_spare) +
     (length(ld.trail) + ld.trail_spare)
 
+# PORT: pl-incl.h hasStackSpace
+# (pl-incl.h:2662-2664 at the pin:
+#     #define hasStackSpace(g, t) \
+#             (hasGlobalSpace_((g)+BIND_GLOBAL_SPACE) && \
+#              hasTrailSpace(t+BIND_TRAIL_SPACE))
+# )
+# DIVERGES (G1-C3): the global stack's "room" is `ensureGlobalSpace`'s full test below: the vector has room for `g` cells (past its end
+# is upstream's `gTop+g > gMax`: it grows on demand) and the three stacks with `g` more stay within the limit (not tested while an
+# exception is processed: upstream's spare stacks), as `ensureGlobalSpace` measures it: no `BIND_GLOBAL_SPACE` margin, and no trail part (the trail grows on demand: never full). Its caller is the VM's `@ENSURE_GLOBAL_SPACE`.
+"Do `g` more global cells fit without growing the stack or passing the limit (pl-incl.h `hasStackSpace`)?"
+@inline hasStackSpace(ld::PL_local_data, g::Int)::Bool =
+    ld.gTop + g <= length(ld.gstack) &&
+    (_stacks_in_use(ld, g) <= ld.stacks_limit || ld.exception_processing)
+
 # PORT: pl-gc.h ensureGlobalSpace
-# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036): no garbage collection to try (`ALLOW_GC`) and
-# nothing to shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
+# DIVERGES (since L1f f2, audit D-0029 D1 (a), D3 (a), D-0036; the garbage collection of `ALLOW_GC` is the hook `considerGC` below, src/pl-gc.jl, the collector `garbageCollect`, src/pl-gcdriver.jl): nothing to
+# shift — the stack grows on demand (`_growGlobalStack!`) — so the check is the LIMIT: the three
 # stacks with `n` more cells within `stacks_limit` (`_stacks_in_use`), else the overflow is raised
 # (`resource_error(stack)`). While an exception is processed no request is refused: upstream's
 # `grow_stacks` in its error condition raises the limit to the need plus 1 MiB (pl-gc.c:5381,
 # `EMERGENCY_LIMIT`) for every request, so none fails for the limit (since L1f f1b: the audit's D-0042 traced).
 # The handler itself runs after `resumeAfterException` (processing cleared): under the limit again.
-"Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`)."
-function ensureGlobalSpace(ld::PL_local_data, n::Int)::Bool
-    (_stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing) && return true
+# G1-GC safe point: `flags` (default 0 = no collection: every site not ruled SAFE in docs/g1gc_safe_points.md) and `site` (the name of the
+# audit table's row, recorded under `ld.gc_force`). With `ALLOW_GC` the order is upstream's `f_ensureStackSpace` (pl-gc.c:4707-4719): when the
+# area is full (here: `gTop + n` past the vector, or the limit passed) or the collector is forced, the hook `considerGC` runs, and the limit is
+# checked AFTER it (a collection that gained room lets the call through). A collection that finds nothing to give back leaves the check as it was.
+"Make room for `n` cells above `gTop` within the limit, or raise the global overflow (pl-gc.h `ensureGlobalSpace`); `flags` `ALLOW_GC` lets the stack collector run first at a site the audit rules SAFE."
+function ensureGlobalSpace(
+    ld::PL_local_data, n::Int, flags::Int=0, site::Symbol=:ensureGlobalSpace
+)::Bool
+    fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing
+    if (flags & ALLOW_GC) != 0 && (ld.gc_force || ld.gTop + n > length(ld.gstack) || !fits)
+        if considerGC(ld, flags, GC_GLOBAL_OVERFLOW, site)   # G1-GC safe point: garbageCollect(GC_GLOBAL_OVERFLOW)
+            fits = _stacks_in_use(ld, n) <= ld.stacks_limit || ld.exception_processing   # hasGlobalSpace(n) again (pl-gc.c:4714-4719)
+        end
+    end
+    fits && return true
     return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
 end
 
@@ -182,8 +214,8 @@ end
 # PORT: pl-alloc.c allocGlobal as allocGlobalCells!
 # DIVERGES: allocates `n` cell VARIABLES (L1a): each cell unbound (`setVar`); returns the first
 # cell's position, the others follow it (upstream returns its address). Growth is
-# `_growGlobalStack!`'s, the only allocating path; no garbage collection (`ensureGlobalSpace`'s
-# `ALLOW_GC`) until pl-gc.c's collector is ported (the GC step, since L1).
+# `_growGlobalStack!`'s, the only allocating path; no garbage collection here (a caller that may collect passes `ALLOW_GC` to
+# `ensureGlobalSpace` first, as upstream's).
 "Allocate `n` fresh variables on the global stack; the position of the first (pl-alloc.c `allocGlobal`)."
 function allocGlobalCells!(ld::PL_local_data{T}, n::Int)::Int where {T}
     p = ld.gTop + 1
@@ -199,10 +231,14 @@ end
 # ORIGINAL: the global stack's growth (upstream: `growStacks`, pl-gc.c, which shifts the stacks):
 # the vector grows to hold position `top`, doubling. No cap of its own: `stacks_limit` governs, where
 # the callers check it (`ensureGlobalSpace`, `allocGlobalNoShift`: L1f f2).
+# DIVERGES (G1, audit D-0966 (2); see `growStacks!`, src/pl-gc.jl): a growth to a size past `GLOBAL_INITIAL` ticks
+# `shift_status.global_shifts` (pl-gc.c:5496-5497 `if ( g ) LD->shift_status.global_shifts++` at 18168e62); the growths up to it
+# stand for upstream's initial allocation (pl-setup.c:1599/1605), not shifts, so a fresh engine reads 0 as swipl's does.
 "Grow the global stack to hold at least `top` cells."
 @noinline function _growGlobalStack!(ld::PL_local_data, top::Int)::Nothing
     n = max(top, 2 * length(ld.gstack), 1024)
     resize!(ld.gstack, n)
+    n > GLOBAL_INITIAL && (ld.shift_status.global_shifts += 1)   # if ( g ) LD->shift_status.global_shifts++ (pl-gc.c:5496-5497)
     return nothing
 end
 
@@ -224,7 +260,8 @@ end
 # DIVERGES (TH1): the thread parts are unwritten by design: upstream's `MallocExtension_MarkThreadTemporarilyIdle`,
 # `_MarkThreadIdle` and `_MarkThreadBusy` tell tcmalloc what this thread does (weak symbols, no Prolog-visible effect), and
 # `garbageCollect(GC_USER)` with `trim_stack_requested` set may notify the background GC thread; the kernel has one engine
-# and no collector (`pl_garbage_collect`, src/pl-gc.jl: nothing to collect), so `long` trims the stacks as the collector's
+# and the idle `garbageCollect(GC_USER)` is not wired (the NO-COUNTERPART row of docs/g1gc_safe_points.md; `pl_garbage_collect`, src/pl-gc.jl, is the
+# collector's one entry from Prolog), so `long` trims the stacks as the collector's
 # trim request would (`trimStacks!`) and `short` trims them as upstream's `trimStacks(true)`. As upstream, a `How` that is
 # neither atom `short` nor atom `long` does the housekeeping of neither and still runs `Goal`; a `How` that is no atom raises
 # `type_error(atom, How)` before `Goal` runs. `Goal` runs in the context module as `sig_atomic/1`'s does (`callProlog(NULL, …)`),
@@ -240,7 +277,11 @@ function pl_thread_idle2_va(
     if sym_key(how) == sym_key(mk_sym(T, :short))
         trimStacks!(ld, true)                           # trimStacks(true)
     elseif sym_key(how) == sym_key(mk_sym(T, :long))
-        trimStacks!(ld, true)                           # LD->trim_stack_requested = true; garbageCollect(GC_USER)
+        # DIVERGES (G1): upstream's sequence is `LD->trim_stack_requested = true; garbageCollect(GC_USER); LD->trim_stack_requested = false`
+        # (pl-alloc.c:1880): the collection, whose end does the trim. Here the trim only (`trimStacks!(ld, true)`), by the dispatcher's ruling:
+        # a collection the collector declines (blocked or off, `garbageCollect` returns without reaching its trim) would otherwise leave
+        # the stacks untrimmed, and `long` exists to trim them. No Prolog-visible difference but which cells a `long` idle moves.
+        trimStacks!(ld, true)
     end
 
     rc = callProlog(_query_gd(ld), ld, 0, A1, PL_Q_PASS_EXCEPTION)

@@ -4,6 +4,7 @@
 # UPSTREAM: swipl-devel src/os/pl-locale.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -252,6 +253,7 @@ mutable struct PL_global_data{T}
     signals_handlers::Vector{sig_handler{T}}                    # signals.handlers: how Prolog receives signals, by `SIGNAL_INDEX` (Q10; initSignals! in src/pl-setup.jl)
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
+    procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -438,6 +440,158 @@ mutable struct ld_statistics
 end
 ld_statistics() = ld_statistics(0, 0, 0, 0, WallTime(), 0.0, 0.0, 0.0, 0.0)
 
+# ---- the records of one stack collection (G1-GC; moved here from pl-gcmark.jl, pl-gcwalk.jl, pl-gctrail.jl and
+#      pl-gcsweep.jl by ALLOC-FIX d, audit D-0971 (4), so `ld_gc` can hold one of each) ----
+"""
+    gc_mark_counts()
+
+The counters of one mark phase (upstream's `LD->gc.*` / `total_marked` / `needs_relocation`
+statistics): `total_marked` (cells marked on the global stack; a local start cell nets 0),
+`needs_relocation` (references to relocate; consumed by G1-5), `local_marked` (marked local cells),
+`trailcells_deleted` (trail entries zeroed by early reset).
+"""
+mutable struct gc_mark_counts
+    total_marked::Int
+    needs_relocation::Int
+    local_marked::Int
+    trailcells_deleted::Int
+    gc_mark_counts() = new(0, 0, 0, 0)
+end
+
+# PORT: pl-gc.c vm_state
+# DIVERGES: the registers are POSITIONS (a slot position, a frame base; 0 = NULL), not pointers; an ARGP
+# in write mode on the global stack is stored as 0 (marking never reads it at `adepth > 0`). G1-2 builds
+# this at the safe point (get_vmi_state); `frame`/`choice` are indexes into ld.frames/ld.choices (0 = none).
+"""
+    vm_state()
+
+The state of the VM at the safe point (pin `vm_state`): the frame and choicepoint being run, the program
+counter (`pc`, an index into the frame's clause codes), the start of the VMI (`pc_start_vmi`), `argp` and
+`argp0` (positions), `adepth`, `lSave`/`lNext` (positions), the `new_args` count, the number of UWRITE
+argument-stack entries (`uwrite_count`), `save_argp` and `in_body`.
+"""
+mutable struct vm_state
+    frame::Int
+    choice::Int
+    pc::Int
+    pc_start_vmi::Int
+    argp::Int
+    argp0::Int
+    adepth::Int
+    lSave::Int
+    lNext::Int
+    new_args::Int
+    uwrite_count::Int
+    save_argp::Bool
+    in_body::Bool
+    vm_state() = new(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, false)
+end
+
+# PORT: pl-gc.c mark_state
+# DIVERGES: `flictx` is the index of the innermost foreign frame to mark, `reset_entry` the trail index
+# early reset has reached (upstream: pointers into the foreign-frame and trail chains).
+mutable struct mark_state
+    vm::vm_state
+    flictx::Int
+    reset_entry::Int
+    mark_state(vm::vm_state) = new(vm, 0, 0)
+end
+
+# PORT: pl-gc.c walk_state as gc_walk_state
+# DIVERGES: `GCM_ACTIVE`/`GCM_CHOICE` and the bit vectors `active`/`clear` belong to the ACTIVE walk of
+# pl-gc.jl (`walk_state`), so there are no bit vectors here and `clear_choice_mark`/`mark_choice_mark`
+# (which act under `GCM_CHOICE` only) are no-ops of this walk; `c0` (debug output) is not carried.
+# `frame` is an index, `base` its position, `envtop` and `ARGP` are POSITIONS of the local stack, `arity`
+# is `frame->predicate->functor->arity` (for `I_CALLCLEANUP` and the others).
+"The state of one `walk_and_mark_gc` (pl-gc.c `walk_state`, the stack collector's fields)."
+mutable struct gc_walk_state
+    frame::Int                  # LocalFrame frame: processing node (index)
+    base::Int                   # the frame's position
+    arity::Int                  # frame->predicate->functor->arity
+    flags::Int                  # general flags (GCM_*)
+    envtop::Int                 # Word envtop: just above environment (position)
+    unmarked::Int               # size_t unmarked: left when marking alt clauses
+    ARGP::Int                   # Word ARGP: head unify instructions (position)
+    adepth::Int                 # int adepth: ARGP nesting
+end
+
+"""
+    gc_trail_state()
+
+The bookkeeping of the trail across one collection: `top` the index of the sentinel word (upstream
+`tTop`), `tagged` whether the entries are in the tagged form, and the counters `values` (value entries
+seen by `tag_trail`), `zeroed` (deleted entries `compact_trail` removed), `kept` (entries it kept) and
+`chains` (relocation chains it unwound).
+"""
+mutable struct gc_trail_state
+    top::Int
+    tagged::Bool
+    values::Int
+    zeroed::Int
+    kept::Int
+    chains::Int
+    gc_trail_state() = new(0, false, 0, 0, 0, 0)
+end
+
+# ---- the counters of one sweep (upstream's `relocation_chains`, `relocation_cells`, `alien_relocations`,
+#      `marks_swept` and `relocated_cells` globals of the collector) ----
+mutable struct gc_sweep_counts
+    relocation_chains::Int
+    relocation_cells::Int
+    alien_relocations::Int
+    marks_swept::Int
+    relocated_cells::Int
+    gc_sweep_counts() = new(0, 0, 0, 0, 0)
+end
+
+# PORT: pl-global.h gc as ld_gc
+# DIVERGES: `LD->gc` is `{inferences, status, [marked_attvars], active, stats}`; here also the three stacks' policies (the kernel's stacks are
+# not structs: `global_policy`, `trail_policy`, `local_policy`, `init_stack`/`gcPolicy` values, pl-setup.c:1584, :1690) and `sig_pending`, the
+# bitmask standing in for `LD->signal.pending` (no signal machinery here: `raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl). `marked_attvars`
+# (O_CALL_RESIDUE) is left to G1-3's mark phase.
+"The stack collector's state of one thread (pl-global.h `LD->gc`, G1-GC G1-1)."
+mutable struct ld_gc
+    inferences::Int64                                           # inferences at the last collection
+    status::pl_gc_status_t                                      # blocked, active
+    active::Int                                                 # gc/0 is running (`LD->gc.active`)
+    stats::gc_stats                                             # the collections' statistics
+    global_policy::gc_stack_policy                              # ORIGINAL: `LD->stacks.global`'s policy
+    trail_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.trail`'s policy
+    local_policy::gc_stack_policy                               # ORIGINAL: `LD->stacks.local`'s policy
+    sig_pending::UInt64                                         # ORIGINAL: the pending virtual signals, bit `sig - SIG_PROLOG_OFFSET`
+    # ORIGINAL (ALLOC-FIX d, audit D-0971 (4)): the records of ONE collection, kept here and RESET at each use, so a
+    # collection allocates nothing. Upstream keeps the counters in `LD->gc` (pl-gc.c:132-151 at the pin 18168e62:
+    # `_total_marked`, `_needs_relocation`, `_local_marked`, `_trailcells_deleted`, `_relocation_*`, ...); `vm_state`,
+    # `mark_state` and `walk_state` are C stack locals of garbageCollect, mark_stacks and mark_environments. A collection
+    # never nests (`blockGC`); a PARENT query's VM state (the walk into the parent of a nested query) is a FRESH object, as
+    # it is live together with `vm`.
+    vm::vm_state                                                # the safe point's VM state (gc_get_vmi_state, get_vmi_state of `ld.query`)
+    mark::mark_state                                            # mark_stacks's state
+    walk::gc_walk_state                                         # the walk of mark_environments / mark_alt_clauses
+    mark_counts::gc_mark_counts                                 # garbageCollect's mark counters
+    sweep_counts::gc_sweep_counts                               # garbageCollect's sweep counters
+    trail_state::gc_trail_state                                 # gc_trail_begin!'s state
+end
+function ld_gc()
+    vm = vm_state()
+    return ld_gc(
+        0,
+        pl_gc_status_t(),
+        0,
+        gc_stats(),
+        gc_stack_policy(true),
+        gc_stack_policy(true),
+        gc_stack_policy(false),
+        UInt64(0),
+        vm,
+        mark_state(vm),
+        gc_walk_state(0, 0, 0, 0, 0, 0, 0, 0),
+        gc_mark_counts(),
+        gc_sweep_counts(),
+        gc_trail_state()
+    )
+end
+
 # PORT: pl-global.h tabling as tbl_restraint
 # DIVERGES: the anonymous `LD->tabling.restraint` struct is its own type; a `size_t` is an `Int` (`(size_t)-1`, no limit, is -1).
 # The defaults are upstream's `initTabling` (pl-tabling.c:12696-12706): `error` for the five actions, no limit for the five
@@ -573,8 +727,8 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # upstream field, the writers' meter. The `exception.*`
 # fields are term references (`term_t`), allocated by `emptyStacks` as upstream allocates them.
 # The local stack's `spare` and `def_spare` are `stacks.local`'s, in positions (since V5d); the global
-# stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack` for the one stack that can
-# overflow, the local stack, so a flag. `unusable` has no upstream field: a second overflow of the
+# stack's and the trail's since L1f f1b (audit D-0042): reserves counted in the one limit (`_stacks_in_use`). `outofstack` is upstream's `LD->outofstack`: the stack we are out of, by the name the stack code uses
+# (`:local`, `:global`; `nothing` is NULL; G1-C, dispatcher decision 2, where it was a flag for the local stack). `unusable` has no upstream field: a second overflow of the
 # local stack before the first is recovered from marks the engine broken, where upstream ends the
 # process (`outOfStack`, src/pl-alloc.jl; user, 2026-10-07).
 # `GD` is the database of the query `PL_open_query` opened last (since V9c): upstream's code reaches
@@ -603,7 +757,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # (`emptyStacks!` makes them, with PERMANENT cells as the exception's: audit D-0122 Q1 (a)), and
 # `attvars`, the chain of attributed variables (`register_attvar`, `reclaim_attvars`) as a global
 # position, 0 for NULL. Since AV9 `call_residue_vars_count` (call_residue_vars/2's nesting:
-# `trail_new_attvar`, src/pl-attvar.jl). NOT PORTED: `gc_attvars` (the collector's, G1).
+# `trail_new_attvar`, src/pl-attvar.jl). `gc_attvars`, the collector's reference to the newest attvar link, is no field: `save_grefs` makes it for the length of a collection (src/pl-gcmark.jl, DIVERGES there).
 # Since R2 F1a: `prolog_flag_mask` (`LD->prolog_flag.mask`, a copy of the database's) and `prolog_flag_enums`,
 # the pool of current_prolog_flag/2's states.
 # Since R2 CONT1: the five `procedures_*` fields `reset3`, `dtbl_reset6`, `call_continuation1`, `dmeta_call1` (set by
@@ -628,6 +782,10 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
 # Since R2 TOP1b A: `break_level` (`LD->break_level`, pl-setup.c:199: -1 outside a toplevel; `currentBreakLevel`, src/pl-pro.jl), appended last.
 # Since TR2: `trie_gens`, the pool of trie_gen/2,3's states (`trie_gen_state`, pl-incl.jl; upstream keeps them on the C stack, then `allocForeignState`), appended last;
 # `trie_gen_force_epoch` (ORIGINAL, a test switch; a module-level `Ref` would be shared state, which the lint refuses), appended after it.
+# Since G1-GC G1-2: `gc_force` (ORIGINAL, pl-vmi.c:238 FAKE_GC's model: every `ALLOW_GC` safe point runs `considerGC`) and `gc_safe_hits` (ORIGINAL: the
+# site names at which it fired while forced; docs/g1gc_safe_points.md), appended last.
+# Since G1-GC G1-1: `gc` (`LD->gc`: `ld_gc`, the statistics, the stacks' policies, the pending-signal bits) and `shift_status` (`LD->shift_status`,
+# `pl_shift_status_t`, pl-incl.jl), appended after G1-2's two.
 # Since R2 F1c: `debugstatus_skiplevel`, `debugstatus_tracing`, `debugstatus_debugging`, `debugstatus_showContext` (`LD->_debugstatus`, pl-incl.h
 # `pl_debugstatus_t`; the flags `debug`, `debugger_show_context`: src/os/pl-prologflag.jl, `debugmode`, `tracemode`: src/pl-trace.jl).
 # (the input context stack is LB3's `input_context_stack`, which `'\$push_input_context'/1` shares; src/os/pl-file.jl).
@@ -738,8 +896,9 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     tmp_top::Int                                                # tmp.top
     tmp_cells::Int                                              # (tmp.h[0]'s PERMANENT cell; tmp.h[i]'s +i, as exception_cells)
     exception_processing::Bool                                  # exception.processing
-    outofstack::Bool                                            # outofstack (the local stack)
+    outofstack::Union{Nothing, Symbol}                          # outofstack: the Stack we are out of (nothing: NULL)
     unusable::Bool                                              # (after a second overflow)
+    trim_stack_requested::Bool                                  # trim_stack_requested (G1-A): perform a trim-stack
     fast_condition::Int                                         # fast_condition (0: NULL; an index)
     chp_scratch::ClauseChoice{T}                                # (a C-stack clause_choice)
     placeholder::T                                              # (argp_t's unread term)
@@ -805,6 +964,11 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     undo_scheduled::Vector{UInt64}                              # undo.scheduled: the undo blobs waiting to run (empty: upstream's NULL buffer; TX1e)
     undo_running::Int                                           # undo.running: undo goals are running (TX1e)
     coverage::ld_coverage{T}                                    # coverage: the data and the active count; '$cov_data'/3's states (lane F)
+    gc_force::Bool                                              # ORIGINAL (FAKE_GC's model, pl-vmi.c:238): every ALLOW_GC safe point runs the hook (G1-2)
+    gc_safe_hits::Vector{Symbol}                                # ORIGINAL: the sites at which the hook fired while `gc_force` (G1-2)
+    gc::ld_gc                                                   # gc: the stack collector's state (G1-1)
+    shift_status::pl_shift_status_t                             # shift_status: the shifter's counters (G1-1)
+    trail_size::Int                                             # ORIGINAL stacks.trail's size in entries, MODELLED: the trail vector has no capacity; only `_growTrail!`'s shift count reads it (G1, D-0966)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -870,7 +1034,7 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         DEPTH_NO_LIMIT, 0,                      # depth_info: limit (pl-setup.c: DEPTH_NO_LIMIT), reached
         INFERENCE_NO_LIMIT,                     # inference_limit.limit (pl-setup.c: INFERENCE_NO_LIMIT)
         0, 0, 0,                                # tmp: set by emptyStacks!
-        false, false, false, 0,
+        false, nothing, false, false, 0,        # exception.processing, outofstack, unusable, trim_stack_requested, fast_condition
         ClauseChoice{T}(nothing, word(0)), e,
         gd,                                     # GD: the engine's database (PL_open_query sets it again)
         source_location{T}(nothing, IOPOS()),
@@ -932,7 +1096,12 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         0,                                      # undo.undo_list: set by emptyStacks! (TX1e)
         UInt64[],                               # undo.scheduled: none (TX1e)
         0,                                      # undo.running: no undo goal runs (TX1e)
-        ld_coverage{T}()                        # coverage: no data, not active (pl-global.c: zero)
+        ld_coverage{T}(),                       # coverage: no data, not active (pl-global.c: zero)
+        false,                                  # gc_force: off (G1-2)
+        Symbol[],                               # gc_safe_hits: none (G1-2)
+        ld_gc(),                                # gc: nothing collected, policies at init_stack's (G1-1)
+        pl_shift_status_t(),                    # shift_status: nothing shifted (G1-1)
+        0                                       # trail_size: set by allocStacks! (G1, D-0966)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)
@@ -979,6 +1148,14 @@ end
 # setup:1600 `minlocal = 4*SIZEOF_WORD K`: the local stack a thread starts with, here in positions.
 "The positions of a new local stack (pl-setup.c `allocStacks`'s `minlocal`, in words)."
 const LOCAL_INITIAL = 4096
+
+# setup:1599/1605 `minglobal = 8*SIZEOF_WORD K`, `iglobal = nextStackSizeAbove(minglobal-1)`: 64 KB, here in words.
+"The words of a new global stack (pl-setup.c `allocStacks`'s `iglobal`): a growth past it is a shift (G1)."
+const GLOBAL_INITIAL = 8192
+
+# setup:1601/1604 `mintrail = 4*SIZEOF_WORD K`, `itrail = nextStackSizeAbove(mintrail-1)`: 32 KB, here in entries.
+"The entries of a new trail (pl-setup.c `allocStacks`'s `itrail`): the modelled `trail_size` starts here (G1)."
+const TRAIL_INITIAL = 4096
 
 # The `stack_limit` flag's default, 1 GiB (swipl 10.1.16: `1073741824`), here in positions.
 "The default `stacks_limit`, in positions: `stack_limit`'s default of 1 GiB, in words."

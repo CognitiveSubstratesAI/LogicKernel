@@ -651,6 +651,7 @@ trailValP(e::word)::Int = Int(e >> 3)
     BOOLEX_FALSE = 0            # logical failure (= `false`)
     LOCAL_OVERFLOW = -1         # Local stack overflow
     GLOBAL_OVERFLOW = -2        # Global stack overflow (L1f f2)
+    CHECK_INTERRUPT = -7        # Procedure was signalled (G1-C: the analysis' interrupt test, pl-comp.c:971-974)
     DO_COMPOUND = -8            # need more general algorithm
     NOT_CALLABLE = -9           # pl-comp.c
     MAX_ARITY_OVERFLOW = -10    # pl-comp.c
@@ -1769,9 +1770,33 @@ const MINFOREIGNSIZE = 32
 "The space a call keeps free above `lTop`: a frame, its arguments and one choice point (pl-incl.h)."
 const LOCAL_MARGIN = SIZEOF_LOCALFRAME + MAXARITY + SIZEOF_CHOICE
 
+# PORT: pl-incl.h ALLOW_GC
+# G1-GC safe point: the flag of a call that may run the stack collector; passed only at the sites docs/g1gc_safe_points.md rules SAFE.
+"`ensureGlobalSpace` and friends may run the stack garbage collector (pl-incl.h)."
+const ALLOW_GC = 1
+
 # PORT: pl-incl.h ALLOW_SHIFT
 "`growLocalSpace` may grow the stacks (pl-incl.h)."
 const ALLOW_SHIFT = 2
+
+# PORT: pl-incl.h GC_GLOBAL_OVERFLOW
+"The reason bits of a collection (pl-incl.h `GC_*`): the global stack overflowed."
+const GC_GLOBAL_OVERFLOW = 0x1
+# PORT: pl-incl.h GC_GLOBAL_REQUEST
+"Reason: the global stack asked for more room (pl-incl.h)."
+const GC_GLOBAL_REQUEST = 0x100
+# PORT: pl-incl.h GC_TRAIL_OVERFLOW
+"Reason: the trail overflowed (pl-incl.h)."
+const GC_TRAIL_OVERFLOW = 0x10000
+# PORT: pl-incl.h GC_TRAIL_REQUEST
+"Reason: the trail asked for more room (pl-incl.h)."
+const GC_TRAIL_REQUEST = 0x1000000
+# PORT: pl-incl.h GC_EXCEPTION
+"Reason: a collection while an exception unwinds (pl-incl.h)."
+const GC_EXCEPTION = 0x100000000
+# PORT: pl-incl.h GC_USER
+"Reason: `garbage_collect/0` and friends (pl-incl.h)."
+const GC_USER = 0x10000000000
 
 # PORT: pl-incl.h FR_HIDE_CHILDS
 "Frame flag: the predicate's children are hidden, after `I_DEPART` (pl-incl.h)."
@@ -1926,9 +1951,14 @@ const WAKEUP_STATE_SKIP_EXCEPTION = UInt32(0x4)
 "Wakeup-state flag: keep the most urgent exception (pl-incl.h)."
 const WAKEUP_KEEP_URGENT_EXCEPTION = UInt32(0x8)
 
+# PORT: pl-incl.h ALERT_SIGNAL
+# DIVERGES: the pending signals are the collector's two virtual ones (`ld.gc.sig_pending`, src/pl-gc.jl; G1-C, dispatcher decision 1).
+"Alert bit: a signal is pending (pl-incl.h `ALERT_SIGNAL`)."
+const ALERT_SIGNAL = Int32(0x001)
+
 # PORT: pl-incl.h ALERT_WAKEUP
-# NOT PORTED: the other `ALERT_*` bits (signals, GC, profiling, the debugger, buffered output, …) — nothing here
-# sets them; `LD->alerted` carries the wakeup bit, since TX1e the undo bit and, since P3, the two limit bits.
+# NOT PORTED: the other `ALERT_*` bits (profiling, the debugger, buffered output, exit requests, coverage, …) — nothing here
+# sets them; `LD->alerted` carries the signal and the wakeup bits (G1-C), since TX1e the undo bit and, since P3, the two limit bits.
 "Alert bit: the wakeup list is not empty (pl-incl.h `ALERT_WAKEUP`)."
 const ALERT_WAKEUP = Int32(0x040)
 
@@ -1957,12 +1987,32 @@ const INFERENCE_NO_LIMIT = typemax(Int)
 
 # PORT: pl-incl.h wakeup_state
 # DIVERGES: an immutable value `saveWakeup` returns, where upstream fills the caller's struct;
-# `outofstack` is a flag (the local stack's, as `LD->outofstack` here).
+# `outofstack` is `LD->outofstack` (G1-C: the stack's name or `nothing`) as a one-byte CODE (`_stack_code`), so that
+# the struct is bits-only: with a `Symbol` field `saveWakeup`'s value was a heap object, one allocation per call
+# (G1 chunk 8a; findall/3's and bagof/3's cleanup calls it once, the pins of test_zero_exports.jl).
 "What `saveWakeup` set aside (pl-incl.h `wakeup_state`): its foreign frame, `outofstack`, the flags."
 struct wakeup_state
     fid::Int                                # foreign frame reference
-    outofstack::Bool                        # Stack we are out of
+    outofstack::UInt8                       # Stack we are out of, as `_stack_code` (0: none)
     flags::UInt32                           # WAKEUP_STATE_*
+end
+
+"`LD->outofstack` (`nothing` or the stack's name: `:local`, `:global`, `:trail`) as the byte `wakeup_state` keeps."
+function _stack_code(stack::Union{Nothing, Symbol})::UInt8
+    stack === nothing && return 0x00
+    stack === :local && return 0x01
+    stack === :global && return 0x02
+    stack === :trail && return 0x03
+    error("_stack_code: no such stack: ", stack)
+end
+
+"The inverse of [`_stack_code`](@ref)."
+function _stack_name(code::UInt8)::Union{Nothing, Symbol}
+    code == 0x00 && return nothing
+    code == 0x01 && return :local
+    code == 0x02 && return :global
+    code == 0x03 && return :trail
+    error("_stack_name: no such stack code: ", code)
 end
 
 # The VM's argument pointer — upstream's `Word ARGP` register (pl-wam.c), which points at "the
@@ -3626,3 +3676,106 @@ mutable struct tbl_status{T}
     iap::Bool                                           # We are in assert propagation
 end
 tbl_status{T}() where {T} = tbl_status{T}(nothing, nothing, false, false, false)
+
+# ── the stack collector's statistics (G1-GC, piece G1-1; pl-incl.h:1592-1630, :2546, :2354-2411, :2756-2772) ──
+# PORT: pl-incl.h SMALLSTACK
+"The `small` of a stack's collection policy: below this many bytes above the last collection no request is made (pl-incl.h `SMALLSTACK`, `32 * 1024`)."
+const SMALLSTACK = 32 * 1024
+
+# PORT: pl-incl.h GC_FAST_POLICY
+"The only stack policy (pl-incl.h `GC_FAST_POLICY`: \"not really used yet\")."
+const GC_FAST_POLICY = 1
+
+# PORT: pl-incl.h GC_STAT_WINDOW_SIZE
+"How many collections the statistics keep (`gc_stats.last`) and how many aggregates (`gc_stats.aggr`) (pl-incl.h)."
+const GC_STAT_WINDOW_SIZE = 3
+
+# PORT: pl-incl.h SIG_PROLOG_OFFSET
+"The number of the first Prolog (virtual) signal (pl-incl.h)."
+const SIG_PROLOG_OFFSET = 32
+
+# PORT: pl-incl.h SIG_GC
+# DIVERGES: the kernel's signals are the collector's virtual ones: the number names a bit of `ld_gc.sig_pending`
+# (`raiseGcSignal!`, `pendingGcSignal`, src/pl-gc.jl), served by `handleSignals` (src/pl-setup.jl; G1-C). `VSIG_GC` is 1 (the enum order is ATOM_GC, GC, THREAD_SIGNAL, CLAUSE_GC, then the unwind and halt signals, TUNE_GC).
+"The virtual signal asking the run loop to collect (`SIG_PROLOG_OFFSET + VSIG_GC`, pl-incl.h)."
+const SIG_GC = SIG_PROLOG_OFFSET + 1
+
+# PORT: pl-incl.h SIG_TUNE_GC
+"The virtual signal asking for the `prolog:tune_gc/3` hook (`SIG_PROLOG_OFFSET + VSIG_TUNE_GC`, pl-incl.h)."
+const SIG_TUNE_GC = SIG_PROLOG_OFFSET + 6
+
+# PORT: pl-incl.h gc_stat
+# DIVERGES: `local` is a Julia keyword: the field is `local_used`; `size_t` is `Int`, `gc_reason_t` (`uint64_t`) is `UInt64`.
+"The numbers of one collection (pl-incl.h `struct gc_stat`): the stacks' used bytes before and after, the CPU times, the reason bits."
+mutable struct gc_stat
+    global_before::Int                                          # global stack before
+    global_after::Int                                           # global stack after
+    trail_before::Int                                           # trail stack before
+    trail_after::Int                                            # trail stack after
+    local_used::Int                                             # local stack (`local`)
+    gc_time::Float64                                            # time spent on last GC
+    prolog_time::Float64                                        # real work CPU before this GC
+    reason::UInt64                                              # gc_reason_t
+end
+gc_stat() = gc_stat(0, 0, 0, 0, 0, 0.0, 0.0, UInt64(0))
+
+# PORT: pl-incl.h gc_stats as gc_totals
+# DIVERGES: the anonymous `totals` struct is its own type (`gc_totals`); the arrays are vectors of GC_STAT_WINDOW_SIZE `gc_stat`s; the two ring
+# indexes stay 0-based as upstream (`last[last_index + 1]`).
+"The running totals of the stack collector (pl-incl.h `gc_stats.totals`)."
+mutable struct gc_totals
+    collections::Int64                                          # # garbage collections
+    global_gained::Int64                                        # global stack bytes gained
+    trail_gained::Int64                                         # trail stack bytes gained
+    time::Float64                                               # time spent in GC
+end
+gc_totals() = gc_totals(0, 0, 0, 0.0)
+
+# PORT: pl-incl.h gc_stats
+"The statistics of the stack collector of one thread (pl-incl.h `struct gc_stats`): the last three collections, the aggregates over them, the CPU clock, the pending request."
+mutable struct gc_stats
+    last::Vector{gc_stat}                                       # window of the last collections
+    aggr::Vector{gc_stat}                                       # aggregates over `last`
+    last_index::Int                                             # next entry of `last` (0-based)
+    aggr_index::Int                                             # next entry of `aggr` (0-based)
+    thread_cpu::Float64                                         # thread CPU time at the last gc_stat_start/end
+    request::UInt64                                             # gc_reason_t: why a collection was requested
+    totals::gc_totals
+end
+gc_stats() = gc_stats(
+    [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE],
+    [gc_stat() for _ in 1:GC_STAT_WINDOW_SIZE], 0, 0, 0.0, UInt64(0), gc_totals()
+)
+
+# PORT: pl-incl.h pl_gc_status_t
+"The collector's blocking state (pl-incl.h `pl_gc_status_t`): `blocked` counts `blockGC` calls, `active` is set while it runs."
+mutable struct pl_gc_status_t
+    blocked::Int                                                # GC is blocked
+    active::Bool                                                # GC is active
+end
+pl_gc_status_t() = pl_gc_status_t(0, false)
+
+# PORT: pl-incl.h pl_shift_status_t
+"The stack shifter's state (pl-incl.h `pl_shift_status_t`): the time spent shifting, the inference count it last ran at, whether it is blocked, how many shifts of each stack."
+mutable struct pl_shift_status_t
+    time::Float64                                               # time spent in stack shifts
+    inferences::Int64                                           # inferences when last shifted (uint64_t)
+    blocked::Int                                                # shifting is blocked
+    local_shifts::Int                                           # # local stack shifts
+    global_shifts::Int                                          # # global stack shifts
+    trail_shifts::Int                                           # # trail stack shifts
+end
+pl_shift_status_t() = pl_shift_status_t(0.0, 0, 0, 0, 0, 0)
+
+# ORIGINAL: the collection policy of one stack (upstream keeps it in `struct stack`: `gc`, `small`, `factor`, `gced_size`, `policy`; the kernel's stacks
+# are not structs, so `ld_gc` holds three of these). Initial values are `init_stack`'s (pl-setup.c:1584) and `gcPolicy`'s (:1690-1704).
+"The garbage-collection policy of one stack (`struct stack`'s `gc`, `small`, `factor`, `gced_size`, `policy`, pl-incl.h)."
+mutable struct gc_stack_policy
+    gced_size::Int                                              # size after last GC
+    small::Int                                                  # Stack is small
+    factor::Int                                                 # How eager we are
+    gc::Bool                                                    # Can be GCed?
+    policy::Int                                                 # GC_*_POLICY
+end
+gc_stack_policy(gc::Bool) =
+    gc_stack_policy(0, gc ? SMALLSTACK : 0, gc ? 3 : 0, gc, gc ? GC_FAST_POLICY : 0)

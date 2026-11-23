@@ -312,7 +312,7 @@ end
         lk_answer(ld, ex),
         _yf(:error, _yf(:resource_error, _ys(:stack)), _ys(:stack_overflow))
     )
-    @test !ld.outofstack && !ld.exception_processing           # recovered at the boundary
+    @test ld.outofstack === nothing && !ld.exception_processing   # recovered at the boundary
     @test ld.local_spare == ld.local_def_spare                  # the spare reserved again
     LK.PL_close_query(ld, qid)
     @test ld.query == 0 && ld.nqueries == 0                     # closed, its records dropped

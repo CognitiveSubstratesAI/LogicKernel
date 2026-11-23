@@ -175,8 +175,8 @@ function TrailAssignment!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
         old = allocGlobalCells!(ld, 1)              # Word old = gTop; gTop++
 
         ld.gstack[old] = ld.gstack[p]               # save the old value on the global
-        push!(ld.trail, _trail_addr(p, TRAIL_GLOBAL))   # (tTop++)->address = p
-        push!(ld.trail, tagTrailPtr(old))           # (tTop++)->address = tagTrailPtr(old)
+        _trail_push!(ld, _trail_addr(p, TRAIL_GLOBAL))  # (tTop++)->address = p
+        _trail_push!(ld, tagTrailPtr(old))          # (tTop++)->address = tagTrailPtr(old)
     end
     return nothing
 end
@@ -200,14 +200,15 @@ end
 end
 
 # PORT: pl-wam.c updateAlerted
-# DIVERGES: the wakeup bit and, since P3, the depth and inference limit bits — `alerted` carries no other (src/pl-incl.jl);
-# no compare-and-swap (one engine per thread, no signal sets `alerted` here). `slow_unify` is not a field
+# DIVERGES: the signal, the wakeup, the undo and, since P3, the depth and inference limit bits — `alerted` carries no other (src/pl-incl.jl);
+# `is_signalled` reads the collector's virtual signals (G1-C); no compare-and-swap (one engine per thread). `slow_unify` is not a field
 # here (`_slow_unify` reads the flag, src/pl-wam.jl), so it is not refreshed.
 # Since TX1e `ALERT_UNDO` while undo goals are scheduled (pl-wam.c:245); since P3 the depth and inference limit bits.
-# NOT PORTED: the other masks (signals, profiling, exit requests, the debugger, string buffers, coverage).
-"Recompute `ld.alerted` from the engine's state: `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
+# NOT PORTED: the other masks (profiling, exit requests, the debugger, string buffers, coverage).
+"Recompute `ld.alerted` from the engine's state: `ALERT_SIGNAL` while a signal is pending, `ALERT_WAKEUP` while the wakeup list is not empty, `ALERT_UNDO` while undo goals wait, the limit bits while a limit is set (pl-wam.c)."
 function updateAlerted(ld::PL_local_data)::Nothing
     mask = Int32(0)
+    is_signalled(ld) && (mask |= ALERT_SIGNAL)     # if ( is_signalled() ) mask |= ALERT_SIGNAL;
     ld.depth_info_limit != DEPTH_NO_LIMIT && (mask |= ALERT_DEPTHLIMIT)         # if ( ld->depth_info.limit != DEPTH_NO_LIMIT )
     ld.inference_limit_limit != INFERENCE_NO_LIMIT && (mask |= ALERT_INFERENCELIMIT)   # inference_limit.limit != INFERENCE_NO_LIMIT
     # ld->stacks.local.base && !isVar(*valTermRef(ld->attvar.head)): the head made by the stacks' set-up
@@ -665,8 +666,8 @@ function findCatcher(
     chpos = ch == 0 ? typemax(Int) : ld.choices[ch].base   # term_t chref = consTermRef(ch)
     wstate = saveWakeup(ld, false)
     if wstate === nothing
-        ld.outofstack = true
-        outOfStack!(ld, STACK_OVERFLOW_THROW)           # throws: see outOfStack!
+        ld.outofstack = :local                          # LD->outofstack = (Stack)&LD->stacks.local
+        outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
         return 0                                        # assert(0)
     end
     while fr != 0
@@ -677,8 +678,8 @@ function findCatcher(
             ex2 = 0                                      # term_t ..., ex2 = 0
             cfid = PL_open_foreign_frame(ld)
             if cfid == 0
-                ld.outofstack = true
-                outOfStack!(ld, STACK_OVERFLOW_THROW)   # throws: see outOfStack!
+                ld.outofstack = :local                  # LD->outofstack = (Stack)&LD->stacks.local
+                outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
                 return 0                                # assert(0)
             end
             f = ld.frames[fr]                            # fr = (LocalFrame)valTermRef(tref)
@@ -1051,7 +1052,7 @@ end
 # carries no `pl_` prefix: `pl_`/`PL_` names are ports of upstream functions, and this has no
 # counterpart (embedding code discards its frames itself).
 # Since L1c a put copies its term onto the global stack and closing a foreign frame keeps global
-# data, as upstream's `PL_close_foreign_frame` does — with no collector until G1, a host that ran
+# data, as upstream's `PL_close_foreign_frame` does — with the collector (G1) giving back only what no frame keeps, a host that ran
 # many queries through open/close would grow the stack without bound. So this helper copies every
 # answer OUT (resolved: an interface term, no cell of the engine's in it) and then DISCARDS its
 # foreign frame (upstream's `PL_discard_foreign_frame`, as embedding code does with libswipl):
@@ -1983,19 +1984,44 @@ macro ENSURE_LOCAL_SPACE(n)
 end
 
 # PORT: pl-vmi.c ENSURE_GLOBAL_SPACE
-# DIVERGES (since L1f f2, audit D-0032): in cells; no garbage collection to try and nothing to shift (no
-# `onchange` to rerun: positions are indices), so the check is the LIMIT, as `ensureGlobalSpace`'s —
-# not applied while an exception is processed (upstream's spare stacks). Its failure is
-# `THROW_EXCEPTION` (`@goto b_throw`).
-"Make room for `n` cells above `gTop` within the limit, else raise the global overflow and throw (pl-vmi.c)."
-macro ENSURE_GLOBAL_SPACE(n)
+# (this one macro also holds upstream's ENSURE_STACK_SPACE and GROW_STACK_SPACE, quoted below: one Julia definition cannot carry
+# three PORT markers, a marker needs a definition of its own, MARKER-ORPHAN)
+# GC-POINT pl-vmi.c:220-235 (G1-C3: the VM's allocation safe point)
+#   #define ENSURE_GLOBAL_SPACE(cells, onchange) \
+#           ENSURE_STACK_SPACE(cells, 0, onchange)
+#   #define ENSURE_STACK_SPACE(g, t, onchange) \
+#           if ( !hasStackSpace(g, t) )                     \
+#           { GROW_STACK_SPACE(g, t);                       \
+#             onchange;                                     \
+#           }
+#   #define GROW_STACK_SPACE(g, t) \
+#           do \
+#           { bool __rc;                                    \
+#             SAVE_REGISTERS(QID);                          \
+#             __rc = ensureStackSpace(g, t);                \
+#             LOAD_REGISTERS(QID);                          \
+#             if ( __rc != true )                           \
+#               THROW_EXCEPTION;                            \
+#           } while(0)
+# DIVERGES: in cells; `hasStackSpace` is the kernel's (src/pl-alloc.jl); no trail cells (ENSURE_STACK_SPACE's `t`: the trail grows on
+# demand and is never full). `ensureStackSpace(g, t)` is `ensureGlobalSpace(ld, g, ALLOW_GC, site)` (pl-gc.h:95 `ensureStackSpace_ex(g, t,
+# ALLOW_GC)`): `considerGarbageCollect` decides on a collection, then the limit is checked; `site` names the VMI (recorded under `gc_force`,
+# as at every ALLOW_GC site). `onchange` re-derives what was read before the call (`deRef2(ARGP, p)`, `deRef2(TrieCurrentP, p)`): a
+# collection moves the global cells; the slots of the local stack stay where they are, so upstream's `k = varFrameP(FR, …)` onchanges
+# (B_FIRSTVAR, B_UNIFY_FIRSTVAR, B_UNIFY_FC) have nothing to redo here: their slot is computed after the call or stays valid. `ARGP` is
+# reloaded by LOAD_REGISTERS. In an outlined T_* body (T27) the reloaded registers are the function's own: the trie VMIs keep `ARGP` in
+# the local frame. FAKE_GC (pl-vmi.c:238-251, a debugging macro with no user at the pin) is not wired: `gc_force` at the ALLOW_GC sites is
+# its model (G1-D lists it).
+"Make room for `n` global cells, letting the stack collector run first; on failure the overflow is raised and the VM throws (pl-vmi.c)."
+macro ENSURE_GLOBAL_SPACE(n, site, onchange...)
     return esc(
         quote
-            if _stacks_in_use(ld, $n) > ld.stacks_limit && !ld.exception_processing
+            if !hasStackSpace(ld, $n)               # if ( !hasStackSpace(g, t) )
                 @SAVE_REGISTERS(QID)
-                raiseStackOverflow(ld, GLOBAL_OVERFLOW)
+                egs_rc = ensureGlobalSpace(ld, $n, ALLOW_GC, $site)   # __rc = ensureStackSpace(g, t);
                 @LOAD_REGISTERS(QID)
-                @goto b_throw
+                egs_rc || @goto b_throw             # if ( __rc != true ) THROW_EXCEPTION;
+                $(onchange...)                      # onchange;
             end
         end
     )
@@ -2057,7 +2083,7 @@ end
     tg_nvars =
         Int(((ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}).prolog_vars) -
         TRIE_VAR_OFFSET
-    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar)
+    @ENSURE_GLOBAL_SPACE(4 + tg_nvars + 1 + tg_ar, :T_TRIE_GEN)
     tg_s = allocGlobalCells!(ld, 4)                 # the four state cells
     ld.gstack[tg_s] = nil_w                         # *TrieTermP = ATOM_nil
     ld.gstack[tg_s + 1] = consInt(1)                # *TrieOffset = consInt(1)
@@ -2095,7 +2121,13 @@ end
     tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)  # deRef2(TrieCurrentP, p)
     if tf_k == DU_CELL || tf_k == DU_ATTVAR         # if ( canBind(*p) )
         tf_ar = arityFunctor(ld.functors, tf_f)
-        @ENSURE_GLOBAL_SPACE(1 + tf_ar + 4 + 6)     # 4 extra for the '$targp'/3 cell
+        @ENSURE_GLOBAL_SPACE(
+            1 + tf_ar + 4 + 6,
+            :T_FUNCTOR,
+            begin
+                tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+            end
+        )     # 4 extra for the '$targp'/3 cell
         tf_ap = allocGlobalCells!(ld, 1 + tf_ar)    # ap = gTop; gTop += 1+arity
         tf_c = consPtr(tf_ap, TAG_COMPOUND | STG_GLOBAL)   # c = consCompound(ap)
         _trie_push_argp!(ld, FR)                    # TriePushArgP()
@@ -2107,7 +2139,13 @@ end
     end
     if tf_k == DU_WORD && _is_gcompound(tf_w)       # if ( isTerm(*p) )
         if ld.gstack[valPtr(tf_w)] == tf_f          # if ( term->definition == f )
-            @ENSURE_GLOBAL_SPACE(4)
+            @ENSURE_GLOBAL_SPACE(
+                4,
+                :T_FUNCTOR,
+                begin
+                    tf_k, tf_w, tf_p = _trie_deref_current(ld, FR)   # onchange: deRef2(TrieCurrentP, p)
+                end
+            )
             _trie_push_argp!(ld, FR)                # TriePushArgP()
             ld.gstack[_trie_state_cell(ld, FR, 0)] = tf_w      # *TrieTermP = *p
             ld.gstack[_trie_state_cell(ld, FR, 1)] = consInt(1)   # *TrieOffset = consInt(1)
@@ -2175,7 +2213,7 @@ end
     @nospecialize(PC::Int),
     @nospecialize(ta_n::Int)
 )::Int where {T}
-    @ENSURE_GLOBAL_SPACE(6 + 4 + 6)
+    @ENSURE_GLOBAL_SPACE(6 + 4 + 6, :T_ATTVARA)
     ta_v = _trie_var_cell(ld, FR, ta_n)             # Word vp = TrieVarP(offset)
     if isVar(ld.gstack[ta_v])                       # first encounter
         ta_gp = allocGlobalCells!(ld, 6)            # gp = gTop; gTop += 6
@@ -2462,19 +2500,17 @@ end
 end
 
 # PORT: pl-wam.c resumeAfterException
-# DIVERGES: `outofstack` is a flag (the local stack is the only one that overflows); there is no
-# stack garbage collector to consult (`considerGarbageCollect`, the `gced_size`s; G1), so the stacks
-# are trimmed (`trimStacks!`: the spare reserved again) as when it declines; `fr_rewritten` is not
-# kept.
+# DIVERGES: `outofstack` is the overflowing stack's name or `nothing` (NULL), `outofstack->gc` its policy's `gc` (`_outofstack_gc`; G1-C decision 2);
+# the `gced_size`s are `ld.gc.global_policy`/`trail_policy`'s; `fr_rewritten` is not kept.
 # NOT PORTED: `clear_low_c_stack` (no C stack) and `updatePendingThreadSignals` (no threads).
 """
     resumeAfterException(ld, clear, outofstack)
 
-After an exception: clear it (when `clear`), reserve the local stack's spare again, and resume
-normal operation (pl-wam.c).
+After an exception: clear it (when `clear`), consider a stack collection, trim the stacks (their spares
+reserved again) and resume normal operation (pl-wam.c).
 """
 function resumeAfterException(
-    ld::PL_local_data{T}, clear::Bool, outofstack::Bool
+    ld::PL_local_data{T}, clear::Bool, outofstack::Union{Nothing, Symbol}
 )::Nothing where {T}
     if clear
         ld.exception_term = 0
@@ -2482,9 +2518,68 @@ function resumeAfterException(
         _reset_exception_slot!(ld, ld.exception_printed, 1)     # setVar(*valTermRef(LD->exception.printed))
         _reset_exception_slot!(ld, ld.exception_pending, 3)     # setVar(*valTermRef(LD->exception.pending))
     end
-    trimStacks!(ld, outofstack)                     # !considerGarbageCollect(NULL)
+    # GC-POINT pl-wam.c:1966-1977
+    #   if ( outofstack && outofstack->gc )
+    #   { LD->stacks.global.gced_size = 0;
+    #     LD->stacks.trail.gced_size  = 0;
+    #   }
+    #   if ( !considerGarbageCollect((Stack)NULL) )
+    #   { trimStacks((outofstack != NULL));
+    #   } else
+    #   { trimStacks(false);  /* just re-enable the spare stacks */
+    #     if ( outofstack != NULL )
+    #       LD->trim_stack_requested = true;  /* next time with resize */
+    #   }
+    if outofstack !== nothing && _outofstack_gc(ld, outofstack)
+        ld.gc.global_policy.gced_size = 0
+        ld.gc.trail_policy.gced_size = 0
+    end
+    if !considerGarbageCollect(ld, nothing)
+        trimStacks!(ld, outofstack !== nothing)
+    else
+        trimStacks!(ld, false)                      # just re-enable the spare stacks
+        if outofstack !== nothing
+            ld.trim_stack_requested = true          # next time with resize
+        end
+    end
     ld.exception_processing = false
-    ld.outofstack = false
+    ld.outofstack = nothing                         # LD->outofstack = NULL
+    return nothing
+end
+
+# ORIGINAL (G1-C): upstream's `outofstack->gc` (pl-incl.h `struct stack`, field `gc`). The kernel's stacks are not structs (`ld.gc`'s three `gc_stack_policy`s carry `gc`, pl-setup.c:1629-1636 `init_stack(..., gc)`:
+# global and trail true, local false); `stack` is the name `LD->outofstack` keeps (G1-C decision 2). The argument stack never overflows here.
+"`outofstack->gc`: can the stack named `stack` be garbage collected (its `init_stack` flag)?"
+function _outofstack_gc(ld::PL_local_data, stack::Symbol)::Bool
+    if stack === :global
+        return ld.gc.global_policy.gc
+    elseif stack === :trail
+        return ld.gc.trail_policy.gc
+    end
+    return ld.gc.local_policy.gc
+end
+
+# PORT: pl-wam.c exceptionUnwindGC
+# DIVERGES: the `gced_size`s are `ld.gc.global_policy`/`trail_policy`'s; the collector is given the VM-state callback (`get_vmi_state`) as every
+# kernel caller of `garbageCollect` is. Its one caller upstream, `dbg_except_start_tracer` (pl-wam.c:2857, from `b_throw_unwind_debug`
+# pl-vmi.c:5196), is debugger code, DBG1's to port (see `b_throw_debug` in the run loop): nothing in the kernel calls it yet.
+"Before the tracer starts on an exception: reset the `gced_size`s, request a trim and collect when one is due (pl-wam.c `exceptionUnwindGC`)."
+function exceptionUnwindGC(ld::PL_local_data)::Nothing
+    # GC-POINT pl-wam.c:1990-1999
+    #   LD->stacks.global.gced_size = 0;
+    #   LD->stacks.trail.gced_size = 0;
+    #   LD->trim_stack_requested = true;
+    #   if ( considerGarbageCollect(NULL) )
+    #   { garbageCollect(GC_EXCEPTION);
+    #     enableSpareStacks();
+    #   }
+    ld.gc.global_policy.gced_size = 0
+    ld.gc.trail_policy.gced_size = 0
+    ld.trim_stack_requested = true
+    if considerGarbageCollect(ld, nothing)
+        garbageCollect(ld, Int(GC_EXCEPTION); vmi_state_of=get_vmi_state)
+        enableSpareStacks!(ld)
+    end
     return nothing
 end
 
@@ -2894,7 +2989,7 @@ function PL_next_solution_guarded(
     FFR::Int = 0                                    # FFR_ID: foreign_redo's foreign frame (an index)
     SLOW_UNIFY::Bool = false                        # unify_var_cont's copy of LD->slow_unify
     dot_f::word = gd.functor_dot2                   # FUNCTOR_dot2 (L1c)
-    bt_outofstack::Bool = false                     # b_throw's outofstack
+    bt_outofstack::Union{Nothing, Symbol} = nothing # b_throw's outofstack
     wk_h::Int = 0                                   # wakeup's head cell (AV3)
     tg_base::Int = 0                                # t_trie_gen's frame position (TR4)
     tg_ar::Int = 0                                  # t_trie_gen's arity of `+/n` (TR4)
@@ -3163,7 +3258,13 @@ function PL_next_solution_guarded(
     hf_lit = functor_literal(hf_f)
     hf_d, hf_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hf_d == DREF_CELL || hf_d == DREF_ATTVAR     # canBind(*p) (an attributed variable: AV1)
-        @ENSURE_GLOBAL_SPACE(1 + hf_ar)             # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(
+            1 + hf_ar,
+            :H_RFUNCTOR,
+            begin
+                hf_d, hf_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+            end
+        )             # (L1f f2)
         hf_q = _alloc_compound!(ld, hf_fw, hf_ar)
         bindConst(ld, Int(hf_w), consPtr(hf_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hf_q + 1, ph)
@@ -3193,7 +3294,14 @@ function PL_next_solution_guarded(
         @goto next_instruction
     end
     (hf_cn != ld.atom_dexpr && hf_ca + 1 == hf_ar) || @goto unify_backtrack   # `$expr/n`, g/(n-1)
-    @ENSURE_GLOBAL_SPACE(hf_ar)                     # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(
+        hf_ar,
+        :H_RFUNCTOR,
+        begin
+            hf_d, hf_w = _argp_deref_word(ld, ARGP)   # ORIGINAL onchange (the cross-match is kernel-only): deRef2(ARGP, p)
+            hf_q = valPtr(hf_w)                         # and the compound's position again
+        end
+    )                     # (L1f f2)
     hf_s = allocGlobalCells!(ld, hf_ar)             # the children of g(…), head included:
     ld.gstack[hf_s] = hf_cn                         # g's atom word,
     for hf_i in 1:hf_ca                             # then a reference to each argument cell (a
@@ -3218,7 +3326,13 @@ function PL_next_solution_guarded(
     end
     hl_d, hl_w = _argp_deref_word(ld, ARGP)         # deRef2(ARGP, p)
     if hl_d == DREF_CELL || hl_d == DREF_ATTVAR     # case TAG_VAR: case TAG_ATTVAR: (AV1)
-        @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(
+            3,
+            :H_RLIST,
+            begin
+                hl_d, hl_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p)
+            end
+        )                     # (L1f f2)
         hl_q = _alloc_compound!(ld, dot_f, 2)
         bindConst(ld, Int(hl_w), consPtr(hl_q, TAG_COMPOUND | STG_GLOBAL))
         ARGP = argp_t{T}(ARGP_GLOBAL, hl_q + 1, ph)
@@ -3263,7 +3377,7 @@ function PL_next_solution_guarded(
     hff_b = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
     if UMODE == uwrite
-        @ENSURE_GLOBAL_SPACE(3)                     # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(3, :H_LIST_FF)                     # (L1f f2)
         hff_q = _alloc_compound!(ld, dot_f, 2)      # write:
         ld.slots[hff_a + 1] = makeRefG(hff_q + 1)   # varFrame(FR, *PC++) = makeRefG(ap)
         ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
@@ -3280,7 +3394,13 @@ function PL_next_solution_guarded(
             _slot_from_cell!(ld, hff_a + 1, hff_q + 1)
             _slot_from_cell!(ld, hff_b + 1, hff_q + 2)
         elseif hff_d == DREF_CELL || hff_d == DREF_ATTVAR   # canBind(*p) (AV1)
-            @ENSURE_GLOBAL_SPACE(3)                 # (L1f f2)
+            @ENSURE_GLOBAL_SPACE(
+                3,
+                :H_LIST_FF,
+                begin
+                    hff_d, hff_w = _argp_deref_word(ld, ARGP)   # onchange: deRef2(ARGP, p) (UMODE != uwrite)
+                end
+            )                 # (L1f f2)
             hff_q = _alloc_compound!(ld, dot_f, 2)
             ld.slots[hff_a + 1] = makeRefG(hff_q + 1)
             ld.slots[hff_b + 1] = makeRefG(hff_q + 2)
@@ -3428,7 +3548,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_FIRSTVAR
     # DIVERGES: the cell's reference into the slot and where ARGP points, as words (L1b C6a, L1c).
     @label B_FIRSTVAR
-    @ENSURE_GLOBAL_SPACE(1)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(1, :B_FIRSTVAR)                         # (L1f f2)
     bfv_p = _slot_new_var!(ld, varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1)  # *k = w
     PC += 1
     if ARGP.form == ARGP_GLOBAL                     # *ARGP++ = w
@@ -3460,7 +3580,7 @@ function PL_next_solution_guarded(
     @label B_RFUNCTOR
     bf_f = PCc[PC]
     PC += 1
-    @ENSURE_GLOBAL_SPACE(1 + functor_arity(bf_f))   # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(1 + functor_arity(bf_f), :B_RFUNCTOR)   # (L1f f2)
     bf_q = _alloc_compound!(ld, functor_operand_word(bf_f), functor_arity(bf_f))
     bf_c = consPtr(bf_q, TAG_COMPOUND | STG_GLOBAL)     # consPtr(gTop, TAG_COMPOUND|STG_GLOBAL)
     if ARGP.form == ARGP_SLOT                       # *ARGP = …
@@ -3481,7 +3601,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_RLIST
     # DIVERGES: as `B_RFUNCTOR`, for `FUNCTOR_dot2`.
     @label B_RLIST
-    @ENSURE_GLOBAL_SPACE(3)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(3, :B_RLIST)                         # (L1f f2)
     bl_q = _alloc_compound!(ld, dot_f, 2)
     bl_c = consPtr(bl_q, TAG_COMPOUND | STG_GLOBAL)
     if ARGP.form == ARGP_SLOT
@@ -3507,7 +3627,7 @@ function PL_next_solution_guarded(
     @label B_UNIFY_FIRSTVAR
     ARGP = argp_t{T}(ARGP_SLOT, varFrameP(ld.frames[FR].base, Int(PCc[PC])), ph)
     PC += 1
-    @ENSURE_GLOBAL_SPACE(1)                         # (L1f f2; upstream's in unify_var_cont)
+    @ENSURE_GLOBAL_SPACE(1, :B_UNIFY_FIRSTVAR)                         # (L1f f2; upstream's in unify_var_cont)
     ld.slots[ARGP.pos + 1] = makeRefG(allocGlobalCells!(ld, 1))   # setVar(*ARGP): needed for GC
     @goto unify_var_cont
 
@@ -3555,7 +3675,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_UNIFY_FF
     # DIVERGES: one fresh variable in both slots (decision 2: no global stack, `makeRefG`).
     @label B_UNIFY_FF
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_UNIFY_FF)                         # (L1f f2)
     buff_1 = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     buff_2 = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
@@ -3580,7 +3700,7 @@ function PL_next_solution_guarded(
     # DIVERGES: no `globaliseVar` (decision 2); the first-variable slot gets the value as `bvar_cont`
     # stores one (`linkValI`).
     @label B_UNIFY_FV
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_UNIFY_FV)                         # (L1f f2)
     bufv_f = varFrameP(ld.frames[FR].base, Int(PCc[PC]))
     bufv_v = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1]))
     PC += 2
@@ -3661,7 +3781,7 @@ function PL_next_solution_guarded(
     bufc_c = PCl[PCc[PC + 1]]
     PC += 2
     if _slow_unify(ld)
-        @ENSURE_GLOBAL_SPACE(1)                             # (L1f f2)
+        @ENSURE_GLOBAL_SPACE(1, :B_UNIFY_FC)                             # (L1f f2)
         _slot_new_var!(ld, bufc_f + 1)                      # globaliseFirstVar(f): a WORD (L1c-6)
         ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         _slot_copy!(ld, ARGP.pos + 1, bufc_f + 1)
@@ -3763,7 +3883,7 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c B_ARG_CF
     # DIVERGES: the operand is the integer itself as a signed code (`(scode)PC[-3]`).
     @label B_ARG_CF
-    @ENSURE_GLOBAL_SPACE(2)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(2, :B_ARG_CF)                         # (L1f f2)
     a3_idx = 0                                      # aidx = NULL
     a3_ai = reinterpret(Int64, PCc[PC])             # (scode)PC[-3]
     a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1
@@ -3815,7 +3935,7 @@ function PL_next_solution_guarded(
     # variable is handed on whether or not it holds a tagged integer (upstream hands its dereferenced
     # cell: the same word).
     @label B_ARG_VF
-    @ENSURE_GLOBAL_SPACE(3)                         # (L1f f2)
+    @ENSURE_GLOBAL_SPACE(3, :B_ARG_VF)                         # (L1f f2)
     a3_idx = varFrameP(ld.frames[FR].base, Int(PCc[PC])) + 1        # aidx0
     a3_term = varFrameP(ld.frames[FR].base, Int(PCc[PC + 1])) + 1   # aterm
     a3_arg = varFrameP(ld.frames[FR].base, Int(PCc[PC + 2])) + 1    # aarg
@@ -4383,7 +4503,7 @@ function PL_next_solution_guarded(
 
     # ── calls (pl-vmi.c) ──────────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c I_ENTER
-    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the wakeup bit and the two limit bits (P3:
+    # DIVERGES: the `LD->alerted` test (since AV3) reads the field, which carries the signal and wakeup bits (G1-C) and the two limit bits (P3:
     # the limits are handled in `depart_alerted`; `i_enter_alerted` tests the wakeup bit only).
     @label I_ENTER
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
@@ -4455,10 +4575,10 @@ function PL_next_solution_guarded(
     @goto depart_or_retry_continue
 
     # PORT: pl-vmi.c depart_or_retry_continue
-    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the two limit bits (P3) and
-    # the undo bit (TX1e); signals and the debugger are not ported. Upstream's order inside `depart_alerted` is kept: the
-    # autoloader's early exit, the scheduled undo goals (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit,
-    # then the inference limit.
+    # DIVERGES: NOT PORTED: the profiler's node. The `LD->alerted` test goes to `depart_alerted` for the signal bit (G1-C), the two limit
+    # bits (P3) and the undo bit (TX1e), not for the wakeup bit; the debugger is not ported. Upstream's order inside `depart_alerted` is kept:
+    # the autoloader's early exit, the pending signals (`is_signalled`, a SAFE POINT of the stack collector), the scheduled undo goals
+    # (`run_undo_hooks`; an exception it leaves is thrown), then the depth limit, then the inference limit.
     @label depart_or_retry_continue
     # ORIGINAL (L1f f2, audit D-0029 D1 (a), D-0032): a catch-all once per call and per retried clause,
     # here where every call meets (normal_call, I_DEPART's and L_NOLCO's frame reuse, the query's first
@@ -4476,7 +4596,8 @@ function PL_next_solution_guarded(
     end
     setGenerationFrame(gd, ld, FR)
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
-    (ld.alerted & (ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) != 0 &&
+    (ld.alerted & (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)) !=
+    0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes
     PCl = gd.no_literals
@@ -4500,8 +4621,11 @@ function PL_next_solution_guarded(
     # and, at its start, the autoloader's early exit:
     #     if ( DEF->codes[0] == encode(S_VIRGIN) && !DEF->impl.any.defined && isoff(DEF, PROC_DEFINED) )
     #     { PC = DEF->codes; NEXT_INSTRUCTION; }
-    # DIVERGES: NOT PORTED: the signals, `getProcDefinedDefinition`, the profiler and the coverage and debugger
-    # ports (none is ported). `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
+    # (pl-vmi.c:1947-2055 at the pin.) G1-C, dispatcher decision 1: the `is_signalled()` arm (a SAFE POINT of the stack collector:
+    # `handleSignals` serves a pending `SIG_GC`, pl-setup.c `gc_handler`) is ported, between the autoloader's early exit and the undo goals.
+    # DIVERGES: `enterDefinition(DEF)` is `(void)0` without threads (pl-incl.h:1349), so it has no line; `PROCEDURE_catch3` is `gd.procedures_catch3`.
+    # NOT PORTED: `getProcDefinedDefinition`'s other users, the profiler and the coverage and debugger ports (none is ported).
+    # `levelFrame(FR)` is the frame's `UInt32` level, compared as `Int`.
     @label depart_alerted
     setLTop!(ld, argFrameP(ld.frames[FR].base, DEF.arity))      # lTop = argFrameP(FR, DEF->functor->arity)
     PCc = DEF.codes
@@ -4509,6 +4633,50 @@ function PL_next_solution_guarded(
     PC = 1
     if PCc[1] == S_VIRGIN && !_impl_any_defined(DEF) && (DEF.flags & PROC_DEFINED) == 0
         @goto next_instruction                      # we need the autoloader and get back
+    end
+    # GC-POINT pl-vmi.c:1958-1984
+    #   if ( is_signalled() )
+    #   { SAVE_REGISTERS(QID);
+    #     DEF = getProcDefinedDefinition(DEF); /* see (*) above */
+    #     LOAD_REGISTERS(QID);
+    #     if ( FR->predicate != DEF )   /* auto imported/loaded */
+    #     { setFramePredicate(FR, DEF);
+    #       setGenerationFrame(FR);
+    #     }
+    #     if ( isoff(DEF, P_SIG_ATOMIC) )
+    #     { SAVE_REGISTERS(QID);
+    #       handleSignals();
+    #       LOAD_REGISTERS(QID);
+    #       if ( exception_term )
+    #       { CL = NULL;
+    #         enterDefinition(DEF);
+    #         /* The catch is not yet installed, so we ignore it */
+    #         if ( FR->predicate == PROCEDURE_catch3->definition )
+    #           setLocal(FR, FR_CAUGHT);
+    #         THROW_EXCEPTION;
+    #       }
+    #     }
+    #   }
+    if is_signalled(ld)
+        @SAVE_REGISTERS(QID)
+        DEF = getProcDefinedDefinition(gd, ld, DEF) # see (*) above
+        @LOAD_REGISTERS(QID)
+        if ld.frames[FR].predicate !== DEF          # auto imported/loaded
+            setFramePredicate(ld.frames[FR], DEF)
+            setGenerationFrame(gd, ld, FR)
+        end
+        if (DEF.flags & P_SIG_ATOMIC) == 0          # isoff(DEF, P_SIG_ATOMIC)
+            @SAVE_REGISTERS(QID)
+            handleSignals(ld)
+            @LOAD_REGISTERS(QID)
+            if ld.exception_term != 0
+                ld.frames[FR].clause = nothing      # CL = NULL
+                if ld.frames[FR].predicate === gd.procedures_catch3.definition
+                    ld.frames[FR].flags |= FR_CAUGHT    # setLocal(FR, FR_CAUGHT)
+                end
+                @goto b_throw                       # THROW_EXCEPTION
+            end
+        end
     end
     if (ld.alerted & ALERT_UNDO) != 0 && UNDO_SCHEDULED(ld)     # if ( UNDO_SCHEDULED(LD) ) (TX1e; lTop is set above)
         @SAVE_REGISTERS(QID)
@@ -4742,6 +4910,49 @@ function PL_next_solution_guarded(
         rethrow()
     end
     mc_cl === nothing && @goto b_throw              # case false: THROW_EXCEPTION
+    # GC-POINT pl-vmi.c:5558-5581 (the CHECK_INTERRUPT arm: a signal pending at the compiler's test, G1-C)
+    #   case LOCAL_OVERFLOW:
+    #   case CHECK_INTERRUPT:
+    #   { term_t lTopH = consTermRef(lTop);
+    #
+    #     LD->query->next_environment = NFR;
+    #     lTop = (LocalFrame)argFrameP(NFR, 1);
+    #     ARGP = (Word)lTop;
+    #     SAVE_REGISTERS(QID);
+    #     if ( rc == LOCAL_OVERFLOW )
+    #     { size_t room = roomStack(local);
+    #       rc = growLocalSpace(room*2, ALLOW_SHIFT);
+    #     } else
+    #     { rc = (PL_handle_signals() >= 0); /* rc = false: exception */
+    #     }
+    #     LOAD_REGISTERS(QID);
+    #     LD->query->next_environment = NULL;
+    #     lTop = (LocalFrame)valTermRef(lTopH);
+    #     if ( rc != true )
+    #     { if ( rc )           /* rc < 0 (*_OVERFLOW): raise overflow exception */
+    #         raiseStackOverflow(rc);
+    #       THROW_EXCEPTION;
+    #     }
+    #     VMI_GOTO(I_CALL1);
+    #   }
+    # DIVERGES: the LOCAL_OVERFLOW case is compileGoalClause's own (`ensureLocalSpace`, see its DIVERGES); lowering `lTop` back to
+    # the frame drops the record `I_CALL1` pushed (`dropRecords!`), which `I_CALL1` pushes again, where upstream reuses the
+    # position; `lTop` is a position (no stack shift moves it).
+    if mc_cl isa boolex_t                           # case CHECK_INTERRUPT:
+        @assert mc_cl == CHECK_INTERRUPT
+        mc_lTopH = ld.lTop                          # term_t lTopH = consTermRef(lTop);
+        mc_q = ld.queries[QueryFromQid(ld, QID)]
+        mc_q.next_environment = NFR                 # LD->query->next_environment = NFR;
+        setLTop!(ld, argFrameP(mc_nb, 1))           # lTop = (LocalFrame)argFrameP(NFR, 1);
+        ARGP = argp_t{T}(ARGP_SLOT, ld.lTop, ph)    # ARGP = (Word)lTop;
+        @SAVE_REGISTERS(QID)
+        mc_rc = PL_handle_signals(ld) >= 0          # rc = (PL_handle_signals() >= 0);
+        @LOAD_REGISTERS(QID)
+        mc_q.next_environment = 0                   # LD->query->next_environment = NULL;
+        setLTop!(ld, mc_lTopH)                      # lTop = (LocalFrame)valTermRef(lTopH);
+        mc_rc || @goto b_throw                      # if ( rc != true ) THROW_EXCEPTION;
+        @goto I_CALL1                               # VMI_GOTO(I_CALL1);
+    end
     DEF = gd.procedures_dcall1.definition           # NFR->predicate
     mc_f2 = ld.frames[NFR]
     setFramePredicate(mc_f2, DEF)                   # (compileClause: fr->predicate)
@@ -6296,10 +6507,28 @@ function PL_next_solution_guarded(
     @goto exit_checking_wakeup
 
     # PORT: pl-vmi.c I_FREDO
-    # DIVERGES: NOT PORTED: signals — `LD->alerted` and `handleSignals` (no signals; the kernel keeps no
-    # `alerted`, as at I_ENTER and I_DEPART). A `REDO_PTR` context is passed as the word, as upstream's.
+    # DIVERGES: the signals are the collector's virtual ones (G1-C, dispatcher decision 1). A `REDO_PTR` context is passed as the word,
+    # as upstream's.
     @label I_FREDO
     @assert (DEF.flags & P_FOREIGN) != 0
+    # GC-POINT pl-vmi.c:4765-4773
+    #   if ( unlikely(LD->alerted) && is_signalled() )
+    #   { if ( isoff(DEF, P_SIG_ATOMIC) )
+    #     { SAVE_REGISTERS(QID);
+    #       handleSignals();
+    #       LOAD_REGISTERS(QID);
+    #       if ( exception_term )
+    #         THROW_EXCEPTION;
+    #     }
+    #   }
+    if ld.alerted != 0 && is_signalled(ld)
+        if (DEF.flags & P_SIG_ATOMIC) == 0
+            @SAVE_REGISTERS(QID)
+            handleSignals(ld)
+            @LOAD_REGISTERS(QID)
+            ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
+        end
+    end
     fd_wcl = ld.frames[FR].fctx
     fd_ctx = ld.queries[QueryFromQid(ld, QID)].fndet_context
     if (fd_wcl & FRG_REDO_MASK) == REDO_INT
@@ -6516,6 +6745,33 @@ function PL_next_solution_guarded(
         ld.lTop = argFrameP(ld.frames[FR].base, Int(db_clause.variables))
         UMODE = uread
 
+        # GC-POINT pl-vmi.c:6932-6939
+        #   if ( unlikely(LD->alerted) )
+        #   { if ( is_signalled() )
+        #     { SAVE_REGISTERS(QID);
+        #       handleSignals();
+        #       LOAD_REGISTERS(QID);
+        #       if ( exception_term )
+        #         THROW_EXCEPTION;
+        #     }
+        # DIVERGES: `chp` is the C stack's; here it is `ld.chp_scratch`, which a Prolog hook run by a handler (`prolog:tune_gc/3`)
+        # reuses when it backtracks, so its two fields are kept in locals around the call. NOT PORTED: the block's other arms,
+        # `O_INFERENCE_LIMIT` (call_with_inference_limit/3's owner) and the debugger's redo port with its `clearLocalVariablesFrame(FR)`
+        # (pl-vmi.c:6959; DBG1).
+        if ld.alerted != 0
+            if is_signalled(ld)
+                db_sig_cref = db_chp.cref
+                db_sig_key = db_chp.key
+                @SAVE_REGISTERS(QID)
+                handleSignals(ld)
+                @LOAD_REGISTERS(QID)
+                db_chp = ld.chp_scratch
+                db_chp.cref = db_sig_cref
+                db_chp.key = db_sig_key
+                ld.exception_term != 0 && @goto b_throw # THROW_EXCEPTION
+            end
+        end
+
         if db_chp.cref !== nothing
             db_new = newChoice(ld, CHP_CLAUSE, FR)
             db_v = ld.choices[db_new].value_clause  # ch->value.clause = chp
@@ -6584,8 +6840,8 @@ function PL_next_solution_guarded(
 
     # ── exceptions (pl-vmi.c) ─────────────────────────────────────────────────────────────────────
     # PORT: pl-vmi.c b_throw
-    # DIVERGES: since V9f `findCatcher` finds catch/3's frame (an index; 0 when none). `outofstack` is a flag
-    # (the local stack's); with no emergency space, `outOfStack!`'s second-overflow branch marks the
+    # DIVERGES: since V9f `findCatcher` finds catch/3's frame (an index; 0 when none). `outofstack` is the stack's
+    # name (G1-C decision 2); with no emergency space, `outOfStack!`'s second-overflow branch marks the
     # local data unusable and throws, where upstream ends the process (see there). The rewrite loop's
     # `exception_hook` runs only when `'$exception_hook'/5` has clauses — none: not entered.
     @label b_throw
@@ -6594,7 +6850,7 @@ function PL_next_solution_guarded(
     _reset_argument_stack!(ld, ld.queries[QF])
     @assert ld.exception_term != 0
     bt_outofstack = ld.outofstack                   # outofstack = LD->outofstack
-    ld.outofstack = false
+    ld.outofstack = nothing                         # LD->outofstack = NULL
 
     bt_low = argFrameP(ld.frames[FR].base, (ld.frames[FR].predicate::Definition{T}).arity)
     if ld.lTop < bt_low
@@ -6604,8 +6860,8 @@ function PL_next_solution_guarded(
     if has_emergency_space_local(ld, SIZEOF_LOCALFRAME)
         bt_fid = open_foreign_frame(ld)
     else                                            # fatal
-        ld.outofstack = true
-        outOfStack!(ld, STACK_OVERFLOW_THROW)       # throws: see outOfStack!
+        ld.outofstack = :local                      # LD->outofstack = (Stack)&LD->stacks.local
+        outOfStack!(ld, STACK_OVERFLOW_THROW, :local)   # throws: see outOfStack!
         bt_fid = 0
     end
     # find the catching frame (since V9f). The rewrite loop runs `exception_hook` only when
@@ -6618,7 +6874,9 @@ function PL_next_solution_guarded(
 
     # PORT: pl-vmi.c b_throw_debug
     # DIVERGES: NOT PORTED: the debugger, and printing an uncaught exception (`print_unhandled_exception`;
-    # swipl prints it under `PL_Q_NORMAL`, the kernel never prints).
+    # swipl prints it under `PL_Q_NORMAL`, the kernel never prints). With it `b_throw_unwind_debug` (owner DBG1), which holds
+    # two GC points: `clearLocalVariablesFrame(FR)` after `Undo(ch->mark); DiscardMark(ch->mark);` (pl-vmi.c:5148) and
+    # `started = dbg_except_start_tracer();` (:5196), whose first statement is `exceptionUnwindGC();` (pl-wam.c:2857; ported, src/pl-wam.jl).
     @label b_throw_debug
     @goto b_throw_unwind
 
@@ -6663,7 +6921,8 @@ function PL_next_solution_guarded(
     # kept. An `unwind(_)` ball (`uncachableException`, pl-wam.c:2253-2263, on the words: `PL_is_functor`)
     # wraps the recover goal as `'$recover_and_rethrow'(Goal, Ball)` (boot/init.pl, booted since LB4 b2;
     # pin pl-vmi.c:5266-5278), both arguments stored dereferenced (`_cell_link!`: upstream copies the
-    # recover goal's word as is, the ball's deRef'd). `fatalError` is a Julia `error`. No GC request to honour.
+    # recover goal's word as is, the ball's deRef'd). `fatalError` is a Julia `error`. The query's arm honours a pending `SIG_GC`
+    # (G1-C), the collector given the VM-state callback (`get_vmi_state`).
     @label b_throw_resume
     ld.statistics.inferences += 1                   # box exit, needed for GC (Y1)
     if bt_catchfr != 0
@@ -6711,6 +6970,20 @@ function PL_next_solution_guarded(
     @SAVE_REGISTERS(QID)
     resumeAfterException(ld, (br_q.flags & PL_Q_PASS_EXCEPTION) == 0, bt_outofstack)
     @LOAD_REGISTERS(QID)
+    # GC-POINT pl-vmi.c:5312-5316
+    #   if ( PL_pending(SIG_GC) )
+    #   { SAVE_REGISTERS(QID);
+    #     garbageCollect(LD->gc.stats.request);
+    #     LOAD_REGISTERS(QID);
+    #   }
+    #   QF = QueryFromQid(QID);  /* may be shifted: recompute */
+    if pendingGcSignal(ld, SIG_GC)
+        @SAVE_REGISTERS(QID)
+        garbageCollect(ld, Int(ld.gc.stats.request); vmi_state_of=get_vmi_state)
+        @LOAD_REGISTERS(QID)
+    end
+    QF = QueryFromQid(ld, QID)                      # may be shifted: recompute
+    br_q = ld.queries[QF]
 
     return (br_q.flags & PL_Q_EXT_STATUS) != 0 ? PL_S_EXCEPTION : 0
 end

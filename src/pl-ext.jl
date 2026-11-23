@@ -106,7 +106,8 @@ const _PRED_TABLES = (
     PL_predicates_from_locale,
     PL_predicates_from_coverage,
     PL_predicates_from_profile,
-    PL_predicates_from_zip
+    PL_predicates_from_zip,
+    PL_predicates_from_gc
 )
 const _FOREIGN_VA = (
     PL_predicates_from_atom..., PL_predicates_from_arith..., PL_predicates_from_bag...,
@@ -134,7 +135,8 @@ const _FOREIGN_VA = (
     PL_predicates_from_locale...,
     PL_predicates_from_coverage...,
     PL_predicates_from_profile...,
-    PL_predicates_from_zip...
+    PL_predicates_from_zip...,
+    PL_predicates_from_gc...
 )
 const _FOREIGN_DET = foreigns
 
@@ -188,7 +190,7 @@ end
 
 # DIVERGES: a Julia helper for `initBuildIns!`'s REG_PLIST sequence, in upstream's order with one running
 # dispatch index `first`. A recursive walk (`Base.tail`) specialises per table; a `map` over a tuple of 32
-# or more entries (`_PRED_TABLES` has 46) takes Base's `Any32` method, whose result is not inferred (JET).
+# or more entries (`_PRED_TABLES` has 47) takes Base's `Any32` method, whose result is not inferred (JET).
 "Register the tables `tables` in order, the first at dispatch index `first + 1`; returns the next free index."
 function _register_tables!(gd::PL_global_data{T}, first::Int, ::Tuple{})::Int where {T}
     return first
@@ -237,6 +239,10 @@ function setBuiltinPredicateProperties!(gd::PL_global_data{T})::Nothing where {T
     gd.procedures_dwakeup1 = lookupProcedure(mk_sym(T, Symbol("\$wakeup")), 1, m)  # LOOKUPPROC(dwakeup1)
     gd.procedures_arg3 = lookupProcedure(mk_sym(T, :arg), 3, m)   # LOOKUPPROC(arg3): the slow route of B_ARG_CF/B_ARG_VF
     gd.procedures_print_message2 = lookupProcedure(mk_sym(T, :print_message), 2, m)  # LOOKUPPROC(print_message2)
+    # PROCEDURE_tune_gc3 = PL_predicate("tune_gc", 3, "prolog") (pl-ext.c:385-386 at the pin 18168e62; ALLOC-FIX f)
+    gd.procedures_tune_gc3 = lookupProcedure(
+        mk_sym(T, :tune_gc), 3, lookupModule(gd, mk_sym(T, :prolog))
+    )
     gd.procedures_reset3 = lookupProcedure(mk_sym(T, :reset), 3, m)   # LOOKUPPROC(reset3)
     gd.procedures_dtbl_reset6 = lookupProcedure(mk_sym(T, Symbol("\$tbl_reset")), 6, m)  # LOOKUPPROC(dtbl_reset6)
     gd.procedures_call_continuation1 = lookupProcedure(mk_sym(T, :call_continuation), 1, m)  # LOOKUPPROC(call_continuation1)

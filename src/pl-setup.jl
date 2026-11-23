@@ -24,7 +24,8 @@ const TRAIL_SPARE = 256
 # PORT: pl-setup.c init_stack as init_stack!
 # DIVERGES: the local stack's, in positions; there is no name (the overflow's context names it,
 # src/pl-alloc.jl), `min_free` (the kernel's growth doubles, src/pl-gc.jl `growStacks!`), `gced_size`
-# or GC policy (no stack garbage collector until G1). The cells and the record pools are grown to
+# or GC policy (the collector's `gced_size` and `min_free` are `ld.gc.global_policy` and `ld.gc.trail_policy`, src/pl-gc.jl; the local
+# stack has none). The cells and the record pools are grown to
 # `size` (`_resize_local!`); `stack_malloc` allocated them upstream.
 "Set up the local stack: `size` positions, of which `spare` are reserved above its `max` (pl-setup.c)."
 function init_stack!(ld::PL_local_data{T}, size::Int, spare::Int)::Nothing where {T}
@@ -46,6 +47,7 @@ function allocStacks!(ld::PL_local_data{T})::Bool where {T}
     ld.global_spare = ld.global_def_spare = GLOBAL_SPARE    # init_stack(global, …, 512*SIZEOF_WORD)
     init_stack!(ld, LOCAL_INITIAL, LOCAL_SPARE)
     ld.trail_spare = ld.trail_def_spare = TRAIL_SPARE       # init_stack(trail, …, 256*SIZEOF_WORD)
+    ld.trail_size = TRAIL_INITIAL                           # itrail = nextStackSizeAbove(mintrail-1) (pl-setup.c:1601/1604; G1: a modelled size, `_growTrail!`)
     return true
 end
 
@@ -103,10 +105,11 @@ end
 # f1b under audit D-0049: the local stack shrunk again after an overflow, the spares re-reserved as it
 # shrinks); without it the three spares are reserved again (`trim_stack!`, `_global!`, `_trail!`). `lTop` is
 # raised to the query's saved argument pointer while the spares are reserved, as upstream's.
-# NOT PORTED: `trim_stack_requested`: its readers are the stack garbage collector's (pl-gc.c
-# `garbageCollect`), not ported until G1; SECURE_GC's clearing and the debug checks.
+# `LD->trim_stack_requested` is cleared first (pl-setup.c:1715); `outOfStack!` sets it and `garbageCollect` reads it (G1-A);
+# SECURE_GC's clearing and the debug checks are left out.
 "Reclaim the local stack's spare after an exception (pl-setup.c)."
 function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
+    ld.trim_stack_requested = false             # LD->trim_stack_requested = false
     resize && growStacks_trim!(ld)              # growStacks(GROW_TRIM, GROW_TRIM, GROW_TRIM)
     lsave = ld.lTop
     if ld.query != 0                            # saved registers above lTop
@@ -134,8 +137,9 @@ end
 # upstream's order), then since AV1 `attvar.head` and `attvar.tail`, each with a PERMANENT global cell
 # (audit D-0122 Q1 (a), a representation-only divergence: upstream assigns the two local-stack cells
 # themselves, pl-attvar.c:127 "on local stack!", and its own TBD, pl-wam.c:1565, names the global
-# stack); the others belong to subsystems not ported (`trim.dummy`, `attvar.gc_attvars` (G1); nor
-# `destroyGlobalVars`); since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
+# stack); the others belong to subsystems not ported (`trim.dummy`; nor
+# `destroyGlobalVars`); `attvar.gc_attvars`, the collector's reference to the newest attvar link, is not made here: `save_grefs`
+# (src/pl-gcmark.jl) makes it for the length of a collection, in a foreign frame of its own, and `restore_grefs` reads it back; since TAB1 TB4 `tabling.delay_list` (`init_delay_list`, after the
 # attvar pair as upstream), since TB6 `tabling.idg_current` (one more reference and permanent cell, right after it as upstream).
 # Since TX1e the undo list's cell is the FIRST global cell (`init_undo_list`, pl-setup.c:1557
 # "must be first": `Undo!` finds it by position 1), allocated before the permanent cells above; it is not a term reference. So later term references
@@ -193,6 +197,111 @@ function emptyStacks!(ld::PL_local_data{T})::Nothing where {T}
     return nothing
 end
 
+# PORT: pl-setup.c gc_handler
+# (pl-setup.c:829-834 at the pin, registered at :931 `PL_signal(SIG_GC|PL_SIGSYNC, gc_handler)`:
+#     static void
+#     gc_handler(int sig)
+#     { (void)sig;
+#       garbageCollect(0);
+#     }
+# DIVERGES: the collector is given the VM-state callback (`get_vmi_state`), as every kernel caller of `garbageCollect`; reason 0 takes
+# `LD->gc.stats.request` (`gc_stat_start!`, pl-gc.c:573-574).
+"The handler of `SIG_GC`: run the stack collector for the requested reason (pl-setup.c `gc_handler`)."
+function gc_handler(ld::PL_local_data, sig::Int)::Nothing
+    garbageCollect(ld, 0; vmi_state_of=get_vmi_state)
+    return nothing
+end
+
+# PORT: pl-setup.c gc_tune_handler
+# (pl-setup.c:836-841 at the pin, registered at :932 `PL_signal(SIG_TUNE_GC|PL_SIGSYNC, gc_tune_handler)`:
+#     static void
+#     gc_tune_handler(int sig)
+#     { (void)sig;
+#       call_tune_gc_hook();
+#     }
+"The handler of `SIG_TUNE_GC`: call the `prolog:tune_gc/3` hook (pl-setup.c `gc_tune_handler`)."
+function gc_tune_handler(ld::PL_local_data, sig::Int)::Nothing
+    call_tune_gc_hook(ld)
+    return nothing
+end
+
+# PORT: pl-setup.c dispatch_signal as _dispatch_gc_signal
+# DIVERGES (G1-C, dispatcher decision 1): only the two collector signals have a handler (`PL_signal(SIG_GC|PL_SIGSYNC, gc_handler)` and
+# `SIG_TUNE_GC`'s, pl-setup.c:931-932, both C handlers: `dispatch_signal` calls `sh->handler(sig)` for them). The rest of `dispatch_signal`
+# (Prolog handlers, `PLSIG_THROW`, the frame it opens, the OS signals) is the signal owner's (`on_signal/4`, Q10/TH1); no other bit is raised
+# here, so another number is refused by name.
+"Run the handler of the virtual signal `sig` (pl-setup.c `dispatch_signal`, the collector's two)."
+function _dispatch_gc_signal(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
+    if sig == SIG_GC
+        gc_handler(ld, sig)
+    elseif sig == SIG_TUNE_GC
+        gc_tune_handler(ld, sig)
+    else
+        throw(
+            NotPortedError{T}(
+                mk_sym(T, :signal),
+                "dispatch_signal for signal $sig",
+                "Q10/TH1 (on_signal/4)"
+            )
+        )
+    end
+    return nothing
+end
+
+# PORT: pl-setup.c handleSignals
+# (pl-setup.c:1225-1270 at the pin)
+# DIVERGES (G1-C, dispatcher decision 1): the pending signals are the bits of `ld.gc.sig_pending` (bit `sig - SIG_PROLOG_OFFSET`: one word,
+# `SIGMASK_WORDS` 1, the first signal `SIG_PROLOG_OFFSET`), dispatched by `_dispatch_gc_signal`. `HAS_LD` always holds; `handleSigInt` is not
+# Unix's. `LD->critical` is not kept: its writers (`startCritical`: sig_atomic/1, src/pl-pro.jl; the cleanup handler, src/pl-wam.jl) are
+# themselves left to the signal owner, so a pending collection is served inside such a region where upstream serves it at the next safe
+# point after it; the collector keeps every reachable term, so only the moment of the collection differs.
+"Run the handlers of the pending signals; the number handled, or -1 when an exception is pending (pl-setup.c `handleSignals`)."
+function handleSignals(ld::PL_local_data)::Int
+    done = 0
+    is_signalled(ld) || return 0                    # if ( !is_signalled() ) return 0;
+    ld.exception_term != 0 && return -1             # if ( exception_term ) return -1;
+    while ld.gc.sig_pending != 0                    # while( LD->signal.pending[i] )
+        sig = SIG_PROLOG_OFFSET                     # int sig = MINSIGNAL+SIGMASK_WIDTH*i;
+        mask = UInt64(1)                            # sigmask_t mask = 1;
+        while mask != 0                             # for( ; mask ; mask <<= 1, sig++ )
+            if (ld.gc.sig_pending & mask) != 0
+                ld.gc.sig_pending &= ~mask          # ATOMIC_AND(&LD->signal.pending[i], ~mask);
+                done += 1
+                _dispatch_gc_signal(ld, sig)        # dispatch_signal(sig, true);
+                ld.exception_term != 0 && return -1 # if ( exception_term ) return -1;
+            end
+            mask <<= 1
+            sig += 1
+        end
+    end
+    done != 0 && updateAlerted(ld)                  # if ( done ) updateAlerted(LD);
+    return done
+end
+
+# PORT: pl-setup.c PL_handle_signals
+# (pl-setup.c:1193-1201 at the pin:
+#     int
+#     PL_handle_signals(void)
+#     { GET_LD
+#
+#       if ( !is_signalled() )
+#         return 0;
+#       else
+#         return handleSignals();
+#     }
+# )
+# DIVERGES: as `handleSignals`'s (the collector's virtual signals). Its caller here is i_metacall_common's
+# CHECK_INTERRUPT arm (src/pl-wam.jl) and assert_term's retry (src/pl-comp.jl); the long-loop callers
+# (pl-list.c, pl-file.c, ...) keep their own DIVERGES lines.
+"Run the pending signals' handlers when one is pending; 0, their number, or -1 for an exception (pl-setup.c `PL_handle_signals`)."
+function PL_handle_signals(ld::PL_local_data)::Int
+    if !is_signalled(ld)                            # if ( !is_signalled() )
+        return 0
+    else
+        return handleSignals(ld)
+    end
+end
+
 # PORT: pl-setup.c signames as SIGNAMES
 # DIVERGES (HALT1, for the audit): the signal numbers are Linux's (x86_64): upstream reads them from the host's
 # `<signal.h>`; the kernel is Linux-only here. The `#ifdef`s of signals Linux lacks are left out (`emt`, `info`);
@@ -207,9 +316,8 @@ const SIGNAMES = (
     ("winch", 28)
 )
 
-# PORT: pl-incl.h SIG_PROLOG_OFFSET
-"The number of the first Prolog (virtual) signal (pl-incl.h)."
-const SIG_PROLOG_OFFSET = 32
+# `SIG_PROLOG_OFFSET`, `SIG_GC` and `SIG_TUNE_GC` (pl-incl.h) are defined in src/pl-incl.jl (G1-C: the run loop and the collector, included
+# before this file, name them); the other virtual signal numbers are defined here.
 # PORT: pl-incl.h MINSIGNAL
 "The number of the first signal, with OS signals (pl-incl.h `HAVE_OS_SIGNALS`)."
 const MINSIGNAL = 1
@@ -223,8 +331,6 @@ const NUM_SIGNALS = MAXSIGNAL - MINSIGNAL + 1
 # DIVERGES: the `SIG_*` numbers (`SIG_PROLOG_OFFSET + VSIG_*`) as `Int` constants; `O_ATOMGC` and `O_ENGINES` are on.
 "Prolog signal: atom garbage collection (pl-incl.h `SIG_ATOM_GC`)."
 const SIG_ATOM_GC = SIG_PROLOG_OFFSET + 0
-"Prolog signal: stack garbage collection (pl-incl.h `SIG_GC`)."
-const SIG_GC = SIG_PROLOG_OFFSET + 1
 "Prolog signal: run the thread's signal queue (pl-incl.h `SIG_THREAD_SIGNAL`)."
 const SIG_THREAD_SIGNAL = SIG_PROLOG_OFFSET + 2
 "Prolog signal: clause garbage collection (pl-incl.h `SIG_CLAUSE_GC`)."
@@ -233,8 +339,6 @@ const SIG_CLAUSE_GC = SIG_PROLOG_OFFSET + 3
 const SIG_PLABORT = SIG_PROLOG_OFFSET + 4
 "Prolog signal: halt (pl-incl.h `SIG_PLHALT`)."
 const SIG_PLHALT = SIG_PROLOG_OFFSET + 5
-"Prolog signal: tune the GC (pl-incl.h `SIG_TUNE_GC`)."
-const SIG_TUNE_GC = SIG_PROLOG_OFFSET + 6
 
 # PORT: pl-setup.c PLSIG_USERFLAGS
 "The range of the API-visible signal flags (pl-setup.c)."
@@ -592,7 +696,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         Tuple{Int, Procedure{T}}[],             # format_predicates: no user directive (pl-fmt.c: format_predicates is NULL until format_predicate/2)
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
-        locale_state{T}()                       # locale: empty until initLocale! (below)
+        locale_state{T}(),                      # locale: empty until initLocale! (below)
+        dc_proc                                 # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)
@@ -765,12 +870,14 @@ end
 # DIVERGES: the limit is `ld.stacks_limit`, in positions (words); `limit` is in bytes, as the `stack_limit` flag and
 # `'$set_prolog_stack'/4` give it, and is rounded DOWN to whole words (swipl keeps the exact byte count: 2000001 is reported back
 # as 2000001, here as 2000000). `sizeStack(local) + sizeStack(global) + sizeStack(trail)` is `_stacks_in_use(ld, 0)`, the sum
-# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). There is no stack garbage
-# collector (`garbageCollect(GC_USER)`, src/pl-gc.jl `pl_garbage_collect`): only `trimStacks(true)` is tried.
+# every overflow check compares with the limit (the three stacks with their spares, src/pl-alloc.jl). `garbageCollect(GC_USER)` is
+# the collector's with the VM-state callback `get_vmi_state` (src/pl-gcdriver.jl), as `pl_garbage_collect` passes it (G1-6; the collection declines
+# while the collector is blocked or off, and `trimStacks(true)` follows either way).
 "Set the combined limit of the stacks to `limit` bytes; a limit below what the stacks hold after trimming them is `permission_error(limit, stacks, Limit)` (pl-setup.c)."
 function set_stack_limit!(ld::PL_local_data{T}, limit::Int)::Bool where {T}
     if limit < 8 * ld.stacks_limit && limit < 8 * _stacks_in_use(ld, 0)
-        trimStacks!(ld, true)                           # garbageCollect(GC_USER); trimStacks(true)
+        garbageCollect(ld, Int(GC_USER); vmi_state_of=get_vmi_state)   # garbageCollect(GC_USER)
+        trimStacks!(ld, true)                           # trimStacks(true)
 
         if limit < 8 * _stacks_in_use(ld, 0)
             ex = PL_new_term_ref(ld)
