@@ -20,7 +20,6 @@
 #     units of test_gc.pl (its upstream lines 141-218) stay held out as in test_gc_leak_reset_upstream_swipl.jl (the D-0164 term class).
 #   * Pins: swipl 10.1.20 (the pinned build ~/.local/swipl-pin1-18168e62), two byte-identical runs of the driver below with LC_ALL=C (stdout AND stderr identical, stderr
 #     empty). A row's pin is `ok` for every test: each passes at swipl.
-#   * KNOWN DIFFERENCE (G1-FIX-5, `_GU_KNOWN_DIFF`): t_cg01 raises existence_error(procedure, pu_clause_gc:succ/2) (AR1 owns succ/2; swipl: ok).
 #   * UNVERIFIED on the kernel (pinned from swipl twice; not run on the kernel): every kernel answer. The kernel may lack `stack_limit` handling, `garbage_collect_atoms/0`,
 #     `atomics_to_string/3` or `statistics(globalused|trailused, _)`: a row then fails alone and the line says which.
 
@@ -413,17 +412,11 @@ const _GU_PINNED = [
 ]
 
 """
-KNOWN DIFFERENCE (premise, owner AR1; G1-FIX-5): `t_cg01` (pu_clause_gc:test_clause_gc). The unit's `run/4` calls `succ/2` (upstream tests/GC/test_clause_gc.pl),
-which the kernel does not define at this base (`succ/2` is AR1's: docs/r2_owners.tsv `pred:succ/2 AR1`, pl-arith.c `succ`). The call is resolved in the unit's
-module (`pu_clause_gc`, importing from `user` then `system`), so the error names `pu_clause_gc:succ/2`: NOT a missing dynamic `cl/8` (functor/3 and clause/2 on it
-run before the first `succ/2`; the program's `:- dynamic cl/8` is honoured). Kernel: `raised(existence_error(procedure, pu_clause_gc:succ/2))`; swipl: `ok`.
-`test_clause_gc/1` only catches `resource_error(stack)`, so the error leaves the row.
-CHECKLIST (AR1): when `succ/2` lands, delete this entry; the row must then answer `ok` (`=@=`, `clause/2` on `cl/8` and the 2 MB stack limit run after it: untested).
-The swipl pins in `_GU_PINNED` stay swipl's (the live check compares them to swipl); only the kernel comparison reads this table.
+The known-difference table is EMPTY: `t_cg01` (pu_clause_gc:test_clause_gc; its `run/4` calls `succ/2`, which the kernel lacked until AR1) was its only entry, so every
+row is compared with swipl's pin. The swipl pins in `_GU_PINNED` are swipl's (the live check compares them to swipl). A row that differs again is added here at the
+kernel's EXACT answer, with swipl's in a comment and a checklist item.
 """
-const _GU_KNOWN_DIFF = Dict{String, String}(
-    "t_cg01" => "t_cg01 c[116,95,99,103,48,49]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[112,117,95,99,108,97,117,115,101,95,103,99],c[47]/2(a[115,117,99,99],i2)))))"
-)
+const _GU_KNOWN_DIFF = Dict{String, String}()
 
 "The answer plunit expects of every row: the test passes, so `R = ok`."
 const _GU_UPSTREAM = [
