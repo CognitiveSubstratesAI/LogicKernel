@@ -28,8 +28,13 @@
 # NOV (NO VERDICT), INV (INVALID), EQV (declared equivalents: accepted by a D-entry / declared). First the blocks that need a
 # person: survivors with NO OWNER in the ledger, declared equivalents with NO D-ENTRY in evidence/equivalents.tsv, jobs that
 # ended without a verdict (conclusion, the step that never completed), a battery whose Baseline failed (VOID).
+# THE SRC DIFF (D-1006 (2)): a non-empty `git diff --numstat BASE..SHA -- src` passes the `src diff` landing check only with
+# --release TEXT carrying `src-diff <sha256>` (the audit's release, `LAND <sha> [ids: ...,src-diff <sha256>]`) where <sha256> is the
+# sha256 of the numstat bytes as git prints them; the row prints the numstat and its sha256 either way. No release, a malformed or
+# a second token, or one differing digest fails; an empty diff passes as before.
 # Exit status: 0 all clean, 1 a blocker or a failed landing check, 2 unreadable, 3 a run still pending, 64 usage.
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -359,18 +364,48 @@ def git(root, *args, stdin=None):
     return r.returncode, r.stdout
 
 
-def landing_checks(root, sha, base):
-    """The D-0915 (1) checks as a list of (name, ok, text)."""
+SRC_RELEASE = re.compile(r"^src-diff ([0-9a-f]{64})$")
+
+
+def src_release(text):
+    """The `src-diff <sha256>` tokens of a release text (the `land/approved` description `LAND <sha> [ids: a,b,src-diff <sha256>]`):
+    (well-formed hex digests, malformed tokens). A token is one comma-separated item of the bracket list, exactly as the marker
+    step of tools/land_check.sh reads it."""
+    good, bad = [], []
+    m = re.search(r"\[ids: ([^\]]*)\]", text or "")
+    for t in (x.strip() for x in (m.group(1) if m else "").split(",")):
+        if t.startswith("src-diff"):
+            k = SRC_RELEASE.match(t)
+            (good if k else bad).append(k.group(1) if k else t)
+    return good, bad
+
+
+def landing_checks(root, sha, base, release=None):
+    """The D-0915 (1) checks as a list of (name, ok, text). `release` is the text of the audit's release of this SHA (or None):
+    a non-empty src diff passes ONLY if it carries `src-diff <sha256 of git diff --numstat base..sha -- src>` and the tool's own
+    numstat hashes to exactly that (D-1006 (2))."""
     out = []
-    rc, st = git(root, "diff", "--shortstat", "%s..%s" % (base, sha), "--", "src")
-    if rc != 0:
+    ns = subprocess.run(["git", "-C", root, "diff", "--numstat", "%s..%s" % (base, sha), "--", "src"], capture_output=True)
+    if ns.returncode != 0:
         out.append(("src diff", False, "git diff %s..%s failed (is %s fetched?)" % (base, sha[:8], base)))
-    elif not st.strip():
+    elif not ns.stdout.strip():
         out.append(("src diff", True, "empty"))
     else:
-        _, names = git(root, "diff", "--stat=90", "--stat-count=8", "%s..%s" % (base, sha), "--", "src")
-        out.append(("src diff", False, "NON-EMPTY:%s | %s" % (st.rstrip("\n"), "; ".join(
-            ln.split("|")[0].strip() for ln in names.splitlines()[:-1]))))
+        digest = hashlib.sha256(ns.stdout).hexdigest()
+        lines = ns.stdout.decode("utf-8", "replace").splitlines()
+        shown = "sha256 %s; numstat (git diff --numstat %s..%s -- src): %s" % (digest, base, sha[:8], "; ".join(
+            ln.replace("\t", " ") for ln in lines))
+        good, bad = src_release(release)
+        if bad:
+            out.append(("src diff", False, "NON-EMPTY, malformed release token(s) %s; %s" % (", ".join(bad), shown)))
+        elif not good:
+            out.append(("src diff", False, "NON-EMPTY, no `src-diff <sha256>` release; %s" % shown))
+        elif len(good) > 1:
+            out.append(("src diff", False, "NON-EMPTY, the release names more than one src-diff; %s" % shown))
+        elif good[0] != digest:
+            out.append(("src diff", False, "NON-EMPTY, the release names src-diff %s, the numstat hashes to another; %s" % (good[0], shown)))
+        else:
+            out.append(("src diff", True, "NON-EMPTY, released by src-diff %s; %s" % (digest, shown)))
     rc, diff = git(root, "diff", "%s..%s" % (base, sha))
     _, msgs = git(root, "log", "--format=%B", "%s..%s" % (base, sha))
     added = "\n".join(ln[1:] for ln in diff.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
@@ -564,6 +599,7 @@ def main(argv):
     ap.add_argument("--survivors", default=None)
     ap.add_argument("--equivalents", default=None)
     ap.add_argument("--no-landing", action="store_true")
+    ap.add_argument("--release", default=None, help="the text of the audit's release of this SHA (land/approved description)")
     try:
         a = ap.parse_args(argv[1:])
     except SystemExit:
@@ -592,7 +628,7 @@ def main(argv):
     judge(res, eqs, ledger, gate_set)
     res["caught_open"] = sorted({r["id"] for b in res["batteries"] for r in b["rows"]
                                  if r["kind"] == "caught" and ledger.get((b["name"], r["id"]), {}).get("status") in OPEN_STATES})
-    landing = None if a.no_landing else landing_checks(root, full, a.base)
+    landing = None if a.no_landing else landing_checks(root, full, a.base, a.release)
     if gate_set is not None:
         res["gate_complete"] = not res["set_uncovered"] and not res["set_not_clean"]
         res["gate_why"] = "; ".join(x for x in (
