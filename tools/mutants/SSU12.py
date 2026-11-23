@@ -104,9 +104,10 @@ MUTANTS = [
     dict(id="SSU1-E1 the mixing error names `modify` (KILL a02, a03)", file=E, targets=TA,
          old="        _err_atom(ld, mk_sym(T, :assert)), _err_atom(ld, mk_sym(T, :procedure)), pi\n",
          new="        _err_atom(ld, mk_sym(T, :modify)), _err_atom(ld, mk_sym(T, :procedure)), pi\n"),
-    dict(id="SSU1-T1 retract/1 without the CLAUSE_SSU_FLAGS test: `retract((F => true))` removes the fact F (KILL a22, a23, a24)", file=P, targets=TA,
+    dict(id="SSU1-T1 retract/1 without the CLAUSE_SSU_FLAGS test: `retract((F => true))` removes the fact F (EQUIVALENT: neck_ok (D-0994))", file=P, targets=TA,
          old="            (clause.flags & CLAUSE_SSU_FLAGS) == (flags & CLAUSE_SSU_FLAGS) && if cl_is_head\n",
-         new="            true && if cl_is_head\n"),
+         new="            true && if cl_is_head\n",
+         equivalent="src/pl-proc.jl:2488 (pl_retract1_va, the flags test `(clause.flags & CLAUSE_SSU_FLAGS) == (flags & CLAUSE_SSU_FLAGS)`; ratified EQUIVALENT, audit D-0994 (1), ledger row SSU1-T1) — read, not run. With `cl_is_head` the call's flags are 0 (UNIT_CLAUSE alone) and only UNIT_CLAUSE clauses pass, and a UNIT_CLAUSE clause carries no SSU bit, so the test is `0 == 0`. Otherwise (:2481-2486) neck_ok compares clause_functor(ld, clause.flags) == clause_functor(ld, flags), and a fact needs (flags & CLAUSE_SSU_FLAGS) == 0, so equal functors mean equal SSU bits and the removed conjunct never decides. Ends if a UNIT_CLAUSE clause can carry SSU bits or clause_functor stops being injective on them"),
     # SSU1-T2 (retract/1 without the neck test) is retired with BP2 (upstream ea1b569bd): `cl` takes the neck of the call's
     # flags, so the neck test is implied by the flags equality above it (tools/mutants/BP2r.py, BP2-Q9c/Q9d).
     # ── pl-supervisor.c chainPredicateSupervisor ──
