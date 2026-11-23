@@ -28,7 +28,7 @@ A = "src/pl-attvar.jl"
 MUTANTS = [
     # ── pl-copyterm.c: can_share / must_copy_attvar / unshare_attvar ──
     dict(id="AV6-C1 can_share shares an attributed variable's compound as ground (KILL ct05f)", file=C, targets=TA,
-         old="        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 && (flags & COPYING_ATTVAR) == 0\n",
+         old="        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 &&\n               (flags & COPYING_ATTVAR) == 0\n",
          new="        return true\n"),   # INT-MERGE-15 refit: the tip's can_share_cells (flags form); UNRUN
     dict(id="AV6-C2 must_copy_attvar never walks the attributes (KILL ct05v: a variable in an attribute and outside it)", file=C, targets=TA,
          old="@inline function must_copy_attvar(w::word, flags::Int, mode::Int)::Bool\n    if (flags & (COPY_ATTRS | COPY_MARKED)) != 0\n",

@@ -67,15 +67,15 @@ MUTANTS = [
     m("MISS1-CA9", "                    return mk_sym(T, :foreign)",
       "                    return mk_sym(T, :clause)", TARGETS_CA),
     # choice_type_atom: a catch choice named `debug` (kill: MG ca13)
-    m("MISS1-CA10", "c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :catch : :debug",
-      "c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :debug : :debug", TARGETS_CA),
+    m("MISS1-CA10", "    elseif c.type == CHP_CATCH\n        :catch\n    else\n        :debug",
+      "    elseif c.type == CHP_CATCH\n        :debug\n    else\n        :debug", TARGETS_CA),
     # C31 (the old DBG1 line's b6, b7, b8, b20-b23, refit to the Nov-22 text; rows ca15-ca22 are its t49-t57 re-run on the pinned swipl)
     # choice_type_atom: a jump choice point is named `clause` (kill: MG ca20, ca09)
-    m("MISS1-CA11", "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :",
-      "ty = c.type == CHP_JUMP ? :clause : c.type == CHP_CLAUSE ? :clause :", TARGETS_CA),
+    m("MISS1-CA11", "    ty = if c.type == CHP_JUMP\n        :jump\n    elseif c.type == CHP_CLAUSE\n        :clause",
+      "    ty = if c.type == CHP_JUMP\n        :clause\n    elseif c.type == CHP_CLAUSE\n        :clause", TARGETS_CA),
     # choice_type_atom: a clause choice point is named `jump` (kill: MG ca15, ca10)
-    m("MISS1-CA12", "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :",
-      "ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :jump :", TARGETS_CA),
+    m("MISS1-CA12", "    ty = if c.type == CHP_JUMP\n        :jump\n    elseif c.type == CHP_CLAUSE\n        :clause",
+      "    ty = if c.type == CHP_JUMP\n        :jump\n    elseif c.type == CHP_CLAUSE\n        :jump", TARGETS_CA),
     # PL_get_choice: a position no choice point holds is a type error, not an existence error (kill: MG ca06)
     m("MISS1-CA13", "PL_error(ld, ERR_EXISTENCE, mk_sym(T, :choice), r)",
       "PL_error(ld, ERR_TYPE, mk_sym(T, :choice), r)", TARGETS_CA),
@@ -205,8 +205,8 @@ MUTANTS = [
       '    empty!(sf.modules)\n',
       '    nothing\n', TARGETS_UL, file=S),
     m('MISS1-SRC2-13 a system file is unloaded (kill: TSF system-file testset: the permission error and the clause kept)',
-      '        if sf.system\n            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload)',
-      '        if false\n            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload)', TARGETS_UL, file=S),
+      "        if sf.system\n            rc = PL_error(\n                ld, \"\", 0, \"\", ERR_PERMISSION, mk_sym(T, :unload)",
+      "        if false\n            rc = PL_error(\n                ld, \"\", 0, \"\", ERR_PERMISSION, mk_sym(T, :unload)", TARGETS_UL, file=S),
     m('MISS1-SRC2-14 an unknown file answers false (kill: MG ul03, TSF u04)',
       '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend',
       '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FFALSE\nend', TARGETS_UL, file=S),
@@ -214,8 +214,8 @@ MUTANTS = [
       '        releaseSourceFile(sf)\n        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend',
       '        return rc ? FTRUE : FFALSE\n    end\n\n    return FTRUE\nend', TARGETS_UL, file=S),
     m('MISS1-SRC2-16 the permission error names another action (kill: TSF system-file testset `occursin(unload)`)',
-      'ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1)',
-      'ERR_PERMISSION, mk_sym(T, :load), mk_sym(T, :file), A1)', TARGETS_UL, file=S),
+      "ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1\n            )",
+      "ERR_PERMISSION, mk_sym(T, :load), mk_sym(T, :file), A1\n            )", TARGETS_UL, file=S),
     m('MISS1-SRC2-17 unloadFile walks the procedures oldest first (kill: TSF newest-first testset: baz < bar < foo)',
       '    for proc in Iterators.reverse(sf.procedures)\n        def = proc.definition\n\n        if (def.flags & (P_FOREIGN',
       '    for proc in sf.procedures\n        def = proc.definition\n\n        if (def.flags & (P_FOREIGN', TARGETS_UL, file=S),

@@ -261,8 +261,8 @@ MUTANTS = [
          old="    paths_CWDdir=:reset,             # pl-os.c:989, :1864-1866 at cbf4e189\n",
          new=""),
     dict(id="LB4B2-CWD2 the reset value is \"/\", not the constructor's \"\" (KILL the same row: the copy's field differs from setupProlog's, and PL_cwd trusts \"/\")", file=GT, targets=_first(["test/db/test_gd_template.jl"]),
-         old='const GD_COPY_RESET = (paths_CWDdir="",',
-         new='const GD_COPY_RESET = (paths_CWDdir="/",'),
+         old="const GD_COPY_RESET = (\n    paths_CWDdir=\"\",",
+         new="const GD_COPY_RESET = (\n    paths_CWDdir=\"/\","),
     # ── src/pl-error.jl: printMessage calls print_message/2 ──
     dict(id="LB4B2-E1 printMessage never calls print_message/2, the fallback branch always (KILL test_load_swipl.jl's message_hook rows, T4)", file=ER, targets=TP,
          old="            if isDefinedProcedure(gd, pred) && ld.in_print_message <= OK_RECURSIVE\n",

@@ -59,7 +59,7 @@ MUTANTS = [
     m("RD2-G3 get_quasi_quotation: option and no-option swapped (KILL QA qa01: the option gets `$quasi_quotation(...)`, QB qb01: the library gets a code list)",
       "if rd.quasi_quotations != 0             # option; must return strings", "if rd.quasi_quotations == 0             # option; must return strings", QQ),
     m("RD2-G4 get_quasi_quotation: the code list of the option is read as Latin-1 (KILL QA qa05: [228,8364] becomes the bytes of its UTF-8)",
-      "bytes), ENC_UTF8, false)", "bytes), ENC_ISO_LATIN_1, false)", QQ),
+      "bytes), ENC_UTF8, false\n                )", "bytes), ENC_ISO_LATIN_1, false\n                )", QQ),
     m("RD2-G5 raw_read_quasi_quotation: the end of text is a plain end_of_file (KILL QA qa24, qa25, qa51, qa75: end_of_file_in_quasi_quotation)",
       'return rawSyntaxError("end_of_file_in_quasi_quotation", rd)', 'return rawSyntaxError("end_of_file", rd)', QQ),
     # ---- the tokens

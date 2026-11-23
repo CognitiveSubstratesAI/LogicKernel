@@ -73,8 +73,8 @@ MUTANTS = [
     # ── piece B: the run loop's hook sites (src/pl-wam.jl) and the `$cov_start` port (src/pl-coverage.jl); KILL rows are rows of test_coverage_run_swipl.pl
     dict(id="COV1-15 the call alert test ignores the coverage bit (E1; KILL r6-r9: no call site is recorded, the CALL port is reached only through depart_alerted)",
          file=W, targets=TB,
-         old='    (\n        ld.alerted &\n        (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)\n    ) != 0 &&\n        @goto depart_alerted',
-         new='    (\n        ld.alerted &\n        (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO)\n    ) != 0 &&\n        @goto depart_alerted'),
+         old="    (\n        ld.alerted &\n        (\n            ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO |\n            ALERT_COVERAGE\n        )\n    ) != 0 &&\n        @goto depart_alerted",
+         new="    (\n        ld.alerted &\n        (\n            ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO \n        )\n    ) != 0 &&\n        @goto depart_alerted"),
     dict(id="COV1-16 depart_alerted does not record the call port (E2; KILL r6, r7, r8, r9: the call sites' enter counts)",
          file=W, targets=TB,
          old='    Coverage(gd, ld, FR, CALL_PORT)                 # Coverage(FR, CALL_PORT) (COV1; after Profile(), before the depth limit)\n',

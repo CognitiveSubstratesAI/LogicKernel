@@ -173,8 +173,8 @@ MUTANTS = [
     dict(id="MUTEX-P13 the mutexes are enumerated in reverse creation order",
          file=MX, targets=TM,
          # candidate equivalent: src/pl-mutex.jl:pl_mutex_property2_va — upstream enumerates in hash order, which no row can pin; m32 sorts its answers with msort/2 (see the file header: the DIVERGES of the enumeration order); needs the widened run and the audit's ruling
-         old="sort!(state.mutexes; by = x -> x.serial)",
-         new="sort!(state.mutexes; by = x -> -x.serial)"),
+         old="sort!(state.mutexes; by=x -> x.serial)",
+         new="sort!(state.mutexes; by=x ->- x.serial)"),
     # ── registration ──
     dict(id="MUTEX-R1 mutex_unlock_all/0 is registered under another name (aimed by m33, m34, m56)", file=MX, targets=TX,
          old='PL_extension("mutex_unlock_all", 0,',
