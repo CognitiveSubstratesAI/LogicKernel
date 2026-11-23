@@ -1908,27 +1908,6 @@ function qlfPutUInt32(i::UInt32, fd::IOSTREAM)::Nothing
     end
 end
 
-# PORT: pl-qlf.c qlfGetUInt32
-# DIVERGES: a seventh group (corrupt input; the C shifts by 35, undefined) shifts out to 0; at end of file `Snpgetc` answers -1, which
-# the C's `unsigned int c` reads as 0xffffffff (so `c & 0x80` is set and the value is 0x7f); the same here (`-1 % UInt32`).
-"Read a pl-qlf.c unsigned varint from `fd` (pl-qlf.c `qlfGetUInt32`)."
-function qlfGetUInt32(fd::IOSTREAM)::UInt32
-    c = Snpgetc(fd) % UInt32
-    (c & 0x80) != 0 && return c & 0x7f
-    v = c & 0x7f
-    shift = 7
-    while true
-        c = Snpgetc(fd) % UInt32
-        if (c & 0x80) != 0
-            v |= (c & 0x7f) << shift
-            return v
-        else
-            v |= c << shift
-            shift += 7
-        end
-    end
-end
-
 # PORT: pl-qlf.c PL_qlf_put_uint32
 "Write `i` as a state-file unsigned integer; true if the stream has no error afterwards (pl-qlf.c `PL_qlf_put_uint32`)."
 function PL_qlf_put_uint32(i::UInt32, s::IOSTREAM)::Bool
