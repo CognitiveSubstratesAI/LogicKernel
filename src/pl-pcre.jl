@@ -1370,3 +1370,220 @@ function re_config_(ld::PL_local_data{T}, opt::term_t)::foreign_t where {T}
     end
     return FFALSE                                                         # was: PL_existence_error("re_config", opt)
 end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+
+# PCRE1 piece 11 (packages/pcre/pcre4pl.c, packages-pcre a5e4c885; evidence/R2/pkg2_handoff.md "PCRE-CODE-C"): MATCH. `re_get_subject` (C 453-466),
+# `out_of_range`, `put_capname`, `put_capval`, `unify_match`, `re_error` (C 1548-1690), `re_matchsub_` and `re_match_` (C 1695-1756), over the piece 9
+# wrappers and the piece 1 offset helpers. Nothing here has run (no Julia process was started). `re_foldl_` and the portray predicates are piece D;
+# `get_re`/`get_re_copy` (the blob) and the registration are piece E.
+#
+# DIVERGES (piece 11; 15 is the `\K` guard, 25 and up are new):
+#  15. The `\K` guard of `unify_match` (C 1625-1633: `ovector[0] > ovector[1]`, then `PL_representation_error("\K used assertion to set the match
+#      start after its end")`) is ported 1:1. PCRE2 10.47 (the Julia library) rejects `\K` inside a lookaround at COMPILE time (audit D-1003 (4) Q6), so
+#      through the library this branch is unreachable; the oracle's 10.42 reaches it. The guard stays as the C has it, and is tested on a hand-built ovector.
+#  25. `get_re` / `get_re_copy` are piece E (they read the regex from a blob). `re_matchsub_` and `re_match_` take the `re_data` itself and work on
+#      `re_copy_for_match(re)`: the struct copy of `get_re_copy` (own flag pairs, shared `code`/`capture_names`/`pattern`) with the match flags reset.
+#      The `re_data` must be compiled (`code != C_NULL`): the C reaches `re_matchsub_` only through a compiled blob and has no guard either.
+#  26. The text FLI that pcre4pl.c uses and the kernel has under other names: `PL_get_nchars(.., REP_UTF8|CVT_ATOM|CVT_STRING|CVT_LIST|CVT_EXCEPTION)` is
+#      `PL_get_text` + `PL_mb_text(REP_UTF8)` (`re_get_subject`; no `alloc_flags`, Julia's GC owns the bytes); `PL_put_chars(t, REP_UTF8|type, len, s)`
+#      is `PL_put_variable` + `PL_unify_text` of an `ENC_UTF8` text (`re_put_chars`); `PL_representation_error(msg)` is `PL_error(ERR_REPRESENTATION,
+#      atom)` (`re_representation_error`); `FUNCTOR_pair2` is `-`/2; `PL_STRINGS_MARK/RELEASE` are not needed (pl-prims.jl does the same).
+#  27. The ovector is a Vector copy (`pcre2_ovector_copy`, 17), indexed 1-based (`ovector[i]` of the C is `ovector[i+1]`); the subject offsets stay 0-based
+#      (1 of piece 1). `re_matchsub_` frees the match data in a `finally` (the C has no exception path); the `assert(0)` default of `put_capval` is `error(..)`.
+#      `re_matchsub_` returns `FTRUE`/`FFALSE`; `result == 0` is the C's NULL `result` of `re_match_`.
+# ---------------------------------------------------------------------------------------------------------------------------------
+
+# PORT: packages/pcre/pcre4pl.c re_get_subject
+# DIVERGES: 26.
+"Get the text of `t` (atom, string or code/character list) as UTF-8 bytes into `subj`; false with the error raised if it is none (pcre4pl.c `re_get_subject`)."
+function re_get_subject(ld::PL_local_data{T}, t::term_t, subj::re_subject)::Bool where {T}
+    init_subject!(subj)
+    txt = PL_get_text(ld, t, CVT_ATOM | CVT_STRING | CVT_LIST | REP_UTF8 | CVT_EXCEPTION)    # GET_NCHARS_FLAGS
+    txt === nothing && return false
+    PL_mb_text(txt, REP_UTF8)
+    subj.subject = txt.text
+    subj.length = length(txt.text)
+    return true
+end
+
+# PORT: packages/pcre/pcre4pl.c re_error (PL_representation_error), unify_match (PL_representation_error)
+# DIVERGES: 26.
+"Raise `representation_error(Msg)` with `Msg` the atom of `msg` (kernel stand-in for `PL_representation_error`); false."
+re_representation_error(ld::PL_local_data{T}, msg::String) where {T} = PL_error(ld, ERR_REPRESENTATION, mk_sym(T, Symbol(msg)))
+
+# PORT: packages/pcre/pcre4pl.c PL_put_chars (as pcre4pl.c's put_capval uses it)
+# DIVERGES: 26.
+"Put the first `len` bytes of `s` (UTF-8) into `t` as `type` (`PL_ATOM` or `PL_STRING`) (kernel stand-in for `PL_put_chars(t, REP_UTF8|type, len, s)`)."
+function re_put_chars(ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8})::Bool where {T}
+    txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, ENC_UTF8, false)
+    PL_put_variable(ld, t)
+    return PL_unify_text(ld, t, 0, txt, type)
+end
+
+# PORT: packages/pcre/pcre4pl.c out_of_range
+"Raise `domain_error(offset, Index)` (pcre4pl.c `out_of_range`); false."
+function re_out_of_range(ld::PL_local_data{T}, index::Int)::Bool where {T}
+    ex = PL_new_term_ref(ld)
+    return ex != 0 && PL_put_int64(ld, ex, index) && PL_domain_error(ld, "offset", ex)
+end
+
+# PORT: packages/pcre/pcre4pl.c put_capname
+# DIVERGES: 27 (`i` is the 0-based group, the name table entry `i + 1`).
+"Put the name of capture `i` into `t`: its atom, or the integer `i` for an unnamed capture (pcre4pl.c `put_capname`)."
+function re_put_capname(ld::PL_local_data{T}, t::term_t, re::re_data, i::Int)::Bool where {T}
+    if !isempty(re.capture_names)
+        name = re.capture_names[i + 1].name
+        name !== nothing && return PL_put_atom(ld, t, mk_sym(T, Symbol(name)))
+    end
+    return PL_put_integer(ld, t, i)
+end
+
+# PORT: packages/pcre/pcre4pl.c put_capval
+# DIVERGES: 26, 27.
+"Put the value of capture `i` of the match `ovector` over `subject` into `t`, as the capture's type says (pcre4pl.c `put_capval`)."
+function re_put_capval(ld::PL_local_data{T}, t::term_t, re::re_data, subject::re_subject, i::Int, ovector::AbstractVector{Csize_t})::Bool where {T}
+    cstart = ovector[i * 2 + 1]
+    cend = ovector[i * 2 + 2]
+    ctype = Int(re.capture_type.flags)
+
+    if cstart == PCRE2_UNSET                # group did not participate:
+        cstart = cend = ovector[1]          # empty at start of the match
+    end
+
+    s = view(subject.subject, (Int(cstart) + 1):length(subject.subject))      # &subject->subject[cstart]
+    len = Int(cend - cstart)
+
+    if !isempty(re.capture_names) && re.capture_names[i + 1].type != CAP_DEFAULT
+        ctype = re.capture_names[i + 1].type
+    end
+
+    if ctype == CAP_ATOM
+        return re_put_chars(ld, t, PL_ATOM, len, s)
+    elseif ctype == CAP_STRING
+        return re_put_chars(ld, t, PL_STRING, len, s)
+    elseif ctype == CAP_INTEGER || ctype == CAP_FLOAT || ctype == CAP_NUMBER || ctype == CAP_TERM
+        return PL_put_term_from_chars(ld, t, REP_UTF8, s, len)
+    elseif ctype == CAP_RANGE
+        av = PL_new_term_refs(ld, 2)
+        cs = re_bytep_to_charp(subject, Int(cstart))
+        ce = re_bytep_to_charp(subject, Int(cend))
+        rc = av != 0 && PL_put_int64(ld, av + 0, cs) && PL_put_int64(ld, av + 1, ce - cs) &&
+            PL_cons_functor_v(ld, t, _err_functor(ld, Symbol("-"), 2), av)        # FUNCTOR_pair2
+        av != 0 && PL_reset_term_refs(ld, av)
+        return rc
+    else
+        error("PUT_CAPVAL ctype: ", string(ctype, base = 16, pad = 8))
+    end
+end
+
+# PORT: packages/pcre/pcre4pl.c unify_match
+# DIVERGES: 15, 26, 27.
+"Unify `t` with the list `Name-Value` of the first `ovsize` captures of the match `ovector` (pcre4pl.c `unify_match`); false with an error for a `\\K` that moved the start past the end."
+function re_unify_match(ld::PL_local_data{T}, t::term_t, re::re_data, subject::re_subject, ovsize::Int, ovector::AbstractVector{Csize_t})::Bool where {T}
+    av = PL_new_term_refs(ld, 4)
+    capn = av + 0
+    caps = av + 1
+    pair = av + 2
+    list = av + 3
+    # Must guard against patterns such as /(?=.\K)/ that use \K in an assertion to set the start of a match later than its end.
+    if ovector[1] > ovector[2]
+        return re_representation_error(ld, "\\K used assertion to set the match start after its end")
+    end
+
+    fd = _err_functor(ld, Symbol("-"), 2)                                         # FUNCTOR_pair2
+    PL_put_nil(ld, list)
+    for i in (ovsize - 1):-1:0
+        rc = re_put_capname(ld, capn, re, i) &&
+            re_put_capval(ld, caps, re, subject, i, ovector) &&
+            PL_cons_functor(ld, pair, fd, capn, caps) &&
+            PL_cons_list(ld, list, pair, list)
+        rc || return false
+    end
+
+    rc = PL_unify(ld, t, list)
+    PL_reset_term_refs(ld, av)
+    return rc
+end
+
+# PORT: packages/pcre/pcre4pl.c re_error
+# DIVERGES: 26. `ec` is the PCRE2 result of a match (negative).
+"Map the PCRE2 error code `ec` of a match to false (no match, partial) or a raised error (pcre4pl.c `re_error`); false in every case."
+function re_error(ld::PL_local_data{T}, ec::Integer)::Bool where {T}
+    if ec == PCRE2_ERROR_NOMATCH || ec == PCRE2_ERROR_PARTIAL           # partial matches are not supported
+        return false
+    elseif ec == PCRE2_ERROR_NOMEMORY
+        return PL_resource_error(ld, "memory")
+    elseif ec == PCRE2_ERROR_MATCHLIMIT
+        return PL_resource_error(ld, "match_limit")
+    elseif ec == PCRE2_ERROR_DEPTHLIMIT
+        return PL_resource_error(ld, "depth_limit")
+    elseif ec == PCRE2_ERROR_HEAPLIMIT
+        return PL_resource_error(ld, "heap_limit")
+    elseif ec == PCRE2_ERROR_JIT_STACKLIMIT
+        return PL_resource_error(ld, "jit_stack")
+    elseif ec == PCRE2_ERROR_BADOFFSET                                  # Should be caught by utf8_seek()
+        return re_representation_error(ld, "regex-offset")
+    else                                                                # NULL, BADOPTION, BADMAGIC and the default
+        if ec <= PCRE2_ERROR_UTF8_ERR1 && ec >= PCRE2_ERROR_UTF8_ERR21
+            return re_representation_error(ld, "utf8")
+        end
+        msg = pcre2_get_error_message(ec, 256)
+        msg === nothing && (msg = "regex")
+        return re_representation_error(ld, msg)
+    end
+end
+
+# PORT: packages/pcre/pcre4pl.c get_re_copy (the struct copy and the reset of the match flags)
+# DIVERGES: 25.
+"A copy of `re` with its own flag pairs, the match and start flags reset, sharing `pattern`, `code` and `capture_names` (stand-in for pcre4pl.c `get_re_copy`)."
+function re_copy_for_match(re::re_data)::re_data
+    cp(f::re_options_flags) = re_options_flags(f.seen, f.flags)
+    c = re_data(
+        re.pattern, re.serial, cp(re.compile_options_flags), cp(re.capture_type), cp(re.optimise_flags), cp(re.jit_options_flags),
+        cp(re.compile_ctx_flags), cp(re.compile_bsr_flags), cp(re.compile_newline_flags), cp(re.match_options_flags), cp(re.start_flags),
+        re.capture_size, re.capture_names, re.code
+    )
+    re_reset_match_flags!(c)
+    return c
+end
+
+# PORT: packages/pcre/pcre4pl.c re_matchsub_
+# DIVERGES: 25, 26, 27.
+"`re_matchsub_(+Regex, +String, -Sub, +Options)` over the compiled `src` (`result == 0`: no `Sub`, as `re_match_`); `FTRUE`, or `FFALSE` with or without an error (pcre4pl.c `re_matchsub_`)."
+function re_matchsub_(ld::PL_local_data{T}, src::re_data, on::term_t, result::term_t, options::term_t)::foreign_t where {T}
+    re = re_copy_for_match(src)                                         # get_re_copy(regex, &re)
+    subject = re_subject()
+    re_get_subject(ld, on, subject) || return FFALSE
+    re_get_options(ld, options, re) || return FFALSE
+
+    # From here on, all errors must do "rc = xxx; go to out"
+    match_data = pcre2_match_data_create_from_pattern(re.code)
+    local rc::Bool
+    try
+        # utf8_seek() returns size_t; pcre2_match() takes int. re_get_options() ensured that the value isn't greater than INT_MAX
+        utf8_start = re_utf8_seek(subject.subject, subject.length, Int(re.start_flags.flags))
+        if utf8_start == -1
+            rc = re_out_of_range(ld, Int(re.start_flags.flags))
+        else
+            re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)
+            if re_rc > 0                                                # match
+                if result != 0
+                    rc = re_unify_match(ld, result, re, subject, Int(re_rc), pcre2_ovector_copy(match_data, Int(re_rc)))
+                else
+                    rc = true
+                end
+            else
+                rc = re_error(ld, re_rc)
+            end
+        end
+    finally
+        pcre2_match_data_free(match_data)
+    end
+    return rc ? FTRUE : FFALSE
+end
+
+# PORT: packages/pcre/pcre4pl.c re_match_
+# DIVERGES: 25.
+"`re_match_(+Regex, +String, +Options)`: `re_matchsub_` without a result (pcre4pl.c `re_match_`)."
+re_match_(ld::PL_local_data{T}, src::re_data, on::term_t, options::term_t)::foreign_t where {T} = re_matchsub_(ld, src, on, term_t(0), options)
