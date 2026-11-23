@@ -300,20 +300,44 @@ MUTANTS = [
          old='(c = _re_cmp_flags(a.start_flags, b.start_flags))',
          new='(c = 0)'),
     dict(id='PCRE1-87 compare orders the groups by `seen` (KILL the compare testset: the seen row and the group rows)', file=P, targets=T2,
-         old='x.flags < y.flags ? -1 : x.flags > y.flags ? 1 : 0',
-         new='x.seen < y.seen ? -1 : x.seen > y.seen ? 1 : 0'),
+         old='''if x.flags < y.flags
+        -1
+    elseif x.flags > y.flags
+        1''',
+         new='''if x.seen < y.seen
+        -1
+    elseif x.seen > y.seen
+        1'''),
     dict(id='PCRE1-88 compare turns the flag order round (KILL the compare testset group rows)', file=P, targets=T2,
-         old='x.flags < y.flags ? -1 : x.flags > y.flags ? 1 : 0',
-         new='x.flags < y.flags ? 1 : x.flags > y.flags ? -1 : 0'),
+         old='''if x.flags < y.flags
+        -1
+    elseif x.flags > y.flags
+        1''',
+         new='''if x.flags < y.flags
+        1
+    elseif x.flags > y.flags
+        -1'''),
     dict(id='PCRE1-89 compare lets the creation order decide even after a flag difference (KILL the compare testset: the larger-flag row c, d)', file=P, targets=T2,
          old='    c != 0 && return c\n',
          new=''),
     dict(id='PCRE1-90 compare turns the creation order round (KILL the compare testset: the seen row)', file=P, targets=T2,
-         old='a.serial > b.serial ? 1 : a.serial < b.serial ? -1 : 0',
-         new='a.serial > b.serial ? -1 : a.serial < b.serial ? 1 : 0'),
+         old='''return if a.serial > b.serial
+        1
+    elseif a.serial < b.serial
+        -1''',
+         new='''return if a.serial > b.serial
+        -1
+    elseif a.serial < b.serial
+        1'''),
     dict(id='PCRE1-91 compare answers 0 for equal flags (KILL the compare testset: the seen row)', file=P, targets=T2,
-         old='a.serial > b.serial ? 1 : a.serial < b.serial ? -1 : 0',
-         new='0'),
+         old='''return if a.serial > b.serial
+        1
+    elseif a.serial < b.serial
+        -1
+    else
+        0
+    end''',
+         new='return 0'),
     dict(id='PCRE1-92 re_init_data forgets its pattern (KILL the re_init_data testset)', file=P, targets=T2,
          old='pattern, Threads.atomic_add!',
          new='"", Threads.atomic_add!'),
@@ -462,8 +486,8 @@ MUTANTS = [
          old='"<regex>(0x"',
          new='"<regex>("'),
     dict(id='PCRE1-140 write text prints the serial in base 10 (KILL the serial 255 and 16 rows)', file=P, targets=T4,
-         old='string(re.serial, base = 16)',
-         new='string(re.serial, base = 10)'),
+         old='string(re.serial; base=16)',
+         new='string(re.serial; base=10)'),
     dict(id='PCRE1-141 write text drops the separator space (KILL the write-text rows)', file=P, targets=T4,
          old='", ", re.pattern, ")")',
          new='",", re.pattern, ")")'),
@@ -1227,26 +1251,40 @@ MUTANTS = [
          old="fs = findlast(==(UInt8('_')), s)",
          new="fs = findfirst(==(UInt8('_')), s)"),
     dict(id='PCRE1-391 set_capture_name_and_type: the type letter S gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('S') ? CAP_STRING :",
-         new="b == UInt8('S') ? CAP_DEFAULT :"),
+         old='''ty = if b == UInt8('S')
+            CAP_STRING''',
+         new='''ty = if b == UInt8('S')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-392 set_capture_name_and_type: the type letter A gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('A') ? CAP_ATOM :",
-         new="b == UInt8('A') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('A')
+            CAP_ATOM''',
+         new='''elseif b == UInt8('A')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-393 set_capture_name_and_type: the type letter I gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('I') ? CAP_INTEGER :",
-         new="b == UInt8('I') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('I')
+            CAP_INTEGER''',
+         new='''elseif b == UInt8('I')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-394 set_capture_name_and_type: the type letter F gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('F') ? CAP_FLOAT :",
-         new="b == UInt8('F') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('F')
+            CAP_FLOAT''',
+         new='''elseif b == UInt8('F')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-395 set_capture_name_and_type: the type letter N gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('N') ? CAP_NUMBER :",
-         new="b == UInt8('N') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('N')
+            CAP_NUMBER''',
+         new='''elseif b == UInt8('N')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-396 set_capture_name_and_type: the type letter T gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('T') ? CAP_TERM :",
-         new="b == UInt8('T') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('T')
+            CAP_TERM''',
+         new='''elseif b == UInt8('T')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-397 set_capture_name_and_type: the type letter R gives CAP_DEFAULT (KILL the type-letter row)', file=P, targets=T7,
-         old="b == UInt8('R') ? CAP_RANGE :",
-         new="b == UInt8('R') ? CAP_DEFAULT :"),
+         old='''elseif b == UInt8('R')
+            CAP_RANGE''',
+         new='''elseif b == UInt8('R')
+            CAP_DEFAULT'''),
     dict(id='PCRE1-398 set_capture_name_and_type: an untyped name gets CAP_STRING (KILL the x and a_bc rows)', file=P, targets=T7,
          old='        re.capture_names[ci + 1].type = CAP_DEFAULT\n',
          new='        re.capture_names[ci + 1].type = CAP_STRING\n'),
@@ -1377,11 +1415,11 @@ MUTANTS = [
          old='if flags[] != 0\n        print(io, sep[], "<all:remainder:0x"',
          new='if flags[] == 0\n        print(io, sep[], "<all:remainder:0x"'),
     dict(id='PCRE1-438 remainder: four digits (KILL the remainder rows)', file=P, targets=T8,
-         old='string(flags[], base = 16, pad = 8), ">")',
-         new='string(flags[], base = 16, pad = 4), ">")'),
+         old='string(flags[]; base=16, pad=8), ">")',
+         new='string(flags[]; base=16, pad=4), ">")'),
     dict(id='PCRE1-439 remainder: decimal (KILL the remainder rows)', file=P, targets=T8,
-         old='string(flags[], base = 16, pad = 8), ">")',
-         new='string(flags[], base = 10, pad = 8), ">")'),
+         old='string(flags[]; base=16, pad=8), ">")',
+         new='string(flags[]; base=10, pad=8), ">")'),
     dict(id='PCRE1-440 remainder: leaves the separator empty (KILL the direct remainder row)', file=P, targets=T8,
          old='">")\n        sep[] = " "',
          new='">")\n        sep[] = ""'),
@@ -1524,14 +1562,20 @@ MUTANTS = [
          old='(PCRE2_NEVER_BACKSLASH_C, "NEVER_BACKSLASH_C")',
          new='(PCRE2_NEVER_BACKSLASH_C, "NEVER_BACKSLASH")'),
     dict(id='PCRE1-487 write_re_options writes BSR_ANYCR for ANYCRLF (KILL the BSR ANYCRLF row)', file=P, targets=T8,
-         old='"BSR_ANYCRLF" :',
-         new='"BSR_ANYCR" :'),
+         old='''c = if ui == PCRE2_BSR_ANYCRLF
+            "BSR_ANYCRLF"''',
+         new='''c = if ui == PCRE2_BSR_ANYCRLF
+            "BSR_ANYCR"'''),
     dict(id='PCRE1-488 write_re_options writes BSR_UNICOD for UNICODE (KILL the default rows)', file=P, targets=T8,
-         old='"BSR_UNICODE" :',
-         new='"BSR_UNICOD" :'),
+         old='''elseif ui == PCRE2_BSR_UNICODE
+            "BSR_UNICODE"''',
+         new='''elseif ui == PCRE2_BSR_UNICODE
+            "BSR_UNICOD"'''),
     dict(id='PCRE1-489 write_re_options takes ANYCRLF for the UNICODE name (KILL the BSR rows)', file=P, targets=T8,
-         old='ui == PCRE2_BSR_UNICODE ? "BSR_UNICODE"',
-         new='ui == PCRE2_BSR_ANYCRLF ? "BSR_UNICODE"'),
+         old='''elseif ui == PCRE2_BSR_UNICODE
+            "BSR_UNICODE"''',
+         new='''elseif ui == PCRE2_BSR_ANYCRLF
+            "BSR_UNICODE"'''),
     dict(id="PCRE1-490 write_re_options's BSR error text changes (EQUIVALENT: the library gives only BSR 1 or 2; the C's Sdprintf + assert(0) default is unreachable)", file=P, targets=T8,
          old='"GET_PCRE2_INFO_BSR: 0x"',
          new='"GET_PCRE2_INFO_BSR 0x"',
@@ -1555,23 +1599,35 @@ MUTANTS = [
          old='(config_ui == PCRE2_NEWLINE_LF && ui == PCRE2_NEWLINE_LF)',
          new='(config_ui == PCRE2_NEWLINE_LF || ui == PCRE2_NEWLINE_LF)'),
     dict(id='PCRE1-497 write_re_options writes NEWLINE_CRL for CR (KILL the NEWLINE_CR row)', file=P, targets=T8,
-         old='"NEWLINE_CR" :',
-         new='"NEWLINE_CRL" :'),
+         old='''c = if ui == PCRE2_NEWLINE_CR
+                "NEWLINE_CR"''',
+         new='''c = if ui == PCRE2_NEWLINE_CR
+                "NEWLINE_CRL"'''),
     dict(id='PCRE1-498 write_re_options writes NEWLINE_LFF for LF (KILL the default row on an LF build)', file=P, targets=T8,
-         old='"NEWLINE_LF" :',
-         new='"NEWLINE_LFF" :'),
+         old='''elseif ui == PCRE2_NEWLINE_LF
+                "NEWLINE_LF"''',
+         new='''elseif ui == PCRE2_NEWLINE_LF
+                "NEWLINE_LFF"'''),
     dict(id='PCRE1-499 write_re_options writes NEWLINE_CRL for CRLF (KILL the NEWLINE_CRLF row)', file=P, targets=T8,
-         old='"NEWLINE_CRLF" :',
-         new='"NEWLINE_CRL" :'),
+         old='''elseif ui == PCRE2_NEWLINE_CRLF
+                "NEWLINE_CRLF"''',
+         new='''elseif ui == PCRE2_NEWLINE_CRLF
+                "NEWLINE_CRL"'''),
     dict(id='PCRE1-500 write_re_options writes NEWLINE_ANYY for ANY (KILL the NEWLINE_ANY rows)', file=P, targets=T8,
-         old='"NEWLINE_ANY" :',
-         new='"NEWLINE_ANYY" :'),
+         old='''elseif ui == PCRE2_NEWLINE_ANY
+                "NEWLINE_ANY"''',
+         new='''elseif ui == PCRE2_NEWLINE_ANY
+                "NEWLINE_ANYY"'''),
     dict(id='PCRE1-501 write_re_options writes NEWLINE_ANYCR for ANYCRLF (KILL the NEWLINE_ANYCRLF row)', file=P, targets=T8,
-         old='"NEWLINE_ANYCRLF" :',
-         new='"NEWLINE_ANYCR" :'),
+         old='''elseif ui == PCRE2_NEWLINE_ANYCRLF
+                "NEWLINE_ANYCRLF"''',
+         new='''elseif ui == PCRE2_NEWLINE_ANYCRLF
+                "NEWLINE_ANYCR"'''),
     dict(id='PCRE1-502 write_re_options writes NEWLINE_NULL for NUL (KILL the NEWLINE_NUL row, when the library takes it)', file=P, targets=T8,
-         old='"NEWLINE_NUL" :',
-         new='"NEWLINE_NULL" :'),
+         old='''elseif ui == PCRE2_NEWLINE_NUL
+                "NEWLINE_NUL"''',
+         new='''elseif ui == PCRE2_NEWLINE_NUL
+                "NEWLINE_NULL"'''),
     dict(id="PCRE1-503 write_re_options's newline error text changes (EQUIVALENT: the library gives only newline 1..6; the C's default is unreachable)", file=P, targets=T8,
          old='"GET_PCRE2_INFO_NEWLINE: 0x"',
          new='"GET_PCRE2_INFO_NEWLINE 0x"',
@@ -1719,8 +1775,10 @@ MUTANTS = [
          old='u == PCRE2_BSR_UNICODE && return PL_unify_atom(ld, arg, mk_sym(T, :unicode))',
          new='u == PCRE2_BSR_UNICODE && return PL_unify_atom(ld, arg, mk_sym(T, :anycrlf))'),
     dict(id='PCRE1-550 re_config_ names the LF newline as cr (KILL newline2 on an LF build)', file=P, targets=T8,
-         old='u == PCRE2_NEWLINE_LF ? :lf :',
-         new='u == PCRE2_NEWLINE_LF ? :cr :'),
+         old='''elseif u == PCRE2_NEWLINE_LF
+                :lf''',
+         new='''elseif u == PCRE2_NEWLINE_LF
+                :cr'''),
     dict(id='PCRE1-551 re_config_ answers an INVALID row with rc >= 0 as success (EQUIVALENT: the INVALID rows have id -1, pcre2_config refuses it, the rc >= 0 branch is never taken for them)', file=P, targets=T8,
          old='elseif ty == CFG_INVALID\n            return false',
          new='elseif ty == CFG_INVALID\n            return true',
@@ -1924,7 +1982,7 @@ MUTANTS = [
          old='PL_cons_functor_v(ld, t, _err_functor(ld, Symbol("-"), 2), av)',
          new='PL_cons_functor_v(ld, t, _err_functor(ld, Symbol("+"), 2), av)'),
     dict(id='PCRE1-615 re_put_capval: the unknown type returns false instead of the error (KILL re_put_capval: @test_throws ErrorException)', file=P, targets=T9,
-         old='error("PUT_CAPVAL ctype: ", string(ctype, base = 16, pad = 8))',
+         old='error("PUT_CAPVAL ctype: ", string(ctype; base=16, pad=8))',
          new='return false'),
     dict(id='PCRE1-616 re_put_capval: the range is the type for CAP_STRING (KILL re_put_capval: the default string rows)', file=P, targets=T9,
          old='    elseif ctype == CAP_STRING\n',
@@ -2284,18 +2342,58 @@ MUTANTS = [
          old='utf8_start = re_utf8_seek(\n            subject.subject, subject.length, Int(re.start_flags.flags)\n        )\n        if utf8_start == -1\n            rc = re_out_of_range(ld, Int(re.start_flags.flags))\n        else\n            while true',
          new='utf8_start = re_utf8_seek(\n            subject.subject, subject.length, Int(re.start_flags.flags)\n        )\n        if utf8_start == -1\n            rc = re_out_of_range(ld, Int(re.start_flags.flags) + 1)\n        else\n            while true'),
     dict(id='PCRE1-734 re_foldl_: pcre2_match runs with no match options (KILL re_foldl_: the anchored rows)', file=P, targets=T10,
-         old='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc > 0\n',
-         new='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, UInt32(0), match_data)\n                if re_rc > 0\n'),
+         old='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc > 0''',
+         new='''                    subject.length,
+                    utf8_start,
+                    UInt32(0),
+                    match_data
+                )
+                if re_rc > 0'''),
     dict(id='PCRE1-735 re_foldl_: pcre2_match gets the subject length one short (KILL re_foldl_: the empty match at the end, the é rows)', file=P, targets=T10,
-         old='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc > 0\n',
-         new='re_rc = pcre2_match(re.code, subject.subject, subject.length - 1, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc > 0\n'),
+         old='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc > 0''',
+         new='''                    subject.length - 1,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc > 0'''),
     dict(id='PCRE1-736 re_foldl_: the match test is re_rc >= 0 (EQUIVALENT)', file=P, targets=T10,
-         old='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc > 0\n',
-         new='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc >= 0\n',
+         old='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc > 0''',
+         new='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc >= 0''',
          equivalent='src/pl-pcre.jl re_foldl_: pcre2_match returns 0 only when the ovector is too small for the match; the match data is created from the pattern, so it is never 0 here (as re_matchsub_ PCRE1-691)'),
     dict(id='PCRE1-737 re_foldl_: the match test is inverted (KILL re_foldl_: every row: a match is read as an error)', file=P, targets=T10,
-         old='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc > 0\n',
-         new='re_rc = pcre2_match(re.code, subject.subject, subject.length, utf8_start, re.match_options_flags.flags, match_data)\n                if re_rc < 0\n'),
+         old='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc > 0''',
+         new='''                    subject.length,
+                    utf8_start,
+                    re.match_options_flags.flags,
+                    match_data
+                )
+                if re_rc < 0'''),
     dict(id='PCRE1-738 re_foldl_: the ovector copy is one pair short (KILL re_foldl_: the collect rows)', file=P, targets=T10,
          old='ovector = pcre2_ovector_copy(match_data, Int(re_rc))',
          new='ovector = pcre2_ovector_copy(match_data, Int(re_rc) - 1)'),
