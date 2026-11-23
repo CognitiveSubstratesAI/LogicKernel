@@ -246,6 +246,59 @@ end
     @test ld.gc.status.blocked == 0 && !ld.gc.status.active
 end
 
+# G1GC6C-B1 (the driver's own bar for the NO_MARK_BAR case). pl-gc.c garbageCollect sets `LD->mark_bar = gTop` when the bar is NO_MARK_BAR
+# ("otherwise we cannot relocate"); the value is read in ONE place, the saved bar of the first foreign frame the collection opens, which
+# `sweep_mark` hands to `sweep_global_mark`: the bar names the cell `gTop` itself, and the sweep puts it into the relocation chain of the highest
+# MARKED cell at or below it (`needs_relocation` and `alien_relocations` count +1). A bar one below the top (the mutant `gTop - 1`) gives the same
+# answer whenever some marked cell lies at or below `gTop - 1`, which the base prefix of an engine always provides (`mark_base_cells`, and the
+# permanent term references). So the heap here has NO marked cell but the top one: `tmp_cells = 0` turns the base-prefix root off (as the
+# collector's own guard reads: "emptyStacks! has not run") and every slot below the new reference is overwritten with an atom; the one live root
+# is the cell of the last term reference, which is the top cell. Then the bar `gTop` finds a marked cell (the top: one alien relocation more) and
+# the bar `gTop - 1` finds none (gm = 0, no chain, no count). The expectation is a DIFFERENTIAL against the bar `gTop` set by hand: with an
+# explicit bar the driver does not touch it, so both collections run the same code on the same heap and every counter must agree.
+function _gd_top_only(explicit_bar::Bool)
+    ld, t, n0, dead_cells = _gd_heap()
+    gone = _gd_atom(ld, "gone")
+    for i in 1:(t + 2)                                           # the two live roots of the standard heap, and every slot below them
+        ld.slots[i] = gone
+    end
+    ld.tmp_cells = 0                                             # no base prefix to mark
+    top = LK.PL_new_term_ref(ld)                                 # its own cell is the new top cell
+    @test (ld.slots[top + 1] & LK.VALUE_MASK) == LK.makeRefG(ld.gTop)
+    ld.mark_bar = explicit_bar ? ld.gTop : LK.NO_MARK_BAR
+    return ld
+end
+
+function _gd_sweep_counts(ld)
+    st, sw = ld.gc.mark_counts, ld.gc.sweep_counts
+    return (
+        total_marked=st.total_marked, needs_relocation=st.needs_relocation,
+        relocation_cells=sw.relocation_cells, alien_relocations=sw.alien_relocations,
+        marks_swept=sw.marks_swept, relocated_cells=sw.relocated_cells
+    )
+end
+
+@testset "G1GC6C-B1: NO_MARK_BAR is collected with the bar at the old top (the same counters as an explicit bar at the top)" begin
+    ld_bar = _gd_top_only(true)                                  # the bar `gTop`, set by hand: the driver leaves it alone
+    gtop0 = ld_bar.gTop
+    @test gtop0 >= 10
+    @test ld_bar.mark_bar == gtop0
+    @test LK.garbageCollect(ld_bar, _GD_GC) == LK.BOOLEX_TRUE
+    c_bar = _gd_sweep_counts(ld_bar)
+    @test ld_bar.gTop == 1 && c_bar.total_marked == 1            # the premise: the top cell was the only live cell, so no cell at or below gTop - 1 was marked
+    @test c_bar.alien_relocations >= 1 && c_bar.needs_relocation >= 1   # the bar's own alien relocation is among them (the counts are not empty)
+    ld_nb = _gd_top_only(false)                                  # NO_MARK_BAR: the driver gives the bar the value `gTop`
+    @test ld_nb.gTop == gtop0 && ld_nb.mark_bar == LK.NO_MARK_BAR
+    @test LK.garbageCollect(ld_nb, _GD_GC) == LK.BOOLEX_TRUE
+    @test ld_nb.mark_bar == LK.NO_MARK_BAR                       # restored
+    @test ld_nb.gTop == 1
+    c_nb = _gd_sweep_counts(ld_nb)
+    @test c_nb.total_marked == 1
+    @test c_nb.alien_relocations == c_bar.alien_relocations      # a bar at gTop - 1 reaches no marked cell: one alien relocation fewer
+    @test c_nb.needs_relocation == c_bar.needs_relocation
+    @test c_nb == c_bar
+end
+
 # The base prefix of the global stack is a root class (audit D-0966 (1), `mark_base_cells`, src/pl-gcmark.jl; G1GC3-S5). The undo list's cell (global
 # cell 1) is named by NO slot, so only that rule keeps it; and every cell below it that a slot used to name and no longer names (the two cells of
 # `init_delay_list`'s references) too. Without the rule the first collection frees cells 1, 8 and 9, the bin slot is relocated to cell 1 (the engine
