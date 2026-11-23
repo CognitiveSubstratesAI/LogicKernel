@@ -129,7 +129,10 @@ const _TQ_CASES = [
     ("qc10", raw"message_queue_create(\"str\")"),
     ("qc11", raw"message_queue_create(Q), pk(message_queue_create(Q), R)"),
     ("qc12", raw"message_queue_create(Q), findall(P, message_queue_property(Q, P), R)"),
-    ("qc13", raw"message_queue_create(Q1), message_queue_create(Q2), ( Q1 == Q2 -> R = same ; R = distinct )"),
+    (
+        "qc13",
+        raw"message_queue_create(Q1), message_queue_create(Q2), ( Q1 == Q2 -> R = same ; R = distinct )"
+    ),
     ("qc14", raw"message_queue_create(Q), blob(Q, T), R = T"),
     ("qc15", raw"message_queue_create(Q), ( atom(Q) -> R = atom ; R = notatom )"),
     ("qc16", raw"message_queue_create(Q, [alias(qc16q), max_size(2)]), R = Q"),
@@ -148,21 +151,39 @@ const _TQ_CASES = [
     ("qc29", raw"message_queue_create(_, [max_size(1.5)])"),
     ("qc30", raw"message_queue_create(_, [alias(main)])"),
     ("qc31", raw"cx(message_queue_create(_, [alias(qc16q)]), R)"),
-    ("qc32", raw"message_queue_create(Q, [max_size(3), max_size(2)]), message_queue_property(Q, max_size(R))"),
-    ("qc33", raw"message_queue_create(_, [alias(qc33q), max_size(0)]), findall(P, message_queue_property(qc33q, P), R)"),
+    (
+        "qc32",
+        raw"message_queue_create(Q, [max_size(3), max_size(2)]), message_queue_property(Q, max_size(R))"
+    ),
+    (
+        "qc33",
+        raw"message_queue_create(_, [alias(qc33q), max_size(0)]), findall(P, message_queue_property(qc33q, P), R)"
+    ),
     ("qc34", raw"message_queue_create(_, [alias(_)])"),
     ("qc35", raw"message_queue_create(_, [max_size(_)])"),
     ("qc36", raw"message_queue_create(Q, [alias=qc36q]), R = Q"),
-    ("qc37", raw"message_queue_create(Q, [max_size(1000000000000000000000)]), is_message_queue(Q), R = yes"),
-    ("qc38", raw"message_queue_create(Q, [alias(qc38q), max_size(4)]), is_message_queue(qc38q), message_queue_property(Q, max_size(R))"),
+    (
+        "qc37",
+        raw"message_queue_create(Q, [max_size(1000000000000000000000)]), is_message_queue(Q), R = yes"
+    ),
+    (
+        "qc38",
+        raw"message_queue_create(Q, [alias(qc38q), max_size(4)]), is_message_queue(qc38q), message_queue_property(Q, max_size(R))"
+    ),
     ("qc39", raw"message_queue_create(_, [alias(a), alias(b)]), R = ok"),
     # qp: message_queue_property/2
-    ("qp01", raw"message_queue_create(_, [alias(qp01q), max_size(2)]), findall(P, message_queue_property(qp01q, P), R)"),
+    (
+        "qp01",
+        raw"message_queue_create(_, [alias(qp01q), max_size(2)]), findall(P, message_queue_property(qp01q, P), R)"
+    ),
     ("qp02", raw"message_queue_create(Q), findall(P, message_queue_property(Q, P), R)"),
     ("qp03", raw"findall(P, message_queue_property(main, P), R)"),
     ("qp04", raw"findall(P, message_queue_property(1, P), R)"),
     ("qp05", raw"message_queue_property(main, alias(A)), var(A), R = quirk"),
-    ("qp06", raw"message_queue_create(Q), \+ message_queue_property(Q, alias(_)), R = fails"),
+    (
+        "qp06",
+        raw"message_queue_create(Q), \+ message_queue_property(Q, alias(_)), R = fails"
+    ),
     ("qp07", raw"message_queue_property(nosuchq, P), R = P"),
     ("qp08", raw"cx(message_queue_property(nosuchq, _), R)"),
     ("qp09", raw"message_queue_property(f(x), _)"),
@@ -176,18 +197,36 @@ const _TQ_CASES = [
     ("qp17", raw"message_queue_property(qp01q, max_size(S)), R = S"),
     ("qp18", raw"message_queue_property(qp01q, waiting(_)), R = yes"),
     ("qp19", raw"message_queue_property(qp01q, alias(A)), R = A"),
-    ("qp20", raw"message_queue_property(Q, alias(qp01q)), ( Q == qp01q -> R = same ; R = other )"),
+    (
+        "qp20",
+        raw"message_queue_property(Q, alias(qp01q)), ( Q == qp01q -> R = same ; R = other )"
+    ),
     ("qp21", raw"findall(A, message_queue_property(_, alias(A)), L), msort(L, R)"),
-    ("qp22", raw"call_cleanup(message_queue_property(qp01q, max_size(M)), Det = true), R = Det-M"),
-    ("qp23", raw"call_cleanup(message_queue_property(qp01q, P), Det = true), ( Det == true -> R = det-P ; R = nondet-P )"),
-    ("qp24", raw"once(message_queue_property(Q, alias(qp01q))), ( Q == qp01q -> R = once ; R = other )"),
+    (
+        "qp22",
+        raw"call_cleanup(message_queue_property(qp01q, max_size(M)), Det = true), R = Det-M"
+    ),
+    (
+        "qp23",
+        raw"call_cleanup(message_queue_property(qp01q, P), Det = true), ( Det == true -> R = det-P ; R = nondet-P )"
+    ),
+    (
+        "qp24",
+        raw"once(message_queue_property(Q, alias(qp01q))), ( Q == qp01q -> R = once ; R = other )"
+    ),
     ("qp25", raw"message_queue_property(qp01q, size(1)), R = yes"),
     ("qp26", raw"message_queue_property(qp01q, max_size(3)), R = yes"),
     ("qp27", raw"message_queue_property(qp01q, alias(other)), R = yes"),
     ("qp28", raw"message_queue_property(0, _)"),
     ("qp29", raw"message_queue_property(99, _)"),
-    ("qp30", raw"message_queue_property(_, alias(qp01q)), findall(M, message_queue_property(_, max_size(M)), L), msort(L, R)"),
-    ("qp31", raw"findall(A-S, ( message_queue_property(Q, alias(A)), message_queue_property(Q, size(S)), memberchk(A, [qp01q, qc16q]) ), L), msort(L, R)"),
+    (
+        "qp30",
+        raw"message_queue_property(_, alias(qp01q)), findall(M, message_queue_property(_, max_size(M)), L), msort(L, R)"
+    ),
+    (
+        "qp31",
+        raw"findall(A-S, ( message_queue_property(Q, alias(A)), message_queue_property(Q, size(S)), memberchk(A, [qp01q, qc16q]) ), L), msort(L, R)"
+    ),
     # qd: message_queue_destroy/1
     ("qd01", raw"message_queue_destroy(main)"),
     ("qd02", raw"cx(message_queue_destroy(main), R)"),
@@ -197,50 +236,119 @@ const _TQ_CASES = [
     ("qd06", raw"message_queue_destroy(_)"),
     ("qd07", raw"message_queue_destroy(f(x))"),
     ("qd08", raw"message_queue_create(Q), message_queue_destroy(Q), R = ok"),
-    ("qd09", raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_destroy(Q), R)"),
-    ("qd10", raw"message_queue_create(Q), message_queue_destroy(Q), ( is_message_queue(Q) -> R = yes ; R = no )"),
-    ("qd11", raw"message_queue_create(qd11q), message_queue_destroy(qd11q), thread_send_message(qd11q, x)"),
-    ("qd12", raw"message_queue_create(qd12q), message_queue_destroy(qd12q), message_queue_create(qd12q), R = ok"),
-    ("qd13", raw"message_queue_create(qd13q), thread_send_message(qd13q, x), message_queue_destroy(qd13q), message_queue_create(qd13q), findall(P, message_queue_property(qd13q, P), R)"),
-    ("qd14", raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_send_message(Q, x), R)"),
+    (
+        "qd09",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_destroy(Q), R)"
+    ),
+    (
+        "qd10",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ( is_message_queue(Q) -> R = yes ; R = no )"
+    ),
+    (
+        "qd11",
+        raw"message_queue_create(qd11q), message_queue_destroy(qd11q), thread_send_message(qd11q, x)"
+    ),
+    (
+        "qd12",
+        raw"message_queue_create(qd12q), message_queue_destroy(qd12q), message_queue_create(qd12q), R = ok"
+    ),
+    (
+        "qd13",
+        raw"message_queue_create(qd13q), thread_send_message(qd13q, x), message_queue_destroy(qd13q), message_queue_create(qd13q), findall(P, message_queue_property(qd13q, P), R)"
+    ),
+    (
+        "qd14",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_send_message(Q, x), R)"
+    ),
     ("qd15", raw"message_queue_destroy(0)"),
     ("qd16", raw"message_queue_destroy(-1)"),
-    ("qd17", raw"message_queue_create(_, [alias(qd17q)]), message_queue_destroy(qd17q), \+ message_queue_property(_, alias(qd17q)), R = gone"),
-    ("qd18", raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_property(Q, _), R)"),
-    ("qd19", raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_get_message(Q, _, [timeout(0)]), R)"),
-    ("qd20", raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_peek_message(Q, _), R)"),
-    ("qd21", raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_set(Q, max_size(1)), R)"),
+    (
+        "qd17",
+        raw"message_queue_create(_, [alias(qd17q)]), message_queue_destroy(qd17q), \+ message_queue_property(_, alias(qd17q)), R = gone"
+    ),
+    (
+        "qd18",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_property(Q, _), R)"
+    ),
+    (
+        "qd19",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_get_message(Q, _, [timeout(0)]), R)"
+    ),
+    (
+        "qd20",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(thread_peek_message(Q, _), R)"
+    ),
+    (
+        "qd21",
+        raw"message_queue_create(Q), message_queue_destroy(Q), ek(message_queue_set(Q, max_size(1)), R)"
+    ),
     ("qd22", raw"message_queue_destroy(1.5)"),
-    ("qd23", raw"message_queue_destroy(qp01q), message_queue_create(_, [alias(qp01q), max_size(2)]), R = ok"),
+    (
+        "qd23",
+        raw"message_queue_destroy(qp01q), message_queue_create(_, [alias(qp01q), max_size(2)]), R = ok"
+    ),
     # qs: message_queue_set/2
-    ("qs01", raw"message_queue_create(_, [alias(qs01q)]), message_queue_set(qs01q, max_size(5)), message_queue_property(qs01q, max_size(R))"),
+    (
+        "qs01",
+        raw"message_queue_create(_, [alias(qs01q)]), message_queue_set(qs01q, max_size(5)), message_queue_property(qs01q, max_size(R))"
+    ),
     ("qs02", raw"message_queue_set(qs01q, max_size(-1))"),
     ("qs03", raw"cx(message_queue_set(qs01q, max_size(-1)), R)"),
     ("qs04", raw"message_queue_set(qs01q, foo(1))"),
     ("qs05", raw"cx(message_queue_set(qs01q, foo(1)), R)"),
     ("qs06", raw"message_queue_set(qs01q, foo)"),
     ("qs07", raw"cx(message_queue_set(qs01q, foo), R)"),
-    ("qs08", raw"message_queue_set(main, max_size(3)), message_queue_property(main, max_size(M)), message_queue_set(main, max_size(0)), \+ message_queue_property(main, max_size(_)), R = M"),
+    (
+        "qs08",
+        raw"message_queue_set(main, max_size(3)), message_queue_property(main, max_size(M)), message_queue_set(main, max_size(0)), \+ message_queue_property(main, max_size(_)), R = M"
+    ),
     ("qs09", raw"message_queue_set(nosuchq, max_size(1))"),
     ("qs10", raw"message_queue_set(_, max_size(1))"),
     ("qs11", raw"message_queue_set(qs01q, _)"),
     ("qs12", raw"message_queue_set(qs01q, max_size(a))"),
     ("qs13", raw"message_queue_set(qs01q, max_size(_))"),
     ("qs14", raw"message_queue_set(qs01q, max_size(2.5))"),
-    ("qs15", raw"message_queue_set(qs01q, max_size(0)), \+ message_queue_property(qs01q, max_size(_)), R = none"),
+    (
+        "qs15",
+        raw"message_queue_set(qs01q, max_size(0)), \+ message_queue_property(qs01q, max_size(_)), R = none"
+    ),
     ("qs16", raw"message_queue_set(qs01q, 1)"),
     ("qs17", raw"message_queue_set(qs01q, foo(1, 2))"),
     ("qs18", raw"message_queue_set(f(x), max_size(1))"),
     # qm: thread_send_message/2, thread_get_message/1,2, thread_peek_message/1,2
-    ("qm01", raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_send_message(Q, c), thread_get_message(Q, b), drain(Q, R)"),
-    ("qm02", raw"message_queue_create(Q), thread_send_message(Q, g(1, x)), thread_send_message(Q, g(2, y)), thread_get_message(Q, g(A, y)), drain(Q, L), R = A-L"),
-    ("qm03", raw"message_queue_create(Q), thread_send_message(Q, g(1, x)), thread_send_message(Q, g(2, y)), thread_peek_message(Q, g(A, y)), drain(Q, L), R = A-L"),
-    ("qm04", raw"message_queue_create(Q), thread_send_message(Q, g(1)), \+ thread_peek_message(Q, h(_)), R = no"),
+    (
+        "qm01",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_send_message(Q, c), thread_get_message(Q, b), drain(Q, R)"
+    ),
+    (
+        "qm02",
+        raw"message_queue_create(Q), thread_send_message(Q, g(1, x)), thread_send_message(Q, g(2, y)), thread_get_message(Q, g(A, y)), drain(Q, L), R = A-L"
+    ),
+    (
+        "qm03",
+        raw"message_queue_create(Q), thread_send_message(Q, g(1, x)), thread_send_message(Q, g(2, y)), thread_peek_message(Q, g(A, y)), drain(Q, L), R = A-L"
+    ),
+    (
+        "qm04",
+        raw"message_queue_create(Q), thread_send_message(Q, g(1)), \+ thread_peek_message(Q, h(_)), R = no"
+    ),
     ("qm05", raw"message_queue_create(Q), \+ thread_peek_message(Q, _), R = no"),
-    ("qm06", raw"message_queue_create(_, [alias(qm06q)]), thread_send_message(qm06q, a), thread_send_message(qm06q, b), findall(S, message_queue_property(qm06q, size(S)), R)"),
-    ("qm07", raw"message_queue_create(Q), thread_send_message(Q, _), thread_get_message(Q, M), ( var(M) -> R = unbound ; R = M )"),
-    ("qm08", raw"message_queue_create(Q), thread_send_message(Q, f(X, Y, X)), thread_get_message(Q, f(A, B, C)), ( A == C, A \== B, var(X), var(Y) -> R = fresh ; R = shared )"),
-    ("qm09", raw"message_queue_create(Q), thread_send_message(Q, f(X)), X = 1, thread_get_message(Q, f(Y)), ( var(Y) -> R = unbound ; R = Y )"),
+    (
+        "qm06",
+        raw"message_queue_create(_, [alias(qm06q)]), thread_send_message(qm06q, a), thread_send_message(qm06q, b), findall(S, message_queue_property(qm06q, size(S)), R)"
+    ),
+    (
+        "qm07",
+        raw"message_queue_create(Q), thread_send_message(Q, _), thread_get_message(Q, M), ( var(M) -> R = unbound ; R = M )"
+    ),
+    (
+        "qm08",
+        raw"message_queue_create(Q), thread_send_message(Q, f(X, Y, X)), thread_get_message(Q, f(A, B, C)), ( A == C, A \== B, var(X), var(Y) -> R = fresh ; R = shared )"
+    ),
+    (
+        "qm09",
+        raw"message_queue_create(Q), thread_send_message(Q, f(X)), X = 1, thread_get_message(Q, f(Y)), ( var(Y) -> R = unbound ; R = Y )"
+    ),
     ("qm10", raw"roundtrip(\"str\", R)"),
     ("qm11", raw"roundtrip(1.5, R)"),
     ("qm12", raw"roundtrip(123456789012345678901234567890, R)"),
@@ -248,12 +356,24 @@ const _TQ_CASES = [
     ("qm14", raw"roundtrip('hello world', R)"),
     ("qm15", raw"roundtrip([], R)"),
     ("qm16", raw"roundtrip(f(g(h(i(j(1))))), R)"),
-    ("qm17", raw"numlist(1, 1000, L), roundtrip(L, M), ( M == L -> R = same ; R = differ )"),
+    (
+        "qm17",
+        raw"numlist(1, 1000, L), roundtrip(L, M), ( M == L -> R = same ; R = differ )"
+    ),
     ("qm18", raw"roundtrip(1r3, R)"),
-    ("qm19", raw"thread_send_message(main, qm19a), thread_peek_message(qm19a), thread_get_message(qm19a), R = ok"),
-    ("qm20", raw"thread_send_message(1, qm20a), thread_peek_message(main, qm20a), thread_get_message(qm20a), R = ok"),
+    (
+        "qm19",
+        raw"thread_send_message(main, qm19a), thread_peek_message(qm19a), thread_get_message(qm19a), R = ok"
+    ),
+    (
+        "qm20",
+        raw"thread_send_message(1, qm20a), thread_peek_message(main, qm20a), thread_get_message(qm20a), R = ok"
+    ),
     ("qm21", raw"\+ thread_peek_message(qm21_nothere), R = no"),
-    ("qm22", raw"thread_send_message(main, qm22a), message_queue_property(main, size(S)), thread_get_message(qm22a), R = S"),
+    (
+        "qm22",
+        raw"thread_send_message(main, qm22a), message_queue_property(main, size(S)), thread_get_message(qm22a), R = S"
+    ),
     ("qm23", raw"thread_send_message(_, x)"),
     ("qm24", raw"cx(thread_send_message(nosuchq, x), R)"),
     ("qm25", raw"thread_send_message(f(x), x)"),
@@ -272,25 +392,79 @@ const _TQ_CASES = [
     ("qm38", raw"thread_send_message([], x)"),
     ("qm39", raw"cx(thread_get_message(nosuchq, _), R)"),
     ("qm40", raw"cx(thread_peek_message(nosuchq, x), R)"),
-    ("qm41", raw"thread_send_message(main, qm41a), thread_send_message(main, qm41b), thread_get_message(qm41b), thread_get_message(qm41a), R = ok"),
-    ("qm42", raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_get_message(Q, X), drain(Q, L), R = X-L"),
-    ("qm43", raw"message_queue_create(Q), thread_send_message(Q, f(1)), thread_get_message(Q, f(X)), R = X"),
-    ("qm44", raw"message_queue_create(Q), thread_send_message(Q, f(1)), ( thread_get_message(Q, f(2), [timeout(0)]) -> R = got ; drain(Q, R) )"),
-    ("qm46", raw"message_queue_create(Q), thread_send_message(Q, x), thread_send_message(Q, x), thread_get_message(Q, x), drain(Q, R)"),
-    ("qm47", raw"message_queue_create(Q), thread_send_message(Q, f(A)), thread_get_message(Q, f(1)), var(A), R = ok"),
-    ("qm48", raw"message_queue_create(Q), thread_send_message(Q, a), thread_peek_message(Q, a), thread_peek_message(Q, a), drain(Q, R)"),
-    ("qm49", raw"message_queue_create(Q), ( thread_get_message(Q, _, [timeout(0)]) -> R = got ; R = empty )"),
-    ("qm50", raw"message_queue_create(Q, [alias(qm50q), max_size(1)]), thread_send_message(qm50q, a), message_queue_set(qm50q, max_size(0)), thread_send_message(qm50q, b), drain(qm50q, R)"),
+    (
+        "qm41",
+        raw"thread_send_message(main, qm41a), thread_send_message(main, qm41b), thread_get_message(qm41b), thread_get_message(qm41a), R = ok"
+    ),
+    (
+        "qm42",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_get_message(Q, X), drain(Q, L), R = X-L"
+    ),
+    (
+        "qm43",
+        raw"message_queue_create(Q), thread_send_message(Q, f(1)), thread_get_message(Q, f(X)), R = X"
+    ),
+    (
+        "qm44",
+        raw"message_queue_create(Q), thread_send_message(Q, f(1)), ( thread_get_message(Q, f(2), [timeout(0)]) -> R = got ; drain(Q, R) )"
+    ),
+    (
+        "qm46",
+        raw"message_queue_create(Q), thread_send_message(Q, x), thread_send_message(Q, x), thread_get_message(Q, x), drain(Q, R)"
+    ),
+    (
+        "qm47",
+        raw"message_queue_create(Q), thread_send_message(Q, f(A)), thread_get_message(Q, f(1)), var(A), R = ok"
+    ),
+    (
+        "qm48",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_peek_message(Q, a), thread_peek_message(Q, a), drain(Q, R)"
+    ),
+    (
+        "qm49",
+        raw"message_queue_create(Q), ( thread_get_message(Q, _, [timeout(0)]) -> R = got ; R = empty )"
+    ),
+    (
+        "qm50",
+        raw"message_queue_create(Q, [alias(qm50q), max_size(1)]), thread_send_message(qm50q, a), message_queue_set(qm50q, max_size(0)), thread_send_message(qm50q, b), drain(qm50q, R)"
+    ),
     # qo: the deadline options of thread_send_message/3 and thread_get_message/3
-    ("qo01", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)])"),
-    ("qo02", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0.01)])"),
-    ("qo03", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [deadline(1.0)])"),
-    ("qo04", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(-1)])"),
-    ("qo05", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(foo), timeout(0)])"),
-    ("qo06", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), cx(thread_send_message(Q, b, [signals(foo)]), R)"),
-    ("qo07", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(false), timeout(0)])"),
-    ("qo08", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(0.5), timeout(0)])"),
-    ("qo09", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(-1.0), timeout(0)])"),
+    (
+        "qo01",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)])"
+    ),
+    (
+        "qo02",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0.01)])"
+    ),
+    (
+        "qo03",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [deadline(1.0)])"
+    ),
+    (
+        "qo04",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(-1)])"
+    ),
+    (
+        "qo05",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(foo), timeout(0)])"
+    ),
+    (
+        "qo06",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), cx(thread_send_message(Q, b, [signals(foo)]), R)"
+    ),
+    (
+        "qo07",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(false), timeout(0)])"
+    ),
+    (
+        "qo08",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(0.5), timeout(0)])"
+    ),
+    (
+        "qo09",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(-1.0), timeout(0)])"
+    ),
     ("qo10", raw"thread_send_message(main, x, foo)"),
     ("qo11", raw"thread_send_message(main, x, [timeout(a)])"),
     ("qo12", raw"thread_send_message(main, x, [timeout(0)|_])"),
@@ -301,70 +475,208 @@ const _TQ_CASES = [
     ("qo17", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout=0]), R = ok"),
     ("qo18", raw"thread_send_message(main, x, [_])"),
     ("qo19", raw"thread_send_message(main, x, [timeout(_)])"),
-    ("qo20", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(0)]), drain(Q, R)"),
+    (
+        "qo20",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(0)]), drain(Q, R)"
+    ),
     ("qo21", raw"message_queue_create(Q), thread_send_message(Q, x, []), drain(Q, R)"),
-    ("qo22", raw"message_queue_create(Q), thread_send_message(Q, x, [signals(true)]), drain(Q, R)"),
-    ("qo23", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(1.0)]), drain(Q, R)"),
-    ("qo24", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(inf)]), drain(Q, R)"),
-    ("qo25", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(1)]), drain(Q, R)"),
-    ("qo26", raw"get_time(T), D is T + 100, message_queue_create(Q), thread_send_message(Q, x, [deadline(D)]), drain(Q, R)"),
-    ("qo27", raw"message_queue_create(Q), thread_send_message(Q, x, [deadline(1.0), timeout(5)]), drain(Q, R)"),
-    ("qo28", raw"message_queue_create(Q), thread_send_message(Q, x, [deadline(1.0)]), drain(Q, R)"),
-    ("qo29", raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(-1)]), drain(Q, R)"),
+    (
+        "qo22",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [signals(true)]), drain(Q, R)"
+    ),
+    (
+        "qo23",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(1.0)]), drain(Q, R)"
+    ),
+    (
+        "qo24",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(inf)]), drain(Q, R)"
+    ),
+    (
+        "qo25",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(1)]), drain(Q, R)"
+    ),
+    (
+        "qo26",
+        raw"get_time(T), D is T + 100, message_queue_create(Q), thread_send_message(Q, x, [deadline(D)]), drain(Q, R)"
+    ),
+    (
+        "qo27",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [deadline(1.0), timeout(5)]), drain(Q, R)"
+    ),
+    (
+        "qo28",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [deadline(1.0)]), drain(Q, R)"
+    ),
+    (
+        "qo29",
+        raw"message_queue_create(Q), thread_send_message(Q, x, [timeout(-1)]), drain(Q, R)"
+    ),
     ("qo30", raw"message_queue_create(Q), thread_send_message(Q, x, [signals(foo)])"),
-    ("qo31", raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_get_message(Q, b, [timeout(0)]), drain(Q, R)"),
-    ("qo32", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(0)])"),
-    ("qo33", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(0.01)])"),
-    ("qo34", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(-1)])"),
-    ("qo35", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [deadline(1.0)])"),
+    (
+        "qo31",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_send_message(Q, b), thread_get_message(Q, b, [timeout(0)]), drain(Q, R)"
+    ),
+    (
+        "qo32",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(0)])"
+    ),
+    (
+        "qo33",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(0.01)])"
+    ),
+    (
+        "qo34",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [timeout(-1)])"
+    ),
+    (
+        "qo35",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b, [deadline(1.0)])"
+    ),
     ("qo36", raw"thread_get_message(nosuchq, _, [timeout(0)])"),
     ("qo37", raw"cx(thread_get_message(nosuchq, _, [timeout(0)]), R)"),
     ("qo38", raw"thread_get_message(_, _, [timeout(0)])"),
     ("qo39", raw"thread_get_message(f(x), _, [timeout(0)])"),
     ("qo40", raw"thread_get_message(nosuchq, x, [timeout(foo)])"),
     ("qo41", raw"thread_get_message(nosuchq, x, [signals(foo)])"),
-    ("qo42", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, []), R = X"),
-    ("qo43", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [signals(true)]), R = X"),
-    ("qo44", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout=0]), R = X"),
-    ("qo45", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, foo), R = X"),
-    ("qo46", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(0)|_]), R = X"),
-    ("qo47", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(inf)]), R = X"),
-    ("qo48", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(5)]), R = X"),
-    ("qo49", raw"get_time(T), D is T + 100, message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [deadline(D)]), R = X"),
-    ("qo50", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [deadline(1.0)]), R = X"),
-    ("qo51", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(-1)]), R = X"),
+    (
+        "qo42",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, []), R = X"
+    ),
+    (
+        "qo43",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [signals(true)]), R = X"
+    ),
+    (
+        "qo44",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout=0]), R = X"
+    ),
+    (
+        "qo45",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, foo), R = X"
+    ),
+    (
+        "qo46",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(0)|_]), R = X"
+    ),
+    (
+        "qo47",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(inf)]), R = X"
+    ),
+    (
+        "qo48",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(5)]), R = X"
+    ),
+    (
+        "qo49",
+        raw"get_time(T), D is T + 100, message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [deadline(D)]), R = X"
+    ),
+    (
+        "qo50",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [deadline(1.0)]), R = X"
+    ),
+    (
+        "qo51",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(-1)]), R = X"
+    ),
     ("qo52", raw"thread_get_message(nothing, [timeout(0)])"),
     ("qo53", raw"cx(thread_get_message(nothing, [timeout(0)]), R)"),
-    ("qo54", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [signals(foo)]), R = X"),
-    ("qo55", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(0), timeout(a)]), R = X"),
-    ("qo56", raw"message_queue_create(Q), thread_send_message(Q, f(1)), thread_send_message(Q, g(2)), thread_get_message(Q, g(X), [timeout(0)]), drain(Q, L), R = X-L"),
-    ("qo57", raw"message_queue_create(Q, [max_size(2)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)]), thread_send_message(Q, c, [timeout(0)])"),
-    ("qo58", raw"message_queue_create(Q, [max_size(2)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)]), thread_get_message(Q, a), thread_send_message(Q, c, [timeout(0)]), drain(Q, R)"),
+    (
+        "qo54",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [signals(foo)]), R = X"
+    ),
+    (
+        "qo55",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, X, [timeout(0), timeout(a)]), R = X"
+    ),
+    (
+        "qo56",
+        raw"message_queue_create(Q), thread_send_message(Q, f(1)), thread_send_message(Q, g(2)), thread_get_message(Q, g(X), [timeout(0)]), drain(Q, L), R = X-L"
+    ),
+    (
+        "qo57",
+        raw"message_queue_create(Q, [max_size(2)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)]), thread_send_message(Q, c, [timeout(0)])"
+    ),
+    (
+        "qo58",
+        raw"message_queue_create(Q, [max_size(2)]), thread_send_message(Q, a), thread_send_message(Q, b, [timeout(0)]), thread_get_message(Q, a), thread_send_message(Q, c, [timeout(0)]), drain(Q, R)"
+    ),
     ("qo59", raw"cx(thread_get_message(nosuchq, x, [timeout(foo)]), R)"),
     ("qo60", raw"cx(thread_send_message(main, x, [timeout(a)]), R)"),
     # qe: the queue of an engine, and the queue of main reached from an engine
-    ("qe01", raw"engine_create(x, true, E), thread_send_message(E, hi), thread_peek_message(E, hi), R = yes"),
-    ("qe02", raw"engine_create(ok, thread_send_message(main, qe02a), E), engine_next(E, _), thread_get_message(main, X), R = X"),
-    ("qe03", raw"engine_create(R0, ( thread_self(Me), thread_send_message(Me, qe03a), thread_get_message(qe03a), R0 = ok ), E), engine_next(E, R)"),
-    ("qe04", raw"thread_send_message(main, qe04a), engine_create(R0, ( thread_peek_message(qe04a) -> R0 = sees ; R0 = empty ), E), engine_next(E, R1), thread_get_message(qe04a), R = R1"),
-    ("qe05", raw"engine_create(x, true, E), engine_destroy(E), ek(thread_send_message(E, x), R)"),
-    ("qe06", raw"engine_create(x, true, E), thread_send_message(E, m), message_queue_property(E, size(S)), R = S"),
+    (
+        "qe01",
+        raw"engine_create(x, true, E), thread_send_message(E, hi), thread_peek_message(E, hi), R = yes"
+    ),
+    (
+        "qe02",
+        raw"engine_create(ok, thread_send_message(main, qe02a), E), engine_next(E, _), thread_get_message(main, X), R = X"
+    ),
+    (
+        "qe03",
+        raw"engine_create(R0, ( thread_self(Me), thread_send_message(Me, qe03a), thread_get_message(qe03a), R0 = ok ), E), engine_next(E, R)"
+    ),
+    (
+        "qe04",
+        raw"thread_send_message(main, qe04a), engine_create(R0, ( thread_peek_message(qe04a) -> R0 = sees ; R0 = empty ), E), engine_next(E, R1), thread_get_message(qe04a), R = R1"
+    ),
+    (
+        "qe05",
+        raw"engine_create(x, true, E), engine_destroy(E), ek(thread_send_message(E, x), R)"
+    ),
+    (
+        "qe06",
+        raw"engine_create(x, true, E), thread_send_message(E, m), message_queue_property(E, size(S)), R = S"
+    ),
     ("qe07", raw"engine_create(x, true, E), pk(message_queue_destroy(E), R)"),
-    ("qe08", raw"message_queue_create(Q), engine_create(ok, thread_send_message(Q, qe08a), E), engine_next(E, _), thread_get_message(Q, X), R = X"),
-    ("qe09", raw"engine_create(x, true, E), findall(P, message_queue_property(E, P), R0), R0 = [alias(A), size(S)], ( var(A) -> R = quirk-S ; R = other )"),
-    ("qe10", raw"engine_create(R0, ( thread_self(Me), thread_get_message(Me, _, [timeout(0)]) ), E), \+ engine_next(E, _), R = no"),
-    ("qe11", raw"engine_create(x, true, E), engine_destroy(E), ek(message_queue_property(E, _), R)"),
+    (
+        "qe08",
+        raw"message_queue_create(Q), engine_create(ok, thread_send_message(Q, qe08a), E), engine_next(E, _), thread_get_message(Q, X), R = X"
+    ),
+    (
+        "qe09",
+        raw"engine_create(x, true, E), findall(P, message_queue_property(E, P), R0), R0 = [alias(A), size(S)], ( var(A) -> R = quirk-S ; R = other )"
+    ),
+    (
+        "qe10",
+        raw"engine_create(R0, ( thread_self(Me), thread_get_message(Me, _, [timeout(0)]) ), E), \+ engine_next(E, _), R = no"
+    ),
+    (
+        "qe11",
+        raw"engine_create(x, true, E), engine_destroy(E), ek(message_queue_property(E, _), R)"
+    ),
     ("qe12", raw"engine_create(x, true, E), is_message_queue(E), R = yes"),
-    ("qe13", raw"engine_create(x, true, E), thread_send_message(E, m), engine_destroy(E), R = ok"),
-    ("qe14", raw"engine_create(R0, ( thread_send_message(main, qe14a), thread_send_message(main, qe14b) ), E), engine_next(E, _), thread_get_message(main, qe14b), thread_get_message(main, qe14a), R = ok"),
-    ("qe15", raw"message_queue_create(qe15q), engine_create(x, true, E), cx(set_thread(E, alias(qe15q)), R)"),
-    ("qe16", raw"message_queue_create(qe16q), engine_create(x, true, E), pk(set_thread(E, alias(qe16q)), R)"),
+    (
+        "qe13",
+        raw"engine_create(x, true, E), thread_send_message(E, m), engine_destroy(E), R = ok"
+    ),
+    (
+        "qe14",
+        raw"engine_create(R0, ( thread_send_message(main, qe14a), thread_send_message(main, qe14b) ), E), engine_next(E, _), thread_get_message(main, qe14b), thread_get_message(main, qe14a), R = ok"
+    ),
+    (
+        "qe15",
+        raw"message_queue_create(qe15q), engine_create(x, true, E), cx(set_thread(E, alias(qe15q)), R)"
+    ),
+    (
+        "qe16",
+        raw"message_queue_create(qe16q), engine_create(x, true, E), pk(set_thread(E, alias(qe16q)), R)"
+    ),
     ("qe17", raw"engine_create(x, true, E), set_thread(E, alias(qe17q)), R = ok"),
-    ("qe18", raw"engine_create(x, true, E), set_thread(E, alias(qe18q)), cx(message_queue_create(qe18q), R)"),
+    (
+        "qe18",
+        raw"engine_create(x, true, E), set_thread(E, alias(qe18q)), cx(message_queue_create(qe18q), R)"
+    ),
     # qz: the table at the end
     ("qz01", raw"findall(A, message_queue_property(_, alias(A)), L), msort(L, R)"),
-    ("qz02", raw"findall(A, ( message_queue_property(Q, alias(A)), is_message_queue(Q) ), L), msort(L, M), length(M, N), length(L, N), R = ok"),
-    ("qz03", raw"message_queue_property(Q, alias(qc16q)), thread_send_message(Q, qz03a), message_queue_property(Q, size(S)), drain(Q, L), R = S-L"),
+    (
+        "qz02",
+        raw"findall(A, ( message_queue_property(Q, alias(A)), is_message_queue(Q) ), L), msort(L, M), length(M, N), length(L, N), R = ok"
+    ),
+    (
+        "qz03",
+        raw"message_queue_property(Q, alias(qc16q)), thread_send_message(Q, qz03a), message_queue_property(Q, size(S)), drain(Q, L), R = S-L"
+    ),
     ("qz04", raw"is_message_queue(qc16q), R = yes"),
     ("qz05", raw"is_message_queue(qd12q), is_message_queue(qd13q), R = yes"),
     ("qz06", raw"is_message_queue(qd11q), R = yes"),
@@ -651,9 +963,9 @@ const _TQ_KD = Dict{String, String}(
 function _tq_program()::String
     return _TQ_PRELUDE * join(
         [
-            "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
-            (id, g) in _TQ_CASES
-        ]
+        "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in _TQ_CASES
+    ]
     )
 end
 
@@ -732,7 +1044,8 @@ end
         @test key == sym_key(q.id::_TQ)
         @test q.serial >= 1 && q.serial <= gd.message_queue_serial
     end
-    @test length(unique(q.serial for q in values(gd.message_queues))) == length(gd.message_queues)
+    @test length(unique(q.serial for q in values(gd.message_queues))) ==
+        length(gd.message_queues)
     @test !isempty(gd.message_queues)
     # the thread queues: the main thread's (tid 1) is empty again (every row drains it), none has a name
     @test haskey(gd.thread_queues, 1)
@@ -764,18 +1077,73 @@ end
 const _TQ_WAIT_GET = "thread_get_message/N: an empty queue, or one with no matching message, and no other thread to send (blocking wait)"
 const _TQ_WAIT_SEND = "thread_send_message/N: a full queue with no other thread to drain it (blocking send)"
 const _TQ_REFUSED = [
-    ("qr01", raw"message_queue_create(Q), thread_get_message(Q, x)", "thread_get_message", _TQ_WAIT_GET),
-    ("qr02", raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b)", "thread_get_message", _TQ_WAIT_GET),
-    ("qr03", raw"message_queue_create(Q), thread_get_message(Q, x, [])", "thread_get_message", _TQ_WAIT_GET),
-    ("qr04", raw"message_queue_create(Q), thread_get_message(Q, x, [signals(true)])", "thread_get_message", _TQ_WAIT_GET),
+    (
+        "qr01",
+        raw"message_queue_create(Q), thread_get_message(Q, x)",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr02",
+        raw"message_queue_create(Q), thread_send_message(Q, a), thread_get_message(Q, b)",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr03",
+        raw"message_queue_create(Q), thread_get_message(Q, x, [])",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr04",
+        raw"message_queue_create(Q), thread_get_message(Q, x, [signals(true)])",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
     ("qr05", raw"thread_get_message(qr05_nothing)", "thread_get_message", _TQ_WAIT_GET),
-    ("qr06", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b)", "thread_send_message", _TQ_WAIT_SEND),
-    ("qr07", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [])", "thread_send_message", _TQ_WAIT_SEND),
-    ("qr08", raw"thread_get_message(main, qr08_nothing)", "thread_get_message", _TQ_WAIT_GET),
-    ("qr09", raw"message_queue_create(Q), thread_send_message(Q, a), message_queue_set(Q, max_size(1)), thread_send_message(Q, b)", "thread_send_message", _TQ_WAIT_SEND),
-    ("qr10", raw"engine_create(x, true, E), thread_get_message(E, x)", "thread_get_message", _TQ_WAIT_GET),
-    ("qr11", raw"message_queue_create(Q), thread_get_message(Q, x, [signals(0.5)])", "thread_get_message", _TQ_WAIT_GET),
-    ("qr12", raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(false)])", "thread_send_message", _TQ_WAIT_SEND)
+    (
+        "qr06",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b)",
+        "thread_send_message",
+        _TQ_WAIT_SEND
+    ),
+    (
+        "qr07",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [])",
+        "thread_send_message",
+        _TQ_WAIT_SEND
+    ),
+    (
+        "qr08",
+        raw"thread_get_message(main, qr08_nothing)",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr09",
+        raw"message_queue_create(Q), thread_send_message(Q, a), message_queue_set(Q, max_size(1)), thread_send_message(Q, b)",
+        "thread_send_message",
+        _TQ_WAIT_SEND
+    ),
+    (
+        "qr10",
+        raw"engine_create(x, true, E), thread_get_message(E, x)",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr11",
+        raw"message_queue_create(Q), thread_get_message(Q, x, [signals(0.5)])",
+        "thread_get_message",
+        _TQ_WAIT_GET
+    ),
+    (
+        "qr12",
+        raw"message_queue_create(Q, [max_size(1)]), thread_send_message(Q, a), thread_send_message(Q, b, [signals(false)])",
+        "thread_send_message",
+        _TQ_WAIT_SEND
+    )
 ]
 
 @testset "the twelve named refusals of the blocking waits, owner TH1 (qr01-qr12)" begin
@@ -798,14 +1166,18 @@ end
 @testset "with a deadline the same waits FAIL at once, no sleep (the DIVERGES of the one-thread form)" begin
     # swipl waits until the deadline here; the kernel answers `false` immediately. Both rows ran in the main testset (qo01-qo04, qo32-qo35, qo57):
     # their pins are the failing line (the id alone), the kernel's line is the same.
-    for id in ("qo01", "qo02", "qo03", "qo04", "qo32", "qo33", "qo34", "qo35", "qo57", "qm44")
+    for id in
+        ("qo01", "qo02", "qo03", "qo04", "qo32", "qo33", "qo34", "qo35", "qo57", "qm44")
         @test haskey(_TQ_PIN, id)
     end
     for id in ("qo01", "qo02", "qo03", "qo04", "qo32", "qo33", "qo34", "qo35", "qo57")
         @test _TQ_PIN[id] == "t_$id"
     end
     f = joinpath(mktempdir(), "queues_nosleep.pl")
-    write(f, "t_ns1(R) :- message_queue_create(Q), thread_get_message(Q, x, [timeout(30)]) -> R = got ; R = timedout.\n")
+    write(
+        f,
+        "t_ns1(R) :- message_queue_create(Q), thread_get_message(Q, x, [timeout(30)]) -> R = got ; R = timedout.\n"
+    )
     t0 = time()
     kl, _, _, e = _tq_kernel(f, ["t_ns1"])
     @test e === nothing
@@ -816,8 +1188,10 @@ end
 @testset "the thirteen queue predicates are registered with upstream's flags (pl-thread.c:8870-8893)" begin
     ext = Dict((e.predicate_name, e.arity) => e for e in LK.foreigns)
     preds = (
-        ("message_queue_create", 1, false, false), ("message_queue_create", 2, false, false),
-        ("message_queue_destroy", 1, true, false), ("message_queue_property", 2, true, true),
+        ("message_queue_create", 1, false, false),
+        ("message_queue_create", 2, false, false),
+        ("message_queue_destroy", 1, true, false),
+        ("message_queue_property", 2, true, true),
         ("message_queue_set", 2, false, false), ("is_message_queue", 1, false, false),
         ("thread_send_message", 2, true, false), ("thread_send_message", 3, false, false),
         ("thread_get_message", 1, true, false), ("thread_get_message", 2, true, false),
@@ -838,7 +1212,8 @@ end
 @testset "a queue's name is refused for a thread alias, and a thread's queue goes with the thread (white box)" begin
     gd = LK.PL_global_data{_TQ}()
     ld = LK.PL_local_data{_TQ}(gd)
-    @test isempty(gd.message_queues) && isempty(gd.thread_queues) && gd.message_queue_serial == 0
+    @test isempty(gd.message_queues) && isempty(gd.thread_queues) &&
+        gd.message_queue_serial == 0
     f = joinpath(mktempdir(), "queues_wb.pl")
     write(
         f,
@@ -848,7 +1223,10 @@ end
     )
     kl, gd, ld, e = _tq_kernel(f, ["t_w1", "t_w2"])
     @test e === nothing
-    @test kl[2] == "t_w1 " * _tq_c("t_w1", _tq_c("-", _tq_c("-", _tq_a("create"), _tq_a("thread")), _tq_a("wbq")))
+    @test kl[2] ==
+        "t_w1 " * _tq_c(
+        "t_w1", _tq_c("-", _tq_c("-", _tq_a("create"), _tq_a("thread")), _tq_a("wbq"))
+    )
     @test kl[3] == "t_w2 " * _tq_c("t_w2", _tq_a("ok"))
     @test gd.message_queue_serial == 1
     @test haskey(gd.message_queues, sym_key(_tqs("wbq")))
@@ -864,7 +1242,25 @@ end
     errors = count(l -> occursin("[114,97,105,115,101,100]", l), _TQ_PINNED)
     @test errors >= 60                                              # the raising rows
     @test count(l -> !occursin(" ", l) && startswith(l, "t_"), _TQ_PINNED) >= 25   # failing rows
-    for id in ("qc01", "qc16", "qp01", "qp22", "qd08", "qd13", "qs01", "qm01", "qm02", "qm03", "qm08", "qm17", "qo31", "qo42", "qe02", "qe03", "qz03")
+    for id in (
+        "qc01",
+        "qc16",
+        "qp01",
+        "qp22",
+        "qd08",
+        "qd13",
+        "qs01",
+        "qm01",
+        "qm02",
+        "qm03",
+        "qm08",
+        "qm17",
+        "qo31",
+        "qo42",
+        "qe02",
+        "qe03",
+        "qz03"
+    )
         @test any(
             l -> startswith(l, "t_$id ") && !occursin("[114,97,105,115,101,100]", l),
             _TQ_PINNED

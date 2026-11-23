@@ -193,7 +193,9 @@ function register_event_function(
 )::Bool where {T}
     fns = gd.event_hook.functions
     push!(fns, event_function(func, closure))
-    cb = event_callback{T, definition{T}}(name, 0, nothing, length(fns), nothing, argc, flags)
+    cb = event_callback{T, definition{T}}(
+        name, 0, nothing, length(fns), nothing, argc, flags
+    )
     return link_event(get_event_list!(gd, ld, loc), cb, last)
 end
 

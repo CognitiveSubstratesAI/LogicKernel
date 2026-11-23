@@ -561,7 +561,7 @@ function Sset_exception(ld::PL_local_data{T}, s::IOSTREAM, ex::term_t)::Int wher
     r = PL_record(ld, ex)
     pending = PL_exception(ld, 0)
     if pending != 0 &&
-            compareStandard_cells(ld, -(ex + 1), -(pending + 1), true) == CMPEX_EQUAL
+        compareStandard_cells(ld, -(ex + 1), -(pending + 1), true) == CMPEX_EQUAL
         PL_clear_exception(ld)
     end
     return Sset_exception(s, StreamException{T}(r))

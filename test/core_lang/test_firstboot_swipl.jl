@@ -78,7 +78,7 @@ function _fb_run(args::Vector{String})
 end
 
 "As `_fb_run`, with the database as a fourth answer (`gd.halt_exited` is read by the rows of the halt count); `prehalt` records a status before `PL_initialise!`."
-function _fb_run_gd(args::Vector{String}; prehalt::Union{Nothing, Int} = nothing)
+function _fb_run_gd(args::Vector{String}; prehalt::Union{Nothing, Int}=nothing)
     gd = LK.PL_global_data{_FB}()
     gd.halt_exit = false
     prehalt === nothing || push!(gd.halt_exited, prehalt)
@@ -185,7 +185,7 @@ end
         @test gd.halt_exited == [0]
     end
     @testset "--dump-runtime-variables after a halt recorded before the call: the closing halt still runs" begin
-        st, o, w, gd = _fb_run_gd(String["--dump-runtime-variables"]; prehalt = 7)
+        st, o, w, gd = _fb_run_gd(String["--dump-runtime-variables"]; prehalt=7)
         @test gd.halt_exited == [7, 0]
     end
 end

@@ -720,7 +720,9 @@ const PL_predicates_from_pro = (
         "sig_atomic", 1, pl_sig_atomic1_va,
         PL_FA_VARARGS | PL_FA_TRANSPARENT | PL_FA_SIG_ATOMIC
     ),
-    PL_extension("\$call_no_catch", 1, pl_call_no_catch1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT),
+    PL_extension(
+        "\$call_no_catch", 1, pl_call_no_catch1_va, PL_FA_VARARGS | PL_FA_TRANSPARENT
+    ),
     PL_extension("\$notrace", 2, pl_notrace2_va, PL_FA_VARARGS | PL_FA_NOTRACE),
     PL_extension(                               # PRED_DEF("$notrace", 1, notrace, PL_FA_TRANSPARENT|PL_FA_NOTRACE)
         "\$notrace", 1, pl_notrace1_va,

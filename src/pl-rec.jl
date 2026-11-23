@@ -305,7 +305,8 @@ function addExternalIndirect(info::compile_info{T}, v::T)::Bool where {T}
         addMPZToBuffer(info.code, z)
     elseif k === NUM_RATIONAL
         q = rational_value(v)
-        info.size += mpz_wsize(numerator(q)) + mpz_wsize(denominator(q)) + 2 * MPZ_STACK_EXTRA + 2
+        info.size +=
+            mpz_wsize(numerator(q)) + mpz_wsize(denominator(q)) + 2 * MPZ_STACK_EXTRA + 2
         addOpCode(info, PL_REC_MPQ)
         addMPQToBuffer(info.code, q)
     elseif k === NUM_FLOAT
@@ -455,7 +456,9 @@ Record the term `t` references (pl-rec.c): a byte code that no longer needs the 
 undoing the bindings it was made under does not change.
 """
 function compileTermToHeap(ld::PL_local_data{T}, t::term_t)::record{T} where {T}
-    info = compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, false, ENONE, nothing)    # init_cycle, initBuffer
+    info = compile_info{T}(
+        UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, false, ENONE, nothing
+    )    # init_cycle, initBuffer
     a = ld.walk_agenda
     initCellAgenda!(a, 1, -(t + 1))                         # initTermAgenda(&agenda, 1, valTermRef(t))
     rc = compile_term_to_heap(ld, a, info)
@@ -505,7 +508,9 @@ REC_COMPAT(m::UInt8)::Bool = (m & (REC_VMASK | REC_SZMASK)) == REC_HDR
 # DIVERGES: the table is indexed by the opcode PLUS ONE (Julia's 1-based index); the versions upstream leaves
 # `NULL` (0, 1 and 3..7) are an empty vector, as `fetchOpCode` reads it.
 "The opcodes of a version 2 external record to this version's (pl-rec.c): index = opcode + 1."
-const v2_map = Int[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, Int(PL_TYPE_EXT_COMPOUND_V2), 14, 15, 16, 17, 18]
+const v2_map = Int[
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, Int(PL_TYPE_EXT_COMPOUND_V2), 14, 15, 16, 17, 18
+]
 
 # PORT: pl-rec.c record_data
 # DIVERGES: `info.code` and `hdr` are `Vector{UInt8}`s; the constructor makes the `compile_info` with
@@ -520,7 +525,8 @@ end
 
 "A fresh `record_data{T}` for an external record."
 record_data(::Type{T}) where {T} = record_data{T}(
-    false, compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, true, ENONE, nothing), UInt8[]
+    false,
+    compile_info{T}(UInt8[], Int[], T[], Tuple{Int, word}[], 0, 0, true, ENONE, nothing), UInt8[]
 )
 
 # PORT: pl-rec.c rec_error
@@ -785,7 +791,8 @@ function fetchAtomW(::Type{T}, code::Vector{UInt8}, b::copy_info)::T where {T}
         isvalid(Char, cp) || throw(
             NotPortedError{T}(
                 mk_sym(T, :fast_term_serialized),
-                "a wide atom with a code point above 0x10FFFF or a surrogate", "the term interface"
+                "a wide atom with a code point above 0x10FFFF or a surrogate",
+                "the term interface"
             )
         )
         push!(chars, Char(cp))
@@ -1035,7 +1042,8 @@ function copy_external_record(
                 ld.gstack[p] = word(0)                      # setVar(*p)
                 b.vars[n] = p
             end
-        elseif tag == PL_TYPE_NIL || tag == PL_TYPE_DICT || tag == PL_TYPE_EXT_ATOM || tag == PL_TYPE_EXT_WATOM
+        elseif tag == PL_TYPE_NIL || tag == PL_TYPE_DICT || tag == PL_TYPE_EXT_ATOM ||
+            tag == PL_TYPE_EXT_WATOM
             _rec_put!(ld, slot, p, fetchExtAtomWord(ld, code, b, tag))
         elseif tag == PL_TYPE_TAGGED_INTEGER
             _rec_put!(ld, slot, p, consInt(fetchInt64(code, b)))
@@ -1072,7 +1080,7 @@ function copy_external_record(
             if len >= 1 && code[s0] == UInt8('B')        # ISO Latin-1 characters
                 text = String(Char.(view(code, (s0 + 1):stop)))
             elseif len >= 4 && len % 4 == 0 && code[s0] == UInt8('W') &&
-                   code[s0 + 1] == 0 && code[s0 + 2] == 0 && code[s0 + 3] == 0
+                code[s0 + 1] == 0 && code[s0 + 2] == 0 && code[s0 + 3] == 0
                 chars = Char[]                              # wchar_t characters, little-endian
                 for k in 1:(len ÷ 4 - 1)
                     cp = UInt32(0)
@@ -1095,7 +1103,8 @@ function copy_external_record(
         elseif tag == PL_REC_CYCLE
             off = fetchSizeInt(code, b)
             _rec_put!(ld, slot, p, consPtr(b.gbase + off, TAG_COMPOUND | STG_GLOBAL))
-        elseif tag == PL_TYPE_CONS || tag == PL_TYPE_EXT_COMPOUND || tag == PL_TYPE_EXT_COMPOUND_V2
+        elseif tag == PL_TYPE_CONS || tag == PL_TYPE_EXT_COMPOUND ||
+            tag == PL_TYPE_EXT_COMPOUND_V2
             nw = word(0)
             if tag == PL_TYPE_CONS
                 fdef = ld.functor_dot2
@@ -1129,7 +1138,8 @@ function copy_external_record(
             throw(
                 NotPortedError{T}(
                     mk_sym(T, :fast_term_serialized),
-                    "an external record's atom as a process-local word (PL_TYPE_ATOM)", "a word is process-local"
+                    "an external record's atom as a process-local word (PL_TYPE_ATOM)",
+                    "a word is process-local"
                 )
             )
         elseif tag == PL_TYPE_COMPOUND
@@ -1137,7 +1147,8 @@ function copy_external_record(
             throw(
                 NotPortedError{T}(
                     mk_sym(T, :fast_term_serialized),
-                    "an external record's functor as a process-local word (PL_TYPE_COMPOUND)", "a word is process-local"
+                    "an external record's functor as a process-local word (PL_TYPE_COMPOUND)",
+                    "a word is process-local"
                 )
             )
         else

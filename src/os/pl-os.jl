@@ -803,7 +803,7 @@ function TemporaryFile(
                 Base.Filesystem.open(
                     temp,
                     Base.Filesystem.JL_O_CREAT | Base.Filesystem.JL_O_EXCL |
-                        Base.Filesystem.JL_O_WRONLY,
+                    Base.Filesystem.JL_O_WRONLY,
                     0o600
                 )
             catch e

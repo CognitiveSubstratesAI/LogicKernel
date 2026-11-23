@@ -150,7 +150,8 @@ const _EN_CASES = [
         true
     ),
     (
-        "en06", "engine_create(X, member(X,[a,b,c]), E)", "engine_destroy(E), engine_destroy(E)",
+        "en06", "engine_create(X, member(X,[a,b,c]), E)",
+        "engine_destroy(E), engine_destroy(E)",
         "raised(existence_error(engine,E))", true
     ),
     (
@@ -198,7 +199,8 @@ const _EN_CASES = [
     ),
     (
         "en17", "engine_create(Y, (engine_fetch(X), Y = X), E)",
-        "engine_post(E,1), engine_post(E,2,_)", "raised(permission_error(post_to,engine,E))",
+        "engine_post(E,1), engine_post(E,2,_)",
+        "raised(permission_error(post_to,engine,E))",
         true
     ),
     (
@@ -219,7 +221,8 @@ const _EN_CASES = [
         "en21", "engine_create(f(Y,_,Y), true, E)", "engine_next(E,R0)", "f(V,_,V)", true
     ),
     (
-        "en22", "engine_create(X, member(X,[1,2,3]), E1), engine_create(Y, member(Y,[a,b,c]), E2)",
+        "en22",
+        "engine_create(X, member(X,[1,2,3]), E1), engine_create(Y, member(Y,[a,b,c]), E2)",
         "engine_next(E1,A), engine_next(E2,B), engine_next(E1,C), engine_next(E2,D), R0 = [A,B,C,D]",
         "[1,a,2,b]", true
     ),
@@ -241,7 +244,8 @@ const _EN_CASES = [
     ),
     (
         "en31", "engine_create(X, (X=1 ; throw(oops)), E)",
-        "engine_next_reified(E,A), engine_next_reified(E,B), R0 = A-B", "the(1)-throw(oops)",
+        "engine_next_reified(E,A), engine_next_reified(E,B), R0 = A-B",
+        "the(1)-throw(oops)",
         true
     ),
     ("en32", "engine_create(X, fail, E)", "engine_next_reified(E,R0)", "no", true),
@@ -275,7 +279,13 @@ const _EN_CASES = [
         "en53", "true", "engine_create(x, true, _, [stack_limit(foo)])",
         "raised(type_error(integer,foo))", true
     ),
-    ("en54", "true", "engine_create(x, true, _, foo)", "raised(type_error(list,foo))", true),
+    (
+        "en54",
+        "true",
+        "engine_create(x, true, _, foo)",
+        "raised(type_error(list,foo))",
+        true
+    ),
     (
         "en55", "true",
         "engine_create(x, true, E, [stack_limit(inf)]), engine_next(E,A), R0 = A", "x", true
@@ -302,7 +312,8 @@ const _EN_CASES = [
         "tpalias03-true", true
     ),
     (
-        "tp04", "engine_create(X, member(X,[a,b]), E)", "( thread_property(E, alias(_)) -> R0 = y ; R0 = n )", "n", true
+        "tp04", "engine_create(X, member(X,[a,b]), E)",
+        "( thread_property(E, alias(_)) -> R0 = y ; R0 = n )", "n", true
     ),
     (
         "tp05", "true",
@@ -331,7 +342,8 @@ const _EN_CASES = [
         "[id,status,detached,debug]", true
     ),
     (
-        "tp11", "true", "thread_property(foo, id(_))", "raised(existence_error(thread,foo))", true
+        "tp11", "true", "thread_property(foo, id(_))",
+        "raised(existence_error(thread,foo))", true
     ),
     ("tp12", "true", "thread_property(1.5, id(_))", "raised(type_error(thread,1.5))", true),
     (
@@ -342,32 +354,50 @@ const _EN_CASES = [
         "tp14", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, foo(_))",
         "raised(domain_error(thread_property,foo(_)))", true
     ),
-    ("tp15", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, 1)", "raised(type_error(thread_property,1))", true),
-    ("tp16", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, id)", "raised(domain_error(thread_property,id))", true),
+    (
+        "tp15",
+        "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, 1)",
+        "raised(type_error(thread_property,1))",
+        true
+    ),
+    (
+        "tp16",
+        "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, id)",
+        "raised(domain_error(thread_property,id))",
+        true
+    ),
     (
         "tp17", "true", "thread_property(_, foo(_))",
         "raised(domain_error(thread_property,foo(_)))", true
     ),
     (
-        "tp18", "engine_create(X, member(X,[a,b]), E)", "engine_destroy(E), thread_property(E, id(_))",
+        "tp18", "engine_create(X, member(X,[a,b]), E)",
+        "engine_destroy(E), thread_property(E, id(_))",
         "raised(existence_error(thread,E))", true
     ),
     (
-        "tp19", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, detached(foo))", "raised(type_error(bool,foo))",
+        "tp19", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, detached(foo))",
+        "raised(type_error(bool,foo))",
         true
     ),
     (
-        "tp20", "engine_create(S, ( thread_self(Me), thread_property(Me, status(S)) ; true ), E)",
-        "engine_next(E, S0), thread_property(E, status(S1)), R0 = S0-S1", "running-suspended",
+        "tp20",
+        "engine_create(S, ( thread_self(Me), thread_property(Me, status(S)) ; true ), E)",
+        "engine_next(E, S0), thread_property(E, status(S1)), R0 = S0-S1",
+        "running-suspended",
         true
     ),
     (
-        "tp21", "engine_create(T, ( thread_self(Me), thread_property(Me, thread(T)) ; true ), E)",
+        "tp21",
+        "engine_create(T, ( thread_self(Me), thread_property(Me, thread(T)) ; true ), E)",
         "( thread_property(E, thread(_)) -> P = y ; P = n ), engine_next(E, T0), R0 = P-T0",
         "n-main", true
     ),
     (
-        "tp22", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, debug_mode(M)), R0 = M", "false", true
+        "tp22", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, debug_mode(M)), R0 = M", "false", true
     ),
     # tp23 is KERNEL-ONLY (measured on the pin build, 2026-11-22: swipl answers `console`): the class of the main thread is set by the
     # toplevel (boot/toplevel.pl:575 `set_thread(main, class(console))`), which the kernel's database never ran; upstream's `info->class`
@@ -386,24 +416,30 @@ const _EN_CASES = [
     # system_thread_id/1 and size/1 (pl-thread.c:3305-3338, system_thread_id :2041, sizeof_thread :3156), measured on the pin build 2026-11-22:
     # main has an OS thread id, an engine only while it is entered (`has_tid`, the same OS thread as main's), a size while it is running.
     (
-        "tp26", "true", "thread_property(main, system_thread_id(I)), integer(I), I > 0, R0 = ok", "ok", true
+        "tp26", "true",
+        "thread_property(main, system_thread_id(I)), integer(I), I > 0, R0 = ok", "ok", true
     ),
     (
-        "tp27", "engine_create(X, (thread_self(S), thread_property(S, system_thread_id(I)), X = I), E)",
-        "engine_next(E, A), thread_property(main, system_thread_id(M)), ( A == M -> R0 = same ; R0 = diff )", "same", true
+        "tp27",
+        "engine_create(X, (thread_self(S), thread_property(S, system_thread_id(I)), X = I), E)",
+        "engine_next(E, A), thread_property(main, system_thread_id(M)), ( A == M -> R0 = same ; R0 = diff )",
+        "same", true
     ),
     (
         "tp28", "engine_create(X, member(X,[a,b]), E)",
         "( thread_property(E, system_thread_id(_)) -> R0 = y ; R0 = n )", "n", true
     ),
     (
-        "tp29", "true", "thread_property(main, size(S)), integer(S), S > 0, R0 = ok", "ok", true
+        "tp29", "true", "thread_property(main, size(S)), integer(S), S > 0, R0 = ok", "ok",
+        true
     ),
     (
-        "tp30", "engine_create(X, member(X,[a,b]), E)", "thread_property(E, size(S)), integer(S), S > 0, R0 = ok", "ok", true
+        "tp30", "engine_create(X, member(X,[a,b]), E)",
+        "thread_property(E, size(S)), integer(S), S > 0, R0 = ok", "ok", true
     ),
     (
-        "tp31", "engine_create(X, ( thread_self(Me), thread_property(Me, size(S)), integer(S), S > 0, X = ok ), E)",
+        "tp31",
+        "engine_create(X, ( thread_self(Me), thread_property(Me, size(S)), integer(S), S > 0, X = ok ), E)",
         "engine_next(E, R0)", "ok", true
     ),
     (
@@ -417,8 +453,11 @@ const _EN_CASES = [
         "[id,status,detached,debug,debug_mode,engine,size,class]", true
     ),
     (
-        "tp34", "engine_create(X, ( thread_self(S), findall(N, ( thread_property(S, P), functor(P, N, _) ), X) ), E)",
-        "engine_next(E, R0)", "[id,status,detached,debug,debug_mode,engine,thread,system_thread_id,size,class]", true
+        "tp34",
+        "engine_create(X, ( thread_self(S), findall(N, ( thread_property(S, P), functor(P, N, _) ), X) ), E)",
+        "engine_next(E, R0)",
+        "[id,status,detached,debug,debug_mode,engine,thread,system_thread_id,size,class]",
+        true
     ),
     # the `main` entry of the thread table (pl-init.c:1606 aliasThread(PL_thread_self(), ATOM_thread, ATOM_main); TH1 piece b), measured on the
     # pin build 2026-11-22: main's handle is in threadTable but is no interactor (its blob is no text atom): every engine predicate raises
@@ -439,11 +478,13 @@ const _EN_CASES = [
         "mn5", "true", "( is_engine(main) -> R0 = y ; R0 = n )", "n", true
     ),
     (
-        "mn6", "true", "engine_create(x,true,_,[alias(main)])", "raised(permission_error(create,engine,main))", true
+        "mn6", "true", "engine_create(x,true,_,[alias(main)])",
+        "raised(permission_error(create,engine,main))", true
     ),
     (
         "mn7", "true",
-        "catch(engine_create(x,true,_,[alias(main)]), _, true), thread_property(T, alias(main)), R0 = T", "main", true
+        "catch(engine_create(x,true,_,[alias(main)]), _, true), thread_property(T, alias(main)), R0 = T",
+        "main", true
     ),
     # the named DIVERGES (TH1): upstream waits for the mutex of an engine that is running, on one thread: a hang. Kernel only.
     (
@@ -497,7 +538,8 @@ const _EN_EV_CASES = [
         "same", true
     ),
     (
-        "ev04", "engine_create(X, member(X,[a,b]), E1), engine_create(Y, member(Y,[a,b]), E2)",
+        "ev04",
+        "engine_create(X, member(X,[a,b]), E1), engine_create(Y, member(Y,[a,b]), E2)",
         "ev_with(thread_exit, [ev_hook-[]], ( engine_destroy(E2), engine_destroy(E1) )), findall(T, evlog(T), L), ( L = [A,B], A == E2, B == E1 -> R0 = same ; R0 = L )",
         "same", true
     ),
@@ -517,7 +559,8 @@ const _EN_EV_CASES = [
         "[]", true
     ),
     (
-        "ev08", "retractall(evlog(_)), engine_create(X, ( prolog_listen(this_thread_exit, ev_hook0), member(X,[a,b]) ), E)",
+        "ev08",
+        "retractall(evlog(_)), engine_create(X, ( prolog_listen(this_thread_exit, ev_hook0), member(X,[a,b]) ), E)",
         "engine_next(E,_), engine_destroy(E), findall(T, evlog(T), L), R0 = L",
         "[this]", true
     ),
@@ -614,9 +657,9 @@ const _EN_YIELD_CASES = [
 function _en_program(cases; prelude::String="")::String
     return prelude * join(
         [
-            "ck_$(c[1])(R) :- $(c[2]), ( catch(($(c[3])), error(SsuE, _), R0 = raised(SsuE)) -> true ; R0 = failed ), " *
-            "( R0 =@= ($(c[4])) -> R = ok ; R = bad(R0) ).\n" for c in cases
-        ]
+        "ck_$(c[1])(R) :- $(c[2]), ( catch(($(c[3])), error(SsuE, _), R0 = raised(SsuE)) -> true ; R0 = failed ), " *
+        "( R0 =@= ($(c[4])) -> R = ok ; R = bad(R0) ).\n" for c in cases
+    ]
     )
 end
 
@@ -683,7 +726,8 @@ function _en_check(cases; prelude::String="")
     @test length(kl) == length(cases) + 1
     for (c, line) in zip(cases, kl[2:end])
         want = _en_ok_line(c[1])
-        line == want || println(stderr, "  row $(c[1]): ours  ", line, "\n          wanted ", want)
+        line == want ||
+            println(stderr, "  row $(c[1]): ours  ", line, "\n          wanted ", want)
         @test line == want
     end
     return gd, ld
@@ -712,10 +756,11 @@ end
     @test [et.argc for et in LK.PL_events][10:12] == [1, 1, 0]
     @test [et.local_ for et in LK.PL_events] == vcat(fill(false, 11), [true])
     # thread_start has no raise site for an engine: raise it by hand with an engine's record (the value `unify_thread_id` puts)
-    prelude = _EN_EV_PRELUDE * """
-    ck_evs1(ok) :- retractall(evlog(_)), engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_start, ev_hook).
-    ck_evs2(R) :- ev_keep(E), findall(T, evlog(T), L), ( L = [T1], T1 == E -> R = ok ; R = bad(L) ).
-    """
+    prelude =
+        _EN_EV_PRELUDE * """
+ck_evs1(ok) :- retractall(evlog(_)), engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_start, ev_hook).
+ck_evs2(R) :- ev_keep(E), findall(T, evlog(T), L), ( L = [T1], T1 == E -> R = ok ; R = bad(L) ).
+"""
     f = joinpath(mktempdir(), "evs.pl")
     write(f, prelude)
     gd, ld, st = _en_load(f)
@@ -729,10 +774,11 @@ end
 end
 
 @testset "the thread events: a hook that raises is reported on the engine's messages and cleared (white-box)" begin
-    prelude = _EN_EV_PRELUDE * """
-    ck_evs3a(ok) :- engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_exit, ev_hook_throw).
-    ck_evs3b(ok) :- ev_keep(E), engine_destroy(E).
-    """
+    prelude =
+        _EN_EV_PRELUDE * """
+ck_evs3a(ok) :- engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)), prolog_listen(thread_exit, ev_hook_throw).
+ck_evs3b(ok) :- ev_keep(E), engine_destroy(E).
+"""
     f = joinpath(mktempdir(), "evs3.pl")
     write(f, prelude)
     gd, ld, st = _en_load(f)
@@ -744,7 +790,9 @@ end
     @test _en_ask(gd, ld, "ck_evs3b") == _en_ok_line("evs3b")        # engine_destroy/1 succeeds
     @test gd.thread.infos[i] === nothing
     @test any(
-        m -> m[1] === :error && kind(m[2]) === SYM && occursin("thread_finished", sym_text(m[2])),
+        m ->
+            m[1] === :error && kind(m[2]) === SYM &&
+            occursin("thread_finished", sym_text(m[2])),
         eld.messages
     )
     @test eld.exception_term == 0                                      # the exception was cleared
@@ -752,7 +800,8 @@ end
 
 # PL_thread_at_exit and the C functions of an event list (pl-thread.c:3598-3620, pl-event.c register_event_function/call_event_list):
 # C-reachable only, so there is no swipl oracle: the expected values are READ from the C (blind: correct on the lane, never the kernel).
-const _EN_AE_PRELUDE = _EN_EV_PRELUDE * raw"""
+const _EN_AE_PRELUDE =
+    _EN_EV_PRELUDE * raw"""
 ck_ae_new(ok) :- engine_create(X, member(X,[a,b]), E), assertz(ev_keep(E)).
 ck_ae_destroy(ok) :- retract(ev_keep(E)), engine_destroy(E).
 ck_ae_listen(ok) :- prolog_listen(thread_exit, ev_hook, []).
@@ -829,7 +878,9 @@ _en_ae_fn(log, tag) = (g, l, c) -> (push!(log, (tag, c, _en_ae_place(l))); nothi
     @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
     @test log == [(:raiser, :craise, :engine)]
     @test any(
-        m -> m[1] === :error && kind(m[2]) === SYM && occursin("thread_finished", sym_text(m[2])),
+        m ->
+            m[1] === :error && kind(m[2]) === SYM &&
+            occursin("thread_finished", sym_text(m[2])),
         eld.messages
     )
     @test eld.exception_term == 0
@@ -842,7 +893,9 @@ _en_ae_fn(log, tag) = (g, l, c) -> (push!(log, (tag, c, _en_ae_place(l))); nothi
         bf = (g, l, c, t) -> (push!(log, (c, t != 0, _en_ae_place(l))); want)
         @test _en_ask(gd, ld, "ck_ae_listen") == _en_ok_line("ae_listen")
         loc = LK.event_location{_EN}(LK.PLEV_THREAD_EXIT, nothing)
-        @test LK.register_event_function(gd, ld, loc, nothing, false, bf, :b, 1, LK.EV_CALLBACK_BOOL)
+        @test LK.register_event_function(
+            gd, ld, loc, nothing, false, bf, :b, 1, LK.EV_CALLBACK_BOOL
+        )
         @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
         @test _en_ask(gd, ld, "ck_ae_destroy") == _en_ok_line("ae_destroy")
         @test log == [(:b, true, :engine)]
@@ -855,7 +908,9 @@ end
 @testset "the thread identifier API of the C interface (white-box, read from the C)" begin
     gd, ld = _en_ae_load()
     selfs = Int[]
-    @test LK.PL_thread_at_exit(gd, ld, (g, l, c) -> (push!(selfs, LK.PL_thread_self(l)); nothing), :s, true)
+    @test LK.PL_thread_at_exit(
+        gd, ld, (g, l, c) -> (push!(selfs, LK.PL_thread_self(l)); nothing), :s, true
+    )
     @test LK.PL_thread_self(ld) == 1                                    # the main thread
     @test _en_ask(gd, ld, "ck_ae_new") == _en_ok_line("ae_new")
     info = gd.thread.infos[2]
@@ -915,7 +970,8 @@ end
 
 # thread_property's `status` of a thread record that ended (pl-thread.c:2698-2765, unify_thread_status): no engine reaches these statuses (a
 # finished engine's slot is dropped), so the rows set the record's `status` and `return_value` by hand on a live engine's record.
-const _EN_ST_PRELUDE = _EN_AE_PRELUDE * raw"""
+const _EN_ST_PRELUDE =
+    _EN_AE_PRELUDE * raw"""
 ck_st_exited(ok) :- ev_keep(E), thread_property(E, status(exited(foo))).
 ck_st_exited_none(ok) :- ev_keep(E), thread_property(E, status(exited(T))), var(T).
 ck_st_exception(ok) :- ev_keep(E), thread_property(E, status(exception(foo))).
@@ -958,8 +1014,11 @@ ck_st_listed(ok) :- ev_keep(E), thread_property(T, status(true)), T == E.
     info.status = LK.PL_THREAD_RUNNING
     eld = info.thread_data
     sz = LK.sizeof_thread(ld, info)
-    @test sz >= sizeof(LK.PL_thread_info{_EN}) + sizeof(LK.PL_local_data{_EN}) + 8 * length(eld.gstack) + 8 * eld.lMax + 8 * length(eld.trail)
-    @test LK.sizeof_thread(ld, nothing) >= sizeof(LK.PL_thread_info{_EN}) + 8 * length(ld.gstack)
+    @test sz >=
+        sizeof(LK.PL_thread_info{_EN}) + sizeof(LK.PL_local_data{_EN}) +
+          8 * length(eld.gstack) + 8 * eld.lMax + 8 * length(eld.trail)
+    @test LK.sizeof_thread(ld, nothing) >=
+        sizeof(LK.PL_thread_info{_EN}) + 8 * length(ld.gstack)
     @test LK.sizeof_thread(eld, nothing) == sizeof(LK.PL_thread_info{_EN})    # main's local data is not the engine's: only the record
     info.status = LK.PL_THREAD_EXITED
     @test LK.sizeof_thread(ld, info) == 0
@@ -999,7 +1058,8 @@ end
     @test kl == ["ok", _en_ok_line("mn1")]
     @test length(gd.thread.handles) == 1                # no engine was made: the handle of the main thread alone
     h = gd.thread.handles[1]
-    @test h.info === nothing && h.engine_id == 1 && h.serial == 1 && h.flags == 0 && !h.running
+    @test h.info === nothing && h.engine_id == 1 && h.serial == 1 && h.flags == 0 &&
+        !h.running
     @test h.alias !== nothing && sym_key(h.alias) == sym_key(_ens(:main))
     @test h.symbol !== nothing && is_blob(h.symbol)
     @test gd.thread.thread_table[sym_key(_ens(:main))] == 1
@@ -1017,9 +1077,11 @@ end
     @test length(gd.thread.handles) == 1 && gd.thread.handles[1] === h
     g2 = LK.PL_global_data{_EN}()
     @test length(g2.thread.handles) == 1 && g2.thread.handles[1] !== h
-    @test g2.thread.handles[1].engine_id == 1 && g2.thread.thread_table[sym_key(_ens(:main))] == 1
+    @test g2.thread.handles[1].engine_id == 1 &&
+        g2.thread.thread_table[sym_key(_ens(:main))] == 1
     g3 = LK.setupProlog(_EN)
-    @test length(g3.thread.handles) == 1 && g3.thread.thread_table[sym_key(_ens(:main))] == 1
+    @test length(g3.thread.handles) == 1 &&
+        g3.thread.thread_table[sym_key(_ens(:main))] == 1
     @test g3.thread.handles[1].engine_id == 1 && g3.thread.handles[1].info === nothing
 end
 
@@ -1053,7 +1115,9 @@ end
     if swipl === nothing
         @info "ENGINES LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES))
+        live = filter(
+            c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES)
+        )
         f, names = _en_file(live; prelude=_EN_EV_PRELUDE * _EN_TI_PRELUDE)
         lines = _en_swipl_lines(f, names)
         @test length(lines) == length(live) + 1

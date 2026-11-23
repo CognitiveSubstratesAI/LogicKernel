@@ -437,7 +437,8 @@ end
                 (LK.Sclose_filter, LK.Sfilter_close), (LK.S_control, LK.Sfilter_control)
             ]
             for a in JET_DISPATCH_ALLOWED[2:end]
-                @test occursin("same as upstream", a.reason) && occursin("STREAMX", a.reason)
+                @test occursin("same as upstream", a.reason) &&
+                    occursin("STREAMX", a.reason)
             end
             for a in JET_DISPATCH_ALLOWED[1:1]
                 @test a.caller === LK.S_read && a.callee === LK.Sread_user

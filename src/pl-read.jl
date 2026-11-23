@@ -4320,7 +4320,9 @@ function get_quasi_quotation(t::term_t, rd::read_data{T})::Bool where {T}
             len = max(in - start, 0)
             if rd.quasi_quotations != 0             # option; must return strings
                 bytes = b[start:(start + len - 1)]
-                text = PL_chars_t(bytes, count(x -> !ISUTF8_CB(Int(x)), bytes), ENC_UTF8, false)
+                text = PL_chars_t(
+                    bytes, count(x -> !ISUTF8_CB(Int(x)), bytes), ENC_UTF8, false
+                )
                 return PL_unify_text(ld, t, 0, text, PL_CODE_LIST)
             else
                 return _unify_position!(
@@ -4461,9 +4463,9 @@ function read_qq_resume(f::pframe{T}, rd::read_data{T})::Int where {T}
         set_range_position(ld, f.pin, Int64(-1), Int64(qqend))
         (
             _unify_position!(                       # PL_FUNCTOR, FUNCTOR_minus2,
-                ld, pv + 2, Symbol("-"),            #   PL_INT64, token->end  (end of | token),
-                (Int64(token.end_), Int64(qqend - 2)), ()   #   PL_INT64, qqend-2 (end minus "|}")
-            )
+            ld, pv + 2, Symbol("-"),            #   PL_INT64, token->end  (end of | token),
+            (Int64(token.end_), Int64(qqend - 2)), ()   #   PL_INT64, qqend-2 (end minus "|}")
+        )
         ) || return 0
     end
 
@@ -4500,7 +4502,13 @@ function read_blob_end(f::pframe{T}, token::token{T}, rd::read_data{T})::Int whe
     _setHandle!(t, _blob_term!(ld.atoms, ld.atom_symbols, T, w), rd)   # PL_put_atom(t, blob)
 
     if f.pin != 0                                   # PL_FUNCTOR_minus2, pos_start, token->end
-        return _unify_position!(ld, f.pin, :-, (Int64(f.blob_pos_start), Int64(token.end_)), ()) ? 1 : 0
+        return if _unify_position!(
+            ld, f.pin, :-, (Int64(f.blob_pos_start), Int64(token.end_)), ()
+        )
+            1
+        else
+            0
+        end
     end
     return 1
 end
@@ -4696,11 +4704,20 @@ function parse_quasi_quotations(rd::read_data{T})::Bool where {T}
             if av != 0
                 PL_put_term(ld, av + 0, rd.qq)
                 PL_put_atom(ld, av + 1, gd.modules[rd.module_].atom)
-                PL_cons_functor_v(ld, av, _err_functor(ld, Symbol("\$parse_quasi_quotations"), 2), av)
+                PL_cons_functor_v(
+                    ld, av, _err_functor(ld, Symbol("\$parse_quasi_quotations"), 2), av
+                )
                 ex = Ref(0)
                 push!(ld.read_contexts, rd)
                 rc = try
-                    callProlog(gd, ld, MODULE_system(gd).index, av + 0, PL_Q_CATCH_EXCEPTION, ex)
+                    callProlog(
+                        gd,
+                        ld,
+                        MODULE_system(gd).index,
+                        av + 0,
+                        PL_Q_CATCH_EXCEPTION,
+                        ex
+                    )
                 finally
                     pop!(ld.read_contexts)
                 end
@@ -4883,9 +4900,9 @@ function is_singleton(var::variable, type::Int, rd::read_data)::Bool
     name = view(var.name, 1:(var.namelen))
     if var.times == 1 &&
         (
-            (type == IS_SINGLETON && warn_singleton(name)) || type == LIST_SINGLETONS ||
-            (type == IS_MULTITON && warn_multiton(name))
-        )
+        (type == IS_SINGLETON && warn_singleton(name)) || type == LIST_SINGLETONS ||
+        (type == IS_MULTITON && warn_multiton(name))
+    )
         if rd.qq != 0 && var.variable != 0
             ld = rd.ld
             tail = PL_copy_term_ref(ld, rd.qq)
@@ -4893,7 +4910,8 @@ function is_singleton(var::variable, type::Int, rd::read_data)::Bool
             result = PL_new_term_ref(ld)
 
             while PL_get_list(ld, tail, head, tail)
-                if _PL_get_arg(ld, 4, head, result) && PL_var_occurs_in(ld, var.variable, result)
+                if _PL_get_arg(ld, 4, head, result) &&
+                    PL_var_occurs_in(ld, var.variable, result)
                     var.times += 1                  # avoid a second scan
                     break
                 end
@@ -5069,7 +5087,9 @@ function callCommentHook(
             PL_put_nil(ld, av + 3)
         end
 
-        qid = PL_open_query(gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, comment_hook, av)
+        qid = PL_open_query(
+            gd, ld, nothing, PL_Q_NODEBUG | PL_Q_PASS_EXCEPTION, comment_hook, av
+        )
         if qid != 0
             if PL_next_solution(gd, ld, qid) == 0 && PL_exception(ld, qid) != 0
                 rc = false
@@ -5345,7 +5365,8 @@ function PL_put_term_from_chars(
 
     (flags & REP_MB) != 0 && throw(
         NotPortedError{Nothing}(
-            nothing, "PL_put_term_from_chars: REP_MB", "ENC_ANSI streams are refused (os/pl-stream.jl)"
+            nothing, "PL_put_term_from_chars: REP_MB",
+            "ENC_ANSI streams are refused (os/pl-stream.jl)"
         )
     )
     stream = Sopen_string(Vector{UInt8}(view(s, 1:len)), len, "r")
@@ -5831,7 +5852,9 @@ function pl_qq_open2_va(
             if i !== nothing
                 rd = ld.read_contexts[i]::read_data{T}
                 from = rd.base + start
-                bufp = Ref{Union{Nothing, Vector{UInt8}}}(rd._rb.base[from:(from + len - 1)])
+                bufp = Ref{Union{Nothing, Vector{UInt8}}}(
+                    rd._rb.base[from:(from + len - 1)]
+                )
                 s = Sopenmem(bufp, Ref(len), "r")
                 if s !== nothing
                     s.encoding = ENC_UTF8

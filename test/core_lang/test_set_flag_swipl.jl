@@ -595,7 +595,10 @@ const _SF_REFUSED = [
         @test_throws LK.NotPortedError _sf_query(gd, ld, "r_$(f)")
     end
     @test length(_SF_REFUSED) >= 4                 # 15 at a7d89b0b - 4 (TAB1 TB8: the four max_* flags) - 1 (R2 F1b: stack_limit) - 2 (ENC1: encoding, unicode_atoms) - 2 (incomparable, theme: setters ported) - 2 (REC-FLAGS: tty_control, var_tag) = 4 (float_overflow became max_integer_size on late-flag-2: one for one)
-    @test !any(f in ("encoding", "unicode_atoms", "incomparable", "theme") for (f, _) in _SF_REFUSED)       # ENC1: encoding and unicode_atoms are set now (the testset below); late-flag-2: incomparable and theme are set (fs01-fs04, fs12-fs17)
+    @test !any(
+        f in ("encoding", "unicode_atoms", "incomparable", "theme") for
+        (f, _) in _SF_REFUSED
+    )       # ENC1: encoding and unicode_atoms are set now (the testset below); late-flag-2: incomparable and theme are set (fs01-fs04, fs12-fs17)
 end
 
 # ENC1 flag setters (pl-prologflag.c setEncoding :768-781, setUnicodeAtoms :891-901; LD->encoding read by pl-file.c:4173 `stream_encoding_options`
@@ -627,7 +630,20 @@ end
     dir = mktempdir()
     path = joinpath(dir, "enc1.pl")
     write(path, _sf_enc1_program(dir))
-    live = ["t_enc01", "t_enc02", "t_enc03", "t_enc04", "t_enc05", "t_enc06", "t_enc07", "t_uni01", "t_uni02", "t_uni03", "t_uni04", "t_uni05"]
+    live = [
+        "t_enc01",
+        "t_enc02",
+        "t_enc03",
+        "t_enc04",
+        "t_enc05",
+        "t_enc06",
+        "t_enc07",
+        "t_uni01",
+        "t_uni02",
+        "t_uni03",
+        "t_uni04",
+        "t_uni05"
+    ]
     names = [live; "t_uni06"]
     kl, _, _ = _sf_kernel(path, names)
     @test kl[1] == "ok"
@@ -640,7 +656,8 @@ end
     @test kl[6] == row("t_enc05", "i2")             # ... two in UTF-8
     @test kl[7] == row("t_enc06", _sf_a("iso_latin_1"))
     @test kl[9] == row("t_uni01", _sf_a("reject"))
-    @test kl[10] == row("t_uni02", _sf_c("domain_error", [_sf_a("unicode_atoms"), _sf_a("foo")]))
+    @test kl[10] ==
+        row("t_uni02", _sf_c("domain_error", [_sf_a("unicode_atoms"), _sf_a("foo")]))
     @test kl[11] == row("t_uni03", "i233")          # accept: the unquoted atom café reads
     @test kl[14] == row("t_uni06", _sf_a("nfc"))
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")

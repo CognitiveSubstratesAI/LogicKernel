@@ -129,7 +129,10 @@ const _SA_CASES = [
     ("sa016", raw"str(ab, S), get0(S, A), get0(S, B), get0(S, C), close(S), R = [A, B, C]"),
     ("sa017", raw"strc([233, 8364], S), get0(S, A), get0(S, B), close(S), R = A-B"),
     ("sa018", raw"inp(xy, O, S), get0(A), get0(B), get0(C), outp(O, S), R = [A, B, C]"),
-    ("sa019", raw"inp(xy, O, S), get_char(A), get_char(B), get_char(C), outp(O, S), R = [A, B, C]"),
+    (
+        "sa019",
+        raw"inp(xy, O, S), get_char(A), get_char(B), get_char(C), outp(O, S), R = [A, B, C]"
+    ),
     ("sa020", raw"inp(x, O, S), cerr(get_char(1), R0), outp(O, S), R = R0"),
     ("sa021", raw"inp(x, O, S), cerr(get_char(ab), R0), outp(O, S), R = R0"),
     ("sa022", raw"inp(abcdef, O, S), skip(99), get_char(C), outp(O, S), R = C"),
@@ -149,7 +152,10 @@ const _SA_CASES = [
     ("sa036", raw"wb(S), cerr(put(S, 65), R0), close(S), R = R0"),
     ("sa037", raw"cerr(put(nosuch, 65), R)"),
     ("sa038", raw"wo(S), put(S, 65), put(S, 10), close(S), rdout(R)"),
-    ("sa039", raw"wbytes([1, 255, 0]), rbo(S), get_byte(S, A), get_byte(S, B), get_byte(S, C), get_byte(S, D), close(S), R = [A, B, C, D]"),
+    (
+        "sa039",
+        raw"wbytes([1, 255, 0]), rbo(S), get_byte(S, A), get_byte(S, B), get_byte(S, C), get_byte(S, D), close(S), R = [A, B, C, D]"
+    ),
     ("sa040", raw"wb(S), cerr(put_byte(S, 256), R0), close(S), R = R0"),
     ("sa041", raw"wb(S), cerr(put_byte(S, -1), R0), close(S), R = R0"),
     ("sa042", raw"wb(S), cerr(put_byte(S, a), R0), close(S), R = R0"),
@@ -158,156 +164,384 @@ const _SA_CASES = [
     ("sa045", raw"ro(S), cerr(put_byte(S, 65), R0), close(S), R = R0"),
     ("sa046", raw"cerr(put_byte(65), R)"),
     ("sa047", raw"cerr(put_byte(256), R)"),
-    ("sa048", raw"wb(S), put_byte(S, 7), byte_count(S, B), character_count(S, C), close(S), R = B-C"),
-    ("sa049", raw"wb(S), put_byte(S, 7), put_byte(S, 8), close(S), cerr(put_byte(S, 9), R)"),
-    ("sa050", raw"wbytes([5, 6]), rbo(S), peek_byte(S, A), peek_byte(S, B), get_byte(S, C), peek_byte(S, D), get_byte(S, E), peek_byte(S, F), close(S), R = [A, B, C, D, E, F]"),
-    ("sa051", raw"wbytes([5]), rbo(S), peek_byte(S, A), byte_count(S, B), get_byte(S, C), byte_count(S, D), close(S), R = [A, B, C, D]"),
+    (
+        "sa048",
+        raw"wb(S), put_byte(S, 7), byte_count(S, B), character_count(S, C), close(S), R = B-C"
+    ),
+    (
+        "sa049",
+        raw"wb(S), put_byte(S, 7), put_byte(S, 8), close(S), cerr(put_byte(S, 9), R)"
+    ),
+    (
+        "sa050",
+        raw"wbytes([5, 6]), rbo(S), peek_byte(S, A), peek_byte(S, B), get_byte(S, C), peek_byte(S, D), get_byte(S, E), peek_byte(S, F), close(S), R = [A, B, C, D, E, F]"
+    ),
+    (
+        "sa051",
+        raw"wbytes([5]), rbo(S), peek_byte(S, A), byte_count(S, B), get_byte(S, C), byte_count(S, D), close(S), R = [A, B, C, D]"
+    ),
     ("sa052", raw"ro(S), cerr(get_byte(S, _), R0), close(S), R = R0"),
     ("sa053", raw"wo(S), cerr(get_byte(S, _), R0), close(S), R = R0"),
     ("sa054", raw"wbytes([5]), rbo(S), cerr(get_byte(S, a), R0), close(S), R = R0"),
     ("sa055", raw"wbytes([5]), rbo(S), cerr(get_byte(S, 300), R0), close(S), R = R0"),
     ("sa056", raw"wbytes([5]), rbo(S), get_byte(S, 5), get_byte(S, -1), close(S), R = ok"),
-    ("sa057", raw"wbytes([5]), rbo(S), set_stream(S, eof_action(error)), get_byte(S, _), get_byte(S, E1), cerr(get_byte(S, _), R0), close(S), R = E1-R0"),
+    (
+        "sa057",
+        raw"wbytes([5]), rbo(S), set_stream(S, eof_action(error)), get_byte(S, _), get_byte(S, E1), cerr(get_byte(S, _), R0), close(S), R = E1-R0"
+    ),
     ("sa058", raw"cerr(get_byte(_), R)"),
     ("sa059", raw"inp(x, O, S), cerr(get_byte(_), R0), outp(O, S), R = R0"),
-    ("sa060", raw"wbytes([9, 8]), current_input(O), rbo(S), set_input(S), get_byte(A), peek_byte(B), get_byte(C), set_input(O), close(S), R = [A, B, C]"),
-    ("sa061", raw"wbytes([9]), rbo(S), set_stream(S, buffer(false)), cerr(peek_byte(S, _), R0), close(S), R = R0"),
+    (
+        "sa060",
+        raw"wbytes([9, 8]), current_input(O), rbo(S), set_input(S), get_byte(A), peek_byte(B), get_byte(C), set_input(O), close(S), R = [A, B, C]"
+    ),
+    (
+        "sa061",
+        raw"wbytes([9]), rbo(S), set_stream(S, buffer(false)), cerr(peek_byte(S, _), R0), close(S), R = R0"
+    ),
     ("sa062", raw"rb(S), cerr(get_byte(S, 1), R0), close(S), R = R0"),
     ("sa063", raw"wbytes([200]), rbo(S), peek_byte(S, A), close(S), R = A"),
-    ("sa064", raw"ro(S), peek_code(S, A), get_code(S, B), peek_code(S, C), close(S), R = [A, B, C]"),
+    (
+        "sa064",
+        raw"ro(S), peek_code(S, A), get_code(S, B), peek_code(S, C), close(S), R = [A, B, C]"
+    ),
     ("sa065", raw"str('', S), peek_code(S, A), close(S), R = A"),
-    ("sa066", raw"strc([233, 8364], S), peek_code(S, A), get_code(S, _), peek_code(S, B), close(S), R = A-B"),
+    (
+        "sa066",
+        raw"strc([233, 8364], S), peek_code(S, A), get_code(S, _), peek_code(S, B), close(S), R = A-B"
+    ),
     ("sa067", raw"str(a, S), ( peek_code(S, 97) -> R0 = yes ; R0 = no ), close(S), R = R0"),
-    ("sa068", raw"str('', S), ( peek_code(S, -1) -> R0 = yes ; R0 = no ), close(S), R = R0"),
+    (
+        "sa068",
+        raw"str('', S), ( peek_code(S, -1) -> R0 = yes ; R0 = no ), close(S), R = R0"
+    ),
     ("sa069", raw"wo(S), cerr(peek_code(S, _), R0), close(S), R = R0"),
     ("sa070", raw"rb(S), cerr(peek_code(S, _), R0), close(S), R = R0"),
     ("sa071", raw"ro(S), cerr(peek_byte(S, _), R0), close(S), R = R0"),
-    ("sa072", raw"ro(S), set_stream(S, buffer(false)), cerr(peek_code(S, _), R0), close(S), R = R0"),
-    ("sa073", raw"inp(xy, O, S), peek_char(A), get_char(B), peek_char(C), outp(O, S), R = [A, B, C]"),
-    ("sa074", raw"inp(xy, O, S), peek_code(A), get_code(B), peek_code(C), outp(O, S), R = [A, B, C]"),
+    (
+        "sa072",
+        raw"ro(S), set_stream(S, buffer(false)), cerr(peek_code(S, _), R0), close(S), R = R0"
+    ),
+    (
+        "sa073",
+        raw"inp(xy, O, S), peek_char(A), get_char(B), peek_char(C), outp(O, S), R = [A, B, C]"
+    ),
+    (
+        "sa074",
+        raw"inp(xy, O, S), peek_code(A), get_code(B), peek_code(C), outp(O, S), R = [A, B, C]"
+    ),
     ("sa075", raw"str(a, S), cerr(peek_char(S, 1), R0), close(S), R = R0"),
     ("sa076", raw"str(a, S), cerr(peek_char(S, foo), R0), close(S), R = R0"),
-    ("sa077", raw"ro(S), peek_code(S, _), character_count(S, A), line_count(S, B), close(S), R = A-B"),
-    ("sa078", raw"ro(S), skip(S, 99), peek_code(S, _), line_count(S, L), line_position(S, P), close(S), R = L-P"),
+    (
+        "sa077",
+        raw"ro(S), peek_code(S, _), character_count(S, A), line_count(S, B), close(S), R = A-B"
+    ),
+    (
+        "sa078",
+        raw"ro(S), skip(S, 99), peek_code(S, _), line_count(S, L), line_position(S, P), close(S), R = L-P"
+    ),
     ("sa079", raw"ro(S), cerr(peek_code(S, 1.5), R0), close(S), R = R0"),
     ("sa080", raw"wo(S), close(S), cerr(peek_code(S, _), R)"),
     ("sa081", raw"cerr(peek_code(_, _), R)"),
-    ("sa082", raw"current_input(O), str(q, S), set_input(S), current_input(C), ( C == S -> A = same ; A = other ), set_input(O), close(S), R = A"),
+    (
+        "sa082",
+        raw"current_input(O), str(q, S), set_input(S), current_input(C), ( C == S -> A = same ; A = other ), set_input(O), close(S), R = A"
+    ),
     ("sa083", raw"ro(S), cerr(set_output(S), R0), close(S), R = R0"),
     ("sa084", raw"wo(S), cerr(set_input(S), R0), close(S), R = R0"),
     ("sa085", raw"cerr(set_input(_), R)"),
     ("sa086", raw"cerr(set_input(nosuch), R)"),
     ("sa087", raw"cerr(set_output(foo(x)), R)"),
-    ("sa088", raw"current_output(O), wo(S), set_output(S), put(104), put(105), set_output(O), close(S), rdout(R)"),
-    ("sa089", raw"current_input(O), ra(S, zzi), set_input(zzi), current_input(C), ( C == S -> R0 = same ; R0 = other ), set_input(O), close(S), R = R0"),
+    (
+        "sa088",
+        raw"current_output(O), wo(S), set_output(S), put(104), put(105), set_output(O), close(S), rdout(R)"
+    ),
+    (
+        "sa089",
+        raw"current_input(O), ra(S, zzi), set_input(zzi), current_input(C), ( C == S -> R0 = same ; R0 = other ), set_input(O), close(S), R = R0"
+    ),
     ("sa090", raw"wo(S), close(S), cerr(set_output(S), R)"),
-    ("sa091", raw"current_output(O), wo(S), set_output(S), put(65), flush_output, set_output(O), close(S), rdout(R)"),
+    (
+        "sa091",
+        raw"current_output(O), wo(S), set_output(S), put(65), flush_output, set_output(O), close(S), rdout(R)"
+    ),
     ("sa092", raw"flush_output, R = ok"),
-    ("sa093", raw"current_output(O), wo(S), set_output(S), current_output(C), ( C == S -> A = same ; A = other ), set_output(O), close(S), current_output(D), ( D == O -> B = same ; B = other ), R = A-B"),
-    ("sa094", raw"current_output(O), wo(S), set_output(S), tab(2), put_char(x), set_output(O), close(S), rdout(R)"),
+    (
+        "sa093",
+        raw"current_output(O), wo(S), set_output(S), current_output(C), ( C == S -> A = same ; A = other ), set_output(O), close(S), current_output(D), ( D == O -> B = same ; B = other ), R = A-B"
+    ),
+    (
+        "sa094",
+        raw"current_output(O), wo(S), set_output(S), tab(2), put_char(x), set_output(O), close(S), rdout(R)"
+    ),
     ("sa095", raw"ro(S), fill_buffer(S), get_char(S, A), close(S), R = A"),
     ("sa096", raw"wo(S), cerr(fill_buffer(S), R0), close(S), R = R0"),
-    ("sa097", raw"ro(S), set_stream(S, buffer(false)), cerr(fill_buffer(S), R0), close(S), R = R0"),
+    (
+        "sa097",
+        raw"ro(S), set_stream(S, buffer(false)), cerr(fill_buffer(S), R0), close(S), R = R0"
+    ),
     ("sa098", raw"str('', S), cerr(fill_buffer(S), R0), close(S), R = R0"),
     ("sa099", raw"str(hello, S), fill_buffer(S), peek_code(S, A), close(S), R = A"),
     ("sa100", raw"cerr(fill_buffer(_), R)"),
     ("sa101", raw"ro(S), fill_buffer(S), fill_buffer(S), get_char(S, A), close(S), R = A"),
-    ("sa102", raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O)), S), close(I), R = S"),
-    ("sa103", raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 3)), S), get_char(I, C), close(I), R = S-C"),
-    ("sa104", raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 0)), S), get_char(I, C), close(I), R = S-C"),
-    ("sa105", raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 100)), S), close(I), R = S"),
-    ("sa106", raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, -1)), S), get_char(I, C), close(I), R = S-C"),
-    ("sa107", raw"str(hello, I), cerr(ws((current_output(O), copy_stream_data(I, O, a)), _), R0), close(I), R = R0"),
-    ("sa108", raw"str(hello, I), cerr(ws((current_output(O), copy_stream_data(I, O, _)), _), R0), close(I), R = R0"),
+    (
+        "sa102",
+        raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O)), S), close(I), R = S"
+    ),
+    (
+        "sa103",
+        raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 3)), S), get_char(I, C), close(I), R = S-C"
+    ),
+    (
+        "sa104",
+        raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 0)), S), get_char(I, C), close(I), R = S-C"
+    ),
+    (
+        "sa105",
+        raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, 100)), S), close(I), R = S"
+    ),
+    (
+        "sa106",
+        raw"str(hello, I), ws((current_output(O), copy_stream_data(I, O, -1)), S), get_char(I, C), close(I), R = S-C"
+    ),
+    (
+        "sa107",
+        raw"str(hello, I), cerr(ws((current_output(O), copy_stream_data(I, O, a)), _), R0), close(I), R = R0"
+    ),
+    (
+        "sa108",
+        raw"str(hello, I), cerr(ws((current_output(O), copy_stream_data(I, O, _)), _), R0), close(I), R = R0"
+    ),
     ("sa109", raw"ro(I), wo(O), copy_stream_data(I, O), close(I), close(O), rdall(R)"),
-    ("sa110", raw"strc([233, 8364, 120], I), wo(O), copy_stream_data(I, O), close(I), close(O), rdall(R)"),
+    (
+        "sa110",
+        raw"strc([233, 8364, 120], I), wo(O), copy_stream_data(I, O), close(I), close(O), rdall(R)"
+    ),
     ("sa111", raw"wo(O), cerr(copy_stream_data(O, O), R0), close(O), R = R0"),
     ("sa112", raw"ro(I), cerr(copy_stream_data(I, I), R0), close(I), R = R0"),
-    ("sa113", raw"wbytes([65, 66]), rbo(I), ws((current_output(O), copy_stream_data(I, O)), S), close(I), R = S"),
+    (
+        "sa113",
+        raw"wbytes([65, 66]), rbo(I), ws((current_output(O), copy_stream_data(I, O)), S), close(I), R = S"
+    ),
     ("sa114", raw"cerr(copy_stream_data(_, _), R)"),
     ("sa115", raw"cerr(copy_stream_data(nosuch, user_output), R)"),
     ("sa116", raw"ro(I), wo(O), copy_stream_data(I, O, 5), close(I), close(O), rdall(R)"),
-    ("sa117", raw"ro(I), wo(O), copy_stream_data(I, O, 4), get_char(I, C), close(I), close(O), rdall(L), R = L-C"),
-    ("sa118", raw"str('hello world', S), peek_string(S, 5, T), get_char(S, C), close(S), R = T-C"),
+    (
+        "sa117",
+        raw"ro(I), wo(O), copy_stream_data(I, O, 4), get_char(I, C), close(I), close(O), rdall(L), R = L-C"
+    ),
+    (
+        "sa118",
+        raw"str('hello world', S), peek_string(S, 5, T), get_char(S, C), close(S), R = T-C"
+    ),
     ("sa119", raw"str(abc, S), peek_string(S, 10, T), close(S), R = T"),
     ("sa120", raw"str(abc, S), peek_string(S, 0, T), close(S), R = T"),
     ("sa121", raw"ro(S), peek_string(S, 4, T), close(S), R = T"),
-    ("sa122", raw"ro(S), get_char(S, _), peek_string(S, 2, T), get_char(S, C), close(S), R = T-C"),
+    (
+        "sa122",
+        raw"ro(S), get_char(S, _), peek_string(S, 2, T), get_char(S, C), close(S), R = T-C"
+    ),
     ("sa123", raw"ro(S), cerr(peek_string(S, a, _), R0), close(S), R = R0"),
     ("sa124", raw"ro(S), cerr(peek_string(S, -1, _), R0), close(S), R = R0"),
     ("sa125", raw"ro(S), cerr(peek_string(S, _, _), R0), close(S), R = R0"),
     ("sa126", raw"wo(S), cerr(peek_string(S, 1, _), R0), close(S), R = R0"),
-    ("sa127", raw"strc([233, 8364, 120], S), peek_string(S, 2, T), string_codes(T, Cs), close(S), R = Cs"),
-    ("sa128", raw"ro(S), peek_string(S, 100, T), get_char(S, C), close(S), string_length(T, N), R = N-C"),
-    ("sa129", raw"str(abc, S), peek_string(S, 2, T), peek_string(S, 3, U), close(S), R = T-U"),
+    (
+        "sa127",
+        raw"strc([233, 8364, 120], S), peek_string(S, 2, T), string_codes(T, Cs), close(S), R = Cs"
+    ),
+    (
+        "sa128",
+        raw"ro(S), peek_string(S, 100, T), get_char(S, C), close(S), string_length(T, N), R = N-C"
+    ),
+    (
+        "sa129",
+        raw"str(abc, S), peek_string(S, 2, T), peek_string(S, 3, U), close(S), R = T-U"
+    ),
     ("sa130", raw"cerr(peek_string(nosuch, 1, _), R)"),
     ("sa131", raw"ro(S), peek_string(S, 2, ab), close(S), R = ok"),
-    ("sa132", raw"ro(S), get_char(S, _), get_char(S, _), byte_count(S, B), character_count(S, C), close(S), R = B-C"),
-    ("sa133", raw"strc([233, 8364], S), get_char(S, _), get_char(S, _), cerr((byte_count(S, B), character_count(S, C), R1 = B-C), R0), close(S), R = R1-R0"),
-    ("sa134", raw"wo(S), put(S, 233), put(S, 8364), close(S), rdo(T), get_char(T, _), get_char(T, _), byte_count(T, B), character_count(T, C), close(T), R = B-C"),
+    (
+        "sa132",
+        raw"ro(S), get_char(S, _), get_char(S, _), byte_count(S, B), character_count(S, C), close(S), R = B-C"
+    ),
+    (
+        "sa133",
+        raw"strc([233, 8364], S), get_char(S, _), get_char(S, _), cerr((byte_count(S, B), character_count(S, C), R1 = B-C), R0), close(S), R = R1-R0"
+    ),
+    (
+        "sa134",
+        raw"wo(S), put(S, 233), put(S, 8364), close(S), rdo(T), get_char(T, _), get_char(T, _), byte_count(T, B), character_count(T, C), close(T), R = B-C"
+    ),
     ("sa135", raw"cerr(byte_count(nosuch, _), R)"),
     ("sa136", raw"cerr(character_count(_, _), R)"),
     ("sa137", raw"str(ab, S), cerr(byte_count(S, _), R0), close(S), R = R0"),
     ("sa138", raw"ro(S), cerr(byte_count(S, a), R0), close(S), R = R0"),
-    ("sa139", raw"ro(S), skip(S, 10), byte_count(S, B), character_count(S, C), line_count(S, L), close(S), R = [B, C, L]"),
+    (
+        "sa139",
+        raw"ro(S), skip(S, 10), byte_count(S, B), character_count(S, C), line_count(S, L), close(S), R = [B, C, L]"
+    ),
     ("sa140", raw"ro(S), close(S), cerr(character_count(S, _), R)"),
-    ("sa141", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, -1), R0), get_byte(S, B), close(S), R = R0-B"),
-    ("sa142", raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B"),
+    (
+        "sa141",
+        raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, -1), R0), get_byte(S, B), close(S), R = R0-B"
+    ),
+    (
+        "sa142",
+        raw"wbytes([5, 6]), rbo(S), cerr(get_byte(S, end_of_file), R0), get_byte(S, B), close(S), R = R0-B"
+    ),
     ("sa143", raw"ro(S), seek(S, 4, bof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa144", raw"ro(S), get_char(S, _), seek(S, 2, current, N), get_char(S, C), close(S), R = N-C"),
+    (
+        "sa144",
+        raw"ro(S), get_char(S, _), seek(S, 2, current, N), get_char(S, C), close(S), R = N-C"
+    ),
     ("sa145", raw"ro(S), seek(S, -5, eof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa146", raw"ro(S), seek(S, 10, bof, A), seek(S, 1, bof, B), get_char(S, C), seek(S, 0, current, D), close(S), R = [A, B, C, D]"),
+    (
+        "sa146",
+        raw"ro(S), seek(S, 10, bof, A), seek(S, 1, bof, B), get_char(S, C), seek(S, 0, current, D), close(S), R = [A, B, C, D]"
+    ),
     ("sa147", raw"ro(S), seek(S, 100, bof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa148", raw"ro(S), cerr(seek(S, -1, bof, _), R0), get_char(S, C), close(S), R = R0-C"),
-    ("sa149", raw"rb(S), seek(S, 2, bof, N), get_byte(S, B), seek(S, -1, eof, M), get_byte(S, D), close(S), R = [N, B, M, D]"),
+    (
+        "sa148",
+        raw"ro(S), cerr(seek(S, -1, bof, _), R0), get_char(S, C), close(S), R = R0-C"
+    ),
+    (
+        "sa149",
+        raw"rb(S), seek(S, 2, bof, N), get_byte(S, B), seek(S, -1, eof, M), get_byte(S, D), close(S), R = [N, B, M, D]"
+    ),
     ("sa150", raw"ro(S), cerr(seek(S, 0, foo, _), R0), close(S), R = R0"),
     ("sa151", raw"ro(S), cerr(seek(S, a, bof, _), R0), close(S), R = R0"),
     ("sa152", raw"ro(S), cerr(seek(S, 0, _, _), R0), close(S), R = R0"),
     ("sa153", raw"ro(S), cerr(seek(S, _, bof, _), R0), close(S), R = R0"),
     ("sa154", raw"cerr(seek(nosuch, 0, bof, _), R)"),
     ("sa155", raw"cerr(seek(_, 0, bof, _), R)"),
-    ("sa156", raw"str(abc, S), cerr((seek(S, 1, bof, N), get_char(S, C)), R0), close(S), R = R0-N-C"),
+    (
+        "sa156",
+        raw"str(abc, S), cerr((seek(S, 1, bof, N), get_char(S, C)), R0), close(S), R = R0-N-C"
+    ),
     ("sa157", raw"cerr(ws((current_output(O), seek(O, 0, bof, _)), _), R)"),
-    ("sa158", raw"wo(S), write(S, abcdef), seek(S, 1, bof, N), write(S, 'X'), close(S), rdall(L), R = N-L"),
+    (
+        "sa158",
+        raw"wo(S), write(S, abcdef), seek(S, 1, bof, N), write(S, 'X'), close(S), rdall(L), R = N-L"
+    ),
     ("sa159", raw"wo(S), write(S, abcdef), seek(S, 0, current, N), close(S), R = N"),
-    ("sa160", raw"wo(S), put_char(S, a), seek(S, 3, bof, _), put_char(S, b), close(S), rdall(L), R = L"),
-    ("sa161", raw"wo(S), write(S, abcdef), seek(S, -2, eof, N), put_char(S, 'Z'), close(S), rdall(L), R = N-L"),
+    (
+        "sa160",
+        raw"wo(S), put_char(S, a), seek(S, 3, bof, _), put_char(S, b), close(S), rdall(L), R = L"
+    ),
+    (
+        "sa161",
+        raw"wo(S), write(S, abcdef), seek(S, -2, eof, N), put_char(S, 'Z'), close(S), rdall(L), R = N-L"
+    ),
     ("sa162", raw"ro(S), seek(S, 3, bof, 3), get_char(S, C), close(S), R = C"),
     ("sa163", raw"ro(S), ( seek(S, 3, bof, 4) -> R0 = yes ; R0 = no ), close(S), R = R0"),
-    ("sa164", raw"wo(S), put(S, 233), put(S, 8364), put(S, 120), close(S), rdo(T), seek(T, 2, bof, N), get_char(T, C), close(T), R = N-C"),
-    ("sa165", raw"wo(S), put(S, 233), put(S, 8364), put(S, 120), close(S), rdo(T), get_char(T, _), seek(T, 0, current, N), byte_count(T, B), character_count(T, C), close(T), R = [N, B, C]"),
-    ("sa166", raw"ro(S), seek(S, 5, bof, _), byte_count(S, B), character_count(S, C), line_count(S, L), line_position(S, P), close(S), R = [B, C, L, P]"),
+    (
+        "sa164",
+        raw"wo(S), put(S, 233), put(S, 8364), put(S, 120), close(S), rdo(T), seek(T, 2, bof, N), get_char(T, C), close(T), R = N-C"
+    ),
+    (
+        "sa165",
+        raw"wo(S), put(S, 233), put(S, 8364), put(S, 120), close(S), rdo(T), get_char(T, _), seek(T, 0, current, N), byte_count(T, B), character_count(T, C), close(T), R = [N, B, C]"
+    ),
+    (
+        "sa166",
+        raw"ro(S), seek(S, 5, bof, _), byte_count(S, B), character_count(S, C), line_count(S, L), line_position(S, P), close(S), R = [B, C, L, P]"
+    ),
     ("sa167", raw"ro(S), close(S), cerr(seek(S, 0, bof, _), R)"),
     ("sa168", raw"ro(S), cerr(seek(S, 1.5, bof, _), R0), close(S), R = R0"),
-    ("sa169", raw"ro(S), skip(S, 0), get_char(S, E), seek(S, 0, bof, _), get_char(S, C), close(S), R = E-C"),
+    (
+        "sa169",
+        raw"ro(S), skip(S, 0), get_char(S, E), seek(S, 0, bof, _), get_char(S, C), close(S), R = E-C"
+    ),
     ("sa170", raw"ro(S), seek(S, 0, eof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa171", raw"ro(S), get_char(S, _), get_char(S, _), seek(S, 1, current, N), seek(S, 1, current, M), get_char(S, C), close(S), R = [N, M, C]"),
-    ("sa172", raw"ro(S), peek_char(S, A), seek(S, 1, bof, N), peek_char(S, B), get_char(S, C), close(S), R = [A, N, B, C]"),
-    ("sa173", raw"datafile(F), open(F, read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
+    (
+        "sa171",
+        raw"ro(S), get_char(S, _), get_char(S, _), seek(S, 1, current, N), seek(S, 1, current, M), get_char(S, C), close(S), R = [N, M, C]"
+    ),
+    (
+        "sa172",
+        raw"ro(S), peek_char(S, A), seek(S, 1, bof, N), peek_char(S, B), get_char(S, C), close(S), R = [A, N, B, C]"
+    ),
+    (
+        "sa173",
+        raw"datafile(F), open(F, read, S, [reposition(false)]), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"
+    ),
     ("sa174", raw"open_null_stream(S), cerr(seek(S, 0, bof, _), R0), close(S), R = R0"),
-    ("sa175", raw"ro(S), get_char(S, _), stream_property(S, position(P)), get_char(S, A), get_char(S, B), set_stream_position(S, P), get_char(S, C), close(S), R = [A, B, C, P]"),
-    ("sa176", raw"ro(S), skip(S, 10), get_char(S, _), stream_property(S, position(P)), get_char(S, _), get_char(S, _), set_stream_position(S, P), line_count(S, L), line_position(S, LP), character_count(S, CC), byte_count(S, BC), get_char(S, C), close(S), R = [L, LP, CC, BC, C]"),
+    (
+        "sa175",
+        raw"ro(S), get_char(S, _), stream_property(S, position(P)), get_char(S, A), get_char(S, B), set_stream_position(S, P), get_char(S, C), close(S), R = [A, B, C, P]"
+    ),
+    (
+        "sa176",
+        raw"ro(S), skip(S, 10), get_char(S, _), stream_property(S, position(P)), get_char(S, _), get_char(S, _), set_stream_position(S, P), line_count(S, L), line_position(S, LP), character_count(S, CC), byte_count(S, BC), get_char(S, C), close(S), R = [L, LP, CC, BC, C]"
+    ),
     ("sa177", raw"ro(S), cerr(set_stream_position(S, foo), R0), close(S), R = R0"),
     ("sa178", raw"ro(S), cerr(set_stream_position(S, _), R0), close(S), R = R0"),
-    ("sa179", raw"ro(S), set_stream_position(S, '$stream_position'(4, 2, 0, 4)), get_char(S, C), line_count(S, L), close(S), R = C-L"),
-    ("sa180", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(a, 2, 0, 4)), R0), close(S), R = R0"),
-    ("sa181", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0)), R0), close(S), R = R0"),
-    ("sa182", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0, -1)), R0), close(S), R = R0"),
-    ("sa183", raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0, 100)), R0), get_char(S, C), close(S), R = R0-C"),
+    (
+        "sa179",
+        raw"ro(S), set_stream_position(S, '$stream_position'(4, 2, 0, 4)), get_char(S, C), line_count(S, L), close(S), R = C-L"
+    ),
+    (
+        "sa180",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(a, 2, 0, 4)), R0), close(S), R = R0"
+    ),
+    (
+        "sa181",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0)), R0), close(S), R = R0"
+    ),
+    (
+        "sa182",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0, -1)), R0), close(S), R = R0"
+    ),
+    (
+        "sa183",
+        raw"ro(S), cerr(set_stream_position(S, '$stream_position'(4, 2, 0, 100)), R0), get_char(S, C), close(S), R = R0-C"
+    ),
     ("sa184", raw"cerr(set_stream_position(nosuch, '$stream_position'(0, 1, 0, 0)), R)"),
     ("sa185", raw"cerr(set_stream_position(_, '$stream_position'(0, 1, 0, 0)), R)"),
-    ("sa186", raw"datafile(F), open(F, read, S, [reposition(false)]), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
-    ("sa187", raw"open_null_stream(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"),
-    ("sa188", raw"ro(S), close(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R)"),
-    ("sa189", raw"str(abc, S), get_char(S, _), stream_property(S, position(P)), get_char(S, A), set_stream_position(S, P), get_char(S, B), close(S), R = A-B"),
-    ("sa190", raw"wo(S), write(S, abc), stream_property(S, position(P)), write(S, def), set_stream_position(S, P), write(S, 'X'), close(S), rdall(L), R = L"),
-    ("sa191", raw"ro(S), get_char(S, _), stream_property(S, position(P)), ro(T), set_stream_position(T, P), get_char(T, C), close(S), close(T), R = C"),
-    ("sa192", raw"rb(S), get_byte(S, _), stream_property(S, position(P)), get_byte(S, A), set_stream_position(S, P), get_byte(S, B), byte_count(S, N), close(S), R = [A, B, N]"),
-    ("sa193", raw"ro(S), skip(S, 0), stream_property(S, position(P)), set_stream_position(S, '$stream_position'(0, 1, 0, 0)), get_char(S, C), close(S), R = P-C"),
-    ("sa194", raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"),
-    ("sa195", raw"wo(S), write(S, abcdef), seek(S, 2, bof, _), set_end_of_stream(S), write(S, 'Q'), close(S), rdall(L), R = L"),
+    (
+        "sa186",
+        raw"datafile(F), open(F, read, S, [reposition(false)]), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"
+    ),
+    (
+        "sa187",
+        raw"open_null_stream(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R0), close(S), R = R0"
+    ),
+    (
+        "sa188",
+        raw"ro(S), close(S), cerr(set_stream_position(S, '$stream_position'(0, 1, 0, 0)), R)"
+    ),
+    (
+        "sa189",
+        raw"str(abc, S), get_char(S, _), stream_property(S, position(P)), get_char(S, A), set_stream_position(S, P), get_char(S, B), close(S), R = A-B"
+    ),
+    (
+        "sa190",
+        raw"wo(S), write(S, abc), stream_property(S, position(P)), write(S, def), set_stream_position(S, P), write(S, 'X'), close(S), rdall(L), R = L"
+    ),
+    (
+        "sa191",
+        raw"ro(S), get_char(S, _), stream_property(S, position(P)), ro(T), set_stream_position(T, P), get_char(T, C), close(S), close(T), R = C"
+    ),
+    (
+        "sa192",
+        raw"rb(S), get_byte(S, _), stream_property(S, position(P)), get_byte(S, A), set_stream_position(S, P), get_byte(S, B), byte_count(S, N), close(S), R = [A, B, N]"
+    ),
+    (
+        "sa193",
+        raw"ro(S), skip(S, 0), stream_property(S, position(P)), set_stream_position(S, '$stream_position'(0, 1, 0, 0)), get_char(S, C), close(S), R = P-C"
+    ),
+    (
+        "sa194",
+        raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"
+    ),
+    (
+        "sa195",
+        raw"wo(S), write(S, abcdef), seek(S, 2, bof, _), set_end_of_stream(S), write(S, 'Q'), close(S), rdall(L), R = L"
+    ),
     ("sa196", raw"wo(S), write(S, abc), set_end_of_stream(S), close(S), rdall(L), R = L"),
-    ("sa197", raw"wo(S), write(S, ab), seek(S, 5, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"),
+    (
+        "sa197",
+        raw"wo(S), write(S, ab), seek(S, 5, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"
+    ),
     ("sa198", raw"ro(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
     ("sa199", raw"ws((current_output(O), cerr(set_end_of_stream(O), R0)), _), R = R0"),
     ("sa200", raw"str(abc, S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
@@ -315,26 +549,77 @@ const _SA_CASES = [
     ("sa202", raw"cerr(set_end_of_stream(nosuch), R)"),
     ("sa203", raw"cerr(set_end_of_stream(_), R)"),
     ("sa204", raw"open_null_stream(S), cerr(set_end_of_stream(S), R0), close(S), R = R0"),
-    ("sa205", raw"wb(S), put_byte(S, 1), put_byte(S, 2), put_byte(S, 3), seek(S, 1, bof, _), set_end_of_stream(S), close(S), rbo(T), get_byte(T, A), get_byte(T, B), close(T), R = A-B"),
-    ("sa206", raw"wo(S), write(S, abcdef), seek(S, 0, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"),
-    ("sa207", raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), byte_count(S, B), close(S), R = B"),
-    ("sa208", raw"wo(S), write(S, abcdef), close(S), outfile(F), open(F, update, S2), seek(S2, 1, bof, _), set_end_of_stream(S2), close(S2), rdall(L), R = L"),
-    ("sa209", raw"ro(S), get_char(S, _), cerr(seek(S, -1, bof, _), R0), get_char(S, C), close(S), R = R0-C"),
-    ("sa210", raw"ro(S), get_char(S, _), seek(S, 18, bof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa211", raw"ro(S), get_char(S, _), seek(S, 19, bof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa212", raw"ro(S), seek(S, 2, bof, _), get_char(S, _), get_char(S, _), line_count(S, L), line_position(S, P), byte_count(S, B), close(S), R = [L, P, B]"),
-    ("sa213", raw"datafile(F), open(F, read, S, [reposition(false)]), get_char(S, _), seek(S, 4, bof, N), get_char(S, C), seek(S, 0, current, M), close(S), R = [N, C, M]"),
-    ("sa214", raw"datafile(F), open(F, read, S, [reposition(false)]), seek(S, -2, eof, N), get_char(S, C), close(S), R = N-C"),
-    ("sa215", raw"outfile(F), open(F, write, S, [encoding(utf16be)]), write(S, abcd), seek(S, 1, bof, N), write(S, 'Z'), close(S), rbo(T), codes(T, L), close(T), R = N-L"),
+    (
+        "sa205",
+        raw"wb(S), put_byte(S, 1), put_byte(S, 2), put_byte(S, 3), seek(S, 1, bof, _), set_end_of_stream(S), close(S), rbo(T), get_byte(T, A), get_byte(T, B), close(T), R = A-B"
+    ),
+    (
+        "sa206",
+        raw"wo(S), write(S, abcdef), seek(S, 0, bof, _), set_end_of_stream(S), close(S), rdall(L), R = L"
+    ),
+    (
+        "sa207",
+        raw"wo(S), write(S, abcdef), seek(S, 3, bof, _), set_end_of_stream(S), byte_count(S, B), close(S), R = B"
+    ),
+    (
+        "sa208",
+        raw"wo(S), write(S, abcdef), close(S), outfile(F), open(F, update, S2), seek(S2, 1, bof, _), set_end_of_stream(S2), close(S2), rdall(L), R = L"
+    ),
+    (
+        "sa209",
+        raw"ro(S), get_char(S, _), cerr(seek(S, -1, bof, _), R0), get_char(S, C), close(S), R = R0-C"
+    ),
+    (
+        "sa210",
+        raw"ro(S), get_char(S, _), seek(S, 18, bof, N), get_char(S, C), close(S), R = N-C"
+    ),
+    (
+        "sa211",
+        raw"ro(S), get_char(S, _), seek(S, 19, bof, N), get_char(S, C), close(S), R = N-C"
+    ),
+    (
+        "sa212",
+        raw"ro(S), seek(S, 2, bof, _), get_char(S, _), get_char(S, _), line_count(S, L), line_position(S, P), byte_count(S, B), close(S), R = [L, P, B]"
+    ),
+    (
+        "sa213",
+        raw"datafile(F), open(F, read, S, [reposition(false)]), get_char(S, _), seek(S, 4, bof, N), get_char(S, C), seek(S, 0, current, M), close(S), R = [N, C, M]"
+    ),
+    (
+        "sa214",
+        raw"datafile(F), open(F, read, S, [reposition(false)]), seek(S, -2, eof, N), get_char(S, C), close(S), R = N-C"
+    ),
+    (
+        "sa215",
+        raw"outfile(F), open(F, write, S, [encoding(utf16be)]), write(S, abcd), seek(S, 1, bof, N), write(S, 'Z'), close(S), rbo(T), codes(T, L), close(T), R = N-L"
+    ),
     ("sa216", raw"cerr(ws((current_output(O), write(abc), seek(O, 100, bof, _)), _), R)"),
-    ("sa217", raw"ro(S), set_stream_position(S, '$stream_position'(7, 3, 2, 4)), line_count(S, L), line_position(S, LP), character_count(S, CC), byte_count(S, BC), get_char(S, C), close(S), R = [L, LP, CC, BC, C]"),
-    ("sa218", raw"wo(S0), close(S0), outfile(F), open(F, append, S, [bom(true)]), write(S, a), close(S), rbo(T), codes(T, L), close(T), R = L"),
-    ("sa219", raw"wo(S0), write(S0, abc), close(S0), outfile(F), open(F, append, S, [bom(true)]), write(S, d), close(S), rbo(T), codes(T, L), close(T), R = L"),
+    (
+        "sa217",
+        raw"ro(S), set_stream_position(S, '$stream_position'(7, 3, 2, 4)), line_count(S, L), line_position(S, LP), character_count(S, CC), byte_count(S, BC), get_char(S, C), close(S), R = [L, LP, CC, BC, C]"
+    ),
+    (
+        "sa218",
+        raw"wo(S0), close(S0), outfile(F), open(F, append, S, [bom(true)]), write(S, a), close(S), rbo(T), codes(T, L), close(T), R = L"
+    ),
+    (
+        "sa219",
+        raw"wo(S0), write(S0, abc), close(S0), outfile(F), open(F, append, S, [bom(true)]), write(S, d), close(S), rbo(T), codes(T, L), close(T), R = L"
+    ),
     # set_stream_position/2 stores `(int)lineno` and `(int)linepos`: a value past 32 bits wraps (pl-file.c:5644-5645)
-    ("sa220", raw"ro(S), set_stream_position(S, '$stream_position'(7, 4294967299, 4294967298, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"),
-    ("sa221", raw"ro(S), set_stream_position(S, '$stream_position'(7, 2147483648, 2147483649, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"),
+    (
+        "sa220",
+        raw"ro(S), set_stream_position(S, '$stream_position'(7, 4294967299, 4294967298, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"
+    ),
+    (
+        "sa221",
+        raw"ro(S), set_stream_position(S, '$stream_position'(7, 2147483648, 2147483649, 4)), line_count(S, L), line_position(S, LP), close(S), R = L-LP"
+    ),
     # set_end_of_stream/1 on a pipe: Sfileno(s) is a descriptor and ftruncate refuses it with EINVAL: existence_error(stream, S) (pl-file.c:2641-2646)
-    ("sa222", raw"open(pipe('cat >/dev/null'), write, S), cerr(set_end_of_stream(S), R0), close(S), R = R0")
+    (
+        "sa222",
+        raw"open(pipe('cat >/dev/null'), write, S), cerr(set_end_of_stream(S), R0), close(S), R = R0"
+    )
 ]
 
 # swipl 10.1.20 (pin 18168e62)'s answers to the program and cases above (the driver's lines; evidence/STREAMS-A/streams_a_rows.out)
@@ -638,8 +923,16 @@ end
     # not vacuous: the pins hold raised errors (84), permission errors (25), type_error(byte, _) answers (4) and 1 failing row(s),
     # so the comparison can pass and can fail
     @test count(l -> occursin("c[114,97,105,115,101,100]", l), _SA_PINNED) == 84      # raised(…)
-    @test count(l -> occursin("c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3", l), _SA_PINNED) == 25  # permission_error(…)
-    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(a[98,121,116,101]", l), _SA_PINNED) == 4  # type_error(byte, _)
+    @test count(
+        l -> occursin(
+            "c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3", l
+        ),
+        _SA_PINNED
+    ) == 25  # permission_error(…)
+    @test count(
+        l -> occursin("c[116,121,112,101,95,101,114,114,111,114]/2(a[98,121,116,101]", l),
+        _SA_PINNED
+    ) == 4  # type_error(byte, _)
     @test count(l -> occursin(r"^t_sa\d+ *$", l), _SA_PINNED) == 1                    # failed rows
 end
 

@@ -46,7 +46,11 @@ const GD_COPY_POLICY = (
 # `thread` is an Expr, evaluated in the body of `copy_global_data` (`T` is its type parameter): a fresh `thread_state{T}()`, as the
 # constructor gives it (a mutable value must not be one literal shared by every copy).
 # `thread_queues` likewise: a fresh empty table (the `message_queues` of the user queues are database state, DEEP like `mutexes`).
-const GD_COPY_RESET = (paths_CWDdir="", thread=:(thread_state{T}()), thread_queues=:(Dict{Int, message_queue{T}}()))   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
+const GD_COPY_RESET = (
+    paths_CWDdir="",
+    thread=:(thread_state{T}()),
+    thread_queues=:(Dict{Int, message_queue{T}}())
+)   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
 
 # The copy of one stream table: empty, and the same shape. `x` is the template's field.
 function _copy_stream_free(x::AbstractVector)

@@ -159,7 +159,8 @@ function _fr_row(lines::Vector{String}, name::String)::String
 end
 
 # ONE extractor for both sides: the integers of a line, in order (a record's bytes are the code list `R` of a row)
-_fr_bytes(line::String)::Vector{Int} = [parse(Int, m[1]) for m in eachmatch(r"i(-?\d+)", line)]
+_fr_bytes(line::String)::Vector{Int} =
+    [parse(Int, m[1]) for m in eachmatch(r"i(-?\d+)", line)]
 
 # the pinned layouts: the bytes swipl 10.1.20 writes (rows t0-t6 of the program), as literals
 const _FR_PINS = Dict(
@@ -171,21 +172,25 @@ const _FR_PINS = Dict(
     "t2" => [114, 9, 5, 13, 1, 11, 1, 102, 6, 2, 66, 233],
     # f(1r3, X, X) with X = g(a): the mpq's cells put the shared subterm at offset 10
     "t3" => [
-        114, 26, 12, 13, 3, 11, 1, 102, 19, 0, 0, 0, 1, 0, 0, 0, 1, 1, 3, 13, 1, 11, 1, 103, 11, 1, 97,
+        114, 26, 12, 13, 3, 11, 1, 102, 19, 0, 0, 0, 1, 0, 0, 0, 1, 1, 3, 13, 1, 11, 1,
+        103, 11, 1, 97,
         17, 10
     ],
     # f(10^20, X, X): the mpz's cells (2 limbs) put it at offset 9
     "t4" => [
-        114, 29, 11, 13, 3, 11, 1, 102, 18, 0, 0, 0, 9, 5, 107, 199, 94, 45, 99, 16, 0, 0, 13, 1, 11, 1,
+        114, 29, 11, 13, 3, 11, 1, 102, 18, 0, 0, 0, 9, 5, 107, 199, 94, 45, 99, 16, 0,
+        0, 13, 1, 11, 1,
         103, 11, 1, 97, 17, 9
     ],
     # f(1.5, X, X): the float's cells put it at offset 7
     "t5" => [
-        114, 24, 9, 13, 3, 11, 1, 102, 14, 0, 0, 0, 0, 0, 0, 248, 63, 13, 1, 11, 1, 103, 11, 1, 97, 17, 7
+        114, 24, 9, 13, 3, 11, 1, 102, 14, 0, 0, 0, 0, 0, 0, 248, 63, 13, 1, 11, 1, 103,
+        11, 1, 97, 17, 7
     ],
     # f("abc", X, X): the string's cells put it at offset 7
     "t6" => [
-        114, 21, 9, 13, 3, 11, 1, 102, 6, 4, 66, 97, 98, 99, 13, 1, 11, 1, 103, 11, 1, 97, 17, 7
+        114, 21, 9, 13, 3, 11, 1, 102, 6, 4, 66, 97, 98, 99, 13, 1, 11, 1, 103, 11, 1,
+        97, 17, 7
     ]
 )
 
@@ -201,7 +206,9 @@ const _FR_BROKEN_RULING = ["t30"]             # a rational at the root: pending 
     @test length(names) == 84 && names == vcat(tnames, rnames)
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
     @test all(
-        i -> startswith(expected[i + 1], names[i] * " ") && length(expected[i + 1]) > length(names[i]) + 1,
+        i ->
+            startswith(expected[i + 1], names[i] * " ") &&
+            length(expected[i + 1]) > length(names[i]) + 1,
         eachindex(names)
     )
     # the pins: the literal bytes equal swipl's (the .out) through one extractor, and every pin is a real record

@@ -445,7 +445,8 @@ end
     @test st === :ok
     line = _pf_query(gd, ld, "t_pe")
     @test occursin(
-        "c" * _pf_codes("e") * "/3(a" * _pf_codes("iso_latin_1") * ",a" * _pf_codes("utf8") * ",a" * _pf_codes("utf8") * ")",
+        "c" * _pf_codes("e") * "/3(a" * _pf_codes("iso_latin_1") * ",a" *
+        _pf_codes("utf8") * ",a" * _pf_codes("utf8") * ")",
         line
     )
 end

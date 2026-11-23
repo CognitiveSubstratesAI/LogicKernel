@@ -3369,7 +3369,9 @@ function remoduleClause(
                     i = Int(codes[pc + an])                     # Procedure op = code2ptr(Procedure, PC[an+1])
                     p = cl.procedures[i]
                     if p.definition.module_ != MODULE_system(gd).index
-                        cl.procedures[i] = lookupProcedure(p.definition.name, p.definition.arity, new)
+                        cl.procedures[i] = lookupProcedure(
+                            p.definition.name, p.definition.arity, new
+                        )
                     end
                 elseif kind == CA1_MODULE
                     if codes[pc + an] == code(old.index)
@@ -3406,9 +3408,9 @@ function pl_copy_predicate_clauses2_va(
 
     if (def.flags & P_FOREIGN) != 0
         return if PL_error(
-                ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure),
-                from
-            )
+            ld, ERR_PERMISSION_PROC, mk_sym(T, :access), mk_sym(T, :private_procedure),
+            from
+        )
             FTRUE
         else
             FFALSE
@@ -3439,7 +3441,9 @@ function pl_copy_predicate_clauses2_va(
                 copy(cl.procedures), cl.line_no, cl.source_no, cl.owner_no
             )
             if def.module_ != copy_def.module_
-                remoduleClause(gd, ncl, gd.modules[def.module_], gd.modules[copy_def.module_])
+                remoduleClause(
+                    gd, ncl, gd.modules[def.module_], gd.modules[copy_def.module_]
+                )
             end
             assertProcedure!(gd, ld, to, ncl, CL_END)
         end

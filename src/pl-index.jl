@@ -2835,7 +2835,8 @@ function unify_clause_index(ld, t::Int, ci::ClauseIndex{T})::Bool where {T}
         mk_sym(T, :speedup), mk_sym(T, :list), mk_sym(T, :size),
         mk_sym(T, :realised), mk_sym(T, :collisions)
     ]
-    rc = PL_put_dict(ld, tmp, mk_sym(T, :hash), NUM_INDEX_KEYS, keys, values) &&
+    rc =
+        PL_put_dict(ld, tmp, mk_sym(T, :hash), NUM_INDEX_KEYS, keys, values) &&
         PL_unify(ld, t, tmp)
 
     PL_reset_term_refs(ld, values)

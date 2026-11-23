@@ -251,14 +251,18 @@ function run_term_conformance(
             @test sym_key(a0b) != sym_key(nul([0x61, 0x00, 0x63]))
             @test sym_key(nul([0x00])) != sym_key(sy(Symbol("")))
             @test sym_key(nul([0x00])) != sym_key(sy(:a))
-            @test sym_hash(a0b) == sym_hash(nul([0x61, 0x00, 0x62])) && sym_hash(a0b) isa UInt64
+            @test sym_hash(a0b) == sym_hash(nul([0x61, 0x00, 0x62])) &&
+                sym_hash(a0b) isa UInt64
             # swipl 10.1.20's order: [0] > [], [0] < [97], [97] < [97,0], [97,0] < [97,1], [97,0] < [97,97],
             # [97,0,98] > [97,0], [97,0,98] < [97,1], [0] < [0,120], [97,0] < [97,0,98]
             rows = (
                 (UInt32[0x00], UInt32[], 1), (UInt32[0x00], UInt32[0x61], -1),
-                (UInt32[0x61], UInt32[0x61, 0x00], -1), (UInt32[0x61, 0x00], UInt32[0x61, 0x01], -1),
-                (UInt32[0x61, 0x00], UInt32[0x61, 0x61], -1), (UInt32[0x61, 0x00, 0x62], UInt32[0x61, 0x00], 1),
-                (UInt32[0x61, 0x00, 0x62], UInt32[0x61, 0x01], -1), (UInt32[0x00], UInt32[0x00, 0x78], -1),
+                (UInt32[0x61], UInt32[0x61, 0x00], -1),
+                (UInt32[0x61, 0x00], UInt32[0x61, 0x01], -1),
+                (UInt32[0x61, 0x00], UInt32[0x61, 0x61], -1),
+                (UInt32[0x61, 0x00, 0x62], UInt32[0x61, 0x00], 1),
+                (UInt32[0x61, 0x00, 0x62], UInt32[0x61, 0x01], -1),
+                (UInt32[0x00], UInt32[0x00, 0x78], -1),
                 (UInt32[0x61, 0x00], UInt32[0x61, 0x00, 0x62], -1),
                 # the escape's own lead byte: the character 0xC0 (`À`, UTF-8 C3 80) sorts after 0 and after ASCII
                 (UInt32[0xc0], UInt32[0x00], 1), (UInt32[0x00], UInt32[0xc0], -1),
@@ -270,23 +274,28 @@ function run_term_conformance(
             end
             # the order of a text WITH a NUL against a text without one is the order of the texts
             @test compareStandard(nul([0x00]), sy(Symbol(""))) == 1
-            @test compareStandard(nul([0x61, 0x00]), sy(:a)) == 1 && compareStandard(sy(:a), nul([0x61, 0x00])) == -1
+            @test compareStandard(nul([0x61, 0x00]), sy(:a)) == 1 &&
+                compareStandard(sy(:a), nul([0x61, 0x00])) == -1
             @test compareStandard(nul([0x00]), sy(Symbol("\x01"))) == -1
             @test compareStandard(nul([0x00]), sy(Symbol("é"))) == -1
             # a name made of a RAW 0xC0 byte (not valid text) escapes to 0xC0 0x81 and reads back as 0xC0
             raw = String(UInt8[0x78, 0xc0, 0x79])
-            @test atom_escape(raw) == String(UInt8[0x78, 0xc0, 0x81, 0x79]) && atom_unescape(atom_escape(raw)) == raw
+            @test atom_escape(raw) == String(UInt8[0x78, 0xc0, 0x81, 0x79]) &&
+                atom_unescape(atom_escape(raw)) == raw
             # the atom of a text holding a RAW 0xC0 byte (not valid UTF-8; no swipl row, the order is the bytes': hand-written,
             # ATOM1): its text, its first byte, and its order against the escape's other lead byte, ASCII and the pair C3 80
             rawsy(bs) = sy(Symbol(atom_escape(String(UInt8[bs...]))))
             r_c0, r_c0x = rawsy([0xc0]), rawsy([0x78, 0xc0, 0x79])
             @test codeunits(sym_text(r_c0)) == UInt8[0xc0] && sym_first_byte(r_c0) == 0xc0
             @test codeunits(sym_text(r_c0x)) == UInt8[0x78, 0xc0, 0x79]
-            @test compareStandard(r_c0, nul([0x00])) == 1 && compareStandard(nul([0x00]), r_c0) == -1   # 0xC0 > 0x00
+            @test compareStandard(r_c0, nul([0x00])) == 1 &&
+                compareStandard(nul([0x00]), r_c0) == -1   # 0xC0 > 0x00
             @test compareStandard(r_c0, sy(:x)) == 1 && compareStandard(sy(:x), r_c0) == -1             # 0xC0 > 'x'
-            @test compareStandard(r_c0, nul([0xc0])) == -1 && compareStandard(nul([0xc0]), r_c0) == 1   # 0xC0 < C3 80
+            @test compareStandard(r_c0, nul([0xc0])) == -1 &&
+                compareStandard(nul([0xc0]), r_c0) == 1   # 0xC0 < C3 80
             @test compareStandard(r_c0, r_c0x) == 1 && compareStandard(r_c0x, r_c0) == -1               # 'x' < 0xC0
-            @test sym_key(r_c0) != sym_key(nul([0x00])) && sym_key(r_c0) != sym_key(nul([0xc0]))
+            @test sym_key(r_c0) != sym_key(nul([0x00])) &&
+                sym_key(r_c0) != sym_key(nul([0xc0]))
             # a text without NUL is its own name, unchanged
             @test atom_escape("abc") == "abc" && atom_unescape("abc") == "abc"
             @test atom_escape("a\0b") == String(UInt8[0x61, 0xc0, 0x80, 0x62])

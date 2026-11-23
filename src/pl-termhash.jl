@@ -826,7 +826,11 @@ function _variant_arg(
         fid == 0 && return nothing
         form = PL_new_term_ref(ld)
         ok, attvars = term_canonical_form(ld, A1, form)
-        t = ok && !(attvars && sha1) ? export_cells(ld, cell_export{T}(), -(form + 1)) : nothing
+        t = if ok && !(attvars && sha1)
+            export_cells(ld, cell_export{T}(), -(form + 1))
+        else
+            nothing
+        end
         PL_discard_foreign_frame(ld, fid)         # the form was only needed here
         ok || return nothing                      # exception already raised
         if attvars && sha1
@@ -878,7 +882,11 @@ function pl_variant_sha1_2_va(
     r === nothing && return FFALSE
     t, prefix = r
 
-    return PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t; prefix)))) ? FTRUE : FFALSE
+    return if PL_unify_atom(ld, A2, mk_sym(T, Symbol(pl_variant_sha1(t; prefix))))
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-termhash.c variant_hash as pl_variant_hash_2_va

@@ -109,59 +109,149 @@ out3text(T) :- out3(F), rfile(F, T).
 
 # (id, goal), run IN ORDER
 const _ED_CASES = [
-    ("e001", raw"datafile(F), see(F), get_code(A), seen, see(F), get_code(B), seen, R = A-B"),
+    (
+        "e001",
+        raw"datafile(F), see(F), get_code(A), seen, see(F), get_code(B), seen, R = A-B"
+    ),
     ("e002", raw"datafile(F), see(F), seen, seeing(X), R = X"),
-    ("e003", raw"datafile(F), data2(G), see(F), get_code(A), see(G), get_code(B), seen, get_code(C), seen, R = A-B-C"),
-    ("e004", raw"datafile(F), data2(G), see(F), see(G), seen, seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, seeing(U), R = X-U"),
-    ("e005", raw"datafile(F), see(F), see(user), seeing(X), see(F), seeing(S), ( blob(S, stream) -> Y = stream ; Y = S ), seen, seeing(Z), R = X-Y-Z"),
+    (
+        "e003",
+        raw"datafile(F), data2(G), see(F), get_code(A), see(G), get_code(B), seen, get_code(C), seen, R = A-B-C"
+    ),
+    (
+        "e004",
+        raw"datafile(F), data2(G), see(F), see(G), seen, seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, seeing(U), R = X-U"
+    ),
+    (
+        "e005",
+        raw"datafile(F), see(F), see(user), seeing(X), see(F), seeing(S), ( blob(S, stream) -> Y = stream ; Y = S ), seen, seeing(Z), R = X-Y-Z"
+    ),
     ("e006", raw"datafile(F), see(F), seeing(S), seen, cerr(see(S), R0), R = R0"),
     ("e007", raw"ro(S), see(S), get_code(C), seen, cerr(get_code(S, _), R0), R = C-R0"),
     ("e008", raw"see(user), seen, seeing(X), R = X"),
     ("e009", raw"datafile(F), see(F), seen, seen, seeing(X), R = X"),
-    ("e010", raw"ra(_, edio_al), see(edio_al), get_code(C), seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, R = C-X"),
+    (
+        "e010",
+        raw"ra(_, edio_al), see(edio_al), get_code(C), seeing(S), ( blob(S, stream) -> X = stream ; X = S ), seen, R = C-X"
+    ),
     ("e011", raw"see(user_input), seeing(X), R = X"),
     ("e012", raw"cerr(see(\"abc\"), R)"),
     ("e013", raw"cerr(see([]), R)"),
     ("e014", raw"datafile(F), see(F), see(F), seen, seeing(X), R = X"),
-    ("e015", raw"datafile(F), see(F), get_code(_), set_input(user_input), seen, see(F), get_code(C), seen, R = C"),
-    ("e016", raw"datafile(F), see(F), seeing(S), current_input(I), ( S == I -> R = same ; R = diff ), seen"),
-    ("e017", raw"datafile(F), see(F), seeing(S), see(F), seeing(S2), seen, ( S == S2 -> R = same ; R = diff )"),
+    (
+        "e015",
+        raw"datafile(F), see(F), get_code(_), set_input(user_input), seen, see(F), get_code(C), seen, R = C"
+    ),
+    (
+        "e016",
+        raw"datafile(F), see(F), seeing(S), current_input(I), ( S == I -> R = same ; R = diff ), seen"
+    ),
+    (
+        "e017",
+        raw"datafile(F), see(F), seeing(S), see(F), seeing(S2), seen, ( S == S2 -> R = same ; R = diff )"
+    ),
     ("e018", raw"cerr(see('/edio_no_dir/x'), R)"),
-    ("e019", raw"datafile(F), see(F), get_code(_), seeing(S), seen, cerr(get_code(S, _), R0), R = R0"),
-    ("e020", raw"datafile(F), see(F), seeing(S), close(S), seeing(X), ( blob(X, stream) -> Y = stream ; Y = X ), seen, seeing(Z), R = Y-Z"),
+    (
+        "e019",
+        raw"datafile(F), see(F), get_code(_), seeing(S), seen, cerr(get_code(S, _), R0), R = R0"
+    ),
+    (
+        "e020",
+        raw"datafile(F), see(F), seeing(S), close(S), seeing(X), ( blob(X, stream) -> Y = stream ; Y = X ), seen, seeing(Z), R = Y-Z"
+    ),
     ("e021", raw"datafile(F), see(F), ro(P), see(P), seen, seeing(X), R = X"),
-    ("e030", raw"outfile(F), out2(G), tell(F), write(a), tell(G), write(b), told, write(c), told, outtext(T), outtext2(U), R = T-U"),
-    ("e031", raw"outfile(F), tell(F), telling(S), told, telling(U), ( blob(S, stream) -> X = stream ; X = S ), R = X-U"),
+    (
+        "e030",
+        raw"outfile(F), out2(G), tell(F), write(a), tell(G), write(b), told, write(c), told, outtext(T), outtext2(U), R = T-U"
+    ),
+    (
+        "e031",
+        raw"outfile(F), tell(F), telling(S), told, telling(U), ( blob(S, stream) -> X = stream ; X = S ), R = X-U"
+    ),
     ("e032", raw"told, telling(X), R = X"),
     ("e033", raw"outfile(F), tell(F), told, told, telling(X), R = X"),
-    ("e034", raw"out3(F), append(F), write(ab), told, append(F), write(cd), told, out3text(T), R = T"),
+    (
+        "e034",
+        raw"out3(F), append(F), write(ab), told, append(F), write(cd), told, out3text(T), R = T"
+    ),
     ("e035", raw"outfile(F), tell(F), write(xyz), told, tell(F), told, outtext(T), R = T"),
-    ("e036", raw"outfile(F), tell(F), append(F), write(q), told, outtext(T), telling(X), R = T-X"),
-    ("e037", raw"outfile(F), tell(F), write(ab), flush_output, see(F), get_code(C), seen, told, R = C"),
+    (
+        "e036",
+        raw"outfile(F), tell(F), append(F), write(q), told, outtext(T), telling(X), R = T-X"
+    ),
+    (
+        "e037",
+        raw"outfile(F), tell(F), write(ab), flush_output, see(F), get_code(C), seen, told, R = C"
+    ),
     ("e038", raw"tell(user), told, telling(X), R = X"),
-    ("e039", raw"wo(S), tell(S), write(z), told, ( is_stream(S) -> R = open ; R = closed )"),
+    (
+        "e039",
+        raw"wo(S), tell(S), write(z), told, ( is_stream(S) -> R = open ; R = closed )"
+    ),
     ("e040", raw"cerr(tell(1), R)"),
     ("e041", raw"cerr(append(\"abc\"), R)"),
     ("e042", raw"cerr(append(f(x)), R)"),
     ("e043", raw"cerr(tell('/edio_no_dir/x'), R)"),
     ("e044", raw"cerr(append('/edio_no_dir/x'), R)"),
-    ("e045", raw"outfile(F), tell(F), telling(S), current_output(O), ( S == O -> R = same ; R = diff ), told"),
-    ("e046", raw"outfile(F), out2(G), tell(F), telling(A), tell(G), told, telling(B), told, ( A == B -> R = same ; R = diff )"),
-    ("e047", raw"outfile(F), tell(F), telling(S), close(S), telling(X), ( blob(X, stream) -> Y = stream ; Y = X ), told, telling(Z), R = Y-Z"),
-    ("e048", raw"outfile(F), tell(F), write(a), set_output(user_output), told, tell(F), write(b), told, outtext(T), R = T"),
-    ("e049", raw"wo(S), write(S, x), outfile(F), tell(F), write(y), told, close(S), outtext(T), R = T"),
+    (
+        "e045",
+        raw"outfile(F), tell(F), telling(S), current_output(O), ( S == O -> R = same ; R = diff ), told"
+    ),
+    (
+        "e046",
+        raw"outfile(F), out2(G), tell(F), telling(A), tell(G), told, telling(B), told, ( A == B -> R = same ; R = diff )"
+    ),
+    (
+        "e047",
+        raw"outfile(F), tell(F), telling(S), close(S), telling(X), ( blob(X, stream) -> Y = stream ; Y = X ), told, telling(Z), R = Y-Z"
+    ),
+    (
+        "e048",
+        raw"outfile(F), tell(F), write(a), set_output(user_output), told, tell(F), write(b), told, outtext(T), R = T"
+    ),
+    (
+        "e049",
+        raw"wo(S), write(S, x), outfile(F), tell(F), write(y), told, close(S), outtext(T), R = T"
+    ),
     ("e050", raw"outfile(F), tell(F), telling(S), told, cerr(tell(S), R0), R = R0"),
-    ("e051", raw"outfile(F), tell(F), write(a), tell(F), told, telling(X), outtext(T), R = X-T"),
+    (
+        "e051",
+        raw"outfile(F), tell(F), write(a), tell(F), told, telling(X), outtext(T), R = X-T"
+    ),
     ("e052", raw"cerr(tell(_), R)"),
-    ("e053", raw"outfile(F), tell(F), write(h), told, append(F), write(i), told, tell(F), told, append(F), write(j), told, outtext(T), R = T"),
-    ("e054", raw"datafile(F), outfile(G), see(F), tell(G), get_code(C), put_char(x), seen, told, outtext(T), R = C-T"),
-    ("e055", raw"datafile(F), outfile(G), see(F), tell(G), seeing(A0), telling(B0), ( blob(A0, stream) -> A = stream ; A = A0 ), ( blob(B0, stream) -> B = stream ; B = B0 ), seen, told, seeing(C), telling(D), R = C-D-A-B"),
-    ("e056", raw"current_output(O), outfile(F), tell(F), told, ( current_output(O2), O == O2 -> R = same ; R = diff )"),
-    ("e057", raw"current_input(O), datafile(F), see(F), seen, ( current_input(O2), O == O2 -> R = same ; R = diff )"),
-    ("e058", raw"datafile(F), see(F), get_code(A), seeing(S), set_stream(S, eof_action(reset)), seen, see(F), get_code(B), seeing(S2), set_stream(S2, eof_action(eof_code)), seen, R = A-B"),
-    ("e059", raw"outfile(F), tell(F), write(a), telling(S), set_stream(S, eof_action(reset)), told, tell(F), write(b), told, outtext(T), R = T"),
+    (
+        "e053",
+        raw"outfile(F), tell(F), write(h), told, append(F), write(i), told, tell(F), told, append(F), write(j), told, outtext(T), R = T"
+    ),
+    (
+        "e054",
+        raw"datafile(F), outfile(G), see(F), tell(G), get_code(C), put_char(x), seen, told, outtext(T), R = C-T"
+    ),
+    (
+        "e055",
+        raw"datafile(F), outfile(G), see(F), tell(G), seeing(A0), telling(B0), ( blob(A0, stream) -> A = stream ; A = A0 ), ( blob(B0, stream) -> B = stream ; B = B0 ), seen, told, seeing(C), telling(D), R = C-D-A-B"
+    ),
+    (
+        "e056",
+        raw"current_output(O), outfile(F), tell(F), told, ( current_output(O2), O == O2 -> R = same ; R = diff )"
+    ),
+    (
+        "e057",
+        raw"current_input(O), datafile(F), see(F), seen, ( current_input(O2), O == O2 -> R = same ; R = diff )"
+    ),
+    (
+        "e058",
+        raw"datafile(F), see(F), get_code(A), seeing(S), set_stream(S, eof_action(reset)), seen, see(F), get_code(B), seeing(S2), set_stream(S2, eof_action(eof_code)), seen, R = A-B"
+    ),
+    (
+        "e059",
+        raw"outfile(F), tell(F), write(a), telling(S), set_stream(S, eof_action(reset)), told, tell(F), write(b), told, outtext(T), R = T"
+    ),
     ("e060", raw"outfile(F), see(F), tell(F), write(x), told, get_code(C), seen, R = C"),
-    ("e061", raw"outfile(F), open(F, write, _, [alias(edio_wal)]), set_stream(edio_wal, eof_action(reset)), tell(edio_wal), write(x), told, flush_output(edio_wal), outtext(T), set_stream(edio_wal, eof_action(eof_code)), close(edio_wal), R = T")
+    (
+        "e061",
+        raw"outfile(F), open(F, write, _, [alias(edio_wal)]), set_stream(edio_wal, eof_action(reset)), tell(edio_wal), write(x), told, flush_output(edio_wal), outtext(T), set_stream(edio_wal, eof_action(eof_code)), close(edio_wal), R = T"
+    )
 ]
 
 # swipl 10.1.20-1-g18168e629's answers to the program and cases above (the driver's lines; evidence/EDIO1/edio_rows.out)
@@ -232,7 +322,7 @@ function _ed_file(dir::String)::Tuple{String, Vector{String}}
     prog = _ED_PROGRAM
     for (k, v) in (
         "@DATA@" => "data.txt", "@DATA2@" => "data2.txt", "@OUT@" => "out.txt",
-        "@OUT2@" => "out2.txt", "@OUT3@" => "out3.txt",
+        "@OUT2@" => "out2.txt", "@OUT3@" => "out3.txt"
     )
         prog = replace(prog, k => joinpath(dir, v))
     end

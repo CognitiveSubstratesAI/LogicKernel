@@ -1137,7 +1137,9 @@ function pl_unload_file1_va(
     sf = lookupSourceFile(gd, name, false)
     if sf !== nothing
         if sf.system
-            rc = PL_error(ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1)
+            rc = PL_error(
+                ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :unload), mk_sym(T, :file), A1
+            )
         else
             if unloadFile(gd, ld, sf)
                 for m in copy(sf.modules)

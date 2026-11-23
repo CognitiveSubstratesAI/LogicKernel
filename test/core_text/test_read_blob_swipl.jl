@@ -459,7 +459,8 @@ function _bl_file(dir::String, program::String, cases)::Tuple{String, Vector{Str
     names = ["t_$(id)" for (id, _) in cases]
     text =
         replace(program, "@RTDIR@" => dir) * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+            (id, g) in cases
         ])
     f = joinpath(dir, "rd2.pl")
     write(f, text)
@@ -534,7 +535,9 @@ end
     @test count(l -> occursin("c[111,107]/1(", l), _BL_PINNED) >= 14
     @test count(l -> occursin(" c[114,97,105,115,101,100]/", l), _BL_PINNED) >= 18
     @test count(l -> occursin("c[114]/4(", l), _BL_PINNED) >= 20       # the `r/4` answers of bl_show/2
-    @test count(l -> occursin("c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120", l), _BL_PINNED) >= 10   # the syntax errors
+    @test count(
+        l -> occursin("c[114,97,105,115,101,100]/2(c[115,121,110,116,97,120", l), _BL_PINNED
+    ) >= 10   # the syntax errors
 end
 
 @testset "the pins are swipl's (live, when swipl is on PATH)" begin

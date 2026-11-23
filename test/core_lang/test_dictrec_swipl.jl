@@ -100,66 +100,159 @@ dpairs(D, Ps) :- findall(K-V, get_dict(K, D, V), Ps0), msort(Ps0, Ps).
 const _DR_CASES = [
     ("dr01", raw"dict_create(D, t, [a-1, b-2]), b_set_dict(a, D, 9), dpairs(D, R)"),
     ("dr02", raw"dict_create(D, t, [a-1, b-2]), b_set_dict(b, D, 9), dpairs(D, R)"),
-    ("dr03", raw"dict_create(D, t, [a-1, b-2]), ( b_set_dict(a, D, 9), fail ; dpairs(D, R) )"),
-    ("dr04", raw"dict_create(D, t, [a-1, b-2]), b_set_dict(a, D, 9), b_set_dict(b, D, 8), dpairs(D, R)"),
-    ("dr05", raw"dict_create(D, t, [a-1, b-2]), ( b_set_dict(a, D, 9), b_set_dict(b, D, 8), fail ; dpairs(D, R) )"),
-    ("dr06", raw"dict_create(D, t, [a-1, b-2]), catch(b_set_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"),
+    (
+        "dr03",
+        raw"dict_create(D, t, [a-1, b-2]), ( b_set_dict(a, D, 9), fail ; dpairs(D, R) )"
+    ),
+    (
+        "dr04",
+        raw"dict_create(D, t, [a-1, b-2]), b_set_dict(a, D, 9), b_set_dict(b, D, 8), dpairs(D, R)"
+    ),
+    (
+        "dr05",
+        raw"dict_create(D, t, [a-1, b-2]), ( b_set_dict(a, D, 9), b_set_dict(b, D, 8), fail ; dpairs(D, R) )"
+    ),
+    (
+        "dr06",
+        raw"dict_create(D, t, [a-1, b-2]), catch(b_set_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"
+    ),
     ("dr07", raw"b_set_dict(a, foo, 9), R = yes"),
     ("dr08", raw"b_set_dict(a, [a-1], 9), R = yes"),
     ("dr09", raw"b_set_dict(a, _, 9), R = yes"),
     ("dr10", raw"dict_create(D, t, [a-1]), b_set_dict(1.5, D, 9), R = yes"),
     ("dr11", raw"dict_create(D, t, [a-1]), b_set_dict(_, D, 9), R = yes"),
     ("dr12", raw"dict_create(D, t, [1-one, 2-two]), b_set_dict(2, D, 9), dpairs(D, R)"),
-    ("dr13", raw"dict_create(D, t, [a-1]), b_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), X == Y, R = same"),
-    ("dr14", raw"dict_create(D, t, [a-1]), b_set_dict(a, D, f(X)), X = 3, get_dict(a, D, V), R = V"),
-    ("dr15", raw"dict_create(D, t, [a-X, b-2]), b_set_dict(a, D, 9), dpairs(D, P), R = X-P"),
-    ("dr16", raw"dict_create(D, t, [a-X, b-2]), ( b_set_dict(a, D, 9), fail ; get_dict(a, D, V), V == X, R = unbound_again )"),
-    ("dr17", raw"dict_create(D, t, [a-1]), b_set_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"),
+    (
+        "dr13",
+        raw"dict_create(D, t, [a-1]), b_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), X == Y, R = same"
+    ),
+    (
+        "dr14",
+        raw"dict_create(D, t, [a-1]), b_set_dict(a, D, f(X)), X = 3, get_dict(a, D, V), R = V"
+    ),
+    (
+        "dr15",
+        raw"dict_create(D, t, [a-X, b-2]), b_set_dict(a, D, 9), dpairs(D, P), R = X-P"
+    ),
+    (
+        "dr16",
+        raw"dict_create(D, t, [a-X, b-2]), ( b_set_dict(a, D, 9), fail ; get_dict(a, D, V), V == X, R = unbound_again )"
+    ),
+    (
+        "dr17",
+        raw"dict_create(D, t, [a-1]), b_set_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"
+    ),
     ("dr18", raw"dict_create(D, t, [a-1, b-2]), b_set_dict(a, D, 1), dpairs(D, R)"),
     ("dr19", raw"dict_create(D, t, [a-1]), b_set_dict(a, D, 9), get_dict(a, D, V), R = V"),
     ("dr20", raw"dict_create(D, t, [a-1, b-2]), nb_set_dict(a, D, 9), dpairs(D, R)"),
     ("dr21", raw"dict_create(D, t, [a-1, b-2]), nb_set_dict(b, D, 9), dpairs(D, R)"),
-    ("dr22", raw"dict_create(D, t, [a-1, b-2]), ( nb_set_dict(a, D, 9), fail ; dpairs(D, R) )"),
-    ("dr23", raw"dict_create(D, t, [a-1, b-2]), nb_set_dict(a, D, 9), nb_set_dict(b, D, 8), dpairs(D, R)"),
-    ("dr24", raw"dict_create(D, t, [a-1, b-2]), catch(nb_set_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"),
+    (
+        "dr22",
+        raw"dict_create(D, t, [a-1, b-2]), ( nb_set_dict(a, D, 9), fail ; dpairs(D, R) )"
+    ),
+    (
+        "dr23",
+        raw"dict_create(D, t, [a-1, b-2]), nb_set_dict(a, D, 9), nb_set_dict(b, D, 8), dpairs(D, R)"
+    ),
+    (
+        "dr24",
+        raw"dict_create(D, t, [a-1, b-2]), catch(nb_set_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"
+    ),
     ("dr25", raw"nb_set_dict(a, foo, 9), R = yes"),
     ("dr26", raw"nb_set_dict(a, [a-1], 9), R = yes"),
     ("dr27", raw"nb_set_dict(a, _, 9), R = yes"),
     ("dr28", raw"dict_create(D, t, [a-1]), nb_set_dict(1.5, D, 9), R = yes"),
     ("dr29", raw"dict_create(D, t, [a-1]), nb_set_dict(_, D, 9), R = yes"),
     ("dr30", raw"dict_create(D, t, [1-one, 2-two]), nb_set_dict(2, D, 9), dpairs(D, R)"),
-    ("dr31", raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), Y = 1, R = X"),
-    ("dr32", raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), ( X == Y -> R = same ; R = copied )"),
-    ("dr33", raw"dict_create(D, t, [a-1]), ( nb_set_dict(a, D, f(x)), fail ; get_dict(a, D, V), R = V )"),
-    ("dr34", raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, g(h(i))), get_dict(a, D, V), R = V"),
-    ("dr35", raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"),
+    (
+        "dr31",
+        raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), Y = 1, R = X"
+    ),
+    (
+        "dr32",
+        raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, f(X)), get_dict(a, D, f(Y)), ( X == Y -> R = same ; R = copied )"
+    ),
+    (
+        "dr33",
+        raw"dict_create(D, t, [a-1]), ( nb_set_dict(a, D, f(x)), fail ; get_dict(a, D, V), R = V )"
+    ),
+    (
+        "dr34",
+        raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, g(h(i))), get_dict(a, D, V), R = V"
+    ),
+    (
+        "dr35",
+        raw"dict_create(D, t, [a-1]), nb_set_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"
+    ),
     ("dr36", raw"dict_create(D, t, [a-X]), nb_set_dict(a, D, 9), dpairs(D, P), R = X-P"),
     ("dr37", raw"dict_create(D, t, [a-1, b-2]), nb_link_dict(a, D, 9), dpairs(D, R)"),
     ("dr38", raw"dict_create(D, t, [a-1, b-2]), nb_link_dict(b, D, 9), dpairs(D, R)"),
-    ("dr39", raw"dict_create(D, t, [a-1, b-2]), ( nb_link_dict(a, D, 9), fail ; dpairs(D, R) )"),
-    ("dr40", raw"dict_create(D, t, [a-1, b-2]), catch(nb_link_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"),
+    (
+        "dr39",
+        raw"dict_create(D, t, [a-1, b-2]), ( nb_link_dict(a, D, 9), fail ; dpairs(D, R) )"
+    ),
+    (
+        "dr40",
+        raw"dict_create(D, t, [a-1, b-2]), catch(nb_link_dict(c, D, 9), error(existence_error(T, K, _), _), R = ex(T, K))"
+    ),
     ("dr41", raw"nb_link_dict(a, foo, 9), R = yes"),
     ("dr42", raw"nb_link_dict(a, [a-1], 9), R = yes"),
     ("dr43", raw"nb_link_dict(a, _, 9), R = yes"),
     ("dr44", raw"dict_create(D, t, [a-1]), nb_link_dict(1.5, D, 9), R = yes"),
     ("dr45", raw"dict_create(D, t, [a-1]), nb_link_dict(_, D, 9), R = yes"),
     ("dr46", raw"dict_create(D, t, [1-one, 2-two]), nb_link_dict(2, D, 9), dpairs(D, R)"),
-    ("dr47", raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, f(X)), get_dict(a, D, f(Y)), Y = 1, R = X"),
-    ("dr48", raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, f(X)), get_dict(a, D, f(Y)), ( X == Y -> R = same ; R = copied )"),
-    ("dr49", raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, g(h(i))), get_dict(a, D, V), R = V"),
-    ("dr50", raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"),
-    ("dr51", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr52", raw"'$btree_find_node'(f, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr53", raw"'$btree_find_node'(s, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr54", raw"'$btree_find_node'(a, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr55", raw"'$btree_find_node'(z, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr56", raw"'$btree_find_node'(g, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
-    ("dr57", raw"'$btree_find_node'(r, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"),
+    (
+        "dr47",
+        raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, f(X)), get_dict(a, D, f(Y)), Y = 1, R = X"
+    ),
+    (
+        "dr48",
+        raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, f(X)), get_dict(a, D, f(Y)), ( X == Y -> R = same ; R = copied )"
+    ),
+    (
+        "dr49",
+        raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, g(h(i))), get_dict(a, D, V), R = V"
+    ),
+    (
+        "dr50",
+        raw"dict_create(D, t, [a-1]), nb_link_dict(a, D, 9), put_dict(a, D, 7, N), dpairs(N, P), dpairs(D, Q), R = P-Q"
+    ),
+    (
+        "dr51",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr52",
+        raw"'$btree_find_node'(f, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr53",
+        raw"'$btree_find_node'(s, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr54",
+        raw"'$btree_find_node'(a, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr55",
+        raw"'$btree_find_node'(z, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr56",
+        raw"'$btree_find_node'(g, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
+    (
+        "dr57",
+        raw"'$btree_find_node'(r, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0x010405, N, A), R = A-N"
+    ),
     ("dr58", raw"'$btree_find_node'(k, t(k,v,<,t,t), 0x010405, N, A), R = A-N"),
     ("dr59", raw"'$btree_find_node'(a, t(k,v,<,t,t), 0x010405, N, A), R = A-N"),
     ("dr60", raw"'$btree_find_node'(z, t(k,v,<,t,t), 0x010405, N, A), R = A-N"),
     ("dr61", raw"'$btree_find_node'(a, t(k,v,<,u(a),t), 0x010405, N, A), R = A-N"),
-    ("dr62", raw"'$btree_find_node'(a, t(k,v,<,t(a,b,c,d,e,f),t), 0x010405, N, A), R = A-N"),
+    (
+        "dr62",
+        raw"'$btree_find_node'(a, t(k,v,<,t(a,b,c,d,e,f),t), 0x010405, N, A), R = A-N"
+    ),
     ("dr63", raw"'$btree_find_node'(a, t(k,v,<,t(c,v,<,t,t),t), 0x010405, N, A), R = A-N"),
     ("dr64", raw"'$btree_find_node'(5, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, A), R = A-N"),
     ("dr65", raw"'$btree_find_node'(2, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, A), R = A-N"),
@@ -167,12 +260,21 @@ const _DR_CASES = [
     ("dr67", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, A), R = A-N"),
     ("dr68", raw"'$btree_find_node'(9, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, A), R = A-N"),
     ("dr69", raw"'$btree_find_node'(3, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, A), R = A-N"),
-    ("dr70", raw"'$btree_find_node'(5, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(5,L,Rt), A), R = A-L-Rt"),
+    (
+        "dr70",
+        raw"'$btree_find_node'(5, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(5,L,Rt), A), R = A-L-Rt"
+    ),
     ("dr71", raw"'$btree_find_node'(2, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, '='), R = N"),
     ("dr72", raw"'$btree_find_node'(2, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, '<'), R = N"),
     ("dr73", raw"'$btree_find_node'(2, n(5,n(2,e,e),n(8,e,e)), 0x010203, foo, A), R = A"),
-    ("dr74", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(2,e,e), A), R = A"),
-    ("dr75", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(5,_,_), A), R = A"),
+    (
+        "dr74",
+        raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(2,e,e), A), R = A"
+    ),
+    (
+        "dr75",
+        raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, n(5,_,_), A), R = A"
+    ),
     ("dr76", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, '>'), R = N"),
     ("dr77", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010203, N, '<'), R = N"),
     ("dr78", raw"'$btree_find_node'(1, n(5,n(2,e,e),n(8,e,e)), 0x010302, N, A), R = A-N"),
@@ -183,11 +285,26 @@ const _DR_CASES = [
     ("dr83", raw"'$btree_find_node'(f(x), n(5,e,e), 0x010203, N, A), R = A-N"),
     ("dr84", raw"'$btree_find_node'(a, n(5,e,e), 0x010203, N, A), R = A-N"),
     ("dr85", raw"'$btree_find_node'(1.5, n(5,e,e), 0x010203, N, A), R = A-N"),
-    ("dr86", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), foo, N, A), R = A-N"),
-    ("dr87", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), -1, N, A), R = A-N"),
-    ("dr88", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0, N, A), R = A-N"),
-    ("dr89", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), _, N, A), R = A-N"),
-    ("dr90", raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 1.5, N, A), R = A-N"),
+    (
+        "dr86",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), foo, N, A), R = A-N"
+    ),
+    (
+        "dr87",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), -1, N, A), R = A-N"
+    ),
+    (
+        "dr88",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 0, N, A), R = A-N"
+    ),
+    (
+        "dr89",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), _, N, A), R = A-N"
+    ),
+    (
+        "dr90",
+        raw"'$btree_find_node'(m, t(m,mv,<,t(f,fv,<,t,t),t(s,sv,<,t,t)), 1.5, N, A), R = A-N"
+    ),
     ("dr91", raw"'$btree_find_node'(m, foo, 0x010405, N, A), R = A-N"),
     ("dr92", raw"'$btree_find_node'(m, _, 0x010405, N, A), R = A-N"),
     ("dr93", raw"'$btree_find_node'(m, 42, 0x010405, N, A), R = A-N"),
@@ -196,7 +313,10 @@ const _DR_CASES = [
     ("dr96", raw"'$btree_find_node'(m, n(1,e,e), 0x060203, N, A), R = A-N"),
     ("dr97", raw"'$btree_find_node'(m, n(1,e,e), 0x010602, N, A), R = A-N"),
     ("dr98", raw"'$btree_find_node'(m, [a,b,c], 0x010102, N, A), R = A-N"),
-    ("dr99", raw"string_codes(S, [115]), '$btree_find_node'(m, S, 0x010203, N, A), R = A-N"),
+    (
+        "dr99",
+        raw"string_codes(S, [115]), '$btree_find_node'(m, S, 0x010203, N, A), R = A-N"
+    ),
     ("dr100", raw"'$needs_quotes'('hello world'), R = yes"),
     ("dr101", raw"'$needs_quotes'('A'), R = yes"),
     ("dr102", raw"'$needs_quotes'('_x'), R = yes"),
@@ -441,7 +561,8 @@ end
     @test count(l -> occursin(code("type_error") * "/2", l), rows) == 27
     @test count(l -> occursin(code("instantiation_error"), l), rows) == 9
     @test count(l -> occursin(code("representation_error") * "/1", l), rows) == 1
-    @test count(l -> occursin(code("btree"), l) && occursin(code("type_error"), l), rows) == 8
+    @test count(l -> occursin(code("btree"), l) && occursin(code("type_error"), l), rows) ==
+        8
     # rows that fail have no answer after the name; rows that answer `yes`
     @test count(l -> occursin(r"^t_dr\d+$", l), rows) == 15
     @test count(l -> endswith(l, "(a" * code("yes") * ")"), rows) == 12
@@ -451,12 +572,17 @@ end
     @test all(l -> occursin(code("dict") * ",a" * code("foo"), l), rows[129:131])
     # the three setters differ in what they leave behind: b_set_dict undoes on backtracking (dr03), nb_set_dict keeps the new
     # value (dr22), and a compound value is DUPLICATED by nb_set_dict (dr31: X unbound) but LINKED by nb_link_dict (dr47: X = 1)
-    @test endswith(_DR_PINNED[1 + 3], "c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))")
-    @test endswith(_DR_PINNED[1 + 22], "c[45]/2(a[97],i9),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))")
+    @test endswith(
+        _DR_PINNED[1 + 3], "c[45]/2(a[97],i1),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))"
+    )
+    @test endswith(
+        _DR_PINNED[1 + 22], "c[45]/2(a[97],i9),c[91,124,93]/2(c[45]/2(a[98],i2),nil)))"
+    )
     @test endswith(_DR_PINNED[1 + 31], "(V0)")
     @test endswith(_DR_PINNED[1 + 47], "(i1)")
     # '$btree_find_node'/5: the node a search ends at and the `=`, `<`, `>` it reports (dr51 root, dr54 left of a miss, dr55 right of a miss)
-    @test startswith(_DR_PINNED[1 + 51], "t_dr51 ") && occursin("c[45]/2(a[61],", _DR_PINNED[1 + 51])
+    @test startswith(_DR_PINNED[1 + 51], "t_dr51 ") &&
+        occursin("c[45]/2(a[61],", _DR_PINNED[1 + 51])
     @test occursin("c[45]/2(a[60],", _DR_PINNED[1 + 54])
     @test occursin("c[45]/2(a[62],", _DR_PINNED[1 + 55])
 end
@@ -466,10 +592,30 @@ end
 # unless it runs on tcmalloc), so no pin could hold: the rows check the refusal is on the books and the kernel does not define them.
 const _DR_REFUSED = [
     # (name, arity, what, step)
-    ("\$atom_references", 2, "atom reference counts: the kernel's atoms carry no count (atom-GC family)", "D-0634 D5"),
-    ("\$atom_completions", 2, "atom-table walk for console completion: the kernel's atoms are not an array (atom-GC family)", "D-0634 D5"),
-    ("malloc_property", 1, "registered only on a tcmalloc process (pl-alloc.c:1782)", "REFUSED (no tcmalloc)"),
-    ("wait_for_input", 3, "polls OS descriptors of streams (pl-file.c:2752): a kernel stream has none", "REFUSED (no descriptors)")
+    (
+        "\$atom_references",
+        2,
+        "atom reference counts: the kernel's atoms carry no count (atom-GC family)",
+        "D-0634 D5"
+    ),
+    (
+        "\$atom_completions",
+        2,
+        "atom-table walk for console completion: the kernel's atoms are not an array (atom-GC family)",
+        "D-0634 D5"
+    ),
+    (
+        "malloc_property",
+        1,
+        "registered only on a tcmalloc process (pl-alloc.c:1782)",
+        "REFUSED (no tcmalloc)"
+    ),
+    (
+        "wait_for_input",
+        3,
+        "polls OS descriptors of streams (pl-file.c:2752): a kernel stream has none",
+        "REFUSED (no descriptors)"
+    )
 ]
 
 @testset "LK-ONLY: the REFUSED owner rows are on the books and the kernel does not define the predicates" begin
@@ -500,11 +646,10 @@ const _DR_LKB = [
 @testset "LK-ONLY: a \$btree_find_node/5 position past the compound is a type error (lkb1-lkb3)" begin
     code(t) = "[" * join(Int.(collect(t)), ",") * "]"
     names = String[id for (id, _) in _DR_LKB]
-    text =
-        join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
-            (id, g) in _DR_LKB
-        ])
+    text = join([
+        "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in _DR_LKB
+    ])
     f = joinpath(mktempdir(), "dictrec_lkb.pl")
     write(f, text)
     kl, _, _ = _dr_kernel(f, ["t_$(n)" for n in names])
@@ -512,8 +657,11 @@ const _DR_LKB = [
     @test length(kl) == length(_DR_LKB) + 1
     for (n, l) in zip(names, kl[2:end])
         # the answer is `raised(type_error(btree, n(1,e,e)))`, the tree as the caller wrote it (as dr95-dr97)
-        @test l == "t_$(n) " * "c" * code("t_$(n)") * "/1(c" * code("raised") * "/1(c" * code("type_error") *
-                  "/2(a" * code("btree") * ",c" * code("n") * "/3(i1,a" * code("e") * ",a" * code("e") * "))))"
+        @test l ==
+            "t_$(n) " * "c" * code("t_$(n)") * "/1(c" * code("raised") * "/1(c" *
+              code("type_error") *
+              "/2(a" * code("btree") * ",c" * code("n") * "/3(i1,a" * code("e") * ",a" *
+              code("e") * "))))"
     end
 end
 

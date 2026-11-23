@@ -183,11 +183,13 @@ _tmp_existing(gd) = sort!(filter(isfile, collect(gd.os_tmp_files)))
             @test length(left) == 3
             @test all(n -> startswith(basename(n), "swipl_"), left)
             @test count(n -> occursin("swipl_lk_left_", n), left) == 1
-            @test count(n -> endswith(n, ".txt"), left) == 1 && count(n -> endswith(n, ".left"), left) == 1
+            @test count(n -> endswith(n, ".txt"), left) == 1 &&
+                count(n -> endswith(n, ".left"), left) == 1
             @test length(gd.os_tmp_files) > length(left)                  # the names of files nobody made stay in the registry
             # delete_file/1 forgot the names of t12 and t13 (Id lk_del): the registry is tried first, not only the file
             @test !any(n -> occursin("swipl_lk_del_", n), gd.os_tmp_files)
-            @test LK.PL_cleanup(gd, ld, 0 | LK.PL_CLEANUP_NO_CANCEL) == LK.PL_CLEANUP_SUCCESS
+            @test LK.PL_cleanup(gd, ld, 0 | LK.PL_CLEANUP_NO_CANCEL) ==
+                LK.PL_CLEANUP_SUCCESS
             @test all(!ispath, left)
             @test isempty(gd.os_tmp_files)
         end
@@ -204,15 +206,19 @@ _tmp_existing(gd) = sort!(filter(isfile, collect(gd.os_tmp_files)))
         end
         @test sw == expected                                              # the .out is swipl's, still
         # swipl's halt removes the names of its registry: a file made at a tmp_file/2 name and one `$tmp_file_stream`/4 made
-        goal = "tmp_file(lk_halt, N), open(N, write, S), close(S), '\$tmp_file_stream'(h, utf8, F, S2), close(S2), " *
-               "writeln(N), writeln(F), exists_file(N), exists_file(F)"
-        names2 = String.(split(
-            read(
-                pipeline(
-                    addenv(`swipl -q -g $goal -t halt`, "LC_ALL" => "C"); stdin=devnull, stderr=devnull
-                ), String
-            ), '\n'; keepempty=false
-        ))
+        goal =
+            "tmp_file(lk_halt, N), open(N, write, S), close(S), '\$tmp_file_stream'(h, utf8, F, S2), close(S2), " *
+            "writeln(N), writeln(F), exists_file(N), exists_file(F)"
+        names2 = String.(
+            split(
+                read(
+                    pipeline(
+                        addenv(`swipl -q -g $goal -t halt`, "LC_ALL" => "C"); stdin=devnull,
+                        stderr=devnull
+                    ), String
+                ), '\n'; keepempty=false
+            )
+        )
         @test length(names2) == 2
         @test all(startswith(basename(n), "swipl_") for n in names2)
         @test all(!ispath, names2)
@@ -320,7 +326,8 @@ end
         @test LK.Sfdopen(fd, "x") == (nothing, LK.EINVAL)
         s, errno = LK.Sfdopen(fd, "w")
         @test s isa LK.IOSTREAM && errno == 0
-        @test (s.flags & LK.SIO_OUTPUT) != 0 && (s.flags & LK.SIO_INPUT) == 0 && (s.flags & LK.SIO_TEXT) != 0
+        @test (s.flags & LK.SIO_OUTPUT) != 0 && (s.flags & LK.SIO_INPUT) == 0 &&
+            (s.flags & LK.SIO_TEXT) != 0
         @test LK.Sputc(Int('h'), s) == Int('h')
         @test LK.Sclose(s) == 0                                           # the stream owns the descriptor: this closes it
         @test read(p, String) == "h"

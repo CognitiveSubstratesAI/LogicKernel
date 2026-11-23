@@ -23,7 +23,9 @@
 #   5. The digest is unified with `PL_unify_atom_nchars(t, 32, hex)`: an atom made from the 32 lowercase hex digits.
 
 # the table of md5.c's T1..T64 (RFC 1321: floor(2^32 * abs(sin(i))), i in 1..64)
-const _MD5_T = UInt32[floor(UInt64, 4294967296.0 * abs(sin(Float64(i)))) % UInt32 for i in 1:64]
+const _MD5_T = UInt32[
+    floor(UInt64, 4294967296.0 * abs(sin(Float64(i)))) % UInt32 for i in 1:64
+]
 # the per-step rotation counts of the four rounds
 const _MD5_S = (
     7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
@@ -58,7 +60,8 @@ function md5_process(pms::md5_state_t, data::AbstractVector{UInt8}, off::Int)::N
     X = Vector{UInt32}(undef, 16)
     for i in 0:15                                   # the byte-order independent word read
         j = off + 4i
-        X[i + 1] = UInt32(data[j + 1]) | (UInt32(data[j + 2]) << 8) |
+        X[i + 1] =
+            UInt32(data[j + 1]) | (UInt32(data[j + 2]) << 8) |
             (UInt32(data[j + 3]) << 16) | (UInt32(data[j + 4]) << 24)
     end
     for i in 0:63
@@ -161,7 +164,9 @@ const md5_option_specs = (PL_option_t(:encoding, OPT_TERM),)
 # PORT: packages/clib/md54pl.c md5_options
 # DIVERGES: returns the `REP_*` encoding flag (`opts.encoding`), or `nothing` with the error raised; `PL_scan_options` returns the values.
 "The encoding flag of the options `options` of md5_hash/3: `REP_UTF8` (default) or `REP_ISO_LATIN_1` (md54pl.c)."
-function md5_options(ld::PL_local_data{T}, options::term_t)::Union{Nothing, UInt32} where {T}
+function md5_options(
+    ld::PL_local_data{T}, options::term_t
+)::Union{Nothing, UInt32} where {T}
     vals = PL_scan_options(ld, options, 0, "md5_option", md5_option_specs)
     vals === nothing && return nothing
     encoding = vals[1]
@@ -179,7 +184,9 @@ end
 
 # PORT: packages/clib/md54pl.c md5_unify_digest
 "Unify `t` with the atom of the 32 lowercase hex digits of `digest` (md54pl.c)."
-function md5_unify_digest(ld::PL_local_data{T}, t::term_t, digest::Vector{UInt8})::Bool where {T}
+function md5_unify_digest(
+    ld::PL_local_data{T}, t::term_t, digest::Vector{UInt8}
+)::Bool where {T}
     hexd = "0123456789abcdef"
     io = IOBuffer()
     for b in digest
@@ -208,7 +215,11 @@ function pl_md5_hash3_va(
     else                                            # REP_ISO_LATIN_1
         cps = _text_code_points(txt)
         any(c -> c > 255, cps) &&
-            return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :encoding)) ? FTRUE : FFALSE
+            return if PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :encoding))
+                FTRUE
+            else
+                FFALSE
+            end
         UInt8[c % UInt8 for c in cps]
     end
 

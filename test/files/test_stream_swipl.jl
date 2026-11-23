@@ -153,9 +153,16 @@ end
 # (two byte-identical runs). The returned values and the buffer contents are the C functions' own (pl-stream.c:2349-2406),
 # written by hand. Sfread, Sfwrite and Spending are not in this branch.
 @testset "Sfgets, Sfputs, Sfree" begin
-    _p(s) = [Int(s.position.byteno), Int(s.position.charno), s.position.lineno, s.position.linepos]
+    _p(s) = [
+        Int(s.position.byteno),
+        Int(s.position.charno),
+        s.position.lineno,
+        s.position.linepos
+    ]
     # Sfgets: a line with its newline and a NUL, the last line without one, then NULL
-    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("ab\ncd"))), Ref(5), "r")
+    s = LK.Sopenmem(
+        Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("ab\ncd"))), Ref(5), "r"
+    )
     buf = fill(0x7a, 10)
     @test LK.Sfgets(buf, 10, s) === buf && buf[1:4] == UInt8[97, 98, 10, 0]
     buf = fill(0x7a, 10)
@@ -164,23 +171,30 @@ end
     @test LK.Sfgets(buf, 10, s) === nothing && buf[1] == 0x00
     LK.Sclose(s)
     # Sfgets reads n bytes at most (the C's `while (n-- > 0)`), and writes the NUL only after a newline or at the end of file
-    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("abc"))), Ref(3), "r")
+    s = LK.Sopenmem(
+        Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("abc"))), Ref(3), "r"
+    )
     buf = fill(0x7a, 5)
     @test LK.Sfgets(buf, 2, s) === buf && buf == UInt8[97, 98, 0x7a, 0x7a, 0x7a]
     LK.Sclose(s)
-    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r")
+    s = LK.Sopenmem(
+        Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r"
+    )
     buf = fill(0x7a, 5)
     @test LK.Sfgets(buf, 3, s) === buf && buf == UInt8[97, 10, 0x00, 0x7a, 0x7a]
     @test LK.Sfgets(buf, 2, s) === buf && buf[1] == 98
     LK.Sclose(s)
     # a newline in the last byte of room: no NUL after it (n is 0 then)
-    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r")
+    s = LK.Sopenmem(
+        Ref{Union{Nothing, Vector{UInt8}}}(Vector{UInt8}(codeunits("a\nb"))), Ref(3), "r"
+    )
     buf = fill(0x7a, 5)
     @test LK.Sfgets(buf, 2, s) === buf && buf == UInt8[97, 10, 0x7a, 0x7a, 0x7a]
     LK.Sclose(s)
     # wc rows of sfx_rows.out: Sfputs writes each byte as a character (Sputcode); the position as put_char/2 leaves it
     for (str, want) in (
-        ("ab\ncd\te", [7, 7, 2, 9]), ("\n\nx", [3, 3, 3, 1]), ("x\by", [3, 3, 1, 1]), ("a\rb", [3, 3, 1, 1]),
+        ("ab\ncd\te", [7, 7, 2, 9]), ("\n\nx", [3, 3, 3, 1]), ("x\by", [3, 3, 1, 1]),
+        ("a\rb", [3, 3, 1, 1])
     )
         bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
         sizep = Ref(0)
@@ -193,7 +207,8 @@ end
     bufp = Ref{Union{Nothing, Vector{UInt8}}}(nothing)
     sizep = Ref(0)
     w = LK.Sopenmem(bufp, sizep, "w")
-    @test LK.Sfputs(UInt8[97, 0, 98], w) == 0 && LK.Sclose(w) == 0 && bufp[][1:sizep[]] == UInt8[97]
+    @test LK.Sfputs(UInt8[97, 0, 98], w) == 0 && LK.Sclose(w) == 0 &&
+        bufp[][1:sizep[]] == UInt8[97]
     @test LK.Sfree(UInt8[1]) === nothing
 end
 

@@ -574,8 +574,10 @@ end
     f, names = _fm_file(filter(c -> c[1] == "e18", _FM_CASES))
     kl, _, _ = _fm_kernel(f, names)
     @test length(kl) == 2
-    pre = "t_e18 c" * _fm_codes("t_e18") * "/1(c" * _fm_codes("raised") * "/1(c" * _fm_codes("existence_error") *
-          "/2(a" * _fm_codes("format_character") * ",a["
+    pre =
+        "t_e18 c" * _fm_codes("t_e18") * "/1(c" * _fm_codes("raised") * "/1(c" *
+        _fm_codes("existence_error") *
+        "/2(a" * _fm_codes("format_character") * ",a["
     @test startswith(kl[2], pre) && endswith(kl[2], "])))")
     @test any(l -> startswith(l, "t_e25 ") && endswith(l, "a[0])))"), _FM_PINNED)   # e25 is the NUL terminator: pinned
 end

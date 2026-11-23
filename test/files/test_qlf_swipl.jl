@@ -600,7 +600,10 @@ const _QL_F5_PINNED = ["p undefined", "q defined", "r defined"]
     LK.compileFile(gd, ld, nothing, f)
     LK.PL_clear_exception(ld)
     kl = _ql_query_lines(gd, ld, ["p", "q", "r"])
-    got = [startswith(l, n * " undefined") ? n * " undefined" : n * " defined" for (l, n) in zip(kl, ["p", "q", "r"])]
+    got = [
+        startswith(l, n * " undefined") ? n * " undefined" : n * " defined" for
+        (l, n) in zip(kl, ["p", "q", "r"])
+    ]
     @test got == _QL_F5_PINNED
     @test count(m -> occursin(r":[0-9]+: Syntax error\n$", m), _ql_messages(ld)) == 1
 end
@@ -814,8 +817,8 @@ end
     ld = LK.PL_local_data{_QL}(gd)
     # the six QLF1 rows have their own answers (below), not "true"
     qlf1 = Set(["\$qlf_current_source", "\$qlf_dependency", "\$qlf_close", "\$close_wic",
-                "\$map_id", "\$unmap_id", "\$file_hash",
-                "\$qlf_versions", "\$qlf_is_compatible", "\$qlf_sources", "\$qlf_module"])
+        "\$map_id", "\$unmap_id", "\$file_hash",
+        "\$qlf_versions", "\$qlf_is_compatible", "\$qlf_sources", "\$qlf_module"])
     for (n, ar) in shells
         (n == "\$qlf_include" || n in qlf1) && continue
         args = _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:ar]
@@ -862,11 +865,18 @@ end
             (joinpath(d, "missing.pl"), "0"), (d, "0")
         )
             @test _ql_hash(gd, ld, f) == parse(BigInt, h)
-            @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), lk_gnd(_QL, parse(BigInt, h))]) === :ok
+            @test _ql_call(
+                gd, ld, "\$file_hash", _QL[_qls(f), lk_gnd(_QL, parse(BigInt, h))]
+            ) === :ok
             @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), lk_gnd(_QL, 1)]) === :fail
             @test _ql_call(gd, ld, "\$file_hash", _QL[_qls(f), foo]) === :fail
         end
-        @test _ql_call(gd, ld, "\$file_hash", _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]) === :exception   # File unbound: instantiation_error
+        @test _ql_call(
+            gd,
+            ld,
+            "\$file_hash",
+            _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]
+        ) === :exception   # File unbound: instantiation_error
     end
     # QLF1B: '$qlf_versions'/6 and '$qlf_is_compatible'/1 on header bytes (pl-qlf.c:3498-3680, 3802-3932). `real.qlf` is the first 29
     # bytes of a file swipl 10.1.20 18168e62's qcompile/1 wrote (magic, NUL, version 72, signature 0xe5ee110c: a header is all the
@@ -874,12 +884,17 @@ end
     mktempdir() do d
         magic = "SWI-Prolog .qlf file\n\0"
         sig = UInt8[0x18, 0x44, 0x70, 0x5e, 0x9c]
-        mk(name, bytes) = (f = joinpath(d, name); write(f, bytes); f)
+        mk(name, bytes) = (f=joinpath(d, name); write(f, bytes); f)
         real = mk("real.qlf", vcat(codeunits(magic), UInt8[0x10, 0x81], sig))
         old = mk("old.qlf", vcat(codeunits(magic), UInt8[0x08, 0x81], sig))      # file version 68: the oldest loaded
         tooold = mk("tooold.qlf", vcat(codeunits(magic), UInt8[0x06, 0x81], sig))  # 67
-        badsig = mk("badsig.qlf", vcat(codeunits(magic), UInt8[0x10, 0x81, 0x02, 0x00, 0x00, 0x00, 0x80]))
-        badmagic = mk("badmagic.qlf", vcat(codeunits("not a qlf file at all\n\0"), UInt8[0x10, 0x81]))
+        badsig = mk(
+            "badsig.qlf",
+            vcat(codeunits(magic), UInt8[0x10, 0x81, 0x02, 0x00, 0x00, 0x00, 0x80])
+        )
+        badmagic = mk(
+            "badmagic.qlf", vcat(codeunits("not a qlf file at all\n\0"), UInt8[0x10, 0x81])
+        )
         trunc = mk("trunc.qlf", vcat(codeunits(magic), UInt8[0x10]))         # EOF reads as byte 0xff...: -1 & 0x7f
         empty = mk("empty.qlf", UInt8[])
         nonul = mk("nonul.qlf", codeunits("SWI-Prolog .qlf file\n"))
@@ -887,7 +902,12 @@ end
         csig = "3857584396"
         qfe(f, m) = _ql_enc(mk_expr(_QL, _QL[_qls("qlf_format_error"), _qls(f), _qls(m)]))
         function versions(f)
-            st, ans = _ql_goal(gd, ld, "\$qlf_versions", _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])
+            st, ans = _ql_goal(
+                gd,
+                ld,
+                "\$qlf_versions",
+                _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...]
+            )
             return st, [_ql_enc(a) for a in ans]
         end
         ival(x) = _ql_enc(lk_gnd(_QL, x))
@@ -895,9 +915,21 @@ end
         for (f, vs, cm) in (
             (real, (72, 68, 72, 3857584396, 3857584396), nothing),
             (old, (72, 68, 68, 3857584396, 3857584396), nothing),
-            (tooold, (72, 68, 67, 3857584396, 3857584396), "incompatible version (file: 67, Prolog: 72)"),
-            (badsig, (72, 68, 72, 3857584396, 1), "incompatible VM-signature (file: 0x1; Prolog: 0xe5ee110c)"),
-            (trunc, (72, 68, 8136, 3857584396, 4294967232), "incompatible VM-signature (file: 0xffffffc0; Prolog: 0xe5ee110c)")
+            (
+                tooold,
+                (72, 68, 67, 3857584396, 3857584396),
+                "incompatible version (file: 67, Prolog: 72)"
+            ),
+            (
+                badsig,
+                (72, 68, 72, 3857584396, 1),
+                "incompatible VM-signature (file: 0x1; Prolog: 0xe5ee110c)"
+            ),
+            (
+                trunc,
+                (72, 68, 8136, 3857584396, 4294967232),
+                "incompatible VM-signature (file: 0xffffffc0; Prolog: 0xe5ee110c)"
+            )
         )
             st, ans = versions(f)
             @test st === :true
@@ -913,7 +945,10 @@ end
         for f in (badmagic, empty, nonul)                    # `Not a SWI-Prolog .qlf file\n`, from both predicates
             for (n, args) in (
                 ("\$qlf_is_compatible", _QL[_qls(f)]),
-                ("\$qlf_versions", _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])
+                (
+                    "\$qlf_versions",
+                    _QL[_qls(f), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...]
+                )
             )
                 st, ans = _ql_goal(gd, ld, n, args)
                 @test st === :exception
@@ -922,11 +957,25 @@ end
         end
         # a missing file: existence_error(source_sink, File) from open_qlf_file; an unbound or a non-text File from PL_get_file_name
         @test _ql_call(gd, ld, "\$qlf_is_compatible", _QL[_qls(missing)]) === :exception
-        @test _ql_goal(gd, ld, "\$qlf_versions", _QL[_qls(missing), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...])[1] === :exception
+        @test _ql_goal(
+            gd,
+            ld,
+            "\$qlf_versions",
+            _QL[_qls(missing), (mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:5)...]
+        )[1] === :exception
         @test _ql_call(gd, ld, "\$qlf_is_compatible", v1()) === :exception
-        @test _ql_call(gd, ld, "\$qlf_versions", _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:6]) === :exception
+        @test _ql_call(
+            gd, ld, "\$qlf_versions", _QL[mk_var(_QL, LK.fresh_var_keys!(1)) for _ in 1:6]
+        ) === :exception
         # a bound answer position is unified, not overwritten: the right values succeed, a wrong one fails
-        right = _QL[_qls(real), lk_gnd(_QL, 72), lk_gnd(_QL, 68), lk_gnd(_QL, 72), lk_gnd(_QL, 3857584396), lk_gnd(_QL, 3857584396)]
+        right = _QL[
+            _qls(real),
+            lk_gnd(_QL, 72),
+            lk_gnd(_QL, 68),
+            lk_gnd(_QL, 72),
+            lk_gnd(_QL, 3857584396),
+            lk_gnd(_QL, 3857584396)
+        ]
         @test _ql_call(gd, ld, "\$qlf_versions", right) === :ok
         for k in 2:6
             wrong = copy(right)
@@ -959,13 +1008,20 @@ function _ql_zz(v::Int64)::Vector{UInt8}
     return out
 end
 "A string as `qlfPutString` writes it: its length and the bytes."
-_ql_str(s::String)::Vector{UInt8} = vcat(_ql_zz(Int64(ncodeunits(s))), collect(codeunits(s)))
+_ql_str(s::String)::Vector{UInt8} =
+    vcat(_ql_zz(Int64(ncodeunits(s))), collect(codeunits(s)))
 "Four bytes, the big end first (`PutInt32`)."
-_ql_be4(n::Int)::Vector{UInt8} = UInt8[(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
+_ql_be4(n::Int)::Vector{UInt8} =
+    UInt8[(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
 const _QL_SIG = UInt8[0x18, 0x44, 0x70, 0x5e, 0x9c]         # VM_SIGNATURE 0xe5ee110c, as the pinned swipl writes it
 "The header of a QLF file of version `ver` saved as `save` (magic, version, signature, the saved name)."
 _ql_hdr(save::String, ver::Int=72)::Vector{UInt8} =
-    vcat(collect(codeunits("SWI-Prolog .qlf file\n\0")), _ql_zz(Int64(ver)), _QL_SIG, _ql_str(save))
+    vcat(
+        collect(codeunits("SWI-Prolog .qlf file\n\0")),
+        _ql_zz(Int64(ver)),
+        _QL_SIG,
+        _ql_str(save)
+    )
 "The bytes of a QLF file saved as `save`, with `ents` = (kind, name, hash) and the index of their offsets at the end (or `tail`)."
 function _ql_qlf(
     save::String, ents::Vector{Tuple{Char, String, UInt64}}; ver::Int=72,
@@ -987,7 +1043,8 @@ end
 function _ql_items(t::_QL)::Union{Nothing, Vector{String}}
     out = String[]
     while !is_nil(t)
-        (kind(t) !== VAR && kind(t) !== SYM && kind(t) !== GND && nchildren(t) == 3) || return nothing
+        (kind(t) !== VAR && kind(t) !== SYM && kind(t) !== GND && nchildren(t) == 3) ||
+            return nothing
         push!(out, _ql_enc(child(t, 2)))
         t = child(t, 3)
     end
@@ -1003,16 +1060,29 @@ _ql_list(items::Vector{_QL}) =
     mktempdir() do d
         gd = LK.PL_global_data{_QL}()
         ld = LK.PL_local_data{_QL}(gd)
-        mk(name, bytes) = (f = joinpath(d, name); write(f, bytes); f)
+        mk(name, bytes) = (f=joinpath(d, name); write(f, bytes); f)
         big = (UInt64(1) << 63) + UInt64(5)                  # above Int64: the hash goes through PL_put_uint64
         none = Tuple{Char, String, UInt64}[]
-        three = mk("three.qlf", _ql_qlf(joinpath(d, "three.qlf"), Tuple{Char, String, UInt64}[
-            ('F', "/src/a.pl", 123), ('L', "/src/inc/b.pl", big), ('D', "/src/dep.pl", 0)]))
+        three = mk(
+            "three.qlf",
+            _ql_qlf(
+                joinpath(d, "three.qlf"),
+                Tuple{Char, String, UInt64}[
+                    ('F', "/src/a.pl", 123), ('L', "/src/inc/b.pl", big),
+                    ('D', "/src/dep.pl", 0)]
+            )
+        )
         empty = mk("empty.qlf", _ql_qlf(joinpath(d, "empty.qlf"), none))
-        v68 = mk("v68.qlf", _ql_qlf(joinpath(d, "v68.qlf"), Tuple{Char, String, UInt64}[
-            ('F', "/src/a.pl", 5), ('L', "/src/b.pl", 6)]; ver=68))
+        v68 = mk(
+            "v68.qlf",
+            _ql_qlf(joinpath(d, "v68.qlf"),
+                Tuple{Char, String, UInt64}[
+                    ('F', "/src/a.pl", 5), ('L', "/src/b.pl", 6)]; ver=68)
+        )
         function sources(f)
-            st, ans = _ql_goal(gd, ld, "\$qlf_sources", _QL[_qls(f), mk_var(_QL, LK.fresh_var_keys!(1))])
+            st, ans = _ql_goal(
+                gd, ld, "\$qlf_sources", _QL[_qls(f), mk_var(_QL, LK.fresh_var_keys!(1))]
+            )
             st === :true && return st, _ql_items(ans[3])
             st === :exception && return st, _ql_enc(child(ans[1], 2))
             return st, nothing
@@ -1021,30 +1091,65 @@ _ql_list(items::Vector{_QL}) =
         # the saved name equals the load name: no translation; the entries come in the order of the index; the hash is `qlfGetInt64`'s
         st, items = sources(three)
         @test st === :true
-        @test items == [_ql_src("source", "/src/a.pl", 123), _ql_src("include", "/src/inc/b.pl", BigInt(big)),
-                        _ql_src("dependency", "/src/dep.pl", 0)]
+        @test items == [_ql_src("source", "/src/a.pl", 123),
+            _ql_src("include", "/src/inc/b.pl", BigInt(big)),
+            _ql_src("dependency", "/src/dep.pl", 0)]
         @test items !== nothing && length(items) == 3 && all(!isempty, items)   # not vacuous: three entries, three different functors
         @test items !== nothing && length(unique(first.(split.(items, "("; limit=2)))) == 3
         # an index of no entries is `[]`; a version before 72 has no hash: 0, and no byte of the entry is left unread
         @test sources(empty) == (:true, String[])
-        @test sources(v68) == (:true, [_ql_src("source", "/src/a.pl", 0), _ql_src("include", "/src/b.pl", 0)])
+        @test sources(v68) == (
+            :true, [_ql_src("source", "/src/a.pl", 0), _ql_src("include", "/src/b.pl", 0)]
+        )
         # a bound list is unified with the entries: the right one succeeds; a wrong head, a shorter list, a longer one fail
-        right = _ql_list(_QL[_ql_srct("source", "/src/a.pl", 123), _ql_srct("include", "/src/inc/b.pl", BigInt(big)),
-                             _ql_srct("dependency", "/src/dep.pl", 0)])
+        right = _ql_list(
+            _QL[_ql_srct("source", "/src/a.pl", 123),
+                _ql_srct("include", "/src/inc/b.pl", BigInt(big)),
+                _ql_srct("dependency", "/src/dep.pl", 0)]
+        )
         @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(three), right]) === :ok
         @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(three), mk_nil(_QL)]) === :fail
         @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(three), _qls("foo")]) === :fail
-        @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(three), _ql_list(_QL[_ql_srct("source", "/src/a.pl", 124)])]) === :fail
+        @test _ql_call(
+            gd,
+            ld,
+            "\$qlf_sources",
+            _QL[_qls(three), _ql_list(_QL[_ql_srct("source", "/src/a.pl", 124)])]
+        ) === :fail
         @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(empty), mk_nil(_QL)]) === :ok
         @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(empty), right]) === :fail
         # the errors, each a qlf_format_error of the file with upstream's message (swipl's own text)
-        negcount = mk("negcount.qlf", _ql_qlf(joinpath(d, "negcount.qlf"), none; tail=UInt8[0xff, 0xff, 0xff, 0xff]))
+        negcount = mk(
+            "negcount.qlf",
+            _ql_qlf(joinpath(d, "negcount.qlf"), none; tail=UInt8[0xff, 0xff, 0xff, 0xff])
+        )
         short = mk("short.qlf", _ql_qlf(joinpath(d, "short.qlf"), none; tail=_ql_be4(256)))
         hl(n) = length(_ql_hdr(joinpath(d, n)))
-        badoff = mk("badoff.qlf", vcat(_ql_hdr(joinpath(d, "badoff.qlf")), UInt8['X'], _ql_be4(hl("badoff.qlf")), _ql_be4(1)))
-        pastend = mk("pastend.qlf", vcat(_ql_hdr(joinpath(d, "pastend.qlf")), _ql_be4(100000), _ql_be4(1)))
-        negoff = mk("negoff.qlf", vcat(_ql_hdr(joinpath(d, "negoff.qlf")), UInt8[0xff, 0xff, 0xff, 0xff], _ql_be4(1)))
-        badmagic = mk("badmagic.qlf", vcat(collect(codeunits("not a qlf file at all\n\0")), zeros(UInt8, 40)))
+        badoff = mk(
+            "badoff.qlf",
+            vcat(
+                _ql_hdr(joinpath(d, "badoff.qlf")),
+                UInt8['X'],
+                _ql_be4(hl("badoff.qlf")),
+                _ql_be4(1)
+            )
+        )
+        pastend = mk(
+            "pastend.qlf",
+            vcat(_ql_hdr(joinpath(d, "pastend.qlf")), _ql_be4(100000), _ql_be4(1))
+        )
+        negoff = mk(
+            "negoff.qlf",
+            vcat(
+                _ql_hdr(joinpath(d, "negoff.qlf")),
+                UInt8[0xff, 0xff, 0xff, 0xff],
+                _ql_be4(1)
+            )
+        )
+        badmagic = mk(
+            "badmagic.qlf",
+            vcat(collect(codeunits("not a qlf file at all\n\0")), zeros(UInt8, 40))
+        )
         for (f, m) in (
             (negcount, "invalid number of files (-1)"),                    # the count at the end is negative
             (short, "seek to files failed: Invalid argument"),            # 256 entries do not fit in the file
@@ -1058,20 +1163,40 @@ _ql_list(items::Vector{_QL}) =
             @test ex == qfe(f, m)
         end
         # a file that is missing, a name that is unbound: the errors of open_qlf_file and PL_get_file_name, not a qlf_format_error
-        @test _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(joinpath(d, "missing.qlf")), mk_var(_QL, LK.fresh_var_keys!(1))]) === :exception
-        @test _ql_call(gd, ld, "\$qlf_sources", _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]) === :exception
+        @test _ql_call(
+            gd,
+            ld,
+            "\$qlf_sources",
+            _QL[_qls(joinpath(d, "missing.qlf")), mk_var(_QL, LK.fresh_var_keys!(1))]
+        ) === :exception
+        @test _ql_call(
+            gd,
+            ld,
+            "\$qlf_sources",
+            _QL[mk_var(_QL, LK.fresh_var_keys!(1)), mk_var(_QL, LK.fresh_var_keys!(1))]
+        ) === :exception
         # a file name longer than PATH_MAX in the index is upstream's fatalError (a Julia `error` naming its message)
-        toolong = mk("toolong.qlf", vcat(_ql_hdr(joinpath(d, "toolong.qlf")), UInt8['F'], _ql_zz(5000), fill(UInt8('a'), 10),
-                                         _ql_be4(hl("toolong.qlf")), _ql_be4(1)))
+        toolong = mk(
+            "toolong.qlf",
+            vcat(_ql_hdr(joinpath(d, "toolong.qlf")), UInt8['F'], _ql_zz(5000),
+                fill(UInt8('a'), 10),
+                _ql_be4(hl("toolong.qlf")), _ql_be4(1))
+        )
         # (the message is read too: a length that passed the bound would run into the end of the file and raise a different error)
         toolong_err = try
-            _ql_call(gd, ld, "\$qlf_sources", _QL[_qls(toolong), mk_var(_QL, LK.fresh_var_keys!(1))])
+            _ql_call(
+                gd,
+                ld,
+                "\$qlf_sources",
+                _QL[_qls(toolong), mk_var(_QL, LK.fresh_var_keys!(1))]
+            )
             nothing
         catch e
             e
         end
         @test toolong_err isa ErrorException
-        @test toolong_err isa ErrorException && occursin("Invalid QLF: illegal string", toolong_err.msg)
+        @test toolong_err isa ErrorException &&
+            occursin("Invalid QLF: illegal string", toolong_err.msg)
     end
 end
 
@@ -1089,20 +1214,38 @@ end
         @test LK.compileFile(gd, ld, nothing, helper)
         gd.bootsession = false
         moved = joinpath(d, "moved.qlf")
-        write(moved, _ql_qlf("/old/place#/moved.qlf", Tuple{Char, String, UInt64}[
-            ('F', "/old/place#/x/a.pl", 7), ('F', "/elsewhere/b.pl", 8),
-            ('D', "/old/place#/../old/place#/c.pl", 9)]))
-        st, ans = _ql_goal(gd, ld, "\$qlf_sources", _QL[_qls(moved), mk_var(_QL, LK.fresh_var_keys!(1))])
+        write(
+            moved,
+            _ql_qlf(
+                "/old/place#/moved.qlf",
+                Tuple{Char, String, UInt64}[
+                    ('F', "/old/place#/x/a.pl", 7), ('F', "/elsewhere/b.pl", 8),
+                    ('D', "/old/place#/../old/place#/c.pl", 9)]
+            )
+        )
+        st, ans = _ql_goal(
+            gd, ld, "\$qlf_sources", _QL[_qls(moved), mk_var(_QL, LK.fresh_var_keys!(1))]
+        )
         a_new = joinpath(d, "x", "a.pl")
         c_new = normpath(joinpath(d, "..", "old", "place#", "c.pl"))
-        want = [_ql_src("source", a_new, 7), _ql_src("source", "/elsewhere/b.pl", 8), _ql_src("dependency", c_new, 9)]
+        want = [
+            _ql_src("source", a_new, 7),
+            _ql_src("source", "/elsewhere/b.pl", 8),
+            _ql_src("dependency", c_new, 9)
+        ]
         @test st === :true
         @test st === :true && _ql_items(ans[3]) == want
         # C: the translated list is newest first, so the third entry's rewrite is told before the first's; the second was not rewritten
         lines = _ql_query_lines(gd, ld, ["tr_seen"])
         told = [
-            _ql_enc(mk_expr(_QL, _QL[_qls("tr_seen"), mk_expr(_QL, _QL[_qls("-"), _qls(f), _qls(t)])])) for
-            (f, t) in (("/old/place#/../old/place#/c.pl", c_new), ("/old/place#/x/a.pl", a_new))
+            _ql_enc(
+                mk_expr(
+                    _QL,
+                    _QL[_qls("tr_seen"), mk_expr(_QL, _QL[_qls("-"), _qls(f), _qls(t)])]
+                )
+            ) for
+            (f, t) in
+            (("/old/place#/../old/place#/c.pl", c_new), ("/old/place#/x/a.pl", a_new))
         ]
         @test !isempty(told) && all(!isempty, told)
         @test lines == ["tr_seen" * join(" " .* told)]
@@ -1113,22 +1256,45 @@ end
         sub = joinpath(d, "place", "sub")
         mkpath(sub)
         shared = joinpath(sub, "shared.qlf")
-        write(shared, _ql_qlf("/old#/place/sub/shared.qlf", Tuple{Char, String, UInt64}[
-            ('F', "/old#/place/sub/a.pl", 1), ('F', "/old#/place/other/b.pl", 2),
-            ('L', "/old#/c.pl", 3), ('D', "/keep/d.pl", 4)]))
-        st2, ans2 = _ql_goal(gd, ld, "\$qlf_sources", _QL[_qls(shared), mk_var(_QL, LK.fresh_var_keys!(1))])
+        write(
+            shared,
+            _ql_qlf(
+                "/old#/place/sub/shared.qlf",
+                Tuple{Char, String, UInt64}[
+                    ('F', "/old#/place/sub/a.pl", 1), ('F', "/old#/place/other/b.pl", 2),
+                    ('L', "/old#/c.pl", 3), ('D', "/keep/d.pl", 4)]
+            )
+        )
+        st2, ans2 = _ql_goal(
+            gd, ld, "\$qlf_sources", _QL[_qls(shared), mk_var(_QL, LK.fresh_var_keys!(1))]
+        )
         a2 = joinpath(sub, "a.pl")
         b2 = joinpath(d, "place", "other", "b.pl")
         c2 = joinpath(d, "c.pl")
-        want2 = [_ql_src("source", a2, 1), _ql_src("source", b2, 2), _ql_src("include", c2, 3), _ql_src("dependency", "/keep/d.pl", 4)]
+        want2 = [
+            _ql_src("source", a2, 1),
+            _ql_src("source", b2, 2),
+            _ql_src("include", c2, 3),
+            _ql_src("dependency", "/keep/d.pl", 4)
+        ]
         @test st2 === :true
         @test st2 === :true && _ql_items(ans2[3]) == want2
         @test length(want2) == 4 && all(!isempty, want2) && length(unique(want2)) == 4
         told2 = [
-            _ql_enc(mk_expr(_QL, _QL[_qls("tr_seen"), mk_expr(_QL, _QL[_qls("-"), _qls(f), _qls(t)])])) for
-            (f, t) in (("/old#/c.pl", c2), ("/old#/place/other/b.pl", b2), ("/old#/place/sub/a.pl", a2))
+            _ql_enc(
+                mk_expr(
+                    _QL,
+                    _QL[_qls("tr_seen"), mk_expr(_QL, _QL[_qls("-"), _qls(f), _qls(t)])]
+                )
+            ) for
+            (f, t) in (
+                ("/old#/c.pl", c2),
+                ("/old#/place/other/b.pl", b2),
+                ("/old#/place/sub/a.pl", a2)
+            )
         ]
         @test !isempty(told2) && all(!isempty, told2)
-        @test _ql_query_lines(gd, ld, ["tr_seen"]) == ["tr_seen" * join(" " .* vcat(told, told2))]
+        @test _ql_query_lines(gd, ld, ["tr_seen"]) ==
+            ["tr_seen" * join(" " .* vcat(told, told2))]
     end
 end

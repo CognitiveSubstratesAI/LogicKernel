@@ -98,8 +98,14 @@ const _PB_CASES = [
 ]
 
 const _PB_COPY_CASES = [
-    ("c01", raw"copy_term([X], f(X,Y), Vs, T), Vs = [V], T = f(V2, Z), V == V2, V \== X, Z == Y, R = yes"),
-    ("c02", raw"copy_term([X], f(X,Y,X), Vs, T), T = f(A,B,C), A == C, B == Y, A \== X, Vs = [A], R = yes"),
+    (
+        "c01",
+        raw"copy_term([X], f(X,Y), Vs, T), Vs = [V], T = f(V2, Z), V == V2, V \== X, Z == Y, R = yes"
+    ),
+    (
+        "c02",
+        raw"copy_term([X], f(X,Y,X), Vs, T), T = f(A,B,C), A == C, B == Y, A \== X, Vs = [A], R = yes"
+    ),
     ("c03", raw"copy_term([], f(X), Vs, T), Vs = [], T = f(Z), Z == X, R = yes"),
     ("c04", raw"size_abstract_term(1, f(g(h(a)),b), T), R = T"),
     ("c05", raw"size_abstract_term(0, f(a,b), T), R = T"),
@@ -110,22 +116,52 @@ const _PB_COPY_CASES = [
     ("c10", raw"copy_term([a,X], f(X), Vs, T), R = Vs-T"),
     ("c11", raw"copy_term(g(X,h(Y)), f(X,Y,Z), Vs, T), R = Vs-T"),
     ("c12", raw"copy_term(V, f(X), Vs, T), Vs \== V, T = f(Z), Z == X, R = yes"),
-    ("c13", raw"put_attr(X, a, 1), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, A), R = A"),
-    ("c14", raw"put_attr(X, a, 1), copy_term_nat([X], f(X), Vs, T), Vs = [V], ( get_attr(V, a, _) -> R = attr ; R = noattr )"),
-    ("c15", raw"put_attr(X, a, 1), copy_term([], f(X), Vs, T), T = f(Z), ( Z == X -> R = same ; R = differ )"),
-    ("c16", raw"put_attr(X, a, g(Y)), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, g(W)), ( W == Y -> R = same ; R = differ )"),
-    ("c17", raw"copy_term_nat([X], f(X,Y), Vs, T), Vs = [V], T = f(V2, Z), V == V2, V \== X, Z == Y, R = yes"),
-    ("c18", raw"put_attr(X, a, 1), copy_term_nat([], f(X), Vs, T), T = f(Z), ( Z == X -> R = same ; R = differ )"),
-    ("c19", raw"S = h(X), copy_term([X], f(S,S), Vs, T), T = f(A,B), ( same_term(A, B) -> R = shared ; R = apart )"),
-    ("c20", raw"S = h(a), copy_term([X], f(X,S,S), Vs, T), T = f(_,A,B), ( same_term(A, S), same_term(B, S) -> R = shared ; R = apart )"),
-    ("c21", raw"copy_term([X], f(X,X), Vs, T), T = f(A,B), A == B, Vs = [V], V == A, R = yes"),
+    (
+        "c13",
+        raw"put_attr(X, a, 1), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, A), R = A"
+    ),
+    (
+        "c14",
+        raw"put_attr(X, a, 1), copy_term_nat([X], f(X), Vs, T), Vs = [V], ( get_attr(V, a, _) -> R = attr ; R = noattr )"
+    ),
+    (
+        "c15",
+        raw"put_attr(X, a, 1), copy_term([], f(X), Vs, T), T = f(Z), ( Z == X -> R = same ; R = differ )"
+    ),
+    (
+        "c16",
+        raw"put_attr(X, a, g(Y)), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, g(W)), ( W == Y -> R = same ; R = differ )"
+    ),
+    (
+        "c17",
+        raw"copy_term_nat([X], f(X,Y), Vs, T), Vs = [V], T = f(V2, Z), V == V2, V \== X, Z == Y, R = yes"
+    ),
+    (
+        "c18",
+        raw"put_attr(X, a, 1), copy_term_nat([], f(X), Vs, T), T = f(Z), ( Z == X -> R = same ; R = differ )"
+    ),
+    (
+        "c19",
+        raw"S = h(X), copy_term([X], f(S,S), Vs, T), T = f(A,B), ( same_term(A, B) -> R = shared ; R = apart )"
+    ),
+    (
+        "c20",
+        raw"S = h(a), copy_term([X], f(X,S,S), Vs, T), T = f(_,A,B), ( same_term(A, S), same_term(B, S) -> R = shared ; R = apart )"
+    ),
+    (
+        "c21",
+        raw"copy_term([X], f(X,X), Vs, T), T = f(A,B), A == B, Vs = [V], V == A, R = yes"
+    ),
     ("c22", raw"copy_term_nat([X,Y], f(X,Y), Vs, T), R = Vs-T"),
     ("c23", raw"copy_term([X], f(Y), Vs, T), R = Vs-T"),
     ("c24", raw"copy_term(foo, bar, Vs, T), R = Vs-T"),
     ("c25", raw"copy_term([X], X, Vs, T), Vs = [V], T == V, V \== X, R = yes"),
     ("c26", raw"copy_term([X], f(X), [a], T), R = T"),
     ("c30", raw"size_abstract_term(2, f(g(h(a)),b), T), R = T"),
-    ("c31", raw"put_attr(X, a, 1), size_abstract_term(5, f(X), T), T = f(V), get_attr(V, a, A), R = A"),
+    (
+        "c31",
+        raw"put_attr(X, a, 1), size_abstract_term(5, f(X), T), T = f(V), get_attr(V, a, A), R = A"
+    ),
     ("c32", raw"size_abstract_term(2, f(X,Y,X), T), R = T"),
     ("c33", raw"size_abstract_term(0, a, T), R = T"),
     ("c34", raw"size_abstract_term(0, X, T), R = T"),
@@ -135,12 +171,27 @@ const _PB_COPY_CASES = [
     ("c38", raw"S = g(h(a)), size_abstract_term(2, f(S,S), T), R = T"),
     ("c39", raw"size_abstract_term(1, f(a), T), R = T"),
     ("c40", raw"size_abstract_term(2, f(g(a,b),h(c)), T), R = T"),
-    ("c41", raw"size_abstract_term(4, f(g(X),h(X)), T), T = f(g(A),h(B)), ( A == B -> R = same ; R = differ )"),
+    (
+        "c41",
+        raw"size_abstract_term(4, f(g(X),h(X)), T), T = f(g(A),h(B)), ( A == B -> R = same ; R = differ )"
+    ),
     ("c42", raw"size_abstract_term(1, f(g(X)), T), R = T"),
-    ("c43", raw"size_abstract_term(1, f(g(X)), T), T = f(A), ( A == X -> R = same ; R = fresh )"),
-    ("c44", raw"size_abstract_term(5, f(X,a), T), T = f(A,_), ( A == X -> R = same ; R = fresh )"),
-    ("c45", raw"put_attr(Y, b, 2), put_attr(X, a, g(Y)), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, g(W)), ( W == Y -> R = same ; get_attr(W, b, B) -> R = B ; R = noattr )"),
-    ("c46", raw"put_attr(X, a, 1), copy_term([X], f(X), _, _), copy_term(X, Y), ( Y == X -> R = same ; get_attr(Y, a, A), R = A )")
+    (
+        "c43",
+        raw"size_abstract_term(1, f(g(X)), T), T = f(A), ( A == X -> R = same ; R = fresh )"
+    ),
+    (
+        "c44",
+        raw"size_abstract_term(5, f(X,a), T), T = f(A,_), ( A == X -> R = same ; R = fresh )"
+    ),
+    (
+        "c45",
+        raw"put_attr(Y, b, 2), put_attr(X, a, g(Y)), copy_term([X], f(X), Vs, T), Vs = [V], get_attr(V, a, g(W)), ( W == Y -> R = same ; get_attr(W, b, B) -> R = B ; R = noattr )"
+    ),
+    (
+        "c46",
+        raw"put_attr(X, a, 1), copy_term([X], f(X), _, _), copy_term(X, Y), ( Y == X -> R = same ; get_attr(Y, a, A), R = A )"
+    )
 ]
 
 # the driver's whole output, one line per case after `ok`, from swipl 10.1.20 (the pin binary, swipl-devel 18168e62; two runs byte-identical)
@@ -201,7 +252,8 @@ const _PB_COPY_PINNED = [
 "The program's text for `cases`, each wrapped as the driver expects."
 _pb_text(cases) =
     join([
-        "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+        "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in cases
     ])
 
 function _pb_file(cases)::Tuple{String, Vector{String}}

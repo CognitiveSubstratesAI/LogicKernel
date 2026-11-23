@@ -1537,7 +1537,11 @@ end
 "Record `ex` as the pending exception of `s` and set `SIO_FERR`, or with `nothing` drop it and clear `SIO_FERR` and `SIO_WARN`: 0, -1 on a closed stream (pl-stream.c)."
 function Sset_exception(s::IOSTREAM, ex::Union{Nothing, AbstractStreamException})::Int
     s.magic == SIO_MAGIC || return -1
-    nflags = ex !== nothing ? ((s.flags & ~SIO_WARN) | SIO_FERR) : (s.flags & ~(SIO_FERR | SIO_WARN))
+    nflags = if ex !== nothing
+        ((s.flags & ~SIO_WARN) | SIO_FERR)
+    else
+        (s.flags & ~(SIO_FERR | SIO_WARN))
+    end
     s.exception = ex === nothing ? nothing : Ref{AbstractStreamException}(ex)
     s.flags = nflags
     return 0
@@ -1600,8 +1604,8 @@ end
 "A new stream over `handle` with `functions`, its flags `flags` (pl-stream.c)."
 function Snew(
     handle::Union{Nothing, memfile, IOSTREAM, Sjulia_io}, flags::UInt32,
-    functions::IOFUNCTIONS, enc::IOENC = ENC_UTF8,
-    uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+    functions::IOFUNCTIONS, enc::IOENC=ENC_UTF8,
+    uatoms::Sunicode_atoms_t=S_UATOMS_ACCEPT
 )::IOSTREAM
     s = IOSTREAM()
     s.magic = SIO_MAGIC
@@ -2288,7 +2292,7 @@ A stream on the user's byte vector `buf` (pl-stream.c): mode `"r"` reads its fir
 `"w"` writes into it; ISO Latin-1, as upstream opens it (`Sopen_text` sets the text's encoding).
 """
 function Sopen_string(
-    buf::Vector{UInt8}, size::Int, mode::String, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+    buf::Vector{UInt8}, size::Int, mode::String, uatoms::Sunicode_atoms_t=S_UATOMS_ACCEPT
 )::Union{Nothing, IOSTREAM}
     flags = SIO_FBUF | SIO_USERBUF
     s = IOSTREAM()
@@ -2414,7 +2418,8 @@ end
 # `enc` and `uatoms` are `Snew`'s (`initEncoding()`, `initUnicodeAtoms()`: the caller's `ld.encoding`, `ld.unicode_atoms`).
 "Open a `/bin/sh -c command` child as a stream: `type` is `r` or `w`, then `b` for binary; the stream and 0, or `nothing` and the errno (pl-stream.c)."
 function Sopen_pipe(
-    command::String, type::String, enc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+    command::String, type::String, enc::IOENC=ENC_UTF8,
+    uatoms::Sunicode_atoms_t=S_UATOMS_ACCEPT
 )::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(type) && return (nothing, EINVAL)
     mode = type[1]
@@ -2526,7 +2531,8 @@ end
 # (a read or write lock; `L` fails instead of waiting), `m` and three octal digits (the mode of a new file).
 "Open the file `path` as `how` says: the stream and 0, or `nothing` and the errno (pl-stream.c)."
 function Sopen_file(
-    path::String, how::String, initenc::IOENC = ENC_UTF8, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+    path::String, how::String, initenc::IOENC=ENC_UTF8,
+    uatoms::Sunicode_atoms_t=S_UATOMS_ACCEPT
 )::Tuple{Union{Nothing, IOSTREAM}, Int}
     isempty(how) && return (nothing, EINVAL)
     op = how[1]

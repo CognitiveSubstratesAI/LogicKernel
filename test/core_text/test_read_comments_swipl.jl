@@ -493,7 +493,10 @@ end
     @test count(l -> occursin(sp, l), _RC_PINNED) >= 25
     @test count(l -> occursin("c[45]/2(a[45],s[", l), _RC_PINNED) >= 3             # the `-`-Str of a stream without positions
     @test count(l -> occursin("past_end_of_stream", l), _RC_PINNED) >= 5
-    @test count(l -> occursin("var_prefix", l) || occursin("c[100,111,109,97,105,110", l), _RC_PINNED) >= 2
+    @test count(
+        l -> occursin("var_prefix", l) || occursin("c[100,111,109,97,105,110", l),
+        _RC_PINNED
+    ) >= 2
     @test count(l -> startswith(l, "t_rh") && occursin(sp, l), _RC_PINNED) >= 6    # the hook saw the position
     @test count(l -> !occursin(' ', l), _RC_PINNED[2:end]) >= 2                    # the rows that fail
 end

@@ -148,43 +148,106 @@ const _TO_CASES = [
     ("tp96", raw"set_thread(self, bogus(1))"),
     ("tp97", raw"set_thread(self, 1)"),
     ("tp98", raw"set_thread(self, alias(foo))"),
-    ("tp99", raw"set_thread(main, debug_mode(false)), thread_property(main, debug_mode(X)), R = X"),
+    (
+        "tp99",
+        raw"set_thread(main, debug_mode(false)), thread_property(main, debug_mode(X)), R = X"
+    ),
     ("tp100", raw"debug_reset_from_class, R = ok"),
     ("tp101", raw"findall(x, debug_reset_from_class, R)"),
     ("tp102", raw"debug_reset_from_class, thread_property(main, status(X)), R = X"),
     # engines: the engine handle E is a blob, `C == E` prints `same`
-    ("te01", raw"engine_create(x, true, E), catch(thread_join(E, _), error(permission_error(J, T, C), context(Cx, M)), true), ( C == E -> S = same ; S = other ), R = J-T-S-Cx-M"),
-    ("te02", raw"engine_create(x, true, E), thread_detach(E), thread_property(E, detached(R))"),
+    (
+        "te01",
+        raw"engine_create(x, true, E), catch(thread_join(E, _), error(permission_error(J, T, C), context(Cx, M)), true), ( C == E -> S = same ; S = other ), R = J-T-S-Cx-M"
+    ),
+    (
+        "te02",
+        raw"engine_create(x, true, E), thread_detach(E), thread_property(E, detached(R))"
+    ),
     ("te03", raw"engine_create(x, true, E), thread_property(E, detached(R))"),
     ("te04", raw"engine_create(x, true, E), is_thread(E), R = yes"),
-    ("te05", raw"engine_create(x, true, E), set_thread(E, debug(false)), thread_property(E, debug(R))"),
-    ("te06", raw"engine_create(x, true, E), set_thread(E, debug(true)), thread_property(E, debug(R))"),
-    ("te07", raw"engine_create(x, true, E), set_thread(E, class(foo)), thread_property(E, class(C)), thread_property(E, debug_mode(D)), R = C-D"),
+    (
+        "te05",
+        raw"engine_create(x, true, E), set_thread(E, debug(false)), thread_property(E, debug(R))"
+    ),
+    (
+        "te06",
+        raw"engine_create(x, true, E), set_thread(E, debug(true)), thread_property(E, debug(R))"
+    ),
+    (
+        "te07",
+        raw"engine_create(x, true, E), set_thread(E, class(foo)), thread_property(E, class(C)), thread_property(E, debug_mode(D)), R = C-D"
+    ),
     ("te08", raw"engine_create(x, true, E), thread_property(E, class(R))"),
-    ("te09", raw"engine_create(x, true, E), set_thread(E, class(user)), thread_property(E, class(R))"),
+    (
+        "te09",
+        raw"engine_create(x, true, E), set_thread(E, class(user)), thread_property(E, class(R))"
+    ),
     ("te10", raw"engine_create(x, true, E), set_thread(E, debug_mode(maybe))"),
     ("te11", raw"engine_create(x, true, E), set_thread(E, bogus(1))"),
-    ("te12", raw"engine_create(x, true, E, [alias(teal12)]), catch(set_thread(E, alias(teal12b)), error(permission_error(A, B, C), _), true), ( C == E -> S = same ; S = other ), R = A-B-S"),
-    ("te13", raw"engine_create(x, true, _, [alias(teal13)]), set_thread(teal13, alias(teal13b))"),
+    (
+        "te12",
+        raw"engine_create(x, true, E, [alias(teal12)]), catch(set_thread(E, alias(teal12b)), error(permission_error(A, B, C), _), true), ( C == E -> S = same ; S = other ), R = A-B-S"
+    ),
+    (
+        "te13",
+        raw"engine_create(x, true, _, [alias(teal13)]), set_thread(teal13, alias(teal13b))"
+    ),
     ("te14", raw"engine_create(x, true, E), set_thread(E, class(_))"),
     ("te15", raw"engine_create(x, true, E), set_thread(E, class(1))"),
     ("te16", raw"engine_create(x, true, E), set_thread(E, debug(maybe))"),
-    ("te17", raw"engine_create(C, (thread_self(Me), set_thread(self, class(zz17)), thread_property(Me, class(C))), E), engine_next(E, R)"),
-    ("te18", raw"engine_create(R0, (thread_self(Me), catch(thread_join(Me, _), error(permission_error(J, T, _), context(_, M)), true), R0 = J-T-M), E), engine_next(E, R)"),
-    ("te19", raw"engine_create(ok, (thread_self(Me), thread_detach(Me)), E), engine_next(E, R)"),
+    (
+        "te17",
+        raw"engine_create(C, (thread_self(Me), set_thread(self, class(zz17)), thread_property(Me, class(C))), E), engine_next(E, R)"
+    ),
+    (
+        "te18",
+        raw"engine_create(R0, (thread_self(Me), catch(thread_join(Me, _), error(permission_error(J, T, _), context(_, M)), true), R0 = J-T-M), E), engine_next(E, R)"
+    ),
+    (
+        "te19",
+        raw"engine_create(ok, (thread_self(Me), thread_detach(Me)), E), engine_next(E, R)"
+    ),
     ("te20", raw"engine_create(ok, debug_reset_from_class, E), engine_next(E, R)"),
-    ("te21", raw"engine_create(A, (set_thread(self, alias(zz21)), thread_self(A)), E), engine_next(E, R)"),
-    ("te23", raw"engine_create(x, true, E), engine_destroy(E), catch(is_thread(E), error(Er, _), true), ( var(Er) -> R = answered ; Er =.. [N|_], R = raised(N) )"),
-    ("te24", raw"engine_create(x, true, E), engine_destroy(E), catch(thread_detach(E), error(Er, _), true), ( var(Er) -> R = answered ; Er =.. [N|_], R = raised(N) )"),
-    ("te25", raw"engine_create(R0, (thread_self(Me), is_thread(Me), R0 = yes), E), engine_next(E, R)"),
-    ("te26", raw"engine_create(R0, (thread_self(Me), set_thread(Me, debug(false)), thread_property(Me, debug(R0))), E), engine_next(E, R)"),
+    (
+        "te21",
+        raw"engine_create(A, (set_thread(self, alias(zz21)), thread_self(A)), E), engine_next(E, R)"
+    ),
+    (
+        "te23",
+        raw"engine_create(x, true, E), engine_destroy(E), catch(is_thread(E), error(Er, _), true), ( var(Er) -> R = answered ; Er =.. [N|_], R = raised(N) )"
+    ),
+    (
+        "te24",
+        raw"engine_create(x, true, E), engine_destroy(E), catch(thread_detach(E), error(Er, _), true), ( var(Er) -> R = answered ; Er =.. [N|_], R = raised(N) )"
+    ),
+    (
+        "te25",
+        raw"engine_create(R0, (thread_self(Me), is_thread(Me), R0 = yes), E), engine_next(E, R)"
+    ),
+    (
+        "te26",
+        raw"engine_create(R0, (thread_self(Me), set_thread(Me, debug(false)), thread_property(Me, debug(R0))), E), engine_next(E, R)"
+    ),
     # the join error of the main thread names the thread as given and its message (the C order: detached, else self)
-    ("te27", raw"catch(thread_join(main, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"),
-    ("te28", raw"catch(thread_join(1, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"),
+    (
+        "te27",
+        raw"catch(thread_join(main, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"
+    ),
+    (
+        "te28",
+        raw"catch(thread_join(1, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"
+    ),
     ("te29", raw"catch(thread_detach(nosuch), error(E, context(Cx, _)), true), R = E-Cx"),
-    ("te30", raw"catch(set_thread(main, alias(foo)), error(E, context(Cx, _)), true), R = E-Cx"),
+    (
+        "te30",
+        raw"catch(set_thread(main, alias(foo)), error(E, context(Cx, _)), true), R = E-Cx"
+    ),
     # the thread an engine is called from (thread_symbol of the main thread): main here, its new alias after aq01 (aq14)
-    ("te31", raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"),
+    (
+        "te31",
+        raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"
+    ),
     # the known difference: main's class
     ("kd01", raw"thread_property(main, class(R))"),
     ("kd02", raw"findall(C, thread_property(main, class(C)), R)"),
@@ -193,9 +256,15 @@ const _TO_CASES = [
     ("sc02", raw"thread_property(main, class(R))"),
     ("sc03", raw"set_thread(main, class(console)), thread_property(main, class(R))"),
     ("sc04", raw"debug_reset_from_class, thread_property(main, debug_mode(R))"),
-    ("sc05", raw"engine_create(ok, set_thread(main, class(console)), E), engine_next(E, R)"),
+    (
+        "sc05",
+        raw"engine_create(ok, set_thread(main, class(console)), E), engine_next(E, R)"
+    ),
     ("sc06", raw"set_thread(main, class(foo)), thread_property(main, class(R))"),
-    ("sc07", raw"set_thread(main, class(console)), thread_property(main, class(C)), thread_property(main, debug_mode(D)), R = C-D"),
+    (
+        "sc07",
+        raw"set_thread(main, class(console)), thread_property(main, class(C)), thread_property(main, debug_mode(D)), R = C-D"
+    ),
     ("sc08", raw"set_thread(main, debug(false)), thread_property(main, debug(R))"),
     ("sc09", raw"set_thread(main, debug(true)), thread_property(main, debug(R))"),
     ("sc10", raw"set_thread(1, debug(false)), thread_property(main, debug(R))"),
@@ -204,11 +273,20 @@ const _TO_CASES = [
     ("sc13", raw"thread_property(main, detached(R))"),
     ("sc14", raw"thread_detach(main), R = ok"),
     ("sc15", raw"thread_detach(1), R = ok"),
-    ("sc16", raw"catch(thread_join(main, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"),
+    (
+        "sc16",
+        raw"catch(thread_join(main, _), error(permission_error(J, T, C), context(Cx, M)), true), R = J-T-C-Cx-M"
+    ),
     ("sc17", raw"thread_join(main, _)"),
-    ("sc18", raw"engine_create(R0, (catch(thread_join(main, _), error(permission_error(J, T, C), context(_, M)), true), R0 = J-T-C-M), E), engine_next(E, R)"),
+    (
+        "sc18",
+        raw"engine_create(R0, (catch(thread_join(main, _), error(permission_error(J, T, C), context(_, M)), true), R0 = J-T-C-M), E), engine_next(E, R)"
+    ),
     ("sc19", raw"thread_property(main, status(R))"),
-    ("sc20", raw"engine_create(R0, (thread_self(Me), set_thread(Me, debug(false)), set_thread(main, debug(true)), thread_property(main, debug(R0))), E), engine_next(E, R)"),
+    (
+        "sc20",
+        raw"engine_create(R0, (thread_self(Me), set_thread(Me, debug(false)), set_thread(main, debug(true)), thread_property(main, debug(R0))), E), engine_next(E, R)"
+    ),
     ("sc21", raw"debug_reset_from_class, R = ok"),
     # the alias quirk: set_thread(E, alias(A)) of an engine without an alias aliases the CALLER (main)
     ("aq01", raw"engine_create(x, true, E), set_thread(E, alias(zz)), R = ok"),
@@ -223,15 +301,33 @@ const _TO_CASES = [
     ("aq10", raw"catch(set_thread(main, alias(other)), error(E, _), true), R = E"),
     ("aq11", raw"catch(set_thread(zz, alias(other)), error(E, _), true), R = E"),
     ("aq12", raw"set_thread(self, alias(other))"),
-    ("aq13", raw"engine_create(R0, (thread_self(Me), ( Me == zz -> R0 = same ; R0 = other )), E), engine_next(E, R)"),
-    ("aq14", raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"),
+    (
+        "aq13",
+        raw"engine_create(R0, (thread_self(Me), ( Me == zz -> R0 = same ; R0 = other )), E), engine_next(E, R)"
+    ),
+    (
+        "aq14",
+        raw"engine_create(R0, (thread_self(Me), thread_property(Me, thread(T)), R0 = T), E), engine_next(E, R)"
+    ),
     # debug_mode(true): the VM in debug mode, LAST
-    ("dm01", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), thread_property(E, debug_mode(R))"),
-    ("dm02", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, debug_mode(false)), thread_property(E, debug_mode(R))"),
-    ("dm03", raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, class(foo3)), thread_property(E, debug_mode(R))"),
+    (
+        "dm01",
+        raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), thread_property(E, debug_mode(R))"
+    ),
+    (
+        "dm02",
+        raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, debug_mode(false)), thread_property(E, debug_mode(R))"
+    ),
+    (
+        "dm03",
+        raw"engine_create(x, true, E), set_thread(E, debug_mode(true)), set_thread(E, class(foo3)), thread_property(E, debug_mode(R))"
+    ),
     ("dm04", raw"set_thread(main, debug_mode(true)), thread_property(main, debug_mode(R))"),
     ("dm05", raw"debug_reset_from_class, thread_property(main, debug_mode(R))"),
-    ("dm06", raw"set_thread(main, debug_mode(true)), set_thread(main, class(foo6)), thread_property(main, debug_mode(R))")
+    (
+        "dm06",
+        raw"set_thread(main, debug_mode(true)), set_thread(main, class(foo6)), thread_property(main, debug_mode(R))"
+    )
 ]
 
 # swipl 10.1.20's answers (the driver's lines): `ok`, then one line per case (filled by evidence/THREADOPS/gen_rows.py --fill)
@@ -379,9 +475,9 @@ const _TO_PIN = Dict(zip(_TO_IDS, _TO_PINNED[2:end]))
 function _to_program()::String
     return join(
         [
-            "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
-            (id, g) in _TO_CASES
-        ]
+        "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in _TO_CASES
+    ]
     )
 end
 
@@ -476,10 +572,26 @@ end
 # REFUSED by name, owner TH1, kernel only (id, goal, `what`): the kernel has no local data of the main thread to reach from an engine,
 # and a blob atom is no class. swipl carries the operation out (or, for the join, would hang): no swipl line is pinned.
 const _TO_REFUSED = [
-    ("rf01", raw"engine_create(x, thread_join(main, _), E), engine_next(E, _)", "thread_join/2: joining the main thread from an engine"),
-    ("rf02", raw"engine_create(x, set_thread(main, debug_mode(true)), E), engine_next(E, _)", "set_thread/2: debug_mode(Bool) of the main thread from an engine"),
-    ("rf03", raw"engine_create(x, set_thread(main, class(zzz)), E), engine_next(E, _)", "set_thread/2: class(Class) of the main thread from an engine"),
-    ("rf04", raw"engine_create(x, true, E), set_thread(main, class(E))", "set_thread/2: class(Class) with a blob atom")
+    (
+        "rf01",
+        raw"engine_create(x, thread_join(main, _), E), engine_next(E, _)",
+        "thread_join/2: joining the main thread from an engine"
+    ),
+    (
+        "rf02",
+        raw"engine_create(x, set_thread(main, debug_mode(true)), E), engine_next(E, _)",
+        "set_thread/2: debug_mode(Bool) of the main thread from an engine"
+    ),
+    (
+        "rf03",
+        raw"engine_create(x, set_thread(main, class(zzz)), E), engine_next(E, _)",
+        "set_thread/2: class(Class) of the main thread from an engine"
+    ),
+    (
+        "rf04",
+        raw"engine_create(x, true, E), set_thread(main, class(E))",
+        "set_thread/2: class(Class) with a blob atom"
+    )
 ]
 
 @testset "the four named refusals of the thread operations, owner TH1 (rf01-rf04)" begin
@@ -510,7 +622,8 @@ end
     end
     @test (ext[("thread_detach", 1)].flags & LK.PL_FA_ISO) != 0
     for (name, ar) in (
-        ("is_thread", 1), ("thread_join", 2), ("set_thread", 2), ("debug_reset_from_class", 0)
+        ("is_thread", 1), ("thread_join", 2), ("set_thread", 2),
+        ("debug_reset_from_class", 0)
     )
         @test (ext[(name, ar)].flags & LK.PL_FA_ISO) == 0
     end

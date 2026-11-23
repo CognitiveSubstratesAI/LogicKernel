@@ -2575,7 +2575,10 @@ end
 "The address in the first argument of `<type>(0x63c0850, ...)`, `nothing` if there is none (pl-atom.c)."
 function blob_address(text::AbstractVector{UInt8}, len::Int)::Union{Nothing, UInt64}
     s = findfirst(==(UInt8('(')), view(text, 1:len))
-    (s === nothing || len - (s - 1) < 4 || text[s + 1] != UInt8('0') || text[s + 2] != UInt8('x')) &&
+    (
+        s === nothing || len - (s - 1) < 4 || text[s + 1] != UInt8('0') ||
+        text[s + 2] != UInt8('x')
+    ) &&
         return nothing
     addr = UInt64(0)
     d = s + 3
@@ -2590,7 +2593,10 @@ function blob_address(text::AbstractVector{UInt8}, len::Int)::Union{Nothing, UIn
         end
         d += 1
     end
-    (d == s + 3 || d == len + 1 || (text[d] != UInt8(',') && text[d] != UInt8(')')) || addr == 0) &&
+    (
+        d == s + 3 || d == len + 1 || (text[d] != UInt8(',') && text[d] != UInt8(')')) ||
+        addr == 0
+    ) &&
         return nothing
     return addr
 end
@@ -2602,7 +2608,8 @@ end
 # atom word; no reference counts (the atom is returned, not locked); no atom GC to skip.
 "Scan the atom table for the one blob that writes as `text`: `(atom word or 0, ambiguous)` (pl-atom.c)."
 function scanLiveBlobs(
-    atoms::atoms_t, written::F, type_name::Union{Nothing, String}, addr::UInt64, by_addr::Bool,
+    atoms::atoms_t, written::F, type_name::Union{Nothing, String}, addr::UInt64,
+    by_addr::Bool,
     text::AbstractVector{UInt8}, len::Int
 )::Tuple{UInt64, Bool} where {F <: Function}
     found = UInt64(0)
@@ -2610,7 +2617,8 @@ function scanLiveBlobs(
         a = fetchAtomArray(atoms, index)
         bt = a.type
         (
-            ATOM_IS_VALID(a.references) && bt !== ATOM_TYPE_INVALID && bt !== unavailable_blob &&
+            ATOM_IS_VALID(a.references) && bt !== ATOM_TYPE_INVALID &&
+            bt !== unavailable_blob &&
             bt !== reserved_symbol && bt.flags & PL_BLOB_TEXT == 0 &&
             (by_addr ? a.atom == addr : bt.name == type_name)
         ) || continue

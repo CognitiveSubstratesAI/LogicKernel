@@ -60,9 +60,13 @@ end
 function pl_btree_find_node5_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
-    return btree_find_node(
+    return if btree_find_node(
         ld, PL__t0, PL__t0 + 1, PL__t0 + 2, PL__t0 + 3, PL__t0 + 4
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-btree.c BeginPredDefs as PL_predicates_from_btree

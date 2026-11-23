@@ -385,7 +385,10 @@ const _S2_CASES = [
     ),
     # s139: set_stream(S, buffer(false)) flushes what is pending (set_buffering, pl-file.c): the 3 bytes are in the file before any close.
     #   KILLS S1-31 (set_buffering(false) without Sflush: the size is 0)
-    ("s139", raw"wo(S), write(S, abc), set_stream(S, buffer(false)), outfile(F), size_file(F, N), close(S), R = N")
+    (
+        "s139",
+        raw"wo(S), write(S, abc), set_stream(S, buffer(false)), outfile(F), size_file(F, N), close(S), R = N"
+    )
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/S2A/s2a_rows.out)

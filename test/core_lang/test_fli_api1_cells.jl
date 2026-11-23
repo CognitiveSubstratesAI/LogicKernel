@@ -133,7 +133,14 @@ end
 # an index past the arity; PL_get_compound_name_arity reads a compound only, where PL_get_name_arity also reads an atom.
 @testset "LK-ONLY: PL_get_arg and PL_get_compound_name_arity (pl-fli.c:2637, :2521)" begin
     ld, t = _fa_engine(
-        _R[_rf("f", _rs("a"), _fa_k(2), _rv(3)), _rs("atom"), _fa_k(9), _rv(4), _rlist(_fa_k(1)), _rnil()]
+        _R[
+            _rf("f", _rs("a"), _fa_k(2), _rv(3)),
+            _rs("atom"),
+            _fa_k(9),
+            _rv(4),
+            _rlist(_fa_k(1)),
+            _rnil()
+        ]
     )
     a = LK.PL_new_term_ref(ld)
     @test LK.PL_get_arg(ld, 1, t, a) && lk_name(LK.PL_get_atom(ld, a)) === :a
@@ -188,18 +195,24 @@ end
     u8 = Int(LK.REP_UTF8)
     @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 2, UInt8[0xc3, 0xa9])) === Symbol("é")
     @test LK._atom_word!(ld, LK.PL_new_atom_mbchars(ld, u8, 2, UInt8[0xc3, 0xa9])) ==
-          LK._atom_word!(ld, LK.PL_new_atom(ld, UInt8[0xe9]))
+        LK._atom_word!(ld, LK.PL_new_atom(ld, UInt8[0xe9]))
     # no REP_UTF8: the same two bytes are two Latin-1 characters
     @test lk_name(LK.PL_new_atom_mbchars(ld, 0, 2, UInt8[0xc3, 0xa9])) === Symbol("Ã©")
-    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 3, UInt8[0xe2, 0x82, 0xac])) === Symbol("€")
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 3, UInt8[0xe2, 0x82, 0xac])) ===
+        Symbol("€")
     @test lk_name(LK.PL_new_atom_mbchars(ld, u8, 2, Vector{UInt8}("abc"))) === :ab        # len bytes
     @test lk_name(LK.PL_new_atom_mbchars(ld, u8, -1, UInt8[0x61, 0x62, 0x00, 0x63])) === :ab    # len == (size_t)-1: strlen
     @test lk_name(LK.PL_new_atom_mbchars(ld, 0, 0, UInt8[])) === Symbol("")
-    @test_throws LK.AtomNotRepresentableError LK.PL_new_atom_mbchars(ld, u8, 3, UInt8[0x61, 0x00, 0x62])
+    @test_throws LK.AtomNotRepresentableError LK.PL_new_atom_mbchars(
+        ld, u8, 3, UInt8[0x61, 0x00, 0x62]
+    )
     @test_throws LK.AtomNotRepresentableError LK.PL_new_atom_mbchars(ld, 0, 1, UInt8[0])
-    @test_throws LK.NotPortedError LK.PL_new_atom_mbchars(ld, Int(LK.REP_MB), 1, UInt8[0x61])
+    @test_throws LK.NotPortedError LK.PL_new_atom_mbchars(
+        ld, Int(LK.REP_MB), 1, UInt8[0x61]
+    )
     # REP_UTF8 wins where both are asked (:712)
-    @test lk_name(LK.PL_new_atom_mbchars(ld, u8 | Int(LK.REP_MB), 2, UInt8[0xc3, 0xa9])) === Symbol("é")
+    @test lk_name(LK.PL_new_atom_mbchars(ld, u8 | Int(LK.REP_MB), 2, UInt8[0xc3, 0xa9])) ===
+        Symbol("é")
 end
 
 # LK-ONLY (pl-fli.c:747-788): PL_new_functor_sz and PL_new_functor are lookupFunctorDef (one functor per name and
@@ -210,15 +223,20 @@ end
     f3 = _fa_functor(ld, "f", 3)
     @test LK.PL_new_functor_sz(ld, _rs("f"), 3) == f3
     @test LK.PL_new_functor(ld, _rs("f"), 3) == f3
-    @test LK.PL_new_functor(ld, _rs("f"), 2) != f3 && LK.PL_new_functor(ld, _rs("g"), 3) != f3
+    @test LK.PL_new_functor(ld, _rs("f"), 2) != f3 &&
+        LK.PL_new_functor(ld, _rs("g"), 3) != f3
     @test lk_name(LK.PL_functor_name(ld, f3)) === :f
     @test LK.PL_functor_arity(ld, f3) == 3
     f0 = LK.PL_new_functor(ld, _rs("k"), 0)
     @test lk_name(LK.PL_functor_name(ld, f0)) === :k && LK.PL_functor_arity(ld, f0) == 0
     @test lk_name(LK.PL_functor_name(ld, ld.functor_dot2)) === Symbol("[|]")
     @test LK.PL_functor_arity(ld, ld.functor_dot2) == 2
-    @test_throws ErrorException("Arity out of range: -1") LK.PL_new_functor(ld, _rs("f"), -1)
-    @test_throws ErrorException("Arity out of range: 2147483648") LK.PL_new_functor(ld, _rs("f"), Int(typemax(Int32)) + 1)
+    @test_throws ErrorException("Arity out of range: -1") LK.PL_new_functor(
+        ld, _rs("f"), -1
+    )
+    @test_throws ErrorException("Arity out of range: 2147483648") LK.PL_new_functor(
+        ld, _rs("f"), Int(typemax(Int32)) + 1
+    )
     # a functor from PL_new_functor builds the term PL_put_functor puts
     @test LK.PL_put_functor(ld, t, LK.PL_new_functor(ld, _rs("h"), 2))
     @test LK.PL_is_functor(ld, t, _rs("h"), 2)
@@ -249,7 +267,9 @@ end
 # LK-ONLY (pl-fli.c:2035-2050): PL_get_atom_chars reads the name of an atom of a PL_BLOB_TEXT type — a wide atom too,
 # as its wchar_t bytes — and refuses anything else: an integer, a variable, a compound, the reserved `[]`.
 @testset "LK-ONLY: PL_get_atom_chars (pl-fli.c:2035)" begin
-    ld, t = _fa_engine(_R[_rs("abc"), _fa_k(5), _rv(1), _rnil(), _rf("f", _rs("a")), _rs("€"), _rs("")])
+    ld, t = _fa_engine(
+        _R[_rs("abc"), _fa_k(5), _rv(1), _rnil(), _rf("f", _rs("a")), _rs("€"), _rs("")]
+    )
     @test LK.PL_get_atom_chars(ld, t) == Vector{UInt8}("abc")
     @test LK.PL_get_atom_chars(ld, t + 1) === nothing
     @test LK.PL_get_atom_chars(ld, t + 2) === nothing
@@ -283,12 +303,13 @@ end
 "The UTF-8 bytes of `s`."
 _fa_b(s::String) = Vector{UInt8}(s)
 "The message of the error `f` raises, \"\" where it raises none."
-_fa_msg(f) = try
-    f()
-    ""
-catch e
-    e isa ErrorException ? e.msg : "not an ErrorException: $(typeof(e))"
-end
+_fa_msg(f) =
+    try
+        f()
+        ""
+    catch e
+        e isa ErrorException ? e.msg : "not an ErrorException: $(typeof(e))"
+    end
 "A fresh database: `(gd, ld)`."
 function _fa_db()
     db = _rdb(Tuple{_R, Union{Nothing, _R}}[])
@@ -318,13 +339,15 @@ end
     m1 = LK.PL_new_module(gd, _rs("m1"))
     f = _fa_functor(ld, "p", 2)
     pr = LK.PL_pred(gd, ld, f, 0)                                            # NULL: PL_context()
-    @test pr.definition.module_ == u && pr.definition.arity == 2 && lk_name(pr.definition.name) === :p
+    @test pr.definition.module_ == u && pr.definition.arity == 2 &&
+        lk_name(pr.definition.name) === :p
     @test LK.PL_pred(gd, ld, f, u) === pr && LK.PL_pred(gd, ld, f, 0) === pr   # one procedure per functor and module
     pm = LK.PL_pred(gd, ld, f, m1)
     @test pm !== pr && pm.definition.module_ == m1 && pm.definition.arity == 2
     @test LK.PL_pred(gd, ld, _fa_functor(ld, "p", 3), m1) !== pm              # another arity
     @test LK.PL_pred(gd, ld, _fa_functor(ld, "k", 0), 0).definition.arity == 0
-    @test LK.PL_pred(gd, ld, _fa_functor(ld, "b", LK.MAXARITY), 0).definition.arity == LK.MAXARITY
+    @test LK.PL_pred(gd, ld, _fa_functor(ld, "b", LK.MAXARITY), 0).definition.arity ==
+        LK.MAXARITY
     @test_throws ErrorException("invalid arity $(LK.MAXARITY + 1) (out of range)") LK.PL_pred(
         gd, ld, _fa_functor(ld, "b", LK.MAXARITY + 1), 0
     )
@@ -338,20 +361,26 @@ end
     gd, ld = _fa_db()
     u = LK.MODULE_user(gd).index
     pr = LK.PL_predicate(gd, ld, _fa_b("p"), 2, nothing)
-    @test pr === LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), 0) && pr.definition.module_ == u
+    @test pr === LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), 0) &&
+        pr.definition.module_ == u
     pm = LK.PL_predicate(gd, ld, _fa_b("p"), 2, _fa_b("m1"))
     @test pm !== pr && lk_name(gd.modules[pm.definition.module_].atom) === :m1
-    @test pm === LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), LK.PL_new_module(gd, _rs("m1")))
+    @test pm ===
+        LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), LK.PL_new_module(gd, _rs("m1")))
     @test LK.PL_predicate(gd, ld, _fa_b("p"), 2, _fa_b("user")) === pr
     latin1(s) = Symbol(String(map(Char, codeunits(s))))                      # each byte one character
     pe = LK.PL_predicate(gd, ld, _fa_b("é€"), 1, _fa_b("ü"))                # the UTF-8 bytes, read as Latin-1
-    @test lk_name(pe.definition.name) === latin1("é€") && lk_name(pe.definition.name) !== Symbol("é€")
+    @test lk_name(pe.definition.name) === latin1("é€") &&
+        lk_name(pe.definition.name) !== Symbol("é€")
     @test lk_name(gd.modules[pe.definition.module_].atom) === latin1("ü")
-    @test LK.PL_predicate(gd, ld, UInt8[0x61, 0x62, 0x00, 0x63, 0x64], 0, nothing) === LK.PL_predicate(gd, ld, _fa_b("ab"), 0, nothing)  # strlen
-    @test LK.PL_predicate(gd, ld, _fa_b("b"), LK.MAXARITY, nothing).definition.arity == LK.MAXARITY
-    @test _fa_msg(() -> LK.PL_predicate(gd, ld, _fa_b("p"), -1, nothing)) == "invalid arity -1 (out of range)"
+    @test LK.PL_predicate(gd, ld, UInt8[0x61, 0x62, 0x00, 0x63, 0x64], 0, nothing) ===
+        LK.PL_predicate(gd, ld, _fa_b("ab"), 0, nothing)  # strlen
+    @test LK.PL_predicate(gd, ld, _fa_b("b"), LK.MAXARITY, nothing).definition.arity ==
+        LK.MAXARITY
+    @test _fa_msg(() -> LK.PL_predicate(gd, ld, _fa_b("p"), -1, nothing)) ==
+        "invalid arity -1 (out of range)"
     @test _fa_msg(() -> LK.PL_predicate(gd, ld, _fa_b("p"), LK.MAXARITY + 1, nothing)) ==
-          "invalid arity $(LK.MAXARITY + 1) (out of range)"
+        "invalid arity $(LK.MAXARITY + 1) (out of range)"
     pf = LK.PL_predicate(gd, ld, UInt8[0xff, 0xfe], 1, UInt8[0xff])         # no byte string is invalid as Latin-1
     @test lk_name(pf.definition.name) === Symbol("\u00ff\u00fe")
     @test lk_name(gd.modules[pf.definition.module_].atom) === Symbol("\u00ff")
@@ -362,9 +391,13 @@ end
 @testset "LK-ONLY: PL_predicate_info (pl-fli.c:4782)" begin
     gd, ld = _fa_db()
     m1 = LK.PL_new_module(gd, _rs("m1"))
-    ok, name, arity, m = LK.PL_predicate_info(LK.PL_pred(gd, ld, _fa_functor(ld, "p", 3), m1))
+    ok, name, arity, m = LK.PL_predicate_info(
+        LK.PL_pred(gd, ld, _fa_functor(ld, "p", 3), m1)
+    )
     @test ok === true && lk_name(name) === :p && arity == 3 && m == m1
-    ok, name, arity, m = LK.PL_predicate_info(LK.PL_predicate(gd, ld, _fa_b("q"), 0, nothing))
+    ok, name, arity, m = LK.PL_predicate_info(
+        LK.PL_predicate(gd, ld, _fa_b("q"), 0, nothing)
+    )
     @test ok === true && lk_name(name) === :q && arity == 0 && m == LK.MODULE_user(gd).index
 end
 
@@ -405,8 +438,11 @@ _fa_atom(ld, t) = lk_name(LK.PL_get_atom(ld, t))
     @test _fa_atom(ld, t + 4) === Symbol("")
     @test LK.PL_put_atom_nchars(ld, t, -1, UInt8[0x61, 0x62, 0x00, 0x63])         # -1: strlen
     @test _fa_atom(ld, t) === :ab
-    @test LK.PL_put_atom_nchars(ld, t, 3, _fa_b("€")) && _fa_atom(ld, t) === Symbol("â\u0082¬")
-    @test_throws LK.AtomNotRepresentableError LK.PL_put_atom_nchars(ld, t, 3, UInt8[0x61, 0x00, 0x63])
+    @test LK.PL_put_atom_nchars(ld, t, 3, _fa_b("€")) &&
+        _fa_atom(ld, t) === Symbol("â\u0082¬")
+    @test_throws LK.AtomNotRepresentableError LK.PL_put_atom_nchars(
+        ld, t, 3, UInt8[0x61, 0x00, 0x63]
+    )
 end
 
 # LK-ONLY (pl-fli.c:3092-3118): PL_put_string_chars puts the string of the bytes before the first 0, PL_put_string_nchars
@@ -441,7 +477,8 @@ end
     @test LK.PL_put_chars(ld, t + 1, LK.PL_ATOM, 3, euro)                         # Latin-1: three characters
     @test _fa_atom(ld, t + 1) === Symbol("â\u0082¬")
     @test LK.PL_put_chars(ld, t + 2, LK.PL_STRING, 3, _fa_b("abc"))
-    @test LK.PL_is_string(ld, t + 2) && !LK.PL_is_atom(ld, t + 2) && _fa_text(ld, t + 2) == "abc"
+    @test LK.PL_is_string(ld, t + 2) && !LK.PL_is_atom(ld, t + 2) &&
+        _fa_text(ld, t + 2) == "abc"
     @test LK.PL_put_chars(ld, t + 2, Int(LK.PL_STRING | LK.REP_UTF8), 3, euro)
     @test LK.PL_is_string(ld, t + 2) && _fa_text(ld, t + 2) == "€"
     @test LK.PL_put_chars(ld, t + 3, LK.PL_CODE_LIST, 2, _fa_b("hi"))
@@ -456,8 +493,11 @@ end
     @test _fa_atom(ld, t) === :ab
     @test LK.PL_put_chars(ld, t, LK.PL_STRING, -1, UInt8[0x61, 0x62, 0x00, 0x63])
     @test _fa_text(ld, t) == "ab"
-    @test_throws LK.NotPortedError LK.PL_put_chars(ld, t, Int(LK.PL_ATOM | LK.REP_MB), 3, _fa_b("abc"))
-    @test _fa_msg(() -> LK.PL_put_chars(ld, t, 0, 3, _fa_b("abc"))) == "PL_put_chars: unknown type 0"
+    @test_throws LK.NotPortedError LK.PL_put_chars(
+        ld, t, Int(LK.PL_ATOM | LK.REP_MB), 3, _fa_b("abc")
+    )
+    @test _fa_msg(() -> LK.PL_put_chars(ld, t, 0, 3, _fa_b("abc"))) ==
+        "PL_put_chars: unknown type 0"
 end
 
 # LK-ONLY (pl-fli.c:3165-3189, :3193): PL_put_list_ncodes puts the list of the `len` bytes as integer codes, [] for 0; the
@@ -467,7 +507,8 @@ end
     @test LK.PL_put_list_ncodes(ld, t, 2, _fa_b("hi"))
     @test LK.PL_is_pair(ld, t) && _fa_codes(ld, t) == [104, 105]
     @test LK.PL_put_list_ncodes(ld, t + 1, 3, _fa_b("hello"))
-    @test _fa_codes(ld, t + 1) == [104, 101, 108] && LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
+    @test _fa_codes(ld, t + 1) == [104, 101, 108] &&
+        LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
     @test LK.PL_put_list_ncodes(ld, t + 2, 0, _fa_b("hello"))
     @test LK.PL_get_nil(ld, t + 2)
     @test LK.PL_put_list_ncodes(ld, t + 2, 3, UInt8[0x00, 0xe9, 0xff])            # unsigned bytes
@@ -487,7 +528,8 @@ end
     @test LK.PL_put_list_nchars(ld, t, 2, _fa_b("hi"))
     @test LK.PL_is_pair(ld, t) && _fa_chars(ld, t) == [:h, :i]
     @test LK.PL_put_list_nchars(ld, t + 1, 3, _fa_b("hello"))
-    @test _fa_chars(ld, t + 1) == [:h, :e, :l] && LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
+    @test _fa_chars(ld, t + 1) == [:h, :e, :l] &&
+        LK.PL_skip_list(ld, t + 1) == (LK.PL_LIST, 3)
     @test LK.PL_put_list_nchars(ld, t + 2, 0, _fa_b("hello"))
     @test LK.PL_get_nil(ld, t + 2)
     @test LK.PL_put_list_nchars(ld, t + 2, 1, UInt8[0xe9])                        # Latin-1
@@ -505,7 +547,8 @@ end
     @test !LK.PL_unify_atom_chars(ld, t + 3, _fa_b("abd"))
     @test !LK.PL_unify_atom_chars(ld, t + 4, _fa_b("abc"))                        # an integer
     @test !LK.PL_unify_atom_chars(ld, t + 5, _fa_b("abc"))                        # a string is no atom
-    @test LK.PL_unify_atom_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) && _fa_atom(ld, t + 1) === :a   # strlen
+    @test LK.PL_unify_atom_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) &&
+        _fa_atom(ld, t + 1) === :a   # strlen
     @test LK.PL_unify_atom_nchars(ld, t + 2, 2, _fa_b("abc")) && _fa_atom(ld, t + 2) === :ab
     @test LK.PL_unify_atom_nchars(ld, t + 3, 3, _fa_b("abcd"))
     @test !LK.PL_unify_atom_nchars(ld, t + 3, 2, _fa_b("abcd"))
@@ -521,7 +564,8 @@ end
     @test LK.PL_unify_string_chars(ld, t + 3, _fa_b("abc"))
     @test !LK.PL_unify_string_chars(ld, t + 3, _fa_b("abd"))
     @test !LK.PL_unify_string_chars(ld, t + 4, _fa_b("abc"))                      # an atom
-    @test LK.PL_unify_string_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) && _fa_text(ld, t + 1) == "a"   # strlen
+    @test LK.PL_unify_string_chars(ld, t + 1, UInt8[0x61, 0x00, 0x62]) &&
+        _fa_text(ld, t + 1) == "a"   # strlen
     @test LK.PL_unify_string_nchars(ld, t + 2, 2, _fa_b("abc"))
     @test LK.PL_is_string(ld, t + 2) && _fa_text(ld, t + 2) == "ab"
     @test LK.PL_unify_string_nchars(ld, t + 3, 3, _fa_b("abcd"))
@@ -547,7 +591,8 @@ end
     @test !LK.PL_unify_list_ncodes(ld, t + 4, 1, _fa_b("hi"))
     @test LK.PL_unify_list_ncodes(ld, t + 2, 0, _fa_b("hi")) && LK.PL_get_nil(ld, t + 2)   # a variable: []
     @test LK.PL_put_list_codes(ld, t + 3, _fa_b("ab"))
-    @test LK.PL_unify_list_codes(ld, t + 3, _fa_b("ab")) && !LK.PL_unify_list_codes(ld, t + 3, _fa_b("abc"))
+    @test LK.PL_unify_list_codes(ld, t + 3, _fa_b("ab")) &&
+        !LK.PL_unify_list_codes(ld, t + 3, _fa_b("abc"))
     @test LK.PL_unify_list_codes(ld, t + 3, UInt8[0x61, 0x62, 0x00, 0x63])        # strlen
 end
 
@@ -592,19 +637,26 @@ end
 # atom, a string, a code or a character list (:1178) — as the byte; PL_cvt_i_schar reads the byte signed, PL_cvt_i_uchar unsigned;
 # an integer out of range is representation_error(char) / (uchar) (:1191), anything else type_error(integer, X) (:1193).
 @testset "LK-ONLY: PL_cvt_i_schar and PL_cvt_i_uchar (pl-fli.c:1166, :1198, :1203)" begin
-    ld, t = _fa_engine(_R[_fa_k(-5), _fa_k(200), _fa_k(-128), _fa_k(127), _fa_k(255), _fa_k(0)])
+    ld, t = _fa_engine(
+        _R[_fa_k(-5), _fa_k(200), _fa_k(-128), _fa_k(127), _fa_k(255), _fa_k(0)]
+    )
     @test LK.PL_cvt_i_schar(ld, t) === Int8(-5)
-    @test LK.PL_cvt_i_schar(ld, t + 2) === Int8(-128) && LK.PL_cvt_i_schar(ld, t + 3) === Int8(127)
+    @test LK.PL_cvt_i_schar(ld, t + 2) === Int8(-128) &&
+        LK.PL_cvt_i_schar(ld, t + 3) === Int8(127)
     @test LK.PL_cvt_i_uchar(ld, t + 1) === 0xc8 && LK.PL_cvt_i_uchar(ld, t + 4) === 0xff
     @test LK.PL_cvt_i_uchar(ld, t + 5) === 0x00 && LK.PL_cvt_i_schar(ld, t + 5) === Int8(0)
     @test ld.exception_term == 0
     ld, t = _fa_engine(_R[_rv(1), _rv(2), _rv(3), _rv(4), _rv(5)])
     @test LK.PL_put_atom_chars(ld, t, _fa_b("a")) && LK.PL_cvt_i_uchar(ld, t) === 0x61
-    @test LK.PL_put_string_chars(ld, t + 1, _fa_b("b")) && LK.PL_cvt_i_uchar(ld, t + 1) === 0x62
-    @test LK.PL_put_list_codes(ld, t + 2, _fa_b("c")) && LK.PL_cvt_i_uchar(ld, t + 2) === 0x63
-    @test LK.PL_put_list_chars(ld, t + 3, _fa_b("d")) && LK.PL_cvt_i_schar(ld, t + 3) === Int8(100)
+    @test LK.PL_put_string_chars(ld, t + 1, _fa_b("b")) &&
+        LK.PL_cvt_i_uchar(ld, t + 1) === 0x62
+    @test LK.PL_put_list_codes(ld, t + 2, _fa_b("c")) &&
+        LK.PL_cvt_i_uchar(ld, t + 2) === 0x63
+    @test LK.PL_put_list_chars(ld, t + 3, _fa_b("d")) &&
+        LK.PL_cvt_i_schar(ld, t + 3) === Int8(100)
     @test LK.PL_put_atom_chars(ld, t + 4, UInt8[0xe9])                            # Latin-1 byte 0xe9
-    @test LK.PL_cvt_i_uchar(ld, t + 4) === 0xe9 && LK.PL_cvt_i_schar(ld, t + 4) === Int8(-23)
+    @test LK.PL_cvt_i_uchar(ld, t + 4) === 0xe9 &&
+        LK.PL_cvt_i_schar(ld, t + 4) === Int8(-23)
     @test ld.exception_term == 0
     schar(ld, t) = LK.PL_cvt_i_schar(ld, t)
     uchar(ld, t) = LK.PL_cvt_i_uchar(ld, t)
@@ -644,10 +696,14 @@ end
 # else an error. The pin's PL_get_uint64_ex (pl-error.c) is not in the kernel: the negative / too large / not an integer
 # errors are written as PL_get_size_ex's with uint64_t's range.
 @testset "LK-ONLY: PL_cvt_i_int64 and PL_cvt_i_uint64 (pl-fli.c:1291, :1296)" begin
-    ld, t = _fa_engine(_R[_fa_k(7), _fa_k(-7), _fa_k(typemax(Int64)), _fa_k(typemin(Int64)), _fa_k(0)])
+    ld, t = _fa_engine(
+        _R[_fa_k(7), _fa_k(-7), _fa_k(typemax(Int64)), _fa_k(typemin(Int64)), _fa_k(0)]
+    )
     @test LK.PL_cvt_i_int64(ld, t) === 7 && LK.PL_cvt_i_int64(ld, t + 1) === -7
-    @test LK.PL_cvt_i_int64(ld, t + 2) === typemax(Int64) && LK.PL_cvt_i_int64(ld, t + 3) === typemin(Int64)
-    @test LK.PL_cvt_i_uint64(ld, t) === UInt64(7) && LK.PL_cvt_i_uint64(ld, t + 4) === UInt64(0)
+    @test LK.PL_cvt_i_int64(ld, t + 2) === typemax(Int64) &&
+        LK.PL_cvt_i_int64(ld, t + 3) === typemin(Int64)
+    @test LK.PL_cvt_i_uint64(ld, t) === UInt64(7) &&
+        LK.PL_cvt_i_uint64(ld, t + 4) === UInt64(0)
     @test LK.PL_cvt_i_uint64(ld, t + 2) === UInt64(typemax(Int64))
     @test ld.exception_term == 0
     i64(ld, t) = LK.PL_cvt_i_int64(ld, t)
@@ -658,7 +714,8 @@ end
     @test _fa_err(_rg(1.5), u64) == (nothing, (:type_error, :integer))
     @test _fa_err(_rv(1), u64) == (nothing, (:instantiation_error, nothing))
     @test _fa_err(_fa_k(-1), u64) == (nothing, (:domain_error, :not_less_than_zero))
-    @test _fa_err(_fa_k(typemin(Int64)), u64) == (nothing, (:domain_error, :not_less_than_zero))
+    @test _fa_err(_fa_k(typemin(Int64)), u64) ==
+        (nothing, (:domain_error, :not_less_than_zero))
     @test _fa_err(_rg(-big(2)^70), u64) == (nothing, (:domain_error, :not_less_than_zero))
     @test _fa_err(_rg(big(2)^64), u64) == (nothing, (:representation_error, :uint64_t))
     ld2, t2 = _fa_engine(_R[_rg(big(2)^64 - 1), _rg(big(2)^63)])
@@ -684,7 +741,8 @@ end
     @test LK.PL_put_list(ld, t + 5)                                               # [_|_]: partial
     @test LK.PL_get_list_nchars(ld, t + 5, UInt32(0)) === nothing
     h, tl = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)                        # the code list [0x20ac]
-    @test LK.PL_unify_list(ld, t + 6, h, tl) && LK.PL_unify_integer(ld, h, 0x20ac % Int) && LK.PL_unify_nil(ld, tl)
+    @test LK.PL_unify_list(ld, t + 6, h, tl) && LK.PL_unify_integer(ld, h, 0x20ac % Int) &&
+        LK.PL_unify_nil(ld, tl)
     @test LK.PL_get_list_nchars(ld, t + 6, UInt32(0)) === nothing                 # a code above 255: wide = false
     @test LK.PL_get_list_nchars(ld, t, UInt32(LK.CVT_EXCEPTION)) == (_fa_b("hi"), 2)
 end
@@ -713,7 +771,10 @@ end
     @test ld.exception_term == 0
     @test_throws LK.NotPortedError LK.PL_get_nchars(ld, t, LK.CVT_ATOM)           # REP_ISO_LATIN_1: PL_mb_text refuses
     @test_throws LK.NotPortedError LK.PL_get_chars(ld, t, LK.CVT_ATOM | LK.REP_MB)
-    r, e = _fa_err(_fa_k(7), (ld, t) -> LK.PL_get_nchars(ld, t, LK.CVT_ATOM | LK.CVT_EXCEPTION | LK.REP_UTF8))
+    r, e = _fa_err(
+        _fa_k(7),
+        (ld, t) -> LK.PL_get_nchars(ld, t, LK.CVT_ATOM | LK.CVT_EXCEPTION | LK.REP_UTF8)
+    )
     @test r === nothing && e !== nothing
 end
 
@@ -731,7 +792,8 @@ end
     @test lk_name(LK.uncachedCodeToAtom(_R, 233)) === Symbol("é")
     @test lk_name(LK.uncachedCodeToAtom(_R, 0x20ac)) === Symbol("€")
     @test lk_name(LK.uncachedCodeToAtom(_R, 0x1f600)) === Symbol("😀")              # past the BMP
-    @test lk_name(LK.codeToAtom(_R, 97)) === :a && lk_name(LK.codeToAtom(_R, 0x20ac)) === Symbol("€")
+    @test lk_name(LK.codeToAtom(_R, 97)) === :a &&
+        lk_name(LK.codeToAtom(_R, 0x20ac)) === Symbol("€")
     @test lk_name(LK.codeToAtom(_R, 0x1f600)) === Symbol("😀")
     @test lk_name(LK.codeToAtom(_R, -1)) === :end_of_file
     @test LK.cleanupCodeToAtom() === nothing
@@ -756,9 +818,11 @@ _fa_av(ld, s) = LK.atomValue(ld.atoms, LK._atom_word!(ld, _rs(s)))
     @test LK.isUCSAtom(wide) && !LK.isUCSAtom(narrow) && !LK.isUCSAtom(e)
     @test !LK.isUCSAtom(LK.atomValue(ld.atoms, nilw))                        # the reserved [] is no wide atom
     tx = LK.get_atom_ptr_text(wide)
-    @test tx.encoding === LK.ENC_WCHAR && tx.length == 1 && tx.canonical && collect(reinterpret(UInt32, tx.text)) == UInt32[0x20ac]
+    @test tx.encoding === LK.ENC_WCHAR && tx.length == 1 && tx.canonical &&
+        collect(reinterpret(UInt32, tx.text)) == UInt32[0x20ac]
     tx = LK.get_atom_ptr_text(narrow)
-    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical && tx.text == Vector{UInt8}("abc")
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical &&
+        tx.text == Vector{UInt8}("abc")
     tx = LK.get_atom_text(ld.atoms, LK._atom_word!(ld, _rs("é")))
     @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 1 && tx.text == UInt8[0xe9]
     tx = LK.get_atom_text(ld.atoms, LK._atom_word!(ld, _rs("")))
@@ -771,7 +835,8 @@ end
 # 0x100 (isBString), else ENC_WCHAR; the length is in characters (swipl: string_length("a€", 2)).
 @testset "LK-ONLY: get_string_text (pl-fli.c:905)" begin
     tx = LK.get_string_text(_rg("abc"))
-    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical && tx.text == Vector{UInt8}("abc")
+    @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 3 && tx.canonical &&
+        tx.text == Vector{UInt8}("abc")
     tx = LK.get_string_text(_rg("é"))
     @test tx.encoding === LK.ENC_ISO_LATIN_1 && tx.length == 1 && tx.text == UInt8[0xe9]
     tx = LK.get_string_text(_rg("a€"))
@@ -812,8 +877,10 @@ end
     catch e
         e
     end
-    @test e1 isa LK.NotPortedError && occursin("LD2", e1.step) && occursin("saveUCSAtom", e1.what)
-    @test e2 isa LK.NotPortedError && occursin("LD2", e2.step) && occursin("loadUCSAtom", e2.what)
+    @test e1 isa LK.NotPortedError && occursin("LD2", e1.step) &&
+        occursin("saveUCSAtom", e1.what)
+    @test e2 isa LK.NotPortedError && occursin("LD2", e2.step) &&
+        occursin("loadUCSAtom", e2.what)
 end
 
 "`(rc, text)` of `blob_write_usc_atom(name, options)` with write `flags` on a memory stream (`rc`, the bytes written)."
@@ -847,8 +914,10 @@ end
 @testset "LK-ONLY: is_text_value (pl-fli.c:1721)" begin
     f0, fa, ff = UInt32(0), LK.CVT_ATOM, LK.CVT_FLOAT
     @test LK.is_text_value(LK.PL_STRING, f0) && LK.is_text_value(LK.PL_STRING, ff)
-    @test !LK.is_text_value(LK.PL_ATOM, f0) && LK.is_text_value(LK.PL_ATOM, fa) && !LK.is_text_value(LK.PL_ATOM, ff)
-    @test LK.is_text_value(LK.PL_INTEGER, f0) && LK.is_text_value(LK.PL_INTEGER, fa) && !LK.is_text_value(LK.PL_INTEGER, ff)
+    @test !LK.is_text_value(LK.PL_ATOM, f0) && LK.is_text_value(LK.PL_ATOM, fa) &&
+        !LK.is_text_value(LK.PL_ATOM, ff)
+    @test LK.is_text_value(LK.PL_INTEGER, f0) && LK.is_text_value(LK.PL_INTEGER, fa) &&
+        !LK.is_text_value(LK.PL_INTEGER, ff)
     @test LK.is_text_value(LK.PL_RATIONAL, f0) && !LK.is_text_value(LK.PL_RATIONAL, ff | fa)
     @test !LK.is_text_value(5, f0 | fa) && !LK.is_text_value(1, fa | LK.CVT_INTEGER)   # PL_FLOAT, PL_VARIABLE
     @test !LK.is_text_value(7, f0)                                           # PL_TERM
@@ -858,7 +927,9 @@ end
 # (`(flags & ~CVT_MASK) | cvt`): the CVT bits the caller's flags carry are dropped, REP_UTF8 stays. The answer is the UTF-8 bytes
 # and their count; nothing where the type is not among `cvt`.
 @testset "LK-ONLY: get_value_text (pl-fli.c:1739)" begin
-    ld, t = _fa_engine(_R[_rs("abc"), _rg("héllo"), _fa_k(42), _rf("f", _rs("a")), _rs("é")])
+    ld, t = _fa_engine(
+        _R[_rs("abc"), _rg("héllo"), _fa_k(42), _rf("f", _rs("a")), _rs("é")]
+    )
     u8 = LK.REP_UTF8
     both = LK.CVT_ATOM | LK.CVT_STRING | u8
     @test LK.get_value_text(ld, t, LK.CVT_ATOM, u8) == (Vector{UInt8}("abc"), 3)
@@ -867,7 +938,8 @@ end
     @test LK.get_value_text(ld, t + 1, LK.CVT_ATOM, both) === nothing        # a string is no atom
     @test LK.get_value_text(ld, t + 2, LK.CVT_INTEGER, u8) == (Vector{UInt8}("42"), 2)
     @test LK.get_value_text(ld, t + 2, LK.CVT_ATOM, both) === nothing
-    @test LK.get_value_text(ld, t + 3, LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_INTEGER, u8) === nothing   # a compound
+    @test LK.get_value_text(ld, t + 3, LK.CVT_ATOM | LK.CVT_STRING | LK.CVT_INTEGER, u8) ===
+        nothing   # a compound
     @test LK.get_value_text(ld, t + 4, LK.CVT_ATOM, u8) == (UInt8[0xc3, 0xa9], 2)
     @test_throws LK.NotPortedError LK.get_value_text(ld, t, LK.CVT_ATOM, UInt32(0))   # PL_mb_text: only REP_UTF8
 end
@@ -876,7 +948,19 @@ end
 # text the flags allow — one text, one atom, a wide one above 0xff — and nothing for a variable, a compound or a type the
 # flags do not allow. DIVERGES (forced): a text with the character 0 raises AtomNotRepresentableError.
 @testset "LK-ONLY: PL_get_text_as_atom (pl-fli.c:2213)" begin
-    ld, t = _fa_engine(_R[_rs("abc"), _rg("xyz"), _fa_k(42), _rv(1), _rf("f", _rs("a")), _rg("a€"), _rnil(), _rv(2), _rv(3)])
+    ld, t = _fa_engine(
+        _R[
+            _rs("abc"),
+            _rg("xyz"),
+            _fa_k(42),
+            _rv(1),
+            _rf("f", _rs("a")),
+            _rg("a€"),
+            _rnil(),
+            _rv(2),
+            _rv(3)
+        ]
+    )
     @test LK.PL_put_list_codes(ld, t + 7, _fa_b("hi"))
     @test LK.PL_put_string_nchars(ld, t + 8, 3, UInt8[0x61, 0x00, 0x62])
     f0 = UInt32(0)
@@ -884,16 +968,20 @@ end
     @test LK.PL_get_text_as_atom(ld, t + 6, f0) == LK.PL_get_atom(ld, t + 6)  # [] too
     @test lk_name(LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_STRING)) === :xyz
     @test LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_ATOM) === nothing         # a string, CVT_STRING not set
-    @test lk_name(LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_STRING)) === lk_name(LK.PL_new_atom(ld, _fa_b("xyz")))   # one text, one atom
+    @test lk_name(LK.PL_get_text_as_atom(ld, t + 1, LK.CVT_STRING)) ===
+        lk_name(LK.PL_new_atom(ld, _fa_b("xyz")))   # one text, one atom
     @test lk_name(LK.PL_get_text_as_atom(ld, t + 2, LK.CVT_INTEGER)) === Symbol("42")
     @test LK.PL_get_text_as_atom(ld, t + 2, LK.CVT_ATOM | LK.CVT_STRING) === nothing
     @test LK.PL_get_text_as_atom(ld, t + 3, LK.CVT_ALL) === nothing          # a variable
     @test LK.PL_get_text_as_atom(ld, t + 4, LK.CVT_ALL) === nothing          # a compound
     w = LK.PL_get_text_as_atom(ld, t + 5, LK.CVT_STRING)
-    @test lk_name(w) === Symbol("a€") && LK.isUCSAtom(LK.atomValue(ld.atoms, LK._atom_word!(ld, w)))
+    @test lk_name(w) === Symbol("a€") &&
+        LK.isUCSAtom(LK.atomValue(ld.atoms, LK._atom_word!(ld, w)))
     @test lk_name(LK.PL_get_text_as_atom(ld, t + 7, LK.CVT_LIST)) === :hi    # a code list
     @test LK.PL_get_text_as_atom(ld, t + 7, LK.CVT_STRING) === nothing
-    @test_throws LK.AtomNotRepresentableError LK.PL_get_text_as_atom(ld, t + 8, LK.CVT_STRING)   # a\0b
+    @test_throws LK.AtomNotRepresentableError LK.PL_get_text_as_atom(
+        ld, t + 8, LK.CVT_STRING
+    )   # a\0b
     ex = try
         LK.PL_get_text_as_atom(ld, t + 8, LK.CVT_STRING)
     catch e
@@ -924,7 +1012,9 @@ _fa_is_atom(ld, t, name::Symbol) = LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === n
 # LK-ONLY (pl-fli.c:2588-2599): PL_get_module is lookupModule of the atom the term reference holds — the module the name gives
 # (created if new, one index for one name) — and fails for anything but an atom.
 @testset "LK-ONLY: PL_get_module (pl-fli.c:2588)" begin
-    gd, ld, t = _fa_gengine(_R[_rs("m9"), _rs("user"), _fa_k(5), _rf("f", _rs("a")), _rv(1)])
+    gd, ld, t = _fa_gengine(
+        _R[_rs("m9"), _rs("user"), _fa_k(5), _rf("f", _rs("a")), _rv(1)]
+    )
     m = LK.PL_get_module(gd, ld, t)
     @test m isa Int && m > 0 && m == LK.PL_new_module(gd, _rs("m9"))
     @test lk_name(gd.modules[m].atom) === :m9
@@ -951,22 +1041,30 @@ end
 # atom reference; an integer the tag cannot hold raises representation_error(pce_reference) and gives the word 0.
 @testset "LK-ONLY: put_xpce_ref_arg (pl-fli.c:4278)" begin
     ld, t = _fa_engine(_R[_rv(1)])
-    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, 5, nothing)) == LK.consInt(Int64(5))
-    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, -3, nothing)) == LK.consInt(Int64(-3))
-    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_ATOM, 0, _rs("obj"))) == LK._atom_word!(ld, _rs("obj"))
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, 5, nothing)) ==
+        LK.consInt(Int64(5))
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, -3, nothing)) ==
+        LK.consInt(Int64(-3))
+    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_ATOM, 0, _rs("obj"))) ==
+        LK._atom_word!(ld, _rs("obj"))
     @test ld.exception_term == 0
-    @test LK.put_xpce_ref_arg(ld, LK.xpceref_t{_R}(LK.PL_INTEGER, typemax(Int64), nothing)) == 0
+    @test LK.put_xpce_ref_arg(
+        ld, LK.xpceref_t{_R}(LK.PL_INTEGER, typemax(Int64), nothing)
+    ) == 0
     @test ld.exception_term != 0
     fm = LK.PL_new_term_ref(ld)
     @test LK.PL_get_arg(ld, 1, ld.exception_term, fm)
-    @test LK.PL_get_name_arity(ld, fm) !== nothing && lk_name(LK.PL_get_name_arity(ld, fm)[1]) === :representation_error
+    @test LK.PL_get_name_arity(ld, fm) !== nothing &&
+        lk_name(LK.PL_get_name_arity(ld, fm)[1]) === :representation_error
 end
 
 # LK-ONLY (pl-fli.c:4539-4569): PL_term_type — a variable PL_VARIABLE, a text atom PL_ATOM, `[]` PL_NIL, an integer PL_INTEGER
 # (a big one too), a float PL_FLOAT, a string PL_STRING, a compound PL_TERM, a list cell PL_LIST_PAIR, a `dict` compound PL_DICT.
 @testset "LK-ONLY: PL_term_type (pl-fli.c:4539)" begin
-    ld, t = _fa_engine(_R[_rv(1), _rs("abc"), _rnil(), _fa_k(5), _rg(2.5), _rg("s"), _rf("f", _rs("a")),
-                          _rlist(_fa_k(1)), _rf("dict", _rs("t"), _fa_k(1), _rs("k")), _rg(big(2)^70)])
+    ld, t = _fa_engine(
+        _R[_rv(1), _rs("abc"), _rnil(), _fa_k(5), _rg(2.5), _rg("s"), _rf("f", _rs("a")),
+            _rlist(_fa_k(1)), _rf("dict", _rs("t"), _fa_k(1), _rs("k")), _rg(big(2)^70)]
+    )
     @test LK.PL_term_type(ld, t) == LK.PL_VARIABLE == 1
     @test LK.PL_term_type(ld, t + 1) == LK.PL_ATOM == 2
     @test LK.PL_term_type(ld, t + 2) == LK.PL_NIL == 8
@@ -982,14 +1080,28 @@ end
 # LK-ONLY (pl-fli.c:4601-4614): PL_unify_output binds a variable to a bound value (an atom, a compound, an integer) and
 # otherwise is PL_unify: equal values unify, different ones do not, two variables become one.
 @testset "LK-ONLY: PL_unify_output (pl-fli.c:4601)" begin
-    ld, t = _fa_engine(_R[_rv(1), _rs("a"), _rv(2), _rf("f", _rs("x")), _rv(3), _fa_k(42), _rs("b"), _rv(4), _rv(5)])
+    ld, t = _fa_engine(
+        _R[
+            _rv(1),
+            _rs("a"),
+            _rv(2),
+            _rf("f", _rs("x")),
+            _rv(3),
+            _fa_k(42),
+            _rs("b"),
+            _rv(4),
+            _rv(5)
+        ]
+    )
     @test LK.PL_unify_output(ld, t, t + 1) && _fa_atom(ld, t) === :a
     @test LK.PL_unify_output(ld, t + 2, t + 3)
-    @test LK.PL_get_name_arity(ld, t + 2) !== nothing && lk_name(LK.PL_get_name_arity(ld, t + 2)[1]) === :f
+    @test LK.PL_get_name_arity(ld, t + 2) !== nothing &&
+        lk_name(LK.PL_get_name_arity(ld, t + 2)[1]) === :f
     @test LK.PL_unify_output(ld, t + 4, t + 5) && LK.PL_get_integer(ld, t + 4) == 42
     @test LK.PL_unify_output(ld, t, t + 1)                                   # bound to the same atom
     @test !LK.PL_unify_output(ld, t, t + 6)                                  # bound to another
-    @test LK.PL_unify_output(ld, t + 7, t + 8) && LK.PL_unify_atom(ld, t + 8, _rs("z")) && _fa_atom(ld, t + 7) === :z
+    @test LK.PL_unify_output(ld, t + 7, t + 8) && LK.PL_unify_atom(ld, t + 8, _rs("z")) &&
+        _fa_atom(ld, t + 7) === :z
 end
 
 "The elements of the integer list term reference `t` holds (`nothing` for no proper list)."
@@ -1004,17 +1116,21 @@ _fa_ints(ld, t) = _fa_codes(ld, t)
     @test U(gd, ld, t + 1, LK.PL_ATOM, _rs("a")) && _fa_atom(ld, t + 1) === :a
     @test U(gd, ld, t + 2, LK.PL_BOOL, 7) && _fa_atom(ld, t + 2) === :true
     @test U(gd, ld, t + 3, LK.PL_BOOL, 0) && _fa_atom(ld, t + 3) === :false
-    @test U(gd, ld, t + 4, LK.PL_LIST, 7, LK.PL_SHORT, 1, LK.PL_INT, 2, LK.PL_LONG, 3, LK.PL_INTEGER, 4,
-            LK.PL_INT64, 5, LK.PL_INTPTR, 6, LK.PL_SWORD, 7) && _fa_ints(ld, t + 4) == [1, 2, 3, 4, 5, 6, 7]
-    @test U(gd, ld, t + 5, LK.PL_POINTER, 4096) && LK.PL_get_pointer(ld, t + 5) === UInt(4096)
+    @test U(gd, ld, t + 4, LK.PL_LIST, 7, LK.PL_SHORT, 1, LK.PL_INT, 2, LK.PL_LONG, 3,
+        LK.PL_INTEGER, 4,
+        LK.PL_INT64, 5, LK.PL_INTPTR, 6, LK.PL_SWORD, 7) && _fa_ints(ld, t + 4) == [1, 2, 3, 4, 5, 6, 7]
+    @test U(gd, ld, t + 5, LK.PL_POINTER, 4096) &&
+        LK.PL_get_pointer(ld, t + 5) === UInt(4096)
     @test U(gd, ld, t + 6, LK.PL_FLOAT, 2.5) && LK.PL_get_float(ld, t + 6) == 2.5
     @test U(gd, ld, t + 7, LK.PL_DOUBLE, -0.5) && LK.PL_get_float(ld, t + 7) == -0.5
-    @test U(gd, ld, t + 8, LK.PL_STRING, _fa_b("abc")) && LK.PL_is_string(ld, t + 8) && _fa_text(ld, t + 8) == "abc"
+    @test U(gd, ld, t + 8, LK.PL_STRING, _fa_b("abc")) && LK.PL_is_string(ld, t + 8) &&
+        _fa_text(ld, t + 8) == "abc"
     @test U(gd, ld, t + 9, LK.PL_CHARS, _fa_b("abc")) && _fa_atom(ld, t + 9) === :abc
     @test U(gd, ld, t + 10, LK.PL_NCHARS, 2, _fa_b("abc")) && _fa_atom(ld, t + 10) === :ab
     @test LK.PL_unify_atom(ld, t + 11, _rs("q"))
     @test U(gd, ld, t + 12, LK.PL_TERM, t + 11) && _fa_atom(ld, t + 12) === :q
-    @test U(gd, ld, t + 13, LK.PL_INT64, typemax(Int64)) && LK.PL_get_integer(ld, t + 13) === nothing
+    @test U(gd, ld, t + 13, LK.PL_INT64, typemax(Int64)) &&
+        LK.PL_get_integer(ld, t + 13) === nothing
 end
 
 # LK-ONLY (pl-fli.c:4065-4140): the text tags — UTF-8 atom and string, UTF-8 with a length (atom, code list, string), wide
@@ -1028,15 +1144,22 @@ end
         gd, ld, t = _fa_gengine(_R[_rv(i) for i in 1:11])
         U = LK.PL_unify_term
         e = Vector{UInt8}("é")
-        @test U(gd, ld, t, LK.PL_UTF8_CHARS, e) && LK.PL_is_atom(ld, t) && _fa_atom(ld, t) === Symbol("é")
-        @test U(gd, ld, t + 1, LK.PL_UTF8_STRING, e) && LK.PL_is_string(ld, t + 1) && _fa_text(ld, t + 1) == "é"
-        @test U(gd, ld, t + 2, LK.PL_NUTF8_CHARS, 2, _fa_b("abc")) && _fa_atom(ld, t + 2) === :ab
-        @test U(gd, ld, t + 3, LK.PL_NUTF8_CODES, 3, _fa_b("abc")) && _fa_codes(ld, t + 3) == [97, 98, 99]
-        @test U(gd, ld, t + 4, LK.PL_NUTF8_STRING, 1, _fa_b("abc")) && LK.PL_is_string(ld, t + 4) && _fa_text(ld, t + 4) == "a"
+        @test U(gd, ld, t, LK.PL_UTF8_CHARS, e) && LK.PL_is_atom(ld, t) &&
+            _fa_atom(ld, t) === Symbol("é")
+        @test U(gd, ld, t + 1, LK.PL_UTF8_STRING, e) && LK.PL_is_string(ld, t + 1) &&
+            _fa_text(ld, t + 1) == "é"
+        @test U(gd, ld, t + 2, LK.PL_NUTF8_CHARS, 2, _fa_b("abc")) &&
+            _fa_atom(ld, t + 2) === :ab
+        @test U(gd, ld, t + 3, LK.PL_NUTF8_CODES, 3, _fa_b("abc")) &&
+            _fa_codes(ld, t + 3) == [97, 98, 99]
+        @test U(gd, ld, t + 4, LK.PL_NUTF8_STRING, 1, _fa_b("abc")) &&
+            LK.PL_is_string(ld, t + 4) && _fa_text(ld, t + 4) == "a"
         w = UInt32[0x61, 0x20ac, 0x62]
         @test U(gd, ld, t + 5, LK.PL_NWCHARS, 2, w) && _fa_atom(ld, t + 5) === Symbol("a€")
-        @test U(gd, ld, t + 6, LK.PL_NWCODES, 3, w) && _fa_codes(ld, t + 6) == [0x61, 0x20ac, 0x62]
-        @test U(gd, ld, t + 7, LK.PL_NWSTRING, -1, w) && LK.PL_is_string(ld, t + 7) && _fa_text(ld, t + 7) == "a€b"
+        @test U(gd, ld, t + 6, LK.PL_NWCODES, 3, w) &&
+            _fa_codes(ld, t + 6) == [0x61, 0x20ac, 0x62]
+        @test U(gd, ld, t + 7, LK.PL_NWSTRING, -1, w) && LK.PL_is_string(ld, t + 7) &&
+            _fa_text(ld, t + 7) == "a€b"
         @test_throws LK.NotPortedError U(gd, ld, t + 8, LK.PL_MBCHARS, _fa_b("abc"))
         @test_throws LK.NotPortedError U(gd, ld, t + 9, LK.PL_MBCODES, _fa_b("abc"))
         @test_throws LK.NotPortedError U(gd, ld, t + 10, LK.PL_MBSTRING, _fa_b("abc"))
@@ -1050,7 +1173,9 @@ end
     gd, ld, t = _fa_gengine(_R[_rv(i) for i in 1:8])
     U = LK.PL_unify_term
     a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
-    @test U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)
+    @test U(
+        gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5
+    )
     na = LK.PL_get_name_arity(ld, t)
     @test na !== nothing && lk_name(na[1]) === :f && na[2] == 2
     @test LK.PL_get_arg(ld, 1, t, a1) && _fa_atom(ld, a1) === :a
@@ -1059,25 +1184,64 @@ end
     @test U(gd, ld, t + 1, LK.PL_FUNCTOR, ft, LK.PL_VARIABLE, LK.PL_ATOM, _rs("x"))
     @test LK.PL_get_arg(ld, 1, t + 1, a1) && LK.PL_is_variable(ld, a1)
     @test LK.PL_get_arg(ld, 2, t + 1, a2) && _fa_atom(ld, a2) === :x
-    @test U(gd, ld, t + 2, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_FUNCTOR_CHARS, _fa_b("g"), 1, LK.PL_INT, 1, LK.PL_INT, 2)
-    @test LK.PL_get_arg(ld, 1, t + 2, a1) && LK.PL_get_arg(ld, 1, a1, a2) && LK.PL_get_integer(ld, a2) == 1
+    @test U(
+        gd,
+        ld,
+        t + 2,
+        LK.PL_FUNCTOR_CHARS,
+        _fa_b("f"),
+        2,
+        LK.PL_FUNCTOR_CHARS,
+        _fa_b("g"),
+        1,
+        LK.PL_INT,
+        1,
+        LK.PL_INT,
+        2
+    )
+    @test LK.PL_get_arg(ld, 1, t + 2, a1) && LK.PL_get_arg(ld, 1, a1, a2) &&
+        LK.PL_get_integer(ld, a2) == 1
     @test LK.PL_get_arg(ld, 2, t + 2, a2) && LK.PL_get_integer(ld, a2) == 2
-    @test U(gd, ld, t + 3, LK.PL_LIST, 3, LK.PL_INT, 1, LK.PL_INT, 2, LK.PL_INT, 3) && _fa_ints(ld, t + 3) == [1, 2, 3]
+    @test U(gd, ld, t + 3, LK.PL_LIST, 3, LK.PL_INT, 1, LK.PL_INT, 2, LK.PL_INT, 3) &&
+        _fa_ints(ld, t + 3) == [1, 2, 3]
     @test U(gd, ld, t + 4, LK.PL_LIST, 0) && LK.PL_get_nil(ld, t + 4)
-    @test U(gd, ld, t + 5, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_LIST, 2, LK.PL_INT, 1, LK.PL_INT, 2, LK.PL_ATOM, _rs("x"))
+    @test U(
+        gd,
+        ld,
+        t + 5,
+        LK.PL_FUNCTOR_CHARS,
+        _fa_b("f"),
+        2,
+        LK.PL_LIST,
+        2,
+        LK.PL_INT,
+        1,
+        LK.PL_INT,
+        2,
+        LK.PL_ATOM,
+        _rs("x")
+    )
     @test LK.PL_get_arg(ld, 1, t + 5, a1) && _fa_ints(ld, a1) == [1, 2]
     @test LK.PL_get_arg(ld, 2, t + 5, a2) && _fa_atom(ld, a2) === :x
     @test U(gd, ld, t + 6, LK.PL_FUNCTOR_CHARS, _fa_b("c"), 0) && _fa_atom(ld, t + 6) === :c    # arity 0: the atom
-    @test U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)   # compared, not rebuilt
-    @test !U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 6)
-    @test !U(gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("g"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5)
+    @test U(
+        gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5
+    )   # compared, not rebuilt
+    @test !U(
+        gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("f"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 6
+    )
+    @test !U(
+        gd, ld, t, LK.PL_FUNCTOR_CHARS, _fa_b("g"), 2, LK.PL_ATOM, _rs("a"), LK.PL_INT, 5
+    )
 end
 
 # LK-ONLY (pl-fli.c:4189-4247): a _PL_PREDICATE_INDICATOR is Name/Arity of the predicate (qualified when its module is not user);
 # a failure resets the term references made on the way (4231, 4237); an unknown tag fails (4196-4198); a list longer than the
 # bound one fails. DIVERGES (forced): upstream's PL_LIST with a failing PL_unify_list repeats the call; here it fails.
 @testset "LK-ONLY: PL_unify_term, predicates, failure (pl-fli.c:4189)" begin
-    gd, ld, t = _fa_gengine(_R[_rv(1), _rv(2), _rs("a"), _rlist(_fa_k(1)), _rv(3), _rlist(_fa_k(1), _fa_k(2))])
+    gd, ld, t = _fa_gengine(
+        _R[_rv(1), _rv(2), _rs("a"), _rlist(_fa_k(1)), _rv(3), _rlist(_fa_k(1), _fa_k(2))]
+    )
     U = LK.PL_unify_term
     a1, a2 = LK.PL_new_term_ref(ld), LK.PL_new_term_ref(ld)
     p = LK.PL_pred(gd, ld, _fa_functor(ld, "p", 2), 0)
@@ -1105,7 +1269,8 @@ end
 @testset "LK-ONLY: PL_unify_termv (pl-fli.c:3997)" begin
     gd, ld, t = _fa_gengine(_R[_rv(1), _rv(2)])
     @test LK.PL_unify_termv(gd, ld, t, Any[LK.PL_ATOM, _rs("v")]) && _fa_atom(ld, t) === :v
-    @test LK.PL_unify_termv(gd, ld, t + 1, [LK.PL_INT, 9]) && LK.PL_get_integer(ld, t + 1) == 9
+    @test LK.PL_unify_termv(gd, ld, t + 1, [LK.PL_INT, 9]) &&
+        LK.PL_get_integer(ld, t + 1) == 9
 end
 
 # PL_unify_blob, PL_put_blob, PL_get_blob, PL_blob_data (group G) ──────────────────────────────────────────────────
@@ -1162,7 +1327,9 @@ end
     @test _fa_blob(ld, t) == (UInt8[1, 2, 3], 3, ty)
     @test LK.PL_unify_blob(ld, t, UInt8[1, 2, 3], 3, ty)                             # bound, the same blob
     @test !LK.PL_unify_blob(ld, t, UInt8[1, 2, 4], 3, ty)                            # another payload
-    @test !LK.PL_unify_blob(ld, t, UInt8[1, 2, 3], 3, LK.PL_blob_t(LK.PL_BLOB_UNIQUE, "fa_other"))  # another type
+    @test !LK.PL_unify_blob(
+        ld, t, UInt8[1, 2, 3], 3, LK.PL_blob_t(LK.PL_BLOB_UNIQUE, "fa_other")
+    )  # another type
     @test LK.PL_put_blob(ld, t + 1, UInt8[1, 2, 3], 3, ty) === false                 # the atom unify made
     @test LK.PL_get_blob(ld, t + 1)[1] === LK.PL_get_blob(ld, t)[1]
     @test LK.PL_unify_atom(ld, t + 2, LK.PL_get_atom(ld, t))                         # a blob's symbol unifies as an atom
@@ -1194,8 +1361,12 @@ end
     @test _fa_atom(ld, t + 2) === :abc
     LK.PL_put_blob(ld, t + 3, UInt8[0xe9], 1, LK.text_atom)
     @test _fa_atom(ld, t + 3) === Symbol("é")
-    @test_throws LK.AtomNotRepresentableError LK.PL_put_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom)
-    @test_throws LK.AtomNotRepresentableError LK.PL_unify_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom)
+    @test_throws LK.AtomNotRepresentableError LK.PL_put_blob(
+        ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom
+    )
+    @test_throws LK.AtomNotRepresentableError LK.PL_unify_blob(
+        ld, t + 4, UInt8[0x61, 0, 0x62], 3, LK.text_atom
+    )
     LK.PL_put_blob(ld, t + 4, UInt8[0x61, 0, 0x62], 1, LK.text_atom)                 # the 0 is past `len`
     @test _fa_atom(ld, t + 4) === :a
 end
@@ -1220,7 +1391,8 @@ end
     catch err
         err
     end
-    @test e isa LK.NotPortedError && occursin("FLI1", e.step) && occursin("ucs_text", e.what)
+    @test e isa LK.NotPortedError && occursin("FLI1", e.step) &&
+        occursin("ucs_text", e.what)
     @test ld.atoms.highest == h
     e = try
         LK.PL_put_blob(ld, t, UInt8[0x5b, 0x5d], 2, LK.reserved_symbol)
@@ -1228,7 +1400,8 @@ end
     catch err
         err
     end
-    @test e isa LK.NotPortedError && occursin("FLI1", e.step) && occursin("reserved_symbol", e.what)
+    @test e isa LK.NotPortedError && occursin("FLI1", e.step) &&
+        occursin("reserved_symbol", e.what)
     @test ld.atoms.highest == h
 end
 
@@ -1308,8 +1481,10 @@ end
 @testset "LK-ONLY: PL_warning (pl-fli.c:5886)" begin
     gd, ld, t = _fa_gengine(_R[_rv(1)])
     W = LK.PL_warning
-    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "a b"))) == (false, "ERROR: a b\n")
-    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "x\ny"))) == (false, "ERROR: x\ny\n")
+    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "a b"))) ==
+        (false, "ERROR: a b\n")
+    @test _fa_uerr(ld, () -> _fa_outofstack(ld, () -> W(gd, ld, "x\ny"))) ==
+        (false, "ERROR: x\ny\n")
     @test _fa_uerr(ld, () -> W(gd, ld, "\$raw")) == (false, "ERROR: \$raw\n")
     before = LK.PL_new_term_refs(ld, 0)
     @test W(gd, ld, "plain") === false
@@ -1322,7 +1497,9 @@ end
 # LK-ONLY (pl-fli.c:4197): an unknown tag of PL_unify_term is PL_warning("Format error in PL_unify_term()") and the call fails.
 @testset "LK-ONLY: PL_unify_term unknown tag warns (pl-fli.c:4197)" begin
     gd, ld, t = _fa_gengine(_R[_rv(1)])
-    rc, text = _fa_uerr(ld, () -> _fa_outofstack(ld, () -> LK.PL_unify_term(gd, ld, t, 999)))
+    rc, text = _fa_uerr(
+        ld, () -> _fa_outofstack(ld, () -> LK.PL_unify_term(gd, ld, t, 999))
+    )
     @test rc === false
     @test text == "ERROR: Format error in PL_unify_term()\n"
     @test LK.PL_is_variable(ld, t)
@@ -1336,7 +1513,10 @@ end
     gd.halt_exit = false
     rc, text = _fa_uerr(ld, () -> LK.PL_fatal_error(gd, ld, "disk gone"))
     @test rc === nothing
-    @test occursin(r"^\[FATAL ERROR: at \w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4}\n\tdisk gone\]\n$", text)
+    @test occursin(
+        r"^\[FATAL ERROR: at \w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4}\n\tdisk gone\]\n$",
+        text
+    )
     @test gd.halt_exited == [134]
     @test LK._FLI_FATAL_ACTIVE[] == 0
     gd2, ld2 = _fa_db()
@@ -1373,7 +1553,9 @@ end
 A database (with the clauses `rows`) with the seam off (`halt_exit` false) and the three standard streams in memory, so that a mutant
 reaching `PL_halt` or `_fli_sys_error` neither ends the test process nor a mutant reaching `pl_break` or PL_QUERY_GETC reads the real stdin.
 """
-function _fa_hdb0(rows::Vector{Tuple{_R, Union{Nothing, _R}}}=Tuple{_R, Union{Nothing, _R}}[])
+function _fa_hdb0(
+    rows::Vector{Tuple{_R, Union{Nothing, _R}}}=Tuple{_R, Union{Nothing, _R}}[]
+)
     db = _rdb(rows)
     db.gd.halt_exit = false
     LK.set_standard_stream!(db.ld, LK.SNO_USER_INPUT, IOBuffer())
@@ -1451,7 +1633,7 @@ end
     gd.halt_cleaning = LK.CLN_NORMAL
     # PL_QUERY_MAX_THREADS: the O_PLMT arm of the pin: the message on user_error (Sdprintf), the answer 100000 (:6072-6075)
     @test _fa_uerr(ld, () -> Q(LK.PL_QUERY_MAX_THREADS)) ==
-          (100000, "PL_query(PL_QUERY_MAX_THREADS) is no longer supported\n")
+        (100000, "PL_query(PL_QUERY_MAX_THREADS) is no longer supported\n")
     # PL_QUERY_GETC: Sgetchar() on user_input: the bytes, then -1 at the end; no user_input: -1 (DIVERGES (c))
     s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(UInt8[0x61, 0x62]), Ref(2), "r")
     ld.IO_streams[LK.SNO_USER_INPUT + 1] = s
@@ -1468,7 +1650,8 @@ end
 # reported is abort() alone.
 @testset "LK-ONLY: PL_query, an illegal query is a system error (pl-fli.c:6093)" begin
     gd, ld = _fa_hdb()
-    @test _fa_uerr(ld, () -> LK.PL_query(gd, ld, 99)) == (0, "\nERROR: system error: PL_query: Illegal query: 99\n")
+    @test _fa_uerr(ld, () -> LK.PL_query(gd, ld, 99)) ==
+        (0, "\nERROR: system error: PL_query: Illegal query: 99\n")
     @test gd.halt_exited == [134]
     @test LK._FLI_SYS_ACTIVE[] == 0
     gd2, ld2 = _fa_hdb()
@@ -1494,7 +1677,7 @@ end
     gd, ld = _fa_hdb()
     gd.bootsession = true
     @test _fa_uerr(ld, () -> LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)) ==
-          (false, "\n[Cannot print stack while initialising]\n")
+        (false, "\n[Cannot print stack while initialising]\n")
     gd.bootsession = false
     @test_throws LK.NotPortedError LK.PL_action(gd, ld, LK.PL_ACTION_BACKTRACE, 5)
     # the refusal names the call with the depth the caller passed (PL_backtrace(a, 0), pl-fli.c:5966)
@@ -1553,17 +1736,21 @@ end
     @test W("a\0b") == (true, "a")
     # a stream error ends it: an ASCII stream cannot represent C3 (put_code -> reperror, no SIO_REP* flag on a memory stream:
     # Sputcode -1, Sfputs EOF, pl-stream.c:2395-2402); the byte before it was written
-    @test _fa_cout(ld, () -> begin
-        ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1].encoding = LK.ENC_ASCII
-        LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "aé")
-    end) == (false, "a")
+    @test _fa_cout(
+        ld, () -> begin
+            ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1].encoding = LK.ENC_ASCII
+            LK.PL_action(gd, ld, LK.PL_ACTION_WRITE, "aé")
+        end
+    ) == (false, "a")
     # _fli_sfputs itself answers -1 (EOF) on the error, and writes what came before it
     @test _fa_cout(ld, () -> begin
         s = ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1]
         s.encoding = LK.ENC_ASCII
         LK._fli_sfputs(s, "aé")
     end) == (-1, "a")
-    @test _fa_cout(ld, () -> LK._fli_sfputs(ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1], "ab\0c")) == (0, "ab")
+    @test _fa_cout(
+        ld, () -> LK._fli_sfputs(ld.IO_streams[LK.SNO_CURRENT_OUTPUT + 1], "ab\0c")
+    ) == (0, "ab")
     # Sfputs of a missing stream (DIVERGES: upstream would dereference NULL) is EOF, -1
     @test LK._fli_sfputs(nothing, "a") === -1
     @test LK._fli_sfputs(nothing, "") === -1
@@ -1590,7 +1777,7 @@ end
     for act in (99, 7)
         gd, ld = _fa_hdb()
         @test _fa_uerr(ld, () -> LK.PL_action(gd, ld, act)) ==
-              (false, "\nERROR: system error: PL_action(): Illegal action: $act\n")
+            (false, "\nERROR: system error: PL_action(): Illegal action: $act\n")
         @test gd.halt_exited == [134]
         @test LK._FLI_SYS_ACTIVE[] == 0
     end
@@ -1633,12 +1820,17 @@ end
         ("PL_FLI_VERSION", "E", "2"),
         ("PL_REC_VERSION", "E", "3"),
         ("PL_QLF_LOADVERSION", "E", "68"),
-        ("PL_QLF_VERSION", "E", "72"),
+        ("PL_QLF_VERSION", "E", "72")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -1646,13 +1838,47 @@ end
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -1668,9 +1894,15 @@ end
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -1680,8 +1912,27 @@ end
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -1689,7 +1940,7 @@ end
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 4 name(s); each must exist in LK and carry the C value
     @test !isempty(rows) && length(rows) == 4 && allunique(first.(rows))
     for (nm, k, c) in rows
@@ -1719,12 +1970,17 @@ end
         ("PL_ACTION_GUIAPP", "E", "10"),
         ("PL_ACTION_ATTACH_CONSOLE", "E", "11"),
         ("PL_GMP_SET_ALLOC_FUNCTIONS", "E", "12"),
-        ("PL_ACTION_TRADITIONAL", "E", "13"),
+        ("PL_ACTION_TRADITIONAL", "E", "13")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -1732,13 +1988,47 @@ end
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -1754,9 +2044,15 @@ end
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -1766,8 +2062,27 @@ end
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -1775,7 +2090,7 @@ end
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 12 name(s); each must exist in LK and carry the C value
     @test !isempty(rows) && length(rows) == 12 && allunique(first.(rows))
     for (nm, k, c) in rows
@@ -1800,12 +2115,17 @@ end
         ("PL_VERSION_QLF", "E", "4"),
         ("PL_VERSION_QLF_LOAD", "E", "5"),
         ("PL_VERSION_VM", "E", "6"),
-        ("PL_VERSION_BUILT_IN", "E", "7"),
+        ("PL_VERSION_BUILT_IN", "E", "7")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -1813,13 +2133,47 @@ end
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -1835,9 +2189,15 @@ end
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -1847,8 +2207,27 @@ end
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -1856,7 +2235,7 @@ end
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 7 name(s); each must exist in LK and carry the C value
     @test !isempty(rows) && length(rows) == 7 && allunique(first.(rows))
     for (nm, k, c) in rows
@@ -1886,12 +2265,17 @@ end
         ("PL_QUERY_MAX_THREADS", "E", "11"),
         ("PL_QUERY_ENCODING", "E", "12"),
         ("PL_QUERY_USER_CPU", "E", "13"),
-        ("PL_QUERY_HALTING", "E", "14"),
+        ("PL_QUERY_HALTING", "E", "14")
     ]
     # C integer expressions (+ - * / % << >> & | ^ ~ ( ), integer literals, names looked up in the module): parsed here from the C
     # text, independently of the python that wrote the table; results compare modulo the width of the Julia value.
     function ceval(M::Module, s::AbstractString)
-        toks = [m.match for m in eachmatch(r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]", s)]
+        toks = [
+            m.match for m in eachmatch(
+                r"0[xX][0-9a-fA-F]+[uUlL]*|0[bB][01]+[uUlL]*|[0-9]+[uUlL]*|[A-Za-z_][A-Za-z_0-9]*|<<|>>|[-+*/%&|^~()]",
+                s
+            )
+        ]
         join(toks) == replace(s, r"\s+" => "") || error("unparsed C text: $s")
         pos = 1
         levels = (("|",), ("^",), ("&",), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
@@ -1899,13 +2283,47 @@ end
             if lv > length(levels)
                 t = toks[pos]
                 pos += 1
-                if t == "(" && toks[pos] in ("unsigned", "signed", "int", "long", "short", "char", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "size_t")
+                if t == "(" && toks[pos] in (
+                    "unsigned",
+                    "signed",
+                    "int",
+                    "long",
+                    "short",
+                    "char",
+                    "uint8_t",
+                    "uint16_t",
+                    "uint32_t",
+                    "uint64_t",
+                    "int8_t",
+                    "int16_t",
+                    "int32_t",
+                    "int64_t",
+                    "size_t"
+                )
                     j = findnext(==(")"), toks, pos)
-                    ty = toks[pos:j-1]
+                    ty = toks[pos:(j - 1)]
                     pos = j + 1
-                    bits = any(w -> w in ("char", "int8_t", "uint8_t"), ty) ? 8 : any(w -> w in ("short", "int16_t", "uint16_t"), ty) ? 16 :
-                           any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty) ? 64 : 32
-                    sgn = !any(w -> w in ("unsigned", "uint8_t", "uint16_t", "uint32_t", "uint64_t", "size_t"), ty)
+                    bits = if any(w -> w in ("char", "int8_t", "uint8_t"), ty)
+                        8
+                    elseif any(w -> w in ("short", "int16_t", "uint16_t"), ty)
+                        16
+                    elseif any(w -> w in ("long", "int64_t", "uint64_t", "size_t"), ty)
+                        64
+                    else
+                        32
+                    end
+                    sgn =
+                        !any(
+                            w -> w in (
+                                "unsigned",
+                                "uint8_t",
+                                "uint16_t",
+                                "uint32_t",
+                                "uint64_t",
+                                "size_t"
+                            ),
+                            ty
+                        )
                     x = lvl(lv) & ((Int128(1) << bits) - 1)
                     return sgn && x >= Int128(1) << (bits - 1) ? x - (Int128(1) << bits) : x
                 elseif t == "("
@@ -1921,9 +2339,15 @@ end
                     return lvl(lv)
                 elseif isdigit(t[1])
                     d = rstrip(t, ['u', 'U', 'l', 'L'])
-                    return startswith(d, "0x") || startswith(d, "0X") ? Base.parse(Int128, d[3:end]; base = 16) :
-                           startswith(d, "0b") || startswith(d, "0B") ? Base.parse(Int128, d[3:end]; base = 2) :
-                           length(d) > 1 && d[1] == '0' ? Base.parse(Int128, d; base = 8) : Base.parse(Int128, d)
+                    return if startswith(d, "0x") || startswith(d, "0X")
+                        Base.parse(Int128, d[3:end]; base=16)
+                    elseif startswith(d, "0b") || startswith(d, "0B")
+                        Base.parse(Int128, d[3:end]; base=2)
+                    elseif length(d) > 1 && d[1] == '0'
+                        Base.parse(Int128, d; base=8)
+                    else
+                        Base.parse(Int128, d)
+                    end
                 else
                     return Int128(Integer(getfield(M, Symbol(t))))
                 end
@@ -1933,8 +2357,27 @@ end
                 op = toks[pos]
                 pos += 1
                 w = lvl(lv + 1)
-                v = op == "|" ? v | w : op == "^" ? xor(v, w) : op == "&" ? v & w : op == "<<" ? v << w : op == ">>" ? v >> w :
-                    op == "+" ? v + w : op == "-" ? v - w : op == "*" ? v * w : op == "/" ? v ÷ w : rem(v, w)
+                v = if op == "|"
+                    v | w
+                elseif op == "^"
+                    xor(v, w)
+                elseif op == "&"
+                    v & w
+                elseif op == "<<"
+                    v << w
+                elseif op == ">>"
+                    v >> w
+                elseif op == "+"
+                    v + w
+                elseif op == "-"
+                    v - w
+                elseif op == "*"
+                    v * w
+                elseif op == "/"
+                    v ÷ w
+                else
+                    rem(v, w)
+                end
             end
             return v
         end
@@ -1942,7 +2385,7 @@ end
         pos == length(toks) + 1 || error("trailing C text in $s")
         return res
     end
-    ceq(v, c) = (m = (Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
+    ceq(v, c) = (m=(Int128(1) << (8 * sizeof(v))) - 1; (Int128(Integer(v)) & m) == (c & m))
     # ROW-COUNT GUARD (D-0984/T2): the C extractor found 12 name(s); each must exist in LK and carry the C value
     @test !isempty(rows) && length(rows) == 12 && allunique(first.(rows))
     for (nm, k, c) in rows

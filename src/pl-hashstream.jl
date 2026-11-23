@@ -110,14 +110,19 @@ end
 function hash_append(ctx::HashContext, data::Vector{UInt8}, size::Int)::Nothing
     return _hash_append(ctx.state, data, size)
 end
-_hash_append(st::md5_state_t, data::Vector{UInt8}, size::Int)::Nothing = md5_append(st, data, size)
-_hash_append(st::sha1_ctx, data::Vector{UInt8}, size::Int)::Nothing = sha1_hash!(data, size, st)
-_hash_append(st::sha2_ctx, data::Vector{UInt8}, size::Int)::Nothing = sha2_hash!(data, size, st)
+_hash_append(st::md5_state_t, data::Vector{UInt8}, size::Int)::Nothing =
+    md5_append(st, data, size)
+_hash_append(st::sha1_ctx, data::Vector{UInt8}, size::Int)::Nothing =
+    sha1_hash!(data, size, st)
+_hash_append(st::sha2_ctx, data::Vector{UInt8}, size::Int)::Nothing =
+    sha2_hash!(data, size, st)
 
 # ORIGINAL: `hash_context copy = *ctx` (pl_stream_hash): a copy the finishing does not disturb. The states hold vectors, so each is copied.
 "A copy of the state `st`, sharing nothing with it."
-_hash_copy_state(st::md5_state_t)::md5_state_t = md5_state_t(copy(st.count), copy(st.abcd), copy(st.buf))
-_hash_copy_state(st::sha1_ctx)::sha1_ctx = sha1_ctx(copy(st.count), copy(st.hash), copy(st.wbuf))
+_hash_copy_state(st::md5_state_t)::md5_state_t =
+    md5_state_t(copy(st.count), copy(st.abcd), copy(st.buf))
+_hash_copy_state(st::sha1_ctx)::sha1_ctx =
+    sha1_ctx(copy(st.count), copy(st.hash), copy(st.wbuf))
 function _hash_copy_state(st::sha2_ctx)::sha2_ctx
     c256 = sha256_ctx(copy(st.ctx256.count), copy(st.ctx256.hash), copy(st.ctx256.wbuf))
     c512 = sha512_ctx(copy(st.ctx512.count), copy(st.ctx512.hash), copy(st.ctx512.wbuf))
@@ -230,8 +235,9 @@ end
 
 # PORT: packages/clib/hash_stream.c hash_stream_options
 # (PL_OPTION("algorithm", OPT_TERM), PL_OPTION("close_parent", OPT_BOOL))
-const hash_stream_option_specs =
-    (PL_option_t(:algorithm, OPT_TERM), PL_option_t(:close_parent, OPT_BOOL))
+const hash_stream_option_specs = (
+    PL_option_t(:algorithm, OPT_TERM), PL_option_t(:close_parent, OPT_BOOL)
+)
 
 # PORT: packages/clib/hash_stream.c pl_stream_hash_open
 # DIVERGES: see the file header, 3 to 6; the "no memory" exit is gone; `PL_get_stream_handle` is `term_stream_handle(SH_ERRORS|SH_ALIAS)`.
@@ -331,5 +337,5 @@ end
 # DIVERGES: see the file header, 1.
 const PL_predicates_from_hashstream = (
     PL_extension("open_hash_stream", 3, pl_open_hash_stream3_va, PL_FA_VARARGS),
-    PL_extension("stream_hash", 2, pl_stream_hash2_va, PL_FA_VARARGS),
+    PL_extension("stream_hash", 2, pl_stream_hash2_va, PL_FA_VARARGS)
 )

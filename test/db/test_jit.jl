@@ -49,8 +49,9 @@ end
 not_hashed(p::IxPred)::Bool = LK.unify_index_pattern(p.def) === nothing
 
 # PORT: pl-index.c unify_index_pattern (the term-building port, PR1b)
-const _INDEX_DICT_KEYS =
-    (:arguments, :position, :buckets, :speedup, :list, :size, :realised, :collisions)
+const _INDEX_DICT_KEYS = (
+    :arguments, :position, :buckets, :speedup, :list, :size, :realised, :collisions
+)
 
 """
 `predicate_property(P, indexed(L))` as `'\$get_predicate_attribute'(P, indexed, L)` answers it, through `LK.unify_index_pattern(ld, proc,

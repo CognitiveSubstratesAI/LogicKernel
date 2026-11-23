@@ -131,8 +131,11 @@ function pl_mutex_create2_va(
 
     if alias !== nothing
         if !PL_unify_atom(ld, A1, alias)
-            return PL_error(ld, "mutex_create", 2, "", ERR_UNINSTANTIATION, 1, A1) ? FTRUE :
+            return if PL_error(ld, "mutex_create", 2, "", ERR_UNINSTANTIATION, 1, A1)
+                FTRUE
+            else
                 FFALSE
+            end
         end
     end
 
@@ -282,10 +285,14 @@ function pl_mutex_unlock1_va(
         return FTRUE
     else
         msg = m.owner != 0 ? "not owner" : "not locked"
-        return PL_error(
+        return if PL_error(
             ld, "mutex_unlock", 1, msg, ERR_PERMISSION, mk_sym(T, :unlock),
             mk_sym(T, :mutex), A1
-        ) ? FTRUE : FFALSE
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
 end
 
@@ -334,8 +341,8 @@ function mutex_property_value(
         by = PL_new_term_ref(ld)
         count = PL_new_term_ref(ld)
         return PL_unify_functor(ld, prop, mk_sym(T, :locked), 2) &&
-            _PL_get_arg(ld, 1, prop, by) && _PL_get_arg(ld, 2, prop, count) &&
-            PL_unify_integer(ld, count, m.count) && unify_mutex_owner(ld, by, m.owner)
+               _PL_get_arg(ld, 1, prop, by) && _PL_get_arg(ld, 2, prop, count) &&
+               PL_unify_integer(ld, count, m.count) && unify_mutex_owner(ld, by, m.owner)
     end
     return PL_unify_atom(ld, prop, mk_sym(T, :unlocked))
 end
@@ -356,7 +363,9 @@ end
 # PORT: pl-mutex.c free_mstate
 # DIVERGES: the record goes back to the pool (`freeForeignState`); it drops its references to the mutexes.
 "Give the `mutex_property/2` state at pool index `idx` back (pl-mutex.c)."
-function free_mstate!(pool::foreign_state_pool{mutex_prop_enum{T}}, idx::Int)::Nothing where {T}
+function free_mstate!(
+    pool::foreign_state_pool{mutex_prop_enum{T}}, idx::Int
+)::Nothing where {T}
     state = pool.states[idx]
     empty!(state.mutexes)
     state.m = nothing
@@ -389,7 +398,7 @@ function pl_mutex_property2_va(
             state.enumerating = true                    # state->e = newTableEnumWP(GD->thread.mutexTable)
             empty!(state.mutexes)
             append!(state.mutexes, values(_query_gd(ld).mutexes))
-            sort!(state.mutexes; by = x -> x.serial)
+            sort!(state.mutexes; by=x -> x.serial)
             if rc == 1
                 state.p = p
                 state.enum_properties = false

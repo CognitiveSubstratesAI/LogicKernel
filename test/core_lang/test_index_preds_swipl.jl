@@ -181,10 +181,22 @@ const _IP_CASES = [
     ("ipc30", raw"'$candidate_indexes'(pair/3, [_,_,_,_], 3), R = yes"),
     ("ipc31", raw"'$candidate_indexes'(one/1, [], 3), R = yes"),
     ("ipc32", raw"'$candidate_indexes'(pair/3, [x], 3), R = yes"),
-    ("ipc33", raw"dict_pairs(D, hash_info, [arguments-[1,2], list-false, ln_buckets-5, speedup-36.0]), '$candidate_indexes'(pair/3, [D|_], 3), R = yes"),
-    ("ipc34", raw"dict_pairs(D, hash_info, [arguments-[2,1], list-false, ln_buckets-5, speedup-36.0]), '$candidate_indexes'(pair/3, [D|_], 3), R = yes"),
-    ("ipc35", raw"'$candidate_indexes'(big/2, L, 4), L = [D], get_dict(speedup, D, S), R = S"),
-    ("ipc36", raw"'$candidate_indexes'(q/2, L, 4), L = [D], get_dict(speedup, D, S), ( S =:= 5/3 -> R = exact ; R = widened )"),
+    (
+        "ipc33",
+        raw"dict_pairs(D, hash_info, [arguments-[1,2], list-false, ln_buckets-5, speedup-36.0]), '$candidate_indexes'(pair/3, [D|_], 3), R = yes"
+    ),
+    (
+        "ipc34",
+        raw"dict_pairs(D, hash_info, [arguments-[2,1], list-false, ln_buckets-5, speedup-36.0]), '$candidate_indexes'(pair/3, [D|_], 3), R = yes"
+    ),
+    (
+        "ipc35",
+        raw"'$candidate_indexes'(big/2, L, 4), L = [D], get_dict(speedup, D, S), R = S"
+    ),
+    (
+        "ipc36",
+        raw"'$candidate_indexes'(q/2, L, 4), L = [D], get_dict(speedup, D, S), ( S =:= 5/3 -> R = exact ; R = widened )"
+    ),
     ("ipc37", raw"'$candidate_indexes'(big/2, L, -1), R = L"),
     ("ipc38", raw"'$candidate_indexes'(big/2, L, a), R = L"),
     ("ipc39", raw"'$candidate_indexes'(big/2, L, 1.5), R = L"),
@@ -226,7 +238,10 @@ const _IP_CASES = [
     ("ipsc22", raw"'$set_candidate_indexes'(one/1, 3), R = yes"),
     ("ipsc23", raw"'$set_candidate_indexes'(fa/2, 3), ip_h(fa/2, 4, R)"),
     ("ipsc24", raw"'$set_candidate_indexes'(_, a), R = yes"),
-    ("ipsc25", raw"'$set_candidate_indexes'(pair/3, 4), pair(2, 3, Z), findall(J, pair(2, J, _), Js), R = Z-Js"),
+    (
+        "ipsc25",
+        raw"'$set_candidate_indexes'(pair/3, 4), pair(2, 3, Z), findall(J, pair(2, J, _), Js), R = Z-Js"
+    ),
     ("ipsc26", raw"'$set_candidate_indexes'(1, a), R = yes"),
     ("ipsc27", raw"findall(x, '$set_candidate_indexes'(big/2, 4), L), R = L"),
     ("ipss01", raw"'$set_source_files'(foo), R = yes"),
@@ -279,17 +294,38 @@ const _IP_CASES = [
     ("ipdf_fl13", raw"ip_dir(fl13, R)"),
     ("ipdf_fl14", raw"ip_dir(fl14, R)"),
     ("ipdf_fp12", raw"ip_dir(fp12, R)"),
-    ("ipcf01", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))@, Cs), ip_cl(Cs, R)"),
-    ("ipcf02", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(c))@, Cs), ip_cl(Cs, R)"),
-    ("ipcf03", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))@, Cs), ip_cl(Cs, R)"),
-    ("ipcf04", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))+1@, Cs), ip_cl(Cs, R)"),
-    ("ipcf05", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(2))@, Cs), ip_cl(Cs, R)"),
-    ("ipcf06", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(2))+1@, Cs), length(Cs, R)"),
+    (
+        "ipcf01",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))@, Cs), ip_cl(Cs, R)"
+    ),
+    (
+        "ipcf02",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(c))@, Cs), ip_cl(Cs, R)"
+    ),
+    (
+        "ipcf03",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))@, Cs), ip_cl(Cs, R)"
+    ),
+    (
+        "ipcf04",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))+1@, Cs), ip_cl(Cs, R)"
+    ),
+    (
+        "ipcf05",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(2))@, Cs), ip_cl(Cs, R)"
+    ),
+    (
+        "ipcf06",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(2))+1@, Cs), length(Cs, R)"
+    ),
     ("ipcf07", raw"'$clause_from_source'('@FILE@', '@FILE@', 1000, Cs), length(Cs, R)"),
     ("ipcf08", raw"'$clause_from_source'('@FILE@', '@FILE@', 0, Cs), ip_cl(Cs, R)"),
     ("ipcf09", raw"'$clause_from_source'('@FILE@', '@FILE@', -1, Cs), ip_cl(Cs, R)"),
     ("ipcf10", raw"'$clause_from_source'('@FILE@', '@FILE@', 1, Cs), ip_cl(Cs, R)"),
-    ("ipcf11", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))-1@, Cs), ip_cl(Cs, R)"),
+    (
+        "ipcf11",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))-1@, Cs), ip_cl(Cs, R)"
+    ),
     ("ipcf12", raw"'$clause_from_source'('@FILE@', '@FILE@', a, Cs), R = Cs"),
     ("ipcf13", raw"'$clause_from_source'(_, '@FILE@', 1, Cs), R = Cs"),
     ("ipcf14", raw"'$clause_from_source'('@FILE@', _, 1, Cs), R = Cs"),
@@ -298,15 +334,24 @@ const _IP_CASES = [
     ("ipcf17", raw"'$clause_from_source'('/no/such', '@FILE@', 1000, Cs), R = Cs"),
     ("ipcf18", raw"'$clause_from_source'(1, '@FILE@', 1000, Cs), R = Cs"),
     ("ipcf19", raw"'$clause_from_source'('@FILE@', 1, 1000, Cs), R = Cs"),
-    ("ipcf20", raw"'$clause_from_source'('@FILE@', '@FILE@', 1000, [C]), clause(H, _, C), functor(H, N, A), R = N/A"),
+    (
+        "ipcf20",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', 1000, [C]), clause(H, _, C), functor(H, N, A), R = N/A"
+    ),
     ("ipcf21", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(c))@, [_,_]), R = yes"),
     ("ipcf22", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(c))@, foo), R = yes"),
     ("ipcf23", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(c))@, []), R = yes"),
     ("ipcf24", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))@, [_,_]), R = yes"),
     ("ipcf25", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cf(a))@, []), R = yes"),
     ("ipcf26", raw"'$clause_from_source'('@FILE@', '@FILE@', 1.5, Cs), R = Cs"),
-    ("ipcf27", raw"findall(x, '$clause_from_source'('@FILE@', '@FILE@', 1000, _), L), R = L"),
-    ("ipcf28", raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))@, [C]), ( clause(cg(1), true, C) -> R = body ; R = other )"),
+    (
+        "ipcf27",
+        raw"findall(x, '$clause_from_source'('@FILE@', '@FILE@', 1000, _), L), R = L"
+    ),
+    (
+        "ipcf28",
+        raw"'$clause_from_source'('@FILE@', '@FILE@', @L(cg(1))@, [C]), ( clause(cg(1), true, C) -> R = body ; R = other )"
+    ),
     ("iprs01", raw"redefine_system_predicate(ip_zz(_)), R = yes"),
     ("iprs02", raw"redefine_system_predicate(user:ip_ww(_, _)), R = yes"),
     ("iprs03", raw"redefine_system_predicate(_), R = yes"),
@@ -317,13 +362,25 @@ const _IP_CASES = [
     ("iprs08", raw"redefine_system_predicate(ip_z0), R = yes"),
     ("iprs09", raw"redefine_system_predicate(ip_f(1, 2, 3)), R = yes"),
     ("iprs10", raw"assertz(ip_m1:atom_length(a, b)), R = yes"),
-    ("iprs11", raw"redefine_system_predicate(ip_m2:atom_length(_, _)), assertz(ip_m2:atom_length(c, d)), ip_m2:atom_length(c, X), R = X"),
+    (
+        "iprs11",
+        raw"redefine_system_predicate(ip_m2:atom_length(_, _)), assertz(ip_m2:atom_length(c, d)), ip_m2:atom_length(c, X), R = X"
+    ),
     ("iprs12", raw"ip_m2:atom_length(abc, X), R = X"),
-    ("iprs13", raw"redefine_system_predicate(ip_m3:atom_length(_, _)), ip_m3:atom_length(abc, X), R = X"),
-    ("iprs14", raw"assertz(ip_m4:ip_foo(1)), redefine_system_predicate(ip_m4:ip_foo(_)), ip_m4:ip_foo(X), R = X"),
+    (
+        "iprs13",
+        raw"redefine_system_predicate(ip_m3:atom_length(_, _)), ip_m3:atom_length(abc, X), R = X"
+    ),
+    (
+        "iprs14",
+        raw"assertz(ip_m4:ip_foo(1)), redefine_system_predicate(ip_m4:ip_foo(_)), ip_m4:ip_foo(X), R = X"
+    ),
     ("iprs15", raw"redefine_system_predicate(ip_st(_)), ip_st(X), R = X"),
     ("iprs16", raw"redefine_system_predicate(ip_dy(_)), ip_dy(X), R = X"),
-    ("iprs17", raw"predicate_property(ip_m2:atom_length(_, _), number_of_clauses(N)), R = N"),
+    (
+        "iprs17",
+        raw"predicate_property(ip_m2:atom_length(_, _), number_of_clauses(N)), R = N"
+    ),
     ("iprs18", raw"findall(x, redefine_system_predicate(ip_zz(_)), L), R = L"),
     ("ippd01", raw"'$predefine_foreign'(ip_pf/2), R = yes"),
     ("ippd02", raw"ip_pr(ip_pf(_, _), R)"),
@@ -600,7 +657,9 @@ function _ip_lines_of(prog::String, g::String)::String
             mm = match(r"@L\((.*?)\)([+-]\d+)?@", m)
             v = findfirst(l -> startswith(l, mm.captures[1]), plines)
             v === nothing && error("no marker $(mm.captures[1])")
-            return string(v + (mm.captures[2] === nothing ? 0 : parse(Int, mm.captures[2])))
+            return string(
+                v + (mm.captures[2] === nothing ? 0 : parse(Int, mm.captures[2]))
+            )
         end
     )
 end
@@ -679,7 +738,8 @@ end
     @test length(_IP_PINNED) == length(_IP_CASES) + 1
     @test length(_IP_CASES) == 200
     fam(re) = [id for (id, _) in _IP_CASES if occursin(re, id)]
-    for re in (r"^ipc\d", r"^ipsc", r"^ipss", r"^ipfl", r"^ipdf_", r"^ipcf", r"^iprs", r"^ippd")
+    for re in
+        (r"^ipc\d", r"^ipsc", r"^ipss", r"^ipfl", r"^ipdf_", r"^ipcf", r"^iprs", r"^ippd")
         ids = fam(re)
         answered = [l for l in _IP_PINNED if any(id -> startswith(l, "t_$id "), ids)]
         failed = [l for l in _IP_PINNED if any(id -> l == "t_$id", ids)]

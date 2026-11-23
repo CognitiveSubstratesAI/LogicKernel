@@ -184,7 +184,11 @@ const _MG_CASES = [
         raw"open_string('  ab', S), current_input(O), set_input(S), get(C), set_input(O), R = C",
         _mgi(97)
     ),
-    ("ge16", raw"open_string('', S), current_input(O), set_input(S), get(C), set_input(O), R = C", _mgi(-1)),
+    (
+        "ge16",
+        raw"open_string('', S), current_input(O), set_input(S), get(C), set_input(O), R = C",
+        _mgi(-1)
+    ),
     (
         "ge11",
         raw"get(nosuch, _)",
@@ -296,7 +300,11 @@ const _MG_CASES = [
         raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), memberchk(T, [jump, clause, top, catch, debug, foreign]), R = ok",
         _mga("ok")
     ),
-    ("ca02", raw"prolog_current_choice(C), prolog_choice_attribute(C, frame, F), integer(F), R = ok", _mga("ok")),
+    (
+        "ca02",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, frame, F), integer(F), R = ok",
+        _mga("ok")
+    ),
     (
         "ca03",
         raw"prolog_current_choice(C), ( prolog_choice_attribute(C, parent, P) -> ( integer(P), P < C -> R = older ; R = other ) ; R = noparent )",
@@ -322,7 +330,11 @@ const _MG_CASES = [
         raw"prolog_current_choice(C), prolog_choice_attribute(C, 1, _)",
         _mgraised(_mgc("type_error", _mga("atom"), _mgi(1)))
     ),
-    ("ca08", raw"prolog_choice_attribute(_, type, _)", _mgraised(_mga("instantiation_error"))),
+    (
+        "ca08",
+        raw"prolog_choice_attribute(_, type, _)",
+        _mgraised(_mga("instantiation_error"))
+    ),
     ("ca09", raw"mg_or(R)", _mgc("-", _mga("jump"), _mga("pc"))),
     ("ca10", raw"mg_cc(R)", _mgc("-", _mga("clause"), _mgi(2))),
     (
@@ -332,8 +344,16 @@ const _MG_CASES = [
     ),
     # a non-deterministic foreign call's choice point is a CHP_JUMP whose code is I_FREDO (`foreign`); the row's own catch/3 choice is the
     # current one before any call (`catch`). MEASURE ON THE LANE: ca12 `swipl -g "between(1,3,_), prolog_current_choice(C), prolog_choice_attribute(C,type,T), print(T), nl" -t halt`
-    ("ca12", raw"between(1, 3, _), prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("foreign")),
-    ("ca13", raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T", _mga("catch")),
+    (
+        "ca12",
+        raw"between(1, 3, _), prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T",
+        _mga("foreign")
+    ),
+    (
+        "ca13",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, type, T), R = T",
+        _mga("catch")
+    ),
     # the `pc` key's OFFSET, pinned exactly (MISS1 mutants PC1/PC2): the code offset of mg_pc's `;` jump choice point inside its clause,
     # MEASURED against the pinned swipl 18168e62: `swipl -q` on the program, `mg_pc(P), print(P)` prints 15. The kernel's `value_pc - 1`
     # (in_clause_jump) equals it only while the kernel compiles to swipl's word layout: a kernel answer other than 15 is a layout difference
@@ -351,7 +371,11 @@ const _MG_CASES = [
     ("ca19", raw"mg_cp(R)", _mga("parent")),
     ("ca20", raw"mg_jt(R)", _mga("jump")),
     ("ca21", raw"mg_jp(R)", _mga("pc")),
-    ("ca22", raw"prolog_current_choice(C), prolog_choice_attribute(C, _, _)", _mgraised(_mga("instantiation_error"))),
+    (
+        "ca22",
+        raw"prolog_current_choice(C), prolog_choice_attribute(C, _, _)",
+        _mgraised(_mga("instantiation_error"))
+    ),
     # trace/0 where the kernel does NOT refuse (audit D-0768 (2): no port of PORT_MASK is visible, so the tracer cannot stop): swipl answers as the
     # kernel does, MEASURED with the pin: `'$visible'(V0, 0), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off )`
     # gives on-off (a mask of 0 and one outside PORT_MASK, 512, alike). The rows restore the mask and the debug mode (`nodebug`: trace/0 switches the
@@ -365,7 +389,7 @@ const _MG_CASES = [
         "tr02",
         raw"'$visible'(V0, 512), trace, ( tracing -> A = on ; A = off ), notrace, ( tracing -> B = on ; B = off ), nodebug, '$visible'(_, V0), R = A-B",
         _mgc("-", _mga("on"), _mga("off"))
-    ),
+    )
 ]
 
 "The expected lines (the driver's output) of the rows."
@@ -477,20 +501,25 @@ _mg_refused(f) =
     ld = LK.PL_local_data{_MG}(gd)
     @test ld.debugstatus_leashing == 0x14f            # initTracer: CALL|FAIL|REDO|EXIT|CUT_CALL|EXCEPTION
     @test ld.debugstatus_visible == 0x14f
-    @test LK.CALL_PORT | LK.FAIL_PORT | LK.REDO_PORT | LK.EXIT_PORT | LK.CUT_CALL_PORT | LK.EXCEPTION_PORT == 0x14f
-    @test LK.CUT_PORT == 0xc0 && LK.PORT_MASK == 0x1ff && LK.UNIFY_PORT == 0x10 && LK.NO_PORT == 0
+    @test LK.CALL_PORT | LK.FAIL_PORT | LK.REDO_PORT | LK.EXIT_PORT | LK.CUT_CALL_PORT |
+          LK.EXCEPTION_PORT == 0x14f
+    @test LK.CUT_PORT == 0xc0 && LK.PORT_MASK == 0x1ff && LK.UNIFY_PORT == 0x10 &&
+        LK.NO_PORT == 0
     @test LK.pl_tracing(ld) == LK.FFALSE
     @test !ld.debugstatus_debugging
     # the initial mask shows ports: trace/0 is refused by name, DBG2, and nothing changes
     e = _mg_refused(() -> LK.pl_trace(ld))
-    @test e isa LK.NotPortedError && e.step == "DBG2" && occursin("trace/0 with a visible port", e.what)
+    @test e isa LK.NotPortedError && e.step == "DBG2" &&
+        occursin("trace/0 with a visible port", e.what)
     @test LK.pl_tracing(ld) == LK.FFALSE
     @test !ld.debugstatus_debugging
     sk = ld.debugstatus_skiplevel
     # one visible port of each kind refuses; a mask outside PORT_MASK (0x200, 0x400) or 0 shows no port: tracemode(true)
     for (v, refused) in (
-        (0x001, true), (0x002, true), (0x004, true), (0x008, true), (0x010, true), (0x040, true),
-        (0x080, true), (0x100, true), (0x1ff, true), (0x3ff, true), (0x200, false), (0x400, false),
+        (0x001, true), (0x002, true), (0x004, true), (0x008, true), (0x010, true),
+        (0x040, true),
+        (0x080, true), (0x100, true), (0x1ff, true), (0x3ff, true), (0x200, false),
+        (0x400, false),
         (0x000, false)
     )
         ld.debugstatus_visible = v
@@ -498,7 +527,8 @@ _mg_refused(f) =
         e = _mg_refused(() -> LK.pl_trace(ld))
         if refused
             @test e isa LK.NotPortedError
-            @test LK.pl_tracing(ld) == LK.FFALSE && !ld.debugstatus_debugging && ld.debugstatus_skiplevel == sk
+            @test LK.pl_tracing(ld) == LK.FFALSE && !ld.debugstatus_debugging &&
+                ld.debugstatus_skiplevel == sk
         else
             @test e === nothing
             @test LK.pl_tracing(ld) == LK.FTRUE && ld.debugstatus_debugging   # tracemode(true): the debug mode goes on with it

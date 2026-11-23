@@ -462,7 +462,7 @@ function existingFrame(ld::PL_local_data{T}, off::Int)::Int where {T}
     start = 0
     for i in ld.nframes:-1:1                        # the pool is ordered by `base`
         b = ld.frames[i].base
-        b == off && (start = i; break)
+        b == off && (start=i; break)
         b < off && return 0
     end
     start == 0 && return 0
@@ -4941,7 +4941,9 @@ function PL_next_solution_guarded(
     # DIVERGES: the helper's argument `answer` is a node id `tgs_answer` of the trie `tgs_tr` (both set by the jumping site);
     # the key is the term reference of argument 2 of the frame (`consTermRef(argFrameP(FR, 1))`).
     @label trie_gen_single
-    vs_st = _vmi_trie_gen_single!(ld, QID, FR, ARGP, PCc, PCl, PC, tgs_tr::trie{T}, tgs_answer)   # the body (LAT3b: outlined)
+    vs_st = _vmi_trie_gen_single!(
+        ld, QID, FR, ARGP, PCc, PCl, PC, tgs_tr::trie{T}, tgs_answer
+    )   # the body (LAT3b: outlined)
     vs_st == _VS_NEXT && @goto exit_checking_wakeup
     @goto vs_status
 
@@ -5339,7 +5341,10 @@ function PL_next_solution_guarded(
     ld.statistics.inferences += 1                   # LD->statistics.inferences++ (Y1)
     (
         ld.alerted &
-        (ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO | ALERT_COVERAGE)
+        (
+            ALERT_SIGNAL | ALERT_DEPTHLIMIT | ALERT_INFERENCELIMIT | ALERT_UNDO |
+            ALERT_COVERAGE
+        )
     ) != 0 &&
         @goto depart_alerted   # if ( unlikely(LD->alerted) )
     PCc = DEF.codes

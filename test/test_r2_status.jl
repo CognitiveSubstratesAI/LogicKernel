@@ -318,7 +318,7 @@ end
     # the argv setter defines `argv` / `os_argv` (src/pl-init.jl); the function's own definition and a comment are no definition
     defd_argv = r2_flags_defined([
         "function _set_argv_prolog_flag!(gd, ld, name, v)\nend\n_set_argv_prolog_flag!(gd, ld, \"os_argv\", cmd.os_argv)\n" *
-            "_set_argv_prolog_flag!(\n    gd, ld, \"argv\", cmd.appl_argv)\n# _set_argv_prolog_flag!(gd, ld, \"commented\", x)\n"
+        "_set_argv_prolog_flag!(\n    gd, ld, \"argv\", cmd.appl_argv)\n# _set_argv_prolog_flag!(gd, ld, \"commented\", x)\n"
     ])
     @test defd_argv == Set(["os_argv", "argv"])
     jl = """

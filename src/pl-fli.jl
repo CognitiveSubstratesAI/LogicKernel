@@ -228,7 +228,11 @@ function PL_unify_chars(
     fl = Int(flags)
     utf8 = (fl & Int(REP_UTF8)) != 0
     if !utf8 && (fl & Int(REP_MB)) != 0
-        throw(NotPortedError{Nothing}(nothing, "PL_unify_chars with REP_MB (ENC_ANSI, the locale)", "no caller"))
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_unify_chars with REP_MB (ENC_ANSI, the locale)", "no caller"
+            )
+        )
     end
     bytes = Vector{UInt8}(s[1:len])
     text = if utf8
@@ -1312,7 +1316,8 @@ function pl_blob2_va(
     if name == unavailable_blob.name                        # dead blob: report the type it
         _, w, _ = _deref_loc(ld, -(A1 + 1))                 # stands for, not `unavailable'
         dead = deadBlobType(ld.atoms, blob_handle(_atom_value(ld, w)))
-        dead === nothing || return PL_unify_atom(ld, A2, _atom_from_text(T, dead)) ? FTRUE : FFALSE
+        dead === nothing ||
+            return PL_unify_atom(ld, A2, _atom_from_text(T, dead)) ? FTRUE : FFALSE
     end
     return PL_unify_atom(ld, A2, mk_sym(T, Symbol(name))) ? FTRUE : FFALSE
 end
@@ -2092,7 +2097,8 @@ function _record_atom_symbol!(
 end
 
 # ORIGINAL (FLI-API): `strlen` of a byte vector: the bytes before the first 0, or all of them.
-_c_strlen(s::AbstractVector{UInt8})::Int = something(findfirst(iszero, s), length(s) + 1) - 1
+_c_strlen(s::AbstractVector{UInt8})::Int =
+    something(findfirst(iszero, s), length(s) + 1) - 1
 
 # PORT: pl-fli.c PL_new_atom
 # DIVERGES: the local data is an argument (upstream's `lookupAtom` on `GD->atoms`, after `initAtoms` where the
@@ -2228,9 +2234,13 @@ function get_string_text(s::T)::PL_chars_t where {T}
     isString(s) || error("get_string_text: not a string")
     codes = UInt32[UInt32(c) for c in string_value(s)]
     if all(c -> c < 0x00000100, codes)                        # isBString(w)
-        return PL_chars_t(UInt8[UInt8(c) for c in codes], length(codes), ENC_ISO_LATIN_1, true)
+        return PL_chars_t(
+            UInt8[UInt8(c) for c in codes], length(codes), ENC_ISO_LATIN_1, true
+        )
     end
-    return PL_chars_t(Vector{UInt8}(reinterpret(UInt8, codes)), length(codes), ENC_WCHAR, true)
+    return PL_chars_t(
+        Vector{UInt8}(reinterpret(UInt8, codes)), length(codes), ENC_WCHAR, true
+    )
 end
 
 # PORT: pl-fli.c compareUCSAtom
@@ -2439,7 +2449,9 @@ function _latin1_string(len::Int, s::AbstractVector{UInt8})::String
     if len == -1
         len = _c_strlen(s)
     end
-    return _text_string(PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, ENC_ISO_LATIN_1, true))
+    return _text_string(
+        PL_chars_t(Vector{UInt8}(view(s, 1:len)), len, ENC_ISO_LATIN_1, true)
+    )
 end
 
 # PORT: pl-fli.c PL_put_atom_chars
@@ -2630,7 +2642,9 @@ end
 
 # PORT: pl-fli.c PL_unify_list_codes
 "Unify the term `l` references with the list of the bytes of `chars` before the first 0, as integer codes (pl-fli.c)."
-PL_unify_list_codes(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+PL_unify_list_codes(
+    ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}
+) where {T} =
     PL_unify_list_ncodes(ld, l, _c_strlen(chars), chars)
 
 # PORT: pl-fli.c PL_unify_list_nchars
@@ -2660,7 +2674,9 @@ end
 
 # PORT: pl-fli.c PL_unify_list_chars
 "Unify the term `l` references with the list of the bytes of `chars` before the first 0, as one-character atoms (pl-fli.c)."
-PL_unify_list_chars(ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}) where {T} =
+PL_unify_list_chars(
+    ld::PL_local_data{T}, l::term_t, chars::AbstractVector{UInt8}
+) where {T} =
     PL_unify_list_nchars(ld, l, _c_strlen(chars), chars)
 
 # ── FLI-API group E2 (pl-fli.c): getting text, the cvt_i family, the code-to-atom cache (PL_get_wchars, PL_unify_wchars
@@ -2691,7 +2707,7 @@ function _PL_cvt_i_char(
     end
     txt = PL_get_text(ld, p, CVT_ATOM | CVT_STRING | CVT_LIST)
     if txt !== nothing && PL_canonicalise_text(txt) == 1 && txt.length == 1 &&
-       txt.encoding === ENC_ISO_LATIN_1
+        txt.encoding === ENC_ISO_LATIN_1
         return txt.text[1]                                  # *c = txt.text.t[0]
     end
     if PL_is_integer(ld, p)
@@ -2745,7 +2761,9 @@ PL_cvt_i_int64(ld::PL_local_data{T}, p::term_t) where {T} = PL_get_int64_ex(ld, 
 # ORIGINAL (FLI-API): pl-error.c `PL_get_uint64_ex`, which the kernel has not written; as `PL_get_size_ex` above it
 # with the range of `uint64_t`: a non-negative integer up to `typemax(UInt64)`, else the error.
 "The `uint64_t` term reference `t` holds, or `nothing` after `domain_error(not_less_than_zero, T)`, `representation_error(uint64_t)` or `type_error(integer, T)`."
-function _fli_get_uint64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, UInt64} where {T}
+function _fli_get_uint64_ex(
+    ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, UInt64} where {T}
     k, x, _ = _deref_loc(ld, -(t + 1))
     if k != DU_VALUE                                        # a variable, an atom, a compound
         PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
@@ -2823,7 +2841,11 @@ end
 # (`PL_strip_module`'s convention), `MODULE_user`'s outside a frame.
 "The context module, an index into the module table: that of the environment frame, `user` outside one (pl-fli.c)."
 function PL_context(gd::PL_global_data{T}, ld::PL_local_data{T})::Int where {T}
-    return ld.environment_frame != 0 ? contextModule(gd, ld, ld.environment_frame) : MODULE_user(gd).index
+    return if ld.environment_frame != 0
+        contextModule(gd, ld, ld.environment_frame)
+    else
+        MODULE_user(gd).index
+    end
 end
 
 # PORT: pl-fli.c PL_new_module
@@ -2863,14 +2885,18 @@ function PL_predicate(
     a = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, name)
     if a === nothing
         PL_clear_exception(ld)
-        error("invalid predicate name $(String(Vector{UInt8}(view(name, 1:_c_strlen(name))))) (invalid UTF-8)")
+        error(
+            "invalid predicate name $(String(Vector{UInt8}(view(name, 1:_c_strlen(name))))) (invalid UTF-8)"
+        )
     end
     f = PL_new_functor_sz(ld, a, arity)                     # lookupFunctorDef(a, arity)
     if module_ !== nothing
         b = PL_new_atom_mbchars(ld, Int(ENC_UTF8), -1, module_)
         if b === nothing
             PL_clear_exception(ld)
-            error("invalid module name $(String(Vector{UInt8}(view(module_, 1:_c_strlen(module_))))) (invalid UTF-8)")
+            error(
+                "invalid module name $(String(Vector{UInt8}(view(module_, 1:_c_strlen(module_))))) (invalid UTF-8)"
+            )
         end
         m = lookupModule(gd, b).index                       # m = lookupModule(a)
     else
@@ -2894,7 +2920,9 @@ end
 # DIVERGES: the database is an argument; the answer is the module's index (see `PL_context`), `nothing` for
 # upstream's `false`; no `valid_term_t` check (`O_VALIDATE_API`, owner FLI1).
 "The index of the module named by the atom term reference `t` holds (created if new), `nothing` if `t` holds no atom (pl-fli.c)."
-function PL_get_module(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
+function PL_get_module(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t
+)::Union{Nothing, Int} where {T}
     a = PL_get_atom(ld, t)                                  # if ( PL_get_atom(t, &a) )
     a === nothing && return nothing
     return lookupModule(gd, a).index                        # *m = lookupModule(a)
@@ -3049,16 +3077,38 @@ function PL_unify_termv(
             )
         elseif op == PL_NUTF8_CHARS || op == PL_NUTF8_CODES || op == PL_NUTF8_STRING
             len = Int(args[ai += 1]::Integer)
-            ty = op == PL_NUTF8_CHARS ? PL_ATOM : op == PL_NUTF8_CODES ? PL_CODE_LIST : PL_STRING
-            rval = PL_unify_chars(ld, t, ty | Int(REP_UTF8), len, args[ai += 1]::AbstractVector{UInt8})
+            ty = if op == PL_NUTF8_CHARS
+                PL_ATOM
+            elseif op == PL_NUTF8_CODES
+                PL_CODE_LIST
+            else
+                PL_STRING
+            end
+            rval = PL_unify_chars(
+                ld, t, ty | Int(REP_UTF8), len, args[ai += 1]::AbstractVector{UInt8}
+            )
         elseif op == PL_NWCHARS || op == PL_NWCODES || op == PL_NWSTRING
             len = Int(args[ai += 1]::Integer)
-            ty = op == PL_NWCHARS ? PL_ATOM : op == PL_NWCODES ? PL_CODE_LIST : PL_STRING
+            ty = if op == PL_NWCHARS
+                PL_ATOM
+            elseif op == PL_NWCODES
+                PL_CODE_LIST
+            else
+                PL_STRING
+            end
             ws = args[ai += 1]::AbstractVector{UInt32}      # wip/clib-uri's PL_unify_wchars takes the code points as `Int`s
             rval = PL_unify_wchars(ld, t, ty, len, Int[Int(c) for c in ws])
         elseif op == PL_MBCHARS || op == PL_MBCODES || op == PL_MBSTRING
-            ty = op == PL_MBCHARS ? PL_ATOM : op == PL_MBCODES ? PL_CODE_LIST : PL_STRING
-            rval = PL_unify_chars(ld, t, ty | Int(REP_MB), -1, args[ai += 1]::AbstractVector{UInt8})
+            ty = if op == PL_MBCHARS
+                PL_ATOM
+            elseif op == PL_MBCODES
+                PL_CODE_LIST
+            else
+                PL_STRING
+            end
+            rval = PL_unify_chars(
+                ld, t, ty | Int(REP_MB), -1, args[ai += 1]::AbstractVector{UInt8}
+            )
         elseif op == PL_FUNCTOR_CHARS || op == PL_FUNCTOR
             if op == PL_FUNCTOR_CHARS
                 a = PL_new_atom(ld, args[ai += 1]::AbstractVector{UInt8})   # atom_t a = PL_new_atom(s)
@@ -3259,7 +3309,9 @@ end
 
 # ORIGINAL (FLI-API15): the print_message/2 branch of `vwarning` (pl-init.c:2358-2394): the message split at each newline into
 # a list of strings, `error` and `message_lines(Lines)` as the arguments. False where upstream takes `goto nospace`.
-function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+function _fli_warning_message(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString
+)::Bool where {T}
     cid = PL_open_foreign_frame(ld)
     cid == 0 && return false                                # if ( !(cid = PL_open_foreign_frame()) ) goto nospace
     av = PL_new_term_refs(ld, 2)
@@ -3271,7 +3323,7 @@ function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::
         eol = findnext(==(0x0a), bytes, pos)                # strchr(s, '\n')
         if eol !== nothing
             if !PL_unify_list(ld, tail, head, tail) ||
-               !PL_unify_string_nchars(ld, head, eol - pos, view(bytes, pos:(eol - 1)))
+                !PL_unify_string_nchars(ld, head, eol - pos, view(bytes, pos:(eol - 1)))
                 PL_discard_foreign_frame(ld, cid)           # nospace: if ( cid ) PL_discard_foreign_frame(cid)
                 return false
             end
@@ -3279,7 +3331,7 @@ function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::
         else
             if pos <= length(bytes)                         # if ( *s )
                 if !PL_unify_list(ld, tail, head, tail) ||
-                   !PL_unify_string_chars(ld, head, view(bytes, pos:length(bytes)))
+                    !PL_unify_string_chars(ld, head, view(bytes, pos:length(bytes)))
                     PL_discard_foreign_frame(ld, cid)
                     return false
                 end
@@ -3291,7 +3343,9 @@ function _fli_warning_message(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::
             break
         end
     end
-    if !PL_cons_functor(ld, av + 1, PL_new_functor(ld, mk_sym(T, :message_lines), 1), av + 1)
+    if !PL_cons_functor(
+        ld, av + 1, PL_new_functor(ld, mk_sym(T, :message_lines), 1), av + 1
+    )
         PL_discard_foreign_frame(ld, cid)
         return false
     end
@@ -3309,12 +3363,14 @@ end
 # then the fallback text has nowhere to go and is dropped.
 # (e) when building the line list fails midway the fallback prints the whole text, upstream's the text from the line it
 # stopped at (`s` is advanced as the lines are taken); the case needs a full global stack and is not distinguished here.
-function _fli_vwarning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+function _fli_vwarning(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString
+)::Bool where {T}
     toldString(ld)                                          # play safe
     if truePrologFlag(ld, PLFLAG_REPORT_ERROR)
         done = false
         if !gd.bootsession && isDefinedProcedure(gd, gd.procedures_print_message2) &&
-           !ld.outofstack && !startswith(msg, "\$")
+            !ld.outofstack && !startswith(msg, "\$")
             done = _fli_warning_message(gd, ld, msg)
         end
         if !done                                            # nospace:
@@ -3329,7 +3385,8 @@ end
 # DIVERGES: the message is the formatted text, not a format and its arguments (see `_fli_vwarning`); the database and the local
 # data are arguments.
 "Print the warning `msg` through print_message/2 (to `user_error` where that cannot be called); false (pl-fli.c)."
-PL_warning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} = _fli_vwarning(gd, ld, msg)
+PL_warning(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString) where {T} =
+    _fli_vwarning(gd, ld, msg)
 
 "`vfatalError`'s `static int active`: a second fatal error while one is reported ends the process by `abort()` alone."
 const _FLI_FATAL_ACTIVE = Ref(0)
@@ -3338,7 +3395,9 @@ const _FLI_FATAL_ACTIVE = Ref(0)
 # DIVERGES: (a) the message is the formatted text; (b) the report goes to `Suser_error` (upstream's `Serror`, the same stream
 # until the host redirects it); (c) where the seam of `PL_abort_process` returns (a test that embeds the kernel:
 # `gd.halt_exit = false`) the `active` count is reset, as the process upstream never returns from.
-function _fli_vfatal_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Nothing where {T}
+function _fli_vfatal_error(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString
+)::Nothing where {T}
     active = _FLI_FATAL_ACTIVE[]
     _FLI_FATAL_ACTIVE[] = active + 1                        # if ( active++ )
     if active != 0
@@ -3517,7 +3576,9 @@ const _FLI_SYS_ACTIVE = Ref(0)
 # ("Action?" prompt, taken when `user_input` and `user_error` are terminals and the system is not booting): the process always
 # ends as the non-interactive branch ends it; (d) where the seam of `PL_abort_process` returns (`gd.halt_exit = false`) the
 # `active` count is reset, as the process upstream never returns from. Returns false, as `sysError`.
-function _fli_sys_error(gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString)::Bool where {T}
+function _fli_sys_error(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, msg::AbstractString
+)::Bool where {T}
     active = _FLI_SYS_ACTIVE[]
     _FLI_SYS_ACTIVE[] = active + 1                          # if ( active++ )
     if active != 0
@@ -3580,7 +3641,8 @@ function PL_action(
         else
             throw(
                 NotPortedError{Nothing}(
-                    nothing, "PL_action(PL_ACTION_BACKTRACE): PL_backtrace($depth, 0)", "DBG1"
+                    nothing, "PL_action(PL_ACTION_BACKTRACE): PL_backtrace($depth, 0)",
+                    "DBG1"
                 )
             )
         end
@@ -3643,7 +3705,9 @@ function PL_query(gd::PL_global_data{T}, ld::PL_local_data{T}, query::Int)::Int 
     elseif query == PL_QUERY_ARGV
         throw(
             NotPortedError{Nothing}(
-                nothing, "PL_query(PL_QUERY_ARGV): a char** (gd.cmdline.appl_argv is the vector)", "FLI1"
+                nothing,
+                "PL_query(PL_QUERY_ARGV): a char** (gd.cmdline.appl_argv is the vector)",
+                "FLI1"
             )
         )
     elseif query == PL_QUERY_MAX_INTEGER || query == PL_QUERY_MIN_INTEGER
@@ -3688,7 +3752,9 @@ function PL_version_info(which::Int)::UInt32
     if which == PL_VERSION_VM || which == PL_VERSION_BUILT_IN
         throw(
             NotPortedError{Nothing}(
-                nothing, "PL_version_info($which): the VM and built-in signatures (abi_version)", "FLI1"
+                nothing,
+                "PL_version_info($which): the VM and built-in signatures (abi_version)",
+                "FLI1"
             )
         )
     end

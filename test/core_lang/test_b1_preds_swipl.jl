@@ -96,13 +96,31 @@ end
 
 
 const _B1_CASES = [
-    ("ts01", raw"thread_statistics(main, cputime, X), ( float(X) -> R = float ; R = other )"),
+    (
+        "ts01",
+        raw"thread_statistics(main, cputime, X), ( float(X) -> R = float ; R = other )"
+    ),
     ("ts02", raw"thread_statistics(main, runtime, [A,B]), integer(A), integer(B), R = ok"),
-    ("ts03", raw"thread_statistics(main, system_time, [A,B]), integer(A), integer(B), R = ok"),
-    ("ts04", raw"thread_statistics(main, heapused, X), ( integer(X) -> R = integer ; R = other )"),
-    ("ts05", raw"thread_statistics(1, inferences, X), ( integer(X) -> R = integer ; R = other )"),
-    ("ts06", raw"thread_statistics(main, warnings, X), ( integer(X) -> R = integer ; R = other )"),
-    ("ts07", raw"thread_statistics(main, errors, X), ( integer(X) -> R = integer ; R = other )"),
+    (
+        "ts03",
+        raw"thread_statistics(main, system_time, [A,B]), integer(A), integer(B), R = ok"
+    ),
+    (
+        "ts04",
+        raw"thread_statistics(main, heapused, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "ts05",
+        raw"thread_statistics(1, inferences, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "ts06",
+        raw"thread_statistics(main, warnings, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "ts07",
+        raw"thread_statistics(main, errors, X), ( integer(X) -> R = integer ; R = other )"
+    ),
     ("ts08", raw"thread_statistics(main, nokey, _)"),
     ("ts09", raw"thread_statistics(main, _, _)"),
     ("ts10", raw"thread_statistics(main, 1, _)"),
@@ -115,36 +133,93 @@ const _B1_CASES = [
     ("ts17", raw"thread_statistics(main, warnings, foo)"),
     ("ts18", raw"thread_statistics(main, errors, a)"),
     ("ts19", raw"thread_statistics(main, cputime, f(_))"),
-    ("ts20", raw"thread_statistics(main, threads, X), ( integer(X) -> R = integer ; R = other )"),
-    ("ts21", raw"thread_statistics(main, atoms, X), ( integer(X) -> R = integer ; R = other )"),
+    (
+        "ts20",
+        raw"thread_statistics(main, threads, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "ts21",
+        raw"thread_statistics(main, atoms, X), ( integer(X) -> R = integer ; R = other )"
+    ),
     ("ts22", raw"thread_statistics(main, epoch, X), ( float(X) -> R = float ; R = other )"),
-    ("ts23", raw"thread_statistics(main, stack_limit, X), ( integer(X) -> R = integer ; R = other )"),
+    (
+        "ts23",
+        raw"thread_statistics(main, stack_limit, X), ( integer(X) -> R = integer ; R = other )"
+    ),
     ("ts24", raw"findall(X, thread_statistics(main, cputime, X), L), length(L, N), R = N"),
     ("ts25", raw"thread_statistics(main, runtime, [_])"),
-    ("ts26", raw"thread_statistics(main, cputime, X), thread_statistics(1, cputime, Y), ( Y >= X -> R = mono ; R = bad )"),
+    (
+        "ts26",
+        raw"thread_statistics(main, cputime, X), thread_statistics(1, cputime, Y), ( Y >= X -> R = mono ; R = bad )"
+    ),
     ("ts27", raw"call_cleanup(thread_statistics(main, errors, _), Det = true), R = Det"),
-    ("ts28", raw"thread_statistics(main, cputime, X), findall(B, (between(1,20000,B), atom_length(abc,_)), _), thread_statistics(main, cputime, Y), ( Y > X -> R = later ; R = same )"),
-    ("ts29", raw"thread_statistics(main, runtime, [X,_]), findall(B, (between(1,200000,B), atom_length(abc,_)), _), thread_statistics(main, runtime, [Y,_]), ( Y > X -> R = later ; R = same )"),
+    (
+        "ts28",
+        raw"thread_statistics(main, cputime, X), findall(B, (between(1,20000,B), atom_length(abc,_)), _), thread_statistics(main, cputime, Y), ( Y > X -> R = later ; R = same )"
+    ),
+    (
+        "ts29",
+        raw"thread_statistics(main, runtime, [X,_]), findall(B, (between(1,200000,B), atom_length(abc,_)), _), thread_statistics(main, runtime, [Y,_]), ( Y > X -> R = later ; R = same )"
+    ),
     ("ts30", raw"thread_statistics(main, warnings, [_])"),
     ("ts31", raw"thread_statistics(main, errors, [_])"),
     ("ts32", raw"thread_statistics(main, warnings, 0), R = ok"),
     ("ts33", raw"thread_statistics(main, errors, 0), R = ok"),
-    ("te01", raw"engine_create(x, true, E), thread_statistics(E, cputime, X), ( float(X) -> R = float ; R = other )"),
-    ("te02", raw"engine_create(x, true, E), thread_statistics(E, runtime, [A,B]), integer(A), integer(B), R = ok"),
-    ("te03", raw"engine_create(x, true, E), thread_statistics(E, system_time, [A,B]), integer(A), integer(B), R = ok"),
-    ("te04", raw"engine_create(x, true, E), thread_statistics(E, heapused, X), ( integer(X) -> R = integer ; R = other )"),
-    ("te05", raw"engine_create(x, true, E), thread_statistics(E, warnings, X), ( integer(X) -> R = integer ; R = other )"),
-    ("te06", raw"engine_create(x, true, E), thread_statistics(E, errors, X), ( integer(X) -> R = integer ; R = other )"),
+    (
+        "te01",
+        raw"engine_create(x, true, E), thread_statistics(E, cputime, X), ( float(X) -> R = float ; R = other )"
+    ),
+    (
+        "te02",
+        raw"engine_create(x, true, E), thread_statistics(E, runtime, [A,B]), integer(A), integer(B), R = ok"
+    ),
+    (
+        "te03",
+        raw"engine_create(x, true, E), thread_statistics(E, system_time, [A,B]), integer(A), integer(B), R = ok"
+    ),
+    (
+        "te04",
+        raw"engine_create(x, true, E), thread_statistics(E, heapused, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "te05",
+        raw"engine_create(x, true, E), thread_statistics(E, warnings, X), ( integer(X) -> R = integer ; R = other )"
+    ),
+    (
+        "te06",
+        raw"engine_create(x, true, E), thread_statistics(E, errors, X), ( integer(X) -> R = integer ; R = other )"
+    ),
     ("te07", raw"engine_create(x, true, E), thread_statistics(E, nokey, _)"),
     ("te08", raw"engine_create(x, true, E), thread_statistics(E, cputime, foo)"),
-    ("te09", raw"engine_create(x, true, E), engine_destroy(E), catch(thread_statistics(E, cputime, _), error(existence_error(T0, E2), _), ( E2 == E -> R = existence(T0) ; R = other ))"),
-    ("te10", raw"engine_create(x, true, E), engine_next(E, _), catch(thread_statistics(E, inferences, _), error(existence_error(T0, E2), _), ( E2 == E -> R = existence(T0) ; R = other ))"),
-    ("te11", raw"engine_create(x, ( thread_self(M), thread_statistics(M, errors, V), integer(V) ), E), engine_next(E, R)"),
-    ("te12", raw"engine_create(x, true, E), thread_statistics(E, inferences, X), ( integer(X) -> R = integer ; R = other )"),
+    (
+        "te09",
+        raw"engine_create(x, true, E), engine_destroy(E), catch(thread_statistics(E, cputime, _), error(existence_error(T0, E2), _), ( E2 == E -> R = existence(T0) ; R = other ))"
+    ),
+    (
+        "te10",
+        raw"engine_create(x, true, E), engine_next(E, _), catch(thread_statistics(E, inferences, _), error(existence_error(T0, E2), _), ( E2 == E -> R = existence(T0) ; R = other ))"
+    ),
+    (
+        "te11",
+        raw"engine_create(x, ( thread_self(M), thread_statistics(M, errors, V), integer(V) ), E), engine_next(E, R)"
+    ),
+    (
+        "te12",
+        raw"engine_create(x, true, E), thread_statistics(E, inferences, X), ( integer(X) -> R = integer ; R = other )"
+    ),
     ("te13", raw"engine_create(x, true, E), thread_statistics(E, runtime, [_])"),
-    ("te14", raw"engine_create(x, ( thread_self(M), thread_statistics(M, nokey, _) ), E), catch(engine_next(E, _), error(domain_error(D, K), _), R = d(D, K))"),
-    ("te15", raw"engine_create(x, ( findall(Y, (between(1,3000,Y), atom_length(abc,_)), _) ; true ), E), thread_statistics(E, inferences, I0), engine_next(E, _), thread_statistics(E, inferences, I1), D is I1 - I0, ( D >= 3000 -> R = grew ; R = small )"),
-    ("te16", raw"numlist(1, 100000, L), statistics(stacks, [GM,_]), engine_create(x, true, E), thread_statistics(E, stacks, [GE,_]), L = [_|_], ( GE < GM -> R = less ; R = notless )")
+    (
+        "te14",
+        raw"engine_create(x, ( thread_self(M), thread_statistics(M, nokey, _) ), E), catch(engine_next(E, _), error(domain_error(D, K), _), R = d(D, K))"
+    ),
+    (
+        "te15",
+        raw"engine_create(x, ( findall(Y, (between(1,3000,Y), atom_length(abc,_)), _) ; true ), E), thread_statistics(E, inferences, I0), engine_next(E, _), thread_statistics(E, inferences, I1), D is I1 - I0, ( D >= 3000 -> R = grew ; R = small )"
+    ),
+    (
+        "te16",
+        raw"numlist(1, 100000, L), statistics(stacks, [GM,_]), engine_create(x, true, E), thread_statistics(E, stacks, [GE,_]), L = [_|_], ( GE < GM -> R = less ; R = notless )"
+    )
 ]
 
 # the swipl lines of every case, PINNED (evidence/B1/gen_rows.py --fill writes the block)
@@ -208,9 +283,9 @@ const _B1_PIN = Dict(zip(_B1_IDS, _B1_PINNED[2:end]))
 function _b1_program()::String
     return join(
         [
-            "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
-            (id, g) in _B1_CASES
-        ]
+        "t_$(id)(R) :- catch(($(g)), error(SsuE, _), R = raised(SsuE)).\n" for
+        (id, g) in _B1_CASES
+    ]
     )
 end
 
@@ -287,14 +362,18 @@ end
 # REFUSED by name, owner TH1, kernel only: the main thread's local data is not reachable from an engine; swipl answers the row (a float).
 @testset "thread_statistics/3 of the main thread from an engine is refused by name, owner TH1 (rf01)" begin
     f = joinpath(mktempdir(), "b1_refused.pl")
-    write(f, "t_rf01(R) :- engine_create(x, thread_statistics(main, cputime, _), E), engine_next(E, _), R = ok.\n")   # no catch/3
+    write(
+        f,
+        "t_rf01(R) :- engine_create(x, thread_statistics(main, cputime, _), E), engine_next(E, _), R = ok.\n"
+    )   # no catch/3
     kl, _, _, e = _b1_kernel(f, ["t_rf01"])
     @test e isa LK.NotPortedError
     if e isa LK.NotPortedError
         @test e.step == "TH1"
         @test e.what == "thread_statistics/3: the main thread from an engine"
         @test sym_text(e.culprit) == "thread_statistics"
-        @test kl[end] == "t_rf01 notported TH1 thread_statistics/3: the main thread from an engine"
+        @test kl[end] ==
+            "t_rf01 notported TH1 thread_statistics/3: the main thread from an engine"
     end
 end
 
@@ -309,7 +388,9 @@ end
     end
     # the 3-argument statistics method is statistics/2's, the 4-argument one is thread_statistics/3's
     @test hasmethod(LK.pl_statistics_ld, Tuple{LK.PL_local_data{_B1}, Int, Int})
-    @test hasmethod(LK.pl_statistics_ld, Tuple{LK.PL_local_data{_B1}, Int, Int, LK.PL_local_data{_B1}})
+    @test hasmethod(
+        LK.pl_statistics_ld, Tuple{LK.PL_local_data{_B1}, Int, Int, LK.PL_local_data{_B1}}
+    )
 end
 
 @testset "the B1 rows are not vacuous" begin

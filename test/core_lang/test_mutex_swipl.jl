@@ -151,7 +151,10 @@ const _MX_CASES = [
         "m33",
         raw"mutex_create(mx33), mutex_lock(mx33), mutex_lock(mx33), mutex_unlock_all, mutex_property(mx33, status(R))"
     ),
-    ("m34", raw"mutex_create(mx34), mutex_lock(mx34), mutex_unlock_all, mutex_unlock(mx34)"),
+    (
+        "m34",
+        raw"mutex_create(mx34), mutex_lock(mx34), mutex_unlock_all, mutex_unlock(mx34)"
+    ),
     (
         "m35",
         raw"mutex_create(mx35), mutex_destroy(mx35), mutex_create(mx35), mutex_property(mx35, status(R))"

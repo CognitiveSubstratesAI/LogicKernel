@@ -281,9 +281,12 @@ function get_file_name(
 
         PL_put_term(ld, av, n)
 
-        rc && (flags & PL_FILE_EXIST) != 0 && (rc = add_option(ld, options, mk_sym(T, :exist)))
-        rc && (flags & PL_FILE_READ) != 0 && (rc = add_option(ld, options, mk_sym(T, :read)))
-        rc && (flags & PL_FILE_WRITE) != 0 && (rc = add_option(ld, options, mk_sym(T, :write)))
+        rc && (flags & PL_FILE_EXIST) != 0 &&
+            (rc = add_option(ld, options, mk_sym(T, :exist)))
+        rc && (flags & PL_FILE_READ) != 0 &&
+            (rc = add_option(ld, options, mk_sym(T, :read)))
+        rc && (flags & PL_FILE_WRITE) != 0 &&
+            (rc = add_option(ld, options, mk_sym(T, :write)))
         rc && (flags & PL_FILE_EXECUTE) != 0 &&
             (rc = add_option(ld, options, mk_sym(T, :execute)))
 
@@ -494,7 +497,9 @@ function iri_hook_va(
     try
         argv = PL_new_term_refs(ld, 4)
         if argv != 0 &&
-            PL_put_atom(ld, argv, mk_sym(T, Symbol(String(codeunits(url)[1:(colon - 1)])))) &&
+            PL_put_atom(
+                ld, argv, mk_sym(T, Symbol(String(codeunits(url)[1:(colon - 1)])))
+            ) &&
             PL_unify_atomic(ld, argv + 1, mk_gnd(T, url))
             rc = call_iri_hook(gd, ld, argv, op, md)
         end
@@ -507,7 +512,7 @@ end
 # PORT: pl-file.c iri_hook
 # DIVERGES: as `iri_hook_va`: `md` is the `ACCESS_*` mode of `IRI_ACCESS` (0 for the others); the answer is the value or `nothing`.
 "Call the Prolog hook `'\$iri':iri_hook/4` of the IRI `url` for `op` (`IRI_ACCESS`, `IRI_TIME`, `IRI_SIZE`): its answer, or `nothing` (pl-file.c)."
-iri_hook(ld::PL_local_data{T}, url::String, op::Int, md::Int = 0) where {T} =
+iri_hook(ld::PL_local_data{T}, url::String, op::Int, md::Int=0) where {T} =
     iri_hook_va(ld, url, op, md)
 
 # ORIGINAL (LB2b): `sym_key` equality of an atom with the atom named `name`, for `PL_get_atom`'s result.
@@ -730,7 +735,8 @@ function pl_delete_file1_va(
 )::foreign_t where {T}
     A1 = PL__t0
     aname = PL_get_atom(ld, A1)                                     # PL_get_atom(A1, &aname)
-    aname !== nothing && kind(aname) === SYM && !is_reserved_symbol(aname) && !is_blob(aname) &&
+    aname !== nothing && kind(aname) === SYM && !is_reserved_symbol(aname) &&
+        !is_blob(aname) &&
         DeleteTemporaryFile(_query_gd(ld), sym_text(aname)) && return FTRUE
     n = PL_get_file_name(ld, A1, 0)
     n === nothing && return FFALSE

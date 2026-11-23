@@ -156,9 +156,11 @@ function can_share_cells(ld::PL_local_data, p::Int, flags::Int)::Bool
         c = ld.gstack[p]
     end
     if isVar(c)                                             # TAG_VAR
-        return (flags & COPY_MARKED) != 0 && (_cp_vm(ld, p) & _CPV_BOTH) == 0 && (flags & COPYING_ATTVAR) == 0
+        return (flags & COPY_MARKED) != 0 && (_cp_vm(ld, p) & _CPV_BOTH) == 0 &&
+               (flags & COPYING_ATTVAR) == 0
     elseif isAttVar(c)                                      # TAG_ATTVAR
-        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 && (flags & COPYING_ATTVAR) == 0
+        return (flags & COPY_MARKED) != 0 && (c & BOTH_MASK) == 0 &&
+               (flags & COPYING_ATTVAR) == 0
     end
     _is_gcompound(c) && return (ld.gstack[valPtr(c)] & BOTH_MASK) == FIRST_MASK   # is_ground
     return true
@@ -782,7 +784,9 @@ end
 function size_abstract_term(
     ld::PL_local_data{T}, in::term_t, copy::term_t, abstract::Int
 )::Bool where {T}
-    return copy_term_refs(ld, in, copy, cp_options(Int(COPY_ATTRS | COPY_ABSTRACT), 0, 0, abstract))
+    return copy_term_refs(
+        ld, in, copy, cp_options(Int(COPY_ATTRS | COPY_ABSTRACT), 0, 0, abstract)
+    )
 end
 
 # PORT: pl-copyterm.c size_abstract_term as pl_size_abstract_term3_va

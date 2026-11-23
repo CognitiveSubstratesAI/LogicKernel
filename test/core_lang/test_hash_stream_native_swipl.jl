@@ -15,7 +15,8 @@ const LK = LogicKernel
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _TL = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 
-_ctx(::LK.PL_local_data{T}) where {T} = LK.foreign_context{T}(LK.FRG_FIRST_CALL, UInt(0), nothing)
+_ctx(::LK.PL_local_data{T}) where {T} =
+    LK.foreign_context{T}(LK.FRG_FIRST_CALL, UInt(0), nothing)
 
 # a fresh database and local data with an open foreign frame (the term references live in it)
 function _env(::Type{T}) where {T}
@@ -37,7 +38,7 @@ const _MSGS = Dict{Symbol, Vector{UInt8}}(
     :big => _msg(10000),                          # larger than the 4096-byte buffer of a stream
     :big4096 => _msg(4096),                       # the first 4096 bytes of :big
     :utf8 => Vector{UInt8}(codeunits("héllo")),   # "héllo" in UTF-8
-    :l1 => UInt8[0x68, 0xe9, 0x6c, 0x6c, 0x6f],   # "héllo" in ISO Latin-1
+    :l1 => UInt8[0x68, 0xe9, 0x6c, 0x6c, 0x6f]   # "héllo" in ISO Latin-1
 )
 const _WANT = Dict{Tuple{Symbol, Symbol}, String}(
     (:md5, :empty) => "d41d8cd98f00b204e9800998ecf8427e",
@@ -97,9 +98,11 @@ struct Str
 end
 
 _put_val!(ld, t::Int, ::Nothing) = true
-_put_val!(ld::LK.PL_local_data{T}, t::Int, x::Symbol) where {T} = LK.PL_put_atom(ld, t, lk_sym(T, x))
+_put_val!(ld::LK.PL_local_data{T}, t::Int, x::Symbol) where {T} =
+    LK.PL_put_atom(ld, t, lk_sym(T, x))
 _put_val!(ld, t::Int, x::Integer) = LK.PL_put_int64(ld, t, Int(x))
-_put_val!(ld::LK.PL_local_data{T}, t::Int, x::Str) where {T} = LK.PL_unify_atomic(ld, t, lk_gnd(T, x.text))
+_put_val!(ld::LK.PL_local_data{T}, t::Int, x::Str) where {T} =
+    LK.PL_unify_atomic(ld, t, lk_gnd(T, x.text))
 
 _new1(ld) = LK.PL_new_term_refs(ld, 1)
 function _atomref(ld, x)::Int
@@ -164,7 +167,7 @@ struct OtherRec <: LK.AbstractSfilter end
 
 # open_hash_stream(Parent, Hash, Options) on fresh term references: `parent` is an IOSTREAM, a symbol, an integer or `nothing` (unbound); `second`
 # is what the hash argument holds before the call
-function _open(ld, parent, opts::Int; second = nothing)
+function _open(ld, parent, opts::Int; second=nothing)
     t = LK.PL_new_term_refs(ld, 3)
     if parent isa LK.IOSTREAM
         LK.PL_unify_stream(ld, t, parent) || error("PL_unify_stream")
@@ -185,7 +188,7 @@ function _hash_open(ld, parent::LK.IOSTREAM, items...)
     return hs, t + 1
 end
 # stream_hash(Stream, Hash) on the stream the term reference `ts` holds; `out` is what Hash holds before the call
-function _stream_hash(ld, ts::Int; out = nothing)
+function _stream_hash(ld, ts::Int; out=nothing)
     t = LK.PL_new_term_refs(ld, 2)
     LK.PL_put_term(ld, t, ts)
     _put_val!(ld, t + 1, out) || error("_put_val!")
@@ -196,7 +199,7 @@ function _stream_hash(ld, ts::Int; out = nothing)
         a = lk_answer(ld, t + 1)
         hash = kind(a) === SYM ? sym_text(a) : nothing
     end
-    return (rc = rc, hash = hash, exc = exc)
+    return (rc=rc, hash=hash, exc=exc)
 end
 
 _exc(ld)::Bool = LK.PL_exception(ld, 0) != 0
@@ -212,14 +215,21 @@ function _exc_args(ld)::Tuple{String, String}
     kind(f) === SYM && return ("", "")
     a = child(f, 2)
     b = nchildren(f) >= 3 ? child(f, 3) : nothing
-    txt(x) = x === nothing ? "" : kind(x) === SYM ? sym_text(x) : ""
+    txt(x) =
+        if x === nothing
+            ""
+        elseif kind(x) === SYM
+            sym_text(x)
+        else
+            ""
+        end
     return (txt(a), txt(b))
 end
 # argument `i` of the formal, as a term
 _exc_arg(ld, i::Int) = child(child(_exc_term(ld), 2), i + 1)
 
 # bytes through Sfwrite, `chunk` at a time
-function _write(s::LK.IOSTREAM, bytes::Vector{UInt8}; chunk::Int = max(length(bytes), 1))
+function _write(s::LK.IOSTREAM, bytes::Vector{UInt8}; chunk::Int=max(length(bytes), 1))
     p = 0
     n = length(bytes)
     while p < n
@@ -232,14 +242,18 @@ end
 
 # the streams the database's table holds, not counting the three standard streams
 _live(gd, ld) = count(
-    s -> s !== nothing && !any(x -> x === s, ld.IO_streams[(LK.SNO_USER_INPUT + 1):(LK.SNO_USER_ERROR + 1)]),
-    gd.stream_table,
+    s ->
+        s !== nothing &&
+        !any(x -> x === s, ld.IO_streams[(LK.SNO_USER_INPUT + 1):(LK.SNO_USER_ERROR + 1)]),
+    gd.stream_table
 )
 
 # the core on a byte vector, the digest as lowercase hex (md5.c, sha1.c, sha2.c at the Julia level), in the pieces `chunks`
-_hex(d::Vector{UInt8}) = join(string(b, base = 16, pad = 2) for b in d)
-const _DSIZE = Dict(:md5 => 16, :sha1 => 20, :sha224 => 28, :sha256 => 32, :sha384 => 48, :sha512 => 64)
-function _core(alg::Symbol, data::Vector{UInt8}; chunks = [length(data)])
+_hex(d::Vector{UInt8}) = join(string(b; base=16, pad=2) for b in d)
+const _DSIZE = Dict(
+    :md5 => 16, :sha1 => 20, :sha224 => 28, :sha256 => 32, :sha384 => 48, :sha512 => 64
+)
+function _core(alg::Symbol, data::Vector{UInt8}; chunks=[length(data)])
     pieces = Vector{Vector{UInt8}}()
     p = 0
     for c in chunks
@@ -276,7 +290,7 @@ end
         data = _MSGS[m]
         @test _core(alg, data) == _WANT[(alg, m)]
         if length(data) > 2
-            @test _core(alg, data; chunks = [1, length(data) - 1]) == _WANT[(alg, m)]
+            @test _core(alg, data; chunks=[1, length(data) - 1]) == _WANT[(alg, m)]
         end
     end
     # MUST-FAIL arm: the comparison reports a wrong digest
@@ -292,7 +306,7 @@ end
         bytes = _MSGS[m]
         parent, bufp, sizep = _sf_out()
         hs, ts = _hash_open(ld, parent, :algorithm => alg)
-        chunk == 0 ? _write(hs, bytes) : _write(hs, bytes; chunk = chunk)
+        chunk == 0 ? _write(hs, bytes) : _write(hs, bytes; chunk=chunk)
         r = _stream_hash(ld, ts)
         @test r.rc == LK.FTRUE && !r.exc && r.hash == _WANT[(alg, m)]
         @test LK.closeStream(ld, hs)
@@ -362,7 +376,14 @@ end
     fields(st::LK.md5_state_t) = (st.count, st.abcd, st.buf)
     fields(st::LK.sha1_ctx) = (st.count, st.hash, st.wbuf)
     fields(st::LK.sha2_ctx) =
-        (st.ctx256.count, st.ctx256.hash, st.ctx256.wbuf, st.ctx512.count, st.ctx512.hash, st.ctx512.wbuf)
+        (
+            st.ctx256.count,
+            st.ctx256.hash,
+            st.ctx256.wbuf,
+            st.ctx512.count,
+            st.ctx512.hash,
+            st.ctx512.wbuf
+        )
     for alg in _ALGS
         parent, bufp, sizep = _sf_out()
         hs, ts = _hash_open(ld, parent, :algorithm => alg)
@@ -424,7 +445,8 @@ end
     _write(hs, _MSGS[:abc])
     @test LK.closeStream(ld, hs)
     @test parent.magic == LK.SIO_CMAGIC && hs.magic == LK.SIO_CMAGIC
-    @test gd.stream_table[parent.context] === nothing && gd.stream_table[hs.context] === nothing
+    @test gd.stream_table[parent.context] === nothing &&
+        gd.stream_table[hs.context] === nothing
     @test _sf_bytes(bufp, sizep) == _MSGS[:abc]
     # the bare option close_parent is true
     parent, bufp, sizep = _sf_out()
@@ -464,20 +486,24 @@ end
     buf = zeros(UInt8, 6)
     @test LK.Sfread(buf, 1, 6, hs) == 6 && buf == _MSGS[:abcdef]
     @test LK.closeStream(ld, hs)
-    @test parent.magic == LK.SIO_MAGIC && parent.upstream === nothing && parent.encoding == LK.ENC_ISO_LATIN_1
+    @test parent.magic == LK.SIO_MAGIC && parent.upstream === nothing &&
+        parent.encoding == LK.ENC_ISO_LATIN_1
     @test LK.Sclose(parent) == 0
 end
 
 # h08: the flags of the filter are the parent's direction, text, representation and position flags, plus SIO_FBUF
 @testset "h08 the filter's flags" begin
     gd, ld = _env(_TL)
-    copy_flags = LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_REPXML | LK.SIO_REPPL | LK.SIO_RECORDPOS
+    copy_flags =
+        LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_REPXML | LK.SIO_REPPL |
+        LK.SIO_RECORDPOS
     @test LK.HASH_COPY_FLAGS == copy_flags
     parent = _sf_in(_MSGS[:abc])
     hs, _ = _hash_open(ld, parent, :close_parent => :false)
     @test (hs.flags & copy_flags) == (parent.flags & copy_flags)
     @test (hs.flags & LK.SIO_INPUT) != 0 && (hs.flags & LK.SIO_OUTPUT) == 0
-    @test (hs.flags & LK.SIO_TEXT) != 0 && (hs.flags & LK.SIO_RECORDPOS) != 0 && hs.position !== nothing
+    @test (hs.flags & LK.SIO_TEXT) != 0 && (hs.flags & LK.SIO_RECORDPOS) != 0 &&
+        hs.position !== nothing
     @test (hs.flags & LK.SIO_FBUF) != 0
     @test LK.closeStream(ld, hs)
     parent, _, _ = _sf_out()
@@ -493,15 +519,16 @@ end
 
 # h09: the option errors, as swipl 10.1.20 answers them (the formal and its first argument; the algorithm is checked BEFORE the stream)
 @testset "h09 open_hash_stream: the errors" begin
-    function case(items...; first = :mem, second = nothing, raw = nothing)
+    function case(items...; first=:mem, second=nothing, raw=nothing)
         gd, ld = _env(_TL)
         parent, _, _ = _sf_out()
         opts = raw === nothing ? _opts(ld, items...) : _atomref(ld, raw)
-        rc, t = _open(ld, first === :mem ? parent : first, opts; second = second)
+        rc, t = _open(ld, first === :mem ? parent : first, opts; second=second)
         exc = _exc(ld)
         return (
-            rc = rc, exc = exc, formal = exc ? _exc_formal(ld) : "", args = exc ? _exc_args(ld) : ("", ""),
-            ld = ld, parent = parent,
+            rc=rc, exc=exc, formal=exc ? _exc_formal(ld) : "",
+            args=exc ? _exc_args(ld) : ("", ""),
+            ld=ld, parent=parent
         )
     end
     rows = (
@@ -510,12 +537,12 @@ end
         ((:algorithm => nothing,), (;), "instantiation_error", "", ""),
         ((:algorithm => Str("md5"),), (;), "type_error", "atom", ""),
         ((:close_parent => :maybe,), (;), "type_error", "bool", "maybe"),
-        ((:algorithm => :foo,), (first = nothing,), "domain_error", "algorithm", "foo"),
-        ((), (first = nothing,), "instantiation_error", "", ""),
-        ((), (first = 1,), "domain_error", "stream_or_alias", ""),
-        ((), (first = :foo,), "existence_error", "stream", "foo"),
-        ((), (raw = :foo,), "type_error", "list", "foo"),
-        ((:algorithm => :sha256,), (second = :foo,), "uninstantiation_error", "foo", ""),
+        ((:algorithm => :foo,), (first=nothing,), "domain_error", "algorithm", "foo"),
+        ((), (first=nothing,), "instantiation_error", "", ""),
+        ((), (first=1,), "domain_error", "stream_or_alias", ""),
+        ((), (first=:foo,), "existence_error", "stream", "foo"),
+        ((), (raw=:foo,), "type_error", "list", "foo"),
+        ((:algorithm => :sha256,), (second=:foo,), "uninstantiation_error", "foo", "")
     )
     for (items, kw, formal, a1, a2) in rows
         r = case(items...; kw...)
@@ -527,7 +554,8 @@ end
     # the algorithm names are the six, spelled as swipl does; any other is domain_error(algorithm, Name)
     for name in (:MD5, :sha3, :sha, :sha_256)
         r = case(:algorithm => name)
-        @test r.rc == LK.FFALSE && r.formal == "domain_error" && r.args == ("algorithm", String(name))
+        @test r.rc == LK.FFALSE && r.formal == "domain_error" &&
+            r.args == ("algorithm", String(name))
     end
     # an unknown option is ignored
     gd, ld = _env(_TL)
@@ -544,9 +572,10 @@ end
     parent.encoding = LK.ENC_ISO_LATIN_1
     @test LK.PL_unify_stream(ld, _new1(ld), parent)
     before = _live(gd, ld)
-    rc, t = _open(ld, parent, _opts(ld, :algorithm => :md5); second = :foo)
+    rc, t = _open(ld, parent, _opts(ld, :algorithm => :md5); second=:foo)
     @test rc == LK.FFALSE
-    @test _exc(ld) && _exc_formal(ld) == "uninstantiation_error" && _exc_args(ld)[1] == "foo"
+    @test _exc(ld) && _exc_formal(ld) == "uninstantiation_error" &&
+        _exc_args(ld)[1] == "foo"
     @test parent.magic == LK.SIO_MAGIC && parent.encoding == LK.ENC_ISO_LATIN_1
     @test parent.upstream === nothing && parent.references == 0
     @test _live(gd, ld) == before                                              # the filter stream left the table
@@ -559,11 +588,13 @@ end
 # h11: stream_hash/2's refusals and failures
 @testset "h11 stream_hash: errors and failures" begin
     gd, ld = _env(_TL)
-    function sh(first; out = nothing)
+    function sh(first; out=nothing)
         LK.PL_clear_exception(ld)
-        r = _stream_hash(ld, first; out = out)
+        r = _stream_hash(ld, first; out=out)
         exc = _exc(ld)
-        return (; r..., formal = exc ? _exc_formal(ld) : "", args = exc ? _exc_args(ld) : ("", ""))
+        return (;
+            r..., formal=exc ? _exc_formal(ld) : "", args=exc ? _exc_args(ld) : ("", "")
+        )
     end
     r = sh(_new1(ld))
     @test r.rc == LK.FFALSE && r.formal == "instantiation_error"
@@ -588,9 +619,9 @@ end
     # Hash bound to something else: fails, no error
     parent, _, _ = _sf_out()
     hs, ts = _hash_open(ld, parent, :algorithm => :md5)
-    r = sh(ts; out = :foo)
+    r = sh(ts; out=:foo)
     @test r.rc == LK.FFALSE && r.formal == ""
-    r = sh(ts; out = :d41d8cd98f00b204e9800998ecf8427e)                        # bound to the digest itself: succeeds
+    r = sh(ts; out=:d41d8cd98f00b204e9800998ecf8427e)                        # bound to the digest itself: succeeds
     @test r.rc == LK.FTRUE
     # a stream with its error flag set: false (the Sferror branch)
     LK.Sseterr(hs, LK.SIO_FERR, "boom")
@@ -657,7 +688,8 @@ end
     @test LK.Sfilter_control(ctx, LK.SIO_SETENCODING, Ref(0)) == 0
     @test LK.Sfilter_control(ctx, LK.SIO_FLUSHOUTPUT, Ref(0)) == 0
     @test LK.Sfilter_control(ctx, LK.SIO_GETSIZE, Ref(0)) == -1
-    @test LK.Ssetenc(hs, LK.ENC_UTF8) == 0 && hs.encoding == LK.ENC_UTF8 && parent.encoding == LK.ENC_OCTET
+    @test LK.Ssetenc(hs, LK.ENC_UTF8) == 0 && hs.encoding == LK.ENC_UTF8 &&
+        parent.encoding == LK.ENC_OCTET
     @test LK.closeStream(ld, hs)
     @test LK.Sclose(parent) == 0
     # a parent that has a control function: forwarded (the answer, the argument), except the encoding
@@ -682,15 +714,24 @@ end
         t = _new1(ld)
         ok = LK.hash_unify_digest(ld, t, bytes, len)
         a = ok ? lk_answer(ld, t) : nothing
-        return ok, a === nothing ? nothing : kind(a) === SYM ? sym_text(a) : nothing
+        return ok,
+        if a === nothing
+            nothing
+        elseif kind(a) === SYM
+            sym_text(a)
+        else
+            nothing
+        end
     end
-    @test uni(UInt8[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef], 8) == (true, "0123456789abcdef")
+    @test uni(UInt8[0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef], 8) ==
+        (true, "0123456789abcdef")
     @test uni(UInt8[0xaa, 0xbb, 0xcc], 2) == (true, "aabb")                  # `len` is the used length
     @test uni(UInt8[], 0) == (true, "")
     @test uni(UInt8[0x0f, 0xf0], 2) == (true, "0ff0")                        # nibbles: the zero is kept
     @test uni(fill(0xab, 128), 128) == (true, "ab"^128)                      # 256 characters: the limit
     ok, _ = uni(fill(0xab, 129), 129)
-    @test !ok && _exc(ld) && _exc_formal(ld) == "representation_error" && _exc_args(ld)[1] == "digest_length"
+    @test !ok && _exc(ld) && _exc_formal(ld) == "representation_error" &&
+        _exc_args(ld)[1] == "digest_length"
     LK.PL_clear_exception(ld)
 
     @test [LK.hash_digest_size(a) for a in 0:5] == [16, 20, 28, 32, 48, 64]
@@ -727,7 +768,15 @@ end
         hs, ts = _hash_open(ld, parent, :algorithm => nm, :close_parent => :false)
         ctx = hs.filter[]
         @test ctx.algorithm == i - 1 && ctx.digest_size == _DSIZE[nm]
-        @test ctx.state isa (i == 1 ? LK.md5_state_t : i == 2 ? LK.sha1_ctx : LK.sha2_ctx)
+        @test ctx.state isa (
+            if i == 1
+                LK.md5_state_t
+            elseif i == 2
+                LK.sha1_ctx
+            else
+                LK.sha2_ctx
+            end
+        )
         @test LK.closeStream(ld, hs)
         @test LK.Sclose(parent) == 0
     end

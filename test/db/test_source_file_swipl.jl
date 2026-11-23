@@ -817,7 +817,7 @@ end
     gens = Dict{String, UInt64}()
     procs = Dict(
         n => LK.isCurrentProcedure(sym_key(_tls(n)), 1, LK.MODULE_user(gd)) for
-            n in ("foo", "bar", "baz")
+        n in ("foo", "bar", "baz")
     )
     st, _ = kcall(gd, ld, "\$unload_file", _TL[_tls(f)])
     @test st === :true

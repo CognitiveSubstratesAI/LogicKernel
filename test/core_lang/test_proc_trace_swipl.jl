@@ -235,8 +235,9 @@ function _pt_frames(ld::LK.PL_local_data{T}, name::String, arity::Int) where {T}
     key = sym_key(_tls(T, name))
     return [
         i for i in eachindex(ld.frames) if LK._onStackLocal(ld, i) &&
-        ld.frames[i].predicate !== nothing &&
-        ld.frames[i].predicate.functor_name == key && ld.frames[i].predicate.arity == arity
+            ld.frames[i].predicate !== nothing &&
+            ld.frames[i].predicate.functor_name == key &&
+            ld.frames[i].predicate.arity == arity
     ]
 end
 
@@ -283,7 +284,8 @@ end
         @test all(p -> p !== nothing, P)
         @test [p[2] for p in P] == ["ctx_c", "ctx_b", "ctx_a"] && all(p -> p[3] == 1, P)
         @test occursin(r"^\[PC=-1 in clause 1\]$", P[1][4])     # no continuation point was given
-        @test occursin(r"^\[PC=\d+ in clause 1\]$", P[2][4]) && occursin(r"^\[PC=\d+ in clause 1\]$", P[3][4])
+        @test occursin(r"^\[PC=\d+ in clause 1\]$", P[2][4]) &&
+            occursin(r"^\[PC=\d+ in clause 1\]$", P[3][4])
         @test P[1][1] == P[2][1] + 1 && P[2][1] == P[3][1] + 1    # each frame one level deeper than its parent
         @test ctx.fr == 0 && !LK.PL_step_context(ctx)             # the end of the stack
         @test LK.PL_describe_context(ctx, 256) == ("", 0)         # no frame: no text
@@ -333,6 +335,7 @@ end
         # one step up: ctx_f's own frame, a clause frame
         @test LK.PL_step_context(ctx)
         p2 = _pt_parse(LK.PL_describe_context(ctx, 256)[1])
-        @test p2 !== nothing && p2[2] == "ctx_f" && occursin(r"^\[PC=\d+ in clause 1\]$", p2[4])
+        @test p2 !== nothing && p2[2] == "ctx_f" &&
+            occursin(r"^\[PC=\d+ in clause 1\]$", p2[4])
     end
 end

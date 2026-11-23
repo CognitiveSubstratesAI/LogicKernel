@@ -39,13 +39,15 @@ function LK.Sfilter_control(h::PendFilter, op::Int, arg)::Int
 end
 
 "A memory stream on the text `str`, for reading."
-_sp_in(str::AbstractString) = let bytes = collect(codeunits(str))
-    LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(bytes), Ref(length(bytes)), "r")
-end
+_sp_in(str::AbstractString) =
+    let bytes = collect(codeunits(str))
+        LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(bytes), Ref(length(bytes)), "r")
+    end
 "The position of `s` as (charno, lineno, linepos)."
 _sp_pos(s::LK.IOSTREAM) = (s.position.charno, s.position.lineno, s.position.linepos)
 "A filter input stream over `impl` (no parent: the way prolog_stream.c's streams are made)."
-_sp_filter(impl::PendFilter) = LK.Snew(impl, LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
+_sp_filter(impl::PendFilter) =
+    LK.Snew(impl, LK.SIO_INPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
 
 # p01: SIO_RP_BLOCK on an empty buffer fills it, the first byte is `buf[1]`, the rest of the buffer follows; every byte updates
 # the position (charno 7, lineno 2 after the newline, linepos 3 for "def")
@@ -122,17 +124,17 @@ end
 # p06: Spending of a filter stream: the buffered bytes first (the control function is not asked), else SIO_GETPENDING, a refusing
 # control answer is 0
 @testset "p06 Spending and the control function" begin
-    impl = PendFilter("wxyz"; pending = 99)
+    impl = PendFilter("wxyz"; pending=99)
     s = _sp_filter(impl)
     @test LK.Spending(s) == 99                                 # nothing buffered: the control's answer
     @test LK.Sgetc(s) == Int('w')                              # fills the buffer with 4 bytes
     @test LK.Spending(s) == 3                                  # buffered: 3, not 99
     @test LK.Sclose(s) == 0
-    impl = PendFilter(""; pending = 5, rc = -1)
+    impl = PendFilter(""; pending=5, rc=-1)
     s = _sp_filter(impl)
     @test LK.Spending(s) == 0                                  # the control refuses: 0
     @test LK.Sclose(s) == 0
-    impl = PendFilter(""; pending = 5, rc = LK.SCONTROL_NONE)
+    impl = PendFilter(""; pending=5, rc=LK.SCONTROL_NONE)
     s = _sp_filter(impl)
     @test LK.Spending(s) == 0
     @test LK.Sclose(s) == 0
@@ -146,7 +148,7 @@ end
     @test LK.Sfileno(mem) == -1
     @test LK.S__fileno(mem) == -1
     @test LK.Sclose(mem) == 0
-    impl = PendFilter(""; fileno = 7)
+    impl = PendFilter(""; fileno=7)
     s = _sp_filter(impl)
     @test s.fileno == 7
     @test LK.Sfileno(s) == 7
@@ -157,14 +159,14 @@ end
     @test s.fileno == 7
     @test LK.Sfileno(s) == -1                                  # magic is no longer SIO_MAGIC
     @test LK.S__fileno(s) == -1
-    s = _sp_filter(PendFilter(""; fileno = 0))
+    s = _sp_filter(PendFilter(""; fileno=0))
     @test LK.Sfileno(s) == 0                                   # descriptor 0 is >= 0
     @test LK.Sclose(s) == 0
-    s = _sp_filter(PendFilter(""; fileno = 7, rc = -1))
+    s = _sp_filter(PendFilter(""; fileno=7, rc=-1))
     @test s.fileno == -1
     @test LK.Sfileno(s) == -1
     @test LK.Sclose(s) == 0
-    s = _sp_filter(PendFilter(""; fileno = 7, rc = LK.SCONTROL_NONE))
+    s = _sp_filter(PendFilter(""; fileno=7, rc=LK.SCONTROL_NONE))
     @test LK.Sfileno(s) == -1
     @test LK.Sclose(s) == 0
 end

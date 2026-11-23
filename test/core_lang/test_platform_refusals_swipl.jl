@@ -17,12 +17,14 @@ _tls(x) = lk_sym(_TL, Symbol(x))
 const _PR_CASES = [
     (
         "p01", "'\$activate_static_extension'(foo)", "activate_static_extension",
-        "pl-load.c:450-540", "LB5-LB7", "existence_error(procedure,'\$activate_static_extension'/1)"
+        "pl-load.c:450-540", "LB5-LB7",
+        "existence_error(procedure,'\$activate_static_extension'/1)"
     ),
     (
         "p02", "apple_current_locale_identifier(_)", "apple_current_locale_identifier",
-        "pl-apple.c:56-79", "APPLE1", "existence_error(procedure,apple_current_locale_identifier/1)"
-    ),
+        "pl-apple.c:56-79", "APPLE1",
+        "existence_error(procedure,apple_current_locale_identifier/1)"
+    )
 ]
 
 "The exception the kernel raises running `goal` (a call of a predicate that is refused by name), or `nothing`."
@@ -73,7 +75,8 @@ end
                 @test occursin(name, err.what)
                 @test occursin(pin, err.what)                # the pin's lines are in the text
             end
-            swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+            swipl =
+                get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
             if swipl !== nothing
                 @test _pr_swipl(goal) == swipl_says          # swipl's own answer, live
             end

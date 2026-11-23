@@ -189,7 +189,10 @@ _slc_locales() = String[first(LK._libc_setlocale(c, nothing)) for c in _SLC_CATS
     # representation_error(encoding) of the 0x20AC after the NUL) were swipl's answers behind a NotPortedError; they are
     # compared above like every row, and are rows with a line of their own (not vacuous):
     @test length(_SLC_NUL_ROWS) == 3 && all(n -> n in names, _SLC_NUL_ROWS)
-    @test all(n -> any(l -> startswith(l, n * " ") && !endswith(l, " notported"), kl), _SLC_NUL_ROWS)
+    @test all(
+        n -> any(l -> startswith(l, n * " ") && !endswith(l, " notported"), kl),
+        _SLC_NUL_ROWS
+    )
     @test all(!isempty, before)
 
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")

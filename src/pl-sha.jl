@@ -184,7 +184,8 @@ struct sha256_ctx
     hash::Vector{UInt32}
     wbuf::Vector{UInt8}
 end
-sha256_ctx() = sha256_ctx(zeros(UInt32, 2), zeros(UInt32, 8), zeros(UInt8, SHA256_BLOCK_SIZE))
+sha256_ctx() =
+    sha256_ctx(zeros(UInt32, 2), zeros(UInt32, 8), zeros(UInt8, SHA256_BLOCK_SIZE))
 
 # PORT: packages/clib/sha1/sha2.h sha512_ctx
 # DIVERGES: see the file header, 3.
@@ -194,7 +195,8 @@ struct sha512_ctx
     hash::Vector{UInt64}
     wbuf::Vector{UInt8}
 end
-sha512_ctx() = sha512_ctx(zeros(UInt64, 2), zeros(UInt64, 8), zeros(UInt8, SHA512_BLOCK_SIZE))
+sha512_ctx() =
+    sha512_ctx(zeros(UInt64, 2), zeros(UInt64, 8), zeros(UInt8, SHA512_BLOCK_SIZE))
 
 # PORT: packages/clib/sha1/sha2.h sha2_ctx
 # DIVERGES: the union of the two contexts is two fields (both live; only the one `sha2_len` names is used).
@@ -208,7 +210,8 @@ sha2_ctx() = sha2_ctx(UInt32(0), sha256_ctx(), sha512_ctx())
 
 "The big-endian 32-bit word at the 0-based offset `off` of `b`."
 _sha_get_be32(b::Vector{UInt8}, off::Int)::UInt32 =
-    (UInt32(b[off + 1]) << 24) | (UInt32(b[off + 2]) << 16) | (UInt32(b[off + 3]) << 8) | UInt32(b[off + 4])
+    (UInt32(b[off + 1]) << 24) | (UInt32(b[off + 2]) << 16) | (UInt32(b[off + 3]) << 8) |
+    UInt32(b[off + 4])
 
 "The big-endian 64-bit word at the 0-based offset `off` of `b`."
 function _sha_get_be64(b::Vector{UInt8}, off::Int)::UInt64
@@ -238,13 +241,17 @@ end
 # PORT: packages/clib/sha1/sha2.c hf (the message schedule of v_cycle)
 "The next schedule word `i` (0..15 within a pass) of the SHA-256 block `p`, stored back into `p` (sha2.c `hf`)."
 function _sha256_hf!(p::Vector{UInt32}, i::Int)::UInt32
-    p[(i & 15) + 1] += sha256_g1(p[((i + 14) & 15) + 1]) + p[((i + 9) & 15) + 1] + sha256_g0(p[((i + 1) & 15) + 1])
+    p[(i & 15) + 1] +=
+        sha256_g1(p[((i + 14) & 15) + 1]) + p[((i + 9) & 15) + 1] +
+        sha256_g0(p[((i + 1) & 15) + 1])
     return p[(i & 15) + 1]
 end
 
 "As `_sha256_hf!` for the 64-bit words of SHA-512."
 function _sha512_hf!(p::Vector{UInt64}, i::Int)::UInt64
-    p[(i & 15) + 1] += sha512_g1(p[((i + 14) & 15) + 1]) + p[((i + 9) & 15) + 1] + sha512_g0(p[((i + 1) & 15) + 1])
+    p[(i & 15) + 1] +=
+        sha512_g1(p[((i + 14) & 15) + 1]) + p[((i + 9) & 15) + 1] +
+        sha512_g0(p[((i + 1) & 15) + 1])
     return p[(i & 15) + 1]
 end
 
@@ -525,7 +532,9 @@ end
 # PORT: packages/clib/sha1/sha2.c sha2
 # DIVERGES: see the file header, 5: returns the digest, or `nothing` for an unknown `size`.
 "The SHA-2 digest of the first `len` bytes of `data`, of the size `size` (sha2.c `sha2`)."
-function sha2_digest(size::Int, data::Vector{UInt8}, len::Int)::Union{Nothing, Vector{UInt8}}
+function sha2_digest(
+    size::Int, data::Vector{UInt8}, len::Int
+)::Union{Nothing, Vector{UInt8}}
     cx = sha2_begin(size)
     cx === nothing && return nothing
     sha2_hash!(data, len, cx)
@@ -600,7 +609,9 @@ end
 # PORT: packages/clib/sha1/hmac.c hmac_sha_begin
 "Initialise the HMAC context to zero, for SHA-256 when `use_sha256` (hmac.c)."
 function hmac_sha_begin(use_sha256::Bool)::hmac_ctx
-    return hmac_ctx(use_sha256, zeros(UInt8, HMAC_HASH_INPUT_SIZE), sha1_ctx(), sha256_ctx(), 0)
+    return hmac_ctx(
+        use_sha256, zeros(UInt8, HMAC_HASH_INPUT_SIZE), sha1_ctx(), sha256_ctx(), 0
+    )
 end
 
 # PORT: packages/clib/sha1/hmac.c hmac_sha_key
@@ -691,7 +702,8 @@ end
 # DIVERGES: see the file header, 5.
 "The HMAC of `data` under `key`, the first `mac_len` bytes; SHA-256 when `use_sha256` else SHA-1 (hmac.c `hmac_sha`)."
 function hmac_sha_all(
-    use_sha256::Bool, key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int, mac_len::Int
+    use_sha256::Bool, key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int,
+    mac_len::Int
 )::Vector{UInt8}
     cx = hmac_sha_begin(use_sha256)
     hmac_sha_key!(key, key_len, cx)
@@ -701,12 +713,16 @@ end
 
 # PORT: packages/clib/sha1/hmac_sha1.c hmac_sha1
 "The HMAC-SHA-1 of `data` under `key`, the first `mac_len` bytes (hmac_sha1.c)."
-hmac_sha1(key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int, mac_len::Int)::Vector{UInt8} =
+hmac_sha1(
+    key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int, mac_len::Int
+)::Vector{UInt8} =
     hmac_sha_all(false, key, key_len, data, data_len, mac_len)
 
 # PORT: packages/clib/sha1/hmac_sha256.c hmac_sha256
 "The HMAC-SHA-256 of `data` under `key`, the first `mac_len` bytes (hmac_sha256.c)."
-hmac_sha256(key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int, mac_len::Int)::Vector{UInt8} =
+hmac_sha256(
+    key::Vector{UInt8}, key_len::Int, data::Vector{UInt8}, data_len::Int, mac_len::Int
+)::Vector{UInt8} =
     hmac_sha_all(true, key, key_len, data, data_len, mac_len)
 
 # ── sha4pl.c ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -754,10 +770,13 @@ const SHA_CONTEXT_SIZE = 228
 const SHA_CONTEXT_UNION = 20
 
 # the option specification of sha4pl.c (PL_OPTION("algorithm", OPT_TERM), PL_OPTION("encoding", OPT_TERM))
-const sha_option_specs = (PL_option_t(:algorithm, OPT_TERM), PL_option_t(:encoding, OPT_TERM))
+const sha_option_specs = (
+    PL_option_t(:algorithm, OPT_TERM), PL_option_t(:encoding, OPT_TERM)
+)
 
 "Is the atom `a` the atom `name`?"
-_sha_is_atom(a::T, ::Type{T}, name::Symbol) where {T} = sym_key(a) == sym_key(mk_sym(T, name))
+_sha_is_atom(a::T, ::Type{T}, name::Symbol) where {T} =
+    sym_key(a) == sym_key(mk_sym(T, name))
 
 # PORT: packages/clib/sha4pl.c sha_options
 # DIVERGES: returns the options, or `nothing` with the error raised (upstream returns false); `PL_scan_options` returns the values.
@@ -765,7 +784,9 @@ _sha_is_atom(a::T, ::Type{T}, name::Symbol) where {T} = sym_key(a) == sym_key(mk
 The options `options` of the sha predicates, as a `sha_optval`: `algorithm(sha1|sha224|sha256|sha384|sha512)` (default sha1) and
 `encoding(utf8|octet)` (default utf8); `nothing` after raising the error of a bad option (sha4pl.c).
 """
-function sha_options(ld::PL_local_data{T}, options::term_t)::Union{Nothing, sha_optval} where {T}
+function sha_options(
+    ld::PL_local_data{T}, options::term_t
+)::Union{Nothing, sha_optval} where {T}
     vals = PL_scan_options(ld, options, 0, "sha_option", sha_option_specs)
     vals === nothing && return nothing
     algorithm_t = vals[1]
@@ -822,7 +843,9 @@ end
 The bytes of the text in `t` (an atom, a string, a code or character list) in the representation `enc` (`REP_UTF8` or
 `REP_ISO_LATIN_1`), or `nothing` with the error raised.
 """
-function _sha_text_bytes(ld::PL_local_data{T}, t::term_t, enc::UInt32)::Union{Nothing, Vector{UInt8}} where {T}
+function _sha_text_bytes(
+    ld::PL_local_data{T}, t::term_t, enc::UInt32
+)::Union{Nothing, Vector{UInt8}} where {T}
     txt = PL_get_text(ld, t, CVT_ATOM | CVT_STRING | CVT_LIST | CVT_EXCEPTION)
     txt === nothing && return nothing
     PL_canonicalise_text_ex(ld, txt) || return nothing
@@ -1009,7 +1032,11 @@ function pl_sha_new_ctx2_va(
         c.sha2 = sha2_begin(op.digest_size)::sha2_ctx
     end
 
-    return PL_unify_chars(ld, A1, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c)) ? FTRUE : FFALSE   # PL_unify_string_nchars
+    return if PL_unify_chars(ld, A1, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c))
+        FTRUE   # PL_unify_string_nchars
+    else
+        FFALSE   # PL_unify_string_nchars
+    end   # PL_unify_string_nchars
 end
 
 # PORT: packages/clib/sha4pl.c valid_context
@@ -1029,7 +1056,13 @@ end
 # PORT: packages/clib/sha4pl.c sha_hash_ctx (the `bad_context` label)
 "Raise `domain_error(algorithm, Old)` with the message of a bad old context (sha4pl.c `bad_context`); the predicate then fails."
 function _sha_bad_context(ld::PL_local_data{T}, old_ctx::term_t)::foreign_t where {T}
-    return PL_error(ld, "", 0, "Invalid OldContext passed", ERR_DOMAIN, mk_sym(T, :algorithm), old_ctx) ? FTRUE : FFALSE
+    return if PL_error(
+        ld, "", 0, "Invalid OldContext passed", ERR_DOMAIN, mk_sym(T, :algorithm), old_ctx
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: packages/clib/sha4pl.c sha_hash_ctx as pl_sha_hash_ctx
@@ -1060,13 +1093,15 @@ function pl_sha_hash_ctx4_va(
 
     hval = if c.opts.algorithm == ALGORITHM_SHA1
         sha1_hash!(data, length(data), c.sha1)
-        PL_unify_chars(ld, A3, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c)) || return FFALSE
+        PL_unify_chars(ld, A3, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c)) ||
+            return FFALSE
         h = Vector{UInt8}(undef, SHA1_DIGEST_SIZE)
         sha1_end!(h, c.sha1)
         h
     else
         sha2_hash!(data, length(data), c.sha2)
-        PL_unify_chars(ld, A3, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c)) || return FFALSE
+        PL_unify_chars(ld, A3, PL_STRING, SHA_CONTEXT_SIZE, sha_context_bytes(c)) ||
+            return FFALSE
         sha2_end!(c.sha2)
     end
 
@@ -1096,9 +1131,14 @@ function pl_hmac_sha4_va(
     elseif opts.algorithm == ALGORITHM_SHA256
         hmac_sha256(skey, length(skey), sdata, length(sdata), opts.digest_size)
     else
-        return PL_error(
-            ld, "", 0, "HMAC-SHA only for SHA-1 and SHA-256", ERR_DOMAIN, mk_sym(T, :algorithm), opts.algorithm_term
-        ) ? FTRUE : FFALSE
+        return if PL_error(
+            ld, "", 0, "HMAC-SHA only for SHA-1 and SHA-256", ERR_DOMAIN,
+            mk_sym(T, :algorithm), opts.algorithm_term
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
 
     return PL_unify_chars(ld, A3, PL_CODE_LIST, opts.digest_size, digest) ? FTRUE : FFALSE

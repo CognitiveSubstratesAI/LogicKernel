@@ -274,7 +274,8 @@ function _cc_file(dir::String)::Tuple{String, Vector{String}}
     names = ["t_$(id)" for id in ids]
     text =
         _CC_PROGRAM * join([
-            "t_$(id)(R) :- catch(setup_call_cleanup(true, once(($g)), cc_reset), error(SsuE, _), R = raised(SsuE)).\n" for
+            "t_$(id)(R) :- catch(setup_call_cleanup(true, once(($g)), cc_reset), error(SsuE, _), R = raised(SsuE)).\n"
+            for
             (id, g) in zip(ids, goals)
         ])
     f = joinpath(dir, "cc.pl")
@@ -345,9 +346,13 @@ end
         end
     end
     # not vacuous: the pins hold converted and unconverted reads, the enumeration, the errors and the failures
-    @test count(l -> occursin("/1(a[98])", l) || occursin("c[102]/1(a[98])", l), _CC_PINNED) >= 6    # a read as b
+    @test count(
+        l -> occursin("/1(a[98])", l) || occursin("c[102]/1(a[98])", l), _CC_PINNED
+    ) >= 6    # a read as b
     @test count(l -> occursin("c[102]/1(a[97])", l), _CC_PINNED) >= 3                                # a read as a (flag off, quoted, reset)
-    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _CC_PINNED) >= 5      # type_error
+    @test count(
+        l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _CC_PINNED
+    ) >= 5      # type_error
     @test any(l -> occursin("i256", l), _CC_PINNED)                                                  # the enumeration
     @test count(l -> occursin("a[110,111]", l), _CC_PINNED) >= 2                                     # current_char_conversion failed
 end

@@ -322,7 +322,8 @@ end
     @test raw"t_p08 t_p08(-(-(77,/zz/fake.pl),cp.pl))" in _CP_PINNED
     # an asserted clause has no file, no line and no owner (p14, p20: the enumeration has no line_count, file or source), a consulted one all of them (p18)
     @test raw"t_p14 t_p14(-(-(n,n),n))" in _CP_PINNED
-    @test raw"t_p18 t_p18([|](line_count,[|](file,[|](source,[|](size,[|](fact,[|](predicate,[|](module,[]))))))))" in _CP_PINNED
+    @test raw"t_p18 t_p18([|](line_count,[|](file,[|](source,[|](size,[|](fact,[|](predicate,[|](module,[]))))))))" in
+        _CP_PINNED
     @test raw"t_p20 t_p20([|](size,[|](fact,[|](predicate,[|](module,[])))))" in _CP_PINNED
     # fact: the unit clauses y, the rule cp_s n (p09); erased n then y (p12), an erased reference still answers its line and predicate (p13)
     @test raw"t_p09 t_p09([|](-(r,y),[|](-(r,y),[|](-(r,y),[|](-(s,n),[])))))" in _CP_PINNED

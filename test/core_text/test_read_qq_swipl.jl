@@ -727,9 +727,9 @@ const _QQB_PINNED = [
 # (id, goal): group QK, kernel-only
 const _QQK_CASES = [
     (
-        "qk01",
-        raw"""qk_open(R)"""
-    )
+    "qk01",
+    raw"""qk_open(R)"""
+)
 ]
 
 # the kernel's answers: the existence_error that replaces the dereference of an address that names no read
@@ -743,7 +743,8 @@ function _qq_file(dir::String, program::String, cases)::Tuple{String, Vector{Str
     names = ["t_$(id)" for (id, _) in cases]
     text =
         replace(program, "@RTDIR@" => dir) * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cases
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+            (id, g) in cases
         ])
     f = joinpath(dir, "rd2.pl")
     write(f, text)
@@ -818,9 +819,24 @@ end
     @test count(l -> occursin("c[111,107]/1(", l), _QQA_PINNED) >= 25
     @test count(l -> occursin(" c[114,97,105,115,101,100]/", l), _QQA_PINNED) >= 36
     # the pins hold the collected quotations (`quasi_quotation/4`, code lists), the positions and the errors of both kinds
-    @test count(l -> occursin("c[113,117,97,115,105,95,113,117,111,116,97,116,105,111,110]/4(", l), _QQA_PINNED) >= 20
-    @test count(l -> occursin("c[113,117,97,115,105,95,113,117,111,116,97,116,105,111,110,95,112,111,115,105,116,105,111,110]/5(", l), _QQA_PINNED) >= 8
-    @test count(l -> occursin("c[117,110,107,110,111,119,110,95,113,117,97,115,105,95,113,117,111,116,97,116,105,111,110,95,115,121,110,116,97,120]/2(", l), _QQA_PINNED) >= 8
+    @test count(
+        l -> occursin("c[113,117,97,115,105,95,113,117,111,116,97,116,105,111,110]/4(", l),
+        _QQA_PINNED
+    ) >= 20
+    @test count(
+        l -> occursin(
+            "c[113,117,97,115,105,95,113,117,111,116,97,116,105,111,110,95,112,111,115,105,116,105,111,110]/5(",
+            l
+        ),
+        _QQA_PINNED
+    ) >= 8
+    @test count(
+        l -> occursin(
+            "c[117,110,107,110,111,119,110,95,113,117,97,115,105,95,113,117,111,116,97,116,105,111,110,95,115,121,110,116,97,120]/2(",
+            l
+        ),
+        _QQA_PINNED
+    ) >= 8
 end
 
 @testset "the library: declared syntaxes, with_quasi_quotation_input/3 and the streams of \$qq_open/2 as swipl's (qb01-qb52)" begin

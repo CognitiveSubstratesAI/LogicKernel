@@ -113,7 +113,8 @@ end
     # both balls are garbage).
     @test (length(ld.trail), ld.lTop) == (base[2], base[3])
     @test ld.gTop == ld.frozen_bar > base[1]
-    @test LK.garbageCollect(ld, Int(LK.GC_USER); vmi_state_of=LK.get_vmi_state) == LK.BOOLEX_TRUE
+    @test LK.garbageCollect(ld, Int(LK.GC_USER); vmi_state_of=LK.get_vmi_state) ==
+        LK.BOOLEX_TRUE
     @test ld.gTop <= base[1]
 end
 

@@ -81,7 +81,43 @@ const _TF_ROWS = Tuple{String, Symbol, Vector{UInt32}, Int}[
     ("tf04", :chars, UInt32[51, 46, 49, 52], -1),   # float
     ("tf05", :chars, UInt32[48, 48, 55], -1),   # leading zeros
     ("tf06", :chars, UInt32[49, 95, 48, 48, 48], -1),   # digit group
-    ("tf07", :chars, UInt32[49, 50, 51, 52, 53, 54, 55, 56, 57, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48], -1),   # big integer
+    (
+        "tf07",
+        :chars,
+        UInt32[
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            48,
+            49,
+            50,
+            51,
+            52,
+            53,
+            54,
+            55,
+            56,
+            57,
+            48
+        ],
+        -1
+    ),   # big integer
     ("tf08", :chars, UInt32[45, 97], -1),   # minus then letter: not a number
     ("tf09", :chars, UInt32[49, 46], -1),   # end dot: reader
     ("tf10", :chars, UInt32[49, 32, 50], -1),   # digits at both ends but not a number (KILL: no end check)
@@ -110,7 +146,7 @@ const _TF_ROWS = Tuple{String, Symbol, Vector{UInt32}, Int}[
     ("tf33", :exc, UInt32[102, 111, 111, 40, 97, 41], -1),   # CVT_EXCEPTION: no error
     ("tf34", :mb, UInt32[52, 50], -1),   # REP_MB: a number needs no stream
     ("tf35", :l1, UInt32[102, 40, 97, 44, 10, 10, 10, 98, 41], -1),   # read_source restored (row sets line 77 first)
-    ("tf36", :l1, UInt32[39, 97, 92, 120, 52, 49, 92, 98, 39], -1),   # escape in quoted atom
+    ("tf36", :l1, UInt32[39, 97, 92, 120, 52, 49, 92, 98, 39], -1)   # escape in quoted atom
 ]
 
 "The code points swipl reads for a row: the bytes as Latin-1 (`:u8` decoded as UTF-8), the wide text as it is."
@@ -166,7 +202,9 @@ const _TF_PINNED = [
 
 "swipl's lines for the rows (live)."
 function _tf_swipl_lines()::Vector{String}
-    prog = _TF_DRIVER * join(["tf_row('$id', $(_tf_text(m, d, l))).\n" for (id, m, d, l) in _TF_ROWS])
+    prog =
+        _TF_DRIVER *
+        join(["tf_row('$id', $(_tf_text(m, d, l))).\n" for (id, m, d, l) in _TF_ROWS])
     prog *= ":- initialization((forall(tf_row(I, C), tf_run(I, C)), halt)).\n"
     out = mktempdir() do dir
         f = joinpath(dir, "p.pl")
@@ -182,7 +220,9 @@ end
 _tf_loc() = LK.source_location{_TF}(nothing, LK.IOPOS(0, 0, 77, 0, 0))
 
 "One row on the kernel: its line, and whether `LD->read_source` was left at line 77. A Julia exception is `jlerr <type>`."
-function _tf_kernel(id::String, mode::Symbol, data::Vector{UInt32}, len::Int)::Tuple{String, Bool}
+function _tf_kernel(
+    id::String, mode::Symbol, data::Vector{UInt32}, len::Int
+)::Tuple{String, Bool}
     ld = LK.PL_local_data{_TF}(_TFGD)
     ld.read_source = _tf_loc()
     try
@@ -233,13 +273,16 @@ end
     @test count(l -> occursin(" ok i", l), _TF_PINNED) >= 8
     @test count(l -> occursin(" raised ", l), _TF_PINNED) >= 4
     @test any(l -> occursin("a[955]", l), _TF_PINNED)
-    @test any(l -> occursin("tf16 ok a[195,169]", l), _TF_PINNED) && any(l -> occursin("tf17 ok a[233]", l), _TF_PINNED)
+    @test any(l -> occursin("tf16 ok a[195,169]", l), _TF_PINNED) &&
+        any(l -> occursin("tf17 ok a[233]", l), _TF_PINNED)
 end
 
 @testset "REP_MB is refused by name (a text that is no number needs the stream)" begin
     ld = LK.PL_local_data{_TF}(_TFGD)
     t = LK.PL_new_term_ref(ld)
-    @test_throws LK.NotPortedError LK.PL_put_term_from_chars(ld, t, LK.REP_MB, -1, Vector{UInt8}(codeunits("foo")))
+    @test_throws LK.NotPortedError LK.PL_put_term_from_chars(
+        ld, t, LK.REP_MB, -1, Vector{UInt8}(codeunits("foo"))
+    )
 end
 
 @testset "CVT_EXCEPTION leaves t unbound and the exception pending" begin

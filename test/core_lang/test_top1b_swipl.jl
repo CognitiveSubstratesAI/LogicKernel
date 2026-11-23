@@ -79,8 +79,12 @@ function _tb_db(; booted::Bool, hook::Union{Nothing, String}=nothing)
     ui = LK.set_standard_stream!(ld, LK.SNO_USER_INPUT, IOBuffer())
     uo = LK.set_standard_stream!(ld, LK.SNO_USER_OUTPUT, IOBuffer())
     ue = LK.set_standard_stream!(ld, LK.SNO_USER_ERROR, IOBuffer())
-    LK.setDynamicDefinition!(db.gd, LK.lookupProcedure(_rs(:tp_ev), 1, db.user).definition, true)
-    LK.setDynamicDefinition!(db.gd, LK.lookupProcedure(_rs(:tp_seen), 0, db.user).definition, true)
+    LK.setDynamicDefinition!(
+        db.gd, LK.lookupProcedure(_rs(:tp_ev), 1, db.user).definition, true
+    )
+    LK.setDynamicDefinition!(
+        db.gd, LK.lookupProcedure(_rs(:tp_seen), 0, db.user).definition, true
+    )
     return db, (ui, uo, ue)
 end
 

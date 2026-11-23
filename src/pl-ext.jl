@@ -90,7 +90,9 @@ const foreigns = (
     PL_extension("print", 2, pl_print2, 0x00),
     PL_extension("write_canonical", 2, pl_write_canonical2, PL_FA_ISO),
     PL_extension("thread_self", 1, pl_thread_self, PL_FA_ISO),      # BOOTPRED (pl-ext.c:186)
-    PL_extension("thread_property", 2, pl_thread_property, PL_FA_NONDETERMINISTIC | PL_FA_ISO),   # TH1 (pl-thread.c:3404; NDET|ISO :8849)
+    PL_extension(
+        "thread_property", 2, pl_thread_property, PL_FA_NONDETERMINISTIC | PL_FA_ISO
+    ),   # TH1 (pl-thread.c:3404; NDET|ISO :8849)
     PL_extension("is_thread", 1, pl_is_thread, 0x00),               # TH1 (pl-thread.c:3514; :8849)
     PL_extension("thread_join", 2, pl_thread_join, 0x00),           # TH1 (pl-thread.c:2913)
     PL_extension("thread_detach", 1, pl_thread_detach, PL_FA_ISO),  # TH1 (pl-thread.c:2989; ISO)

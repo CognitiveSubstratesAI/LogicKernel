@@ -206,7 +206,8 @@ _db_count(lines, word) = sum(l -> length(findall(_codes(word), l)), lines; init=
     kl = kernel_lines(_TL, _DB_PL, names)
     @test length(kl) == length(expected)
     # the same extractor over the kernel's lines: the kernel answers the errors and the frames' names, not only the same number of lines
-    for w in ("type_error", "domain_error", "frame_reference", "natural", "findall_loop", "ran")
+    for w in
+        ("type_error", "domain_error", "frame_reference", "natural", "findall_loop", "ran")
         @test _db_count(kl, w) == _db_count(expected, w)
     end
     for i in eachindex(kl)

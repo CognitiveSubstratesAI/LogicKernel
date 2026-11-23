@@ -27,7 +27,18 @@ mutable struct XorFilter <: LK.AbstractSfilter
     args::Vector{Any}                 # the argument of each control action, in the order called
 end
 XorFilter(parent::LK.IOSTREAM, key::Integer=0x55; close_parent::Bool=true) =
-    XorFilter(parent, UInt8(key), close_parent, String[], false, false, false, "no good reason", 1234, Any[])
+    XorFilter(
+        parent,
+        UInt8(key),
+        close_parent,
+        String[],
+        false,
+        false,
+        false,
+        "no good reason",
+        1234,
+        Any[]
+    )
 
 function LK.Sfilter_read(h::XorFilter, mem::Vector{UInt8}, from::Int, size::Int)::Int
     push!(h.log, "read")
@@ -107,7 +118,9 @@ The stream a package's `Snew` builds over `parent` (zlib4pl.c/hash_stream.c): th
 its encoding copied (`s2->encoding = s->encoding`), then linked with Sset_filter.
 """
 function _sf_filter(parent::LK.IOSTREAM, impl::LK.AbstractSfilter)
-    flags = (parent.flags & (LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_RECORDPOS)) | LK.SIO_FBUF
+    flags =
+        (parent.flags & (LK.SIO_INPUT | LK.SIO_OUTPUT | LK.SIO_TEXT | LK.SIO_RECORDPOS)) |
+        LK.SIO_FBUF
     s2 = LK.Snew(impl, flags, LK.Sfilterfunctions)
     s2.encoding = parent.encoding
     @test LK.Sset_filter(parent, s2) == 0
@@ -200,7 +213,8 @@ end
 @testset "f04 Sset_filter links, references, refusals" begin
     parent, _, _ = _sf_out()
     filter = LK.Snew(
-        XorFilter(parent; close_parent=false), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions
+        XorFilter(parent; close_parent=false), LK.SIO_OUTPUT | LK.SIO_FBUF,
+        LK.Sfilterfunctions
     )
     @test parent.upstream === nothing && filter.downstream === nothing
     @test parent.references == 0 && filter.references == 0
@@ -288,12 +302,13 @@ end
     @test LK.Sflush(filter) == 0
     @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
     @test LK.Sflush(filter) == 0                             # empty buffer: no write, but the control action is still asked
-    @test impl.log == ["write", "control$(LK.SIO_FLUSHOUTPUT)", "control$(LK.SIO_FLUSHOUTPUT)"]
+    @test impl.log ==
+        ["write", "control$(LK.SIO_FLUSHOUTPUT)", "control$(LK.SIO_FLUSHOUTPUT)"]
     # a control function that fails the flush: Sflush is -1 (the buffer was written all the same)
     impl.fail_flush = true
     LK.Sputc(Int('c'), filter)
     @test LK.Sflush(filter) == -1
-    @test impl.log[end - 1:end] == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
+    @test impl.log[(end - 1):end] == ["write", "control$(LK.SIO_FLUSHOUTPUT)"]
     impl.fail_flush = false
     @test LK.Sclose(filter) == 0
     @test impl.log[end] == "close"
@@ -351,7 +366,12 @@ end
 # f10: the filter's position counts what it delivers; the parent's counts what the filter pulled through Sgetc (which updates
 # the character, line and line position, not the byte count: get_byte does) or pushed through Sputc (put_byte counts bytes)
 @testset "f10 position counting" begin
-    pos(s) = (Int(s.position.charno), s.position.lineno, s.position.linepos, Int(s.position.byteno))
+    pos(s) = (
+        Int(s.position.charno),
+        s.position.lineno,
+        s.position.linepos,
+        Int(s.position.byteno)
+    )
     parent = _sf_in(collect(codeunits("ab\ncd")))
     filter = _sf_filter(parent, XorFilter(parent, 0))
     @test filter.position !== nothing && filter.position !== parent.position
@@ -421,7 +441,9 @@ end
 # f12: the callers' errors: what the C asserts, and a filter stream with no record
 @testset "f12 refusals" begin
     parent, _, _ = _sf_out()
-    @test_throws AssertionError LK.Snew(XorFilter(parent), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Siofunctions)
+    @test_throws AssertionError LK.Snew(
+        XorFilter(parent), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Siofunctions
+    )
     f1 = _sf_filter(parent, XorFilter(parent; close_parent=false))
     f2 = LK.Snew(XorFilter(parent), LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
     # a second filter on one parent: assert(parent->upstream==NULL && filter->downstream==NULL), pl-stream.c:3310
@@ -445,7 +467,8 @@ end
     @test LK.SCONTROL_NONE != 0 && LK.SCONTROL_NONE < 0
     m = _sf_in(UInt8[])
     @test LK.S_control(m, LK.SIO_GETSIZE, nothing) == LK.SCONTROL_NONE
-    @test LK.S_control(m, LK.SIO_LASTERROR, Ref{Union{Nothing, String}}(nothing)) == LK.SCONTROL_NONE
+    @test LK.S_control(m, LK.SIO_LASTERROR, Ref{Union{Nothing, String}}(nothing)) ==
+        LK.SCONTROL_NONE
     # a stream on a bare record: writing fails with -1 (the default), the error has no message
     s = LK.Snew(b, LK.SIO_OUTPUT | LK.SIO_FBUF, LK.Sfilterfunctions)
     LK.Sputc(Int('x'), s)

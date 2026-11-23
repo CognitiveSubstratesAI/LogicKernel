@@ -63,7 +63,8 @@ function unlocked_message_queue_create(
     name = PL_get_atom(ld, queue)
     id::Union{Nothing, T} = nothing
     if name !== nothing
-        if haskey(gd.message_queues, sym_key(name)) || haskey(gd.thread.thread_table, sym_key(name))
+        if haskey(gd.message_queues, sym_key(name)) ||
+            haskey(gd.thread.thread_table, sym_key(name))
             PL_error(
                 ld, "message_queue_create", 1, "", ERR_PERMISSION, mk_sym(T, :create),
                 mk_sym(T, :message_queue), queue
@@ -74,7 +75,9 @@ function unlocked_message_queue_create(
     elseif PL_is_variable(ld, queue)
         id = nothing
     else
-        PL_error(ld, "message_queue_create", 1, "", ERR_TYPE, mk_sym(T, :message_queue), queue)
+        PL_error(
+            ld, "message_queue_create", 1, "", ERR_TYPE, mk_sym(T, :message_queue), queue
+        )
         return nothing
     end
 
@@ -151,7 +154,8 @@ function get_message_queue(
 )::Union{Nothing, message_queue{T}} where {T}
     gd = _query_gd(ld)
     name = PL_get_atom(ld, t)
-    if name !== nothing && is_blob(name) && atomValue(gd.atoms, blob_handle(name)).type === message_queue_blob
+    if name !== nothing && is_blob(name) &&
+        atomValue(gd.atoms, blob_handle(name)).type === message_queue_blob
         q = get(gd.message_queues, sym_key(name), nothing)
         q === nothing && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :message_queue), t)   # q->destroyed
         return q
@@ -227,10 +231,14 @@ function pl_message_queue_destroy1_va(
     q === nothing && return FFALSE
 
     if q.type == QTYPE_THREAD
-        return PL_error(
+        return if PL_error(
             ld, "", 0, "is a thread-queue", ERR_PERMISSION, mk_sym(T, :destroy),
             mk_sym(T, :message_queue), A1
-        ) ? FTRUE : FFALSE
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
 
     delete!(_query_gd(ld).message_queues, sym_key(q.id::T))     # deleteHTableWP(queueTable, q->id)
@@ -332,7 +340,7 @@ function pl_message_queue_property2_va(
             state.enumerating = true                    # state->e = newTableEnumWP(queueTable)
             empty!(state.queues)
             append!(state.queues, values(_query_gd(ld).message_queues))
-            sort!(state.queues; by = x -> x.serial)
+            sort!(state.queues; by=x -> x.serial)
             if rc == 1
                 state.p = p
                 state.enum_properties = false
@@ -543,7 +551,8 @@ function thread_send_message(
         throw(
             NotPortedError{T}(
                 mk_sym(T, :thread_send_message),
-                "thread_send_message/N: a full queue with no other thread to drain it (blocking send)", "TH1"
+                "thread_send_message/N: a full queue with no other thread to drain it (blocking send)",
+                "TH1"
             )
         )
     end
@@ -718,18 +727,32 @@ end
 const PL_predicates_from_queue = (
     PL_extension("message_queue_create", 1, pl_message_queue_create1_va, PL_FA_VARARGS),
     PL_extension("message_queue_create", 2, pl_message_queue_create2_va, PL_FA_VARARGS),
-    PL_extension("message_queue_destroy", 1, pl_message_queue_destroy1_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "message_queue_destroy", 1, pl_message_queue_destroy1_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
     PL_extension(
         "message_queue_property", 2, pl_message_queue_property2_va,
         PL_FA_NONDETERMINISTIC | PL_FA_ISO | PL_FA_VARARGS
     ),
     PL_extension("message_queue_set", 2, pl_message_queue_set2_va, PL_FA_VARARGS),
     PL_extension("is_message_queue", 1, pl_is_message_queue1_va, PL_FA_VARARGS),
-    PL_extension("thread_send_message", 2, pl_thread_send_message2_va, PL_FA_ISO | PL_FA_VARARGS),
+    PL_extension(
+        "thread_send_message", 2, pl_thread_send_message2_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
     PL_extension("thread_send_message", 3, pl_thread_send_message3_va, PL_FA_VARARGS),
-    PL_extension("thread_get_message", 1, pl_thread_get_message1_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("thread_get_message", 2, pl_thread_get_message2_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("thread_get_message", 3, pl_thread_get_message3_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("thread_peek_message", 1, pl_thread_peek_message1_va, PL_FA_ISO | PL_FA_VARARGS),
-    PL_extension("thread_peek_message", 2, pl_thread_peek_message2_va, PL_FA_ISO | PL_FA_VARARGS)
+    PL_extension(
+        "thread_get_message", 1, pl_thread_get_message1_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "thread_get_message", 2, pl_thread_get_message2_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "thread_get_message", 3, pl_thread_get_message3_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "thread_peek_message", 1, pl_thread_peek_message1_va, PL_FA_ISO | PL_FA_VARARGS
+    ),
+    PL_extension(
+        "thread_peek_message", 2, pl_thread_peek_message2_va, PL_FA_ISO | PL_FA_VARARGS
+    )
 )

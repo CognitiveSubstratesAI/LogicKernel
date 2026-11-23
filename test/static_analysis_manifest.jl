@@ -1002,7 +1002,11 @@ function _manifest_index(T)
         (LK.rawSyntaxError1, Tuple{String, String, LK.read_data{T}}, false),
         (LK.raw_read, Tuple{LK.read_data{T}}, false),
         (LK.raw_read2, Tuple{LK.read_data{T}}, false),
-        (LK.add_comment, Tuple{Vector{UInt8}, Union{Nothing, LK.IOPOS}, LK.read_data{T}}, false),
+        (
+            LK.add_comment,
+            Tuple{Vector{UInt8}, Union{Nothing, LK.IOPOS}, LK.read_data{T}},
+            false
+        ),
         (LK.raw_read_identifier, Tuple{Int64, LK.read_data{T}}, false),
         (LK.raw_read_quoted, Tuple{Int64, Int64, LK.read_data{T}}, false),
         (LK.read_unicode_quote_token, Tuple{Int64, Int64, LK.read_data{T}}, false),
@@ -2661,7 +2665,11 @@ function _manifest_index(T)
         (LK.pl_start_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_end_aux2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_compile_predicates1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.pl_redefine_system_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # WRAPPERS-2
+        (
+            LK.pl_redefine_system_predicate1_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),   # WRAPPERS-2
         (LK.pl_predefine_foreign1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_vmi_property2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_fetch_vm4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -2723,11 +2731,19 @@ function _manifest_index(T)
         (LK.startConsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
         (LK.endConsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
         # LB6b-2 — the end of a reload (pl-srcfile.c), reconsultFinalizePredicate! (pl-proc.c)
-        (LK.reconsultFinalizePredicate!, Tuple{GD, LD, LK.sf_reload{T}, D, LK.p_reload{T}}, false),
+        (
+            LK.reconsultFinalizePredicate!,
+            Tuple{GD, LD, LK.sf_reload{T}, D, LK.p_reload{T}},
+            false
+        ),
         (LK.fix_module, Tuple{MOD, LK.m_reload{T}}, false),
         (LK.delete_old_predicate, Tuple{GD, LD, LK.SourceFile{T}, PR}, false),
         (LK.delete_old_predicates, Tuple{GD, LD, LK.SourceFile{T}}, false),
-        (LK.delete_pending_clauses, Tuple{GD, LD, LK.SourceFile{T}, D, LK.p_reload{T}}, false),
+        (
+            LK.delete_pending_clauses,
+            Tuple{GD, LD, LK.SourceFile{T}, D, LK.p_reload{T}},
+            false
+        ),
         (LK.end_reconsult_proc, Tuple{GD, LD, LK.SourceFile{T}, PR, LK.p_reload{T}}, false),
         (LK.endReconsult, Tuple{GD, LD, LK.SourceFile{T}}, false),
         (LK.registerReloadModule, Tuple{LK.SourceFile{T}, MOD}, false),
@@ -2777,7 +2793,11 @@ function _manifest_index(T)
         # WRAPPERS-2 — pl-index.c's Prolog connection (src/pl-indexpred.jl)
         (LK._put_index_args, Tuple{LD, Int, NTuple{4, LK.iarg_t}}, false),
         (LK._put_hints, Tuple{LD, Int, LK.hash_hints}, false),
-        (LK.pl_candidate_indexes3_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_candidate_indexes3_va,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         (
             LK.pl_set_candidate_indexes2_va,
             Tuple{LD, Int64, Int64, LK.foreign_context{T}},
@@ -2820,7 +2840,11 @@ function _manifest_index(T)
         (LK.pl_current_predicate, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK._cur_enum_clean!, Tuple{GD, LD, Int}, false),
         (LK.pl_current_predicate1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.pl_foreign_predicate_source2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),   # PR1
+        (
+            LK.pl_foreign_predicate_source2_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),   # PR1
         (LK.unify_meta_argument, Tuple{LD, Int, D, Int}, false),
         (LK.unify_meta_pattern, Tuple{LD, PR, Int}, false),
         (LK.num_visible_clauses, Tuple{GD, D, Bool}, false),
@@ -2869,7 +2893,11 @@ function _manifest_index(T)
         (LK.reportReadError, Tuple{LK.read_data{T}}, false),
         (LK.set_module_read_data, Tuple{LK.read_data{T}, Int}, false),
         (LK.read_clause, Tuple{GD, LD, LK.IOSTREAM, Int, Int}, false),
-        (LK.callCommentHook, Tuple{GD, LD, LK.Procedure{T}, Int64, Int64, Int64, Int64}, false),
+        (
+            LK.callCommentHook,
+            Tuple{GD, LD, LK.Procedure{T}, Int64, Int64, Int64, Int64},
+            false
+        ),
         (LK.load_file!, Tuple{GD, LD, String}, false),
         (LK._redefine_indicator, Tuple{GD, LD, D}, false),
         (LK.get_head_and_body_clause, Tuple{GD, LD, Int, Int, Int, Int}, false),
@@ -2902,12 +2930,12 @@ function _manifest_index(T)
         (
             LK.unify_thread_id,
             Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}},
-            false,
+            false
         ),
         (
             LK.aliasThread!,
             Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, T, T},
-            false,
+            false
         ),
         (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (LK.get_interactor, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
@@ -2915,7 +2943,7 @@ function _manifest_index(T)
         (
             LK.copy_local_data!,
             Tuple{LD, LD, LK.PL_thread_info{T}},
-            false,
+            false
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
@@ -2927,13 +2955,13 @@ function _manifest_index(T)
         (
             LK.freePrologThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
-            false,
+            false
         ),
         (LK._destroy_engine!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (
             LK.destroy_interactor!,
             Tuple{LK.PL_global_data{T}, LK.thread_handle{T}, Bool},
-            false,
+            false
         ),
         (LK.done_interactor!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (LK.copy_debug_mode, Tuple{LD, LD}, false),
@@ -2946,14 +2974,14 @@ function _manifest_index(T)
             LK.interactor_post_answer_nolock,
             Tuple{
                 LK.PL_global_data{T}, LD, LK.thread_handle{T}, Int,
-                Union{Nothing, Int}, Int,
+                Union{Nothing, Int}, Int
             },
-            false,
+            false
         ),
         (
             LK.interactor_post_answer,
             Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, Int}, Int},
-            false,
+            false
         ),
         (LK.pl_engine_next, Tuple{LD, Int, Int}, false),
         (LK.pl_engine_post3, Tuple{LD, Int, Int, Int}, false),
@@ -2962,21 +2990,73 @@ function _manifest_index(T)
         (LK.get_thread, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
         (LK._thread_slot_valid, Tuple{LK.PL_global_data{T}, Int}, false),
         (LK.symbol_alias, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
-        (LK.unify_thread_status, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_id_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_alias_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_status_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_detached_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_debug_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_debug_mode_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_engine_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_thread_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.unify_thread_status,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_id_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_alias_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_status_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_detached_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_debug_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_debug_mode_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_engine_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_thread_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK.system_thread_id, Tuple{}, false),
-        (LK.thread_tid_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.thread_tid_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK.sizeof_thread, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
-        (LK.thread_size_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_class_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK._tprop_call, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.thread_size_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_class_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK._tprop_call,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK._tprop_pack, Tuple{Int, Int, Bool, Bool}, false),
         (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
         (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -2985,7 +3065,11 @@ function _manifest_index(T)
         (LK._thread_info_of, Tuple{LK.PL_global_data{T}, Int}, false),
         (LK._thread_ld, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
         (LK.debug_thread_class, Tuple{LK.PL_global_data{T}, Symbol}, false),
-        (LK.update_debug_mode_from_class!, Tuple{LD, Union{Nothing, Base.RefValue{Bool}}}, false),
+        (
+            LK.update_debug_mode_from_class!,
+            Tuple{LD, Union{Nothing, Base.RefValue{Bool}}},
+            false
+        ),
         (LK.pl_is_thread, Tuple{LD, Int}, false),
         (LK.pl_thread_join, Tuple{LD, Int, Int}, false),
         (LK.pl_thread_detach, Tuple{LD, Int}, false),
@@ -3002,8 +3086,16 @@ function _manifest_index(T)
         # MUTEX — the user mutexes of pl-mutex.c (src/pl-mutex.jl)
         (LK.mutex_prop_enum{T}, Tuple{}, false),
         (LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Tuple{}, false),
-        (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}}, false),
-        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int}, false),
+        (
+            LK.alloc_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}},
+            false
+        ),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.mutex_prop_enum{T}}, Int},
+            false
+        ),
         (LK._mutex_bytes, Tuple{Int}, false),
         (LK.unify_mutex, Tuple{LD, Int, LK.pl_mutex{T}}, false),
         (LK.unify_mutex_owner, Tuple{LD, Int, Int}, false),
@@ -3031,7 +3123,11 @@ function _manifest_index(T)
         (LK.qprop_enum{T}, Tuple{}, false),
         (LK.foreign_state_pool{LK.qprop_enum{T}}, Tuple{}, false),
         (LK.alloc_foreign_state!, Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}}, false),
-        (LK.free_foreign_state!, Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}, Int}, false),
+        (
+            LK.free_foreign_state!,
+            Tuple{LK.foreign_state_pool{LK.qprop_enum{T}}, Int},
+            false
+        ),
         (LK._queue_bytes, Tuple{Int}, false),
         (LK.unify_queue, Tuple{LD, Int, LK.message_queue{T}}, false),
         (LK.init_message_queue, Tuple{Type{T}, Int, Int}, false),
@@ -3228,7 +3324,11 @@ function _manifest_index(T)
         (LK.PL_wchars_to_term, Tuple{LD, Vector{UInt32}, Int64}, false),
         (LK.initCharConversion, Tuple{}, false),
         (LK.pl_char_conversion, Tuple{LD, Int64, Int64}, false),
-        (LK.pl_current_char_conversion, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
+        (
+            LK.pl_current_char_conversion,
+            Tuple{LD, Int64, Int64, LK.foreign_context{T}},
+            false
+        ),
         # RD1b: pl-read.c's blob(Type) read option and the tokeniser's `<type>(` claim
         (LK.blob_syntax_available, Tuple{LK.read_data{T}}, false),
         (LK.blob_name_char, Tuple{Int}, false),
@@ -3239,14 +3339,22 @@ function _manifest_index(T)
         (LK.errorWarningRef, Tuple{Int64, LK.read_data{T}}, false),
         (LK.get_quasi_quotation, Tuple{Int64, LK.read_data{T}}, false),
         (LK.is_quasi_quotation_syntax, Tuple{Int64, LK.read_data{T}}, false),
-        (LK.read_qq_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (
+            LK.read_qq_start,
+            Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}},
+            false
+        ),
         (LK.read_qq_resume, Tuple{LK.pframe{T}, LK.read_data{T}}, false),
         (LK.parse_quasi_quotations, Tuple{LK.read_data{T}}, false),
         (LK.pl_qq_open2_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         # RD2 piece C: blobs (pl-read.c read_blob_*; pl-atom.c deadBlobType, blob_address, scanLiveBlobs, lookupLiveBlob,
         # newDeadBlob, write_unavailable). `written` is the closure of `read_blob_end`, whose type has no name: the manifest
         # analyses the same call through `Base.Fix1` of the writer it wraps.
-        (LK.read_blob_start, Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}}, false),
+        (
+            LK.read_blob_start,
+            Tuple{LK.pframe{T}, LK.token{T}, LK.ct_request, LK.read_data{T}},
+            false
+        ),
         (LK.read_blob_resume, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
         (LK.read_blob_end, Tuple{LK.pframe{T}, LK.token{T}, LK.read_data{T}}, false),
         (LK.read_blob_arg, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
@@ -3254,18 +3362,47 @@ function _manifest_index(T)
         (LK.blob_address, Tuple{VIEW, Int}, false),
         (
             LK.scanLiveBlobs,
-            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, Nothing, UInt64, Bool, VIEW, Int},
+            Tuple{
+                LK.atoms_t,
+                Base.Fix1{typeof(LK.blob_written_text), GD},
+                Nothing,
+                UInt64,
+                Bool,
+                VIEW,
+                Int
+            },
             false
         ),
         (
             LK.scanLiveBlobs,
-            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, UInt64, Bool, VIEW, Int},
+            Tuple{
+                LK.atoms_t,
+                Base.Fix1{typeof(LK.blob_written_text), GD},
+                String,
+                UInt64,
+                Bool,
+                VIEW,
+                Int
+            },
             false
         ),
-        (LK.lookupLiveBlob, Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int}, false),
+        (
+            LK.lookupLiveBlob,
+            Tuple{
+                LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int
+            },
+            false
+        ),
         (
             LK.newDeadBlob,
-            Tuple{LK.atoms_t, Base.Fix1{typeof(LK.blob_written_text), GD}, String, VIEW, Int, Bool},
+            Tuple{
+                LK.atoms_t,
+                Base.Fix1{typeof(LK.blob_written_text), GD},
+                String,
+                VIEW,
+                Int,
+                Bool
+            },
             false
         ),
         (LK.write_unavailable, Tuple{T, LK.write_options{T}}, false),
@@ -3296,7 +3433,8 @@ function _manifest_index(T)
         # '$restore_trace'/2 (src/pl-pro.jl), prolog_listen/2,3 (src/pl-event.jl), variant_sha1/2 (src/pl-termhash.jl)
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va, LK.pl_notrace1_va,
+                LK.pl_memberchk3_va, LK.pl_inc_message_count1_va, LK.pl_notrace2_va,
+                LK.pl_notrace1_va,
                 LK.pl_restore_trace2_va, LK.pl_prolog_listen2_va, LK.pl_prolog_listen3_va,
                 LK.pl_variant_sha1_2_va, LK.pl_prolog_unlisten2_va, LK.pl_can_yield0_va
             )
@@ -3325,7 +3463,9 @@ function _manifest_index(T)
         ),
         (
             LK.register_event_function,
-            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32},
+            Tuple{
+                GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32
+            },
             false
         ),
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
@@ -3361,7 +3501,11 @@ function _manifest_index(T)
         (LK.get_procedure_create_namearity, Tuple{GD, LD, Int}, false),   # PROC-TRACE
         (LK.pl_cgc_params6_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_default_predicate2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
-        (LK.pl_copy_predicate_clauses2_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
+        (
+            LK.pl_copy_predicate_clauses2_va,
+            Tuple{LD, Int, Int, LK.foreign_context{T}},
+            false
+        ),
         (LK.remoduleClause, Tuple{GD, C, MOD, MOD}, false),
         # PROC-TRACE — pl-trace.c's context API, the backtrace and the refusals (src/pl-trace.jl), clauseNo (prevPC, is_meta_call, isDebugFrame: DBG1's rows above)
         (LK.PL_get_context, Tuple{LD, Int}, false),
@@ -4174,7 +4318,11 @@ _index_entry_points(T) = (
     (LK.qlfVersion, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.qlfIsCompatible, Tuple{LK.PL_local_data{T}, LK.wic_state, String}, false),
     (LK.open_qlf_file, Tuple{LK.PL_local_data{T}, String}, false),
-    (LK.qlfInfo, Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int, Int}, false),
+    (
+        LK.qlfInfo,
+        Tuple{LK.PL_local_data{T}, String, Int, Int, Int, Int, Int, Int, Int, Int},
+        false
+    ),
     # QLF2: `$qlf_sources`: the index at the end of the file, the path translation, the source entries
     (LK.PL_put_uint64, Tuple{LK.PL_local_data{T}, Int, UInt64}, false),
     (LK.pushPathTranslation, Tuple{LK.PL_local_data{T}, LK.wic_state, String, Int}, false),
@@ -6391,7 +6539,11 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.SkipVarIdCont, Tuple{Vector{UInt8}, Int64}, true),
     (LK.Snew, Tuple{LK.memfile, UInt32, LK.IOFUNCTIONS}, false),
     (LK.Snew, Tuple{LK.Sjulia_io, UInt32, LK.IOFUNCTIONS}, false),
-    (LK.Snew, Tuple{LK.Sjulia_io, UInt32, LK.IOFUNCTIONS, LK.IOENC, LK.Sunicode_atoms_t}, false),   # ENC1 flags: LD->encoding, LD->unicode_atoms
+    (
+        LK.Snew,
+        Tuple{LK.Sjulia_io, UInt32, LK.IOFUNCTIONS, LK.IOENC, LK.Sunicode_atoms_t},
+        false
+    ),   # ENC1 flags: LD->encoding, LD->unicode_atoms
     (LK.Snpgetc, Tuple{LK.IOSTREAM}, false),
     (LK.Sopen_julia_io, Tuple{IOStream, String, Bool}, false),
     (LK.Sopen_julia_io, Tuple{IOBuffer, String, Bool}, false),
@@ -7310,41 +7462,41 @@ const JET_ANALYSED_THROUGH = Dict(
 "Runtime dispatches the JET gate lets through: the call (`callee`, `argtypes`) in the function `caller`, and why."
 const JET_DISPATCH_ALLOWED = [
     (
-    caller=LK.S_read,
-    callee=LK.Sread_user,
-    argtypes=Tuple{
-        Union{Nothing, LK.AbstractLocalData}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8},
-        Int, Int
-    },
-    reason="pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
-),
+        caller=LK.S_read,
+        callee=LK.Sread_user,
+        argtypes=Tuple{
+            Union{Nothing, LK.AbstractLocalData}, LK.IOSTREAM, LK.wrappedIO, Vector{UInt8},
+            Int, Int
+        },
+        reason="pl-file.c:5987-5997 Sread_user: an indirect call per buffer fill, same as upstream (audit D-0433)"
+    ),
     # STREAMX (pending Shivaji's word, Q2): the filter streams' callbacks are the open set's indirect call, upstream's
     # `(*s->functions->read)(s->handle, ...)` of pl-stream.c (S_read/S_write/S_close and the control calls); each barrier
     # function holds exactly one such call.
     (
-    caller=LK.Sread_filter,
-    callee=LK.Sfilter_read,
-    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
-    reason="pl-stream.c S__fillbuf: (*s->functions->read)(s->handle, ...), an indirect call per buffer fill of a filter stream, same as upstream (STREAMX)"
-),
+        caller=LK.Sread_filter,
+        callee=LK.Sfilter_read,
+        argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+        reason="pl-stream.c S__fillbuf: (*s->functions->read)(s->handle, ...), an indirect call per buffer fill of a filter stream, same as upstream (STREAMX)"
+    ),
     (
-    caller=LK.Swrite_filter,
-    callee=LK.Sfilter_write,
-    argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
-    reason="pl-stream.c S__flushbuf: (*s->functions->write)(s->handle, ...), an indirect call per buffer flush of a filter stream, same as upstream (STREAMX)"
-),
+        caller=LK.Swrite_filter,
+        callee=LK.Sfilter_write,
+        argtypes=Tuple{LK.AbstractSfilter, Vector{UInt8}, Int, Int},
+        reason="pl-stream.c S__flushbuf: (*s->functions->write)(s->handle, ...), an indirect call per buffer flush of a filter stream, same as upstream (STREAMX)"
+    ),
     (
-    caller=LK.Sclose_filter,
-    callee=LK.Sfilter_close,
-    argtypes=Tuple{LK.AbstractSfilter},
-    reason="pl-stream.c S__close: (*s->functions->close)(s->handle), one indirect call per close of a filter stream, same as upstream (STREAMX)"
-),
+        caller=LK.Sclose_filter,
+        callee=LK.Sfilter_close,
+        argtypes=Tuple{LK.AbstractSfilter},
+        reason="pl-stream.c S__close: (*s->functions->close)(s->handle), one indirect call per close of a filter stream, same as upstream (STREAMX)"
+    ),
     (
-    caller=LK.S_control,
-    callee=LK.Sfilter_control,
-    argtypes=Tuple{LK.AbstractSfilter, Int, Any},
-    reason="pl-stream.c Ssetenc, Sflush, S__seterror, Ssize: (*s->functions->control)(s->handle, op, arg), an indirect call per control action of a filter stream, same as upstream (STREAMX)"
-)
+        caller=LK.S_control,
+        callee=LK.Sfilter_control,
+        argtypes=Tuple{LK.AbstractSfilter, Int, Any},
+        reason="pl-stream.c Ssetenc, Sflush, S__seterror, Ssize: (*s->functions->control)(s->handle, op, arg), an indirect call per control action of a filter stream, same as upstream (STREAMX)"
+    )
 ]
 
 "The stream function family around the allowed dispatch: `(f, argument types, the JET reports of f's analysis)`; every report of `S_read` is the allowed one. `Swrite_null`, `Sread_null` and `S_seek64` (the null-stream functions and the seek dispatch of the laned stream layer) are members at 0, like their neighbours."

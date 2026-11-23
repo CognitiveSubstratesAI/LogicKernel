@@ -4738,7 +4738,8 @@ function pl_redefine_system_predicate1_va(
     ok, mi = PL_strip_module(gd, ld, pred, 0, head)
     ok || return FFALSE
     nf = PL_get_functor(ld, head)
-    nf === nothing && return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), pred) ? FTRUE : FFALSE
+    nf === nothing &&
+        return PL_error(ld, ERR_TYPE, mk_sym(T, :callable), pred) ? FTRUE : FFALSE
     m = gd.modules[mi]
     proc = lookupProcedure(nf[1], nf[2], m)
     abolishProcedure!(gd, ld, proc, m)
@@ -4870,12 +4871,13 @@ function unify_vmi(
         if at == CA1_VAR || at == CA1_FVAR || at == CA1_CHP
             rc = PL_put_integer(ld, a, VARNUM(w))
         elseif at == CA1_INTEGER || at == CA1_JUMP
-            i = if op == H_SMALLINT || op == B_SMALLINT || op == L_SMALLINT ||
-                op == T_SMALLINT || op == T_TRY_SMALLINT
-                valInt(w)
-            else
-                reinterpret(Int64, w)                           # (scode)*bp++
-            end
+            i =
+                if op == H_SMALLINT || op == B_SMALLINT || op == L_SMALLINT ||
+                    op == T_SMALLINT || op == T_TRY_SMALLINT
+                    valInt(w)
+                else
+                    reinterpret(Int64, w)                           # (scode)*bp++
+                end
             rc = PL_put_int64(ld, a, i)
         elseif at == CA1_FLOAT || at == CA1_MPZ || at == CA1_MPQ || at == CA1_STRING
             rc = PL_unify_atomic(ld, a, lits[Int(w)])
@@ -4916,9 +4918,10 @@ function unify_vmi(
             )
         elseif at == CA1_CLAUSEREF
             tmp = PL_new_term_ref(ld)
-            rc = PL_unify_functor(ld, a, mk_sym(T, :clause), 1) &&
-                 _PL_get_arg(ld, 1, a, tmp) &&
-                 PL_unify_clref(gd, ld, tmp, crefs[Int(w)].clause::Clause{T})
+            rc =
+                PL_unify_functor(ld, a, mk_sym(T, :clause), 1) &&
+                _PL_get_arg(ld, 1, a, tmp) &&
+                PL_unify_clref(gd, ld, tmp, crefs[Int(w)].clause::Clause{T})
         elseif at == CA1_FOREIGN
             rc = PL_put_int64(ld, a, Int(w))
         elseif at == CA1_AFUNC
@@ -4944,7 +4947,8 @@ end
 # (the `ca1_name` array, pl-comp.c:8077-8098: index `CA1_PROC` = 1 on; entry 6, `CA1_WORD`, is named `int64`)
 # a comment, not a docstring, as for every module-level constant the global-state lint reads
 const _CA1_NAMES = (
-    :proc, :lproc, :func, :data, :integer, :int64, :float, :string, :mpz, :mpq, :module, :var, :fvar,
+    :proc, :lproc, :func, :data, :integer, :int64, :float, :string, :mpz, :mpq, :module,
+    :var, :fvar,
     :chp, :foreign, :clauseref, :jump, :afunc, :trie_node
 )
 
@@ -4997,8 +5001,10 @@ function pl_vmi_property2_va(
             head = PL_new_term_ref(ld)
             for at in ci.argtype                                    # the operand kinds, 0-padded (`VM_ARGTYPES`)
                 at == 0x00 && break
-                (PL_unify_list(ld, tail, head, tail) &&
-                 PL_unify_atom(ld, head, mk_sym(T, _CA1_NAMES[Int(at)]))) || return FFALSE
+                (
+                    PL_unify_list(ld, tail, head, tail) &&
+                    PL_unify_atom(ld, head, mk_sym(T, _CA1_NAMES[Int(at)]))
+                ) || return FFALSE
             end
             return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
         else
@@ -5107,7 +5113,8 @@ function pl_break_pc3_va(
                     op == B_UNIFY_EXIT && break
                 end
             end
-            if PL_unify_integer(ld, A2, PC.pc - 1) && PL_unify_integer(ld, A3, nextpc.pc - 1)
+            if PL_unify_integer(ld, A2, PC.pc - 1) &&
+                PL_unify_integer(ld, A3, nextpc.pc - 1)
                 return PL_retry(nextpc.pc - 1)              # ForeignRedoInt(nextpc - clause->codes)
             end
         end
@@ -5176,7 +5183,8 @@ function pl_break_at3_va(
         if PC.pc - 1 == offset && (codeTable(decode(PC)).flags & VIF_BREAK) != 0
             throw(
                 NotPortedError{T}(
-                    mk_sym(T, :break_at), "break_at/3 setting a breakpoint (D_BREAK)", "DBG1"
+                    mk_sym(T, :break_at), "break_at/3 setting a breakpoint (D_BREAK)",
+                    "DBG1"
                 )
             )
         end
@@ -5471,11 +5479,11 @@ function not_breakable(
     av == 0 && return false
     a = PL_new_term_ref(ld)
     if PL_put_clref(gd, ld, av + 1, clause) &&
-       PL_unify_functor(ld, av, mk_sym(T, :break), 2) &&
-       _PL_get_arg(ld, 1, av, a) &&
-       PL_unify(ld, a, av + 1) &&
-       _PL_get_arg(ld, 2, av, a) &&
-       PL_unify_integer(ld, a, offset)
+        PL_unify_functor(ld, av, mk_sym(T, :break), 2) &&
+        _PL_get_arg(ld, 1, av, a) &&
+        PL_unify(ld, a, av + 1) &&
+        _PL_get_arg(ld, 2, av, a) &&
+        PL_unify_integer(ld, a, offset)
         return PL_error(ld, "", 0, "", ERR_PERMISSION, op, mk_sym(T, :break), av)
     end
     return false
@@ -5518,7 +5526,7 @@ function pl_clause_term_position3_va(
     loc = _pc_add(base, pcoffset)
     fin = _pc_add(base, code_size - 1)                          # forget the final I_EXIT
     @assert decode(fin) == I_EXIT || decode(fin) == I_EXITFACT ||
-            decode(fin) == I_EXITCATCH || decode(fin) == I_EXITRESET
+        decode(fin) == I_EXITCATCH || decode(fin) == I_EXITRESET
 
     if pcoffset == code_size
         return PL_unify_atom(ld, A3, mk_sym(T, :exit)) ? FTRUE : FFALSE
@@ -5540,7 +5548,7 @@ function pl_clause_term_position3_va(
             add_node(ld, tail, 2)
             PC = nextpc
         elseif op == I_EXIT || op == I_EXITFACT || op == I_EXITCATCH ||
-               op == I_EXITRESET || op == I_EXITCLEANUP
+            op == I_EXITRESET || op == I_EXITCLEANUP
             if loc.pc == nextpc.pc
                 return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
             end
@@ -5708,7 +5716,8 @@ const PL_predicates_from_comp = (
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(
-        "\$predefine_foreign", 1, pl_predefine_foreign1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+        "\$predefine_foreign", 1, pl_predefine_foreign1_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(                                   # PRED_SHARE("clause", 2, clause, META|NDET|PL_FA_CREF|PL_FA_ISO)
         "clause", 2, pl_clauseva_va,

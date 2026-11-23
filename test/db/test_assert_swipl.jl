@@ -189,7 +189,9 @@ _aproc(db::_ADB, t::_A) = LK.lookupProcedure(_afunctor(t)..., db.user)
 "The program compiled into a fresh database, `ad/1` declared dynamic."
 function _aload(program)::_ADB
     db = _ADB()
-    LK.setDynamicDefinition!(db.gd, LK.lookupProcedure(_as("ad"), 1, db.user).definition, true)
+    LK.setDynamicDefinition!(
+        db.gd, LK.lookupProcedure(_as("ad"), 1, db.user).definition, true
+    )
     for (h, b) in program
         pr = _aproc(db, h)
         cl = LK.compileClause(db.gd, db.ld, h, b, pr, db.user)

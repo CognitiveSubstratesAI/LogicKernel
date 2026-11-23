@@ -159,7 +159,8 @@ function pl_trace(ld::PL_local_data{T})::foreign_t where {T}
     if (ld.debugstatus_visible & PORT_MASK) != 0
         throw(
             NotPortedError{T}(
-                mk_sym(T, :trace), "trace/0 with a visible port: the tracer (pl-trace.c tracePort)", "DBG2"
+                mk_sym(T, :trace),
+                "trace/0 with a visible port: the tracer (pl-trace.c tracePort)", "DBG2"
             )
         )
     end
@@ -382,7 +383,8 @@ function is_meta_call(ld::PL_local_data{T}, fr::Int)::Bool where {T}
     parent = f.parent
     if parent != 0
         pf = ld.frames[parent]
-        if levelFrame(f) == levelFrame(pf) + 1 && ((f.predicate::Definition{T}).flags & P_FOREIGN) == 0
+        if levelFrame(f) == levelFrame(pf) + 1 &&
+            ((f.predicate::Definition{T}).flags & P_FOREIGN) == 0
             pcr = pf.clause
             pcr === nothing && return false
             cl = pcr.clause
@@ -420,7 +422,8 @@ function isDebugFrame(ld::PL_local_data{T}, FR::Int, port::Int)::Bool where {T}
             return false                                # noprof system-system
         end
 
-        while parent != 0 && (((ld.frames[parent].predicate::Definition{T}).flags & P_NOPROFILE) != 0)
+        while parent != 0 &&
+              (((ld.frames[parent].predicate::Definition{T}).flags & P_NOPROFILE) != 0)
             parent = ld.frames[parent].parent           # parent=parent->parent
         end
     end
@@ -559,7 +562,9 @@ function clear_frame_vars(ld::PL_local_data{T}, target::Int)::Nothing where {T}
                     PC = nothing
                     ch = qf.saved_bfr
                 else
-                    error("clear_frame_vars: frame to clear not found on the environment chain")    # (upstream spins)
+                    error(
+                        "clear_frame_vars: frame to clear not found on the environment chain"
+                    )    # (upstream spins)
                 end
             end
         end
@@ -684,7 +689,8 @@ function prolog_frame_attribute(
     elseif kk == sym_key(mk_sym(T, :goal))
         put_frame_goal(ld, result, fr) || return false
     elseif kk == sym_key(mk_sym(T, :predicate_indicator))
-        unify_definition(gd, ld, gd.modules[m], result, def, 0, GP_NAMEARITY) || return false
+        unify_definition(gd, ld, gd.modules[m], result, def, 0, GP_NAMEARITY) ||
+            return false
     elseif kk == sym_key(mk_sym(T, :parent_goal))
         head = PL_new_term_ref(ld)
         a = PL_new_term_ref(ld)
@@ -843,15 +849,25 @@ function choice_type_atom(ld::PL_local_data{T}, ch::Int)::T where {T}
             def = f.predicate::Definition{T}
             if (def.flags & P_FOREIGN) != 0
                 sup = innermost_supervisor(_query_gd(ld), def)[1]
-                if c.value_pc >= 1 && c.value_pc <= length(sup) && sup[c.value_pc] == I_FREDO    # decode(ch->value.pc[0]) == I_FREDO
+                if c.value_pc >= 1 && c.value_pc <= length(sup) &&
+                    sup[c.value_pc] == I_FREDO    # decode(ch->value.pc[0]) == I_FREDO
                     return mk_sym(T, :foreign)
                 end
             end
         end
         return mk_sym(T, :clause)                       # SUPERVISOR(next_clause)
     end
-    ty = c.type == CHP_JUMP ? :jump : c.type == CHP_CLAUSE ? :clause :
-        c.type == CHP_TOP ? :top : c.type == CHP_CATCH ? :catch : :debug     # types[ch->type]
+    ty = if c.type == CHP_JUMP
+        :jump
+    elseif c.type == CHP_CLAUSE
+        :clause
+    elseif c.type == CHP_TOP
+        :top
+    elseif c.type == CHP_CATCH
+        :catch
+    else
+        :debug
+    end     # types[ch->type]
     return mk_sym(T, ty)
 end
 
@@ -915,7 +931,8 @@ function writeContextFrame(
         PutString(string("  ", buf, "\n"), out)
     else
         _debugger_refused(
-            ld, "PL_backtrace without PL_BT_SAFE: the frame goal writer writeFrameGoal (pl-trace.c:1353)"
+            ld,
+            "PL_backtrace without PL_BT_SAFE: the frame goal writer writeFrameGoal (pl-trace.c:1353)"
         )
     end
     return nothing
@@ -1006,7 +1023,9 @@ PL_backtrace(ld::PL_local_data{T}, depth::Int, flags::Int) where {T} =
 # DIVERGES: refused by name, owner DBG2 (see `_debugger_refused`): the body is `interruptHandler`, the interactive debugger.
 "`PL_interrupt(sig)`: refused by name, the interactive `interruptHandler` is left to DBG2 (pl-trace.c)."
 function PL_interrupt(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
-    _debugger_refused(ld, "PL_interrupt: the interactive interruptHandler (pl-trace.c:1928-2059)")
+    _debugger_refused(
+        ld, "PL_interrupt: the interactive interruptHandler (pl-trace.c:1928-2059)"
+    )
 end
 
 # PORT: pl-trace.c prolog_interrupt as pl_prolog_interrupt0_va
@@ -1030,7 +1049,9 @@ const PL_predicates_from_trace = (
         "prolog_frame_attribute", 3, pl_prolog_frame_attribute3_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
-    PL_extension("prolog_choice_attribute", 3, pl_prolog_choice_attribute3_va, PL_FA_VARARGS),    # (pl-trace.c:2755)
+    PL_extension(
+        "prolog_choice_attribute", 3, pl_prolog_choice_attribute3_va, PL_FA_VARARGS
+    ),    # (pl-trace.c:2755)
     PL_extension(
         "prolog_interrupt", 0, pl_prolog_interrupt0_va, PL_FA_NOTRACE | PL_FA_VARARGS
     )                                               # (pl-trace.c:2839, refused by name)
@@ -1151,7 +1172,11 @@ function pl_nospy(ld::PL_local_data{T}, p::term_t)::foreign_t where {T}
         def = proc.definition
         if (def.flags & SPY_ME) != 0                                    # ison(def, SPY_ME)
             def.flags &= ~SPY_ME
-            return printMessage(ld, :informational, _message_term(ld, :nospy, p)) ? FTRUE : FFALSE
+            return if printMessage(ld, :informational, _message_term(ld, :nospy, p))
+                FTRUE
+            else
+                FFALSE
+            end
         end
         return FTRUE
     end

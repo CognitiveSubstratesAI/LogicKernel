@@ -108,8 +108,10 @@ end
     # `atom_escape`); until then it was ported on STRINGS (a Symbol cannot hold the 0), which stays as a second row: the
     # same order rule. compare(Order, '\u1000hello\u0000world', '\u1000hello') is `>` in swipl 10.1.20 as well.
     @testset "zero_codes" begin
-        @test _border(_ba(Symbol(atom_escape("ကhello\0world"))), _ba(Symbol("ကhello"))) === :>
-        @test _border(_ba(Symbol("ကhello")), _ba(Symbol(atom_escape("ကhello\0world")))) === :<
+        @test _border(_ba(Symbol(atom_escape("ကhello\0world"))), _ba(Symbol("ကhello"))) ===
+            :>
+        @test _border(_ba(Symbol("ကhello")), _ba(Symbol(atom_escape("ကhello\0world")))) ===
+            :<
         @test _border(_bg("ကhello\0world"), _bg("ကhello")) === :>
     end
 end

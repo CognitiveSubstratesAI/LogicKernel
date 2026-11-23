@@ -9,11 +9,15 @@ const LK = LogicKernel
 
 # swipl: put_char of [0'a, 0'\n, 233, 8364, 128512, 0x10ffff] on an encoding(wchar_t) stream, read back as bytes
 const _WC_CODES = [97, 10, 233, 8364, 128512, 0x10ffff]
-const _WC_BYTES = UInt8[97, 0, 0, 0, 10, 0, 0, 0, 233, 0, 0, 0, 172, 32, 0, 0, 0, 246, 1, 0, 255, 255, 16, 0]
+const _WC_BYTES = UInt8[
+    97, 0, 0, 0, 10, 0, 0, 0, 233, 0, 0, 0, 172, 32, 0, 0, 0, 246, 1, 0, 255, 255, 16, 0
+]
 
 "A memory stream on `bytes`, for reading, its encoding ENC_WCHAR."
 function _wc_in(bytes::Vector{UInt8})
-    s = LK.Sopenmem(Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r")
+    s = LK.Sopenmem(
+        Ref{Union{Nothing, Vector{UInt8}}}(copy(bytes)), Ref(length(bytes)), "r"
+    )
     @test LK.Ssetenc(s, LK.ENC_WCHAR) == 0
     return s
 end
@@ -47,7 +51,9 @@ end
 
 # the bytes are swipl's: [97, 233, 8364, 128512] and then 3 bytes (swipl: "EOF in UCS character", 65533, then -1)
 @testset "w03 Sgetcode in ENC_WCHAR" begin
-    s = _wc_in(UInt8[97, 0, 0, 0, 233, 0, 0, 0, 0xac, 0x20, 0, 0, 0x00, 0xf6, 0x01, 0, 0x61, 0, 0])
+    s = _wc_in(
+        UInt8[97, 0, 0, 0, 233, 0, 0, 0, 0xac, 0x20, 0, 0, 0x00, 0xf6, 0x01, 0, 0x61, 0, 0]
+    )
     @test LK.Sgetcode(s) == 97
     @test LK.Sgetcode(s) == 233
     @test LK.Sgetcode(s) == 8364
@@ -68,9 +74,10 @@ end
 
 @testset "w04 get_wchar is a signed 32-bit value (pl-stream.c: `c = chr`)" begin
     for (bytes, want) in (
-            (UInt8[0, 0, 0, 0x80], -2147483648), (UInt8[0xff, 0xff, 0xff, 0xff], -1),
-            (UInt8[0xff, 0xff, 0xff, 0x7f], 2147483647), (UInt8[1, 2, 3, 4], Int(only(reinterpret(Int32, UInt8[1, 2, 3, 4])))),
-        )
+        (UInt8[0, 0, 0, 0x80], -2147483648), (UInt8[0xff, 0xff, 0xff, 0xff], -1),
+        (UInt8[0xff, 0xff, 0xff, 0x7f], 2147483647),
+        (UInt8[1, 2, 3, 4], Int(only(reinterpret(Int32, UInt8[1, 2, 3, 4]))))
+    )
         s = _wc_in(bytes)
         @test LK.get_wchar(s) == want
         @test LK.get_wchar(s) == -1                     # then the end, no warning

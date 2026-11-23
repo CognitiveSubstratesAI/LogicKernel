@@ -218,7 +218,7 @@ end
 # DIVERGES: the stream reads the text's own bytes (`Sopen_string`), as upstream's does; `uatoms` is `Sopen_string`'s `initUnicodeAtoms()`.
 "A stream reading the text `txt`, in its encoding (pl-text.c); `nothing` for a mode other than `\"r\"`."
 function Sopen_text(
-    txt::PL_chars_t, mode::String, uatoms::Sunicode_atoms_t = S_UATOMS_ACCEPT
+    txt::PL_chars_t, mode::String, uatoms::Sunicode_atoms_t=S_UATOMS_ACCEPT
 )::Union{Nothing, IOSTREAM}
     mode == "r" || return nothing                   # errno = EINVAL
     stream = Sopen_string(txt.text, length(txt.text), mode, uatoms)

@@ -128,7 +128,11 @@ fz_run(File, Ns) :-
 function swipl_lines(path::String, names::Vector{String})::Vector{String}
     out = mktempdir() do d
         f = joinpath(d, "drv.pl")
-        write(f, DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") * "]), halt)).\n")
+        write(
+            f,
+            DRIVER * ":- initialization((fz_run('$path', [" * join(names, ",") *
+            "]), halt)).\n"
+        )
         read(pipeline(`swipl -q $f`; stderr=devnull), String)
     end
     return String.(split(chomp(out), '\n'; keepempty=false))

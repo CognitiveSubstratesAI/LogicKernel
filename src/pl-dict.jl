@@ -310,7 +310,7 @@ function resortDictsInTerm(ld::PL_local_data{T}, dicts::Vector{Int})::Nothing wh
         fd = ld.gstack[c]
         arity = arityFunctor(ld.functors, fd)
         if nameFunctor(ld.functors, fd) == ATOM_dict && arity > 1 && arity % 2 == 1 &&
-           dict_ordered(ld, c + 2, arity ÷ 2, true)[1] == PL_DICT_FALSE
+            dict_ordered(ld, c + 2, arity ÷ 2, true)[1] == PL_DICT_FALSE
             dict_order(ld, c)                               # the status is not used, as upstream's
         end
     end

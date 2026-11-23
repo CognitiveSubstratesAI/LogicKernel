@@ -921,7 +921,11 @@ end
             t = LK.PL_new_term_refs(ld, 1)
             LK.putSlotValue!(ld, t + 1, x, LK.PutVarMap())
             r = LK.PL_get_file_name(ld, t, flags)
-            ball = ld.exception_term != 0 ? enc(lk_answer(ld, LK.PL_exception(ld, 0))) : nothing
+            ball = if ld.exception_term != 0
+                enc(lk_answer(ld, LK.PL_exception(ld, 0)))
+            else
+                nothing
+            end
             ld.exception_term != 0 && LK.PL_clear_exception(ld)
             LK.PL_close_foreign_frame(ld, fid)
             return r, ball, ld.lTop == l0
@@ -937,8 +941,9 @@ end
         for fl in (EX, RD, WR)
             r, ball, _ = search(gone, S | fl)
             @test r === nothing
-            @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes("source_sink"), ball) &&
-                  occursin(_codes(gone), ball)
+            @test ball !== nothing && occursin(_codes("existence_error"), ball) &&
+                occursin(_codes("source_sink"), ball) &&
+                occursin(_codes(gone), ball)
             @test search(gone, S | fl | NE) == (nothing, nothing, true)
         end
         # the options list is built in the order EXIST, READ, WRITE, EXECUTE; absolute_file_name/3 takes the first access option
@@ -951,7 +956,8 @@ end
         @test search(f, S | EX | RD | WR | XE) == (f, nothing, true)
         r, ball, _ = search(f, S | XE)                                  # the execute option reaches it: the file is not executable
         @test r === nothing
-        @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes(f), ball)
+        @test ball !== nothing && occursin(_codes("existence_error"), ball) &&
+            occursin(_codes(f), ball)
         @test search(f, S | XE | NE) == (nothing, nothing, true)
         chmod(f, 0o755)
         @test search(f, S | XE) == (f, nothing, true)
@@ -970,7 +976,8 @@ end
             for (x, fl) in ((g, RD), (g, WR), (h, WR))
                 r, ball, _ = search(x, S | fl)
                 @test r === nothing
-                @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin(_codes(x), ball)
+                @test ball !== nothing && occursin(_codes("existence_error"), ball) &&
+                    occursin(_codes(x), ball)
             end
             chmod(g, 0o644)
             chmod(h, 0o644)
@@ -978,10 +985,12 @@ end
         # the name argument goes in as the term it is, not converted to text first (a non-SEARCH call raises type_error(string, f(x)))
         r, ball, _ = search(mk_expr(_TL, _TL[_tls("f"), _tls("x")]), S)
         @test r === nothing
-        @test ball !== nothing && occursin(_codes("existence_error"), ball) && occursin("c" * _codes("f") * "/1(a" * _codes("x") * ")", ball)
+        @test ball !== nothing && occursin(_codes("existence_error"), ball) &&
+            occursin("c" * _codes("f") * "/1(a" * _codes("x") * ")", ball)
         r, ball, _ = search(lk_gnd(_TL, 42), S)
         @test r === nothing
-        @test ball !== nothing && occursin(_codes("type_error"), ball) && occursin("i42", ball)
+        @test ball !== nothing && occursin(_codes("type_error"), ball) &&
+            occursin("i42", ball)
         # an unbound name: instantiation_error
         fid = LK.PL_open_foreign_frame(ld)
         r = LK.PL_get_file_name(ld, LK.PL_new_term_ref(ld), S)

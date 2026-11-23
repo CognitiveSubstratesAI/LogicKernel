@@ -39,12 +39,17 @@ end
 "Make `t` hold `hash_info{speedup:S, ln_buckets:N, list:B, arguments:Args}` of the hints `h` (pl-index.c)."
 function _put_hints(ld::PL_local_data{T}, t::term_t, h::hash_hints)::Bool where {T}
     keys = T[
-        mk_sym(T, :speedup), mk_sym(T, :ln_buckets), mk_sym(T, :list), mk_sym(T, :arguments),
+        mk_sym(T, :speedup), mk_sym(T, :ln_buckets), mk_sym(T, :list), mk_sym(T, :arguments)
     ]
     values = PL_new_term_refs(ld, 4)
-    rc = PL_put_float(ld, values, Float64(h.speedup)) &&
+    rc =
+        PL_put_float(ld, values, Float64(h.speedup)) &&
         PL_put_integer(ld, values + 1, Int(h.ln_buckets)) &&
-        PL_put_atom(ld, values + 2, (h.list ? mk_sym(T, Symbol("true")) : mk_sym(T, Symbol("false")))) &&
+        PL_put_atom(
+            ld,
+            values + 2,
+            (h.list ? mk_sym(T, Symbol("true")) : mk_sym(T, Symbol("false")))
+        ) &&
         _put_index_args(ld, values + 3, h.args) &&
         PL_put_dict(ld, t, mk_sym(T, :hash_info), 4, keys, values)
     rc && PL_reset_term_refs(ld, values)
@@ -87,7 +92,7 @@ function pl_candidate_indexes3_va(
     rc = true
     for i in 1:nhints
         if !_put_hints(ld, tmp, hints[i]) || !PL_unify_list(ld, tail, head, tail) ||
-                !PL_unify(ld, head, tmp)
+            !PL_unify(ld, head, tmp)
             rc = false
             break
         end
@@ -123,7 +128,8 @@ end
 "pl-index.c's registration table (`BeginPredDefs(index)`)."
 const PL_predicates_from_index = (
     PL_extension(
-        "\$candidate_indexes", 3, pl_candidate_indexes3_va, PL_FA_TRANSPARENT | PL_FA_VARARGS
+        "\$candidate_indexes", 3, pl_candidate_indexes3_va,
+        PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
     PL_extension(
         "\$set_candidate_indexes", 2, pl_set_candidate_indexes2_va,

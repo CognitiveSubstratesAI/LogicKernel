@@ -44,46 +44,45 @@ function enc(t::_TL, seen::Vector{UInt64}=UInt64[])::String
 end
 
 # ---- the program: swipl's rows. `ctp/2` lists the answers of '$clause_term_position'/3 for PC 0..60; pN/1 are static, one clause each
-const _PROGRAM =
-    """
-:- dynamic dp1/1.
-ctp1(Ref, PC, P) :-
-    catch('\$clause_term_position'(Ref, PC, P0), error(E, C), true),
-    (   nonvar(E)
-    ->  (   E = domain_error(D, _), C = context(_, M)
-        ->  P = dom(D, M)
-        ;   P = err(E)
-        )
-    ;   P = P0
-    ).
-ctp(Ref, R) :- findall(PC-P, ( between(0, 60, PC), ctp1(Ref, PC, P) ), R).
-ex(G, R) :- catch(( G, R = true ), error(E, _), R = err(E)).
-p01(a).
-p02(X) :- q(X).
-p03(X) :- q(X), r(X), s(X).
-p04(X) :- ( q(X) ; r(X) ), s(X).
-p05(X) :- ( q(X) -> r(X) ; s(X) ), t(X).
-p06(X) :- ( q(X) *-> r(X) ; s(X) ), t(X).
-p07(X) :- ( q(X) -> r(X) ), t(X).
-p08(X) :- \\+ q(X), r(X).
-p09(X) :- X = f(Y), q(Y), r(X).
-p10(X) :- q(X), !, r(X).
-p11(X), q(X) => r(X).
-p12(X) :- ( q(X), ( r(X) ; s(X) ) -> t(X) ; u(X) ).
-mq:p13(X) :- q(X).
-p14(X) :- q(X), ( r(X) ; s(X) ).
-p15(X) :- ( q(X) -> r(X) ; s(X) ).
-p16(X) :- \\+ ( q(X), r(X) ), s(X).
-p17(X, Y) :- Y = [X|_], q(Y).
-p18(X) :- ( q(X) -> ( r(X) -> s(X) ; t(X) ) ; u(X) ), v(X).
-p19(X) :- ( q(X) -> r(X) ), ( s(X) -> t(X) ), u(X).
-p20(X) :- ( \\+ q(X) -> r(X) ; s(X) ), t(X).
-p21(X) :- ( q(X) -> ( r(X) ; s(X) ) ), t(X).
-p22(X) :- ( q(X) -> \\+ r(X), s(X) ), t(X).
-p23(X) :- ( q(X) -> ( r(X) -> s(X) ; t(X) ) ), u(X).
-p24(X) :- ( q(X) -> ( r(X) -> s(X) ) ), t(X).
-p25(X) :- ( q(X) *-> ( r(X) -> s(X) ; t(X) ) ), u(X).
-"""
+const _PROGRAM = """
+             :- dynamic dp1/1.
+             ctp1(Ref, PC, P) :-
+                 catch('\$clause_term_position'(Ref, PC, P0), error(E, C), true),
+                 (   nonvar(E)
+                 ->  (   E = domain_error(D, _), C = context(_, M)
+                     ->  P = dom(D, M)
+                     ;   P = err(E)
+                     )
+                 ;   P = P0
+                 ).
+             ctp(Ref, R) :- findall(PC-P, ( between(0, 60, PC), ctp1(Ref, PC, P) ), R).
+             ex(G, R) :- catch(( G, R = true ), error(E, _), R = err(E)).
+             p01(a).
+             p02(X) :- q(X).
+             p03(X) :- q(X), r(X), s(X).
+             p04(X) :- ( q(X) ; r(X) ), s(X).
+             p05(X) :- ( q(X) -> r(X) ; s(X) ), t(X).
+             p06(X) :- ( q(X) *-> r(X) ; s(X) ), t(X).
+             p07(X) :- ( q(X) -> r(X) ), t(X).
+             p08(X) :- \\+ q(X), r(X).
+             p09(X) :- X = f(Y), q(Y), r(X).
+             p10(X) :- q(X), !, r(X).
+             p11(X), q(X) => r(X).
+             p12(X) :- ( q(X), ( r(X) ; s(X) ) -> t(X) ; u(X) ).
+             mq:p13(X) :- q(X).
+             p14(X) :- q(X), ( r(X) ; s(X) ).
+             p15(X) :- ( q(X) -> r(X) ; s(X) ).
+             p16(X) :- \\+ ( q(X), r(X) ), s(X).
+             p17(X, Y) :- Y = [X|_], q(Y).
+             p18(X) :- ( q(X) -> ( r(X) -> s(X) ; t(X) ) ; u(X) ), v(X).
+             p19(X) :- ( q(X) -> r(X) ), ( s(X) -> t(X) ), u(X).
+             p20(X) :- ( \\+ q(X) -> r(X) ; s(X) ), t(X).
+             p21(X) :- ( q(X) -> ( r(X) ; s(X) ) ), t(X).
+             p22(X) :- ( q(X) -> \\+ r(X), s(X) ), t(X).
+             p23(X) :- ( q(X) -> ( r(X) -> s(X) ; t(X) ) ), u(X).
+             p24(X) :- ( q(X) -> ( r(X) -> s(X) ) ), t(X).
+             p25(X) :- ( q(X) *-> ( r(X) -> s(X) ; t(X) ) ), u(X).
+             """
 
 # (id, goal). `ex/2` returns `true` or `err(Formal)`.
 const _CASES = [
@@ -243,12 +242,21 @@ _swipl() = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("sw
         @test count(l -> startswith(l, "t_") && occursin(_codes("exit"), l), sw) == 27   # 25 construct rows + e01 + e02
         @test count(l -> occursin(_codes("not a possible continuation"), l), sw) == 4
         for id in ("c08", "c16", "c20", "c22")
-            @test any(l -> startswith(l, "t_$(id) ") && occursin(_codes("not a possible continuation"), l), sw)
+            @test any(
+                l ->
+                    startswith(l, "t_$(id) ") &&
+                    occursin(_codes("not a possible continuation"), l),
+                sw
+            )
         end
         @test any(l -> startswith(l, "t_e03 ") && occursin(_codes("db_reference"), l), sw)
         @test any(l -> startswith(l, "t_e04 ") && occursin(_codes("integer"), l), sw)
-        @test any(l -> startswith(l, "t_e05 ") && occursin(_codes("program_counter"), l), sw)
-        @test any(l -> startswith(l, "t_e06 ") && occursin(_codes("instantiation_error"), l), sw)
+        @test any(
+            l -> startswith(l, "t_e05 ") && occursin(_codes("program_counter"), l), sw
+        )
+        @test any(
+            l -> startswith(l, "t_e06 ") && occursin(_codes("instantiation_error"), l), sw
+        )
         @test any(l -> startswith(l, "t_e02 ") && occursin("i1", l), sw)           # the erased clause still answers
     end
 end

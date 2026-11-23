@@ -174,7 +174,10 @@ const _TH_CASES = [
     ("tq21", raw"""X is 2^70, thx_h4(X, 1, 1000000, R)"""),
     ("tq22", raw"""X is 1 rdiv 3, thx_h4(X, 1, 1000000, R)"""),
     ("tq23", raw"""thx_h4([], 1, 1000000, R)"""),
-    ("tq24", raw"""thx_h4(f(a), 1, 1000000, R1), thx_h4(f(a), 2, 1000000, R2), thx_same(R1, R2, R)"""),
+    (
+        "tq24",
+        raw"""thx_h4(f(a), 1, 1000000, R1), thx_h4(f(a), 2, 1000000, R2), thx_same(R1, R2, R)"""
+    ),
     ("tq25", raw"""thx_mk(100, L), thx_h4(L, 5, 1000000, R)"""),
     ("tq26", raw"""compound_name_arguments(T, f, []), thx_h4(T, 1, 1000000, R)"""),
     ("tq27", raw"""put_attr(X, m, 1), thx_h4(f(X), -1, 1000000, R)"""),
@@ -199,24 +202,45 @@ const _TH_CASES = [
     ("vh04", raw"""variant_hash("abc", R)"""),
     ("vh05", raw"""X is 1 rdiv 3, variant_hash(X, R)"""),
     ("vh06", raw"""X is 2^63, variant_hash(X, R)"""),
-    ("vh07", raw"""variant_hash(f(X,Y,X), H1), variant_hash(f(A,B,A), H2), thx_same(H1, H2, R)"""),
-    ("vh08", raw"""variant_hash(f(X,Y), H1), variant_hash(f(X,X), H2), thx_same(H1, H2, R)"""),
-    ("vh09", raw"""variant_hash(f(X,Y), H1), variant_hash(f(Y,X), H2), thx_same(H1, H2, R)"""),
+    (
+        "vh07",
+        raw"""variant_hash(f(X,Y,X), H1), variant_hash(f(A,B,A), H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "vh08",
+        raw"""variant_hash(f(X,Y), H1), variant_hash(f(X,X), H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "vh09",
+        raw"""variant_hash(f(X,Y), H1), variant_hash(f(Y,X), H2), thx_same(H1, H2, R)"""
+    ),
     ("vh10", raw"""variant_hash(1, H1), variant_hash(1.0, H2), thx_same(H1, H2, R)"""),
     ("vh11", raw"""variant_hash([], H1), variant_hash('[]', H2), thx_same(H1, H2, R)"""),
     ("vh12", raw"""variant_hash(f(_), R)"""),
     ("vh13", raw"""variant_hash(_, R)"""),
     ("vh14", raw"""variant_hash(f(X,a,X), R)"""),
-    ("vh15", raw"""put_attr(X, m, 1), variant_hash(f(X,Y), H1), variant_hash(f(A,B), H2), thx_same(H1, H2, R)"""),
+    (
+        "vh15",
+        raw"""put_attr(X, m, 1), variant_hash(f(X,Y), H1), variant_hash(f(A,B), H2), thx_same(H1, H2, R)"""
+    ),
     ("vh16", raw"""variant_hash(f(a), 1), R = yes"""),
     ("vh17", raw"""variant_hash(f(a), x), R = yes"""),
     ("vh18", raw"""variant_hash(foo, H), integer(H), R = int"""),
     ("vh19", raw"""thx_ca([233], A), variant_hash(A, R)"""),
     ("vh20", raw"""thx_cs([26085, 26412], S), variant_hash(S, R)"""),
     ("vh21", raw"""thx_ca([26085, 26412], A), variant_hash(A, R)"""),
-    ("vh22", raw"""variant_hash(f(a,b), H1), variant_hash(f(a,b), H2), thx_same(H1, H2, R)"""),
-    ("vh23", raw"""variant_hash(f(a,b), H1), variant_hash(f(b,a), H2), thx_same(H1, H2, R)"""),
-    ("vh24", raw"""variant_hash(f(g(a)), H1), variant_hash(f(g(b)), H2), thx_same(H1, H2, R)"""),
+    (
+        "vh22",
+        raw"""variant_hash(f(a,b), H1), variant_hash(f(a,b), H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "vh23",
+        raw"""variant_hash(f(a,b), H1), variant_hash(f(b,a), H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "vh24",
+        raw"""variant_hash(f(g(a)), H1), variant_hash(f(g(b)), H2), thx_same(H1, H2, R)"""
+    ),
     ("vs01", raw"""variant_sha1(foo, R)"""),
     ("vs02", raw"""variant_sha1("abc", R)"""),
     ("vs03", raw"""thx_ca([26085, 26412], A), variant_sha1(A, R)"""),
@@ -229,8 +253,14 @@ const _TH_CASES = [
     ("vs10", raw"""variant_sha1('[]', R)"""),
     ("vs11", raw"""variant_sha1(1, R)"""),
     ("vs12", raw"""variant_sha1(1.5, R)"""),
-    ("vs13", raw"""variant_sha1(f(X,Y,X), H1), variant_sha1(f(A,B,A), H2), thx_same(H1, H2, R)"""),
-    ("vs14", raw"""variant_sha1(f(X,Y), H1), variant_sha1(f(X,X), H2), thx_same(H1, H2, R)"""),
+    (
+        "vs13",
+        raw"""variant_sha1(f(X,Y,X), H1), variant_sha1(f(A,B,A), H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "vs14",
+        raw"""variant_sha1(f(X,Y), H1), variant_sha1(f(X,X), H2), thx_same(H1, H2, R)"""
+    ),
     ("vs15", raw"""variant_sha1(f(X,a,X), R)"""),
     ("vs16", raw"""put_attr(X, m, 1), variant_sha1(X, R)"""),
     ("vs17", raw"""put_attr(X, m, 1), variant_sha1(f(a, X), R)"""),
@@ -252,19 +282,37 @@ const _TH_CYCLIC = [
     ("cy03", raw"""X = [a|X], variant_sha1(X, R)"""),
     ("cy04", raw"""X = f(X), thx_h4(X, 3, 100000, R)"""),
     ("cy05", raw"""X = [a|X], thx_h4(X, 0, 100, R)"""),
-    ("cy06", raw"""X = [a|X], Y = [a,a|Y], variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""),
+    (
+        "cy06",
+        raw"""X = [a|X], Y = [a,a|Y], variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""
+    ),
     ("cy07", raw"""X = f(X,Y), variant_hash(X, R)"""),
     ("cy08", raw"""X = f(X,Y), variant_sha1(X, R)"""),
-    ("cy09", raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_hash(F, H1), variant_hash(X, H2), thx_same(H1, H2, R)"""),
-    ("cy10", raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_sha1(F, H1), variant_sha1(X, H2), thx_same(H1, H2, R)"""),
+    (
+        "cy09",
+        raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_hash(F, H1), variant_hash(X, H2), thx_same(H1, H2, R)"""
+    ),
+    (
+        "cy10",
+        raw"""X = f(X,Y), '$term_canonical_form'(X, F), variant_sha1(F, H1), variant_sha1(X, H2), thx_same(H1, H2, R)"""
+    ),
     ("cy11", raw"""put_attr(Z, m, 1), X = f(X,Z), variant_hash(X, R)"""),
-    ("cy12", raw"""put_attr(Z, m, 1), X = f(X,Z), catch(variant_sha1(X, _), error(type_error(T, _), _), true), R = T"""),
-    ("cy13", raw"""X = f(X), Y = f(f(Y)), variant_sha1(X, H1), variant_sha1(Y, H2), thx_same(H1, H2, R)"""),
+    (
+        "cy12",
+        raw"""put_attr(Z, m, 1), X = f(X,Z), catch(variant_sha1(X, _), error(type_error(T, _), _), true), R = T"""
+    ),
+    (
+        "cy13",
+        raw"""X = f(X), Y = f(f(Y)), variant_sha1(X, H1), variant_sha1(Y, H2), thx_same(H1, H2, R)"""
+    ),
     ("cy14", raw"""X = [a,b|X], variant_sha1(X, R)"""),
     ("cy15", raw"""X = [b,a|X], variant_sha1(X, R)"""),
     ("cy16", raw"""X = [1,"s",2.5|X], variant_sha1(X, R)"""),
     ("cy17", raw"""X = g(A,B,A,X), variant_hash(X, R)"""),
-    ("cy18", raw"""X = g(A,B,A,X), Y = g(C,D,D,Y), variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""),
+    (
+        "cy18",
+        raw"""X = g(A,B,A,X), Y = g(C,D,D,Y), variant_hash(X, H1), variant_hash(Y, H2), thx_same(H1, H2, R)"""
+    ),
     ("cy19", raw"""X = [a|X], variant_sha1(X, foo), R = yes""")
 ]
 
@@ -448,7 +496,8 @@ function _th_file(cs)::Tuple{String, Vector{String}}
     names = ["t_$(id)" for (id, _) in cs]
     text =
         _TH_PROGRAM * join([
-            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for (id, g) in cs
+            "t_$(id)(R) :- catch(($g), error(SsuE, _), R = raised(SsuE)).\n" for
+            (id, g) in cs
         ])
     f = joinpath(mktempdir(), "termhash.pl")
     write(f, text)
@@ -510,13 +559,15 @@ function _th_kernel(path::String, names::Vector{String})::Vector{String}
 end
 
 # the answer of a pinned line: its integer, or the atom's text
-_th_int(l::String) = (m = match(r"\(i(\d+)\)$", l); m === nothing ? nothing : parse(Int, m[1]))
+_th_int(l::String) =
+    (m=match(r"\(i(\d+)\)$", l); m === nothing ? nothing : parse(Int, m[1]))
 function _th_atom(l::String)
     m = match(r"\(a\[([\d,]*)\]\)$", l)
     return m === nothing ? nothing : String(Char.(parse.(Int, split(m[1], ','))))
 end
 _th_pin(id::String) = only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", _TH_PINNED))
-_th_cypin(id::String) = only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", _TH_CY_PINNED))
+_th_cypin(id::String) =
+    only(filter(l -> startswith(l, "t_$id ") || l == "t_$id", _TH_CY_PINNED))
 
 @testset "term_hash/2, term_hash/4, variant_hash/2, variant_sha1/2 as swipl's (th, tq, vh, vs)" begin
     f, names = _th_file(_TH_CASES)
@@ -557,8 +608,10 @@ end
     # term_hash/2 of a ground term is a 32-bit integer; the known value of `foo` is the one the hand model of pl-termhash.c gave
     ints = Dict(id => _th_int(_th_pin(id)) for id in ids)
     ground = [
-        "th01", "th02", "th03", "th04", "th06", "th07", "th08", "th09", "th10", "th11", "th12", "th13", "th14",
-        "th15", "th16", "th17", "th18", "th19", "th20", "th21", "th22", "th23", "th24", "th25", "th26", "th27",
+        "th01", "th02", "th03", "th04", "th06", "th07", "th08", "th09", "th10", "th11",
+        "th12", "th13", "th14",
+        "th15", "th16", "th17", "th18", "th19", "th20", "th21", "th22", "th23", "th24",
+        "th25", "th26", "th27",
         "th28", "th29", "th31", "th32", "th33", "th34", "th35", "th41", "th42", "th43"
     ]
     for id in ground
@@ -578,9 +631,12 @@ end
     @test _th_atom(_th_pin("th38")) == "same" && _th_atom(_th_pin("th39")) == "diff"
     # term_hash/4: the answer is below the range; a range of 1 answers 0 (tq17, tq20)
     ranges = Dict(
-        "tq01" => 100, "tq02" => 1000, "tq03" => 1000, "tq04" => 10^6, "tq05" => 10^6, "tq06" => 10^6,
-        "tq07" => 10^6, "tq09" => 10, "tq11" => 1000, "tq12" => 1000, "tq13" => 1000, "tq14" => 2147483647,
-        "tq15" => 10^6, "tq16" => 10^6, "tq17" => 1, "tq18" => 10^6, "tq19" => 10^6, "tq20" => 1,
+        "tq01" => 100, "tq02" => 1000, "tq03" => 1000, "tq04" => 10^6, "tq05" => 10^6,
+        "tq06" => 10^6,
+        "tq07" => 10^6, "tq09" => 10, "tq11" => 1000, "tq12" => 1000, "tq13" => 1000,
+        "tq14" => 2147483647,
+        "tq15" => 10^6, "tq16" => 10^6, "tq17" => 1, "tq18" => 10^6, "tq19" => 10^6,
+        "tq20" => 1,
         "tq21" => 10^6, "tq22" => 10^6, "tq23" => 10^6, "tq25" => 10^6, "tq26" => 10^6
     )
     for (id, r) in ranges
@@ -589,29 +645,62 @@ end
     @test ints["tq04"] != ints["tq05"] != ints["tq06"]                         # the depth is read
     @test _th_atom(_th_pin("tq10")) == "unbound" && _th_atom(_th_pin("tq08")) == "unbound"
     @test _th_atom(_th_pin("tq24")) == "diff"                                  # depth 1 and depth 2 of f(a)
-    for id in ("tq28", "tq29", "tq30", "tq31", "tq32", "tq33", "tq34", "tq35", "tq36", "tq37", "tq38", "tq42")
+    for id in (
+        "tq28",
+        "tq29",
+        "tq30",
+        "tq31",
+        "tq32",
+        "tq33",
+        "tq34",
+        "tq35",
+        "tq36",
+        "tq37",
+        "tq38",
+        "tq42"
+    )
         @test occursin("c[114,97,105,115,101,100]/1(", _th_pin(id))                       # every error row raises
     end
     @test occursin(_th_codes("not_less_than_zero"), _th_pin("tq28"))
-    @test occursin(_th_codes("not_less_than_one"), _th_pin("tq29")) && occursin(_th_codes("not_less_than_one"), _th_pin("tq30"))
-    @test occursin(_th_codes("instantiation_error"), _th_pin("tq34")) && occursin(_th_codes("instantiation_error"), _th_pin("tq35"))
-    @test occursin(_th_codes("representation_error"), _th_pin("tq36")) && occursin(_th_codes("int64_t"), _th_pin("tq36"))
+    @test occursin(_th_codes("not_less_than_one"), _th_pin("tq29")) &&
+        occursin(_th_codes("not_less_than_one"), _th_pin("tq30"))
+    @test occursin(_th_codes("instantiation_error"), _th_pin("tq34")) &&
+        occursin(_th_codes("instantiation_error"), _th_pin("tq35"))
+    @test occursin(_th_codes("representation_error"), _th_pin("tq36")) &&
+        occursin(_th_codes("int64_t"), _th_pin("tq36"))
     @test _th_pin("tq39") == "t_tq39"                                          # a bound wrong answer fails
     @test _th_atom(_th_pin("tq40")) == "yes" && _th_atom(_th_pin("tq41")) == "int"
     # variant_hash/2: 24 bits; =@= terms agree
-    for id in ("vh01", "vh02", "vh03", "vh04", "vh05", "vh06", "vh12", "vh13", "vh14", "vh19", "vh20", "vh21")
+    for id in (
+        "vh01",
+        "vh02",
+        "vh03",
+        "vh04",
+        "vh05",
+        "vh06",
+        "vh12",
+        "vh13",
+        "vh14",
+        "vh19",
+        "vh20",
+        "vh21"
+    )
         @test ints[id] !== nothing && 0 <= ints[id] < 2^24
     end
     @test _th_atom(_th_pin("vh07")) == "same" && _th_atom(_th_pin("vh08")) == "diff"
     @test _th_atom(_th_pin("vh10")) == "diff" && _th_atom(_th_pin("vh11")) == "diff"
     @test _th_atom(_th_pin("vh15")) == "same" && _th_atom(_th_pin("vh23")) == "diff"
     # variant_sha1/2: 40 hex digits; the variant relation
-    for id in ("vs01", "vs02", "vs03", "vs04", "vs05", "vs06", "vs07", "vs08", "vs09", "vs10", "vs11", "vs12", "vs15",
-               "vs19", "vs20", "vs21", "vs22", "vs23", "vs24", "vs25", "vs26")
+    for id in
+        ("vs01", "vs02", "vs03", "vs04", "vs05", "vs06", "vs07", "vs08", "vs09", "vs10",
+        "vs11", "vs12", "vs15",
+        "vs19", "vs20", "vs21", "vs22", "vs23", "vs24", "vs25", "vs26")
         a = _th_atom(_th_pin(id))
         @test a !== nothing && length(a) == 40 && all(c -> c in "0123456789abcdef", a)
     end
-    @test length(unique(_th_atom(_th_pin(id)) for id in ("vs09", "vs10", "vs21", "vs22"))) == 4   # [] vs '[]', "" vs ''
+    @test length(
+        unique(_th_atom(_th_pin(id)) for id in ("vs09", "vs10", "vs21", "vs22"))
+    ) == 4   # [] vs '[]', "" vs ''
     @test _th_atom(_th_pin("vs13")) == "same" && _th_atom(_th_pin("vs14")) == "diff"
     @test occursin(_th_codes("free_of_attvar"), _th_pin("vs17"))               # an attributed variable in the term
     @test occursin(_th_codes("instantiation_error"), _th_pin("vs16"))          # a bare one: type_error on an unbound term
@@ -625,9 +714,12 @@ end
         a = _th_atom(_th_pin(id))
         @test a !== nothing && length(a) == 40 && all(c -> c in "0123456789abcdef", a)
     end
-    @test _th_int(_th_cypin("cy07")) == _th_int(_th_cypin("cy11")) && 0 <= _th_int(_th_cypin("cy07")) < 2^24   # an attvar is a variable
-    @test 0 <= _th_int(_th_cypin("cy17")) < 2^24 && _th_int(_th_cypin("cy17")) != _th_int(_th_cypin("cy07"))
-    @test _th_atom(_th_cypin("cy09")) == "diff" && _th_atom(_th_cypin("cy10")) == "diff" && _th_atom(_th_cypin("cy18")) == "diff"
+    @test _th_int(_th_cypin("cy07")) == _th_int(_th_cypin("cy11")) &&
+        0 <= _th_int(_th_cypin("cy07")) < 2^24   # an attvar is a variable
+    @test 0 <= _th_int(_th_cypin("cy17")) < 2^24 &&
+        _th_int(_th_cypin("cy17")) != _th_int(_th_cypin("cy07"))
+    @test _th_atom(_th_cypin("cy09")) == "diff" && _th_atom(_th_cypin("cy10")) == "diff" &&
+        _th_atom(_th_cypin("cy18")) == "diff"
     @test _th_atom(_th_cypin("cy13")) == "same"
     @test _th_atom(_th_cypin("cy14")) != _th_atom(_th_cypin("cy15"))
     @test _th_atom(_th_cypin("cy12")) == "free_of_attvar"                         # variant_sha1 of an attributed variable in a cyclic term

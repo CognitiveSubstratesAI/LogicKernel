@@ -382,11 +382,16 @@ end
         end
     end
     # not vacuous: every category is somewhere in the pins, with the errors and the failure
-    for cat in ("layout", "symbol", "solo", "punct", "upper", "id_start", "id_continue", "invalid")
+    for cat in
+        ("layout", "symbol", "solo", "punct", "upper", "id_start", "id_continue", "invalid")
         @test any(l -> occursin("a" * _cl_codes(cat), l), _CL_PINNED)
     end
-    @test count(l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _CL_PINNED) >= 8    # type_error
-    @test count(l -> occursin("c[100,111,109,97,105,110,95,101,114,114,111,114]", l), _CL_PINNED) >= 1   # domain_error
+    @test count(
+        l -> occursin("c[116,121,112,101,95,101,114,114,111,114]", l), _CL_PINNED
+    ) >= 8    # type_error
+    @test count(
+        l -> occursin("c[100,111,109,97,105,110,95,101,114,114,111,114]", l), _CL_PINNED
+    ) >= 1   # domain_error
     @test count(l -> occursin("a[110,111]", l), _CL_PINNED) >= 1                                     # failed
 end
 

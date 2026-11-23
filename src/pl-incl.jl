@@ -2921,7 +2921,8 @@ mutable struct mutex_prop_enum{T}
     enum_properties::Bool                           # enumerate the properties
     enumerating::Bool                               # e != NULL: enumerating the mutexes
 end
-mutex_prop_enum{T}() where {T} = mutex_prop_enum{T}(pl_mutex{T}[], 1, nothing, 1, false, false)
+mutex_prop_enum{T}() where {T} =
+    mutex_prop_enum{T}(pl_mutex{T}[], 1, nothing, 1, false, false)
 
 # PORT: pl-thread.c message_queue
 # DIVERGES: the kernel runs one thread, so no `pthread_mutex_t`/`pthread_cond_t` (`mutex`, `cond_var`, `wait_for_cond`, `cond_var_sleeping`) and

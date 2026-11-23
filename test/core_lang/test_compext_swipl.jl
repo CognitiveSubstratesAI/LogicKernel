@@ -154,8 +154,9 @@ vq2(1).
 vq3(1).
 """
 # one row: the case wrapped as described in the header (`@ID@`, `@GOAL@` replaced)
-const _CX_WRAP = raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(SsuE)) -> Ok = yes ; Ok = no ), set_prolog_flag(debug, false), Ok == yes." *
-                 "\n"
+const _CX_WRAP =
+    raw"t_@ID@(R) :- ( catch((@GOAL@), error(SsuE, _), R = raised(SsuE)) -> Ok = yes ; Ok = no ), set_prolog_flag(debug, false), Ok == yes." *
+    "\n"
 
 # cx01-cx13: `'$notrace'/1` (the goal's answer, failure and ball pass through; the tracing bit and the skip level are what they were before, the
 # debugging bit is restored too, cx07, and is off inside the goal, cx12: 13 = 15 less the debugging bit); cx14-cx21: `'$predefine_foreign'/1` (the foreign attribute, the four error forms, a qualified and a 0-arity
@@ -1332,8 +1333,10 @@ function _cx_answer(l::AbstractString)::String
 end
 "The encoded atom `s`, compound `f(args...)` and proper list of `items`, as the driver writes them."
 _cx_a(s::String) = "a" * _cx_codes(s)
-_cx_c(f::String, args::String...) = "c" * _cx_codes(f) * "/$(length(args))(" * join(args, ",") * ")"
-_cx_l(items::String...) = isempty(items) ? "nil" : _cx_c("[|]", items[1], _cx_l(items[2:end]...))
+_cx_c(f::String, args::String...) =
+    "c" * _cx_codes(f) * "/$(length(args))(" * join(args, ",") * ")"
+_cx_l(items::String...) =
+    isempty(items) ? "nil" : _cx_c("[|]", items[1], _cx_l(items[2:end]...))
 "The pairs `S-E` as an encoded list."
 _cx_pairs(ps::Tuple{Int, Int}...) = _cx_l([_cx_c("-", "i$s", "i$e") for (s, e) in ps]...)
 
@@ -1393,36 +1396,53 @@ end
     @test length(failed) >= 2                                            # cx40 and cx58 fail
     @test length(answered) + length(failed) == length(_CX_CASES)         # every row has a line
     # the error forms are read back, not only the successes
-    decoded = Dict(split(l, ' ')[1] => _cx_decode(l) for l in _CX_PINNED if startswith(l, "t_cx"))
+    decoded = Dict(
+        split(l, ' ')[1] => _cx_decode(l) for l in _CX_PINNED if startswith(l, "t_cx")
+    )
     @test occursin("instantiation_error", decoded["t_cx16"])
     @test occursin("type_error", decoded["t_cx17"]) && occursin("atom", decoded["t_cx17"])
-    @test occursin("existence_error", decoded["t_cx45"]) && occursin("vmi", decoded["t_cx45"])
-    @test occursin("domain_error", decoded["t_cx42"]) && occursin("vmi_property", decoded["t_cx42"])
-    @test occursin("existence_error", decoded["t_cx54"]) && occursin("procedure", decoded["t_cx54"])
+    @test occursin("existence_error", decoded["t_cx45"]) &&
+        occursin("vmi", decoded["t_cx45"])
+    @test occursin("domain_error", decoded["t_cx42"]) &&
+        occursin("vmi_property", decoded["t_cx42"])
+    @test occursin("existence_error", decoded["t_cx54"]) &&
+        occursin("procedure", decoded["t_cx54"])
     # the messages of the spy rows are read back, in order
     @test occursin("spy", decoded["t_cx51"]) && occursin("nospy", decoded["t_cx51"])
     @test count("spy", decoded["t_cx52"]) == 2 && count("nospy", decoded["t_cx52"]) == 1   # `nospy` contains `spy`: the repeats are silent
-    @test any(l -> startswith(l, "t_cx22 ") && occursin("a[116,114,117,101]", l), _CX_PINNED)   # break(true) is read back
+    @test any(
+        l -> startswith(l, "t_cx22 ") && occursin("a[116,114,117,101]", l), _CX_PINNED
+    )   # break(true) is read back
     @test any(l -> startswith(l, "t_cx14 ") && occursin("i1,i1", l), _CX_PINNED)          # foreign 1, defined 1
     # the `'$fetch_vm'/4` rows are read back: instructions, offsets, the error forms and the supervisor
     @test occursin("h_atom", decoded["t_cx65"]) && occursin("i_exitfact", decoded["t_cx65"])
     @test occursin("h_string", decoded["t_cx70"]) && occursin("h_mpz", decoded["t_cx71"])
     @test occursin("i_depart", decoded["t_cx72"]) && occursin("i_cut", decoded["t_cx73"])
-    @test occursin("a_add_fc", decoded["t_cx74"]) && occursin("i_departm", decoded["t_cx76"])
+    @test occursin("a_add_fc", decoded["t_cx74"]) &&
+        occursin("i_departm", decoded["t_cx76"])
     @test any(l -> startswith(l, "t_cx78 ") && occursin("i0,c[104", l), _CX_PINNED)           # `0-h_atom(a)`: the offsets are read back
-    @test occursin("domain_error", decoded["t_cx91"]) && occursin("program_counter", decoded["t_cx91"])
-    @test occursin("domain_error", decoded["t_cx92"]) && occursin("program_counter", decoded["t_cx92"])
-    @test occursin("type_error", decoded["t_cx93"]) && occursin("instantiation_error", decoded["t_cx94"])
-    @test occursin("domain_error", decoded["t_cx96"]) && occursin("instantiation_error", decoded["t_cx97"])
+    @test occursin("domain_error", decoded["t_cx91"]) &&
+        occursin("program_counter", decoded["t_cx91"])
+    @test occursin("domain_error", decoded["t_cx92"]) &&
+        occursin("program_counter", decoded["t_cx92"])
+    @test occursin("type_error", decoded["t_cx93"]) &&
+        occursin("instantiation_error", decoded["t_cx94"])
+    @test occursin("domain_error", decoded["t_cx96"]) &&
+        occursin("instantiation_error", decoded["t_cx97"])
     @test occursin("s_virgin", decoded["t_cx99"]) && occursin("i_exit", decoded["t_cx99"])
     @test occursin("s_trustme", decoded["t_cx104"])
-    @test occursin("b_unify_fc", decoded["t_cx111"]) && occursin("b_eq_vc", decoded["t_cx111"]) && occursin("b_neq_vc", decoded["t_cx111"])
+    @test occursin("b_unify_fc", decoded["t_cx111"]) &&
+        occursin("b_eq_vc", decoded["t_cx111"]) && occursin("b_neq_vc", decoded["t_cx111"])
     @test occursin("b_smallint", decoded["t_cx112"])
-    @test count(l -> occursin(r"^t_cx11[345] ", l) && occursin("a[110,111])", l), _CX_PINNED) == 2   # cx113, cx114: a wrong arity or name does not match
+    @test count(
+        l -> occursin(r"^t_cx11[345] ", l) && occursin("a[110,111])", l), _CX_PINNED
+    ) == 2   # cx113, cx114: a wrong arity or name does not match
     @test any(l -> l == "t_cx90 c[116,95,99,120,57,48]/1(a[110,111])", _CX_PINNED)          # a bound instruction that does not match fails
     @test length(unique(_CX_PINNED)) == length(_CX_PINNED)               # the rows differ from one another
     # the `'$xr_member'/2`, `'$break_pc'/3` and `'$break_at'/3` rows are read back: values, offsets and the error forms
-    pin = Dict(split(l, ' ')[1] => _cx_answer(l) for l in _CX_PINNED if startswith(l, "t_cx"))
+    pin = Dict(
+        split(l, ' ')[1] => _cx_answer(l) for l in _CX_PINNED if startswith(l, "t_cx")
+    )
     vc(n) = _cx_c("vc", "V$n")
     err(kind, args...) = _cx_c("raised", _cx_c(kind, args...))
     @test pin["t_cx116"] == _cx_l(_cx_a("a"))                            # `vf1(a)`: the atom
@@ -1430,7 +1450,9 @@ end
     @test pin["t_cx118"] == _cx_l(_cx_c("f", "V0", "V1"))                # `vf4(f(X, X))`: the functor skeleton
     @test pin["t_cx121"] == _cx_l(vc(0), vc(1))                          # `vr1`: the one call is listed twice, by its two procedure operands
     @test pin["t_cx122"] == _cx_l(_cx_a("m1"), _cx_c(":", _cx_a("m1"), vc(0)), vc(1), vc(2))
-    @test pin["t_cx123"] == _cx_l(_cx_a("lists"), _cx_c(":", _cx_a("lists"), _cx_c("append", "V0", "V1", "V2")))
+    @test pin["t_cx123"] == _cx_l(
+        _cx_a("lists"), _cx_c(":", _cx_a("lists"), _cx_c("append", "V0", "V1", "V2"))
+    )
     @test pin["t_cx124"] == _cx_l(_cx_c("foo", "V0", "V1"), _cx_a("bar"))
     @test pin["t_cx125"] == _cx_l(_cx_a("bar"), vc(0), _cx_a("bar"), _cx_a("bar"))   # `vr7`: three `bar` operands and the call
     @test pin["t_cx126"] == _cx_l("i5", "i6")                            # `vr10`: both comparison constants
@@ -1450,26 +1472,40 @@ end
     @test pin["t_cx153"] == _cx_pairs((0, 1), (3, 5), (10, 12), (12, 13))
     @test pin["t_cx154"] == _cx_c("-", "i0", "i1")                       # the first answer of `once/1`
     @test pin["t_cx158"] == _cx_c("-", "i6", "i7")                       # the first break-point after offset 0 of `vr4`
-    @test all(id -> pin["t_cx$id"] == err("type_error", _cx_a("db_reference"), _cx_a("a")), (156, 164))
-    @test all(id -> pin["t_cx$id"] == err("domain_error", _cx_a("program_counter"), "i100000"), (159, 167))
+    @test all(
+        id -> pin["t_cx$id"] == err("type_error", _cx_a("db_reference"), _cx_a("a")),
+        (156, 164)
+    )
+    @test all(
+        id -> pin["t_cx$id"] == err("domain_error", _cx_a("program_counter"), "i100000"),
+        (159, 167)
+    )
     @test pin["t_cx160"] == err("domain_error", _cx_a("not_less_than_zero"), "i-1")
     @test pin["t_cx161"] == err("type_error", _cx_a("integer"), _cx_a("a"))
-    @test all(id -> pin["t_cx$id"] == err("type_error", _cx_a("bool"), _cx_a("foo")), (162, 163))   # the Boolean is read before the offset
+    @test all(
+        id -> pin["t_cx$id"] == err("type_error", _cx_a("bool"), _cx_a("foo")), (162, 163)
+    )   # the Boolean is read before the offset
     @test all(id -> pin["t_cx$id"] == _cx_c("got", "i0"), (166, 168, 169, 171))   # the culprit `break(Ref, 0)` of the clear and set errors
     @test pin["t_cx170"] == _cx_c("raised", _cx_a("instantiation_error"))
     # cx172-cx201 (COMPEXT-5): the instruction kinds, operand kinds and lookups the rows above never held
-    @test occursin("b_unify_firstvar", decoded["t_cx172"]) && occursin("b_unify_exit", decoded["t_cx172"])
+    @test occursin("b_unify_firstvar", decoded["t_cx172"]) &&
+        occursin("b_unify_exit", decoded["t_cx172"])
     @test occursin("l_atom", decoded["t_cx173"]) && occursin("b_atom", decoded["t_cx173"])
-    @test occursin("b_unify_vc", decoded["t_cx174"]) && occursin("b_unify_var", decoded["t_cx175"])
+    @test occursin("b_unify_vc", decoded["t_cx174"]) &&
+        occursin("b_unify_var", decoded["t_cx175"])
     @test pin["t_cx176"] == _cx_pairs((0, 1), (1, 9), (17, 19), (19, 20))   # `vr11`: the inline unification 1-9 is one break-point
     @test pin["t_cx177"] == _cx_pairs((0, 1), (3, 5), (5, 13), (13, 14))    # `vr21`: `b_unify_var` ... `b_unify_exit` is 5-13
     @test pin["t_cx178"] == _cx_l(_cx_c("foo", "V0"), vc(1), vc(2))
     @test pin["t_cx179"] == _cx_l(_cx_a("foo"), vc(0), _cx_a("foo"), vc(1))   # `vr12`: `l_atom` and `b_atom`, each a `foo`
-    @test pin["t_cx180"] == _cx_l(_cx_c(":", "V0", "V1"), _cx_a("a"), _cx_a("b"), vc(2), vc(3))
+    @test pin["t_cx180"] ==
+        _cx_l(_cx_c(":", "V0", "V1"), _cx_a("a"), _cx_a("b"), vc(2), vc(3))
     @test pin["t_cx181"] == _cx_l(_cx_a("a"), _cx_a("b"))                    # `vr16`: the two `b_unify_vc` constants
     @test pin["t_cx182"] == _cx_l(vc(0), _cx_c("foo", "V1"))
     @test pin["t_cx183"] == _cx_l(_cx_a("system"), _cx_c(":", _cx_a("system"), vc(0)))
-    @test all(id -> pin["t_cx$id"] == _cx_a(id in (184, 185, 188, 195, 197, 199) ? "yes" : "no"), 184:199)
+    @test all(
+        id -> pin["t_cx$id"] == _cx_a(id in (184, 185, 188, 195, 197, 199) ? "yes" : "no"),
+        184:199
+    )
     @test pin["t_cx200"] == err("domain_error", _cx_a("program_counter"), "i3")   # `vf1` has 3 code words: offset 3 is past the code
     @test pin["t_cx201"] == _cx_c("got", "i5")
 end
