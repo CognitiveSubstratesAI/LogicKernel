@@ -13,6 +13,7 @@
 #   KA = "early reset: a kept assignment marks the old value it saved"   LQ = "the argument stack and the choicepoints and frames of a live query ..."
 #   AS = "the argument stack's global entries are term references ..."  AC = "mark_alt_clauses marks only the arguments the alternative clauses read"
 #   CO = "deliberate corruptions FAIL the comparison"
+#   KM = "early reset: two assignments of one cell within one trail range ..."   KR = "mark_stacks resets the trail-cell counter ..."
 # TARGETS (audit D-0238): every test file that runs the mutated code and can see its effect. The mark phase has no caller yet beyond the
 #   test file of the step (G1-2 and G1-5 call it later): test_gc_mark.jl is the only file that reaches these functions, and `git grep` of
 #   the names in test/ finds no other (a file that drives the collector later adds itself here).
@@ -32,9 +33,12 @@
 #     G1GC3-D3-ROW (evidence/R2/g1_ci_fix_handoff.md): a nested-call program is needed to build its row.
 # G1GC3-A3, A4, A5: the row of testset AC is m(a, p(1), d) / m(b, _, c) (initVMIMerge drops a void head argument before I_EXITFACT,
 #   src/pl-comp.jl:98-118, so `m(b, _)` holds no H_VOID): A1-A4 fail test_gc_mark.jl :564 :566 :569; A5 fails :565 :569 :571.
-# DECLARED, NOT BLOCKING (audit D-0971 (6)): G1GC3-D5 is NOT equivalent in the strict sense: a row with two assignments of one cell within
-#   one trail range would kill it; the reason is a MISSING ROW (a TODO).
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): G1GC3-E2, G1GC3-E3. G1GC3-E1's declaration is
+# KILL (audit D-0994 (5), TESTROWS-1; was "declared, not blocking", D-0971 (6): the reason was a MISSING ROW): G1GC3-D5 is killed by the new
+#   testset KM of test/core_lang/test_gc_mark.jl, "early reset: two assignments of one cell within one trail range keep the first pair and
+#   delete the later ...", marked UNRUN until the lane shows it fails with D5 applied and passes unmutated.
+# KILL (audit D-0994 (5), TESTROWS-1): G1GC3-E3 is killed by the new testset KR of test/core_lang/test_gc_mark.jl, "mark_stacks resets the
+#   trail-cell counter: one gc_mark_counts reused across two collections ...", marked UNRUN likewise.
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): G1GC3-E2. G1GC3-E1's declaration is
 #   WITHDRAWN: it was killed by an error (test_gc_driver.jl:365) and the exception was not read: TO READ ON THE LANE.
 # Every `old` is counted EXACTLY once in its file by `python3 -I ~/code/lk-t27-scratch/oldscan.py G1GC3` from the repository root;
 # `new` != `old`; no duplicate id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
@@ -50,10 +54,11 @@ TARGETS = [GM, GC, GD, GV, GS, SP, UP]
 M = "src/pl-gcmark.jl"
 W = "src/pl-gcwalk.jl"
 
-def m(id, old, new, file=M, eq=None):
+def m(id, old, new, file=M, eq=None, **extra):
     d = dict(id=id, file=file, old=old, new=new, targets=TARGETS)
     if eq:
         d["equivalent"] = eq
+    d.update(extra)                              # expect= / site= (a mutant that must hang, tools/mutate_ci.py)
     return d
 
 MUTANTS = [
@@ -137,12 +142,14 @@ MUTANTS = [
     m("G1GC3-T1 early_reset_vars: a marked trailed variable is reset like an unmarked one (KILL ER: `ld.gstack[c1]` and its entry; KA: the pair is deleted)",
       "            elseif !is_marked(ld.gstack[tard])\n                ld.gstack[tard] = word(0)               # setVar(*tard)",
       "            elseif is_marked(ld.gstack[tard])\n                ld.gstack[tard] = word(0)               # setVar(*tard)", file=W),
-    m("G1GC3-T2 early_reset_vars: the unreachable variable keeps its value (KILL ER: `ld.gstack[c2] == 0`)",
+    m("G1GC3-T2 early_reset_vars: the unreachable variable keeps its value (HANG in boot: expect=hang; VM loop in boot (every engine creation, so every TARGETS file hangs at _rdb); observed site pl-wam.jl:4552 normal_call (T2); the corrupting step is an interpretation of one dump, not tested; dumps: evidence/G1/kmdiag_t2_dump.log and evidence/G1/kmdiag_t3_dump.log)",
       "                ld.gstack[tard] = word(0)               # setVar(*tard)\n",
-      "                nothing               # setVar(*tard)\n", file=W),
-    m("G1GC3-T3 early_reset_vars: every trailed cell counts as newer than the frame (KILL ER: c1's entry is deleted, `ld.trail[tr0 + 1] != 0`)",
+      "                nothing               # setVar(*tard)\n", file=W,
+      expect="hang", site="PL_next_solution_guarded"),
+    m("G1GC3-T3 early_reset_vars: every trailed cell counts as newer than the frame (HANG in boot: expect=hang; VM loop in boot (every engine creation, so every TARGETS file hangs at _rdb); observed site pl-index.jl:381 setClauseChoice! (T3); the corrupting step is an interpretation of one dump, not tested; dumps: evidence/G1/kmdiag_t2_dump.log and evidence/G1/kmdiag_t3_dump.log)",
       "            if tard > gk + 1                            # tard > gKeep && tard < gMax",
-      "            if tard > 0                            # tard > gKeep && tard < gMax", file=W),
+      "            if tard > 0                            # tard > gKeep && tard < gMax", file=W,
+      expect="hang", site="setClauseChoice!"),
     m("G1GC3-T4 early_reset_vars: the cell of a kept assignment is not recognised as marked (KILL KA: the pair is reset and deleted, `ld.trail[tr0 + 1] != 0`)",
       "            elseif is_marked(ld.gstack[tard])\n                keep = true",
       "            elseif false\n                keep = true", file=W),
@@ -186,11 +193,10 @@ MUTANTS = [
       "        if false\n            pc = f.programPointer.pc\n            fr = f.parent",
       file=W),
 
-    m("G1GC3-D5 mergeTrailedAssignments: a later pair for the same cell is kept (declared, not blocking, D-0971 (6): not equivalent in the strict sense: a row with two assignments of one cell within one range would kill it; the reason is a MISSING ROW)",
+    m("G1GC3-D5 mergeTrailedAssignments: a later pair for the same cell is kept (KILL KM: the later pair's two trail entries stay non-zero, st.trailcells_deleted == 2 fails; audit D-0994 (5), UNRUN until the lane shows it)",
       "            if is_first(ld.gstack[p])\n                trail[te] = word(0)                     # te->as_word = 0",
       "            if false\n                trail[te] = word(0)                     # te->as_word = 0",
-      file=W,
-      eq="NOT EQUIVALENT in the strict sense (D-0971 (6), declared and not blocking): a row with two assignments of one cell within one range would kill it; the reason is a MISSING ROW. TODO: add that row (row KA trails one assignment; src/pl-gcwalk.jl:277-280, the duplicate arm, is_first true)"),
+      file=W),
     m("G1GC3-S5 mark_phase: the base prefix is not a root (KILL GD's base-prefix testset: the bin and tmp slots relocate below the cached exception_cells/tmp_cells, gstack[undo_list] is not []; GM, GC, GS: cells 1, 8, 9 are unmarked but the models root them)",
       "    mark_base_cells(ld, st)                             # DIVERGES (G1): the base prefix is a root (pl-gcmark.jl)\n",
       "", file=W),
@@ -202,10 +208,9 @@ MUTANTS = [
     m("G1GC3-E2 mark_local_variable: the local-reference refusal is skipped (EQUIVALENT: the kernel stores no local-stack reference)",
       "    if isRef(w) && storage(w) == STG_LOCAL\n        throw(\n            NotPortedError(\n                ld.placeholder,\n                \"a local-stack reference in mark_local_variable",
       "    if false && isRef(w) && storage(w) == STG_LOCAL\n        throw(\n            NotPortedError(\n                ld.placeholder,\n                \"a local-stack reference in mark_local_variable",
-      eq="src/pl-gcmark.jl:295 mark_local_variable (confirmed at the tip, G1-FIX-10): no word the kernel builds is a local-stack reference (the DIVERGES note), so the branch never fires"),
-    m("G1GC3-E3 mark_stacks: the trail-cell counter is not reset (EQUIVALENT: every row passes a fresh gc_mark_counts)",
+      eq="src/pl-gcmark.jl:246 mark_local_variable (confirmed at the tip, G1-FIX-10): no word the kernel builds is a local-stack reference (the DIVERGES note), so the branch never fires"),
+    m("G1GC3-E3 mark_stacks: the trail-cell counter is not reset (KILL KR: a second mark_stacks over the same gc_mark_counts counts the first call's deletions again; audit D-0994 (5), UNRUN until the lane shows it)",
       "    ms.flictx = ld.fli_context\n    st.trailcells_deleted = 0\n",
       "    ms.flictx = ld.fli_context\n",
-      file=W,
-      eq="src/pl-gcwalk.jl:580 mark_stacks (confirmed at the tip, G1-FIX-10; the one production caller, src/pl-gcdriver.jl:390, builds a fresh gc_mark_counts() per collection): st is a fresh gc_mark_counts() in every row of test_gc_mark.jl, its trailcells_deleted is 0 already"),
+      file=W),
 ]

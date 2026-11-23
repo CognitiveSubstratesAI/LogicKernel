@@ -500,6 +500,52 @@ end
     @test_throws ErrorException LK.compact_global(W2.ld, W2.st, W2.sw)
 end
 
+# G1GC6A-D2 (G1GC6-ROWS-1, D-0995 (4)). UNRUN: written from the code, not verified on the lane (G1GC6-ROWS-1, D-0995 (4)).
+# The row above asserts only the exception TYPE: with the down phase's `dest == 0` check removed (src/pl-gccompact.jl:259) the up phase's check
+# (:285-286) throws an ErrorException too, so the type cannot tell the two checks apart. The MESSAGE can: the down phase names itself and the
+# value of `dest` (the count `total_marked` minus the 6 marked cells the scan met), the up phase names "up phase".
+@testset "G1GC6A-D2: a wrong total_marked is caught by the DOWN phase check, by its own message" begin
+    for (total, want_dest) in ((7, 1), (5, -1))                 # 6 live cells: dest ends at total - 6
+        W = _gc6_wb(total=total)
+        @test length(W.live) == 6
+        err = try
+            LK.compact_global(W.ld, W.st, W.sw)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test err isa ErrorException &&
+            err.msg == "GC: mismatch in down phase: dest = $(want_dest), expected 0"
+    end
+end
+
+# G1GC6A-R5 (G1GC6-ROWS-1, D-0995 (4)). UNRUN: written from the code, not verified on the lane (G1GC6-ROWS-1, D-0995 (4)).
+# `collect_phase` compares the marks it swept (`sw.marks_swept`, bumped by `sweep_mark`, src/pl-gcsweep.jl:339) with the marks the unsweep gave
+# back (src/pl-gccompact.jl:423-424). `sw` is the CALLER's: one more mark swept than unswept is made by starting the counter at 1 (the driver
+# starts it at 0, src/pl-gcdriver.jl:435), the same way the row above starts `total_marked` wrong. Nothing after the check reads the counter, so
+# with the comparison removed `collect_phase` returns normally.
+@testset "G1GC6A-R5: collect_phase compares the marks swept with the marks unswept" begin
+    P = _gc6_prepare(_gc6_heap())
+    ld = P.ld
+    sw = LK.gc_sweep_counts()
+    vm = LK.vm_state()
+    LK.gc_trail_phase(ld, P.st, sw, P.ts, vm)
+    ld.mark_bar = 5
+    sw.marks_swept = 1                                          # one mark more than the sweeps below will count and the unsweep will give back
+    err = try
+        LK.collect_phase(ld, P.st, sw, vm)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ErrorException
+    swept = sw.marks_swept
+    @test swept - 1 >= 1                                        # the heap has marks to sweep: not vacuous
+    @test err isa ErrorException &&
+        err.msg == "GC: marks_swept = $(swept) but marks_unswept = $(swept - 1)"
+end
+
 @testset "downskip_combine_garbage: the run becomes a hole only above 4 cells, the chain of its head is unwound" begin
     ld, t, n0 = _gc6_engine(_R[_rf("k", _rs("a"), _rv(1))])
     base = LK.allocGlobalCells!(ld, 12)

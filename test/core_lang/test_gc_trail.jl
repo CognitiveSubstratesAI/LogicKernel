@@ -97,6 +97,20 @@ end
     pop!(ld.trail)
 end
 
+# UNRUN: written from the code, not verified on the lane (G1GC-ROWS-1, D-0995 (4)). Kills G1GC4-T5 (`w == 0 && return word(0)` dropped from
+# `gc_trail_untag_entry`). The row DE above is in the mutant's TARGETS and does assert on the deleted entry (word 0), but only THROUGH `untag_trail`,
+# whose loop skips a zero word itself (`if w != 0`, src/pl-gctrail.jl:153): the entry function never sees 0 there, so the mutant is silent on DE.
+# Mutated, `gc_trail_untag_entry(ld, 0)` reads p = 0, no TRAILVAL bit, storage 0 != STG_GLOBAL, and throws NotPortedError: a direct call fails.
+@testset "G1GC4-T5: gc_trail_untag_entry keeps a deleted entry (word 0) at 0 when called directly" begin
+    ld, cells, tr0 = _gt_engine()
+    @test LK.gc_trail_untag_entry(ld, UInt64(0)) == 0
+    @test LK.gc_trail_tag_entry(ld, UInt64(0)) == 0             # the pair of T3's row: both 0-tests, called directly
+    @test length(ld.trail) >= tr0 + 5 && count(LK.isTrailVal, ld.trail) >= 1   # non-vacuous: live entries of both kinds
+    for e in ld.trail
+        @test LK.gc_trail_untag_entry(ld, LK.gc_trail_tag_entry(ld, e)) == e   # the live words still round-trip
+    end
+end
+
 @testset "compact_trail removes exactly the deleted entries and keeps the order" begin
     ld, cells, tr0 = _gt_engine()
     ld.trail[tr0 + 2] = 0                                       # delete c2's entry and the whole pair

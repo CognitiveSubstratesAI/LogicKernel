@@ -35,8 +35,9 @@ F = "src/pl-gccompact.jl"
 TT = [GC, GS, GM, UP]                           # compaction and its sweep
 
 
-def m(id, old, new, targets=TT, file=F, eq=None):
+def m(id, old, new, targets=TT, file=F, eq=None, **extra):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
+    d.update(extra)                              # expect= / site= (a mutant that must hang, tools/mutate_ci.py)
     if eq:
         d["equivalent"] = eq
     return d
@@ -47,11 +48,11 @@ MUTANTS = [
     m("G1GC6A-D1 compact_global: dest is decremented by 2 (KILL MODEL: the new positions and `dest == 0`; WB)",
       "            dest -= 1\n",
       "            dest -= 2\n"),
-    m("G1GC6A-D2 compact_global: the down phase does not check dest == 0",
+    # G1GC6-ROWS-1 (D-0995 (4)): no longer declared equivalent. The two checks (:259 and the up phase's :285-286) count the same marked cells, but the MESSAGE of
+    # the throw differs ("down phase: dest = 1" vs "up phase"), and the row "G1GC6A-D2: a wrong total_marked is caught by the DOWN phase check" (UNRUN) reads it.
+    m("G1GC6A-D2 compact_global: the down phase does not check dest == 0 (KILL D2 row: the message names the down phase; WB `total = 7` only reads the type)",
       "    dest == 0 || error(\"GC: mismatch in down phase",
-      "    true || error(\"GC: mismatch in down phase",
-      eq="src/pl-gccompact.jl:238 vs :259: the down phase decrements `dest` once per marked cell and the up phase counts the same marked cells, so `dest == 0` "
-         "holds exactly when `dest - 1 == st.total_marked` of the up-phase check does; the WB row `total = 7` still throws from the up-phase check (ErrorException)"),
+      "    true || error(\"GC: mismatch in down phase"),
     m("G1GC6A-D3 compact_global: a downward reference is not chained (KILL MODEL: the cells and `relocated_cells == needs_relocation - nvword`; WB: want[5])",
       "            if is_downward_ref(ld, current)\n",
       "            if false\n"),
@@ -83,9 +84,15 @@ MUTANTS = [
     m("G1GC6A-S1 downskip_combine_garbage: the hole covers the marked cell below the run (KILL DS: `gstack[base - 1] == marked_before`)",
       "is_marked(w) && return make_gc_hole(ld, cur + 1, top_gc)",
       "is_marked(w) && return make_gc_hole(ld, cur, top_gc)"),
+    # G1GC6-ROWS-1 (D-0995 (4)), PROPOSED, UNRUN: S2 TIMED OUT (time), it is a loop, not a slow run. Mutated, a run of garbage down to cell 1 returns bottom = 2; compact_global
+    # (pl-gccompact.jl:243-256, `while current >= 1 ... current = downskip_combine_garbage(...); current -= 1`) then steps to cell 1; cell 1 is garbage and not first, so it calls
+    # downskip(current = 1): `cur = 0`, no scan, `make_gc_hole(ld, 2, 1)` returns 2 again -> current = 2 -> 1 -> 2 -> 1 for ever (no allocation: a time cut). The WB testset reaches
+    # it first (cells 1 and 2 are garbage), so no row of the file can fail first: the DS row `== 1` is after it. Declared `expect="hang"`, `site="compact_global"`; if the SIGQUIT tail
+    # of the cut does not show compact_global the verdict stays the blocking TIMEOUT and the audit decides.
     m("G1GC6A-S2 downskip_combine_garbage: a run down to the bottom of the stack starts its hole at 2 (KILL DS: the last row, `== 1` and the zeroed cell 1)",
       "    return make_gc_hole(ld, 1, top_gc)\n",
-      "    return make_gc_hole(ld, 2, top_gc)\n"),
+      "    return make_gc_hole(ld, 2, top_gc)\n",
+      expect="hang", site="compact_global"),
     m("G1GC6A-S3 downskip_combine_garbage: the top of the hole is one below the first garbage cell (KILL DS: the top cell of the 12-cell run stays non-zero)",
       "    top_gc = current\n",
       "    top_gc = current - 1\n"),
@@ -151,12 +158,11 @@ MUTANTS = [
     m("G1GC6A-R4 collect_phase: the return value is zero (KILL NV: `R.nv == n`, `n >= 3`)",
       "    return nvword\n",
       "    return 0\n"),
-    m("G1GC6A-R5 collect_phase: the marks swept and unswept are not compared",
+    # G1GC6-ROWS-1 (D-0995 (4)): no longer declared equivalent: `collect_phase` takes the CALLER's `sw`, so a counter started at 1 makes one mark swept more than
+    # unswept, and nothing after the check reads `marks_swept`; the row "G1GC6A-R5: collect_phase compares the marks swept with the marks unswept" (UNRUN) reads the message.
+    m("G1GC6A-R5 collect_phase: the marks swept and unswept are not compared (KILL R5 row: sw.marks_swept started at 1)",
       "    unswept == sw.marks_swept ||\n",
-      "    true ||\n",
-      eq="src/pl-gccompact.jl:398-400: `unswept` and `sw.marks_swept` count the marks of the SAME safe point (`vm`) walked by sweep_foreign/sweep_stacks and "
-         "unsweep_foreign/unsweep_stacks, which step identically (gc_choice_indices, one walk); no row can make them differ without editing the counter in between, "
-         "and collect_phase's own calls leave no gap; the check is a sysError guard (pl-gc.c collect_phase)"),
+      "    true ||\n"),
     # ---- the choicepoint walk
     m("G1GC6A-W1 gc_choice_indices: only the first choicepoint is listed (KILL LQ: `gc_choice_indices == chs`)",
       "            push!(out, ch)\n            ch = ld.choices[ch].parent\n",

@@ -104,7 +104,7 @@ MUTANTS = [
     m("G1GC2-E4 ensureGlobalSpace: the flag test is dropped (considerGC tests the flag itself; output equivalent)",
       "if (flags & ALLOW_GC) != 0 && (ld.gc_force", "if (ld.gc_force",
       HOOK, AL,
-      eq="src/pl-alloc.jl:ensureGlobalSpace: `considerGC` (src/pl-gc.jl) opens with `(flags & ALLOW_GC) == 0 && return false`, so a call without ALLOW_GC reaches it and leaves it with false, records nothing, and `fits` is not re-read (the re-check runs only after a collection that ran). The hook is called more often, with no effect; killing it needs a test that counts calls of considerGC, which the one-line flag test of H1 already guards"),
+      eq="src/pl-alloc.jl:184 ensureGlobalSpace (the flag test): `considerGC` (src/pl-gc.jl:126-127) opens with `(flags & ALLOW_GC) == 0 && return false` as its first statement (audit D-0996 (4)), so a call without ALLOW_GC reaches it and leaves it with false, records nothing, and `fits` is not re-read (the re-check runs only after a collection that ran). The hook is called more often, with no effect; killing it needs a test that counts calls of considerGC, which the one-line flag test of H1 already guards"),
     # G1GC2-E5 and E5B were declared EQUIVALENT ("the placeholder never collects"); since the G1-6c driver the collector RUNS at a foreign safe point
     # (registers_fr == 0: functor/3, =../2, '$length'/2, or no query), so neither is an equivalent: both are killed, the `eq=` is gone (audit D-0644 item 2).
     m("G1GC2-E5 ensureGlobalSpace: the re-check of `fits` after a collection that ran is dropped (KILL GD: `ensureGlobalSpace at a foreign safe point: a collection that gains room lets the call through the limit`, `r === true`, `!ld.outofstack`)",

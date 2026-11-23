@@ -68,7 +68,7 @@ from mutate_drive import judge, noload_hint, run_targets as _run_targets  # noqa
 from ci_compile_summary import ANCHOR_TEST, ANSI  # noqa: E402 — the compile summary's Julia failure shapes
 
 OUT = "mutation-out"
-EVIDENCE_LINES = 60                       # the output tail kept as the evidence of a cut
+EVIDENCE_LINES = 400                      # the output tail kept as the evidence of a cut: a whole SIGQUIT stack dump (measured 286-302 lines: the loop frames come first, the toplevel include chain last)
 SAMPLE_WAIT_S = 3.0                       # SIGQUIT to the stack dump
 LOG_CAP = 16 << 20                        # a longer log is kept as its first and its last LOG_KEEP bytes
 LOG_KEEP = 4 << 20

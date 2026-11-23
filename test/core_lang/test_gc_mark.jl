@@ -375,6 +375,63 @@ end
     @test !any(LK.is_first, view(ld.gstack, 1:(ld.gTop)))       # mergeTrailedAssignments cleared the FIRST bits it set
 end
 
+# UNRUN: written from the code, not verified on the lane (TESTROWS-1, audit D-0994 (5)). Kills G1GC3-D5 (mergeTrailedAssignments: `is_first` arm
+# replaced by `false`): the mutant keeps the later pair, st.trailcells_deleted stays 0 and the later pair's two entries stay non-zero.
+@testset "early reset: two assignments of one cell within one trail range keep the first pair and delete the later (mergeTrailedAssignments)" begin
+    ld, t, n0 = _gm_engine(_R[_rs("a")])
+    cv = LK.allocGlobalCells!(ld, 1)
+    ld.gstack[cv] = _gm_atom(ld, "v0")                          # the cell's value before the first assignment
+    ld.slots[t + 1] = LK.makeRefG(cv)                           # the cell is a root: kept, so both assignments are "kept" by early_reset_vars
+    fid = LK.PL_open_foreign_frame(ld)                          # cv is older than this frame's bar
+    tr0 = length(ld.trail)
+    LK.TrailAssignment!(ld, cv)                                 # pair 1: (cv, saved "v0")
+    ld.gstack[cv] = _gm_atom(ld, "v1")
+    LK.TrailAssignment!(ld, cv)                                 # pair 2: the SAME cell again, within the same range (saved "v1")
+    ld.gstack[cv] = _gm_atom(ld, "v2")
+    @test length(ld.trail) == tr0 + 4
+    @test LK.isTrailVal(ld.trail[tr0 + 2]) && LK.isTrailVal(ld.trail[tr0 + 4])
+    @test LK._trail_pos(ld.trail[tr0 + 1]) == cv && LK._trail_pos(ld.trail[tr0 + 3]) == cv
+    gp1 = LK.trailValP(ld.trail[tr0 + 2])
+    gp2 = LK.trailValP(ld.trail[tr0 + 4])
+    @test gp1 != gp2
+    e1 = ld.trail[(tr0 + 1):(tr0 + 2)]                          # pair 1 as trailed
+    st = LK.gc_mark_counts()
+    LK.mark_phase(ld, st, LK.vm_state())
+    # pl-gc.c merge_trail_adjacent_assignments / mergeTrailedAssignments walks te upward from the mark: the FIRST pair of a cell sets FIRST and
+    # stays, the later pair of the same cell finds FIRST set and both of its entries are zeroed (te->as_word = te[1].as_word = 0), two cells deleted.
+    @test ld.trail[(tr0 + 1):(tr0 + 2)] == e1                   # the first pair survives unchanged
+    @test ld.trail[tr0 + 1] != 0 && ld.trail[tr0 + 2] != 0
+    @test ld.trail[tr0 + 3] == 0 && ld.trail[tr0 + 4] == 0      # the later pair is deleted
+    @test st.trailcells_deleted == 2
+    @test gp1 in _gm_marked(ld)                                 # the first pair's saved value stays marked
+    @test !any(LK.is_first, view(ld.gstack, 1:(ld.gTop)))       # popall_marked cleared the FIRST bit set on the cell
+end
+
+# UNRUN: written from the code, not verified on the lane (TESTROWS-1, audit D-0994 (5)). Kills G1GC3-E3 (mark_stacks: `st.trailcells_deleted = 0`
+# removed): the second collection over the SAME gc_mark_counts then reports the first one's deletions on top of its own (2, not 1).
+@testset "mark_stacks resets the trail-cell counter: one gc_mark_counts reused across two collections counts only the second" begin
+    ld, t, n0 = _gm_engine(_R[_rs("a")])
+    c1 = LK.allocGlobalCells!(ld, 1)
+    c2 = LK.allocGlobalCells!(ld, 1)
+    fid = LK.PL_open_foreign_frame(ld)
+    tr0 = length(ld.trail)
+    LK._bind_const!(ld, c1, _gm_atom(ld, "one"))                # as the early-reset row: c1 reachable, c2 not, c2's entry is deleted
+    LK._bind_const!(ld, c2, _gm_atom(ld, "two"))
+    t2 = LK.PL_new_term_ref(ld)
+    ld.slots[t2 + 1] = LK.makeRefG(c1)
+    sn = _gm_snapshot(ld)
+    st = LK.gc_mark_counts()
+    LK.mark_phase(ld, st, LK.vm_state())
+    @test st.trailcells_deleted == 1                            # not vacuous: the first collection deleted one entry
+    _gm_restore!(ld, sn)                                        # the same stacks again (marks, the reset cell and the zeroed entry undone)
+    LK.mark_phase(ld, st, LK.vm_state())                        # the SAME counts object, as a second collection would find it
+    stf = LK.gc_mark_counts()
+    _gm_restore!(ld, sn)
+    LK.mark_phase(ld, stf, LK.vm_state())                       # what a fresh counts object gives for the same stacks
+    @test stf.trailcells_deleted == 1
+    @test st.trailcells_deleted == stf.trailcells_deleted       # reset by mark_stacks: 1, not 1 + 1
+end
+
 @testset "the argument stack and the choicepoints and frames of a live query are roots" begin
     clauses = Tuple{_R, Union{Nothing, _R}}[
         (_rf("n", _rf("p", _rg(Int64(1)), _rg(2.25))), nothing),

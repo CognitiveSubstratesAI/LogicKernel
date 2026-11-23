@@ -278,11 +278,26 @@ end
     @test handled == want && handled >= 1
     @test ld.gc.sig_pending == 0 && (ld.alerted & LK.ALERT_SIGNAL) == 0
     @test Int(ld.gc.stats.totals.collections) == c0 + 2
+    # G1C-S3 (D-0994): garbageCollect's own PL_clearsig(SIG_GC) (src/pl-gcdriver.jl:409) recomputes `alerted`, so the SIG_GC rows above cannot
+    # see handleSignals' `if ( done ) updateAlerted(LD)`. The signals whose handler clears nothing can: (a) the LAST pending signal served ->
+    # `alerted` and ALERT_SIGNAL are cleared. SIG_TUNE_GC (no prolog:tune_gc/3 defined: its handler is a no-op) and SIG_GC with the collector
+    # blocked (garbageCollect returns before its clearsig) both leave the bit set when handleSignals does not recompute.
+    @test LK.raiseGcSignal!(ld, LK.SIG_TUNE_GC) && (ld.alerted & LK.ALERT_SIGNAL) != 0
+    @test LK.handleSignals(ld) == 1
+    @test ld.gc.sig_pending == 0 && !LK.is_signalled(ld) &&
+        (ld.alerted & LK.ALERT_SIGNAL) == 0
+    ld.gc.status.blocked += 1
+    @test LK.raiseGcSignal!(ld, LK.SIG_GC) && (ld.alerted & LK.ALERT_SIGNAL) != 0
+    @test LK.PL_handle_signals(ld) == 1
+    @test ld.gc.sig_pending == 0 && ld.alerted == 0
+    @test Int(ld.gc.stats.totals.collections) == c0 + 2                 # blocked: the handler ran, nothing was collected
+    ld.gc.status.blocked -= 1
     # an exception pending: -1, the signal kept
     @test LK.raiseGcSignal!(ld, LK.SIG_GC)
     ld.exception_term = ld.exception_bin
     @test LK.handleSignals(ld) == -1
     @test LK.pendingGcSignal(ld, LK.SIG_GC)
+    @test (ld.alerted & LK.ALERT_SIGNAL) != 0 && LK.is_signalled(ld)   # (b) a signal still pending: ALERT_SIGNAL stays set (no recompute on -1 either)
     @test Int(ld.gc.stats.totals.collections) == c0 + 2
     ld.exception_term = 0
     @test LK.clearGcSignal!(ld, LK.SIG_GC) && !LK.is_signalled(ld)

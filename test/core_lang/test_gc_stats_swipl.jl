@@ -203,6 +203,35 @@ end
     end
 end
 
+# UNRUN: written from the code, not verified on the lane (G1GC-ROWS-1, D-0995 (4)). Kills G1GC1-S23 (argument 3 of `gc_stats/8` put from
+# `global_before` instead of `global_after`, `unify_gc_stats`, src/pl-gc.jl). The row above reads only arguments 1 and 2 of each gc_stats term
+# (its regex stops after the second number), so argument 3 is read by no row. Here one collection of known sizes, read back through
+# `'$gc_statistics'/5`: argument 2 = 8*500 bytes before, argument 3 = 8*120 after (the sizes `_gs_cycle!` sets, as `last.global_after == 8*70` above).
+@testset "G1GC1-S23: gc_stats/8 argument 3 is GlobalAfter, not GlobalBefore" begin
+    db = _gs_db()
+    ld = db.ld
+    st = ld.gc.stats
+    g0 = ld.gTop
+    n0 = length(ld.trail)
+    try
+        @test st.last_index == 0 && st.totals.collections == 0
+        _gs_cycle!(ld, st, 500, 120, LK.GC_USER; t0=10, t1=4)
+        @test LK.last_gc_stats(st).global_before == 8 * 500 &&
+            LK.last_gc_stats(st).global_after == 8 * 120
+        ld.gTop = g0                                    # the query runs on the real stack, not the cycle's sizes
+        ans = _rcall(db, _rf("\$gc_statistics", _rv(1), _rv(2), _rv(3), _rv(4), _rv(5)))
+        @test length(ans) == 1
+        found = [
+            (parse(Int, m[1]), parse(Int, m[2])) for
+            m in eachmatch(r"gc_stats\(gc\([0-9,]*\),(\d+),(\d+),", ans[1][1])
+        ]
+        @test found == [(8 * 500, 8 * 120)]             # one entry, non-empty; argument 3 is not argument 2
+    finally
+        ld.gTop = g0
+        resize!(ld.trail, n0)
+    end
+end
+
 function _gs_reset!(ld)
     LK.clearGcSignal!(ld, LK.SIG_GC)
     LK.clearGcSignal!(ld, LK.SIG_TUNE_GC)

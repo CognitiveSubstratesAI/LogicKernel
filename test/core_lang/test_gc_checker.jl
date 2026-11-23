@@ -111,6 +111,32 @@ end
     @test _ck_fails(ld, "gstack-compound")
 end
 
+# UNRUN: written from the code, not verified on the lane (G1GC-ROWS-1, D-0995 (4)). Kills G1GC1-K7 (the upper bound `q > gtop` of the compound
+# arm of `_check_global_word!` dropped). The row above reads only the CHECK NAME: with the bound gone the word at `gTop + 9` is read as a cell
+# (a zero cell, no functor), which the else arm reports under the SAME name "gstack-compound" (or a BoundsError), so that row passes mutated.
+# Here the MESSAGE of the range arm is the assertion ("compound at Q outside 1..GTOP"): only the range arm writes it.
+@testset "G1GC1-K7: a compound word above gTop is reported by the range arm, by its own message" begin
+    ld = _ck_heap()
+    a = _ck_functors(ld)[1] + 1
+    q = ld.gTop + 3
+    ld.gstack[a] = LK.consPtr(q, LK.TAG_COMPOUND | LK.STG_GLOBAL)
+    v = LK.stack_violations(ld)
+    @test !isempty(v)
+    @test any(
+        m ->
+            startswith(m, "[gstack-compound]") &&
+            occursin("compound at $q outside 1..$(ld.gTop)", m),
+        v
+    )
+    ld.gstack[a] = LK.consPtr(0, LK.TAG_COMPOUND | LK.STG_GLOBAL)   # position 0: the lower bound, the same arm
+    @test any(
+        m ->
+            startswith(m, "[gstack-compound]") &&
+            occursin("compound at 0 outside 1..$(ld.gTop)", m),
+        LK.stack_violations(ld)
+    )
+end
+
 @testset "a reference cycle is caught, a self-reference is an unbound variable" begin
     ld = _ck_heap()
     a = _ck_functors(ld)[1] + 1
@@ -237,6 +263,25 @@ end
     @test_throws LK.StackInvariantError LK.check_stacks!(ld)
     ld.attvar_attvars = _ck_functors(ld)[1]                      # a link cell holding a functor: neither unbound nor a reference
     @test _ck_fails(ld, "attvar-chain")
+    ld.attvar_attvars = 0
+    @test isempty(LK.stack_violations(ld))
+end
+
+# UNRUN: written from the code, not verified on the lane (G1GC-ROWS-1, D-0995 (4)). Kills G1GC1-K21 (the upper bound `p > gtop` of
+# `_check_attvar_chain!` dropped). The row above reads only the check name: with the bound gone the link cell at `gTop + 4` is read, and the
+# "neither unbound nor a reference to an older link" arm reports under the SAME name "attvar-chain" (or a BoundsError). The range arm alone
+# writes "link P outside 1..GTOP": that message is the assertion.
+@testset "G1GC1-K21: an attvar chain link above gTop is reported by the range arm, by its own message" begin
+    ld = _ck_heap()
+    p = ld.gTop + 4
+    ld.attvar_attvars = p
+    v = LK.stack_violations(ld)
+    @test !isempty(v)
+    @test any(
+        m ->
+            startswith(m, "[attvar-chain]") && occursin("link $p outside 1..$(ld.gTop)", m),
+        v
+    )
     ld.attvar_attvars = 0
     @test isempty(LK.stack_violations(ld))
 end

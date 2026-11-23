@@ -28,10 +28,11 @@ TG = [GS]
 TW = [GS, SYS]
 
 
-def m(id, old, new, targets, file=F, eq=None):
+def m(id, old, new, targets, file=F, eq=None, **extra):
     d = dict(id=id, file=file, old=old, new=new, targets=targets)
     if eq:
         d["equivalent"] = eq
+    d.update(extra)                              # expect= / site= (a mutant that must hang, tools/mutate_ci.py)
     return d
 
 
@@ -53,7 +54,11 @@ MUTANTS = [
     m("G1GC1-K9", "        if i < 1 || i > length(ld.vtable)", "        if i < 1", TC),
     m("G1GC1-K10", "    if gtop < 0 || gtop > length(ld.gstack)\n        _viol!(r, \"gstack-top\"", "    if gtop < 0\n        _viol!(r, \"gstack-top\"", TC),
     m("G1GC1-K11", "            elseif p + n > gtop", "            elseif false", TC),
-    m("G1GC1-K12", "            if state[p] == 0x01", "            if state[p] == 0x07", TC),
+    # G1GC-ROWS-1 (D-0995 (4)), PROPOSED, UNRUN: with the cycle test never true, `_check_ref_chains!` walks a reference cycle (the row "a reference cycle is
+    # caught", a -> b -> a) for ever, and `push!(path, p)` grows `path` by one Int per step with no bound: the CI run's TIMEOUT (memory) is that growth, there is
+    # no row that can fail first (any row that builds a cycle hangs mutated). So it is a hang with a known site, not a missing kill: `expect="hang"`; the
+    # lane must show `_check_ref_chains!` in the SIGQUIT tail of the cut, else the verdict stays the blocking TIMEOUT (hang declared, site not shown).
+    m("G1GC1-K12", "            if state[p] == 0x01", "            if state[p] == 0x07", TC, expect="hang", site="_check_ref_chains!"),
     m("G1GC1-K13", "            if q == p ", "            if false ", TC),
     m("G1GC1-K14", "    if length(ld.vbox) != nv", "    if false", TC),
     m("G1GC1-K15", "        if got != want", "        if false", TC),

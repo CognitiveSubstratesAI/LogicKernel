@@ -34,3 +34,7 @@ CONT1-R3	D-0920	src/pl-wam.jl:3345-3351
 TB4-D6	D-0705	src/pl-tabling.jl
 LD6-2	D-0992	src/os/pl-stream.jl Ssize: the seek-to-end block is reached only by a null stream (Scontrol_getsize answers every seekable function set); the skipped branch changes errno (ESPIPE for EINVAL), which io_error(write, S) does not carry; rows pin only the error term
 LD6-3	D-0992	src/os/pl-stream.jl Ssize: the seek-to-end block is reached only by a null stream (see LD6-2); the skipped Sseek64(s, here, SIO_SEEK_SET) repositions to the position the stream already holds
+SSU1-T1	D-0994	src/pl-proc.jl:2450
+G1GC3-E2	D-0994	src/pl-gcmark.jl:246
+G1GC2-E4	D-0996	src/pl-alloc.jl:184
+G1GC6C-B3	D-0997	src/pl-gcsweep.jl:342
