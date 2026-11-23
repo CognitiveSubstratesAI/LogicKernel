@@ -247,9 +247,18 @@ re_options_flags() = re_options_flags(UInt32(0), UInt32(0))
 # The serial number of the next regex (the stand-in for the C's stable blob address, see `re_compare`).
 const _re_serial = Threads.Atomic{Int}(0)
 
+# PORT: packages/pcre/pcre4pl.c cap_how
+# DIVERGES: 16 (piece 9 header, below). `name` is the capture's name (the C atom, 0 for an unnamed capture: `nothing`), `type` one of the CAP_* values.
+"A capture's name and type (pcre4pl.c `cap_how`): `name` is `nothing` for a capture referenced by its number alone."
+mutable struct re_cap_how
+    name::Union{Nothing, String}
+    type::Int
+end
+re_cap_how() = re_cap_how(nothing, CAP_DEFAULT)
+
 # PORT: packages/pcre/pcre4pl.c re_data (the option fields), init_re_data, get_re_copy (the reset of the match flags)
-# DIVERGES: see the piece 2 header, 6.
-"The option part of a regex (pcre4pl.c `re_data`): the flag pairs of the compile, capture, optimise, JIT, context, bsr, newline, match and start options."
+# DIVERGES: see the piece 2 header, 6; 16 (piece 9 header, below): `capture_names` and `code` (the C's `capture_names` and `re_compiled`).
+"The option part of a regex (pcre4pl.c `re_data`): the flag pairs of the compile, capture, optimise, JIT, context, bsr, newline, match and start options, the capture names and the compiled code."
 mutable struct re_data
     pattern::String
     serial::Int
@@ -263,13 +272,16 @@ mutable struct re_data
     match_options_flags::re_options_flags
     start_flags::re_options_flags
     capture_size::UInt32
+    capture_names::Vector{re_cap_how}   # the C's `cap_how *`: empty until `init_capture_map` fills capture_size+1 entries (NULL)
+    code::Ptr{Cvoid}                    # the C's `re_compiled` (pcre2_code_8 *): C_NULL until compiled
 end
 
 "A regex's option fields as `init_re_data` leaves them: utf and no UTF check to compile, no UTF check to match, the string capture type (pcre4pl.c)."
 function re_init_data(pattern::String = "")::re_data
     re = re_data(
         pattern, Threads.atomic_add!(_re_serial, 1) + 1, re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(),
-        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), UInt32(0)
+        re_options_flags(), re_options_flags(), re_options_flags(), re_options_flags(), UInt32(0),
+        re_cap_how[], C_NULL
     )
     re.compile_options_flags.flags = PCRE2_UTF | PCRE2_NO_UTF_CHECK
     re.match_options_flags.flags = PCRE2_NO_UTF_CHECK
@@ -711,4 +723,193 @@ function re_load_fields(fd::IOSTREAM, get_atom::Function)::Union{Nothing, re_dat
         return nothing
     end
     return re
+end
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# PCRE1 piece 9 (packages/pcre/pcre4pl.c, packages-pcre a5e4c885; evidence/R2/pcre_plan.md sections 2, 3 and 6 A): THE CARRIER BINDING. D-1002 (Shivaji):
+# PCRE is implemented as a `ccall` to PCRE2_jll (the stdlib JLL that carries libpcre2-8: Project.toml allows exactly it and PrecompileTools). Below: the
+# `PCRE2_ERROR_*`, `PCRE2_INFO_*` and `PCRE2_UNSET` values the C uses (read by a script from Julia's `Base.PCRE`, share/julia/base/pcre_h.jl, not typed; the
+# test compares each with `Base.PCRE`), then the 15 libpcre2 entry points the C calls (the 8-bit `_8` names, C line numbers in each comment) as typed
+# wrappers, and `re_data` gained `capture_names` and `code` (piece 2's struct). NOT PORTED here: `pcre2_substitute`, `pcre2_dfa_match`, `pcre2_pattern_convert`
+# (named in the C's comments and tables, never called), match contexts, the JIT stack, and everything that calls these wrappers (compile, match, config,
+# the capture map: the next pieces). Nothing here has run (no Julia process was started).
+#
+# DIVERGES (piece 9; 15 is reserved by the plan for the `\K` guard of the match piece):
+#  16. `re_data.capture_names` is a Vector{re_cap_how} (the C's `cap_how *`, NULL until `init_capture_map`: empty here; a name atom 0 is `nothing`, a name
+#      is the atom's text, as `pattern`, 10), `re_data.code` is the C's `re_compiled` (C_NULL for NULL); the blob's `symbol` is not a field (no blob yet).
+#  17. The wrappers return their out-parameters as a tuple (`pcre2_compile`: `(code, errcode, erroff)`; `pcre2_pattern_info`: `(rc, value)`) and the subject
+#      of `pcre2_match` is a `Vector{UInt8}` with its length passed (the C's `PCRE2_SPTR` and `len`); the match context is always NULL, as the C. `pcre2_get_error_message`
+#      answers `nothing` where the C tests `rc < 0` (the match error's fallback text "regex" is `re_error`'s, a later piece). `pcre2_get_ovector_pointer` is the
+#      raw pointer; `pcre2_ovector_copy(md, rc)` is the copy of its `2*rc` values that the C reads in place (the pointer dies with `match_data`).
+#  18. `pcre2_config_` of the C is the plain `pcre2_config` (`FORCE_NO_JIT` is off), and the result buffer of the 100-byte union is a `Vector{UInt8}` read through
+#      `pcre2_config_u32`/`_i32`/`_str`. The `pcre2_config(flag, NULL)` form (the C's FORCE_NO_JIT wrapper only) is not bound.
+using PCRE2_jll: libpcre2_8
+
+# PORT: packages/pcre/pcre4pl.c PCRE2_ERROR_* (860, 989, 1026, 1168-1177, 1659-1680, 1819), PCRE2_INFO_* (1139-1142, 1206-1317), PCRE2_UNSET (1576)
+const PCRE2_ERROR_NOMATCH = Cint(-1)
+const PCRE2_ERROR_PARTIAL = Cint(-2)
+const PCRE2_ERROR_UTF8_ERR1 = Cint(-3)
+const PCRE2_ERROR_UTF8_ERR21 = Cint(-23)
+const PCRE2_ERROR_NOMEMORY = Cint(-48)
+const PCRE2_ERROR_MATCHLIMIT = Cint(-47)
+const PCRE2_ERROR_DEPTHLIMIT = Cint(-53)
+const PCRE2_ERROR_HEAPLIMIT = Cint(-63)
+const PCRE2_ERROR_JIT_STACKLIMIT = Cint(-46)
+const PCRE2_ERROR_BADOFFSET = Cint(-33)
+const PCRE2_ERROR_NULL = Cint(-51)
+const PCRE2_ERROR_BADOPTION = Cint(-34)
+const PCRE2_ERROR_BADMAGIC = Cint(-31)
+const PCRE2_ERROR_UNSET = Cint(-55)
+
+const PCRE2_INFO_ARGOPTIONS = UInt32(1)
+const PCRE2_INFO_BSR = UInt32(3)
+const PCRE2_INFO_CAPTURECOUNT = UInt32(4)
+const PCRE2_INFO_EXTRAOPTIONS = UInt32(26)
+const PCRE2_INFO_NAMECOUNT = UInt32(17)
+const PCRE2_INFO_NAMEENTRYSIZE = UInt32(18)
+const PCRE2_INFO_NAMETABLE = UInt32(19)
+const PCRE2_INFO_NEWLINE = UInt32(20)
+# `(PCRE2_SIZE)~0`: the ovector value of a group that did not participate in the match.
+const PCRE2_UNSET = ~Csize_t(0)
+
+# PORT: packages/pcre/pcre4pl.c free_pcre (188): pcre2_code_free
+# DIVERGES: 17 (typed). `code` may be C_NULL (the C frees `re->re_compiled` after a failed compile): libpcre2 does nothing then.
+"Free a compiled pattern (pcre4pl.c `free_pcre`'s `pcre2_code_free`); a NULL `code` is a no-op."
+function pcre2_code_free(code::Ptr{Cvoid})::Nothing
+    ccall((:pcre2_code_free_8, libpcre2_8), Cvoid, (Ptr{Cvoid},), code)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl (1451): pcre2_compile
+# DIVERGES: 17. The C passes `(PCRE2_SPTR)pats, len`; `len` is `length(pat)` here. C_NULL `ctx` = no compile context.
+"Compile `pat` (UTF-8 bytes) with `options` and the compile context `ctx` (or C_NULL): `(code, errcode, erroff)`; `code` is C_NULL on an error (pcre4pl.c `re_compile_impl`)."
+function pcre2_compile(pat::Vector{UInt8}, options::UInt32, ctx::Ptr{Cvoid})::Tuple{Ptr{Cvoid}, Cint, Csize_t}
+    errcode = Ref{Cint}(0)
+    erroff = Ref{Csize_t}(0)
+    code = ccall(
+        (:pcre2_compile_8, libpcre2_8), Ptr{Cvoid},
+        (Ptr{UInt8}, Csize_t, UInt32, Ref{Cint}, Ref{Csize_t}, Ptr{Cvoid}),
+        pat, length(pat), options, errcode, erroff, ctx
+    )
+    return (code, errcode[], erroff[])
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl (1454): pcre2_jit_compile
+"JIT-compile `code` with `flags` (the C ignores the result): 0, or a negative PCRE2 error (pcre4pl.c `re_compile_impl`)."
+function pcre2_jit_compile(code::Ptr{Cvoid}, flags::UInt32)::Cint
+    return ccall((:pcre2_jit_compile_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), code, flags)
+end
+
+# PORT: packages/pcre/pcre4pl.c ensure_compile_context (757), re_compile_impl (1470), re_portray_match_options_ (1544): pcre2_compile_context_create/_free
+"A new compile context with the default general context (pcre4pl.c `ensure_compile_context`); C_NULL when out of memory."
+function pcre2_compile_context_create()::Ptr{Cvoid}
+    return ccall((:pcre2_compile_context_create_8, libpcre2_8), Ptr{Cvoid}, (Ptr{Cvoid},), C_NULL)
+end
+
+"Free a compile context (pcre4pl.c `re_compile_impl`, `re_portray_match_options_`); a NULL `ctx` is a no-op."
+function pcre2_compile_context_free(ctx::Ptr{Cvoid})::Nothing
+    ccall((:pcre2_compile_context_free_8, libpcre2_8), Cvoid, (Ptr{Cvoid},), ctx)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl (1423, 1433, 1443): pcre2_set_bsr, pcre2_set_newline, pcre2_set_compile_extra_options
+"Set the compile context's `\\R` convention (pcre4pl.c `re_compile_impl`): 0, nonzero for an invalid `value`."
+function pcre2_set_bsr(ctx::Ptr{Cvoid}, value::UInt32)::Cint
+    return ccall((:pcre2_set_bsr_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), ctx, value)
+end
+
+"Set the compile context's newline convention (pcre4pl.c `re_compile_impl`): 0, nonzero for an invalid `value`."
+function pcre2_set_newline(ctx::Ptr{Cvoid}, value::UInt32)::Cint
+    return ccall((:pcre2_set_newline_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), ctx, value)
+end
+
+"Set the compile context's extra options (pcre4pl.c `re_compile_impl`): 0 (libpcre2 never fails here)."
+function pcre2_set_compile_extra_options(ctx::Ptr{Cvoid}, value::UInt32)::Cint
+    return ccall((:pcre2_set_compile_extra_options_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32), ctx, value)
+end
+
+# PORT: packages/pcre/pcre4pl.c init_capture_map (1139-1142), get_pcre2_info (1164, with what = ARGOPTIONS 1209, EXTRAOPTIONS 1256, BSR 1281, NEWLINE 1296): pcre2_pattern_info
+# DIVERGES: 17. `T` is UInt32 for CAPTURECOUNT, NAMECOUNT, NAMEENTRYSIZE, ARGOPTIONS, EXTRAOPTIONS, BSR and NEWLINE (the C declares `int name_count`,
+# `int name_entry_size`: the library writes 32 bits), `Ptr{UInt8}` for NAMETABLE. The value is `T(0)` when `rc != 0`.
+"Ask `code` for `what` (a `PCRE2_INFO_*`): `(rc, value::T)`, `rc` 0 when the library wrote `value` (pcre4pl.c `init_capture_map`, `get_pcre2_info`)."
+function pcre2_pattern_info(code::Ptr{Cvoid}, what::UInt32, ::Type{T})::Tuple{Cint, T} where {T}
+    r = Ref{T}(T(0))
+    rc = ccall((:pcre2_pattern_info_8, libpcre2_8), Cint, (Ptr{Cvoid}, UInt32, Ptr{Cvoid}), code, what, r)
+    return (rc, r[])
+end
+
+# PORT: packages/pcre/pcre4pl.c re_config_ (1027), write_re_options (1298): pcre2_config
+# DIVERGES: 18. `buf` is the 100-byte result union `{uint32_t, int32_t, char[100]}` of the C (`PCRE2_CONFIG_JITTARGET` needs at least 48).
+"Ask libpcre2 for the build-time `what` (a `PCRE2_CONFIG_*`), written into `buf`: 0 (an int), the byte count (a string), a negative PCRE2 error (pcre4pl.c `re_config_`)."
+function pcre2_config(what::UInt32, buf::Vector{UInt8})::Cint
+    return ccall((:pcre2_config_8, libpcre2_8), Cint, (UInt32, Ptr{Cvoid}), what, buf)
+end
+
+"The 100-byte result buffer `pcre2_config` writes into (the C's `val` union), zeroed."
+pcre2_config_buf()::Vector{UInt8} = zeros(UInt8, 100)
+
+"The `uint32_t` member of a `pcre2_config_buf` after `pcre2_config` (the C's `val.i_unsigned`)."
+function pcre2_config_u32(buf::Vector{UInt8})::UInt32
+    return GC.@preserve buf unsafe_load(Ptr{UInt32}(pointer(buf)))
+end
+
+"The `int32_t` member of a `pcre2_config_buf` after `pcre2_config` (the C's `val.i_signed`)."
+function pcre2_config_i32(buf::Vector{UInt8})::Int32
+    return GC.@preserve buf unsafe_load(Ptr{Int32}(pointer(buf)))
+end
+
+"The NUL-terminated string in a `pcre2_config_buf` after `pcre2_config` (the C's `val.s_buf`)."
+function pcre2_config_str(buf::Vector{UInt8})::String
+    return GC.@preserve buf unsafe_string(pointer(buf))
+end
+
+# PORT: packages/pcre/pcre4pl.c re_matchsub_ (1712), re_foldl_ (1786): pcre2_match_data_create_from_pattern; re_matchsub_ (1737), re_foldl_ (1829): pcre2_match_data_free
+"A match data block sized for `code` with the default general context (pcre4pl.c `re_matchsub_`, `re_foldl_`); C_NULL when out of memory."
+function pcre2_match_data_create_from_pattern(code::Ptr{Cvoid})::Ptr{Cvoid}
+    return ccall((:pcre2_match_data_create_from_pattern_8, libpcre2_8), Ptr{Cvoid}, (Ptr{Cvoid}, Ptr{Cvoid}), code, C_NULL)
+end
+
+"Free a match data block (pcre4pl.c `re_matchsub_`, `re_foldl_`); a NULL `md` is a no-op."
+function pcre2_match_data_free(md::Ptr{Cvoid})::Nothing
+    ccall((:pcre2_match_data_free_8, libpcre2_8), Cvoid, (Ptr{Cvoid},), md)
+    return nothing
+end
+
+# PORT: packages/pcre/pcre4pl.c re_matchsub_ (1720), re_foldl_ (1796): pcre2_match
+# DIVERGES: 17. `len` is the byte length the C passes (`subject.length`), `start` the byte offset (`utf8_start`); the match context is NULL, as the C.
+"Match `code` against the first `len` bytes of `subject` from byte `start` with `options`, into `md`: the highest captured group + 1, or a negative PCRE2 error (pcre4pl.c)."
+function pcre2_match(code::Ptr{Cvoid}, subject::Vector{UInt8}, len::Int, start::Int, options::UInt32, md::Ptr{Cvoid})::Cint
+    return ccall(
+        (:pcre2_match_8, libpcre2_8), Cint,
+        (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Csize_t, UInt32, Ptr{Cvoid}, Ptr{Cvoid}),
+        code, subject, len, start, options, md, C_NULL
+    )
+end
+
+# PORT: packages/pcre/pcre4pl.c re_matchsub_ (1728), re_foldl_ (1801): pcre2_get_ovector_pointer
+"The ovector of `md` (valid until `md` is freed): pairs of start and end byte offsets (pcre4pl.c `re_matchsub_`, `re_foldl_`)."
+function pcre2_get_ovector_pointer(md::Ptr{Cvoid})::Ptr{Csize_t}
+    return ccall((:pcre2_get_ovector_pointer_8, libpcre2_8), Ptr{Csize_t}, (Ptr{Cvoid},), md)
+end
+
+# DIVERGES: 17. The C reads `ovector[0 .. 2*rc-1]` in place; the copy outlives `md`.
+"The first `2*rc` values of `md`'s ovector (`rc` is `pcre2_match`'s result) as a Vector (the C reads them in place in `unify_match`)."
+function pcre2_ovector_copy(md::Ptr{Cvoid}, rc::Int)::Vector{Csize_t}
+    p = pcre2_get_ovector_pointer(md)
+    n = max(2 * rc, 0)
+    out = Vector{Csize_t}(undef, n)
+    for i in 1:n
+        out[i] = unsafe_load(p, i)
+    end
+    return out
+end
+
+# PORT: packages/pcre/pcre4pl.c re_compile_impl (1464), re_error (1682): pcre2_get_error_message
+# DIVERGES: 17. The C's buffer is 256 bytes and it passes `sizeof - 1` (compile) or `sizeof` (match) as the length: `buflen` is that length and the buffer is as long.
+"The text of the PCRE2 error `code` (a compile `errcode` or a match result), or `nothing` when libpcre2 answers a negative (unknown code, buffer too small) (pcre4pl.c)."
+function pcre2_get_error_message(code::Integer, buflen::Int = 256)::Union{Nothing, String}
+    buf = Vector{UInt8}(undef, max(buflen, 0))
+    rc = ccall((:pcre2_get_error_message_8, libpcre2_8), Cint, (Cint, Ptr{UInt8}, Csize_t), code, buf, buflen)
+    rc < 0 && return nothing
+    return GC.@preserve buf unsafe_string(pointer(buf), rc)
 end

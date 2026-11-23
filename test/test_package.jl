@@ -16,8 +16,9 @@ using Test, LogicKernel
 # as `endswith("_jll")`: a further JLL needs its own D-entry):
 #   PrecompileTools (user, 2026-10-03) runs src/precompile_workload.jl at precompile time — a fresh
 #   process otherwise spent ~10 s compiling the hot paths before its first answer (measured);
+#   PCRE2_jll (D-1002, Shivaji) carries libpcre2-8, ccall'd by src/pl-pcre.jl for library(pcre);
 #   Zlib_jll (D-1002, Shivaji) carries libz, ccall'd by src/pl-zlib.jl for library(zlib).
-const ALLOWED_DEPS = ("PrecompileTools", "Zlib_jll")
+const ALLOWED_DEPS = ("PrecompileTools", "PCRE2_jll", "Zlib_jll")
 const SIBLINGS = ("MeTTaCore", "MORK", "PathMaps", "MorkSupercompiler")
 
 """Package names in the `[deps]` and `[extras]` tables of `file`, plus the `name`/`uuid` lines."""

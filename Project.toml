@@ -6,20 +6,23 @@ authors = ["CognitiveSubstratesAI"]
 # STANDALONE: this package depends on NOTHING in the CognitiveSubstratesAI tree; other packages may
 # depend on IT. `test/test_package.jl` checks both halves — the [deps] table names only its
 # ALLOWLIST, and no sibling is loaded after `using LogicKernel` — so "standalone" is a tested
-# property, not a claim about this file. The allowlist is two packages, each named by the user:
+# property, not a claim about this file. The allowlist is three packages, each named by the user:
 # PrecompileTools (user, 2026-10-03), for the precompile workload (src/precompile_workload.jl) — a
 # fresh process otherwise spent ~10 s compiling the hot paths before its first answer — and
 # Zlib_jll (D-1002), the stdlib JLL that carries libz for library(zlib) (ccall'd from
-# src/pl-zlib.jl). No wildcard: a further JLL needs its own D-entry.
+# src/pl-zlib.jl), and PCRE2_jll (D-1002), the stdlib JLL that carries libpcre2-8 for library(pcre)
+# (ccall'd from src/pl-pcre.jl). No wildcard: a further JLL needs its own D-entry.
 #
 # 0.x until the term interface has a SECOND implementation in real use. The version is saying that,
 # honestly.
 
 [deps]
+PCRE2_jll = "efcefdf7-47ab-520b-bdef-62a2eaa19f15"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Zlib_jll = "83775a58-1f1d-513f-b197-d71354ab007a"
 
 [compat]
+PCRE2_jll = "10"
 PrecompileTools = "1"
 Random = "1"
 SHA = "0.7, 1"
