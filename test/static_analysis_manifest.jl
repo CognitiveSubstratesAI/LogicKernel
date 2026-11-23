@@ -5661,11 +5661,32 @@ _manifest_pkg2_plain() = (
     (LK.yaml_stream_end_event_initialize, Tuple{Ptr{Cvoid}}, false),
     (LK.yaml_document_start_event_initialize, Tuple{Ptr{Cvoid}, Bool}, false),
     (LK.yaml_document_end_event_initialize, Tuple{Ptr{Cvoid}, Bool}, false),
-    (LK.yaml_mapping_start_event_initialize, Tuple{Ptr{Cvoid}, Union{Nothing, String}, Union{Nothing, String}, Bool, Int}, false),
+    (
+        LK.yaml_mapping_start_event_initialize,
+        Tuple{Ptr{Cvoid}, Union{Nothing, String}, Union{Nothing, String}, Bool, Int},
+        false
+    ),
     (LK.yaml_mapping_end_event_initialize, Tuple{Ptr{Cvoid}}, false),
-    (LK.yaml_sequence_start_event_initialize, Tuple{Ptr{Cvoid}, Union{Nothing, String}, Union{Nothing, String}, Bool, Int}, false),
+    (
+        LK.yaml_sequence_start_event_initialize,
+        Tuple{Ptr{Cvoid}, Union{Nothing, String}, Union{Nothing, String}, Bool, Int},
+        false
+    ),
     (LK.yaml_sequence_end_event_initialize, Tuple{Ptr{Cvoid}}, false),
-    (LK.yaml_scalar_event_initialize, Tuple{Ptr{Cvoid}, Union{Nothing, String}, Union{Nothing, String}, String, Int, Bool, Bool, Int}, false),
+    (
+        LK.yaml_scalar_event_initialize,
+        Tuple{
+            Ptr{Cvoid},
+            Union{Nothing, String},
+            Union{Nothing, String},
+            String,
+            Int,
+            Bool,
+            Bool,
+            Int
+        },
+        false
+    ),
     (LK.yaml_alias_event_initialize, Tuple{Ptr{Cvoid}, String}, false),
     (LK.yaml_cev_type, Tuple{Ptr{Cvoid}}, false),
     (LK.yaml_cev_anchor, Tuple{Ptr{Cvoid}}, false),
@@ -5776,7 +5797,11 @@ _manifest_yaml_events(T) = begin
         # YAML1 piece B1 — the parse-side term layer (it builds and reads terms: no allocation claim)
         (LK.yaml_extend, Tuple{LD, LK.yaml_node, Int, Int}, false),
         (LK._yaml_put_functor, Tuple{LD, Int, Symbol, Int}, false),
-        (LK._yaml_unify_chars, Tuple{LD, Int, Int, Int, Base.CodeUnits{UInt8, String}}, false),
+        (
+            LK._yaml_unify_chars,
+            Tuple{LD, Int, Int, Int, Base.CodeUnits{UInt8, String}},
+            false
+        ),
         (LK.yaml_put_scalar, Tuple{LD, Int, Bool, LK.yaml_event}, false),
         (LK.yaml_create_mapping, Tuple{LD, Int, LK.yaml_event}, false),
         (LK.yaml_get_mapping_mapping, Tuple{LD, Int}, false),

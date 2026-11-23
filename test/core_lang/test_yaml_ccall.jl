@@ -22,25 +22,27 @@ function _ev_info(ev::Ptr{Cvoid})
     t = LK.yaml_cev_type(ev)
     if t == LK.YAML_SCALAR_EVENT
         return (;
-            type = t, anchor = LK.yaml_cev_anchor(ev), tag = LK.yaml_cev_tag(ev), value = LK.yaml_cev_value(ev),
-            length = LK.yaml_cev_scalar_length(ev), plain = LK.yaml_cev_plain_implicit(ev),
-            quoted = LK.yaml_cev_quoted_implicit(ev), style = LK.yaml_cev_scalar_style(ev),
+            type=t, anchor=LK.yaml_cev_anchor(ev), tag=LK.yaml_cev_tag(ev),
+            value=LK.yaml_cev_value(ev),
+            length=LK.yaml_cev_scalar_length(ev), plain=LK.yaml_cev_plain_implicit(ev),
+            quoted=LK.yaml_cev_quoted_implicit(ev), style=LK.yaml_cev_scalar_style(ev)
         )
     elseif t == LK.YAML_ALIAS_EVENT
-        return (; type = t, anchor = LK.yaml_cev_anchor(ev))
+        return (; type=t, anchor=LK.yaml_cev_anchor(ev))
     elseif t == LK.YAML_SEQUENCE_START_EVENT || t == LK.YAML_MAPPING_START_EVENT
         return (;
-            type = t, anchor = LK.yaml_cev_anchor(ev), tag = LK.yaml_cev_tag(ev),
-            implicit = LK.yaml_cev_collection_implicit(ev), style = LK.yaml_cev_collection_style(ev),
+            type=t, anchor=LK.yaml_cev_anchor(ev), tag=LK.yaml_cev_tag(ev),
+            implicit=LK.yaml_cev_collection_implicit(ev),
+            style=LK.yaml_cev_collection_style(ev)
         )
     elseif t == LK.YAML_STREAM_START_EVENT
-        return (; type = t, encoding = LK.yaml_cev_encoding(ev))
+        return (; type=t, encoding=LK.yaml_cev_encoding(ev))
     elseif t == LK.YAML_DOCUMENT_START_EVENT
-        return (; type = t, implicit = LK.yaml_cev_document_start_implicit(ev))
+        return (; type=t, implicit=LK.yaml_cev_document_start_implicit(ev))
     elseif t == LK.YAML_DOCUMENT_END_EVENT
-        return (; type = t, implicit = LK.yaml_cev_document_end_implicit(ev))
+        return (; type=t, implicit=LK.yaml_cev_document_end_implicit(ev))
     end
-    return (; type = t)
+    return (; type=t)
 end
 
 # parse `input` through the raw wrappers (no callback: the string input): (events, ok, err, problem); stops at STREAM-END or at the first error
@@ -54,7 +56,8 @@ function _parse_all(input::Vector{UInt8})
     GC.@preserve input begin
         @test LK.yaml_parser_initialize(parser) == 1
         ccall(
-            (:yaml_parser_set_input_string, LK.libyaml), Cvoid, (Ptr{Cvoid}, Ptr{UInt8}, Csize_t),
+            (:yaml_parser_set_input_string, LK.libyaml), Cvoid,
+            (Ptr{Cvoid}, Ptr{UInt8}, Csize_t),
             parser, input, length(input)
         )
         for _ in 1:1000                                    # a bound: libyaml answers STREAM-END events forever once it is past the end
@@ -73,7 +76,7 @@ function _parse_all(input::Vector{UInt8})
     end
     LK.yaml_free(event)
     LK.yaml_free(parser)
-    return (; events = infos, ok, err, problem)
+    return (; events=infos, ok, err, problem)
 end
 _parse_all(s::String) = _parse_all(Vector{UInt8}(codeunits(s)))
 
@@ -81,7 +84,7 @@ _types(r) = Int[e.type for e in r.events]
 
 # emit the mapping `pairs` (String => String, plain scalars) as ONE document into a fixed 512-byte buffer through the raw wrappers, the order of events
 # `emit_event` sends (C 1125-1201): (rcs of every emit, the text written)
-function _emit_map(pairs; canonical::Bool = false, unicode::Bool = true)
+function _emit_map(pairs; canonical::Bool=false, unicode::Bool=true)
     em = LK.yaml_emitter_alloc()
     ev = LK.yaml_event_alloc()
     out = zeros(UInt8, 512)
@@ -90,7 +93,8 @@ function _emit_map(pairs; canonical::Bool = false, unicode::Bool = true)
     GC.@preserve out written begin
         @test LK.yaml_emitter_initialize(em) == 1
         ccall(
-            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid, (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
+            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid,
+            (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
             em, out, length(out), written
         )
         LK.yaml_emitter_set_canonical(em, canonical)
@@ -98,10 +102,22 @@ function _emit_map(pairs; canonical::Bool = false, unicode::Bool = true)
         step(initrc) = push!(rcs, initrc == 1 ? LK.yaml_emitter_emit(em, ev) : Cint(-1))
         step(LK.yaml_stream_start_event_initialize(ev, LK.YAML_UTF8_ENCODING))
         step(LK.yaml_document_start_event_initialize(ev, true))
-        step(LK.yaml_mapping_start_event_initialize(ev, nothing, nothing, false, LK.YAML_BLOCK_MAPPING_STYLE))
+        step(
+            LK.yaml_mapping_start_event_initialize(
+                ev, nothing, nothing, false, LK.YAML_BLOCK_MAPPING_STYLE
+            )
+        )
         for (k, v) in pairs
-            step(LK.yaml_scalar_event_initialize(ev, nothing, nothing, k, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE))
-            step(LK.yaml_scalar_event_initialize(ev, nothing, nothing, v, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE))
+            step(
+                LK.yaml_scalar_event_initialize(
+                    ev, nothing, nothing, k, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+                )
+            )
+            step(
+                LK.yaml_scalar_event_initialize(
+                    ev, nothing, nothing, v, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+                )
+            )
         end
         step(LK.yaml_mapping_end_event_initialize(ev))
         step(LK.yaml_document_end_event_initialize(ev, true))
@@ -125,7 +141,8 @@ function _emit_first(mk)
     GC.@preserve out written begin
         LK.yaml_emitter_initialize(em)
         ccall(
-            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid, (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
+            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid,
+            (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
             em, out, length(out), written
         )
         @test mk(ev) == 1
@@ -157,14 +174,16 @@ end
 @testset "the 23 entry points are exported by the library" begin
     names = (
         :yaml_get_version_string, :yaml_get_version,
-        :yaml_parser_initialize, :yaml_parser_set_input, :yaml_parser_parse, :yaml_parser_delete, :yaml_event_delete,
-        :yaml_emitter_initialize, :yaml_emitter_set_output, :yaml_emitter_set_canonical, :yaml_emitter_set_unicode,
+        :yaml_parser_initialize, :yaml_parser_set_input, :yaml_parser_parse,
+        :yaml_parser_delete, :yaml_event_delete,
+        :yaml_emitter_initialize, :yaml_emitter_set_output, :yaml_emitter_set_canonical,
+        :yaml_emitter_set_unicode,
         :yaml_emitter_delete, :yaml_emitter_emit,
         :yaml_stream_start_event_initialize, :yaml_stream_end_event_initialize,
         :yaml_document_start_event_initialize, :yaml_document_end_event_initialize,
         :yaml_mapping_start_event_initialize, :yaml_mapping_end_event_initialize,
         :yaml_sequence_start_event_initialize, :yaml_sequence_end_event_initialize,
-        :yaml_scalar_event_initialize, :yaml_alias_event_initialize,
+        :yaml_scalar_event_initialize, :yaml_alias_event_initialize
     )
     @test length(names) == 23
     @test length(unique(names)) == 23
@@ -195,7 +214,9 @@ end
     @test LK.YAML_EMITTER_SIZE == 432
 
     # the event: every `_initialize` memsets sizeof(yaml_event_t); its last field (end_mark.column) is then zero, and nothing behind it is touched
-    (p, tail, behind) = canary(LK.YAML_EVENT_SIZE, p -> LK.yaml_stream_end_event_initialize(p))
+    (p, tail, behind) = canary(
+        LK.YAML_EVENT_SIZE, p -> LK.yaml_stream_end_event_initialize(p)
+    )
     @test all(==(0x00), tail)
     @test all(==(0xaa), behind)
     Libc.free(p)
@@ -235,7 +256,8 @@ end
 @testset "error code names are yaml.h's yaml_error_type_t (doc-only numbers)" begin
     @test (
         LK.YAML_NO_ERROR, LK.YAML_MEMORY_ERROR, LK.YAML_READER_ERROR, LK.YAML_SCANNER_ERROR,
-        LK.YAML_PARSER_ERROR, LK.YAML_COMPOSER_ERROR, LK.YAML_WRITER_ERROR, LK.YAML_EMITTER_ERROR,
+        LK.YAML_PARSER_ERROR, LK.YAML_COMPOSER_ERROR, LK.YAML_WRITER_ERROR,
+        LK.YAML_EMITTER_ERROR
     ) == (0, 1, 2, 3, 4, 5, 6, 7)
 end
 
@@ -243,7 +265,9 @@ end
 
 @testset "scalar event: anchor 8, tag 16, value 24, length 32, plain 40, quoted 44, style 48" begin
     ev = LK.yaml_event_alloc()
-    @test LK.yaml_scalar_event_initialize(ev, "anc", "tg", "hello", -1, true, false, LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE) == 1
+    @test LK.yaml_scalar_event_initialize(
+        ev, "anc", "tg", "hello", -1, true, false, LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE
+    ) == 1
     @test LK.yaml_cev_type(ev) == LK.YAML_SCALAR_EVENT
     @test LK.yaml_cev_anchor(ev) == "anc"
     @test LK.yaml_cev_tag(ev) == "tg"
@@ -260,7 +284,9 @@ end
     @test LK.yaml_cev_scalar_length(ev) == 0
 
     # the two flags the other way round, another style, no anchor, no tag
-    @test LK.yaml_scalar_event_initialize(ev, nothing, nothing, "x", -1, false, true, LK.YAML_LITERAL_SCALAR_STYLE) == 1
+    @test LK.yaml_scalar_event_initialize(
+        ev, nothing, nothing, "x", -1, false, true, LK.YAML_LITERAL_SCALAR_STYLE
+    ) == 1
     @test LK.yaml_cev_anchor(ev) === nothing
     @test LK.yaml_cev_tag(ev) === nothing
     @test LK.yaml_cev_value(ev) == "x"
@@ -270,28 +296,38 @@ end
     LK.yaml_event_delete(ev)
 
     # an explicit length shorter than the text takes a prefix; an embedded NUL counts (libyaml source: the value is copied with `length`)
-    @test LK.yaml_scalar_event_initialize(ev, nothing, nothing, "abcdef", 3, true, true, LK.YAML_PLAIN_SCALAR_STYLE) == 1
+    @test LK.yaml_scalar_event_initialize(
+        ev, nothing, nothing, "abcdef", 3, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+    ) == 1
     @test LK.yaml_cev_value(ev) == "abc"
     @test LK.yaml_cev_scalar_length(ev) == 3
     LK.yaml_event_delete(ev)
-    @test LK.yaml_scalar_event_initialize(ev, nothing, nothing, "a\0b", 3, true, true, LK.YAML_PLAIN_SCALAR_STYLE) == 1
+    @test LK.yaml_scalar_event_initialize(
+        ev, nothing, nothing, "a\0b", 3, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+    ) == 1
     @test LK.yaml_cev_scalar_length(ev) == 3
     @test LK.yaml_cev_value(ev) == "a\0b"
     LK.yaml_event_delete(ev)
 
     # a UTF-8 value keeps its bytes (length counts bytes), an invalid UTF-8 one is refused by the initialiser (returns 0; libyaml source: yaml_check_utf8)
-    @test LK.yaml_scalar_event_initialize(ev, nothing, nothing, "\u00e9\u20ac", -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE) == 1
+    @test LK.yaml_scalar_event_initialize(
+        ev, nothing, nothing, "\u00e9\u20ac", -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+    ) == 1
     @test LK.yaml_cev_scalar_length(ev) == ncodeunits("\u00e9\u20ac")
     @test LK.yaml_cev_value(ev) == "\u00e9\u20ac"
     LK.yaml_event_delete(ev)
     bad = String(UInt8[0x61, 0xff])
-    @test LK.yaml_scalar_event_initialize(ev, nothing, nothing, bad, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE) == 0
+    @test LK.yaml_scalar_event_initialize(
+        ev, nothing, nothing, bad, -1, true, true, LK.YAML_PLAIN_SCALAR_STYLE
+    ) == 0
     LK.yaml_free(ev)
 end
 
 @testset "sequence and mapping start events: anchor 8, tag 16, implicit 24, style 28" begin
     ev = LK.yaml_event_alloc()
-    @test LK.yaml_sequence_start_event_initialize(ev, "sa", "st", true, LK.YAML_BLOCK_SEQUENCE_STYLE) == 1
+    @test LK.yaml_sequence_start_event_initialize(
+        ev, "sa", "st", true, LK.YAML_BLOCK_SEQUENCE_STYLE
+    ) == 1
     @test LK.yaml_cev_type(ev) == LK.YAML_SEQUENCE_START_EVENT
     @test LK.yaml_cev_anchor(ev) == "sa"
     @test LK.yaml_cev_tag(ev) == "st"
@@ -299,7 +335,9 @@ end
     @test LK.yaml_cev_collection_style(ev) == LK.YAML_BLOCK_SEQUENCE_STYLE
     LK.yaml_event_delete(ev)
 
-    @test LK.yaml_mapping_start_event_initialize(ev, "ma", "mt", false, LK.YAML_BLOCK_MAPPING_STYLE) == 1
+    @test LK.yaml_mapping_start_event_initialize(
+        ev, "ma", "mt", false, LK.YAML_BLOCK_MAPPING_STYLE
+    ) == 1
     @test LK.yaml_cev_type(ev) == LK.YAML_MAPPING_START_EVENT
     @test LK.yaml_cev_anchor(ev) == "ma"
     @test LK.yaml_cev_tag(ev) == "mt"
@@ -307,12 +345,16 @@ end
     @test LK.yaml_cev_collection_style(ev) == LK.YAML_BLOCK_MAPPING_STYLE
     LK.yaml_event_delete(ev)
 
-    @test LK.yaml_sequence_start_event_initialize(ev, nothing, nothing, false, LK.YAML_BLOCK_SEQUENCE_STYLE) == 1
+    @test LK.yaml_sequence_start_event_initialize(
+        ev, nothing, nothing, false, LK.YAML_BLOCK_SEQUENCE_STYLE
+    ) == 1
     @test LK.yaml_cev_anchor(ev) === nothing
     @test LK.yaml_cev_tag(ev) === nothing
     @test LK.yaml_cev_collection_implicit(ev) == false
     LK.yaml_event_delete(ev)
-    @test LK.yaml_mapping_start_event_initialize(ev, nothing, nothing, true, LK.YAML_BLOCK_MAPPING_STYLE) == 1
+    @test LK.yaml_mapping_start_event_initialize(
+        ev, nothing, nothing, true, LK.YAML_BLOCK_MAPPING_STYLE
+    ) == 1
     @test LK.yaml_cev_anchor(ev) === nothing
     @test LK.yaml_cev_tag(ev) === nothing
     @test LK.yaml_cev_collection_implicit(ev) == true
@@ -372,8 +414,10 @@ end
     # STREAM-START, DOCUMENT-START, MAPPING-START, SCALAR, SCALAR, MAPPING-END, DOCUMENT-END, STREAM-END
     @test _types(r) == [1, 3, 9, 6, 6, 10, 4, 2]
     @test _types(r) == [
-        LK.YAML_STREAM_START_EVENT, LK.YAML_DOCUMENT_START_EVENT, LK.YAML_MAPPING_START_EVENT, LK.YAML_SCALAR_EVENT,
-        LK.YAML_SCALAR_EVENT, LK.YAML_MAPPING_END_EVENT, LK.YAML_DOCUMENT_END_EVENT, LK.YAML_STREAM_END_EVENT,
+        LK.YAML_STREAM_START_EVENT, LK.YAML_DOCUMENT_START_EVENT,
+        LK.YAML_MAPPING_START_EVENT, LK.YAML_SCALAR_EVENT,
+        LK.YAML_SCALAR_EVENT, LK.YAML_MAPPING_END_EVENT, LK.YAML_DOCUMENT_END_EVENT,
+        LK.YAML_STREAM_END_EVENT
     ]
     @test r.events[1].encoding == LK.YAML_UTF8_ENCODING
     @test r.events[2].implicit == true                       # no `---`
@@ -412,14 +456,19 @@ end
     r = _parse_all("[a, 'b', \"c\"]\n")
     sc = [e for e in r.events if e.type == LK.YAML_SCALAR_EVENT]
     @test [e.value for e in sc] == ["a", "b", "c"]
-    @test [e.style for e in sc] == [LK.YAML_PLAIN_SCALAR_STYLE, LK.YAML_SINGLE_QUOTED_SCALAR_STYLE, LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE]
+    @test [e.style for e in sc] == [
+        LK.YAML_PLAIN_SCALAR_STYLE,
+        LK.YAML_SINGLE_QUOTED_SCALAR_STYLE,
+        LK.YAML_DOUBLE_QUOTED_SCALAR_STYLE
+    ]
     @test [e.plain for e in sc] == [true, false, false]
     @test [e.quoted for e in sc] == [false, true, true]
 
     # literal and folded block scalars
     r = _parse_all("- |\n  l1\n- >\n  f1\n")
     sc = [e for e in r.events if e.type == LK.YAML_SCALAR_EVENT]
-    @test [e.style for e in sc] == [LK.YAML_LITERAL_SCALAR_STYLE, LK.YAML_FOLDED_SCALAR_STYLE]
+    @test [e.style for e in sc] ==
+        [LK.YAML_LITERAL_SCALAR_STYLE, LK.YAML_FOLDED_SCALAR_STYLE]
 
     # an anchored and tagged flow sequence and mapping: the anchor and tag of a collection-start are at the same offsets (8, 16) as a scalar's;
     # with a tag the event is not `implicit`; the flow style is 2 (yaml.h: FLOW follows BLOCK)
@@ -506,14 +555,14 @@ end
 
 @testset "emitter: canonical and unicode flags reach the emitter (offsets 124 and 136 by libyaml's own setters)" begin
     (_, plain) = _emit_map(["a" => "1"])
-    (rcs, canon) = _emit_map(["a" => "1"]; canonical = true)
+    (rcs, canon) = _emit_map(["a" => "1"]; canonical=true)
     @test all(==(Cint(1)), rcs)
     @test canon != plain
     @test startswith(canon, "---")                           # libyaml source: canonical output always writes the document-start marker
 
     # non-ASCII: with unicode the character is written as is, without it a double-quoted \xE9 escape (libyaml source: emitter.c write_double_quoted)
-    (_, with_u) = _emit_map(["a" => "\u00e9"]; unicode = true)
-    (_, without_u) = _emit_map(["a" => "\u00e9"]; unicode = false)
+    (_, with_u) = _emit_map(["a" => "\u00e9"]; unicode=true)
+    (_, without_u) = _emit_map(["a" => "\u00e9"]; unicode=false)
     @test with_u == "a: \u00e9\n"
     @test without_u == "a: \"\\xE9\"\n"
 end
@@ -526,7 +575,9 @@ end
     @test problem == "expected STREAM-START"
 
     # a STREAM-START first is accepted
-    (rc, err, problem) = _emit_first(ev -> LK.yaml_stream_start_event_initialize(ev, LK.YAML_UTF8_ENCODING))
+    (rc, err, problem) = _emit_first(
+        ev -> LK.yaml_stream_start_event_initialize(ev, LK.YAML_UTF8_ENCODING)
+    )
     @test rc == 1
     @test err == LK.YAML_NO_ERROR
     @test problem === nothing
@@ -539,7 +590,8 @@ end
     GC.@preserve out written begin
         LK.yaml_emitter_initialize(em)
         ccall(
-            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid, (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
+            (:yaml_emitter_set_output_string, LK.libyaml), Cvoid,
+            (Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ref{Csize_t}),
             em, out, length(out), written
         )
         @test LK.yaml_stream_start_event_initialize(ev, LK.YAML_UTF8_ENCODING) == 1

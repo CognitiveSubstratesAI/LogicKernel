@@ -59,7 +59,9 @@ function _yp_shape(ld, t::Int)
 end
 
 # put_scalar of a scalar event: (the answer, the shape of the term or nothing, whether an exception is left pending).
-function _yp_scalar(value::Union{Nothing, String}; tag::Union{Nothing, String} = nothing, iskey::Bool = false)
+function _yp_scalar(
+    value::Union{Nothing, String}; tag::Union{Nothing, String}=nothing, iskey::Bool=false
+)
     ld = _YP_LD
     fid = LK.PL_open_foreign_frame(ld)
     ev = LK.yaml_event(LK.YAML_SCALAR_EVENT)
@@ -76,7 +78,7 @@ function _yp_scalar(value::Union{Nothing, String}; tag::Union{Nothing, String} =
 end
 
 # The shape of put_scalar's term, for the rows that must succeed.
-_yp_val(value; kw...) = (r = _yp_scalar(value; kw...); r[1] ? r[2] : :failed)
+_yp_val(value; kw...) = (r=_yp_scalar(value; kw...); r[1] ? r[2] : :failed)
 
 @testset "yaml_put_scalar: numbers (yaml4pl.c put_scalar, is_number branch)" begin
     @test _yp_scalar("42") == (true, 42, false)
@@ -90,7 +92,7 @@ _yp_val(value; kw...) = (r = _yp_scalar(value; kw...); r[1] ? r[2] : :failed)
     @test _yp_scalar("0o17") == (true, 15, false)
     @test _yp_scalar("0x1F") == (true, 31, false)
     # a key that is a number stays a number (the key flag only chooses atom or string for TEXT)
-    @test _yp_scalar("42"; iskey = true) == (true, 42, false)
+    @test _yp_scalar("42"; iskey=true) == (true, 42, false)
     # not a number: is_number says NONE for these, so they are text
     @test _yp_val("007") == ("s", "007")
     @test _yp_val("1.") == ("s", "1.")
@@ -109,7 +111,7 @@ end
 @testset "yaml_put_scalar: null, true, false, special floats" begin
     for s in ("null", "Null", "NULL", "~")
         @test _yp_scalar(s) == (true, ("a", "null"), false)
-        @test _yp_scalar(s; iskey = true) == (true, ("a", "null"), false)
+        @test _yp_scalar(s; iskey=true) == (true, ("a", "null"), false)
     end
     for s in ("true", "True", "TRUE")
         @test _yp_scalar(s) == (true, ("a", "true"), false)
@@ -135,13 +137,13 @@ end
 
 @testset "yaml_put_scalar: text is a string, a key an atom; UTF-8; the NUL byte survives" begin
     @test _yp_scalar("hello") == (true, ("s", "hello"), false)
-    @test _yp_scalar("hello"; iskey = true) == (true, ("a", "hello"), false)
+    @test _yp_scalar("hello"; iskey=true) == (true, ("a", "hello"), false)
     @test _yp_scalar("") == (true, ("s", ""), false)
-    @test _yp_scalar(""; iskey = true) == (true, ("a", ""), false)
-    @test _yp_val("nullx"; iskey = true) == ("a", "nullx")
+    @test _yp_scalar(""; iskey=true) == (true, ("a", ""), false)
+    @test _yp_val("nullx"; iskey=true) == ("a", "nullx")
     @test _yp_val("café") == ("s", "café")
-    @test _yp_val("café"; iskey = true) == ("a", "café")
-    @test _yp_val("日本"; iskey = true) == ("a", "日本")
+    @test _yp_val("café"; iskey=true) == ("a", "café")
+    @test _yp_val("日本"; iskey=true) == ("a", "日本")
     # DIVERGES 14: len is the byte count, so a NUL byte inside the text is kept (BLIND: PL_get_text of a string with a NUL)
     @test _yp_val("a\0b") == ("s", "a\0b")
     # a missing value reads as ""
@@ -150,16 +152,17 @@ end
 
 @testset "yaml_put_scalar: a tagged scalar is tag(Tag, Text) (yaml4pl.c 346-356)" begin
     str = "tag:yaml.org,2002:str"
-    @test _yp_scalar("42"; tag = str) == (true, ("c", "tag", ("a", str), ("s", "42")), false)
-    @test _yp_scalar("42"; tag = str, iskey = true) == (true, ("c", "tag", ("a", str), ("a", "42")), false)
+    @test _yp_scalar("42"; tag=str) == (true, ("c", "tag", ("a", str), ("s", "42")), false)
+    @test _yp_scalar("42"; tag=str, iskey=true) ==
+        (true, ("c", "tag", ("a", str), ("a", "42")), false)
     # the classifier is not applied: null stays text
-    @test _yp_val("null"; tag = "!foo") == ("c", "tag", ("a", "!foo"), ("s", "null"))
-    @test _yp_val(""; tag = "!e") == ("c", "tag", ("a", "!e"), ("s", ""))
+    @test _yp_val("null"; tag="!foo") == ("c", "tag", ("a", "!foo"), ("s", "null"))
+    @test _yp_val(""; tag="!e") == ("c", "tag", ("a", "!e"), ("s", ""))
     # DIVERGES 14: the value is UTF-8 text
-    @test _yp_val("é"; tag = "!u") == ("c", "tag", ("a", "!u"), ("s", "é"))
+    @test _yp_val("é"; tag="!u") == ("c", "tag", ("a", "!u"), ("s", "é"))
     # DIVERGES 15: the tag is read as ISO Latin-1 bytes and ends at the first NUL
-    @test _yp_val("x"; tag = "!é") == ("c", "tag", ("a", "!Ã©"), ("s", "x"))
-    @test _yp_val("x"; tag = "ab\0cd") == ("c", "tag", ("a", "ab"), ("s", "x"))
+    @test _yp_val("x"; tag="!é") == ("c", "tag", ("a", "!Ã©"), ("s", "x"))
+    @test _yp_val("x"; tag="ab\0cd") == ("c", "tag", ("a", "ab"), ("s", "x"))
 end
 
 @testset "yaml_put_scalar overwrites the term it is given (tag branch: PL_put_functor)" begin
@@ -177,8 +180,9 @@ end
 @testset "yaml_create_mapping / yaml_create_sequence and the two readers (yaml4pl.c 562-610)" begin
     ld = _YP_LD
     fid = LK.PL_open_foreign_frame(ld)
-    for (create, getter, name) in ((LK.yaml_create_mapping, LK.yaml_get_mapping_mapping, "mapping"),
-                                   (LK.yaml_create_sequence, LK.yaml_get_sequence_list, "sequence"))
+    for (create, getter, name) in
+        ((LK.yaml_create_mapping, LK.yaml_get_mapping_mapping, "mapping"),
+        (LK.yaml_create_sequence, LK.yaml_get_sequence_list, "sequence"))
         plain = ("c", name, ("v",), ("v",), ("v",))
         # no tag: name(_, _, _)
         t = LK.PL_new_term_ref(ld)
@@ -206,8 +210,13 @@ end
             @test getter(ld, r) === true
             @test LK.PL_unify(ld, r, _yp_term(ld, "[x]")) === true
             @test _yp_shape(ld, term) ==
-                  (tagged ? ("c", "tag", ("a", "!t"), ("c", name, [("a", "x")], ("v",), ("v",))) :
-                   ("c", name, [("a", "x")], ("v",), ("v",)))
+                (
+                if tagged
+                    ("c", "tag", ("a", "!t"), ("c", name, [("a", "x")], ("v",), ("v",)))
+                else
+                    ("c", name, [("a", "x")], ("v",), ("v",))
+                end
+            )
         end
     end
     LK.PL_discard_foreign_frame(ld, fid)
@@ -285,15 +294,19 @@ end
     @test LK.yaml_extend(ld, map, tmp, _yp_term(ld, "two")) === true
     @test map.key == 0
     @test LK.PL_unify_nil(ld, map.doc) === true
-    @test _yp_shape(ld, mhead) == Any[("c", "=", ("a", "a"), 1), ("c", "=", ("a", "b"), ("a", "two"))]
+    @test _yp_shape(ld, mhead) ==
+        Any[("c", "=", ("a", "a"), 1), ("c", "=", ("a", "b"), ("a", "two"))]
 
     # a mapping whose doc is no list: the pair is refused and the key is gone all the same (C resets it before the unify)
-    mbad = LK.yaml_node(nothing, LK.YAML_NODE_MAPPING, _yp_term(ld, "k"), _yp_term(ld, "foo"))
+    mbad = LK.yaml_node(
+        nothing, LK.YAML_NODE_MAPPING, _yp_term(ld, "k"), _yp_term(ld, "foo")
+    )
     @test LK.yaml_extend(ld, mbad, LK.PL_new_term_ref(ld), _yp_term(ld, "v")) === false
     @test mbad.key == 0
 
     # an unknown node type: C's assert(0) branch, answered false
-    @test LK.yaml_extend(ld, LK.yaml_node(nothing, 7, 0, d), tmp, _yp_term(ld, "1")) === false
+    @test LK.yaml_extend(ld, LK.yaml_node(nothing, 7, 0, d), tmp, _yp_term(ld, "1")) ===
+        false
     LK.PL_discard_foreign_frame(ld, fid)
 end
 

@@ -675,7 +675,9 @@ end
 # PORT: packages/yaml/yaml4pl.c push
 # DIVERGES: see the piece B1 header, 11. Returns the new node, which is also `stack[]` now.
 "Push a copy of `old` on `stack`; returns the new top, whose `parent` is the old top (yaml4pl.c)."
-function yaml_push(stack::Base.RefValue{Union{Nothing, yaml_node}}, old::yaml_node)::yaml_node
+function yaml_push(
+    stack::Base.RefValue{Union{Nothing, yaml_node}}, old::yaml_node
+)::yaml_node
     n = yaml_node(stack[], old.type, old.key, old.doc)        # *n = *old; n->parent = *stack
     stack[] = n                                               # *stack = n
     return n
@@ -700,7 +702,9 @@ end
 # PORT: packages/yaml/yaml4pl.c extend
 # DIVERGES: see the piece B1 header, 11 and 13.
 "Add the value `v` to the container `state`: unify it (top), append it to the list (sequence), or hold it as the key / complete the `Key=Value` (mapping) (yaml4pl.c)."
-function yaml_extend(ld::PL_local_data{T}, state::yaml_node, tmp::term_t, v::term_t)::Bool where {T}
+function yaml_extend(
+    ld::PL_local_data{T}, state::yaml_node, tmp::term_t, v::term_t
+)::Bool where {T}
     if state.type == YAML_NODE_TOP
         return PL_unify(ld, state.doc, v)
     elseif state.type == YAML_NODE_SEQUENCE
@@ -711,7 +715,9 @@ function yaml_extend(ld::PL_local_data{T}, state::yaml_node, tmp::term_t, v::ter
             state.key = 0
             PL_unify_list(ld, state.doc, tmp, state.doc) || return false
             pair = PL_new_term_ref(ld)
-            rc = PL_cons_functor(ld, pair, _err_functor(ld, Symbol("="), 2), key, v) && PL_unify(ld, tmp, pair)
+            rc =
+                PL_cons_functor(ld, pair, _err_functor(ld, Symbol("="), 2), key, v) &&
+                PL_unify(ld, tmp, pair)
             PL_reset_term_refs(ld, pair)
             return rc
         else
@@ -725,7 +731,9 @@ end
 # PORT: packages/yaml/yaml4pl.c PL_put_functor (as yaml4pl.c's put_scalar, create_mapping and create_sequence use it)
 # DIVERGES: see the piece B1 header, 12.
 "Put a new compound `name`/`arity` of fresh variables into `t` (kernel stand-in for `PL_put_functor(t, f)`)."
-function _yaml_put_functor(ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int)::Bool where {T}
+function _yaml_put_functor(
+    ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int
+)::Bool where {T}
     PL_put_variable(ld, t)
     return PL_unify_functor(ld, t, mk_sym(T, name), arity)
 end
@@ -733,7 +741,9 @@ end
 # PORT: packages/yaml/yaml4pl.c PL_unify_chars (as yaml4pl.c's put_scalar uses it)
 # DIVERGES: see the piece B1 header, 14.
 "Unify `t` with the first `len` bytes of `s` (UTF-8) made a `type` (`PL_ATOM` or `PL_STRING`) (kernel stand-in for `PL_unify_chars(t, REP_UTF8|type, len, s)`)."
-function _yaml_unify_chars(ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8})::Bool where {T}
+function _yaml_unify_chars(
+    ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8}
+)::Bool where {T}
     txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, ENC_UTF8, false)
     return PL_unify_text(ld, t, 0, txt, type)
 end
@@ -749,7 +759,9 @@ _yaml_latin1_sym(s::String)::Symbol = Symbol(String(Char.(codeunits(_yaml_cstrin
 Put the term of the scalar event `event` into `t` (yaml4pl.c): `tag(Tag, Text)` when it has a tag, else (by the classifier of piece 1) a number,
 `null`/`true`/`false`, a special float, or a string (an atom when `iskey`). Float overflow reads as `inf`/`-inf`.
 """
-function yaml_put_scalar(ld::PL_local_data{T}, t::term_t, iskey::Bool, event::yaml_event)::Bool where {T}
+function yaml_put_scalar(
+    ld::PL_local_data{T}, t::term_t, iskey::Bool, event::yaml_event
+)::Bool where {T}
     value = event.value === nothing ? "" : event.value
     s = codeunits(value)                                      # char *s = event->data.scalar.value
     len = ncodeunits(value)                                   # size_t len = event->data.scalar.length
@@ -791,13 +803,15 @@ end
 # PORT: packages/yaml/yaml4pl.c create_mapping
 # DIVERGES: see the piece B1 header, 12 and 15. The tag of the mapping-start event is `event.tag`.
 "Put `mapping(_, _, _)` into `t`, wrapped in `tag(Tag, ...)` when the event has a tag (yaml4pl.c)."
-function yaml_create_mapping(ld::PL_local_data{T}, t::term_t, event::yaml_event)::Bool where {T}
+function yaml_create_mapping(
+    ld::PL_local_data{T}, t::term_t, event::yaml_event
+)::Bool where {T}
     _yaml_put_functor(ld, t, :mapping, 3) || return false
 
     if event.tag !== nothing
         tag = PL_new_term_ref(ld)
         if !PL_put_atom(ld, tag, mk_sym(T, _yaml_latin1_sym(event.tag))) ||
-           !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
+            !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
             return false
         end
     end
@@ -820,13 +834,15 @@ end
 # PORT: packages/yaml/yaml4pl.c create_sequence
 # DIVERGES: see the piece B1 header, 12 and 15. The tag of the sequence-start event is `event.tag`.
 "Put `sequence(_, _, _)` into `t`, wrapped in `tag(Tag, ...)` when the event has a tag (yaml4pl.c)."
-function yaml_create_sequence(ld::PL_local_data{T}, t::term_t, event::yaml_event)::Bool where {T}
+function yaml_create_sequence(
+    ld::PL_local_data{T}, t::term_t, event::yaml_event
+)::Bool where {T}
     _yaml_put_functor(ld, t, :sequence, 3) || return false
 
     if event.tag !== nothing
         tag = PL_new_term_ref(ld)
         if !PL_put_atom(ld, tag, mk_sym(T, _yaml_latin1_sym(event.tag))) ||
-           !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
+            !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
             return false
         end
     end
@@ -926,7 +942,8 @@ yaml_parser_alloc()::Ptr{Cvoid} = yaml_alloc(YAML_PARSER_SIZE)
 yaml_emitter_alloc()::Ptr{Cvoid} = yaml_alloc(YAML_EMITTER_SIZE)
 
 # The NUL-terminated bytes of `s`, or NULL for `nothing` (16); the caller keeps `s` alive with `GC.@preserve`.
-@inline _yaml_cstr(s::Union{Nothing, String})::Ptr{UInt8} = s === nothing ? Ptr{UInt8}(C_NULL) : pointer(s)
+@inline _yaml_cstr(s::Union{Nothing, String})::Ptr{UInt8} =
+    s === nothing ? Ptr{UInt8}(C_NULL) : pointer(s)
 
 # A `char *` field copied out as a Julia String, `nothing` for NULL (18).
 @inline function _yaml_load_cstring(p::Ptr{Cvoid}, offset::Int)::Union{Nothing, String}
@@ -934,7 +951,8 @@ yaml_emitter_alloc()::Ptr{Cvoid} = yaml_alloc(YAML_EMITTER_SIZE)
     return s == C_NULL ? nothing : unsafe_string(s)
 end
 
-@inline _yaml_load_cint(p::Ptr{Cvoid}, offset::Int)::Cint = unsafe_load(Ptr{Cint}(p + offset))
+@inline _yaml_load_cint(p::Ptr{Cvoid}, offset::Int)::Cint =
+    unsafe_load(Ptr{Cint}(p + offset))
 
 # PORT: packages/yaml/yaml4pl.c yaml_get_version_string, yaml_get_version (libyaml; no call in the C: the first-run check of evidence/R2/yaml_plan.md 2.4)
 # DIVERGES: see the piece A header, 18.
@@ -948,7 +966,14 @@ function yaml_get_version()::Tuple{Cint, Cint, Cint}
     major = Ref{Cint}(0)
     minor = Ref{Cint}(0)
     patch = Ref{Cint}(0)
-    ccall((:yaml_get_version, libyaml), Cvoid, (Ref{Cint}, Ref{Cint}, Ref{Cint}), major, minor, patch)
+    ccall(
+        (:yaml_get_version, libyaml),
+        Cvoid,
+        (Ref{Cint}, Ref{Cint}, Ref{Cint}),
+        major,
+        minor,
+        patch
+    )
     return (major[], minor[], patch[])
 end
 
@@ -960,14 +985,25 @@ function yaml_parser_initialize(parser::Ptr{Cvoid})::Cint
 end
 
 "Set the parser's read handler and its data pointer (yaml4pl.c `yaml_parse_stream`)."
-function yaml_parser_set_input(parser::Ptr{Cvoid}, handler::Ptr{Cvoid}, data::Ptr{Cvoid})::Nothing
-    ccall((:yaml_parser_set_input, libyaml), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), parser, handler, data)
+function yaml_parser_set_input(
+    parser::Ptr{Cvoid}, handler::Ptr{Cvoid}, data::Ptr{Cvoid}
+)::Nothing
+    ccall(
+        (:yaml_parser_set_input, libyaml),
+        Cvoid,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
+        parser,
+        handler,
+        data
+    )
     return nothing
 end
 
 "Read the next event into `event`: 1, or 0 on an error (`parser->error` and `->problem`; yaml4pl.c `parse_document`)."
 function yaml_parser_parse(parser::Ptr{Cvoid}, event::Ptr{Cvoid})::Cint
-    return ccall((:yaml_parser_parse, libyaml), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), parser, event)
+    return ccall(
+        (:yaml_parser_parse, libyaml), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), parser, event
+    )
 end
 
 "Free the parser's buffers (yaml4pl.c `yaml_parse_stream`); the struct itself is freed by `yaml_free`."
@@ -991,20 +1027,41 @@ function yaml_emitter_initialize(emitter::Ptr{Cvoid})::Cint
 end
 
 "Set the emitter's write handler and its data pointer (yaml4pl.c `yaml_emitter_create`)."
-function yaml_emitter_set_output(emitter::Ptr{Cvoid}, handler::Ptr{Cvoid}, data::Ptr{Cvoid})::Nothing
-    ccall((:yaml_emitter_set_output, libyaml), Cvoid, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), emitter, handler, data)
+function yaml_emitter_set_output(
+    emitter::Ptr{Cvoid}, handler::Ptr{Cvoid}, data::Ptr{Cvoid}
+)::Nothing
+    ccall(
+        (:yaml_emitter_set_output, libyaml),
+        Cvoid,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
+        emitter,
+        handler,
+        data
+    )
     return nothing
 end
 
 "Set the emitter's canonical flag (yaml4pl.c `yaml_emitter_create`)."
 function yaml_emitter_set_canonical(emitter::Ptr{Cvoid}, canonical::Bool)::Nothing
-    ccall((:yaml_emitter_set_canonical, libyaml), Cvoid, (Ptr{Cvoid}, Cint), emitter, Cint(canonical))
+    ccall(
+        (:yaml_emitter_set_canonical, libyaml),
+        Cvoid,
+        (Ptr{Cvoid}, Cint),
+        emitter,
+        Cint(canonical)
+    )
     return nothing
 end
 
 "Set the emitter's unicode flag (yaml4pl.c `yaml_emitter_create`)."
 function yaml_emitter_set_unicode(emitter::Ptr{Cvoid}, unicode::Bool)::Nothing
-    ccall((:yaml_emitter_set_unicode, libyaml), Cvoid, (Ptr{Cvoid}, Cint), emitter, Cint(unicode))
+    ccall(
+        (:yaml_emitter_set_unicode, libyaml),
+        Cvoid,
+        (Ptr{Cvoid}, Cint),
+        emitter,
+        Cint(unicode)
+    )
     return nothing
 end
 
@@ -1017,14 +1074,22 @@ end
 # PORT: packages/yaml/yaml4pl.c emit_event (1201): yaml_emitter_emit
 "Emit `event` (the emitter takes its ownership): 1, or 0 on an error (`emitter->error` and `->problem`; yaml4pl.c `emit_event`)."
 function yaml_emitter_emit(emitter::Ptr{Cvoid}, event::Ptr{Cvoid})::Cint
-    return ccall((:yaml_emitter_emit, libyaml), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), emitter, event)
+    return ccall(
+        (:yaml_emitter_emit, libyaml), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), emitter, event
+    )
 end
 
 # PORT: packages/yaml/yaml4pl.c emit_event (1125, 1127, 1134, 1141, 1147, 1150, 1156, 1159, 1189, 1196): the ten yaml_*_event_initialize
 # DIVERGES: see the piece A header, 16. Each returns 1, or 0 when out of memory or (a string argument) not valid UTF-8; `event` is a zeroed `yaml_event_t`.
 "Make a STREAM-START event with `encoding` (`YAML_UTF8_ENCODING`; yaml4pl.c `emit_event`)."
 function yaml_stream_start_event_initialize(event::Ptr{Cvoid}, encoding::Int)::Cint
-    return ccall((:yaml_stream_start_event_initialize, libyaml), Cint, (Ptr{Cvoid}, Cint), event, encoding)
+    return ccall(
+        (:yaml_stream_start_event_initialize, libyaml),
+        Cint,
+        (Ptr{Cvoid}, Cint),
+        event,
+        encoding
+    )
 end
 
 "Make a STREAM-END event (yaml4pl.c `emit_event`)."
@@ -1043,13 +1108,20 @@ end
 
 "Make a DOCUMENT-END event (yaml4pl.c `emit_event`)."
 function yaml_document_end_event_initialize(event::Ptr{Cvoid}, implicit::Bool)::Cint
-    return ccall((:yaml_document_end_event_initialize, libyaml), Cint, (Ptr{Cvoid}, Cint), event, Cint(implicit))
+    return ccall(
+        (:yaml_document_end_event_initialize, libyaml),
+        Cint,
+        (Ptr{Cvoid}, Cint),
+        event,
+        Cint(implicit)
+    )
 end
 
 "Make a MAPPING-START event with `anchor` and `tag` (`nothing` = NULL), `implicit` and `style` (yaml4pl.c `emit_event`)."
 function yaml_mapping_start_event_initialize(
-        event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String}, implicit::Bool, style::Int
-    )::Cint
+    event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String},
+    implicit::Bool, style::Int
+)::Cint
     GC.@preserve anchor tag begin
         return ccall(
             (:yaml_mapping_start_event_initialize, libyaml), Cint,
@@ -1066,8 +1138,9 @@ end
 
 "Make a SEQUENCE-START event with `anchor` and `tag` (`nothing` = NULL), `implicit` and `style` (yaml4pl.c `emit_event`)."
 function yaml_sequence_start_event_initialize(
-        event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String}, implicit::Bool, style::Int
-    )::Cint
+    event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String},
+    implicit::Bool, style::Int
+)::Cint
     GC.@preserve anchor tag begin
         return ccall(
             (:yaml_sequence_start_event_initialize, libyaml), Cint,
@@ -1084,14 +1157,16 @@ end
 
 "Make a SCALAR event: `value` of `len` bytes (-1: up to its first NUL, as the C passes it), the two implicit flags and `style` (yaml4pl.c `emit_event`)."
 function yaml_scalar_event_initialize(
-        event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String}, value::String, len::Int,
-        plain_implicit::Bool, quoted_implicit::Bool, style::Int
-    )::Cint
+    event::Ptr{Cvoid}, anchor::Union{Nothing, String}, tag::Union{Nothing, String},
+    value::String, len::Int,
+    plain_implicit::Bool, quoted_implicit::Bool, style::Int
+)::Cint
     GC.@preserve anchor tag value begin
         return ccall(
             (:yaml_scalar_event_initialize, libyaml), Cint,
             (Ptr{Cvoid}, Ptr{UInt8}, Ptr{UInt8}, Ptr{UInt8}, Cint, Cint, Cint, Cint),
-            event, _yaml_cstr(anchor), _yaml_cstr(tag), pointer(value), len, Cint(plain_implicit), Cint(quoted_implicit), style
+            event, _yaml_cstr(anchor), _yaml_cstr(tag), pointer(value), len,
+            Cint(plain_implicit), Cint(quoted_implicit), style
         )
     end
 end
@@ -1099,7 +1174,13 @@ end
 "Make an ALIAS event for `anchor` (yaml4pl.c `emit_event`)."
 function yaml_alias_event_initialize(event::Ptr{Cvoid}, anchor::String)::Cint
     GC.@preserve anchor begin
-        return ccall((:yaml_alias_event_initialize, libyaml), Cint, (Ptr{Cvoid}, Ptr{UInt8}), event, pointer(anchor))
+        return ccall(
+            (:yaml_alias_event_initialize, libyaml),
+            Cint,
+            (Ptr{Cvoid}, Ptr{UInt8}),
+            event,
+            pointer(anchor)
+        )
     end
 end
 
@@ -1110,13 +1191,16 @@ end
 yaml_cev_type(event::Ptr{Cvoid})::Int = Int(_yaml_load_cint(event, YAML_EVENT_TYPE_OFFSET))
 
 "The anchor of an alias, scalar, sequence-start or mapping-start event, `nothing` when it has none."
-yaml_cev_anchor(event::Ptr{Cvoid})::Union{Nothing, String} = _yaml_load_cstring(event, YAML_EVENT_ANCHOR_OFFSET)
+yaml_cev_anchor(event::Ptr{Cvoid})::Union{Nothing, String} =
+    _yaml_load_cstring(event, YAML_EVENT_ANCHOR_OFFSET)
 
 "The tag of a scalar, sequence-start or mapping-start event, `nothing` when it has none."
-yaml_cev_tag(event::Ptr{Cvoid})::Union{Nothing, String} = _yaml_load_cstring(event, YAML_EVENT_TAG_OFFSET)
+yaml_cev_tag(event::Ptr{Cvoid})::Union{Nothing, String} =
+    _yaml_load_cstring(event, YAML_EVENT_TAG_OFFSET)
 
 "The byte count of a scalar event's value (libyaml's `length`, which counts a NUL inside the text)."
-yaml_cev_scalar_length(event::Ptr{Cvoid})::Int = Int(unsafe_load(Ptr{Csize_t}(event + YAML_EVENT_SCALAR_LENGTH_OFFSET)))
+yaml_cev_scalar_length(event::Ptr{Cvoid})::Int =
+    Int(unsafe_load(Ptr{Csize_t}(event + YAML_EVENT_SCALAR_LENGTH_OFFSET)))
 
 "The value of a scalar event, its `length` bytes copied out (`nothing` if the pointer is NULL; yaml4pl.c `put_scalar` reads `value` with `length`)."
 function yaml_cev_value(event::Ptr{Cvoid})::Union{Nothing, String}
@@ -1126,39 +1210,51 @@ function yaml_cev_value(event::Ptr{Cvoid})::Union{Nothing, String}
 end
 
 "A scalar event's `plain_implicit` flag."
-yaml_cev_plain_implicit(event::Ptr{Cvoid})::Bool = _yaml_load_cint(event, YAML_EVENT_SCALAR_PLAIN_IMPLICIT_OFFSET) != 0
+yaml_cev_plain_implicit(event::Ptr{Cvoid})::Bool =
+    _yaml_load_cint(event, YAML_EVENT_SCALAR_PLAIN_IMPLICIT_OFFSET) != 0
 
 "A scalar event's `quoted_implicit` flag."
-yaml_cev_quoted_implicit(event::Ptr{Cvoid})::Bool = _yaml_load_cint(event, YAML_EVENT_SCALAR_QUOTED_IMPLICIT_OFFSET) != 0
+yaml_cev_quoted_implicit(event::Ptr{Cvoid})::Bool =
+    _yaml_load_cint(event, YAML_EVENT_SCALAR_QUOTED_IMPLICIT_OFFSET) != 0
 
 "A scalar event's `style` (`YAML_*_SCALAR_STYLE`)."
-yaml_cev_scalar_style(event::Ptr{Cvoid})::Int = Int(_yaml_load_cint(event, YAML_EVENT_SCALAR_STYLE_OFFSET))
+yaml_cev_scalar_style(event::Ptr{Cvoid})::Int =
+    Int(_yaml_load_cint(event, YAML_EVENT_SCALAR_STYLE_OFFSET))
 
 "A sequence- or mapping-start event's `implicit` flag."
-yaml_cev_collection_implicit(event::Ptr{Cvoid})::Bool = _yaml_load_cint(event, YAML_EVENT_COLLECTION_IMPLICIT_OFFSET) != 0
+yaml_cev_collection_implicit(event::Ptr{Cvoid})::Bool =
+    _yaml_load_cint(event, YAML_EVENT_COLLECTION_IMPLICIT_OFFSET) != 0
 
 "A sequence- or mapping-start event's `style` (`YAML_BLOCK_SEQUENCE_STYLE`/`YAML_BLOCK_MAPPING_STYLE`)."
-yaml_cev_collection_style(event::Ptr{Cvoid})::Int = Int(_yaml_load_cint(event, YAML_EVENT_COLLECTION_STYLE_OFFSET))
+yaml_cev_collection_style(event::Ptr{Cvoid})::Int =
+    Int(_yaml_load_cint(event, YAML_EVENT_COLLECTION_STYLE_OFFSET))
 
 "A stream-start event's `encoding` (`YAML_UTF8_ENCODING`)."
-yaml_cev_encoding(event::Ptr{Cvoid})::Int = Int(_yaml_load_cint(event, YAML_EVENT_STREAM_ENCODING_OFFSET))
+yaml_cev_encoding(event::Ptr{Cvoid})::Int =
+    Int(_yaml_load_cint(event, YAML_EVENT_STREAM_ENCODING_OFFSET))
 
 "A document-start event's `implicit` flag."
-yaml_cev_document_start_implicit(event::Ptr{Cvoid})::Bool = _yaml_load_cint(event, YAML_EVENT_DOCUMENT_START_IMPLICIT_OFFSET) != 0
+yaml_cev_document_start_implicit(event::Ptr{Cvoid})::Bool =
+    _yaml_load_cint(event, YAML_EVENT_DOCUMENT_START_IMPLICIT_OFFSET) != 0
 
 "A document-end event's `implicit` flag."
-yaml_cev_document_end_implicit(event::Ptr{Cvoid})::Bool = _yaml_load_cint(event, YAML_EVENT_DOCUMENT_END_IMPLICIT_OFFSET) != 0
+yaml_cev_document_end_implicit(event::Ptr{Cvoid})::Bool =
+    _yaml_load_cint(event, YAML_EVENT_DOCUMENT_END_IMPLICIT_OFFSET) != 0
 
 # PORT: packages/yaml/yaml4pl.c parse_document (631-632), emit_event (1209-1210): parser->error/problem, emitter->error/problem
 # DIVERGES: see the piece A header, 17 and 18.
 "The parser's error code after `yaml_parser_parse` returned 0 (`YAML_*_ERROR`; yaml4pl.c `parse_document`)."
-yaml_parser_error(parser::Ptr{Cvoid})::Int = Int(_yaml_load_cint(parser, YAML_PARSER_ERROR_OFFSET))
+yaml_parser_error(parser::Ptr{Cvoid})::Int =
+    Int(_yaml_load_cint(parser, YAML_PARSER_ERROR_OFFSET))
 
 "The parser's problem text after an error, `nothing` if NULL (yaml4pl.c `parse_document`)."
-yaml_parser_problem(parser::Ptr{Cvoid})::Union{Nothing, String} = _yaml_load_cstring(parser, YAML_PARSER_PROBLEM_OFFSET)
+yaml_parser_problem(parser::Ptr{Cvoid})::Union{Nothing, String} =
+    _yaml_load_cstring(parser, YAML_PARSER_PROBLEM_OFFSET)
 
 "The emitter's error code after `yaml_emitter_emit` returned 0 (`YAML_*_ERROR`; yaml4pl.c `emit_event`)."
-yaml_emitter_error(emitter::Ptr{Cvoid})::Int = Int(_yaml_load_cint(emitter, YAML_EMITTER_ERROR_OFFSET))
+yaml_emitter_error(emitter::Ptr{Cvoid})::Int =
+    Int(_yaml_load_cint(emitter, YAML_EMITTER_ERROR_OFFSET))
 
 "The emitter's problem text after an error, `nothing` if NULL (yaml4pl.c `emit_event`)."
-yaml_emitter_problem(emitter::Ptr{Cvoid})::Union{Nothing, String} = _yaml_load_cstring(emitter, YAML_EMITTER_PROBLEM_OFFSET)
+yaml_emitter_problem(emitter::Ptr{Cvoid})::Union{Nothing, String} =
+    _yaml_load_cstring(emitter, YAML_EMITTER_PROBLEM_OFFSET)
