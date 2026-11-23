@@ -5633,7 +5633,11 @@ _manifest_pkg2_plain() = (
     (LK.yaml_murmur_hash_aligned2, Tuple{Vector{UInt8}, Int, UInt32}, false),
     (LK._yaml_anchor_bucket, Tuple{String, Int}, false),
     (LK.yaml_rehash, Tuple{LK.yaml_htable}, false),
-    (LK.yaml_find_anchor, Tuple{LK.yaml_htable, String}, false)
+    (LK.yaml_find_anchor, Tuple{LK.yaml_htable, String}, false),
+    # YAML1 piece B1 — the node stack and the Latin-1 atom name (no term type)
+    (LK.yaml_push, Tuple{Base.RefValue{Union{Nothing, LK.yaml_node}}, LK.yaml_node}, false),
+    (LK.yaml_pop, Tuple{Base.RefValue{Union{Nothing, LK.yaml_node}}, LK.yaml_node}, false),
+    (LK._yaml_latin1_sym, Tuple{String}, false)
 )
 # YAML1 piece 2 — the event-term decoding of yaml4pl.c (src/pl-yaml.jl): checked for every payload type.
 _manifest_yaml_events(T) = begin
@@ -5722,7 +5726,16 @@ _manifest_yaml_events(T) = begin
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, Nothing}, false),
         (LK.yaml_store_anchor, Tuple{LD, Nothing, Int, String}, false),
         (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, Nothing}, false),
-        (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, String}, false)
+        (LK.yaml_store_anchor, Tuple{LD, LK.yaml_htable, Int, String}, false),
+        # YAML1 piece B1 — the parse-side term layer (it builds and reads terms: no allocation claim)
+        (LK.yaml_extend, Tuple{LD, LK.yaml_node, Int, Int}, false),
+        (LK._yaml_put_functor, Tuple{LD, Int, Symbol, Int}, false),
+        (LK._yaml_unify_chars, Tuple{LD, Int, Int, Int, Base.CodeUnits{UInt8, String}}, false),
+        (LK.yaml_put_scalar, Tuple{LD, Int, Bool, LK.yaml_event}, false),
+        (LK.yaml_create_mapping, Tuple{LD, Int, LK.yaml_event}, false),
+        (LK.yaml_get_mapping_mapping, Tuple{LD, Int}, false),
+        (LK.yaml_create_sequence, Tuple{LD, Int, LK.yaml_event}, false),
+        (LK.yaml_get_sequence_list, Tuple{LD, Int}, false)
     )
 end
 

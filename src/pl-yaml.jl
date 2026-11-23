@@ -625,3 +625,223 @@ function yaml_store_anchor(
     anchors === nothing && (anchors = yaml_new_anchor_table())
     return (yaml_add_anchor(ld, anchors, anchor, node), anchors)
 end
+
+# ======================================================================================================================
+# YAML1 piece B1 (packages/yaml/yaml4pl.c, packages-yaml 0ce45ecf, lines 62-152, 344-376, 562-610): the PARSE-SIDE TERM LAYER, with no libyaml
+# in it. The parser (piece B2) walks libyaml's events and builds the Prolog term of the document with these: the stack of open containers
+# (`node`: `push`, `pop`, `extend`), the scalar (`put_scalar`, which makes the term of one scalar event: a tagged one, a number, null,
+# true/false, a special float, or a string/atom), the mapping and sequence terms (`create_mapping`, `create_sequence`: `mapping(List, ...)`/
+# `sequence(List, ...)`, wrapped in `tag(Tag, ...)` when the event has a tag) and the two readers that find the list inside one of them
+# again (`get_mapping_mapping`, `get_sequence_list`). They run over the `yaml_event` of piece 2 (the fields of libyaml's `yaml_event_t`
+# that yaml4pl.c reads), over piece 1's classifier and the term API of the kernel. Nothing here has run (no Julia process was started).
+#
+# DIVERGES (piece B1; the file's own numbering goes on):
+#  11. The node enum is three Int constants `YAML_NODE_TOP/MAPPING/SEQUENCE` (0, 1, 2; the names are `N_TOP`/`N_MAPPING`/`N_SEQUENCE`; `N_NONE`,
+#      `N_INT`, `N_FLOAT` of `ntype` are piece 1's `YAML_N_*`). `node` is the mutable struct `yaml_node`; its `parent` is `nothing` for NULL and a
+#      term reference `0` is C's `term_t 0`: `key == 0` is the C's `state->key == NULL` test (`0` is never a term reference). The stack is a
+#      `Base.RefValue{Union{Nothing, yaml_node}}` (C's `node **stack`). `push` has no `malloc` and so no `PL_resource_error("memory")` branch,
+#      `pop` and `free` leave the nodes to the garbage collector. The two `assert(0)` branches (`pop` on an empty stack, `extend` on an unknown
+#      type) are `return false` as C compiled with NDEBUG answers.
+#  12. `PL_put_functor(t, f)` (a fresh compound of fresh arguments in `t`) is not in the kernel's FLI: it is `PL_put_variable` + `PL_unify_functor`
+#      (`_yaml_put_functor`; the functor is its name and arity, as `PL_unify_functor`'s). The `FUNCTOR_*` constants are `_err_functor(ld, name, arity)`
+#      (the functor WORD); `PL_is_functor` takes the name and arity, so `tag`/2 is `mk_sym(T, :tag)`.
+#  13. `PL_unify_term(tmp, PL_FUNCTOR, FUNCTOR_eq2, PL_TERM, key, PL_TERM, v)` of `extend` is `PL_cons_functor` of a new reference (`=`/2 over `key`
+#      and `v`) + `PL_unify` + `PL_reset_term_refs` of that reference (C's `PL_unify_term` makes no reference): the same term, a fresh `=`/2 or the
+#      existing one checked.
+#  14. The event's strings are Julia `String`s (`nothing` for NULL) and the scalar's `len` is `ncodeunits(value)`, upstream's `event->data.scalar.length`
+#      (libyaml's count, which also counts a NUL byte inside the text): the classifier and `PL_put_term_from_chars` get `codeunits(value)`, so a NUL
+#      byte survives into the term as in C. `PL_unify_chars(t, REP_UTF8|type, len, s)` is `_yaml_unify_chars` (`PL_unify_text` of an `ENC_UTF8` text,
+#      as pl-pcre.jl's `re_put_chars` does for `PL_put_chars`). A scalar event with `value === nothing` (libyaml never makes one) reads as "".
+#  15. `PL_unify_atom_chars(tmp, tag)` and `PL_put_atom_chars(tag, ...)` read the C string as ISO Latin-1, byte per character, and stop at the first NUL
+#      (`_yaml_latin1_sym`): a tag with a byte >= 0x80 is NOT decoded as UTF-8, as upstream (libyaml's tag text is UTF-8: that is upstream's own mixing).
+#      `HUGE_VAL` is `Inf`. `PL_clear_exception()` takes `ld`.
+
+# PORT: packages/yaml/yaml4pl.c N_TOP, N_MAPPING, N_SEQUENCE
+# DIVERGES: see the piece B1 header, 11.
+const YAML_NODE_TOP = 0
+const YAML_NODE_MAPPING = 1
+const YAML_NODE_SEQUENCE = 2
+
+# PORT: packages/yaml/yaml4pl.c node
+# DIVERGES: see the piece B1 header, 11.
+"One open container of the parse (yaml4pl.c `node`): its parent, its type `YAML_NODE_*`, the key just read (0: none) and the document tail (term references)."
+mutable struct yaml_node
+    parent::Union{Nothing, yaml_node}
+    type::Int
+    key::Int
+    doc::Int
+end
+
+# PORT: packages/yaml/yaml4pl.c push
+# DIVERGES: see the piece B1 header, 11. Returns the new node, which is also `stack[]` now.
+"Push a copy of `old` on `stack`; returns the new top, whose `parent` is the old top (yaml4pl.c)."
+function yaml_push(stack::Base.RefValue{Union{Nothing, yaml_node}}, old::yaml_node)::yaml_node
+    n = yaml_node(stack[], old.type, old.key, old.doc)        # *n = *old; n->parent = *stack
+    stack[] = n                                               # *stack = n
+    return n
+end
+
+# PORT: packages/yaml/yaml4pl.c pop
+# DIVERGES: see the piece B1 header, 11. `old` receives a copy of the popped top, `parent` included (`*old = *n`).
+"Pop the top of `stack` into `old`; false (the C `assert(0)`) when the stack is empty (yaml4pl.c)."
+function yaml_pop(stack::Base.RefValue{Union{Nothing, yaml_node}}, old::yaml_node)::Bool
+    n = stack[]
+    if n !== nothing
+        old.parent = n.parent                                 # *old = *n
+        old.type = n.type
+        old.key = n.key
+        old.doc = n.doc
+        stack[] = n.parent                                    # *stack = n->parent
+        return true
+    end
+    return false
+end
+
+# PORT: packages/yaml/yaml4pl.c extend
+# DIVERGES: see the piece B1 header, 11 and 13.
+"Add the value `v` to the container `state`: unify it (top), append it to the list (sequence), or hold it as the key / complete the `Key=Value` (mapping) (yaml4pl.c)."
+function yaml_extend(ld::PL_local_data{T}, state::yaml_node, tmp::term_t, v::term_t)::Bool where {T}
+    if state.type == YAML_NODE_TOP
+        return PL_unify(ld, state.doc, v)
+    elseif state.type == YAML_NODE_SEQUENCE
+        return PL_unify_list(ld, state.doc, tmp, state.doc) && PL_unify(ld, tmp, v)
+    elseif state.type == YAML_NODE_MAPPING
+        if state.key != 0
+            key = state.key
+            state.key = 0
+            PL_unify_list(ld, state.doc, tmp, state.doc) || return false
+            pair = PL_new_term_ref(ld)
+            rc = PL_cons_functor(ld, pair, _err_functor(ld, Symbol("="), 2), key, v) && PL_unify(ld, tmp, pair)
+            PL_reset_term_refs(ld, pair)
+            return rc
+        else
+            state.key = v
+            return true
+        end
+    end
+    return false
+end
+
+# PORT: packages/yaml/yaml4pl.c PL_put_functor (as yaml4pl.c's put_scalar, create_mapping and create_sequence use it)
+# DIVERGES: see the piece B1 header, 12.
+"Put a new compound `name`/`arity` of fresh variables into `t` (kernel stand-in for `PL_put_functor(t, f)`)."
+function _yaml_put_functor(ld::PL_local_data{T}, t::term_t, name::Symbol, arity::Int)::Bool where {T}
+    PL_put_variable(ld, t)
+    return PL_unify_functor(ld, t, mk_sym(T, name), arity)
+end
+
+# PORT: packages/yaml/yaml4pl.c PL_unify_chars (as yaml4pl.c's put_scalar uses it)
+# DIVERGES: see the piece B1 header, 14.
+"Unify `t` with the first `len` bytes of `s` (UTF-8) made a `type` (`PL_ATOM` or `PL_STRING`) (kernel stand-in for `PL_unify_chars(t, REP_UTF8|type, len, s)`)."
+function _yaml_unify_chars(ld::PL_local_data{T}, t::term_t, type::Int, len::Int, s::AbstractVector{UInt8})::Bool where {T}
+    txt = PL_chars_t(Vector{UInt8}(s[1:len]), len, ENC_UTF8, false)
+    return PL_unify_text(ld, t, 0, txt, type)
+end
+
+# PORT: packages/yaml/yaml4pl.c PL_unify_atom_chars, PL_put_atom_chars (as yaml4pl.c's put_scalar, create_mapping and create_sequence use them)
+# DIVERGES: see the piece B1 header, 15.
+"The atom name the C string `s` makes through `PL_*_atom_chars`: its bytes up to the first NUL, each one an ISO Latin-1 character."
+_yaml_latin1_sym(s::String)::Symbol = Symbol(String(Char.(codeunits(_yaml_cstring(s)))))
+
+# PORT: packages/yaml/yaml4pl.c put_scalar
+# DIVERGES: see the piece B1 header, 12, 14 and 15. `iskey` is a Bool (C `int`). `t` must be a fresh variable, as the C callers pass one.
+"""
+Put the term of the scalar event `event` into `t` (yaml4pl.c): `tag(Tag, Text)` when it has a tag, else (by the classifier of piece 1) a number,
+`null`/`true`/`false`, a special float, or a string (an atom when `iskey`). Float overflow reads as `inf`/`-inf`.
+"""
+function yaml_put_scalar(ld::PL_local_data{T}, t::term_t, iskey::Bool, event::yaml_event)::Bool where {T}
+    value = event.value === nothing ? "" : event.value
+    s = codeunits(value)                                      # char *s = event->data.scalar.value
+    len = ncodeunits(value)                                   # size_t len = event->data.scalar.length
+    type = iskey ? PL_ATOM : PL_STRING                        # flags = iskey ? PL_ATOM|REP_UTF8 : PL_STRING|REP_UTF8
+
+    if event.tag !== nothing
+        tmp = PL_new_term_ref(ld)
+        return _yaml_put_functor(ld, t, :tag, 2) &&
+               _PL_get_arg(ld, 1, t, tmp) &&
+               PL_unify_atom(ld, tmp, mk_sym(T, _yaml_latin1_sym(event.tag))) &&
+               _PL_get_arg(ld, 2, t, tmp) &&
+               _yaml_unify_chars(ld, tmp, type, len, s)
+    end
+
+    nt = yaml_is_number(s)
+    if nt != YAML_N_NONE
+        if PL_put_term_from_chars(ld, t, UInt32(REP_UTF8 | CVT_EXCEPTION), s, len)
+            return true
+        end
+        if nt == YAML_N_FLOAT                                 # float overflow: YAML wants a float
+            PL_clear_exception(ld)
+            return PL_put_float(ld, t, _yaml_byte(s, 1) == Int('-') ? -Inf : Inf)
+        end
+        return false
+    elseif yaml_is_null(s)
+        return PL_unify_atom(ld, t, mk_sym(T, :null))
+    elseif yaml_is_true(s)
+        return PL_unify_atom(ld, t, mk_sym(T, Symbol("true")))
+    elseif yaml_is_false(s)
+        return PL_unify_atom(ld, t, mk_sym(T, Symbol("false")))
+    end
+    d = yaml_is_special_float(s)
+    if d !== nothing
+        return PL_unify_float(ld, t, d)
+    end
+    return _yaml_unify_chars(ld, t, type, len, s)
+end
+
+# PORT: packages/yaml/yaml4pl.c create_mapping
+# DIVERGES: see the piece B1 header, 12 and 15. The tag of the mapping-start event is `event.tag`.
+"Put `mapping(_, _, _)` into `t`, wrapped in `tag(Tag, ...)` when the event has a tag (yaml4pl.c)."
+function yaml_create_mapping(ld::PL_local_data{T}, t::term_t, event::yaml_event)::Bool where {T}
+    _yaml_put_functor(ld, t, :mapping, 3) || return false
+
+    if event.tag !== nothing
+        tag = PL_new_term_ref(ld)
+        if !PL_put_atom(ld, tag, mk_sym(T, _yaml_latin1_sym(event.tag))) ||
+           !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
+            return false
+        end
+    end
+
+    return true
+end
+
+# PORT: packages/yaml/yaml4pl.c get_mapping_mapping
+# DIVERGES: see the piece B1 header, 12.
+"Replace `t`, a term made by `yaml_create_mapping`, by the first argument of its `mapping/3` (through `tag/2` when tagged) (yaml4pl.c)."
+function yaml_get_mapping_mapping(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    if PL_is_functor(ld, t, mk_sym(T, :tag), 2)
+        _PL_get_arg(ld, 2, t, t)
+    end
+    _PL_get_arg(ld, 1, t, t)                                  # mapping
+
+    return true
+end
+
+# PORT: packages/yaml/yaml4pl.c create_sequence
+# DIVERGES: see the piece B1 header, 12 and 15. The tag of the sequence-start event is `event.tag`.
+"Put `sequence(_, _, _)` into `t`, wrapped in `tag(Tag, ...)` when the event has a tag (yaml4pl.c)."
+function yaml_create_sequence(ld::PL_local_data{T}, t::term_t, event::yaml_event)::Bool where {T}
+    _yaml_put_functor(ld, t, :sequence, 3) || return false
+
+    if event.tag !== nothing
+        tag = PL_new_term_ref(ld)
+        if !PL_put_atom(ld, tag, mk_sym(T, _yaml_latin1_sym(event.tag))) ||
+           !PL_cons_functor(ld, t, _err_functor(ld, :tag, 2), tag, t)
+            return false
+        end
+    end
+
+    return true
+end
+
+# PORT: packages/yaml/yaml4pl.c get_sequence_list
+# DIVERGES: see the piece B1 header, 12.
+"Replace `t`, a term made by `yaml_create_sequence`, by the first argument of its `sequence/3` (through `tag/2` when tagged) (yaml4pl.c)."
+function yaml_get_sequence_list(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    if PL_is_functor(ld, t, mk_sym(T, :tag), 2)
+        _PL_get_arg(ld, 2, t, t)
+    end
+    _PL_get_arg(ld, 1, t, t)
+
+    return true
+end
