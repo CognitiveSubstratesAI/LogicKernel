@@ -297,7 +297,9 @@ echo "== verdicts (b) =="
 vd() {   # vd SHA READER [VAR=value ...]
     local sha="$1" vr="$2"; shift 2
     fresh; bash tools/land_check.sh gateset "$sha" > /dev/null 2>&1
-    env LAND_VERDICT_READ="$vr" "$@" bash tools/land_check.sh verdicts "$sha" > "$T/vd.out" 2>&1
+    # the fake gh always: the release is read through it, and no case may reach the network (no status json = gh fails = no release)
+    env PATH="$FAKEBIN:$PATH" GITHUB_REPOSITORY=o/r FAKE_GH_JSON="$T/no_such_status.json" LAND_VERDICT_READ="$vr" "$@" \
+        bash tools/land_check.sh verdicts "$sha" > "$T/vd.out" 2>&1
 }
 vd "$GOOD" "$T/vr_ok.py" GH_TOKEN=TESTTOKEN-not-real; expect "verdicts: landable, exit 0" verdicts PASS "2 batteries read"
 grep -q -- "--set $T/lw/gate_set.txt" "$T/lw/vr_args.txt" && grep -q -- "--equivalents $T/lw/equivalents.tsv" "$T/lw/vr_args.txt" &&
@@ -312,6 +314,37 @@ vd "$GOOD" "$T/vr_nobat.py"; expect "verdicts: no battery read is no pass" verdi
 vd "$GOOD" "$T/vr_garbage.py"; expect "verdicts: unreadable output" verdicts FAIL "unreadable"
 vd "$GOOD" "$T/does_not_exist.py"; expect "verdicts: reader missing from the trusted tree" verdicts FAIL "land the reader first"
 fresh; bash tools/land_check.sh verdicts "$GOOD" > /dev/null 2>&1; expect "verdicts: no reader and no gate set extracted" verdicts FAIL
+
+# the release of a non-empty src diff (D-1006 (2)): the verdicts step hands the reader the description of an APPROVER's success
+# `land/approved` status as --release, and prints the reader's src diff text (numstat and sha256) in its row, PASS or FAIL
+HEX64="$(printf 'numstat' | sha256sum | cut -d' ' -f1)"
+cat > "$T/vr_src.py" << 'EOF'
+import json, os, sys
+open(os.environ["LAND_WORK"] + "/vr_args.txt", "w").write("\n".join(sys.argv[1:]))
+ok = "--release" in sys.argv and "src-diff " in sys.argv[sys.argv.index("--release") + 1]
+print(json.dumps({"landable": ok, "ci_ok": True, "ev_ok": True,
+                  "batteries": [{"name": "B1", "clean": True, "state": "done"}],
+                  "landing": [{"check": "src diff", "ok": ok, "text": "sha256 SENTINEL-DIGEST; numstat: 2 1 src/a.jl"}]}))
+sys.exit(0 if ok else 1)
+EOF
+reldesc() { status_json "$GOOD" "$1" "$2" "$3" > "$T/rel.json"; }   # reldesc STATE DESCRIPTION LOGIN
+reldesc success "LAND $GOOD [ids: src-diff $HEX64]" AuditBot
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rel.json"
+expect "verdicts: an approver's release reaches the reader, a src diff it accepts passes" verdicts PASS "src diff: sha256 SENTINEL-DIGEST"
+if grep -qxF -- "--release" "$T/lw/vr_args.txt" && grep -qxF -- "LAND $GOOD [ids: src-diff $HEX64]" "$T/lw/vr_args.txt"; then ok "verdicts: the reader gets --release with the whole description"
+else bad "verdicts: release argument" "$(cat "$T/lw/vr_args.txt")"; fi
+vd "$GOOD" "$T/vr_src.py"
+expect "verdicts: no release readable (gh fails): the reader fails the src diff, the row says so" verdicts FAIL "src diff: sha256 SENTINEL-DIGEST"
+if grep -qxF -- "--release" "$T/lw/vr_args.txt"; then bad "verdicts: --release passed with no release"; else ok "verdicts: no release, no --release argument"; fi
+reldesc success "LAND $GOOD [ids: src-diff $HEX64]" stranger
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rel.json"
+expect "verdicts: a release set by a stranger is no release" verdicts FAIL "landing checks failed: src diff"
+if grep -qxF -- "--release" "$T/lw/vr_args.txt"; then bad "verdicts: a stranger's release reached the reader"; else ok "verdicts: a stranger's release does not reach the reader"; fi
+reldesc failure "LAND $GOOD [ids: src-diff $HEX64]" AuditBot
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/rel.json"
+expect "verdicts: a release whose state is not success is no release" verdicts FAIL "landing checks failed: src diff"
+vd "$GOOD" "$T/vr_ok.py" FAKE_GH_JSON="$T/rel.json"
+expect "verdicts: an empty src diff row adds no src note" verdicts PASS "2 batteries read"
 
 echo "== marker (c) =="
 MKSHA="$GOOD"
@@ -358,6 +391,16 @@ status_json "$EQRM" success "LAND $EQRM" AuditBot > "$T/e9.json"; mk "$T/e9.json
 MKSHA="$GOOD"
 status_json "$GOOD" success "LAND $GOOD [ids: D-0950:NEWMUT]" AuditBot > "$T/e10.json"; mk "$T/e10.json"; expect "marker ids: ids named but none added" marker FAIL "does not add"
 status_json "$GOOD" success "LAND $GOOD [ids: D-0950]" AuditBot > "$T/e11.json"; mk "$T/e11.json"; expect "marker ids: a bare D-id with no row added" marker FAIL "does not add"
+# `src-diff <sha256>` in the ids list (D-1006 (2)): form-checked here, compared by tools/verdict_read.py; never an id of an evidence row
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64]" AuditBot > "$T/q1.json"; mk "$T/q1.json"; expect "marker src-diff: a well-formed release, no rows added: passes" marker PASS "src-diff $HEX64"
+status_json "$EQADD" success "LAND $EQADD [ids: D-0950:NEWMUT,src-diff $HEX64]" AuditBot > "$T/q2.json"; MKSHA="$EQADD"; mk "$T/q2.json"; expect "marker src-diff: beside an equivalents id: passes" marker PASS "D-0950:NEWMUT"
+status_json "$EQADD" success "LAND $EQADD [ids: src-diff $HEX64]" AuditBot > "$T/q3.json"; mk "$T/q3.json"; expect "marker src-diff: the src-diff names no evidence row" marker FAIL "not named"
+MKSHA="$GOOD"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff ${HEX64:0:63}]" AuditBot > "$T/q4.json"; mk "$T/q4.json"; expect "marker src-diff: 63 digits" marker FAIL "malformed src-diff"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff $(echo "$HEX64" | tr a-f A-F)]" AuditBot > "$T/q5.json"; mk "$T/q5.json"; expect "marker src-diff: upper-case digits" marker FAIL "malformed src-diff"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff]" AuditBot > "$T/q6.json"; mk "$T/q6.json"; expect "marker src-diff: no digest" marker FAIL "malformed src-diff"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64,src-diff $(printf 'other' | sha256sum | cut -d' ' -f1)]" AuditBot > "$T/q7.json"; mk "$T/q7.json"; expect "marker src-diff: two different digests" marker FAIL "more than one"
+status_json "$GOOD" success "LAND $GOOD [ids: src-diff $HEX64]" stranger > "$T/q8.json"; mk "$T/q8.json"; expect "marker src-diff: a stranger's release is still refused" marker FAIL "not in land_approvers"
 
 echo "== decide =="
 fill() {   # fill ROW=STATUS... : write a full table with the given statuses (default PASS)
