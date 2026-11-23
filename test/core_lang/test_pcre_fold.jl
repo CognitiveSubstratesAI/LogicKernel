@@ -296,6 +296,7 @@ end
     re = _pc_re("a")
     rc, val, _ = _pf_fold(re, _q(s); opts = "[start(2)]")
     @test rc == LK.FTRUE && val == length(collect(eachmatch(r"a", s[3:end])))
+    @test re.start_flags.flags == 0 && re.start_flags.seen == 0                      # the loop works on a copy: the source regex is untouched
     rc, val, _ = _pf_fold(re, _q(s); opts = "[start(6)]")
     @test rc == LK.FTRUE && val == 0
     # a start beyond the subject: domain_error(offset, 99); no fold ran
@@ -310,8 +311,11 @@ end
     rc, val, _ = _pf_fold(re, _q("baa"); opts = "[anchored(true)]")
     @test rc == LK.FTRUE && val == 0
     # capture_type reaches unify_match
-    rc, val, _ = _pf_fold(_pc_re("(\\w)"), _q("ab"); clos = "keep", v0 = "none", opts = "[capture_type(atom)]")
+    rcap = _pc_re("(\\w)")
+    rc, val, _ = _pf_fold(rcap, _q("ab"); clos = "keep", v0 = "none", opts = "[capture_type(atom)]")
     @test rc == LK.FTRUE && val == _ex((0, :b), (1, :b))
+    @test rcap.capture_type.flags == LK.CAP_DEFAULT                                  # the option went to the copy, not the source
+    LK.re_free(rcap)
     LK.re_free(re)
 end
 
@@ -326,6 +330,13 @@ end
     rc, val, _ = _pf_fold(re, _q("xyz"); v0 = "5", v = "5")
     @test rc == LK.FTRUE && val == 5
     LK.re_free(re)
+    # the loop that ends on the empty match at the end of the subject unifies too: `x*` on "ab" has 3 matches
+    rex = _pc_re("x*")
+    rc, val, _ = _pf_fold(rex, _q("ab"); v = "3")
+    @test rc == LK.FTRUE && val == 3
+    rc, _, exc = _pf_fold(rex, _q("ab"); v = "4")
+    @test rc == LK.FFALSE && exc === nothing
+    LK.re_free(rex)
 end
 
 @testset "re_foldl_: subjects (code list, string) and errors read before the loop" begin
@@ -393,6 +404,13 @@ end
     @test rc == LK.FTRUE
     @test endswith(out, "\$capture=3 {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT})")
     @test out == _pf_expect(re, "(?<z>a)(?<b_I>b)(c)", "CAP_DEFAULT", " {3 0:CAP_DEFAULT 1:z:CAP_DEFAULT 2:b:CAP_INTEGER 3:CAP_DEFAULT}")
+    LK.re_free(re)
+
+    # an unnamed group's own type is printed (the entry is set by hand: no pattern gives an unnamed group a type)
+    re = _pc_re("(a)b")
+    re.capture_names[2].type = LK.CAP_RANGE
+    rc, out, _ = _pf_portray(re)
+    @test rc == LK.FTRUE && endswith(out, " {1 0:CAP_DEFAULT 1:CAP_RANGE})")
     LK.re_free(re)
 
     # the regex capture type is printed by name
