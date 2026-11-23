@@ -171,7 +171,7 @@ end
 # PORT: pl-coverage.c bump
 # DIVERGES: file-wide 2 (a plain `+=`); the argument is `Union{Nothing, cov_obj}` without a type parameter, as `share_coverage_data`'s.
 "Count one call (`CALL_PORT`) or one exit (`EXIT_PORT`) at `obj`; a `nothing` is no site (pl-coverage.c)."
-function bump(obj::Union{Nothing, cov_obj}, port::Int)::Nothing
+function bump(obj::Union{Nothing, cov_obj}, port::Integer)::Nothing
     if obj !== nothing
         if port == CALL_PORT
             obj.enter += 1                                      # ATOMIC_INC(&cov->enter)
@@ -189,7 +189,7 @@ end
 # without a clause (upstream dereferences it) records no clause site.
 "Record `port` at frame `fr`: the call port counts its call site, the unify port the clause's entry, the exit port the clause's exit and the call site's (pl-coverage.c)."
 function record_coverage(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Integer
 )::Nothing where {T}
     f = ld.frames[fr]
     if port == CALL_PORT
@@ -211,7 +211,7 @@ end
 # DIVERGES: the database and local data are arguments; `fr` is the frame's index.
 "The VM's hook: `record_coverage` while the collection is active (pl-coverage.h `Coverage`)."
 @inline function Coverage(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Int
+    gd::PL_global_data{T}, ld::PL_local_data{T}, fr::Int, port::Integer
 )::Nothing where {T}
     ld.coverage.active != 0 && record_coverage(gd, ld, fr, port)
     return nothing
