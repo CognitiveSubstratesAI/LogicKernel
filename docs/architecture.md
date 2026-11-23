@@ -6281,8 +6281,8 @@ the SSU one is `S_SSU_DET`, :3743, SSU1/SSU2). What SSU1b ports:
   `P_DET` in the reload and also applies it, as `P_DET` is outside `P_ATEND`). White-box rows: test/db/test_reload_blocks_swipl.jl `r19b`; the second
   consult itself is LB6b's.
 - **Not here:** the `det/1` directive and `$/1` as predicates (boot/init.pl: R2's consult); `PRED_DET` of the saved state (pl-qlf.c:1162 in
-  `loadPredicateFlags`, :3136 in `predicateFlags`): both functions are unwritten in the kernel, on main and on the QLF line (`wip/qlfrd2`: the
-  predicate writer and reader of the state file are unwritten, `state` is `nothing`); owner LB3 (docs/r2_owners.tsv `kfile:pl-qlf.jl`).
+  `loadPredicateFlags`, :3136 in `predicateFlags`): both functions are unwritten in the kernel, as the loader and writer of the state file are on every branch (`state` is `nothing`: a decided
+  non-port for now, see the LB3 section); owner LB3 (docs/r2_owners.tsv `kfile:pl-qlf.jl`).
 
 Tests: test/core_lang/test_det_ssu_swipl.jl (upstream's `det_decl` unit of tests/core_lang/test_det_decl.pl and the tabled SSU case
 `ssu_complete_fails` of tests/tabling/test_tabled_supervisor.pl as kernel rows, answers pinned on the pinned swipl; white-box rows on the supervisor
@@ -7234,6 +7234,12 @@ What LB3 adds (pl-qlf.c, os/pl-file.c, pl-init.c; written edit-only, nothing com
 - **Pinned by** test/files/test_qlf_swipl.jl: the loadable program against swipl 10.1.19's answers (generator and pins in
   evidence/LB3/ql/), plus white-box rows (prefix `_ql_`); every row that depends on the kernel carries `UNVERIFIED on the kernel: gate decides`.
   Mutants: tools/mutants/LB3C.py (54).
+- **Decided non-port FOR NOW: the QLF loader and writer (audit D-0994 (1)).** `$qlf_load`/2, `$open_wic`/2, `$qlf_open`/1 and the writer
+  side (`qlfSaveSource`, `saveWicClause`, the predicate and clause writers; about 3500 of pl-qlf.c's 4976 lines) are NOT ported. They are
+  refused by name (`NotPortedError`, src/pl-qlf.jl `_qlf_refused`). The boot does not need them: the kernel loads the vendored `.pl` files
+  (`boot_from_source!`), never a state file. The QLF line (QLF2, QLF3, QLFROWS: the header, the XR reader, `$qlf_module`/2 and the
+  readers listed above) is on the integration line; the INT-MERGE-20 finding is that `wip/qlf3` carries nothing the line lacks for QLF, so
+  no pending branch holds the loader or writer: they exist on no branch. The QLF4 loader waits for Shivaji's scope decision.
 
 ## P1 — term inspection: `arg/3`, `compound_name_arity/3`, `compound_name_arguments/3`, `subsumes_term/2`, `'$factorize_term'/3`, `'$term_size'/3`, `term_singletons/2`, `'$term_multitons'/2`, `is_most_general_term/1` (R2 boot C predicates, audit D-0306 items 2-3)
 
