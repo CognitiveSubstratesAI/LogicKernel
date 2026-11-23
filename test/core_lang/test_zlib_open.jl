@@ -10,7 +10,7 @@
 # the filter's init failures, and the Prolog-level test_zlib.pl / zlib.pl rows (gzopen/3,4, the 7 binary fixtures; piece Z4: the vendored plunit run).
 # KERNEL-SIDE (a row rests on what the stream layer does, not on zlib4pl.c): the stream table count after the failure arm; a memory stream's flags.
 # NOT DONE (named): registration in module `system` at a booted database is asserted on the tables (`_PRED_TABLES`, `_FOREIGN_VA`), not by calling `zopen/3` through
-# the VM; the `static_extensions` row of src/pl-load.jl is absent in this base (DIVERGES 11), so `$activate_static_extension(zlib4pl)` is not exercised.
+# the VM; the `static_extensions` row of src/pl-load.jl (`zlib4pl`, INT-MERGE-23) is present since the integration with JSON1's pl-load.jl, but `$activate_static_extension(zlib4pl)` is still not exercised here.
 using Test, LogicKernel
 const LK = LogicKernel
 

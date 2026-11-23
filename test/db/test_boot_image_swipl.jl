@@ -28,6 +28,11 @@
 #     (`current_predicate('$activate_static_extension'/1)`, :549, fails in the kernel too), so use_foreign_library/1,2,
 #     use_foreign_library_noi/1 and ensure_shlib/0 are left undefined and unload_file_/1 keeps one clause (FLAG F8: the
 #     boot-file consequence of D-0151).
+#     INT-FIX-24: STALE since the static-extension form of src/pl-load.jl is registered at boot (JSON1): `current_predicate(
+#     '$activate_static_extension'/1)` now SUCCEEDS in the kernel, so :549-589 is taken (use_foreign_library/1 and
+#     use_foreign_library_noi/1 defined, `loading/1` and `foreign_predicate/2` dynamic, current_foreign_library/2 and
+#     system:'$foreign_registered'/2 defined); the config rows below (_BI_T1_CONFIG, _BI_T3_CONFIG) still say the older
+#     answer and are NOT re-derived here (listed in evidence/R2/int_merge1_handoff.md, INT-FIX-24; the gate prints the values).
 # The five `'$wrap$…'` closures that tabling.pl:2356 and :2407-2411 `:- table` make through wrap_predicate (pl-wrap.c
 # assert_wrapper, landed with TAB1-min) exist on BOTH sides since pl-wrap.c landed: the oracle lists them (they are rows of
 # the .out) and the kernel compares them as any row (the earlier KNOWN DIFFERENCE LD12, "`:- table` raises in the kernel", is gone).
@@ -216,6 +221,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # COMP-EXT replay (wip/compext-int on wip/int-g1 37d561d1): the replay registers eight foreign rows of `system`: '$notrace'/1, '$vmi_property'/2, '$spy'/1, '$nospy'/1 (pl-pro.c, pl-comp.c, pl-trace.c),
 # '$fetch_vm'/4, '$break_pc'/3, '$break_at'/3, '$xr_member'/2 (pl-comp.c); all eight are rows of the oracle's list ('$predefine_foreign'/1 was registered at the tip already). RE-COUNTED by the same script (bifor.py)
 # on the replayed tree, not summed: 53 not registered (61 before the replay) - 4 (the calibration offset) = 49. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
+# INT-FIX-24 (wip/int-g2, the zlib/json/pcre integration): `$activate_static_extension`/1 is NO row of test_boot_image_swipl_rows.out (the pin's swipl is built without O_STATIC_EXTENSIONS), so
+# it is not in this count whichever form registers it: int-g1's refusal and JSON1's real form are each ONE `PL_extension("\$activate_static_extension", 1, ...)` pair. Derived by the file's own script
+# (bifor.py WT: foreign oracle rows 761, registered pairs 735, missing foreign 53; the same 53 as at the COMP-EXT replay), so the constant is unchanged: 53 - 4 = 49. The registrations of json (4), pcre (8)
+# and zlib (2) are not oracle rows either: they leave this count alone. DERIVED, NOT RUN: the gate prints the PIN line (D-0083, a registration count).
 const _BI_KERNEL_MISSING_FOREIGN = 49     # COMP-EXT replay: script count 53 on the replayed tree - 4 (calibrated on 2 measured points), DERIVED, NOT RUN; see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
