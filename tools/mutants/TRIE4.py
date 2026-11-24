@@ -11,7 +11,8 @@
 #   test_trie_compiled_swipl.pl, answers in test_trie_compiled_swipl.out: swipl's, and the kill testset by row name) or its kernel-only
 #   testset KD-1; TW = test/core_lang/test_trie_swipl.jl (white-box rows on LK.* internals: trie_discard_clause :161-164 and `_tr_discard_clause_rows` at the end of the file, trie_table_size
 #   :746/:755), TP = test/core_lang/test_trie_preds_swipl.jl, TO = test/core_lang/test_cont_boot_swipl.jl (the opcode order of the tail of
-#   the code table), TB = test/db/test_boot_image_swipl.jl (the boot-module predicate rows).
+#   the code table), TB = test/db/test_boot_image_swipl.jl (the boot-module predicate rows), TG = test/core_lang/test_trie_gen_swipl.jl (rows t52 and t53 of its program:
+#   a tabled predicate over the answer trie, the kill rows of TR4-K4 and TR4-S4 since EQ8; swipl's lines in its .out).
 # TARGETS (audit D-0238): every test file that runs the mutated code and can see its effect. The compile block runs through `$trie_compile` and
 #   `trie_gen_compiled/2,3` (TC); trie_discard_clause also under TW (rows :161-164) and through every trie change TP makes; the VM bodies and the `_trie_*`
 #   helpers run only in TC's rows; a dropped registration (`initTries!`, its call in src/pl-setup.jl) also TB, a reordered code table TO. The
@@ -28,8 +29,10 @@
 #   (TR4-D3, the retract of the discarded clause, is no longer deferred: the row `_tr_discard_clause_rows` of TW reads the erased flag of the clause: it kills TR4-D3, TR4-D4, TR4-D5.)
 #   Drafted and left out of this list as not worth a CI slot: the attributed-variable choices and `compounds -= popn` (TR3), TN_DELAYINFO and the `error` atom
 #   (TB4, TR2), the empty-children path and trie_table_size of a compiled trie (TR2, TB3): each has the same owner and the same reason as a row above.
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR4-E9 (c2 is never emitted), TR4-N2 (T_POPN 1 is T_POP),
-#   TR4-K4 (the cached `fail` atom), TR4-S4 (compile_trie answers `fail` for an empty trie), TR4-D6 (the `::Clause{T}` assertion of trie_discard_clause).
+# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR4-E9 (c2 is never emitted) and TR4-D6 (the `::Clause{T}` assertion of
+#   trie_discard_clause), both ratified by audit D-1017 Q5. TR4-N2, TR4-K4 and TR4-S4 were declared equivalent and are KILLS since EQ8 (the declarations ignored the code
+#   stream length that compiled_size counts, TRIE_DISCARDABLE and a table evaluated while its own trie is enumerated): rows TW (white-box), TG t52, TG t53;
+#   the trace is evidence/R2/eight_equiv_trace.md of the channel.
 # Every `old` was counted EXACTLY once in its file by a python3 -I script at the tip of wip/tr4 when this file was written (no Julia ran); `new` != `old`; no duplicate
 #   id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
 TC = "test/core_lang/test_trie_compiled_swipl.jl"
@@ -37,7 +40,8 @@ TW = "test/core_lang/test_trie_swipl.jl"
 TP = "test/core_lang/test_trie_preds_swipl.jl"
 TO = "test/core_lang/test_cont_boot_swipl.jl"
 TB = "test/db/test_boot_image_swipl.jl"
-TARGETS = [TC, TW, TP, TO, TB]               # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
+TG = "test/core_lang/test_trie_gen_swipl.jl"   # the .pl/.out rows t52, t53 (tabling over the trie: TR4-K4, TR4-S4; EQ8)
+TARGETS = [TC, TW, TP, TO, TB, TG]           # the union of every mutant's targets (mutate_ci.py plan reads TARGETS)
 F = "src/pl-trie.jl"
 W = "src/pl-wam.jl"
 V = "src/pl-vmi.jl"
@@ -88,10 +92,9 @@ MUTANTS = [
     m("TR4-N1 POP key: popn == 2 chooses T_POP (KILL TC t8: `f(g(h(1)), ...)` pops two with one T_POP)",
       "                popn == 1 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)",
       "                popn == 2 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)"),
-    m("TR4-N2 POP key: always T_POPN (EQUIVALENT: T_POPN with n == 1 is T_POP)",
+    m("TR4-N2 POP key: always T_POPN (KILL TW `compile_trie_node: a POP key of one pop is T_POP, of two T_POPN 2`, WHITE-BOX since EQ8: `cl.codes` holds T_POPN 1; no answer differs, the code stream is one code longer)",
       "                popn == 1 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)",
-      "                add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)",
-      eq="src/pl-wam.jl:3775-3785 (T_POPN: save the state, pop n times, TrieNextArg) does what src/pl-wam.jl:3767-3772 (T_POP) does for n == 1; only the code stream differs"),
+      "                add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)", targets=[TC, TW]),
     m("TR4-N3 functor key: no T_TRY_FUNCTOR for a non-last child (KILL TC t0: the first alternative's mismatch fails the clause, f(2) is lost)",
       "                if st.try_\n                    add_vmi_else_d!(st, T_TRY_FUNCTOR, code(key))\n                else\n                    add_vmi_d!(st, T_FUNCTOR, code(key))\n                end",
       "                add_vmi_d!(st, T_FUNCTOR, code(key))"),
@@ -138,9 +141,8 @@ MUTANTS = [
       "    if tr.value_count == 0\n        dbref = _atom_word!", "    if tr.value_count == 1\n        dbref = _atom_word!"),
     m("TR4-K3 the generator instruction by the wrong arity (KILL TC t0, t1: T_TRIE_GEN3 for key-only)",
       "    gen = def.arity == 2 ? T_TRIE_GEN2 : T_TRIE_GEN3", "    gen = def.arity == 3 ? T_TRIE_GEN2 : T_TRIE_GEN3"),
-    m("TR4-K4 the cached `fail` atom is not kept (EQUIVALENT: compile_trie answers the same atom again)",
-      "        dbref = _atom_word!(ld, mk_sym(T, :fail))\n        tr.clause = dbref\n", "        dbref = _atom_word!(ld, mk_sym(T, :fail))\n",
-      eq="src/pl-trie.jl:2467-2471: an empty trie answers `fail` again on the next call (t21, t29 see the same atom), S_TRIE_GEN backtracks on it (src/pl-wam.jl:3646); trie_discard_clause (:173) clears the word only to retract a clause, none exists for `fail`"),
+    m("TR4-K4 the cached `fail` atom is not kept (KILL TG t52: a complete empty table called twice is TRIE_DISCARDED only if `tr.clause` holds `fail`, trie_maybe_discard_nodes needs `tr.clause != 0`; swipl: discarded(true))",
+      "        dbref = _atom_word!(ld, mk_sym(T, :fail))\n        tr.clause = dbref\n", "        dbref = _atom_word!(ld, mk_sym(T, :fail))\n", targets=[TC, TW, TP, TG]),
     m("TR4-K5 the clause reference is not kept (KILL TC t0: S_TRIE_GEN's `_trie_clause_cref` is `nothing`, a TypeError)",
       "            tr.clause_cref = cref ", "            tr.clause_cref = nothing "),
     m("TR4-K6 the clause word is not kept (KILL TC t51: every call compiles a new clause)",
@@ -180,9 +182,8 @@ MUTANTS = [
       "    stg_w == stg_fail && @goto deep_backtrack       # if ( dbref == ATOM_fail ) FRAME_FAILED\n", "    nothing\n", file=W),
     m("TR4-S2 S_TRIE_GEN: a non-trie atom is no type error (KILL TC KD-1 k1, k2: a FieldError for `foo`)",
       "        stg_tr === nothing && @goto trie_gen_type_error     # if ( !(t = symbol_trie(dbref)) )", "        false && @goto trie_gen_type_error                  # if ( !(t = symbol_trie(dbref)) )", file=W),
-    m("TR4-S4 S_TRIE_GEN: an empty trie is not left at once (EQUIVALENT: compile_trie answers `fail`, the next line backtracks)",
-      "            stg_tr.value_count == 0 && @goto deep_backtrack # FRAME_FAILED\n", "            nothing\n", file=W,
-      eq="src/pl-trie.jl:2467-2471: compile_trie answers `fail` for value_count == 0, and src/pl-wam.jl:3646 `stg_w == stg_fail && @goto deep_backtrack` leaves the frame the same way (t4, t5 see no difference)"),
+    m("TR4-S4 S_TRIE_GEN: an empty trie is not left at once (KILL TG t53: trie_gen_compiled on the table's own empty trie while it is evaluated; the mutant stores `fail` in `tr.clause`, table_complete_all then discards the nodes: discarded(true), swipl false)",
+      "            stg_tr.value_count == 0 && @goto deep_backtrack # FRAME_FAILED\n", "            nothing\n", file=W, targets=[TC, TG]),
     m("TR4-S5 S_TRIE_GEN: the single-answer shortcut is taken for arity 3 (KILL TC, the testset `TR4-S5: ...`: a table trie with an IDG node and one answer is not compiled, `tr.clause` stays 0)",
       "            if DEF.arity == 2                       # if ( DEF->functor->arity == 2 && (answer=tbl_single_answer(t)) )", "            if DEF.arity == 3                       # if ( DEF->functor->arity == 2 && (answer=tbl_single_answer(t)) )", file=W),
     # ---- T_TRIE_GEN2/3 (t_trie_gen), T_VALUE

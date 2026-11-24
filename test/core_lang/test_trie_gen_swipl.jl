@@ -6,7 +6,7 @@
 # driver below); when `swipl` is on PATH the .out is checked against a live run as well.
 # NOT HERE, with the reason: attributed_query, stored_attvar_beside_constants (attributed variables in keys: TR3, a named refusal here);
 # stack_shift (no stack shift moves a position); garbage_collection_between_answers is row t51 (the epoch follows `ld.gc.stats.totals.collections` since G1; the replay path is also exercised by ld.trie_gen_force_epoch below);
-# generated_shapes (random: the rows are a fixed list); the thread, tabling and compiled (trie_gen_compiled: TR4) tests; '$trie_property'
+# generated_shapes (random: the rows are a fixed list); the thread and compiled (trie_gen_compiled: TR4) tests (the tabling rows t52, t53 are the EQ8 kill rows of TR4-K4 and TR4-S4); '$trie_property'
 # invalidated/reevaluated/idg_* (the IDG is TB6's: those names FAIL here, as swipl's do for a trie with no IDG, row t21);
 # trie_insert_insert/3, trie_lookup_gen/3, trie_lookup_delete/3 are not defined at the pin (O_NESTED_TRIES is defined nowhere).
 # KNOWN DIFFERENCES (named): the node handle of '$trie_gen_node'/3 is an integer here, a pointer in swipl (rows never print one, t17 checks it
@@ -251,6 +251,15 @@ end
     @test kl["t49"] == _row("t49", _el([_ei(2), _ei(1)]))   # the last nonvar argument keeps pruning going
     @test kl["t50"] == _row("t50", _el([_ei(2), _ei(1), _ei(4), _ei(3)]))   # the descent below a backtrack still prunes
     @test kl["t51"] == _row("t51", _ei(100))                # a collection between the answers: the kept cursors are rebuilt
+end
+
+# EQ8 kill rows of TR4-K4 and TR4-S4 (tools/mutants/TRIE4.py): what the `fail` atom stored by compile_trie in `tr.clause` of an EMPTY trie decides is
+# TRIE_DISCARDED (trie_maybe_discard_nodes needs `tr.clause != 0`). The two values are swipl's (10.1.20, the .out; both were the predictions read off the C).
+@testset "EQ8 kill rows: the discarded flag of an empty table trie (t52, t53)" begin
+    names = _trie_names()
+    kl = Dict(zip(["ok"; names], kernel_lines(_TRIE_PL, names)))
+    @test kl["t52"] == _row("t52", _ea("true"))    # TR4-K4: the second call of a complete empty table compiles `fail` and discards the nodes
+    @test kl["t53"] == _row("t53", _ea("false"))   # TR4-S4: trie_gen_compiled on the table's own empty trie, while it is evaluated, leaves before the discard
 end
 
 # The replay path: with the epoch advancing at every call the kept cursors are rebuilt from the root; the answers must not change.

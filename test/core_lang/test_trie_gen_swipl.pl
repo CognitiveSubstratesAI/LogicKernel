@@ -155,3 +155,16 @@ t50(R) :- trie_new(T), trie_insert(T, f(a, _), 1), trie_insert(T, f(a, b), 2),
 mkgar :- numlist(1, 400, L), length(L, _).
 t51(R) :- mkgar, trie_new(T), forall(between(1, 100, I), trie_insert(T, p(I, f(a), _))),
     findall(I, ( trie_gen(T, p(I, f(a), b)), garbage_collect ), Ids), length(Ids, R).
+% EQ8 (TR4-K4, TR4-S4; the tabling side of the compiled trie: tools/mutants/TRIE4.py): the `fail` atom that compile_trie stores in `tr.clause` of an EMPTY trie
+% decides whether `trie_maybe_discard_nodes` (pl-trie.h:339-344: needs `trie->clause != 0`) may set TRIE_DISCARDED on a complete table with no answer.
+% t52: a complete variant table with no answers, called a SECOND time: the S_TABLED path (complete_answer_clause: compile_trie, then trie_maybe_discard_nodes)
+:- table k4q/1.
+k4q(_) :- fail.
+t52(R) :- abolish_all_tables, ( k4q(_) -> true ; true ), ( k4q(_) -> true ; true ),
+    '$tbl_variant_table'(0, user:k4q(_), T, _, _, _), '$trie_property'(T, discarded(D)), R = D.
+% t53: trie_gen_compiled/2 run by the body of the tabled predicate on its OWN, still incomplete, empty variant trie (S_TRIE_GEN: an empty trie leaves at once,
+% before it could compile `fail` into `tr.clause`); the table is completed by that one call, then `discarded/1` is read (ONE call only: a second one would
+% reach complete_answer_clause and give the same answer in both versions)
+:- table s4q/1.
+s4q(_) :- '$tbl_variant_table'(0, user:s4q(_), T, _, _, _), nb_setval(s4_trie, T), ( trie_gen_compiled(T, _) -> true ; true ), fail.
+t53(R) :- abolish_all_tables, ( s4q(_) -> true ; true ), nb_getval(s4_trie, T), '$trie_property'(T, discarded(D)), R = D.

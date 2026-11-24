@@ -1742,3 +1742,37 @@ end
 @testset "compile_trie_node: a flagged node with children is a leaf, a value-less leaf ends the code (white-box; TR4-N21, TR4-N23)" begin
     _tr_compile_leaf_rows(_TT)
 end
+
+# EQ8 WHITE-BOX row for TR4-N2 (compile_trie_node, src/pl-trie.jl): a POP key of ONE pop compiles to the one-code T_POP, a POP of n > 1 to T_POPN n
+# (pl-trie.c compile_trie_node; pl-vmi.c T_POP, T_POPN). At run time T_POPN 1 does what T_POP does, so no answer differs: the difference is the CODE STREAM,
+# one code longer per single POP, which `'$trie_property'(T, compiled_size(S))` and trie_table_size count (pl-trie.jl). The row reads the kept clause's
+# `cl.codes` of a trie built by trie_lookup_abstract (white-box: NO swipl line can pin it, swipl's compiled_size is a machine size, DIVERGES in
+# test_trie_property_idg_swipl.jl). The mutant (always T_POPN) puts T_POPN 1 into the first stream and leaves no T_POP in it.
+function _tr_compile_pop_rows(::Type{T}) where {T}
+    s(n) = lk_sym(T, n)
+    t1 = _trx(T, :f, _trx(T, :g, s(:a)), s(:b))                          # keys f/2 g/1 a POP(1) b: one pop
+    t2 = _trx(T, :f, _trx(T, :g, _trx(T, :h, s(:a))), s(:b))             # keys f/2 g/1 h/1 a POP(2) b: two pops with one key
+    gd, ld, t = _tr_engine(T, T[t1, t2])
+    function codes_of(slot::Int, pop::Int)
+        tr = LK.trie_create(T)
+        rc, nid = LK.trie_lookup_abstract(ld, tr, 0, -(t + slot), true, nothing, nothing)
+        @test rc == 1 && nid != 0
+        @test count(==(LK.TRIE_KEY_POP(pop)), _tr_path(tr, nid)) == 1     # the premise: the one POP key of the row
+        tr.nodes[nid].value = UInt64(5)
+        tr.nodes[nid].flags |= LK.TN_PRIMARY
+        tr.value_count = 1
+        return copy(_tr_compile_codes(gd, ld, T, tr))
+    end
+    codes1 = codes_of(1, 1)
+    @test LK.T_POP in codes1                       # a single pop is the one-code T_POP
+    @test !(LK.T_POPN in codes1)                   # kills TR4-N2: the mutant emits T_POPN 1 (one code longer)
+    codes2 = codes_of(2, 2)
+    i = findfirst(==(LK.T_POPN), codes2)
+    @test i !== nothing && codes2[i + 1] == 2      # two pops are T_POPN with the operand 2
+    @test !(LK.T_POP in codes2)
+    return nothing
+end
+
+@testset "compile_trie_node: a POP key of one pop is T_POP, of two T_POPN 2 (white-box; TR4-N2)" begin
+    _tr_compile_pop_rows(_TT)
+end
