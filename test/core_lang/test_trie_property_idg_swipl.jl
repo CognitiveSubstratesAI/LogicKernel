@@ -52,10 +52,14 @@ t_tp03(R) :- tp_t(_), tp_all(R).
 t_tp04(R) :- trie_new(T), tp_props(T, L0), trie_insert(T, a, 1), trie_insert(T, b, 2), ( trie_gen_compiled(T, _) -> true ; true ),
     tp_props(T, L1), R = r(L0, L1).
 t_tp05(R) :- tm_q(_), tp_tab(tm_q(_), Q), tp_tab(tm_p(_), P), tp_props(Q, LQ), tp_props(P, LP), R = r(q(LQ), p(LP)).
+t_tp06(R) :- trie_new(T), trie_insert(T, a, 1), trie_insert(T, b, 2), ( trie_gen_compiled(T, _) -> true ; true ),
+    '$trie_property'(T, compiled_size(R)).
 tp_q1(G, A) :- ( catch(call(G, R), E, R = exc(E)) -> true ; R = failed ), format(atom(A), "~q", [R]).
 """
 
 const _TP_CASES = ["t_tp01", "t_tp02", "t_tp03", "t_tp04", "t_tp05"]
+# the case swipl is NOT asked: its answer differs from the kernel's by design (tp06, the exact `compiled_size`; see the testset below)
+const _TP_KERNEL_ONLY = ["t_tp06"]
 
 # swipl 10.1.20 (`tp_q1(t_tp<NN>, A)`, in the order of `_TP_CASES`), two identical runs (md5 equal), 2026-11-14
 const _TP_PINNED = [
@@ -119,14 +123,14 @@ function _tp_kernel_lines()::Vector{String}
     ld = LK.PL_local_data{_TP}(gd)
     st, _ = LK.load_file!(gd, ld, f)
     st === :ok || return ["load: $st"]
-    return [_tp_ask(gd, ld, case) for case in _TP_CASES]
+    return [_tp_ask(gd, ld, case) for case in [_TP_CASES; _TP_KERNEL_ONLY]]
 end
 
 # an exception while loading or asking becomes five lines that differ from the pins (a throw outside a testset gives no verdict in CI mode)
 const _TP_KERNEL = try
     _tp_kernel_lines()
 catch e
-    ["exception: $(typeof(e))" for _ in _TP_CASES]
+    ["exception: $(typeof(e))" for _ in [_TP_CASES; _TP_KERNEL_ONLY]]
 end
 
 @testset "tp01-tp03: the counters, the sizes and the edge counts of an incremental chain, as swipl's (pl-trie.c:4326-4351)" begin
@@ -146,6 +150,17 @@ end
     @test _TP_KERNEL[4] != replace(
         _TP_PINNED[4], "[none,none,none,none,none,int]" => "[none,none,none,none,none,none]"
     )
+end
+
+# tp06 (TBP-E1): the EXACT `compiled_size` of the tp04 trie ({a, b}, compiled by trie_gen_compiled/2), pinned at 192 = 8 * sizeofClause(16) = 8 * (8 + 16).
+# swipl 10.1.20 answers 192 for the same trie too (`sizeofClause(code_size)` = offsetof(struct clause, codes[code_size]), pl-trie.c:4301-4310). KNOWN
+# DIFFERENCE (DIVERGES of pl_trie_property2_va, src/pl-trie.jl:3211-3214): the two numbers are computed differently, so their agreement here is the
+# coincidence of this trie's size and NOT a guarantee: swipl counts the bytes of its C struct for its own `code_size` codes, the kernel takes
+# `sizeofClause(n) = 8 + n` (src/pl-incl.jl:171, a count of positions for the n codes of its own compiled clause) and counts each as 8 bytes. The row
+# pins the kernel's own deterministic number; it is not in `_TP_CASES` (swipl is not asked for it: another trie or another build need not agree).
+@testset "tp06: the exact compiled_size of the tp04 trie is the kernel's own 8 * (8 + 16) = 192 (swipl: 192 here, counted differently; pl-trie.c:4301-4310)" begin
+    @test _TP_KERNEL[6] == "192"
+    @test _TP_KERNEL[6] != "24"       # the mutant (sizeofClause(n) without the factor 8): 8 + 16
 end
 
 @testset "tp05: the mono dependency table is part of idg_size (pl-trie.c:4341-4351: sizeof(*idg->mono) + sizeofTablePP(idg->mono->deps))" begin

@@ -27,11 +27,14 @@
 #   * TR1-V12 (trie_lookup/3 answers an inner node): owner TR2 ($trie_property / trie_gen read the
 #     arena after a delete) or a TW row that sets ld.GD (the foreign is pl_trie_delete3_va, src/pl-trie.jl:1999); V12 alone is unreachable while deletes prune.
 #   (C6, S2, P3, V3, V4 were DEFERRED in the draft: the rows added after it kill them, TW:348, 542, 632, 1273/1276; B6 by the row t76, TP:261.)
-# EQUIVALENT mutants (declared with their reason, file:line in the `equivalent` text): TR1-A4 (the chunk-size clamp at the maximum), TR1-S4
-#   (sweep_at at kept*2 == the minimum), TR1-X1 (the cyclic check one compound later; the bounded TR1-L1 is its kill), TR1-W2b (the tab.wild loop
-#   of a keyed value, by the gnd_value_key contract), TR1-K3 (trie_term/2's magic test: the range test refuses a destroyed trie's handle),
-#   TR1-D2 (clear_node's CN_ALL chunked branch: clear_nodes resets what it frees),
-#   TR1-V22 (unify_value's reserved-value branch: the atom branch reads the same reserved symbol, src/pl-atom.jl:2317-2326).
+# EQUIVALENT mutants (declared with their reason, anchored at the `old` line and the function name; ledger rows evidence/equivalents.tsv, audit D-1028):
+#   TR1-A4 (alloc_trie_node, pl-trie.jl:838: the chunk-size clamp at the maximum), TR1-S4 (sweep_node_chunks, :952: sweep_at at kept*2 == the minimum),
+#   TR1-D2 (clear_node, :995: CN_ALL comes only from clear_nodes, whose resets erase what the extra free edits), TR1-V22 (unify_value, :1867: both arms
+#   read the symbol setupProlog records), TR1-W2b (intern_indirect, :1193-1194: the tab.wild loop of a keyed value; residual risk in the text).
+# KILL rows added by TRIE-KILL-8 (audit D-1028 (2); TR1-X1 and TR1-K3 were declared equivalent at D-0554 and are NOT: the traces of
+#   evidence/R2/eight_equiv_trace2.md): TR1-X1 by the row t87 of TP ('$trie_insert_abstract'(T, 999, X) with X = f(X): swipl raises
+#   type_error(acyclic_term, _), node_count 1), TR1-K3 by the row kd10 of TP (a trie_gen choice point open while trie_destroy runs; the KNOWN DIFFERENCE
+#   row: swipl's debug build asserts at pl-trie.c:2193). TARGETS of both: TW, TP, TG, TA (TT; TP holds the new rows).
 # Every `old` was counted EXACTLY once in its file by a python3 -I script at f504d2c2 (the last commit of src/pl-trie.jl and src/pl-setup.jl; the 112
 #   mutants, no Julia ran); `new` != `old`; no duplicate
 #   id. RE-FIT any `old` that `tools/warm.sh fmt` rewraps.
@@ -108,7 +111,7 @@ MUTANTS = [
       "    elseif tr.node_count <= TRIE_SINGLE_NODES\n", "    elseif tr.node_count < TRIE_SINGLE_NODES\n"),
     m("TR1-A4 chunk size clamp >= (EQUIVALENT: at bytes == TRIE_CHUNK_MAX the assignment is the identity)",
       "    bytes > TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)\n", "    bytes >= TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)\n",
-      eq="src/pl-trie.jl:644 (alloc_trie_node): `bytes > TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)`: at bytes == TRIE_CHUNK_MAX (16384, :87) the assignment gives bytes the value it already has"),
+      eq="src/pl-trie.jl:838 (alloc_trie_node): `bytes > TRIE_CHUNK_MAX && (bytes = TRIE_CHUNK_MAX)`: at bytes == TRIE_CHUNK_MAX (16384) the clamp stores the value bytes already holds (D-0554, D-1028)"),
     m("TR1-A5 chunk size grows by +1024 (KILL TW:470-478: 2048, 4096, 8192 expected)",
       "    bytes = c !== nothing ? Int(c.bytes) * 2 : TRIE_CHUNK_MIN\n", "    bytes = c !== nothing ? Int(c.bytes) + 1024 : TRIE_CHUNK_MIN\n"),
     m("TR1-A6 chunk header 64, not 72 (KILL TW:456, c.size == 23)",
@@ -132,7 +135,7 @@ MUTANTS = [
       "        if c.live == 0 && c !== head\n", "        if c.live == 0\n"),
     m("TR1-S4 sweep_at kept*2 >= MIN (EQUIVALENT: at kept*2 == TRIE_SWEEP_MIN both branches give 1024)",
       "    head.sweep_at = UInt32(kept * 2 > TRIE_SWEEP_MIN ? kept * 2 : TRIE_SWEEP_MIN)\n", "    head.sweep_at = UInt32(kept * 2 >= TRIE_SWEEP_MIN ? kept * 2 : TRIE_SWEEP_MIN)\n",
-      eq="src/pl-trie.jl:733 (sweep_node_chunks): at kept*2 == TRIE_SWEEP_MIN (1024, :90) the `>` branch yields TRIE_SWEEP_MIN and the `>=` branch yields kept*2, the same 1024"),
+      eq="src/pl-trie.jl:952 (sweep_node_chunks): at kept*2 == TRIE_SWEEP_MIN (1024) the `>` arm yields TRIE_SWEEP_MIN and the `>=` arm yields kept*2, the same 1024 (D-0554, D-1028)"),
     m("TR1-S5 sweep_at = kept*3 (KILL TW:523, sweep_at == 1234)",
       "    head.sweep_at = UInt32(kept * 2 > TRIE_SWEEP_MIN ? kept * 2 : TRIE_SWEEP_MIN)\n", "    head.sweep_at = UInt32(kept * 3 > TRIE_SWEEP_MIN ? kept * 3 : TRIE_SWEEP_MIN)\n"),
     m("TR1-S6 the chunk list keeps empty chunks (KILL TW:522, length(cs2) == 6)",
@@ -154,7 +157,7 @@ MUTANTS = [
       "        tr.flags &= ~(TRIE_DISCARDABLE | TRIE_DISCARDED)\n", "        nothing\n"),
     m("TR1-D2 clear_node CN_ALL frees every chunked node (EQUIVALENT: clear_nodes resets chunks, free_ids and the node arena right after)",
       "            if (flags & CN_ALL) == 0 || (n.flags & TN_CHUNKED) == 0\n", "            if true\n",
-      eq="src/pl-trie.jl:772 (clear_node): clear_nodes (:193-207) calls clear_node(CN_ALL) (:194), then free_node_chunks (:196), `resize!(tr.nodes, 1)` (:198) and `empty!(tr.free_ids)` (:199); the frees the mutant adds (free_trie_node, and a sweep it may trigger) only touch the chunk list, free_ids and node fields that those lines drop, and the walk uses the `children` captured before the free: nothing observable is left"),
+      eq="src/pl-trie.jl:995 (clear_node): CN_ALL comes only from clear_nodes, whose resets (free_node_chunks, `resize!(tr.nodes, 1)`, `empty!(tr.free_ids)`) erase what the extra free_trie_node (and a sweep it may trigger) edits; the pool bytes of every chunk go back once either way (D-0554, D-1028)"),
     m("TR1-D3 empty_trie keeps value_count (KILL TW:683 value_count == 0)",
       "        tr.value_count = 0\n", "        nothing\n"),
     m("TR1-D4 trie_single_value_node: value_count is not asked (KILL TW:639/643)",
@@ -192,7 +195,7 @@ MUTANTS = [
     m("TR1-W2b the tab.wild loop of a keyed value (EQUIVALENT by the key invariant: a keyed value never equals a wildcard one)",
       "        for i in tab.wild\n            gnd_equal(tab.values[i], v) && return consTagged(i, indirect_tagex(v))\n",
       "        for i in Int[]\n            gnd_equal(tab.values[i], v) && return consTagged(i, indirect_tagex(v))\n",
-      eq="src/pl-trie.jl:952 (intern_indirect, the branch of a value with a key, :939): `gnd_value_key` (src/default_term.jl:54, contract :44-52) agrees with gnd_equal, so a value with a key is never gnd_equal to a keyless (wildcard) one and the loop over tab.wild finds nothing for it"),
+      eq="src/pl-trie.jl:1193-1194 (intern_indirect, the `tab.wild` loop of a value with a key): a keyed value never gnd_equals a keyless (wildcard) entry; RESIDUAL RISK (D-1028 (1)): same host-type class implies same keyed-ness, read off Term{G} and AltTerm only; revisit when a third term type exists"),
     m("TR1-I3 a wildcard value is not found again (KILL TW:827-828)",
       "            gnd_equal(tab.values[i], v) &&\n                return consTagged(i, indirect_tagex(tab.values[i]))\n",
       "            false &&\n                return consTagged(i, indirect_tagex(tab.values[i]))\n"),
@@ -201,9 +204,8 @@ MUTANTS = [
     # ---- lookup (TW _tr_lookup_*_rows 849-1080, _tr_insert_flat_rows 1082, _tr_lookup_flat_rows 1137)
     m("TR1-L1 the cyclic check, bounded: an acyclic term of depth 1000 is flagged (KILL TW:1038, rc2 == 1; the cyclic term still stops at 5000 compounds: no hang)",
       "                if compounds == 1000 && add && !is_acyclic_cells(ld, l)\n", "                if (compounds == 1000 && add && is_acyclic_cells(ld, l)) || compounds == 5000\n"),
-    m("TR1-X1 the cyclic check at depth 1001 (EQUIVALENT: an infinite term reaches 1001 too, a finite one is acyclic at either depth: same rc, same pruned trie; the bounded kill of the check is TR1-L1)",
-      "                if compounds == 1000 && add && !is_acyclic_cells(ld, l)\n", "                if compounds == 1001 && add && !is_acyclic_cells(ld, l)\n",
-      eq="src/pl-trie.jl:1094 (trie_lookup_abstract): the test only moves the depth at which the walk looks; a cyclic term is infinite, so it passes 1001 as well, and prune_error (:1096) removes every node added, an acyclic term is acyclic at either depth: same rc, same trie. TW:1021-1023 (the cyclic rows) cannot see the depth; the kill of the check itself is the bounded TR1-L1"),
+    m("TR1-X1 the cyclic check at depth 1001 (KILL TP:198 the .out line of the row t87, and TP:422 t87: '$trie_insert_abstract'(T, 999, X), X = f(X): swipl raises type_error(acyclic_term, _) and prunes to node_count 1; the check at 1001 is never reached, the walk abstracts first; the bounded kill of the check itself is TR1-L1)",
+      "                if compounds == 1000 && add && !is_acyclic_cells(ld, l)\n", "                if compounds == 1001 && add && !is_acyclic_cells(ld, l)\n"),
     m("TR1-L2 the abstraction budget is not spent (KILL TW:997, h(a) below g is abstracted at (1,1))",
       "                aleft != typemax(Int) && (aleft -= 1)\n", "                nothing\n"),
     m("TR1-L3 the budget is renewed below from_depth (KILL TW:997)",
@@ -289,9 +291,8 @@ MUTANTS = [
       "    nid = h & 0xffffffff\n", "    nid = h\n"),
     m("TR1-V15 trie_term/2: a node id past the arena is not refused (KILL TP:373 kd6, a BoundsError instead of existence_error)",
       "!(1 <= nid <= length(tr.nodes))", "!(0 <= nid)"),
-    m("TR1-K3 trie_term/2: a destroyed trie is not refused by its magic (EQUIVALENT: the destroyed trie's arena is reset to the root, a handle fails the range test)",
-      "tr === nothing || tr.magic != TRIE_MAGIC || ", "tr === nothing || ",
-      eq="src/pl-trie.jl:2053 (pl_trie_term2_va): trie_destroy empties the trie (trie_empty -> empty_trie :216-223 -> clear_nodes :193-207, `resize!(tr.nodes, 1)` at :198; no TR1 code raises tr.references, TB1's), so the handle of a destroyed trie (nid >= 2: trie_insert/4 never hands out the root) fails `1 <= nid <= length(tr.nodes)`; row kd7 (test/core_lang/test_trie_preds_swipl.jl:374) runs it"),
+    m("TR1-K3 trie_term/2: a destroyed trie is not refused by its magic (KILL TP:472 kd10, a KNOWN DIFFERENCE row: a trie_gen choice point holds the trie open (references 1, the arena is not emptied) while trie_destroy runs, the handle still names a node: the original raises existence_error(trie_node, H), X unbound; the mutant answers f(a); swipl's debug build asserts at pl-trie.c:2193)",
+      "tr === nothing || tr.magic != TRIE_MAGIC || ", "tr === nothing || "),
     m("TR1-V16 trie_destroy/1 does not mark (KILL TP:211 t4: the second destroy raises existence_error; TP t3)",
       "    tr.magic = TRIE_CMAGIC\n    trie_empty(gd, tr)\n    return FTRUE\n", "    trie_empty(gd, tr)\n    return FTRUE\n"),
     m("TR1-V17 trie_destroy (the function) does not mark (KILL TW:1224 and TW life rows tr2.magic == TRIE_CMAGIC)",
@@ -306,7 +307,7 @@ MUTANTS = [
       "    if isRecord(v1) && isRecord(v2)\n", "    if isRecord(v1) || isRecord(v2)\n"),
     m("TR1-V22 unify_value: the reserved value is read as a plain atom (EQUIVALENT: `_atom_value` reads the symbol recorded for ATOM_trienode, the reserved symbol itself; probed, booted and unbooted)",
       "        v = if value == ATOM_trienode\n", "        v = if false\n",
-      eq="the else branch reads the symbol recorded for ATOM_trienode, the reserved symbol itself (src/pl-atom.jl:2317-2326, src/pl-setup.jl:263, src/pl-trie.jl:1577)"),
+      eq="src/pl-trie.jl:1867 (unify_value): both arms read the symbol setupProlog records for ATOM_trienode, mk_reserved_symbol(T, :trienode) (D-0554, D-1028)"),
     # ---- unify_key (TP t41-t52, t71-t73; TW _tr_unify_rows 1283)
     m("TR1-U1 unify_key: a repeated variable is not unified (KILL TW:1296: f(X, X) against f(1, 2) must answer (false, 0))",
       "                unify_ptrs_cells(ld, p, st.vars[index]) || return BOOLEX_FALSE\n", "                unify_ptrs_cells(ld, p, st.vars[index])\n"),

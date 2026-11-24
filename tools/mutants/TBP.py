@@ -7,7 +7,8 @@
 #   tp02 (after `assertz(tp_d(2))`: invalidated 1), tp03 (after the re-evaluation: reevaluated 1, compiled_size an integer), tp04 (a plain trie: the
 #   four IDG branches fail, compiled_size fails until the trie is compiled), tp05 (a monotonic chain: idg_size 240 = 80 + 24 + 136) and the testset
 #   `sizeofTablePP` (the modelled capacity: 136 for up to two entries, 200 for three).
-# EQUIVALENT: one (E1), with the file:line of its reason below: the NUMBER of `compiled_size` is a machine size, pinned only as "an integer > 0".
+# EQUIVALENT: none. TBP-E1 was declared one (the number of `compiled_size` as a machine size, pinned only as "an integer > 0"); the audit ruled it a KILL
+#   row (D-1028 (2)): the kernel's number is deterministic and the mutant moves it by the factor 8; the row tp06 pins it (swipl's 192 in a comment).
 # TARGETS (audit D-0238): TP for every mutant; TG (the trie rows that call `'$trie_property'/2`) and TZ (`compiled_size` of the answer-discard rows)
 #   for the property function; the tabling rows that read the IDG sizes (`'$idg_thread_summary'/3`, the pools) for SIZEOF_IDG_NODE.
 TP = "test/core_lang/test_trie_property_idg_swipl.jl"
@@ -27,9 +28,8 @@ MUTANTS = [
          file=TR, targets=[TP, TG, TZ],
          old='        if (cref = tr.clause_cref) !== nothing          # (dbref = trie->clause) && (cref = clause_clref(dbref))\n',
          new='        if false          # (dbref = trie->clause) && (cref = clause_clref(dbref))\n'),
-    dict(id="TBP-E1 compiled_size counts positions, not bytes (EQUIVALENT at the rows: the number is a machine size, swipl 160 and 192, the kernel's differs by the DIVERGES at src/pl-trie.jl:3072-3078; TP pins `int` only)",
+    dict(id="TBP-E1 compiled_size counts positions, not bytes (KILL TP tp06, test_trie_property_idg_swipl.jl:162-163: the tp04 trie's exact compiled_size is the kernel's own 8 * sizeofClause(n); the mutant answers sizeofClause(n), one eighth; swipl answers 192, a DIVERGES of pl_trie_property2_va, src/pl-trie.jl:3253)",
          file=TR, targets=[TP, TG, TZ],
-         equivalent="src/pl-trie.jl:3072-3078 (the DIVERGES of the function): compiled_size is the kernel's own byte count of the kept clause; swipl's number (160, 192 in tp03/tp04 at the pin) is a machine size no row can pin, TP keeps `int` (> 0); positions vs bytes are both > 0",
          old='PL_unify_int64(ld, arg, 8 * sizeofClause(length(cref.clause.codes)))',
          new='PL_unify_int64(ld, arg, sizeofClause(length(cref.clause.codes)))'),
     dict(id='TBP-I1 invalidated reads the reevaluated counter (KILL TP tp02: the pin is invalidated 1, reevaluated 0)',

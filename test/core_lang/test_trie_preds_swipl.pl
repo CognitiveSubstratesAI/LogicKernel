@@ -273,3 +273,7 @@ t85(R) :- put_attr(X, user, 1), trie_new(T), trie_insert(T, f(X), 1, H), retract
 t86(R) :- put_attr(X, user, 1), trie_new(T), trie_insert(T, f(X, b), 1, H), put_attr(W, user, 1),
     ( trie_term(H, f(W, b)) -> R1 = yes ; R1 = no ), put_attr(W2, user, 2), ( trie_term(H, f(W2, b)) -> R2 = yes ; R2 = no ),
     ( trie_term(H, f(_, c)) -> R3 = yes ; R3 = no ), R = [R1, R2, R3].
+% t87: '$trie_insert_abstract'/3 with a size of 999 on a cyclic key: the abstraction budget runs out exactly at the 1000th compound, where the
+% cyclic check sits (pl-trie.c:1822 `++compounds == 1000 && add && !is_acyclic(p)`), so swipl raises type_error(acyclic_term, _) and prunes the
+% trie to its root (node_count 1). A check that moved to the 1001st compound is never reached (the next compound is abstracted first): TR1-X1.
+t87(R) :- trie_new(T), X = f(X), cyc('$trie_insert_abstract'(T, 999, X), R1), '$trie_property'(T, node_count(N)), R = [R1, N].

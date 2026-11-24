@@ -417,6 +417,9 @@ end
     @test row("t84") == _er("t84", _el([_ei(7), _ea("yes")]))                          # an attvar nested in an attribute value
     @test row("t85") == _er("t85", _atoms("b"))                                         # the END key binds the new attvar: its hook runs
     @test row("t86") == _er("t86", yn("yes", "yes", "no"))
+    # TR1-X1: '$trie_insert_abstract'(T, 999, X), X = f(X): swipl 10.1.20 (real run) raises type_error(acyclic_term, _) and the pruned trie has node_count 1
+    # (the budget of 999 ends exactly at the 1000th compound, where the cyclic check sits; at 1001 the mutant never checks, the walk abstracts)
+    @test row("t87") == _er("t87", _el([cyc("\$trie_insert_abstract", 3, 0), _ei(1)]))
 end
 
 # KD-1: the rows swipl and the kernel answer differently BY DESIGN. Each pins the kernel's exact current answer; swipl's is in the
@@ -437,6 +440,8 @@ kd6(R) :- trie_new(T), trie_insert(T, a, 1, H), H2 is H + 1000000, fn(trie_term(
 kd7(R) :- trie_new(T), trie_insert(T, a, 1, H), trie_destroy(T), fn(trie_term(H, _), H, R).
 kd8(R) :- fn(trie_term(0, _), 0, R).
 kd9(R) :- fn(trie_term(-1, _), -1, R).
+kd10(R) :- trie_new(T), trie_insert(T, f(a), v, H), trie_insert(T, f(b), w), trie_gen(T, _, _), trie_destroy(T),
+    fn(trie_term(H, X), H, R0), ( var(X) -> R1 = unbound ; R1 = bound ), R = [R0, R1], !.
 """
 
 @testset "TR1 known differences KD-1: a bad node handle (swipl: type_error(address, _) / undefined behaviour)" begin
@@ -460,6 +465,11 @@ kd9(R) :- fn(trie_term(-1, _), -1, R).
     @test row("kd7") == _er("kd7", _ea("existence_error"))
     @test row("kd8") == _er("kd8", _ea("existence_error"))
     @test row("kd9") == _er("kd9", _ea("existence_error"))
+    # KNOWN DIFFERENCE (TR1-K3): the handle of a trie destroyed while a trie_gen choice point is OPEN (the trie holds a reference, so its arena is not
+    # emptied: the node is still there). swipl 10.1.20 (debug build, real run) has NO answer: `unify_trie_term` ASSERTS `trie_ptr->magic == TRIE_MAGIC`
+    # (pl-trie.c:2193) and the process is killed (a release build reads a destroyed trie). The kernel refuses by the magic test of pl_trie_term2_va
+    # (its own DIVERGES, src/pl-trie.jl:2422-2426): existence_error(trie_node, H) and X stays unbound. Without the magic test the node would answer f(a).
+    @test row("kd10") == _er("kd10", _el([_ea("existence_error"), _ea("unbound")]))
 end
 
 # DEFKILL5 rows (white-box over a program, no oracle line beyond the numbers cited): TR1-V6 and TR1-V11.
