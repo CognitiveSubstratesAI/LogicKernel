@@ -87,7 +87,7 @@ MUTANTS = [
     m("TR4-E9 add_smallint!: the instruction is c2 (EQUIVALENT: every call passes the same code twice)",
       "add_smallint!(st::trie_compile_state, c1::code, c2::code, w::word)::Nothing =\n    add_vmi_d!(st, c1, code(w))",
       "add_smallint!(st::trie_compile_state, c1::code, c2::code, w::word)::Nothing =\n    add_vmi_d!(st, c2, code(w))",
-      eq="src/pl-trie.jl:2297, :2371 and :2405 call it with (T_SMALLINT, T_SMALLINT, w), the W form c2 is never emitted (CODES_PER_WORD == 1, the DIVERGES note of add_smallint!)"),
+      eq="src/pl-trie.jl:3391-3392 (add_smallint!): its three callers, src/pl-trie.jl:3493, :3606 and :3647, all pass (T_SMALLINT, T_SMALLINT, w), so c1 == c2 and the W form is never emitted (T_SMALLINTW is not declared; CODES_PER_WORD == 1, the DIVERGES note of add_smallint!); upstream pl-trie.c:4643-4655 and its callers :4785, :4975, :5018 (ratified EQUIVALENT, audit D-1017 Q5)"),
     # ---- compile_trie_node (TC rows)
     m("TR4-N1 POP key: popn == 2 chooses T_POP (KILL TC t8: `f(g(h(1)), ...)` pops two with one T_POP)",
       "                popn == 1 ? add_vmi!(st, T_POP) : add_vmi_d!(st, T_POPN, code(popn))\n            elseif isFunctor(key)",
@@ -166,7 +166,7 @@ MUTANTS = [
     m("TR4-D6 trie_discard_clause drops the `::Clause{T}` assertion (EQUIVALENT at run time: the reference always holds its clause)",
       "                cl = cref.clause::Clause{T}                     # cref->value.clause",
       "                cl = cref.clause                                # cref->value.clause", targets=TD,
-      eq="src/pl-proc.jl:514-515 newClauseRef makes the cell `ClauseRef{T}(nothing, key, clause, nothing)` with a `Clause{T}`, src/pl-trie.jl:3441-3445 compile_trie keeps only that cell (`tr.clause_cref = cref`), and no site sets `cref.clause = nothing`: the assertion cannot raise, and without it the same clause is read (a static-analysis finding: JET sees a `Union{Nothing, Clause{T}}`; pin pl-trie.c:283 reads `cref->value.clause` with no test)"),
+      eq="src/pl-trie.jl:218 (trie_discard_clause :210-225): `cref` is `newClauseRef(clause, key)` (src/pl-proc.jl:533-536, the cell `ClauseRef{T}(nothing, key, clause, nothing)` with a `Clause{T}`) and compile_trie keeps only that cell (`tr.clause_cref = cref`, src/pl-trie.jl:3730); the only other cell with `clause = nothing` is a list-index cell (src/pl-index.jl:796) that never reaches `trie.clause_cref`, and no site writes `ClauseRef.clause` afterwards: the assertion cannot raise, and without it the same clause is read (JET sees a `Union{Nothing, Clause{T}}`; the pin pl-trie.c:283 reads `cref->value.clause` with no test) (ratified EQUIVALENT, audit D-1017 Q5)"),
     # ---- the registration (BOOT PATH: judged by tools/mutate_ci.py one)
     m("TR4-I1 trie_gen_compiled/2 has no supervisor (KILL TB: the boot-module row of system:trie_gen_compiled/2; TC every row)",
       "    def.codes = gd.code_data.trie_gen                           # SUPERVISOR(trie_gen)\n    gd.procedures_trie_gen_compiled2 = proc",
