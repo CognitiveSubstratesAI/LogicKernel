@@ -48,3 +48,7 @@ TR2-Q6	D-1014	src/pl-trie.jl:2544-2547
 EV1-C3	D-0384	src/pl-event.jl:471
 LB2-30	D-0280	src/pl-wam.jl:1410
 LB2-63	D-0280	src/pl-comp.jl:3955 (TEMPORARY, D-0280 (4): revisit when transactions are ported; first accepted D-0256 (1))
+EV1-C9	D-1017	src/pl-event.jl:164
+EV1-C10	D-1017	src/pl-wam.jl:1329-1331 (equivalent only until DBG1 ports prolog_frame_attribute/3, the one setter of FR_NOTIFY: pl-trace.c:2509; DBG1 must add the kill row)
+TR4-E9	D-1017	src/pl-trie.jl:3391-3392
+TR4-D6	D-1017	src/pl-trie.jl:218 (revisit trigger: a writer of ClauseRef.clause, or a second source of tr.clause_cref)
