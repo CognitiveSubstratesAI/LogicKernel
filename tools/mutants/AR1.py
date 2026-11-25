@@ -803,4 +803,7 @@ MUTANTS = [
     dict(id='AR1-B27 _ldexp_mode: to_negative does not round an underflow of a negative value away from zero (KILL t440)', file='src/pl-gmp.jl', targets=TB,
          old='        if (mode == FE_UPWARD && d > 0) || (mode == FE_DOWNWARD && d < 0)\n',
          new='        if (mode == FE_UPWARD && d > 0)\n'),
+    dict(id='AR1-G1 the curfn row guard rejects an empty-answer row again: the bare-name line is not a match (KILL the :153 guard on t117, t118, t129; D-1043 (2); the mutant is in the test file, which is its own target)', file='test/core_lang/test_arith_curfn_swipl.jl', targets=TC,
+         old='l == name || startswith(l, name * " ")',
+         new='startswith(l, name * " ")'),
 ]

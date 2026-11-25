@@ -141,13 +141,16 @@ function swipl_lines(path::String, names::Vector{String})::Vector{String}
     return String.(split(chomp(out), '\n'; keepempty=false))
 end
 
+# a .out line is `<name>` (swipl answers nothing: t117, t118, t129) or `<name> <answers>`; the space keeps t1 from matching a t10 line
+_cf_row_is(l::AbstractString, name::AbstractString) = l == name || startswith(l, name * " ")
+
 @testset "AR1: current_arithmetic_function/1 == swipl's answers" begin
     names = _cf_names()
     expected = String.(readlines(_CF_OUT))
     # not a vacuous agreement: the .out has a line per row, and the rows' own evidence is in it
     @test length(names) == 140
     @test length(expected) == length(names) + 1 && expected[1] == "ok"
-    @test all(i -> startswith(expected[i + 1], names[i] * " "), eachindex(names))
+    @test all(i -> _cf_row_is(expected[i + 1], names[i]), eachindex(names))
     @test occursin("i79", expected[3])                               # t2: the pin's table has 79 evaluable functors
     @test count(l -> occursin(_codes("callable"), l), expected) >= 9   # the type errors of a non-callable head
     @test count(l -> occursin("a" * _codes("yes"), l), expected) >= 50
