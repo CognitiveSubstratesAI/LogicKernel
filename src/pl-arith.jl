@@ -3889,11 +3889,11 @@ function set_rounding(mode::Int)::Nothing
     return nothing
 end
 
-# PORT: pl-arith.c set_restraint
+# PORT: pl-arith.c set_restraint as set_arith_restraint
 # DIVERGES: returns the value or `nothing` after raising (upstream: `size_t *valp` and an int); the
 # value is a `UInt64`, `typemax(UInt64)` for `infinite` (upstream's `(size_t)-1`).
-"The limit `t` holds, `infinite` or a size not below `min` (pl-arith.c); `nothing` after raising."
-function set_restraint(
+"The limit `t` holds, `infinite` or a size not below `min` (pl-arith.c); `nothing` after raising. pl-tabling.c has a function of the same C name, ported as pl-tabling.jl's `set_restraint` (arity 2); the arith one has its own Julia name."
+function set_arith_restraint(
     ld::PL_local_data{T}, t::term_t, min::Int
 )::Union{Nothing, UInt64} where {T}
     inf = PL_get_atom(ld, t)
@@ -3955,7 +3955,7 @@ end
 function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {T}
     name = sym_text(key)
     if name == "max_rational_size" || name == "max_integer_size"
-        v = set_restraint(ld, val, name == "max_integer_size" ? 1000 : 0)
+        v = set_arith_restraint(ld, val, name == "max_integer_size" ? 1000 : 0)
         v === nothing && return false
         v == typemax(UInt64) && return true                 # unlimited: the state it has
         throw(

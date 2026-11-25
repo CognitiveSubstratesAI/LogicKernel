@@ -1281,7 +1281,7 @@ function _manifest_index(T)
         # arith-c (AR1): set_arith_flag and its helpers, the rounding-mode tables
         (LK.set_arith_flag, Tuple{LD, Int64, T}, false),
         (LK._set_float_flag, Tuple{LD, T, UInt32, Symbol}, false),
-        (LK.set_restraint, Tuple{LD, Int64, Int}, false),
+        (LK.set_arith_restraint, Tuple{LD, Int64, Int}, false),
         (LK.set_arith_restraint_action, Tuple{LD, Int64, T}, false),
         (LK.atom_to_rounding, Tuple{T}, false),
         (LK.float_rounding_name, Tuple{Type{T}, Int}, false),
