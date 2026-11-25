@@ -18,7 +18,7 @@
 using Test, LogicKernel
 const LK = LogicKernel
 
-# TERM TYPES PER CHUNK: all three: the predicates take the term type through the term interface (atoms, integers, compounds)
+# TERM TYPES PER CHUNK: ALL — src/pl-queue.jl: all three term types: the predicates take the term type through the term interface (atoms, integers, compounds)
 include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 const _TQ = lk_term_type(Union{Int64, Float64, String, BigInt, Rational{BigInt}})
 _tqs(x) = lk_sym(_TQ, Symbol(x))
