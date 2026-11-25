@@ -1282,7 +1282,7 @@ function _manifest_index(T)
         (LK.set_arith_flag, Tuple{LD, Int64, T}, false),
         (LK._set_float_flag, Tuple{LD, T, UInt32, Symbol}, false),
         (LK.set_restraint, Tuple{LD, Int64, Int}, false),
-        (LK.set_restraint_action, Tuple{LD, Int64, T}, false),
+        (LK.set_arith_restraint_action, Tuple{LD, Int64, T}, false),
         (LK.atom_to_rounding, Tuple{T}, false),
         (LK.float_rounding_name, Tuple{Type{T}, Int}, false),
         (LK.set_rounding, Tuple{Int}, true),

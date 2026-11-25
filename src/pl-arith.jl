@@ -3905,10 +3905,10 @@ function set_restraint(
     return UInt64(max(v, min))
 end
 
-# PORT: pl-arith.c set_restraint_action
+# PORT: pl-arith.c set_restraint_action as set_arith_restraint_action
 # DIVERGES: returns the atom or `nothing` after raising (upstream: `atom_t *valp` and an int).
-"The action atom `t` holds for `key` (pl-arith.c): `error`, and `float` for `max_rational_size_action`; `nothing` after raising."
-function set_restraint_action(
+"The action atom `t` holds for `key` (pl-arith.c): `error`, and `float` for `max_rational_size_action`; `nothing` after raising. pl-tabling.c has a function of the same C name, ported as pl-tabling.jl's `set_restraint_action`; the arith one has its own Julia name."
+function set_arith_restraint_action(
     ld::PL_local_data{T}, t::term_t, key::T
 )::Union{Nothing, T} where {T}
     act = PL_get_atom_ex(ld, t)
@@ -3967,7 +3967,7 @@ function set_arith_flag(ld::PL_local_data{T}, val::term_t, key::T)::Bool where {
         )
     end
     if name == "max_rational_size_action"
-        act = set_restraint_action(ld, val, key)
+        act = set_arith_restraint_action(ld, val, key)
         act === nothing && return false
         sym_key(act) == sym_key(mk_sym(T, :error)) && return true      # the state it has
         throw(
