@@ -315,11 +315,17 @@ end
 
 @testset "the yield rows are swipl's (live, when swipl is on PATH)" begin
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
+    live = filter(c -> c[5], _EY_CASES)
+    f, names = _ey_file(live)
+    # the inert-testset guard: what swipl is asked, asserted either way: every row but the kernel-only eyk1, and the program it
+    # consults has exactly one clause for each of them and none for eyk1
+    @test names == ["ck_$(c[1])" for c in _EY_CASES if c[1] != "eyk1"]
+    program = split(read(f, String), '\n')
+    @test all(n -> count(startswith("$n(R) :- "), program) == 1, names)
+    @test !any(startswith("ck_eyk1("), program)
     if swipl === nothing
         @info "ENGINE YIELD LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        live = filter(c -> c[5], _EY_CASES)
-        f, names = _ey_file(live)
         lines = _ey_swipl_lines(f, names)
         @test length(lines) == length(live) + 1
         @test lines[1] == "ok"
