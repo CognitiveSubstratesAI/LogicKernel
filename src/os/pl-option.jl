@@ -24,13 +24,7 @@ const MAXOPTIONS = 64
 "Whether the unknown-option mode of `f` is `m` (pl-option.c)."
 HAS_OPT_MODE(f::Int, m::Int)::Bool = (f & OPT_UNKNOWN_MASK) == m
 
-# PORT: pl-fli.c PL_is_inf
-"Whether term reference `t` holds the atom `inf` or `infinite` (pl-fli.c)."
-function PL_is_inf(ld::PL_local_data{T}, t::term_t)::Bool where {T}
-    a = PL_get_atom(ld, t)
-    a === nothing && return false
-    return sym_key(a) == sym_key(mk_sym(T, :inf)) || sym_key(a) == sym_key(mk_sym(T, :infinite))
-end
+# PL_is_inf (pl-fli.c) is defined once, in src/pl-fli.jl (on the words); `get_optval` below calls it.
 
 # PORT: pl-option.c get_optval
 # DIVERGES: returns `(ok, value)` — a `Bool`, an `Int`, an atom or a term reference — where upstream

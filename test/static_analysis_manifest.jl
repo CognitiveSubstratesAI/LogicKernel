@@ -2070,7 +2070,6 @@ function _manifest_index(T)
         ]...,
         # NF1 — the non-deterministic foreign calls: the return values, the context, the state pool
         (LK.PL_get_number, Tuple{LD, Int, LK.number}, false),
-        (LK.PL_is_inf, Tuple{LD, Int}, false),
         (LK.PL_retry, Tuple{Int}, true), (LK.PL_retry_address, Tuple{Int}, true),
         (LK.PL_foreign_control, Tuple{LK.foreign_context{T}}, true),
         (LK.PL_foreign_context, Tuple{LK.foreign_context{T}}, true),
