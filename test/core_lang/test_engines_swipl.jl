@@ -1049,12 +1049,20 @@ end
 end
 
 @testset "the rows are swipl's (live, when swipl is on PATH)" begin
+    allc = vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES)
+    live = filter(c -> c[5], allc)
+    f, names = _en_file(live; prelude=_EN_EV_PRELUDE * _EN_TI_PRELUDE)
+    # the inert-testset guard (as in test_engine_yield_swipl.jl): what swipl is asked, asserted with or without swipl: every
+    # row but the four kernel-only ones, and the program it consults has exactly one clause for each of them and none for those
+    kernel_only = ("dv1", "dv2", "dv3", "tp23")
+    @test names == ["ck_$(c[1])" for c in allc if !(c[1] in kernel_only)]
+    program = split(read(f, String), '\n')
+    @test all(n -> count(startswith("$n(R) :- "), program) == 1, names)
+    @test !any(l -> any(id -> startswith(l, "ck_$id("), kernel_only), program)
     swipl = get(ENV, "LOGICKERNEL_NO_SWIPL", "") == "1" ? nothing : Sys.which("swipl")
     if swipl === nothing
         @info "ENGINES LIVE CHECK NOT RUN: `swipl` is not on PATH here. It runs in tools/run_tests.sh and CI."
     else
-        live = filter(c -> c[5], vcat(_EN_CASES, _EN_YIELD_CASES, _EN_EV_CASES, _EN_TI_CASES))
-        f, names = _en_file(live; prelude=_EN_EV_PRELUDE * _EN_TI_PRELUDE)
         lines = _en_swipl_lines(f, names)
         @test length(lines) == length(live) + 1
         @test lines[1] == "ok"
