@@ -2524,12 +2524,12 @@ function _manifest_index(T)
         (
             LK.unify_thread_id,
             Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}},
-            false,
+            false
         ),
         (
             LK.aliasThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}, T, T},
-            false,
+            false
         ),
         (LK.unalias_thread!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (LK.get_interactor, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
@@ -2537,7 +2537,7 @@ function _manifest_index(T)
         (
             LK.copy_local_data!,
             Tuple{LD, LD, LK.PL_thread_info{T}},
-            false,
+            false
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
@@ -2549,13 +2549,13 @@ function _manifest_index(T)
         (
             LK.freePrologThread!,
             Tuple{LK.PL_global_data{T}, LD, LK.PL_thread_info{T}},
-            false,
+            false
         ),
         (LK._destroy_engine!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (
             LK.destroy_interactor!,
             Tuple{LK.PL_global_data{T}, LK.thread_handle{T}, Bool},
-            false,
+            false
         ),
         (LK.done_interactor!, Tuple{LK.PL_global_data{T}, LK.thread_handle{T}}, false),
         (LK.copy_debug_mode, Tuple{LD, LD}, false),
@@ -2568,14 +2568,14 @@ function _manifest_index(T)
             LK.interactor_post_answer_nolock,
             Tuple{
                 LK.PL_global_data{T}, LD, LK.thread_handle{T}, Int,
-                Union{Nothing, Int}, Int,
+                Union{Nothing, Int}, Int
             },
-            false,
+            false
         ),
         (
             LK.interactor_post_answer,
             Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, Int}, Int},
-            false,
+            false
         ),
         (LK.pl_engine_next, Tuple{LD, Int, Int}, false),
         (LK.pl_engine_post3, Tuple{LD, Int, Int, Int}, false),
@@ -2584,21 +2584,73 @@ function _manifest_index(T)
         (LK.get_thread, Tuple{LK.PL_global_data{T}, LD, Int, Bool}, false),
         (LK._thread_slot_valid, Tuple{LK.PL_global_data{T}, Int}, false),
         (LK.symbol_alias, Tuple{LK.PL_global_data{T}, Union{Nothing, T}}, false),
-        (LK.unify_thread_status, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_id_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_alias_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_status_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_detached_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_debug_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_debug_mode_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_engine_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_thread_property, Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.unify_thread_status,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_id_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_alias_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_status_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_detached_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_debug_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_debug_mode_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_engine_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_thread_property,
+            Tuple{LK.PL_global_data{T}, LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK.system_thread_id, Tuple{}, false),
-        (LK.thread_tid_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.thread_tid_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK.sizeof_thread, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}}, false),
-        (LK.thread_size_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK.thread_class_property, Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
-        (LK._tprop_call, Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int}, false),
+        (
+            LK.thread_size_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK.thread_class_property,
+            Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
+        (
+            LK._tprop_call,
+            Tuple{LK.PL_global_data{T}, LD, Int, Union{Nothing, LK.PL_thread_info{T}}, Int},
+            false
+        ),
         (LK._tprop_pack, Tuple{Int, Int, Bool, Bool}, false),
         (LK.tprop_advance_state, Tuple{LK.PL_global_data{T}, Int, Int, Bool, Bool}, false),
         (LK.pl_thread_property, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -2824,7 +2876,9 @@ function _manifest_index(T)
         ),
         (
             LK.register_event_function,
-            Tuple{GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32},
+            Tuple{
+                GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32
+            },
             false
         ),
         (LK.get_event_listp, Tuple{GD, LD, Int}, false),
