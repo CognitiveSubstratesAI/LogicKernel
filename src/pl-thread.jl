@@ -127,8 +127,8 @@ end
 "The blob type of a thread or engine handle (pl-thread.c `thread_blob`): unique by payload, non-text, named `thread`."
 const thread_blob = PL_blob_t(PL_BLOB_UNIQUE, "thread")
 
-# PORT: pl-thread.c initThreads
-# DIVERGES: only the blob type is registered here (the thread table of `GD->thread` is `thread_state`, made with the database).
+# PORT: pl-thread.c initMessageQueues as initThreads
+# DIVERGES: only the registration of `thread_blob` (no message queue blob; the thread table of `GD->thread` is `thread_state`, made with the database).
 "Register the thread blob type in `atoms` (pl-thread.c)."
 function initThreads!(atoms::atoms_t)::Nothing
     PL_register_blob_type(atoms, thread_blob)
@@ -180,8 +180,9 @@ function _thread_handle_blob!(gd::PL_global_data{T}, th::thread_handle{T})::T wh
     return _blob_term!(gd.atoms, gd.atom_symbols, T, w)
 end
 
-# PORT: pl-init.c PL_initialise (aliasThread(PL_thread_self(), ATOM_thread, ATOM_main), pl-init.c:1606 at the pin)
-# DIVERGES: the main thread has no record here (`info === nothing`, engine id 1, `ld.thread_info === nothing`), so its handle is made with no
+# not a marked port: pl-init.c is not one of this file's UPSTREAM files. `PL_initialise`
+# (aliasThread(PL_thread_self(), ATOM_thread, ATOM_main), pl-init.c:1606 at the pin).
+# DIVERGES (TH1): the main thread has no record here (`info === nothing`, engine id 1, `ld.thread_info === nothing`), so its handle is made with no
 # `info` and `alias` `main` and is entered in `thread_table` directly (`aliasThread!` takes a thread record). It is the FIRST handle of the
 # database (`handles[1]`): called when a database is made (`setupProlog`) and when one is copied from the template (`copy_global_data`: the
 # copy starts with a fresh `thread_state`). A handle that is no engine (no `TH_IS_INTERACTOR`, no record) is no interactor: `get_interactor`
@@ -283,7 +284,7 @@ function get_interactor(
     return nothing
 end
 
-# PORT: pl-thread.c is_engine
+# PORT: pl-thread.c is_engine as pl_is_engine
 # (PRED_IMPL("is_engine", 1, is_engine, 0), pl-thread.c:4504-4510 at the pin)
 "`is_engine(@Term)`: true when `Term` is a live engine, or one whose last answer is still to be taken (pl-thread.c)."
 function pl_is_engine(ld::PL_local_data{T}, a1::term_t)::foreign_t where {T}
@@ -381,7 +382,8 @@ function _create_engine(
     return eld
 end
 
-# PORT: pl-thread.c PL_thread_attach_engine (the call of `PROCEDURE_dthread_init0`, pl-thread.c:7003)
+# PORT: pl-thread.c PL_thread_attach_engine as thread_init_goals
+# (the call of `PROCEDURE_dthread_init0`, pl-thread.c:7003)
 # DIVERGES: the procedure is looked up in `system` at each call (`lookupProcedure`), where upstream keeps it in
 # `GD->procedures.dthread_init0` (`LOOKUPPROC(dthread_init0)`, pl-ext.c:374): no database field, the same procedure. `PL_thread_attach_engine`
 # is not ported as such (there is no pthread to attach: `_create_engine` is the part of it an engine needs); the call is made in the
@@ -409,7 +411,8 @@ function PL_thread_at_exit(
     )
 end
 
-# PORT: pl-thread.c freePrologThread (the exit hooks and the release of the thread record; `after_fork` is false)
+# PORT: pl-thread.c freePrologThread
+# (the exit hooks and the release of the thread record; `after_fork` is false)
 # DIVERGES: the engine's local data is dropped by the garbage collector (`freeStacks`, `freePrologLocalData`, `cleanupLocalDefinitions`,
 # the message queue and the thread's statistics are not kept: no pool); `startCritical`/`endCritical` block signals (none here) and
 # the test `ld->stacks.argument.base` (stacks initialised) is always true: `_bare_local_data` makes them; `info->in_exit_hooks` has no field
@@ -501,7 +504,7 @@ const make_engine_options = (
     PL_option_t(:inherit_from, OPT_TERM)
 )
 
-# PORT: pl-thread.c engine_create
+# PORT: pl-thread.c engine_create as pl_engine_create
 # (PRED_IMPL("$engine_create", 3, engine_create, 0), pl-thread.c:4097-4170 at the pin)
 # DIVERGES: the option `stack_limit` is in bytes and the engine's limit in positions (words): `min(bytes ÷ 8, typemax(Int) >> 8)` (`stacks_limit`
 # is multiplied by 8 where bytes are wanted, src/pl-gmp.jl); `inherit_from` is read and ignored, as upstream. The goal's record is made in
@@ -561,7 +564,7 @@ function pl_engine_create(
     return FTRUE
 end
 
-# PORT: pl-thread.c engine_destroy
+# PORT: pl-thread.c engine_destroy as pl_engine_destroy
 # (PRED_IMPL("engine_destroy", 1, engine_destroy, 0), pl-thread.c:4233-4247 at the pin)
 # DIVERGES (TH1): an engine that is running (its query is inside `engine_next/2`, so it is the caller of the running engine or the
 # engine itself) is not destroyed: `permission_error(destroy, engine, E)`, as for the engine itself; upstream waits for the engine's
@@ -585,7 +588,7 @@ function pl_engine_destroy(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T
     return FTRUE
 end
 
-# PORT: pl-thread.c engine_post
+# PORT: pl-thread.c engine_post as pl_engine_post2
 # (PRED_IMPL("engine_post", 2, engine_post, 0), pl-thread.c:4437-4461 at the pin)
 # DIVERGES (TH1): posting to a running engine is `permission_error(post_to, engine, E)` (upstream waits for the mutex the running
 # `engine_next/2` holds); a record made in the caller's local data is read in the engine's by `engine_fetch/1`.
@@ -607,7 +610,7 @@ function pl_engine_post2(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_
     end
 end
 
-# PORT: pl-thread.c engine_fetch
+# PORT: pl-thread.c engine_fetch as pl_engine_fetch
 # (PRED_IMPL("engine_fetch", 1, engine_fetch, 0), pl-thread.c:4473-4502 at the pin)
 "`engine_fetch(-Term)`: the term `engine_post/2,3` delivered to the running engine (pl-thread.c)."
 function pl_engine_fetch(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
@@ -769,14 +772,14 @@ function interactor_post_answer(
     return rc
 end
 
-# PORT: pl-thread.c engine_next
+# PORT: pl-thread.c engine_next as pl_engine_next
 # (PRED_IMPL("engine_next", 2, engine_next, 0), pl-thread.c:4428-4433 at the pin)
 "`engine_next(+Engine, -Term)`: run the engine to its next answer (pl-thread.c)."
 function pl_engine_next(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_t where {T}
     return interactor_post_answer(_query_gd(ld), ld, A1, nothing, A2) ? FTRUE : FFALSE
 end
 
-# PORT: pl-thread.c engine_post
+# PORT: pl-thread.c engine_post as pl_engine_post3
 # (PRED_IMPL("engine_post", 3, engine_post, 0), pl-thread.c:4465-4470 at the pin)
 "`engine_post(+Engine, +Term, -Next)`: `engine_post/2` and `engine_next/2` in one (pl-thread.c)."
 function pl_engine_post3(
@@ -1203,7 +1206,7 @@ function tprop_advance_state(
     return (false, tid, p)
 end
 
-# PORT: pl-thread.c thread_property
+# PORT: pl-thread.c thread_property as pl_thread_property
 # (PRED_IMPL("thread_property", 2, thread_property, PL_FA_NONDETERMINISTIC), pl-thread.c:3404-3512 at the pin; NDET|PL_FA_ISO, :8849)
 # DIVERGES: see the section head (the state is the retry integer); the main thread is a record `nothing`.
 "`thread_property(?Thread, ?Property)`: the properties of the threads and engines, on backtracking (pl-thread.c)."
@@ -1275,7 +1278,7 @@ function pl_thread_property(
     end
 end
 
-# PORT: pl-thread.c gc_wait
+# PORT: pl-thread.c gc_wait as pl_gc_wait
 # (PRED_IMPL("$gc_wait", 1, gc_wait, 0), pl-thread.c:7299-7324 at the pin)
 # DIVERGES (TH1): the predicate is the loop of the GC thread (boot/gc.pl `gc_loop`): it blocks on `GD->thread.gc.cond` until a request
 # (`GD->thread.gc.requests`: the GCREQUEST_ bits) is posted by `signalGCThreadCond`, then unifies A1 with the action it asks for
@@ -1291,7 +1294,7 @@ function pl_gc_wait(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
     )
 end
 
-# PORT: pl-thread.c gc_clear
+# PORT: pl-thread.c gc_clear as pl_gc_clear
 # (PRED_IMPL("$gc_clear", 1, gc_clear, 0), pl-thread.c:7327-7347 at the pin)
 # DIVERGES (TH1): the C clears the request bit (`GD->thread.gc.requests &= ~mask`, under `GD->thread.gc.mutex`); the kernel has no GC
 # thread and no request word, so there is no bit to clear: after the argument checks (an atom, `garbage_collect_atoms` or
@@ -1308,7 +1311,7 @@ function pl_gc_clear(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
     return FTRUE
 end
 
-# PORT: pl-thread.c gc_stop
+# PORT: pl-thread.c gc_stop as pl_gc_stop
 # (PRED_IMPL("$gc_stop", 0, gc_stop, 0), pl-thread.c:7359-7366 at the pin: `if ( (tid=gc_running()) ) return cancelGCThread(tid) != ...; return false;`)
 # DIVERGES (TH1): `gc_running()` (pl-thread.c:7283-7292) is the id of a GC thread whose status is PL_THREAD_RUNNING; the kernel never starts
 # one (`GCthread()`, :7227), so there is nothing to cancel: the predicate fails, as it does in swipl while no GC thread has been started.
