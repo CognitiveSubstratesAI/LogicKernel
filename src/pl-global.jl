@@ -5,6 +5,7 @@
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -172,7 +173,7 @@ end
 locale_state{T}() where {T} =
     locale_state{T}(PL_locale_rec{T}[], PL_locale_rec{T}[], nothing, nothing)
 
-# PORT: pl-thread.h thread_status as PL_THREAD_*
+# PORT: pl-thread.h thread_status as PL_THREAD_UNUSED
 # (swipl-devel 18168e62, src/pl-thread.h: the enum, in its order; the engines read `RUNNING` and the `THREAD_STATUS_INVALID` test)
 "The states of a thread slot (pl-thread.h `thread_status`)."
 const PL_THREAD_UNUSED = 0

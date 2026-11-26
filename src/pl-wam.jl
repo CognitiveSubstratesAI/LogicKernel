@@ -3055,8 +3055,8 @@ function PL_next_solution_guarded(
     end
 
     DEF = ld.frames[FR].predicate::Definition{T}
-    # PORT: pl-wam.c PL_next_solution (the resume after a yield, pl-wam.c:3874-3905 at the pin)
-    # DIVERGES: only the branch "Engine yield using I_YIELD" runs: `YIELD_TERM_FOREIGN` (`PL_yield_address()`) and
+    # pl-wam.c `PL_next_solution`: the resume after a yield (pl-wam.c:3874-3905 at the pin)
+    # DIVERGES (TH1): only the branch "Engine yield using I_YIELD" runs: `YIELD_TERM_FOREIGN` (`PL_yield_address()`) and
     # `YIELD_TERM_DEBUG` (the debugger) are never set here, so `yield_term` is 0 or a term reference.
     if q.yield_term != 0                            # resume after yield
         q.yield_term = 0                            # QF->yield.term = 0

@@ -904,7 +904,8 @@ mutable struct event_callback{T, D}
     flags::UInt32                                       # EV_CALLBACK_*
 end
 
-# PORT: pl-event.h event_callback (`function` and `closure.pointer`)
+# PORT: pl-event.h event_callback as event_function
+# (`function` and `closure.pointer`)
 # DIVERGES: the C function pointer is a Julia callable and the `void *` closure any value; the function takes the database and
 # the local data as its first two arguments (upstream reads them from the thread's `LD`: there is no thread-local here), then the
 # closure, then the event's term references (`argv+1`, `argv+2`) for a callback of `argc` 1 or 2.
