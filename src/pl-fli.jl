@@ -228,7 +228,11 @@ function PL_unify_chars(
     fl = Int(flags)
     utf8 = (fl & Int(REP_UTF8)) != 0
     if !utf8 && (fl & Int(REP_MB)) != 0
-        throw(NotPortedError{Nothing}(nothing, "PL_unify_chars with REP_MB (ENC_ANSI, the locale)", "no caller"))
+        throw(
+            NotPortedError{Nothing}(
+                nothing, "PL_unify_chars with REP_MB (ENC_ANSI, the locale)", "no caller"
+            )
+        )
     end
     bytes = Vector{UInt8}(s[1:len])
     text = if utf8
