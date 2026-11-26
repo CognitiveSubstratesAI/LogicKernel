@@ -57,7 +57,9 @@ _uc_isstring(x::_R, s::String) = kind(x) === GND && lk_value(x) == s
 
 const _UC_ATOM, _UC_STR = LK.PL_ATOM, LK.PL_STRING
 const _UC_CODES, _UC_CHARS = LK.PL_CODE_LIST, LK.PL_CHAR_LIST
-const _UC_UTF8, _UC_LATIN1, _UC_MB = Int(LK.REP_UTF8), Int(LK.REP_ISO_LATIN_1), Int(LK.REP_MB)
+const _UC_UTF8, _UC_LATIN1, _UC_MB = Int(LK.REP_UTF8),
+Int(LK.REP_ISO_LATIN_1),
+Int(LK.REP_MB)
 const _UC_DIFF = Int(LK.PL_DIFF_LIST)
 const _UC_ABC = UInt8[0x61, 0x62, 0x63]
 
@@ -161,7 +163,8 @@ end
     @test rc && _uc_isatom(_uc_read(ld, t), "aé€")
     # as ISO Latin-1 (explicit or the default): six characters, one per byte
     for rep in (_UC_LATIN1, 0)
-        @test _uc_elems(_UC_CODES | rep, length(u), u) == [0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac]
+        @test _uc_elems(_UC_CODES | rep, length(u), u) ==
+            [0x61, 0xc3, 0xa9, 0xe2, 0x82, 0xac]
         ld, t, rc = _uc_run(_UC_ATOM | rep, 2, UInt8[0xc3, 0xa9])
         @test rc && _uc_isatom(_uc_read(ld, t), "Ã©")
     end
