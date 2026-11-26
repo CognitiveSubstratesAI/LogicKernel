@@ -109,10 +109,17 @@ const _EY_CASES = [
     ),
     (
         "ey03", "engine_create(_, engine_yield(f(X,X,_)), E)",
-        "engine_next(E,A), A = f(P,Q,_), ( P == Q -> R0 = shared ; R0 = distinct )", "shared",
+        "engine_next(E,A), A = f(P,Q,_), ( P == Q -> R0 = shared ; R0 = distinct )",
+        "shared",
         true
     ),
-    ("ey04", "engine_create(X, (X = 1, engine_yield(X)), E)", "engine_next(E,A), R0 = A", "1", true),
+    (
+        "ey04",
+        "engine_create(X, (X = 1, engine_yield(X)), E)",
+        "engine_next(E,A), R0 = A",
+        "1",
+        true
+    ),
     # the reified form: yields are answers (`the/1`), the end is `no`
     (
         "ey05", "engine_create(_, (engine_yield(a), engine_yield(b)), E)",
@@ -154,7 +161,8 @@ const _EY_CASES = [
     ),
     # a yield from a query that did not ask for it (the main thread's query): the permission error of I_YIELD
     (
-        "ey12", "true", "engine_yield(x)", "raised(permission_error(execute,vmi,'I_YIELD'))",
+        "ey12", "true", "engine_yield(x)",
+        "raised(permission_error(execute,vmi,'I_YIELD'))",
         true
     ),
     # an engine inside an engine, the inner one yields
@@ -213,9 +221,9 @@ const _EY_CASES = [
 function _ey_program(cases)::String
     return join(
         [
-            "ck_$(c[1])(R) :- $(c[2]), ( catch(($(c[3])), error(SsuE, _), R0 = raised(SsuE)) -> true ; R0 = failed ), " *
-            "( R0 =@= ($(c[4])) -> R = ok ; R = bad(R0) ).\n" for c in cases
-        ]
+        "ck_$(c[1])(R) :- $(c[2]), ( catch(($(c[3])), error(SsuE, _), R0 = raised(SsuE)) -> true ; R0 = failed ), " *
+        "( R0 =@= ($(c[4])) -> R = ok ; R = bad(R0) ).\n" for c in cases
+    ]
     )
 end
 
@@ -282,7 +290,8 @@ function _ey_check(cases)
     @test length(kl) == length(cases) + 1
     for (c, line) in zip(cases, kl[2:end])
         want = _ey_ok_line(c[1])
-        line == want || println(stderr, "  row $(c[1]): ours  ", line, "\n          wanted ", want)
+        line == want ||
+            println(stderr, "  row $(c[1]): ours  ", line, "\n          wanted ", want)
         @test line == want
     end
     return gd, ld
@@ -306,7 +315,9 @@ end
     end
     # the rows that call the private predicates carry the `$` of their names (raw strings)
     @test count(c -> occursin("\$gc_clear", c[3]), _EY_CASES) == 7
-    @test count(c -> occursin("\$can_yield", c[2]) || occursin("\$can_yield", c[3]), _EY_CASES) == 3
+    @test count(
+        c -> occursin("\$can_yield", c[2]) || occursin("\$can_yield", c[3]), _EY_CASES
+    ) == 3
     @test count(c -> !c[5], _EY_CASES) == 1                 # eyk1 is the only kernel-only row
     @test _ey_ok_line("ey01") == "ck_ey01 c[99,107,95,101,121,48,49]/1(a[111,107])"
     # the rows that call the private predicate carry the `$` of its name: a raw string that a mistaken interpolation would have emptied
@@ -420,7 +431,9 @@ end
 
 @testset "engine yield: white-box (a query that did not ask to yield refuses, PL_can_yield is false)" begin
     gd, ld = _ey_wb_load()
-    fid, a, qid = _ey_wb_open(gd, ld, "ey_wb3", LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS)
+    fid, a, qid = _ey_wb_open(
+        gd, ld, "ey_wb3", LK.PL_Q_CATCH_EXCEPTION | LK.PL_Q_EXT_STATUS
+    )
     @test !LK.PL_can_yield(ld)
     rc = LK.PL_next_solution(gd, ld, qid)
     @test rc == LK.PL_S_EXCEPTION                       # permission_error(execute, vmi, 'I_YIELD')

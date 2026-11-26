@@ -261,7 +261,7 @@ function get_interactor(
             th = symbol_thread_handle(gd, symbol)
             if th !== nothing && (th.flags & TH_IS_INTERACTOR) != 0
                 if th.info !== nothing ||
-                   (th.flags & (TH_INTERACTOR_NOMORE | TH_INTERACTOR_DONE)) != 0
+                    (th.flags & (TH_INTERACTOR_NOMORE | TH_INTERACTOR_DONE)) != 0
                     return th
                 end
                 warn && PL_error(ld, ERR_EXISTENCE, mk_sym(T, :engine), t)
@@ -404,7 +404,9 @@ function PL_thread_at_exit(
     gd::PL_global_data{T}, ld::PL_local_data{T}, func, closure, is_global::Bool
 )::Bool where {T}
     loc = event_location{T}(is_global ? PLEV_THREAD_EXIT : PLEV_THIS_THREAD_EXIT, nothing)
-    return register_event_function(gd, ld, loc, nothing, false, func, closure, 0, EV_CALLBACK_VOID)
+    return register_event_function(
+        gd, ld, loc, nothing, false, func, closure, 0, EV_CALLBACK_VOID
+    )
 end
 
 # PORT: pl-thread.c freePrologThread (the exit hooks and the release of the thread record; `after_fork` is false)
@@ -544,13 +546,16 @@ function pl_engine_create(
     argv = PL_new_term_refs(eld, 2)
     th.interactor_argv = argv
     if t != 0 && argv != 0 && PL_recorded(eld, r, t) && _PL_get_arg(eld, 1, t, argv) &&
-       _PL_get_arg(eld, 2, t, argv + 1)
+        _PL_get_arg(eld, 2, t, argv + 1)
         th.interactor_query = PL_open_query(
-            gd, eld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_ALLOW_YIELD | PL_Q_EXT_STATUS, pred,
+            gd, eld, nothing, PL_Q_CATCH_EXCEPTION | PL_Q_ALLOW_YIELD | PL_Q_EXT_STATUS,
+            pred,
             argv + 1
         )
     else
-        error("\$engine_create/3: the goal could not be copied into the engine (upstream: assert(0), TBD: copy exception)")
+        error(
+            "\$engine_create/3: the goal could not be copied into the engine (upstream: assert(0), TBD: copy exception)"
+        )
     end
     PL_erase(r)
     return FTRUE
@@ -568,9 +573,13 @@ function pl_engine_destroy(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T
     th = get_interactor(gd, ld, A1, true)
     th === nothing && return FFALSE
     if (th.info !== nothing && th.info === ld.thread_info) || th.running
-        return PL_error(
+        return if PL_error(
             ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :destroy), mk_sym(T, :engine), A1
-        ) ? FTRUE : FFALSE
+        )
+            FTRUE
+        else
+            FFALSE
+        end
     end
     destroy_interactor!(gd, th, false)
     return FTRUE
@@ -589,9 +598,13 @@ function pl_engine_post2(ld::PL_local_data{T}, A1::term_t, A2::term_t)::foreign_
         th.interactor_package = PL_record(ld, A2)
         return FTRUE
     end
-    return PL_error(
+    return if PL_error(
         ld, "", 0, "", ERR_PERMISSION, mk_sym(T, :post_to), mk_sym(T, :engine), A1
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # PORT: pl-thread.c engine_fetch
@@ -604,20 +617,26 @@ function pl_engine_fetch(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
         th = symbol_thread_handle(gd, info.symbol)::thread_handle{T}
         if th.interactor_package !== nothing
             tmp = PL_new_term_ref(ld)
-            rc = tmp != 0 && PL_recorded(ld, th.interactor_package, tmp) && PL_unify(ld, A1, tmp)
+            rc =
+                tmp != 0 && PL_recorded(ld, th.interactor_package, tmp) &&
+                PL_unify(ld, A1, tmp)
             th.interactor_package = nothing         # PL_erase(th->interactor.package)
             return rc ? FTRUE : FFALSE
         end
     end
 
     exv = PL_new_term_refs(ld, 2)
-    return (
+    return if (
         exv != 0 && PL_unify_atom(ld, exv, mk_sym(T, :delivery)) &&
         unify_thread_id(gd, ld, exv + 1, info) &&
         PL_existence_error3(
             ld, mk_sym(T, :term), exv, exv + 1, "engine_fetch", 1, "Use engine_post/2,3"
         )
-    ) ? FTRUE : FFALSE
+    )
+        FTRUE
+    else
+        FFALSE
+    end
 end
 
 # ---- ENGINES: engine_next/2, engine_post/3 AND THE ANSWER (TH1 engines, pl-thread.c at 18168e62) ----
@@ -862,7 +881,9 @@ end
 
 # PORT: pl-thread.c symbol_alias
 "The alias of the thread handle the blob `symbol` names, or `nothing` (pl-thread.c)."
-function symbol_alias(gd::PL_global_data{T}, symbol::Union{Nothing, T})::Union{Nothing, T} where {T}
+function symbol_alias(
+    gd::PL_global_data{T}, symbol::Union{Nothing, T}
+)::Union{Nothing, T} where {T}
     th = symbol_thread_handle(gd, symbol)
     th === nothing && return nothing
     return th.alias
@@ -889,7 +910,10 @@ function PL_unify_thread_id(
         return -1
     end
     info = i == 1 ? nothing : gd.thread.infos[i]
-    if i != 1 && (info === nothing || info.status == PL_THREAD_UNUSED || info.status == PL_THREAD_RESERVED)
+    if i != 1 && (
+        info === nothing || info.status == PL_THREAD_UNUSED ||
+        info.status == PL_THREAD_RESERVED
+    )
         return -1
     end
     return unify_thread_id(gd, ld, t, info) ? 1 : 0
@@ -947,8 +971,8 @@ function unify_thread_status(
         rc || return raiseStackOverflow(ld, GLOBAL_OVERFLOW)
         a1 = PL_new_term_ref(ld)                            # PL_unify_term(status, PL_FUNCTOR, f, PL_TERM, tmp)
         return PL_unify_functor(
-                ld, status, mk_sym(T, stat == PL_THREAD_EXITED ? :exited : :exception), 1
-            ) && _PL_get_arg(ld, 1, status, a1) && PL_unify(ld, a1, tmp)
+                   ld, status, mk_sym(T, stat == PL_THREAD_EXITED ? :exited : :exception), 1
+               ) && _PL_get_arg(ld, 1, status, a1) && PL_unify(ld, a1, tmp)
     elseif stat == PL_THREAD_SUCCEEDED
         return PL_unify_atom(ld, status, mk_sym(T, Symbol("true")))
     elseif stat == PL_THREAD_FAILED
@@ -973,7 +997,7 @@ end
 # (`_tprop_call`) where upstream calls a function pointer.
 const THREAD_PROPERTY_NAMES = (
     :id, :alias, :status, :detached, :debug, :debug_mode, :engine, :thread,
-    :system_thread_id, :size, :class,
+    :system_thread_id, :size, :class
 )
 
 # PORT: pl-thread.c thread_id_property
@@ -1234,7 +1258,7 @@ function pl_thread_property(
             if enum_properties
                 a2 = PL_new_term_ref(ld)                    # PL_unify_term(property, PL_FUNCTOR, f, PL_TERM, arg)
                 PL_unify_functor(ld, property, mk_sym(T, THREAD_PROPERTY_NAMES[p]), 1) &&
-                    _PL_get_arg(ld, 1, property, a2) && PL_unify(ld, a2, arg) ||
+                _PL_get_arg(ld, 1, property, a2) && PL_unify(ld, a2, arg) ||
                     return FFALSE
             end
             if enum_threads
@@ -1261,7 +1285,8 @@ end
 function pl_gc_wait(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
     throw(
         NotPortedError{T}(
-            mk_sym(T, Symbol("\$gc_wait")), "gc_wait/1: blocks for the GC thread (none)", "TH1"
+            mk_sym(T, Symbol("\$gc_wait")), "gc_wait/1: blocks for the GC thread (none)",
+            "TH1"
         )
     )
 end
