@@ -592,7 +592,7 @@ class Units(unittest.TestCase):
         self.assertGreaterEqual(len(led), 60)
         self.assertTrue(all(r["status"] in vr.STATES and r["owner"] for r in led.values()))
         gs = vr.read_gate_set(os.path.join(REAL, "evidence", "gate_set.txt"))
-        self.assertEqual(len(gs), 26)
+        self.assertEqual(len(gs), 27)
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{8}|", c) for _, c in gs))
 
     def test_ci_annotations_seam(self):
