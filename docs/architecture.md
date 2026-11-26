@@ -1556,6 +1556,7 @@ graph LR
     pl_fli --> pl_modul
     pl_fli --> pl_inline
     pl_fli --> pl_prims
+    pl_fli --> pl_comp
     pl_fli --> pl_copyterm
     pl_fli --> pl_rec
     pl_fli --> pl_gc
@@ -2496,10 +2497,10 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
 | predicates (C-defined, reached by the boot) | 384 | 0 | 38 | 3 | 1 |
-| refusal sites | 0 | 85 | 0 | 0 | 5 |
+| refusal sites | 0 | 86 | 0 | 0 | 6 |
 | Prolog flags | 66 | 13 | 20 | 0 | 33 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 649 | 98 | 92 | 3 | 39 |
+| **total** | 649 | 99 | 92 | 3 | 40 |
 
 #### The boot and library files
 
@@ -2568,7 +2569,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +31 |
+| NO OWNER | 40 | 21 | 19 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +32 |
 
 #### Missing and refused per category
 
@@ -2578,7 +2579,7 @@ xychart-beta
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
     bar [38, 0, 20, 34]
-    line [0, 85, 13, 0]
+    line [0, 86, 13, 0]
 ```
 
 <!-- END GENERATED R2 status -->
