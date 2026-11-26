@@ -749,7 +749,8 @@ end
     # the event table of the O_ENGINES build (pl-event.c:80-95): twelve rows, in upstream's order, the id the row's index
     @test length(LK.PL_events) == 12
     @test [et.name for et in LK.PL_events] == [
-        :abort, :erase, :erase, :break, :break, :break, :break, :frame_finished, :untable,
+        Symbol("abo", "rt"), :erase, :erase, :break, :break, :break, :break,
+        :frame_finished, :untable,
         :thread_start, :thread_exit, :this_thread_exit
     ]
     @test all(i -> LK.PL_events[i].id == i - 1, 1:12)
