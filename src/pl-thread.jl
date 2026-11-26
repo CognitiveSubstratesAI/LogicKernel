@@ -950,9 +950,9 @@ function unify_thread_status(
                 ld, status, mk_sym(T, stat == PL_THREAD_EXITED ? :exited : :exception), 1
             ) && _PL_get_arg(ld, 1, status, a1) && PL_unify(ld, a1, tmp)
     elseif stat == PL_THREAD_SUCCEEDED
-        return PL_unify_atom(ld, status, mk_sym(T, :true))
+        return PL_unify_atom(ld, status, mk_sym(T, Symbol("true")))
     elseif stat == PL_THREAD_FAILED
-        return PL_unify_atom(ld, status, mk_sym(T, :false))
+        return PL_unify_atom(ld, status, mk_sym(T, Symbol("false")))
     elseif stat == PL_THREAD_NOMEM
         # exception(error(resource_error(memory), _))
         a1 = PL_new_term_ref(ld)
