@@ -185,7 +185,7 @@ const _EY_CASES = [
     ("gs01", "true", raw"'$gc_clear'(garbage_collect_atoms), R0 = ok", "ok", true),
     ("gs02", "true", raw"'$gc_clear'(garbage_collect_clauses), R0 = ok", "ok", true),
     ("gs03", "true", raw"'$gc_clear'(foo)", "raised(domain_error(action,foo))", true),
-    ("gs04", "true", raw"'$gc_clear'(abort)", "raised(domain_error(action,abort))", true),
+    ("gs04", "true", raw"'$gc_clear'(bogus)", "raised(domain_error(action,bogus))", true),
     ("gs05", "true", raw"'$gc_clear'(_)", "raised(instantiation_error)", true),
     ("gs06", "true", raw"'$gc_clear'(1)", "raised(type_error(atom,1))", true),
     ("gs07", "true", raw"'$gc_clear'(f(x))", "raised(type_error(atom,f(x)))", true),
