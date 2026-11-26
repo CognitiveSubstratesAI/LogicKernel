@@ -1755,6 +1755,7 @@ function _manifest_index(T)
         (LK.PL_cons_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_list, Tuple{LD, Int, Int, Int}, false),
         (LK.PL_unify_nil, Tuple{LD, Int}, false),
+        (LK.PL_unify_chars, Tuple{LD, Int, Int, Int, Vector{UInt8}}, false),
         (LK.PL_skip_list, Tuple{LD, Int}, false),
         (LK.PL_unify_functor, Tuple{LD, Int, T, Int}, false),
         (LK.PL_unify_arg, Tuple{LD, Int, Int, Int}, false),
