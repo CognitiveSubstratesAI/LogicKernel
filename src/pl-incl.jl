@@ -906,13 +906,14 @@ end
 
 # PORT: pl-event.h event_callback as event_function
 # (`function` and `closure.pointer`)
-# DIVERGES: the C function pointer is a Julia callable and the `void *` closure any value; the function takes the database and
+# DIVERGES: one value holds both members: `fn` is a typed C-callable pointer (`@cfunction`) over a Julia closure that holds the Julia
+# callable and the `void *` closure (any value); the `Base.CFunction` keeps that closure alive. The callable takes the database and
 # the local data as its first two arguments (upstream reads them from the thread's `LD`: there is no thread-local here), then the
-# closure, then the event's term references (`argv+1`, `argv+2`) for a callback of `argc` 1 or 2.
+# closure, then the event's term references (`argv+1`, `argv+2`) for a callback of `argc` 1 or 2 (`event_function(func, closure)` and
+# `_call_event_function`, src/pl-event.jl).
 "The C function of an event listener and its closure (pl-event.h `event_callback.function`, `closure.pointer`)."
 struct event_function
-    fn::Any                                             # the function (void (*)(void *) etc.)
-    closure::Any                                        # closure.pointer
+    fn::Base.CFunction                                  # the function (void (*)(void *) etc.) with closure.pointer
 end
 
 # PORT: pl-event.h event_list

@@ -182,6 +182,37 @@ function add_event_hook(
     return link_event(list, cb, last)
 end
 
+# ORIGINAL: upstream stores the C function pointer and the `void *` closure; here both go into one pointer, made at registration. Its one C
+# signature is `(gd, ld, argv+1, argv+2, nargs)`, and the closure under it passes the first `nargs` term references to the callable. A
+# typed pointer, as measured in src/pl-ext.jl (THE DISPATCH): there for the built-ins' table, here for the functions a caller registers.
+"The `event_function` of the Julia callable `func` and its closure value: a C-callable pointer over both."
+function event_function(func::F, closure::C)::event_function where {F, C}
+    entry =
+        (gd, ld, a1::term_t, a2::term_t, nargs::Int) ->
+            nargs == 0 ? func(gd, ld, closure) :
+            nargs == 1 ? func(gd, ld, closure, a1) : func(gd, ld, closure, a1, a2)
+    return event_function(
+        @cfunction($entry, Any, (Any, Any, term_t, term_t, Int))
+    )
+end
+
+# a copy of a database keeps the pointer, as a C function pointer is copied: the `Base.CFunction` owns the code the pointer names, so a
+# field-by-field copy of it would hold a pointer it does not own
+Base.deepcopy_internal(f::event_function, ::IdDict)::event_function = f
+
+# ORIGINAL: the C call `(*function)(closure, ...)` through the pointer.
+"Call `f` through its pointer; the callable gets the first `nargs` of the two term references. Its return value is the callable's."
+function _call_event_function(
+    f::event_function, gd::PL_global_data{T}, ld::PL_local_data{T},
+    a1::term_t, a2::term_t, nargs::Int
+) where {T}
+    fn = f.fn
+    return GC.@preserve fn ccall(
+        Base.unsafe_convert(Ptr{Cvoid}, fn), Any, (Any, Any, term_t, term_t, Int),
+        gd, ld, a1, a2, nargs
+    )
+end
+
 # PORT: pl-event.c register_event_function
 # DIVERGES: the list is an `event_location` (see `event_list_at`) and the database and local data are arguments; `func` is a Julia
 # callable and `closure` any value (`event_function`), kept in `gd.event_hook.functions` for the database's life (upstream's `PL_malloc`ed
@@ -452,8 +483,8 @@ end
 
 # PORT: pl-event.c call_event_list
 # DIVERGES: the callbacks are a SNAPSHOT of the vector (a listener may call `prolog_unlisten/2`); a C function (`function_ != 0`,
-# registered by `register_event_function`, `PL_thread_at_exit`'s) is the Julia callable of `gd.event_hook.functions[function_]`, called
-# with `(gd, ld, closure[, argv+1[, argv+2]])` (see `event_function`); upstream's `assert(0)` for an unsupported `argc` is `@assert`;
+# registered by `register_event_function`, `PL_thread_at_exit`'s) is the pointer of `gd.event_hook.functions[function_]`, whose Julia
+# callable is called with `(gd, ld, closure[, argv+1[, argv+2]])` (see `event_function`); upstream's `assert(0)` for an unsupported `argc` is `@assert`;
 # a callback's module is its index.
 "Call the listeners of `list` with the event's arguments `argv+1…`, `argv` the closure's slot (pl-event.c)."
 function call_event_list(
@@ -469,12 +500,8 @@ function call_event_list(
                 f = gd.event_hook.functions[ev.function_]
                 if (ev.flags & EV_CALLBACK_VOID) != 0
                     @assert argc >= ev.argc
-                    if ev.argc == 0
-                        f.fn(gd, ld, f.closure)
-                    elseif ev.argc == 1
-                        f.fn(gd, ld, f.closure, argv + 1)
-                    elseif ev.argc == 2
-                        f.fn(gd, ld, f.closure, argv + 1, argv + 2)
+                    if 0 <= ev.argc <= 2
+                        _call_event_function(f, gd, ld, argv + 1, argv + 2, ev.argc)
                     else
                         rc = false
                         @assert false "call_event_list(): a void callback of argc $(ev.argc)"
@@ -483,12 +510,8 @@ function call_event_list(
                         rc = false
                     end
                 else
-                    if argc == 0
-                        rc = f.fn(gd, ld, f.closure)::Bool
-                    elseif argc == 1
-                        rc = f.fn(gd, ld, f.closure, argv + 1)::Bool
-                    elseif argc == 2
-                        rc = f.fn(gd, ld, f.closure, argv + 1, argv + 2)::Bool
+                    if 0 <= argc <= 2
+                        rc = _call_event_function(f, gd, ld, argv + 1, argv + 2, argc)::Bool
                     else
                         rc = false
                         @assert false "call_event_list(): a callback of argc $argc"
