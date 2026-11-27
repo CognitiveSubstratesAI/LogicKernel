@@ -449,13 +449,13 @@ const _RB_CASES = let T = _rbv(1), L = _rbv(2), foo = _rbs("foo")
         # KNOWN DIFFERENCE (design decision 5; an R2 checklist item, "functor/3 arity past
         # Int64"): 2^63 fits `uint64` (pl-error.c `mpz_to_uint64`, case 0), so swipl reads it as
         # the arity and raises resource_error(stack) when the term does not fit; the kernel's
-        # `PL_get_size_ex` raises representation_error(size_t) for any integer past Int64
-        # (pl-error.jl:690-695). This row pins the kernel's answer, swipl's is above.
-        # The kernel's answer was confirmed by running this row on the base, 42d6205 (2026-10-22).
+        # `PL_get_size_ex` raises representation_error(size_t(N)) for any integer past Int64
+        # (pl-error.jl `PL_get_size_ex`, through `int_range_error`: 11.1.0's culprit). This row
+        # pins the kernel's answer, taken from the run (2026-11-27); swipl's is the third column.
         (
             "functor", _RB[T, foo, _rbg(big2(63))],
             "exception(resource_error(stack))",
-            "exception(representation_error(size_t))"
+            "exception(representation_error(size_t(9223372036854775808)))"
         ),
         ("\$length", _RB[L, _rbg(-big2(64))], "fails", nothing),
         (
