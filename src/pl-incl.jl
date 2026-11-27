@@ -3107,15 +3107,19 @@ end
 prof_handle_nodes{T}() where {T} = prof_handle_nodes{T}(0, prof_occurrence{T}[])
 
 # PORT: pl-prof.c prof_index
-# DIVERGES: `table` (a `TablePP`) is an `IdDict` keyed by the handle (`===`: a `Definition`'s identity is the pointer's).
+# DIVERGES: `table` (a `TablePP`) is an `IdDict` keyed by the handle (`===`: a `Definition`'s identity is the pointer's),
+# its key type the handle's (`call_node.handle`; `nothing`: NULL).
 "The index of the call tree by handle, valid as long as `ld.profile.nodes` is unchanged (pl-prof.c `struct prof_index`)."
 mutable struct prof_index{T}
     nodes::Int                                  # LD->profile.nodes when built
-    table::IdDict{Any, prof_handle_nodes{T}}    # handle -> prof_handle_nodes
+    table::IdDict{Union{Nothing, Definition{T}}, prof_handle_nodes{T}}    # handle -> prof_handle_nodes
     all::Vector{prof_handle_nodes{T}}           # all prof_handle_nodes, in creation order (upstream's chain: the reverse)
 end
 prof_index{T}() where {T} =
-    prof_index{T}(0, IdDict{Any, prof_handle_nodes{T}}(), prof_handle_nodes{T}[])
+    prof_index{T}(
+        0, IdDict{Union{Nothing, Definition{T}}, prof_handle_nodes{T}}(),
+        prof_handle_nodes{T}[]
+    )
 
 # PORT: pl-global.h clock as ld_profile_clock
 "The `PROF_*_EXACT` clock of a thread's profile (pl-global.h `LD->profile.clock`)."

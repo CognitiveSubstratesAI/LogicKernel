@@ -238,16 +238,16 @@ an_node(parent::Int, disj::Int) = an_node(parent, disj, 0, 0, 0, 0, 0, 0, 0)
 
 # PORT: pl-comp.c an_disj
 "A disjunction of the branch tree of a clause body (pl-comp.c `an_disj`)."
-mutable struct an_disj
+mutable struct an_disj{T}
     parent::Int         # Node holding the disjunction
     first::Int          # First alternative node
     second::Int         # Second alternative node (f475b538)
     size::Int           # Max size of the alternatives
     start::Int          # First slot
     placed::Bool        # start is assigned
-    term::Any           # The (A;B) term (f475b538; upstream's `Word term`, here the compound itself, found by `===`)
+    term::T             # The (A;B) term (f475b538; upstream's `Word term`, here the compound itself, found by `===`)
 end
-an_disj(parent::Int, term) = an_disj(parent, 0, 0, 0, 0, false, term)
+an_disj(parent::Int, term::T) where {T} = an_disj{T}(parent, 0, 0, 0, 0, false, term)
 
 # PORT: pl-comp.c an_occ
 "An occurrence of a variable in a branch node (pl-comp.c `an_occ`; f475b538 af9e2e7e)."
@@ -399,7 +399,7 @@ mutable struct compileInfo{T}
     progress::Int                                           # Progress counter (G1-C)
     ld::Union{Nothing, PL_local_data{T}}                    # (LD: is_signalled(), G1-C)
     an_nodes::Vector{an_node}                               # an_node array (slot sharing; b9caf216)
-    an_disjs::Vector{an_disj}                               # an_disj array (slot sharing)
+    an_disjs::Vector{an_disj{T}}                            # an_disj array (slot sharing)
     an_cur::Int                                             # Current an_node
     shared_base::Int                                        # (ci->clause->shared_base)
     an_occs::Vector{an_occ}                                 # an_occ array (slot sets; f475b538)
@@ -425,7 +425,7 @@ compileInfo{T}(
         TARGET_MODULE_NONE,                                     # ci->colon_context.type = TM_NONE (c:2047)
         TARGET_MODULE_NONE,                                     # ci->at_context.type = TM_NONE (c:2049)
         0, nothing,                                             # no progress; LD: set by the compiling caller
-        an_node[an_node(-1, -1)], an_disj[], 0, 0,              # node 0 (the clause): `analyseVariables2!` called alone sees it, as upstream's analyse_variables makes it
+        an_node[an_node(-1, -1)], an_disj{T}[], 0, 0,              # node 0 (the clause): `analyseVariables2!` called alone sees it, as upstream's analyse_variables makes it
         an_occ[], Int[], IdDict{T, Tuple{Int, Int}}(), false,   # no slot sets yet (`an_slot_sets!`)
         gd
     )
@@ -1013,7 +1013,7 @@ an_node_ptr(ci::compileInfo, n::Int)::an_node = ci.an_nodes[n + 1]
 
 # PORT: pl-comp.c an_disj_ptr
 "The record of disjunction `d` (0-based) (pl-comp.c; b9caf216 af9e2e7e)."
-an_disj_ptr(ci::compileInfo, d::Int)::an_disj = ci.an_disjs[d + 1]
+an_disj_ptr(ci::compileInfo{T}, d::Int) where {T} = ci.an_disjs[d + 1]::an_disj{T}
 
 # PORT: pl-comp.c an_new_node
 "Add a branch node, alternative of disjunction `disj` in node `parent`, and make it the current one (pl-comp.c; b9caf216 af9e2e7e)."
@@ -1026,7 +1026,7 @@ end
 # PORT: pl-comp.c an_enter_disjunction
 # (f475b538 af9e2e7e: records the term `(A;B)` of the disjunction, upstream `(Word)f`)
 "Enter the first alternative of a disjunction in the current node (pl-comp.c; b9caf216 af9e2e7e)."
-function an_enter_disjunction!(ci::compileInfo, term)::Nothing
+function an_enter_disjunction!(ci::compileInfo{T}, term::T)::Nothing where {T}
     push!(ci.an_disjs, an_disj(ci.an_cur, term))
     di = length(ci.an_disjs) - 1
     an_new_node!(ci, ci.an_cur, di)
@@ -1593,7 +1593,7 @@ function analyse_variables!(
     ci.branch_vars = nothing
     ci.singletons = 0
     ci.an_nodes = an_node[]                                    # initBuffer(&ci->an_nodes), (&ci->an_disjs)
-    ci.an_disjs = an_disj[]
+    ci.an_disjs = an_disj{T}[]
     ci.an_occs = an_occ[]                                      # initBuffer(&ci->an_occs), (&ci->an_slots); an_index = NULL
     ci.an_slots = Int[]
     ci.an_index = IdDict{T, Tuple{Int, Int}}()
