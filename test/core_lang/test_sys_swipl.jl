@@ -3,7 +3,10 @@
 # through a PROGRAM (the pattern of test/core_lang/test_between_swipl.jl): test_sys_swipl.pl holds the rows, each a predicate
 # `tN(R)`; the kernel consults the program and enumerates every solution of every tN/1, and its lines are compared with
 # test_sys_swipl.out — swipl 10.1.20's own (the first 90 rows read the same in 10.1.19), printed by the driver below
-# (`ok`, then one line per row: its name and every solution). When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
+# (`ok`, then one line per row: its name and every solution).
+# TAG1: row t85 is swipl 11.1.0's (pin af9e2e7e): representation_error(nul_terminated_string([97,0,98])),
+# context(system:delete_file/1, _); was (10.1.20) domain_error(file_name, [97,0,98]), the context's message
+# 'file name contains a 0-code'. When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
 # The values the machine decides — the time, the CPU, the stacks, the environment — are compared by TYPE or by an
 # order in the rows themselves; the error rows are swipl's formal term AND context, the message of `errno` included.
 # The program works in a fresh directory that holds the files delete_file/1 removes (lk_y1_victim, lk_y1_emptydir) and
