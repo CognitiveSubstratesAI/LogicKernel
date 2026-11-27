@@ -1187,6 +1187,7 @@ graph LR
     pl_modul --> pl_proc
     pl_modul --> pl_srcfile
     pl_modul --> pl_tabling
+    pl_modul --> pl_op
     pl_inline --> term_interface
     pl_inline --> default_term
     pl_inline --> pl_incl
@@ -1371,6 +1372,7 @@ graph LR
     pl_prof --> pl_comp
     pl_prof --> pl_fli
     pl_prof --> pl_error
+    pl_prof --> pl_arith
     pl_prof --> pl_proc
     pl_prof --> pl_pro
     pl_prof --> pl_tabling
@@ -1538,6 +1540,7 @@ graph LR
     pl_wam --> pl_supervisor
     pl_wam --> pl_trace
     pl_wam --> pl_event
+    pl_wam --> pl_transaction
     pl_wam --> pl_undo
     pl_wam --> pl_tabling
     pl_wam --> pl_wrap
@@ -1864,6 +1867,7 @@ graph LR
     pl_proc --> pl_gc
     pl_proc --> pl_wam
     pl_proc --> pl_fli
+    pl_proc --> pl_attvar
     pl_proc --> pl_error
     pl_proc --> pl_dbref
     pl_proc --> pl_arith
@@ -2142,6 +2146,7 @@ graph LR
     pl_trie --> pl_atom
     pl_trie --> pl_termwalk
     pl_trie --> pl_vmi
+    pl_trie --> pl_index
     pl_trie --> pl_funct
     pl_trie --> pl_global
     pl_trie --> pl_inline
@@ -2322,6 +2327,7 @@ graph LR
     os_pl_fmt --> pl_write
     os_pl_fmt --> pl_read
     os_pl_fmt --> pl_string
+    os_pl_fmt --> os_pl_locale
     pl_dwim --> term_interface
     pl_dwim --> default_term
     pl_dwim --> os_pl_ctype
@@ -2489,17 +2495,17 @@ or platform, with the step that owns the rest. The upstream side is the committe
 to its generator, here and in CI. The history of this block in git is the burn-down.
 
 <!-- BEGIN GENERATED R2 status by tools/port_check.jl --write-inventory — do not hand-edit -->
-Generated from `docs/r2_upstream.tsv` (swipl-devel `18168e62`: 1042 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
+Generated from `docs/r2_upstream.tsv` (swipl-devel `af9e2e7e`: 1058 definitions), `docs/r2_owners.tsv` and the kernel's `src/`.
 A row is **done** (registered, defined or marked in the kernel), **refused** (the kernel raises the refusal on purpose), **missing**,
 or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** counts missing and refused rows no step owns yet.
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 384 | 0 | 38 | 3 | 1 |
+| predicates (C-defined, reached by the boot) | 386 | 0 | 38 | 3 | 1 |
 | refusal sites | 0 | 85 | 0 | 0 | 5 |
 | Prolog flags | 66 | 13 | 20 | 0 | 33 |
-| VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 649 | 98 | 92 | 3 | 39 |
+| VM instructions | 199 | 0 | 40 | 0 | 6 |
+| **total** | 651 | 98 | 98 | 3 | 45 |
 
 #### The boot and library files
 
@@ -2513,10 +2519,10 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 102 | 11 | 0 |
-| `boot/messages.pl` | loaded | 81 | 4 | 1 |
+| `boot/syspred.pl` | loaded | 104 | 11 | 0 |
+| `boot/messages.pl` | loaded | 84 | 4 | 1 |
 | `boot/toplevel.pl` | loaded | 89 | 10 | 2 |
-| `boot/attvar.pl` | loaded | 29 | 0 | 0 |
+| `boot/attvar.pl` | loaded | 31 | 0 | 0 |
 | `boot/bags.pl` | loaded | 22 | 0 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
 | `boot/history.pl` | loaded | 21 | 0 | 0 |
@@ -2568,7 +2574,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | TB5-TB9 | 1 | 0 | 1 | `refusal what` |
 | WR2 | 1 | 0 | 1 | `refusal writing a grounded value SWI has no type…` |
 | WRAP1 | 1 | 0 | 1 | `refusal freeCodesDefinition! of a wrapped predic…` |
-| NO OWNER | 39 | 21 | 18 | `apple_current_locale_identifier/1`, `flag ci_set_flag (pl-index.c)`, `flag set_arith_flag (pl-arith.c)`, `flag agc_margin`, `flag app_name`, `flag apple`, `flag apple_universal_binary`, `flag argv`, … +31 |
+| NO OWNER | 45 | 27 | 18 | `apple_current_locale_identifier/1`, `A_CMP_VI`, `A_CMP_VV`, `B_PTRINT`, `H_PTRINT`, `T_PTRINT`, `T_TRY_PTRINT`, `flag ci_set_flag (pl-index.c)`, … +37 |
 
 #### Missing and refused per category
 
@@ -2577,7 +2583,7 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [38, 0, 20, 34]
+    bar [38, 0, 20, 40]
     line [0, 85, 13, 0]
 ```
 
