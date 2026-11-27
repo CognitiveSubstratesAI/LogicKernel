@@ -46,7 +46,9 @@ end
     @test ht.size == 1
     @test LK.addHTable(ht, UInt64(3), UInt64(32)) == UInt64(32)             # a tombstoned name takes a value again
     @test ht.size == 2
-    @test LK.sizeofTable(LK.newHTable(16)) == 32 + 40 + 16 * 16
+    # white-box, from upstream's formula (sizeofTable: the two structs and `len` symbols); `struct kvs` has 48 bytes at the
+    # newer pin (40 before)
+    @test LK.sizeofTable(LK.newHTable(16)) == 32 + 48 + 16 * 16
 end
 
 @testset "pl-table.c: the enumeration order is the bucket order, with reprobing" begin

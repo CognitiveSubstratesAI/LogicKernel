@@ -9,14 +9,15 @@
 #   `sizeofTablePP` (the modelled capacity: 144 for up to two entries, 208 for three).
 # EQUIVALENT: none. TBP-E1 was declared one (the number of `compiled_size` as a machine size, pinned only as "an integer > 0"); the audit ruled it a KILL
 #   row (D-1028 (2)): the kernel's number is deterministic and the mutant moves it by the factor 8; the row tp06 pins it (swipl's 192 in a comment).
-# TARGETS (audit D-0238): TP for every mutant; TG (the trie rows that call `'$trie_property'/2`) and TZ (`compiled_size` of the answer-discard rows)
+# TARGETS (audit D-0238): TH = test/core_lang/test_htable.jl for TBP-K1..K3 (`sizeofTable` reads the three constants); TP for every mutant; TG (the trie rows that call `'$trie_property'/2`) and TZ (`compiled_size` of the answer-discard rows)
 #   for the property function; the tabling rows that read the IDG sizes (`'$idg_thread_summary'/3`, the pools) for SIZEOF_IDG_NODE.
 TP = "test/core_lang/test_trie_property_idg_swipl.jl"
 TG = "test/core_lang/test_trie_gen_swipl.jl"
 TZ = "test/core_lang/test_tabling_answer_discard_upstream_swipl.jl"
 TAB_IDG = "test/core_lang/test_tabling_idg_swipl.jl"
 TST = "test/core_lang/test_tabling_table_statistics_upstream_swipl.jl"
-TARGETS = [TP, TG, TZ, TAB_IDG, TST]
+TH = "test/core_lang/test_htable.jl"
+TARGETS = [TP, TG, TZ, TAB_IDG, TST, TH]
 TR = "src/pl-trie.jl"
 INC = "src/pl-incl.jl"
 MUTANTS = [
@@ -109,15 +110,15 @@ MUTANTS = [
          old='SIZEOF_KVS + len * SIZEOF_SYMBOL',
          new='SIZEOF_KVS + SIZEOF_SYMBOL'),
     dict(id='TBP-K1 SIZEOF_TABLE is 33 (KILL TP testset sizeofTablePP: the constant and 144)',
-         file=INC, targets=[TP],
+         file=INC, targets=[TP, TH],
          old='const SIZEOF_TABLE = 32\n',
          new='const SIZEOF_TABLE = 33\n'),
     dict(id='TBP-K2 SIZEOF_KVS is 41 (KILL TP testset sizeofTablePP)',
-         file=INC, targets=[TP],
+         file=INC, targets=[TP, TH],
          old='const SIZEOF_KVS = 48\n',
          new='const SIZEOF_KVS = 41\n'),
     dict(id='TBP-K3 SIZEOF_SYMBOL is 17 (KILL TP testset sizeofTablePP and tp05)',
-         file=INC, targets=[TP],
+         file=INC, targets=[TP, TH],
          old='const SIZEOF_SYMBOL = 16\n',
          new='const SIZEOF_SYMBOL = 17\n'),
     dict(id='TBP-K4 SIZEOF_IDG_NODE is 81 (KILL TP tp01: idg_size 81 and 137)',

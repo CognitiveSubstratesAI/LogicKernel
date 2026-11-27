@@ -547,11 +547,11 @@ function advanceTableEnum(e::TableEnum)::Tuple{Bool, UInt64, UInt64}
 end
 
 # PORT: pl-table.c sizeofTable
-# DIVERGES: the sizes of upstream's structs on a 64-bit machine (`struct table` 32 bytes, `struct kvs` 40, `struct symbol` 16),
-# not Julia's.
+# DIVERGES: the sizes of upstream's structs on a 64-bit machine (`SIZEOF_TABLE` 32 bytes, `SIZEOF_KVS` 48, `SIZEOF_SYMBOL` 16,
+# src/pl-incl.jl), not Julia's.
 "The memory usage of `ht` in bytes, as upstream counts it."
 function sizeofTable(ht::Table)::Int
-    return 32 + 40 + ht.kvs.len * 16
+    return SIZEOF_TABLE + SIZEOF_KVS + ht.kvs.len * SIZEOF_SYMBOL
 end
 
 # PORT: pl-table.c PL_new_hash_table
