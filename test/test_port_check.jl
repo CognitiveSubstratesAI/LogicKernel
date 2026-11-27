@@ -933,7 +933,12 @@ _pc_codes(vs) = sort!([
             ("src/pl-incl.jl", "M_DESTROYED", "src/pl-incl.h", "77c3148d"),
             ("src/pl-modul.jl", "releaseModule_unlocked", "src/pl-modul.c", "77c3148d")
         ]
-        @test all(k -> k.reason == "P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move", KEPT_NAMES)
+        @test all(
+            k ->
+                k.reason ==
+                "P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move",
+            KEPT_NAMES
+        )
         mktempdir() do base
             up = joinpath(base, "swipl-devel")
             for f in ("pl-incl.h", "pl-modul.c", "pl-inline.h")

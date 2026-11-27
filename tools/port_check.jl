@@ -181,9 +181,13 @@ const KeptName = @NamedTuple{
 }
 const KEPT_NAMES = KeptName[
     (file="src/pl-incl.jl", name="M_DESTROYED", upstream="src/pl-incl.h",
-        removed_by="77c3148d", reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"),
+        removed_by="77c3148d",
+        reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"
+    ),
     (file="src/pl-modul.jl", name="releaseModule_unlocked", upstream="src/pl-modul.c",
-        removed_by="77c3148d", reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move")
+        removed_by="77c3148d",
+        reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"
+    )
 ]
 
 "Upstream paths an ORIGINAL file at `rel` would shadow (swipl-devel)."
