@@ -813,7 +813,8 @@ end
     @test LK.PL_current_prolog_flag(gd, ld, _tls("version_data"), t)
     vd = lk_answers(ld, t)[1]
     @test sym_text(child(vd, 1)) == "swi" && nchildren(vd) == 5
-    @test [lk_value(child(vd, i)) for i in 2:4] == [10, 1, 20] && is_nil(child(vd, 5))
+    # swipl at the pin af9e2e7e: swi(11,1,0,[]) (before TAG1, the V10.1.20 pin: swi(10,1,20,[]))
+    @test [lk_value(child(vd, i)) for i in 2:4] == [11, 1, 0] && is_nil(child(vd, 5))
     @test !LK.PL_current_prolog_flag(gd, ld, _tls("iso"), t)                  # not a term flag
     @test !LK.PL_current_prolog_flag(gd, ld, _tls("nosuchflag"), t)
     LK.PL_close_foreign_frame(ld, fid)

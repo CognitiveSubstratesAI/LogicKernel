@@ -427,8 +427,9 @@ _db_atom_list_enc(xs::Vector{String})::String =
     @test length(debug_msgs()) == n0 + 2
     # the build flags: the access of libswipl (swipl: read) and the exact version_git
     @test occursin(_db_atom_list_enc(["write", "atom"]), _db_query(gd, ld, "r_lib"))
+    # swipl at the pin af9e2e7e: '10.1.21-86-gaf9e2e7e' (before TAG1, the V10.1.20 pin: '10.1.20-1-g18168e62')
     @test _db_query(gd, ld, "r_git") ==
-        "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.20-1-g18168e62") * ")"
+        "r_git c" * _db_codes("r_git") * "/1(a" * _db_codes("10.1.21-86-gaf9e2e7e") * ")"
     # `debug` false while the debug mode is already off still sets the run-mode bits (pl-trace.c:2253 `else if (!doit) setPrologRunMode`; pl-incl.h
     # sets them whatever the table's `last_call_optimisation` says): clear LASTCALL by the flag, then `debug` false puts it back
     @test LK.truePrologFlag(ld, LK.PLFLAG_LASTCALL)

@@ -1922,8 +1922,9 @@ end
 const UNICODE_SYNTAX_VERSION = "17.0.0"
 
 # ORIGINAL: the version of the system the pin names (src/pl-version.h `PLVERSION`: major*10000+minor*100+patch).
-"The SWI-Prolog version the port follows, as the flag `version` has it: 10.1.20 is 100120 (pl-version.h `PLVERSION`)."
-const PLVERSION = 100120
+# 11.1.0 since TAG1 (before: 10.1.20, 100120), as the oracle at the pin af9e2e7e answers (the VERSION file there).
+"The SWI-Prolog version the port follows, as the flag `version` has it: 11.1.0 is 110100 (pl-version.h `PLVERSION`)."
+const PLVERSION = 110100
 
 # ORIGINAL: upstream's `compiled_at` is the C compiler's `__DATE__ ", " __TIME__` (the `#elif defined(__DATE__) &&
 # defined(__TIME__)` branch, pl-prologflag.c:2785-2787, which every C compiler satisfies, so a build without cmake's
@@ -2016,8 +2017,10 @@ end
 const SO_EXT = Sys.iswindows() ? "dll" : "so"
 
 # Not a port of C code: the value of cmake/GitVersion.cmake's GIT_VERSION, which pl-version.c setGITVersion reads.
-"The `version_git` flag: `git describe --match \"V*\"` of the pin 18168e629eab with the `V` cut (cmake/GitVersion.cmake)."
-const GIT_VERSION = "10.1.20-1-g18168e62"
+# Since TAG1 the pin is af9e2e7e (before: 18168e629eab, "10.1.20-1-g18168e62"). The latest `V*` tag it describes from is V10.1.21,
+# so this differs from the flag `version` (the VERSION file at the commit says 11.1.0); the oracle's build answers both.
+"The `version_git` flag: `git describe --match \"V*\"` of the pin af9e2e7ed0be with the `V` cut (cmake/GitVersion.cmake)."
+const GIT_VERSION = "10.1.21-86-gaf9e2e7e"
 
 # PORT: pl-prologflag.c initPrologFlags as initPrologFlags!
 # DIVERGES: the database is the argument and the flags go to its table, in upstream's order. The order of the
@@ -2218,14 +2221,14 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
             mk_expr(
                 T,
                 T[
-                    mk_sym(T, :swi), mk_gnd(T, 10), mk_gnd(T, 1), mk_gnd(T, 20), mk_nil(T)
+                    mk_sym(T, :swi), mk_gnd(T, 11), mk_gnd(T, 1), mk_gnd(T, 0), mk_nil(T)
                 ]
             )
         )
         setPrologFlag(gd, ld, "version_data", FT_TERM | FF_READONLY, t)
     end
     # Port of pl-version.c setGITVersion (:41-48), called at the end of the version flags (pl-prologflag.c:2930). DIVERGES: `GIT_VERSION` is
-    # cmake/GitVersion.cmake's `git describe --match "V*"` of the pin with the `V` cut, as a build of the pin gets it: `V10.1.20-1-g18168e62`.
+    # cmake/GitVersion.cmake's `git describe --match "V*"` of the pin with the `V` cut, as a build of the pin gets it: `V10.1.21-86-gaf9e2e7e`.
     # `cmake_build_type` (:46) is the build's own and stays deferred.
     setPrologFlag(gd, "version_git", FT_ATOM | FF_READONLY, GIT_VERSION)
     _set_argv_prolog_flag!(gd, ld, "os_argv", ["swipl"])
