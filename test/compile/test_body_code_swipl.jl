@@ -237,13 +237,15 @@ const _BC_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
 _bP(n, a) = "P:" * _hcps(n) * "/$a"
 const _bX, _bL1, _bL2, _bL3 = _bv(1), _bv(2), _bv(3), _bv(4)
 
-# (head, body, swipl 10.1.16's code — probed, `clause_vm/2` + `vmi_labels/2`)
+# (head, body, swipl 10.1.16's code — probed, `clause_vm/2` + `vmi_labels/2`;
+# TAG1: concatenate's head from 11.1.0's, its last list cell h_rlist with no h_pop,
+# was h_list … h_pop)
 const _BC_PINNED_CODE = [
     (   # concatenate/3, clause 1: LCO with i_tcall, b_var1 already in place (no l_var for it)
         _bf("concatenate", _bcons(_bX, _bL1), _bL2, _bcons(_bX, _bL3)),
         _bf("concatenate", _bL1, _bL2, _bL3),
         [
-            "h_list_ff(3,4)", "h_void", "h_list", "h_var(3)", "h_firstvar(5)", "h_pop",
+            "h_list_ff(3,4)", "h_void", "h_rlist", "h_var(3)", "h_firstvar(5)",
             "i_enter", "l_nolco(L1)", "l_var(0,4)", "l_var(2,5)", "i_tcall", "L1:",
             "b_var(4)",
             "b_var1", "b_var(5)", "i_depart($(_bP("concatenate", 3)))", "i_exit"
@@ -1662,16 +1664,18 @@ const _BC_DEC_DECOMPILED = Dict{String, String}(
     @test named("not last")[2:6] ==
         ["c_or(L1)", "i_call(P:[97]/0)", "c_jmp(L2)", "L1:", "i_call(P:[98]/0)"]
     @test named("a | b")[2:end] == named("a ; b")[2:end]        # `|` is `;`
-    # balancing: the branch that leaves a variable unset makes it fresh, before its C_JMP or at
-    # its end — also a variable that lives in the other branch alone; a variable both branches
-    # set is not touched
+    # balancing: the branch that leaves a variable unset makes it fresh, before its
+    # C_JMP or at its end; a variable both branches set is not touched. TAG1: variables
+    # each living in one branch alone are not balanced and share a slot (11.1.0's
+    # clause_vm/2; was c_var(1) before the C_JMP, b_firstvar(1)/b_var1 in the second
+    # branch and c_var(0) at its end)
     @test count(startswith("c_var("), named("one variable to balance")) == 1
     @test count(startswith("c_var("), named("balance in the second branch")) == 1
     @test !any(startswith("c_var"), named("both branches set it"))
     @test named("a variable only inside") == [
         "i_enter", "c_or(L1)", "b_firstvar(0)", "i_call(P:[113]/1)", "b_var0",
-        "i_call(P:[114]/1)", "c_var(1)", "c_jmp(L2)", "L1:", "b_firstvar(1)", "b_var1",
-        "i_depart(P:[115]/2)", "c_var(0)", "L2:", "i_exit"
+        "i_call(P:[114]/1)", "c_jmp(L2)", "L1:", "b_firstvar(0)", "b_var0",
+        "i_depart(P:[115]/2)", "L2:", "i_exit"
     ]
     # upstream's `c_var` joins a slot to a run only when it follows the run's FIRST slot: four
     # slots in a row are two C_VAR_N of two, three are a C_VAR_N of two and a C_VAR

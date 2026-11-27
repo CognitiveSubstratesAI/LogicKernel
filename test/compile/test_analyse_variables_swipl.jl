@@ -258,9 +258,13 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
     q(xs...) = _ve("q", collect(_V, xs))
     r(xs...) = _ve("r", collect(_V, xs))
     s(xs...) = _ve("s", collect(_V, xs))
-    fx = "h_functor($(_hF("f", 1)))"
+    # TAG1 (swipl 11.1.0's clause_vm/2): the head's last compound is h_rfunctor with
+    # no h_pop (was h_functor … h_pop: p2, p13), and p10's variables share one slot
+    # (was ["0", "0", "1", "1"], 2)
+    fx = "h_rfunctor($(_hF("f", 1)))"
     # (head, body, framed, head code, body slots, frame size), each probed in swipl 10.1.16
-    # (2026-10-04); a framed clause's body is `shift(k), Body, zz`, its slots the Body's
+    # (2026-10-04; p2, p10, p13 in 11.1.0, above); a framed clause's body is
+    # `shift(k), Body, zz`, its slots the Body's
     pinned = [
         # p1(X) :- q(X): an argument used in the body is in its argument slot, no head code
         (_ve("p1", [X]), q(X), true, ["i_enter"], ["0"], 1),
@@ -269,7 +273,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
             _ve("p2", [_ve("f", [X])]),
             q(X),
             true,
-            [fx, "h_firstvar(1)", "h_pop", "i_enter"],
+            [fx, "h_firstvar(1)", "i_enter"],
             ["1"],
             2
         ),
@@ -299,7 +303,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         # p10 :- (q(X) *-> r(X) ; s(Y,Y)): `*->` is control too
         (
             _vs("p10"), _ve(";", [_ve("*->", [q(X), r(X)]), s(Y, Y)]), true, ["i_enter"],
-            ["0", "0", "1", "1"], 2
+            ["0", "0", "0", "0"], 1
         ),
         # p11(P) :- (q(P) -> \+ r(Q) ; s(Q)): a `\+` INSIDE a branch takes its variables out of it
         (
@@ -314,7 +318,7 @@ const _VA_SWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         # p13(f(X)) :- (q(X) ; r): a head variable met in one branch is not a void
         (
             _ve("p13", [_ve("f", [X])]), _ve(";", [q(X), _vs("r")]), true,
-            [fx, "h_firstvar(1)", "h_pop", "i_enter"], ["1"], 2
+            [fx, "h_firstvar(1)", "i_enter"], ["1"], 2
         ),
         # BARE — b1(X) :- q(Y, X, Y): a body goal's direct argument is numbered ABOVE the arity
         (_ve("b1", [X]), q(Y, X, Y), false, ["i_enter"], ["1", "0", "1"], 2),

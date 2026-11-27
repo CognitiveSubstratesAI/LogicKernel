@@ -214,9 +214,11 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         ["h_void_n(2)", "h_atom($(_ha("a")))", "i_exitfact"]
     # slots are COMPACTED past voids (pl-comp.c analyse_variables, `n + argvars - body_voids`),
     # pinned with swipl 10.1.16's vm_list: p(f(_A,B,B)) puts B in slot 1, not 2 ...
+    # (TAG1, 11.1.0's vm_list: a head's LAST compound is h_rfunctor with no h_pop,
+    # was h_functor … h_pop)
     vA, vB = mk_var(_H, UInt64(1)), mk_var(_H, UInt64(2))
     @test _hcode(_he(:p, [_he(:f, [vA, vB, vB])])) == [
-        "h_functor($(_hF("f", 3)))", "h_void", "h_firstvar(1)", "h_var(1)", "h_pop",
+        "h_rfunctor($(_hF("f", 3)))", "h_void", "h_firstvar(1)", "h_var(1)",
         "i_exitfact"
     ]
     # ... and q(X,g(_,Y,_,Y),X) puts Y in slot 3: of the variables numbered above the arity
@@ -236,8 +238,8 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         _he(:p, [mk_var(_H, UInt64(8)), _he(:f, [mk_var(_H, UInt64(9)), vY2, vY2])])
     ) ==
         [
-        "h_void", "h_functor($(_hF("f", 3)))", "h_void", "h_firstvar(2)", "h_var(2)",
-        "h_pop", "i_exitfact"
+        "h_void", "h_rfunctor($(_hF("f", 3)))", "h_void", "h_firstvar(2)", "h_var(2)",
+        "i_exitfact"
     ]
     # the frame is sized by the SAME count (pl-comp.c: prolog_vars = variables =
     # nvars + arity + argvars - body_voids): the arguments, then the compacted variables. The
@@ -271,13 +273,15 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
             _he(:lp9, [lk_gnd(_H, -2^56), lk_gnd(_H, -2^56 - 1)])
         )
     ]
-    a, b, f2 = "h_atom($(_ha("a")))", "h_atom($(_ha("b")))", "h_functor($(_hF("f", 2)))"
+    a, b, f2 = "h_atom($(_ha("a")))", "h_atom($(_ha("b")))", "h_rfunctor($(_hF("f", 2)))"
+    # TAG1 (11.1.0's vm_list): lp1-lp5's last compound or list cell is
+    # h_rlist/h_rfunctor with no h_pop (was h_list/h_functor … h_pop)
     want = [
-        ["h_list", a, "h_pop", "i_exitfact"],
-        ["h_list", a, "h_pop", "i_exitfact"],
-        ["h_list", a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
-        ["h_list_ff(2,3)", f2, "h_var(2)", "h_var(3)", "h_pop", "i_exitfact"],
-        [f2, a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
+        ["h_rlist", a, "i_exitfact"],
+        ["h_rlist", a, "i_exitfact"],
+        ["h_rlist", a, "h_rlist", b, "h_nil", "i_exitfact"],
+        ["h_list_ff(2,3)", f2, "h_var(2)", "h_var(3)", "i_exitfact"],
+        [f2, a, "h_rlist", b, "h_nil", "i_exitfact"],
         ["h_smallint(i:36028797018963967)", "h_mpz(i:36028797018963968)", "i_exitfact"],
         ["h_smallint(i:-36028797018963968)", "h_mpz(i:-36028797018963969)", "i_exitfact"],
         ["h_mpz(i:72057594037927935)", "h_mpz(i:72057594037927936)", "i_exitfact"],
