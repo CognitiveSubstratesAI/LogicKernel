@@ -246,8 +246,11 @@ mutable struct an_disj{T}
     start::Int          # First slot
     placed::Bool        # start is assigned
     term::T             # The (A;B) term (f475b538; upstream's `Word term`, here the compound itself, found by `===`)
+    # The one constructor, and no outer one: the caller names T. A T taken from the term's runtime type would be a
+    # subtype of the compiler's term type, and the record would not go into `compileInfo{T}.an_disjs`.
+    an_disj{T}(parent::Int, first::Int, second::Int, size::Int, start::Int, placed::Bool, term::T) where {T} =
+        new{T}(parent, first, second, size, start, placed, term)
 end
-an_disj(parent::Int, term::T) where {T} = an_disj{T}(parent, 0, 0, 0, 0, false, term)
 
 # PORT: pl-comp.c an_occ
 "An occurrence of a variable in a branch node (pl-comp.c `an_occ`; f475b538 af9e2e7e)."
@@ -1027,7 +1030,7 @@ end
 # (f475b538 af9e2e7e: records the term `(A;B)` of the disjunction, upstream `(Word)f`)
 "Enter the first alternative of a disjunction in the current node (pl-comp.c; b9caf216 af9e2e7e)."
 function an_enter_disjunction!(ci::compileInfo{T}, term::T)::Nothing where {T}
-    push!(ci.an_disjs, an_disj(ci.an_cur, term))
+    push!(ci.an_disjs, an_disj{T}(ci.an_cur, 0, 0, 0, 0, false, term))
     di = length(ci.an_disjs) - 1
     an_new_node!(ci, ci.an_cur, di)
     an_disj_ptr(ci, di).first = ci.an_cur
