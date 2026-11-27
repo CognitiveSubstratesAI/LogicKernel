@@ -116,6 +116,24 @@ const _VS_UP = get(
     joinpath(homedir(), "dev-zone", "swipl-devel")
 )
 const _VS_CI = get(ENV, "CI", "") == "true"
+
+# THE ONE MIXED-PIN EXCEPTION, TEMPORARY (audit D-1081 (1)): library/sandbox.pl stays vendored at the OLD pin while every other
+# manifest row is at `commit:`. Its refresh is its own queued step, with its own scans, and that step DELETES this exception
+# (these two constants, `_vs_tree_blob` and the lines below that use them). EXACTLY ONE path: a String, not a list. It holds only
+# while the vendored file and its manifest row are the OLD pin's blob AND the new pin's blob DIFFERS: it fails the day the file
+# is refreshed. Both upstream ids are read from the checkout, none is written here: while `sync-from:` names the old pin, CI's
+# jobs that check swipl-devel out also fetch it (tools/fetch_sync_from.sh, depth 1); without it the test fails.
+const _VS_MIXED_PATH = "library/sandbox.pl"
+const _VS_MIXED_OLD_PIN = "18168e629eab641c3ff5ff6359db5855a0128c96"
+
+"The blob id `git ls-tree` gives the file `rel` at `commit` of the checkout `up`, or `\"\"` (no such commit or file)."
+function _vs_tree_blob(up::String, commit::String, rel::String)::String
+    lines = readlines(ignorestatus(`git -C $up ls-tree $commit -- $rel`))
+    length(lines) == 1 || return ""
+    m = match(r"^100644 blob ([0-9a-f]{40})\t(.+)$", lines[1])
+    return m !== nothing && m[2] == rel ? String(m[1]) : ""
+end
+
 if _VS_CI || isdir(joinpath(_VS_UP, ".git"))
     @testset "the manifest is upstream's tree of boot/, library/ and LICENSE at the pinned commit" begin
         have_up = isdir(joinpath(_VS_UP, ".git"))
@@ -129,8 +147,23 @@ if _VS_CI || isdir(joinpath(_VS_UP, ".git"))
             _, upstream, generated = _vs_manifest()
             listed = readlines(`git -C $_VS_UP ls-tree -r $pin boot library LICENSE`)
             @test !isempty(listed)
+            # THE MIXED-PIN EXCEPTION (above): four real ids first, so no comparison is between two empty strings
+            @test _vs_pin("sync-from") == _VS_MIXED_OLD_PIN
+            old = _vs_tree_blob(_VS_UP, _VS_MIXED_OLD_PIN, _VS_MIXED_PATH)
+            new = _vs_tree_blob(_VS_UP, pin, _VS_MIXED_PATH)
+            row = get(upstream, _VS_MIXED_PATH, "")
+            file = only(_vs_blobs(String[joinpath(_VS_DIR, _VS_MIXED_PATH)]))
+            for id in (old, new, row, file)
+                @test occursin(r"^[0-9a-f]{40}$", id)
+            end
+            @test file == old
+            @test row == old
+            @test new != old
+            # every other row is compared exactly; for the one path, the new pin's tree must list the new blob
+            expected = copy(upstream)
+            expected[_VS_MIXED_PATH] = new
             @test sort!(listed) ==
-                sort!(["100644 blob $id\t$rel" for (rel, id) in upstream])
+                sort!(["100644 blob $id\t$rel" for (rel, id) in expected])
             # the generated indexes are NOT upstream's files
             for rel in keys(generated)
                 @test isempty(readlines(`git -C $_VS_UP ls-tree $pin $rel`))
