@@ -230,7 +230,7 @@ const PINNED_ONLY_SWIPL = Dict{String, String}(
     "emacs_inferior_process" => _OTHER_FILE,
     "engines" => _THREADS,
     "executable_format" => _BUILD,
-    "gc_code" => "the collection it controls (gc_code=module) is not ported; gap row: docs/port_inventory.md, table \"Not ported: nothing here can set or observe it\", swipl-devel `src/pl-modul.c` \"module GC\" (the table has no row ids)",
+    "gc_code" => "the kernel lacks module GC and procedure GC, which it controls; gap row:docs/port_inventory.md, table \"Not ported: nothing here can set or observe it\", swipl-devel `src/pl-modul.c` \"module GC\" (the table has no row ids)",
     "malloc" => _OTHER_FILE * " (the allocator found: the kernel uses Julia's)",
     "open_shared_object" => _TOOLCHAIN,
     "pipe" => "pipe streams (pl-prologflag.c HAVE_POPEN): open(pipe(Cmd)) is not ported until R2 S1",
