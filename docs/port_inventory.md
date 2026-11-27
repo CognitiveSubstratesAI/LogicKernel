@@ -498,6 +498,8 @@ subsystems exist.
 | upstream file | name | commit | what sets it, and what reads it, upstream |
 |---|---|---|---|
 | swipl-devel `src/pl-incl.h`, `src/pl-vmi.c` | the definition flag `HIDE_CHILDS` (incl:1116) and its three tests in `I_DEPART`, `I_LCALL`, `I_TCALL` (vmi:2096, 2596, 2610), which mark the frame `FR_HIDE_CHILDS` | `bae881a24a3f` | SET by system mode, by `debuginfo=false` when a predicate is first defined (pl-comp.c:4987-4996, pl-srcfile.c:1218-1225) and for foreign predicates (pl-ext.c:304, pl-fli.c:4903); READ only by the debugger, through `FR_HIDE_CHILDS` (pl-trace.c:227-274). None of these exists here |
+| swipl-devel `src/pl-modul.c` | halt-time module cleanup: `cleanupModules`, `unallocModuleSymbol`, `unallocModule` | `af9e2e7ed0be` | Halt-time module cleanup is not ported: Julia owns the memory. `unallocModule` is called by `unallocModuleSymbol` (the module table's `free_symbol`, `initModules`) and by `cleanupModules` at halt (through `empty_module`); it frees the module's tables and puts a source or typein module that is the freed one back to `user`. No module record leaves the table here |
+| swipl-devel `src/pl-modul.c` | module GC: `collectVolatileModules` and the `gc_code=module` collection | `af9e2e7ed0be` | Upstream's module GC takes an empty, unpinned module with no counted reference out of the module table (`destroyVolatileModule`). The kernel has no module GC: `destroyTemporaryModule` resets the module, which stays in the table with its record; `references` is counted and nothing collects on it |
 
 ## The VM — inventory and port plan (COMPILER_PLAN 3h)
 

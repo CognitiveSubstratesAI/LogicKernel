@@ -6458,12 +6458,13 @@ What MOD5b ports (swipl-devel cbf4e1896275; src/pl-modul.jl unless named):
   another file unless Redefine, then the file (`addModuleSourceFile`), the line, the source module, the abolish loop over the
   procedures, the public table cleared and the super module replaced. The file is the source file's INDEX (0: none); the module
   holds the reference `lookupSourceFile` took until it is destroyed (upstream's leak on the equal-file and refusal paths is mirrored).
-- **The temporary class and the destroy**: `acquireModule` (:195), `acquireModulePtr` (:208), `releaseModule_unlocked` (:217),
-  `releaseModule` (:233), `unallocModule` (:351), `markSourceFilesProcedure` (:389), `unlinkSourceFilesModule` (:402),
-  `destroyModule` (:429) and `pl_destroy_module1_va` (`'$destroy_module'/1`, :1826-1848: a temporary module is destroyed, any other
-  class is `permission_error(destroy, module, M)`, a name of no module succeeds). `unlinkSourceFileModule` (pl-srcfile.c:544,
-  src/pl-srcfile.jl). Only the class `temporary` counts references. The destroy takes the NAME out of `gd.modules.names` and sets
-  `M_DESTROYED`; the last release resets the source and typein modules that were the destroyed one to `user`.
+- **The temporary class and the destroy** (as of the 11.1.0 sync): `acquireModule`, `acquireModulePtr`, `releaseModule`,
+  `markSourceFilesProcedure`, `unlinkSourceFilesModule`, `destroyTemporaryModule`, `abolishModule` and `pl_destroy_module1_va`
+  (`'$destroy_module'/1`: a temporary module is destroyed, any other class is `permission_error(destroy, module, M)`, a name of no
+  module succeeds). `unlinkSourceFileModule` (src/pl-srcfile.jl). Only the class `temporary` counts references, and `releaseModule`
+  only decrements the count. The destroy resets the module to the state of a new one (`abolishModule`): the module keeps its name,
+  its record and its place in the table. `unallocModule` (halt-time cleanup) and module GC are not ported
+  (docs/port_inventory.md, "Not ported: nothing here can set or observe it").
 - **`_text_summary`** (pl-util.c:67-116, `text_summary`/`atom_summary`) for the "Already loaded from …" message.
 - **`abolishProcedure`'s imported-link branch** (pl-proc.c:1517-1530, `abolishProcedure!` since PR1b; MOD5b ported it first as `_abolishProcedure_pristine`): an auto-imported link of a
   re-declared module is replaced by a fresh definition of the module (`shared` 0, as upstream's `memset`), the old one unshared. A
@@ -6480,9 +6481,8 @@ F5 lands.
 
 Representation notes (each in a comment too):
 
-- **GC frees a destroyed module**: `unallocModule` resets the source and typein modules and leaves the record in the module table's
-  vector (indices stay valid); the old record keeps `M_DESTROYED`, `references == 0`, `file == 0`, and its definitions name the old
-  index. A later lookup of the name makes a NEW module (a higher index). Rows e02 and the "H3" testset pin both records.
+- **A destroyed module is not freed**: there is no module GC, so the record stays in the module table's vector under its name
+  (indices stay valid), reset by `abolishModule`, with `file == 0`. A later lookup of the name finds the same module.
 - The procedures are walked in the order of the module's table (Julia's `Dict`), where upstream's follows its hash table (D-0149 item 1).
 - `class` and `super` are atoms; the source file has no `reload` (reconsult stays with the loader); the invariant print of
   `destroyModule` and `GD->modules.generation` have no counterpart.

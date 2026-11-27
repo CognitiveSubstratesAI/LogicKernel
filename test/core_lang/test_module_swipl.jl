@@ -425,7 +425,7 @@ const _SYNTAX = LK.M_CHARESCAPE | LK.DBLQ_STRING | LK.BQ_CODES | LK.O_RATIONAL_S
     @test nilm !== txtm && length(gd.modules) == 7          # system, user, prolog, wb_a, \$wb_d, [], '[]'
     # a module is never removed from the vector, and a definition holds its index
     @test LK.lookupProcedure(_tls(:p), 1, a).definition.module_ == a.index
-    @test LK.M_DESTROYED == UInt32(0x00010000)                     # pl-incl.h
+    @test LK.M_WAITED_FOR == UInt32(0x00020000)                    # pl-incl.h
 end
 
 @testset "the super modules: add, delete, set, clear, levels, cycles (pl-modul.c, by the source)" begin

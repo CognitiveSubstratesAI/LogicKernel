@@ -280,7 +280,7 @@ MUTANTS = [
          old='''    return module_code_size(m) + 16 * length(m.procedures)''',
          new='''    return module_code_size(m)'''),
     # ---- the record (src/pl-incl.jl)
-    dict(id="MOD1-I1 M_DESTROYED is another bit", file=I, targets=TS,
-         old='''const M_DESTROYED = UInt32(0x00010000)''',
-         new='''const M_DESTROYED = UInt32(0x00020000)'''),
+    dict(id="MOD1-I1 M_WAITED_FOR is another bit", file=I, targets=TS,
+         old='''const M_WAITED_FOR = UInt32(0x00020000)''',
+         new='''const M_WAITED_FOR = UInt32(0x00010000)'''),
 ]

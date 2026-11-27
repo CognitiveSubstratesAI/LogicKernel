@@ -1,6 +1,6 @@
 # ORIGINAL: MOD5b's mutant list — no swipl-devel counterpart.
 # tools/mutants/MOD5b2.py — the mutation battery of MOD5b (declaring and destroying modules: pl-modul.c declareModule,
-# declare_module, destroy_module, destroyModule, acquireModule, releaseModule(_unlocked), unallocModule, unlinkSourceFilesModule,
+# declare_module, destroy_module, destroyModule, acquireModule, releaseModule, unlinkSourceFilesModule,
 # markSourceFilesProcedure; pl-srcfile.c unlinkSourceFileModule; pl-proc.c abolishProcedure's imported-link branch), run ONCE, in
 # CI (.github/workflows/mutation.yml; locally: tools/mutate.sh run).
 # Format: tools/mutate_drive.py's (as MOD5a.py): `id`, `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent`
@@ -14,6 +14,8 @@
 # TARGETS (audit D-0238): the code mutated here is reached from `'$declare_module'/6` and `'$destroy_module'/1` only (callers of
 # declareModule, destroyModule, acquireModule, releaseModule, unlinkSourceFile(s)Module and the abolish branch: the grep over src/
 # and test/ found test_declare_destroy_swipl.jl alone; test_export_import_swipl.jl only names '$declare_module' in a comment).
+# releaseModule is also called by the module enumeration (advanceModuleEnum, freeModuleEnum): its row, R4, targets
+# test_module_enum_swipl.jl too.
 # NOT LISTED (each with its reason):
 #   * _text_summary's `maxlen - 6`, the message text "Already loaded from …": it is in the error CONTEXT; the rows compare the
 #     formal only, and no row names a path of more than 100 characters.
@@ -42,32 +44,16 @@ MUTANTS = [
          new='        nothing                           # ATOMIC_INC(&m->gc_references)\n    end\n    return nothing\n',
          equivalent="acquireModulePtr is ported for completeness (pl-modul.c:208) and has no caller in src/ yet (grep over "
                     "src/*.jl); the `getTargetModule!` path that will use it is L-later"),
-    # ── unallocModule ──
-    dict(id="MOD5b-U1 unallocModule leaves the source module as it is: a destroyed module stays the source module (KILL d02)",
-         file=M, targets=TS,
-         old="    ld.modules_source == m.index && (ld.modules_source = user.index)\n",
-         new="    nothing\n"),
-    dict(id="MOD5b-U2 unallocModule leaves the typein module as it is (KILL d03)", file=M, targets=TS,
-         old="    ld.modules_typein == m.index && (ld.modules_typein = user.index)\n",
-         new="    nothing\n"),
-    dict(id="MOD5b-U3 unallocModule puts the destroyed module itself back as the source module (KILL d02)", file=M, targets=TS,
-         old="(ld.modules_source = user.index)",
-         new="(ld.modules_source = m.index)"),
     # ── markSourceFilesProcedure, unlinkSourceFilesModule, unlinkSourceFileModule ──
     dict(id="MOD5b-L1 unlinkSourceFilesModule releases the file but keeps the module's file index (KILL H3: old.file == 0)",
          file=M, targets=TS,
          old="        m.file = 0\n        releaseSourceFile(sf)\n",
          new="        releaseSourceFile(sf)\n"),
-    # ── releaseModule_unlocked, releaseModule ──
-    dict(id="MOD5b-R1 releaseModule_unlocked frees at one reference left, not at none", file=M, targets=TS,
-         old="    if m.references == 0 && (m.flags & M_DESTROYED) != 0\n",
-         new="    if m.references == 1 && (m.flags & M_DESTROYED) != 0\n",
-         equivalent="since af9e2e7e's destroyTemporaryModule nothing sets M_DESTROYED (src/pl-modul.jl destroyTemporaryModule), so "
-                    "the branch is not reached with either test"),
-    dict(id="MOD5b-R4 releaseModule releases the modules that are NOT temporary, not the temporary ones (KILL d02, H3)", file=M,
-         targets=TS,
-         old='    if !isPermanentModule(m)\n        releaseModule_unlocked(gd, ld, m)\n',
-         new='    if isPermanentModule(m)\n        releaseModule_unlocked(gd, ld, m)\n'),
+    # ── releaseModule ──
+    dict(id="MOD5b-R4 releaseModule releases the modules that are NOT temporary, not the temporary ones (KILL H3: references == 0)",
+         file=M, targets=["test/core_lang/test_declare_destroy_swipl.jl", "test/core_lang/test_module_enum_swipl.jl"],
+         old='    if !isPermanentModule(m)\n        m.references -= 1',
+         new='    if isPermanentModule(m)\n        m.references -= 1'),
     # ── destroyTemporaryModule (af9e2e7e: abolish, keep the module) ──
     dict(id="TAG1D-D1 destroyTemporaryModule does not abolish the module (KILL d02-d03 stay, e01, e03, H3)", file=M, targets=TS,
          old="    return abolishModule(gd, ld, m, soft)\n",

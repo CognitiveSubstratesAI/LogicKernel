@@ -179,16 +179,7 @@ end
 const KeptName = @NamedTuple{
     file::String, name::String, upstream::String, removed_by::String, reason::String
 }
-const KEPT_NAMES = KeptName[
-    (file="src/pl-incl.jl", name="M_DESTROYED", upstream="src/pl-incl.h",
-        removed_by="77c3148d",
-        reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"
-    ),
-    (file="src/pl-modul.jl", name="releaseModule_unlocked", upstream="src/pl-modul.c",
-        removed_by="77c3148d",
-        reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"
-    )
-]
+const KEPT_NAMES = KeptName[]
 
 "Upstream paths an ORIGINAL file at `rel` would shadow (swipl-devel)."
 function shadowed_paths(rel::AbstractString)::Vector{String}

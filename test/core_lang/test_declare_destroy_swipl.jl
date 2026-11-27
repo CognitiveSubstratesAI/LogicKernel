@@ -447,14 +447,13 @@ end
 
 @testset "a destroyed module keeps its identity: it is abolished, not replaced (H3)" begin
     # kernel-side: swipl cannot be asked about a module's index. UNVERIFIED on the kernel: gate decides.
-    # Before af9e2e7e the name left the table and a second record took it (two records of mtd7, the old one `M_DESTROYED`).
+    # Before af9e2e7e the name left the table and a second record took it (two records of mtd7, the old one marked destroyed).
     f, names = _mb_file()
     _, gd, _ = _mb_kernel(f, names)
     ms = [m for m in gd.modules if m.name == sym_key(_mbs("mtd7"))]
     @test length(ms) == 1                     # e02 destroyed it and declared the name again: the same module
     m7 = only(ms)
     @test LK.isCurrentModule(gd.modules, _mbs("mtd7")) === m7
-    @test (m7.flags & LK.M_DESTROYED) == 0
     @test m7.references == 0
     @test m7.file != 0                        # abolishModule unlinked /mb/t.pl; the re-declaration linked /mb/t2.pl
     tq = m7.procedures[(sym_key(_mbs("tq")), 1)]
@@ -463,9 +462,9 @@ end
     # d12 destroyed mtd5 twice and nothing declared it again: abolished, still temporary, no file, still in the table
     m5t = LK.isCurrentModule(gd.modules, _mbs("mtd5"))
     @test m5t !== nothing && sym_key(m5t.class) == sym_key(_mbs("temporary"))
-    @test m5t.file == 0 && m5t.references == 0 && (m5t.flags & LK.M_DESTROYED) == 0
+    @test m5t.file == 0 && m5t.references == 0
     mna = LK.isCurrentModule(gd.modules, _mbs("mna"))
-    @test mna !== nothing && (mna.flags & LK.M_DESTROYED) == 0 && mna.file != 0
+    @test mna !== nothing && mna.file != 0
     # b06 (abolishProcedure's imported branch): user's sup_s/1 was linked into mns5 by a call, the re-declaration removed the link:
     # a fresh definition of mns5's own, user's shared once again (UNVERIFIED on the kernel: gate decides)
     us = LK.isCurrentModule(gd.modules, _mbs("user"))

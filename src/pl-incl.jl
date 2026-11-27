@@ -1220,9 +1220,9 @@ const VARTAG_MASK = UInt32(0x00000e00)
 # PORT: pl-incl.h O_RATIONAL_SYNTAX
 "The default rational syntax (pl-incl.h)."
 const O_RATIONAL_SYNTAX = RAT_COMPAT
-# PORT: pl-incl.h M_DESTROYED
-"Module flag: the module was destroyed (`'\$destroy_module'/1`); its name left the table (pl-incl.h)."
-const M_DESTROYED = UInt32(0x00010000)
+# PORT: pl-incl.h M_WAITED_FOR
+"Module flag of the module's wait area, which is not kept (no threads): a module reset keeps the bit (pl-incl.h)."
+const M_WAITED_FOR = UInt32(0x00020000)
 # PORT: pl-incl.h M_RDSTRING_TERM
 "Read flag: read/1 and friends demand a term (pl-incl.h)."
 const M_RDSTRING_TERM = UInt32(0x00040000)

@@ -885,17 +885,15 @@ function fixExportModule(
 end
 
 # PORT: pl-modul.c fixExport
-# DIVERGES: the database `gd` is an argument; a record marked `M_DESTROYED` (since af9e2e7e's `destroyTemporaryModule` nothing sets it) is not
-# in upstream's table, so it is skipped.
+# DIVERGES: the database `gd` is an argument.
 # DIVERGES (SYNC3): upstream (af9e2e7e) calls `fixExportModule` at once for a permanent module (`isPermanentModule`), but for
 # any other counts a reference, skips it when MG_DESTROY is set and gives the reference back (module GC may be collecting it):
-# the kernel's `M_DESTROYED` skip is that test, and there is no concurrent collector, so the reference is not counted.
+# there is no module GC here, so nothing sets MG_DESTROY, there is no concurrent collector and the reference is not counted.
 "Patch the definition `old` to `new` in every module (pl-modul.c)."
 function fixExport(
     gd::PL_global_data{T}, old::Definition{T}, new::Definition{T}
 )::Nothing where {T}
     for m in gd.modules
-        (m.flags & M_DESTROYED) != 0 && continue
         fixExportModule(m, old, new)
     end
     return nothing
@@ -1128,7 +1126,7 @@ end
 # DIVERGES (SYNC3): new at af9e2e7e (77c3148d, module GC): `isPermanentFlags(m->gc_flags)`, `(flags&(MG_PINNED|MG_TEMPORARY)) == MG_PINNED`:
 # pinned and not temporary, references to it are not counted. The kernel has no `gc_flags` (no module GC: P08 handoff): every module
 # is pinned and `class(temporary)` stands for MG_TEMPORARY, so a module is permanent when its class is not `temporary`. A temporary
-# module keeps the kernel's own count (`references`, `releaseModule_unlocked`), the one upstream counts references for too (the module
+# module keeps the kernel's own count (`references`, `releaseModule`), the one upstream counts references for too (the module
 # GC pins of a temporary module are dropped by '$destroy_module'/1).
 "Whether references to `m` are not counted: `m` is not a temporary module (pl-modul.c)."
 isPermanentModule(m::module_t{T}) where {T} =
@@ -1163,24 +1161,10 @@ function acquireModulePtr(m::module_t{T})::Nothing where {T}
     return nothing
 end
 
-# PORT: pl-modul.c unallocModule
-# DIVERGES: the memory (the tables, the super list, the lingering definitions) is Julia's garbage collector's: a destroyed module
-# keeps its record, its procedures and its index, as definitions hold the index (D-0149 M2, H3); what is done is the one
-# visible effect, the source and typein modules go back to `user`.
-# DIVERGES (SYNC3): upstream (af9e2e7e) calls `purgeProcedureCandidates(m)` (pl-proc.c, procedure GC: removes the module's
-# procedures from the collection candidate list) before `destroyHTableWP(m->procedures)`: the call is made, P06's shim is a no-op
-# (src/pl-proc.jl, branch wip/sync-p06: no procedure GC). The new module-GC block after it (`isEmptyModule`, `keepVolatileModule`,
-# `collectVolatileModules`, ...: 277 lines) is E-tier, not ported (no module GC; P08 handoff list).
-"Free a destroyed module: the source and typein modules that are `m` become `user` (pl-modul.c)."
-function unallocModule(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
-)::Nothing where {T}
-    user = MODULE_user(gd)
-    purgeProcedureCandidates(m)                     # if ( m->procedures ) purgeProcedureCandidates(m); destroyHTableWP(m->procedures)
-    ld.modules_source == m.index && (ld.modules_source = user.index)
-    ld.modules_typein == m.index && (ld.modules_typein = user.index)
-    return nothing
-end
+# NOT PORTED: pl-modul.c `unallocModule`. Upstream calls it from `unallocModuleSymbol` (the module table's `free_symbol`,
+# `initModules`) and from `cleanupModules` at halt (through `empty_module`): halt-time module cleanup is not ported, Julia owns
+# the memory. Module GC (`collectVolatileModules`, which frees a module through `destroyVolatileModule`) is a gap of its own.
+# Both are rows of docs/port_inventory.md, "Not ported: nothing here can set or observe it".
 
 # PORT: pl-modul.c markSourceFilesProcedure
 # DIVERGES: the bit vector is a `BitVector` indexed from 0 (element `i + 1`). SYNC3 (af9e2e7e): a `source_no` beyond the vector
@@ -1231,27 +1215,10 @@ function unlinkSourceFilesModule(gd::PL_global_data{T}, m::module_t{T})::Nothing
     return nothing
 end
 
-# PORT: pl-modul.c releaseModule_unlocked
-# CLEANUP (SYNC3): removed upstream at af9e2e7e (77c3148d: module GC; `releaseModule` is `ATOMIC_DEC(&m->gc_references)`, the module
-# is freed by the collector, not by the last release). Kept as the kernel's own function for its temporary-module scheme
-# (`references` + `M_DESTROYED`); its marker points at the pre-GC upstream function (pin 18168e62). P10 decides.
-# DIVERGES: `GD->statistics.modules` and `PL_unregister_atom(name)` (no statistics, no atom GC) and the wait area (no threads) are not kept;
-# the local data is an argument (`unallocModule` resets its source and typein modules).
-"Drop a reference to the temporary module `m`; the last one of a destroyed module frees it (pl-modul.c)."
-function releaseModule_unlocked(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
-)::Nothing where {T}
-    m.references -= 1
-    if m.references == 0 && (m.flags & M_DESTROYED) != 0
-        unlinkSourceFilesModule(gd, m)
-        unallocModule(gd, ld, m)
-    end
-    return nothing
-end
-
 # PORT: pl-modul.c releaseModule
 # DIVERGES (SYNC3): upstream (af9e2e7e) is `if ( m && !isPermanentModule(m) ) ATOMIC_DEC(&m->gc_references)`: the module GC frees the
-# module later. Here the decrement is `releaseModule_unlocked`'s (the kernel's deferred destroy, above); `m` is never NULL. New
+# module later. Here the count is `references`, not atomic (no threads), and no module GC reads it; `m` is never NULL; the database
+# `gd` and the local data are arguments the body does not use. New
 # `releaseModuleRef(ref)` (the counted reference of `acquireModuleRef`) and `releaseModuleCodeRef(m)` (`GD->halt.cleaning !=
 # CLN_DATA`: a clause's reference at halt, `freeClause`) are E-tier, not ported (module GC / clause GC).
 "Drop a reference to `m` when it is not a permanent module (pl-modul.c)."
@@ -1259,7 +1226,7 @@ function releaseModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
 )::Nothing where {T}
     if !isPermanentModule(m)
-        releaseModule_unlocked(gd, ld, m)
+        m.references -= 1                           # ATOMIC_DEC(&m->gc_references)
     end
     return nothing
 end
@@ -1284,9 +1251,9 @@ end
 # not mapped back to its index is not in the table and is not enumerated, as upstream's deleted entry (`destroyTemporaryModule` no
 # longer takes a name out). No lock (no threads).
 # DIVERGES (SYNC3): upstream (af9e2e7e) skips a temporary module unless `MENUM_TEMP`, then, for a module that is not permanent, counts
-# a reference (`gc_references`), skips it if module GC marked it `MG_DESTROY` (`M_DESTROYED` here), and releases the previously held
-# one with `releaseModuleRef(en->gc_ref)` (`releaseModule` here); the field is `en->gc_ref` upstream (`en.current`, pl-incl.jl: held
-# with the pl-incl.h owner).
+# a reference (`gc_references`), skips it if module GC marked it `MG_DESTROY` (no module GC here: the test is not made), and
+# releases the previously held one with `releaseModuleRef(en->gc_ref)` (`releaseModule` here); the field is `en->gc_ref` upstream
+# (`en.current`, pl-incl.jl: held with the pl-incl.h owner).
 "The next module of the table, or `nothing`; a temporary one only with `MENUM_TEMP`, then it is referenced (pl-modul.c)."
 function advanceModuleEnum(
     gd::PL_global_data{T}, ld::PL_local_data{T}, en::module_enum
@@ -1309,10 +1276,6 @@ function advanceModuleEnum(
         # see module GC
         if !isPermanentModule(m)
             m.references += 1                           # ATOMIC_INC(&m->gc_references)
-            if (m.flags & M_DESTROYED) != 0             # LOAD_SEQ_CST(m->gc_flags)&MG_DESTROY
-                m.references -= 1                       # ATOMIC_DEC(&m->gc_references)
-                continue
-            end
             en.current != 0 && releaseModule(gd, ld, table.modules[en.current])    # releaseModuleRef(en->gc_ref)
             en.current = m.index                        # en->gc_ref = m
         end
@@ -1343,8 +1306,7 @@ end
 # `if ( soft )` block, which feeds module GC: dropping `MG_PINNED|MG_TEMPORARY`, `moduleGCCandidate(m)`, `destroyedTemporaryModule()`
 # (in src/pl-{modul,incl,proc,comp,srcfile,global}.jl a grep finds `MG_TEMPORARY` and `moduleGCCandidate` in comments only). So the
 # module stays in the table, reset to a new module, and its record is not reclaimed (module memory is Julia's). `unpin` reaches
-# `unpinProcedure`, P06's shim. `M_DESTROYED` and the destroy branch of `releaseModule_unlocked`, the kernel's earlier deferred
-# destroy, are set and reached by nothing here; their removal (`KEPT_NAMES`, tools/port_check.jl) is a separate step.
+# `unpinProcedure`, P06's shim.
 "Abolish the temporary module `m`; the module keeps its identity and its place in the table (pl-modul.c)."
 function destroyTemporaryModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
@@ -1376,13 +1338,12 @@ function abolishProceduresModule(
 end
 
 # PORT: pl-modul.c MODULE_RESET_FLAGS
-# DIVERGES (SYNC3): upstream `(M_WAITED_FOR)`; see `abolishModule`. `destroyTemporaryModule` no longer sets `M_DESTROYED`.
 "The module flags `abolishModule` keeps (pl-modul.c)."
-const MODULE_RESET_FLAGS = M_DESTROYED
+const MODULE_RESET_FLAGS = M_WAITED_FOR
 
 # PORT: pl-modul.c abolishModule
-# DIVERGES: new at af9e2e7e (SYNC3; 534ec274). `MODULE_RESET_FLAGS` is `M_WAITED_FOR` upstream (a flag of the module's wait area: no
-# threads); here it keeps `M_DESTROYED`, the kernel's own flag (the deferred destroy), which a reset does not touch. `m->hook`
+# DIVERGES: new at af9e2e7e (SYNC3; 534ec274). `MODULE_RESET_FLAGS` is `M_WAITED_FOR`, a flag of the module's wait area, which is
+# not kept (no threads): nothing here sets the bit. `m->hook`
 # (`O_PROLOG_HOOK`) is not kept. The syntax flags are SWI-7's (`GD->options.traditional` is false). No lock (no threads). Whether
 # module GC may collect the module afterwards (`moduleGCCandidate`) is the caller's, E-tier. `global_generation()` is
 # `global_generation(gd)`.

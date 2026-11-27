@@ -77,11 +77,6 @@ MUTANTS = [
     dict(id="MOD5a-F1 fixExportModule does not re-point the sharing procedure (KILL i15, sh)", file=M, targets=TS,
          old="            proc.definition = new\n",
          new="            nothing\n"),
-    dict(id="MOD5a-F2 fixExport also visits a destroyed module (EQUIVALENT: no module is destroyed yet)", file=M, targets=TS,
-         old="(m.flags & M_DESTROYED) != 0 && continue",
-         new="false && continue",
-         equivalent="M_DESTROYED is set by '$destroy_module'/1 (MOD5b), which the kernel does not have: no module of a row is "
-                    "destroyed, so the skipped branch never runs (src/pl-modul.jl fixExport)"),
     # ── atomToImportStrength, import/1, '$import'/2 ──
     dict(id="MOD5a-S1 atomToImportStrength maps weak to strong (KILL w02, F5)", file=M, targets=TS,
          old="sym_key(a) == sym_key(mk_sym(T, :weak)) && return Int(PROC_WEAK)",

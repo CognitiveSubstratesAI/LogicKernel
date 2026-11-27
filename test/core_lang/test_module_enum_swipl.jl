@@ -514,7 +514,7 @@ end
         m = only(ms)
         @test LK.isCurrentModule(gd.modules, _mms(name)) === m
         @test sym_key(m.class) == sym_key(_mms("temporary"))
-        @test (m.flags & LK.M_DESTROYED) == 0 && m.references == 0
+        @test m.references == 0
         push!(destroyed, m)
     end
     en = LK.module_enum()
