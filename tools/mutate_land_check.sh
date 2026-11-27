@@ -205,7 +205,8 @@ echo "baseline: unmutated copy passes ($(tail -1 "$W/base.log"))"
 # (the Landing cases: they hold every row of the src-diff release; the LocalVerdict cases hold the local-verdict ones), the test pointed at the copy through VERDICT_READ_UNDER_TEST
 mkdir -p "$W/vr"; cp "$HERE/battery_table.py" "$W/vr/"; cp "$VSRC" "$W/vr/verdict_read.py"
 # R1-R7 (src-diff release) run the Landing class, R8 and up (local verdict, D-1009 (5)) the LocalVerdict class; both fail-fast
-vtest() { VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" -f $1 > "$W/v.log" 2>&1; }
+# $1 holds one or two class names (vsel): split into an array, one argument each
+vtest() { local -a cls; read -r -a cls <<< "$1"; VERDICT_READ_UNDER_TEST="$W/vr/verdict_read.py" python3 -I "$VTEST" -f "${cls[@]}" > "$W/v.log" 2>&1; }
 vsel() { case "$1" in R[1-7]) echo Landing ;; R3[2-9] | R4[0-5] | R54 | R56 | R58) echo StandItem ;; R4[6-9] | R5[0-3] | R57) echo "LocalVerdict StandItem" ;; *) echo LocalVerdict ;; esac; }
 for cls in Landing LocalVerdict StandItem; do
     if ! vtest "$cls"; then echo "mutate_land_check: the UNMUTATED verdict_read copy fails the $cls tests"; tail -5 "$W/v.log"; exit 2; fi
