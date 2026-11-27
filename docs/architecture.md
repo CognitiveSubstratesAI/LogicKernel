@@ -1103,6 +1103,7 @@ graph LR
     pl_incl --> pl_coverage
     pl_incl --> pl_arith
     pl_incl --> os_pl_text
+    pl_incl --> pl_event
     pl_incl --> pl_tabling
     pl_incl --> pl_wrap
     pl_incl --> pl_trie
@@ -1165,6 +1166,7 @@ graph LR
     pl_global --> os_pl_os
     pl_global --> os_pl_file
     pl_global --> pl_setup
+    pl_global --> pl_event
     pl_global --> pl_transaction
     pl_global --> pl_tabling
     pl_global --> gd_template
@@ -2467,10 +2469,10 @@ graph LR
     gd_template --> default_term
     gd_template --> pl_incl
     gd_template --> pl_global
-    gd_template --> pl_thread
     gd_template --> pl_arith
     gd_template --> os_pl_text
     gd_template --> pl_proc
+    gd_template --> pl_event
     gd_template --> pl_qlf
     boot_image --> term_interface
     boot_image --> default_term
