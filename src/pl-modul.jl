@@ -885,7 +885,7 @@ function fixExportModule(
 end
 
 # PORT: pl-modul.c fixExport
-# DIVERGES: the database `gd` is an argument; a destroyed module (`M_DESTROYED`: its name left the table) is not
+# DIVERGES: the database `gd` is an argument; a record marked `M_DESTROYED` (since af9e2e7e's `destroyTemporaryModule` nothing sets it) is not
 # in upstream's table, so it is skipped.
 # DIVERGES (SYNC3): upstream (af9e2e7e) calls `fixExportModule` at once for a permanent module (`isPermanentModule`), but for
 # any other counts a reference, skips it when MG_DESTROY is set and gives the reference back (module GC may be collecting it):
@@ -1128,8 +1128,8 @@ end
 # DIVERGES (SYNC3): new at af9e2e7e (77c3148d, module GC): `isPermanentFlags(m->gc_flags)`, `(flags&(MG_PINNED|MG_TEMPORARY)) == MG_PINNED`:
 # pinned and not temporary, references to it are not counted. The kernel has no `gc_flags` (no module GC: P08 handoff): every module
 # is pinned and `class(temporary)` stands for MG_TEMPORARY, so a module is permanent when its class is not `temporary`. A temporary
-# module keeps the kernel's own scheme (`references`, `M_DESTROYED`: `releaseModule_unlocked`, `destroyTemporaryModule`), the one upstream
-# counts references for too (the module GC pins of a temporary module are dropped by '$destroy_module'/1).
+# module keeps the kernel's own count (`references`, `releaseModule_unlocked`), the one upstream counts references for too (the module
+# GC pins of a temporary module are dropped by '$destroy_module'/1).
 "Whether references to `m` are not counted: `m` is not a temporary module (pl-modul.c)."
 isPermanentModule(m::module_t{T}) where {T} =
     sym_key(m.class) != sym_key(mk_sym(T, :temporary))
@@ -1281,8 +1281,8 @@ end
 
 # PORT: pl-modul.c advanceModuleEnum
 # DIVERGES: the table is the database's `module_table`, walked in creation order (D-0149 item 1); a record whose name is
-# not mapped back to its index is a DESTROYED module (`destroyTemporaryModule` took the name out) and is not in the table, as upstream's
-# deleted entry is not enumerated. No lock (no threads).
+# not mapped back to its index is not in the table and is not enumerated, as upstream's deleted entry (`destroyTemporaryModule` no
+# longer takes a name out). No lock (no threads).
 # DIVERGES (SYNC3): upstream (af9e2e7e) skips a temporary module unless `MENUM_TEMP`, then, for a module that is not permanent, counts
 # a reference (`gc_references`), skips it if module GC marked it `MG_DESTROY` (`M_DESTROYED` here), and releases the previously held
 # one with `releaseModuleRef(en->gc_ref)` (`releaseModule` here); the field is `en->gc_ref` upstream (`en.current`, pl-incl.jl: held
@@ -1338,26 +1338,19 @@ function freeModuleEnum(
 end
 
 # PORT: pl-modul.c destroyTemporaryModule
-# DIVERGES (SYNC3): upstream (af9e2e7e, 534ec274 + 77c3148d) REMOVED `destroyModule` (delete the name from the table, `M_DESTROYED`,
-# `releaseModule`) and `'$destroy_module'/1` now calls `destroyTemporaryModule(m)`: `abolishModule(m, soft)` (below) and, for a
-# module that was new or unpinned when it became temporary (`MG_TEMPORARY`: module GC), drop the pins (`ATOMIC_AND(&m->gc_flags,
-# ~(MG_PINNED|MG_TEMPORARY))`, `moduleGCCandidate(m)`, `destroyedTemporaryModule()`); the module stays in the table, reset to a new module,
-# and module/procedure GC reclaim it; the caller then does `releaseModule(m)`. The kernel has no module GC and keeps its OWN scheme
-# (dispatcher ruling on P09 question 2: behaviour unchanged): this function is the old `destroyModule` without its trailing
-# `releaseModule` (the caller `'$destroy_module'/1` has it, as upstream's): the name leaves the table, the module is marked
-# `M_DESTROYED` and freed at its last reference (`releaseModule_unlocked`). NOT done: `abolishModule(m, false)` first (clauses erased,
-# imports undefined, supers reset, as upstream: it would change what tests pin; open question in the P10 handoff). Also dropped: the
-# invariant check that prints "Module %s: class %s; refs %d" (removed upstream) and the bump of `GD->modules.generation` (removed
-# upstream: lookup caches are checked by `gc_flags`; the kernel has none, MOD1 Q2).
-"Take the name of the temporary module `m` out of the module table and mark it destroyed (pl-modul.c)."
+# DIVERGES: the database `gd` and the local data are arguments. Upstream's `soft` is `m->gc_flags & MG_TEMPORARY` (a module that was
+# new or unpinned when it became temporary); here `class(temporary)` stands for it (`isPermanentModule`). This port leaves out the
+# `if ( soft )` block, which feeds module GC: dropping `MG_PINNED|MG_TEMPORARY`, `moduleGCCandidate(m)`, `destroyedTemporaryModule()`
+# (in src/pl-{modul,incl,proc,comp,srcfile,global}.jl a grep finds `MG_TEMPORARY` and `moduleGCCandidate` in comments only). So the
+# module stays in the table, reset to a new module, and its record is not reclaimed (module memory is Julia's). `unpin` reaches
+# `unpinProcedure`, P06's shim. `M_DESTROYED` and the destroy branch of `releaseModule_unlocked`, the kernel's earlier deferred
+# destroy, are set and reached by nothing here; their removal (`KEPT_NAMES`, tools/port_check.jl) is a separate step.
+"Abolish the temporary module `m`; the module keeps its identity and its place in the table (pl-modul.c)."
 function destroyTemporaryModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
 )::Bool where {T}
-    if get(gd.modules.names, m.name, 0) == m.index       # deleteHTableWP(GD->tables.modules, m->name) == m
-        delete!(gd.modules.names, m.name)
-        m.flags |= M_DESTROYED
-    end
-    return true
+    soft = !isPermanentModule(m)                    # !!(LOAD_SEQ_CST(m->gc_flags)&MG_TEMPORARY)
+    return abolishModule(gd, ld, m, soft)
 end
 
 # PORT: pl-modul.c abolishProceduresModule
@@ -1383,7 +1376,7 @@ function abolishProceduresModule(
 end
 
 # PORT: pl-modul.c MODULE_RESET_FLAGS
-# DIVERGES (SYNC3): upstream `(M_WAITED_FOR)`; see `abolishModule`.
+# DIVERGES (SYNC3): upstream `(M_WAITED_FOR)`; see `abolishModule`. `destroyTemporaryModule` no longer sets `M_DESTROYED`.
 "The module flags `abolishModule` keeps (pl-modul.c)."
 const MODULE_RESET_FLAGS = M_DESTROYED
 
@@ -1418,8 +1411,7 @@ end
 
 # PORT: pl-modul.c destroy_module as pl_destroy_module1_va
 # (PRED_IMPL("\$destroy_module", 1, destroy_module, 0))
-# DIVERGES (SYNC3): upstream (af9e2e7e) `rc = destroyTemporaryModule(m); releaseModule(m); return rc`, as here; for the kernel's
-# `destroyTemporaryModule` see its comment (the deferred destroy is kept; `releaseModule` is the one that frees the module).
+# DIVERGES (SYNC3): the references are `acquireModule`'s and `releaseModule`'s own (see them): the module is not freed.
 "`'\$destroy_module'(+Module)`: destroy a temporary module; no module of that name succeeds (pl-modul.c)."
 function pl_destroy_module1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}

@@ -154,7 +154,9 @@ MUTANTS = [
     dict(id="MOD6-A1 the walk lists a destroyed module's record (KILL H3: with MENUM_TEMP the destroyed temporary record is returned; the name check is redundant otherwise)",
          file=M, targets=TS_C,
          old="get(table.names, c.name, 0) == c.index && (i = c.index)",
-         new="(i = c.index)"),
+         new="(i = c.index)",
+         equivalent="since af9e2e7e's destroyTemporaryModule no code of src/pl-modul.jl takes a name out of the module table, so every "
+                    "record is the one its name maps to (src/pl-modul.jl advanceModuleEnum)"),
     dict(id="MOD6-A2 the walk lists a temporary module without MENUM_TEMP (KILL c14, d03, H3)",
          file=M, targets=TS_C,
          old='if sym_key(m.class) == temporary && (en.flags & MENUM_TEMP) == 0\n',

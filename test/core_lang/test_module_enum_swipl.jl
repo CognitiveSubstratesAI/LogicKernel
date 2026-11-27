@@ -312,6 +312,10 @@ function _mm_file()::Tuple{String, Vector{String}}
 end
 
 # the swipl answers: filled by evidence/MOD6/gen_rows.py --fill
+# d01 and d04 are swipl 11.1.0's (af9e2e7e): a destroyed temporary module is abolished and keeps its name and class, so it is still
+# current by name (no files) and, being temporary, not enumerated. 10.1.19's, in order (no; [mmx_t]-user):
+#   t_d01 c[116,95,100,48,49]/1(a[110,111])
+#   t_d04 c[116,95,100,48,52]/1(c[45]/2(c[91,124,93]/2(a[109,109,120,95,116],nil),a[117,115,101,114]))
 const _MM_PINNED = [
     "ok",
     "t_s01 c[116,95,115,48,49]/1(a[111,107])",
@@ -357,9 +361,9 @@ const _MM_PINNED = [
     "t_c19 c[116,95,99,49,57]/1(c[91,124,93]/2(a[109,109,120,95,99,50],c[91,124,93]/2(a[109,109,120,95,102],c[91,124,93]/2(a[109,109,120,95,117],nil))))",
     "t_c20 c[116,95,99,50,48]/1(a[110,111])",
     "t_c21 c[116,95,99,50,49]/1(a[110,111])",
-    "t_d01 c[116,95,100,48,49]/1(a[110,111])",
+    "t_d01 c[116,95,100,48,49]/1(c[121,101,115]/1(nil))",
     "t_d03 c[116,95,100,48,51]/1(nil)",
-    "t_d04 c[116,95,100,48,52]/1(c[45]/2(c[91,124,93]/2(a[109,109,120,95,116],nil),a[117,115,101,114]))",
+    "t_d04 c[116,95,100,48,52]/1(c[45]/2(nil,a[116,101,109,112,111,114,97,114,121]))",
     "t_d05 c[116,95,100,48,53]/1(c[91,124,93]/2(c[91,124,93]/2(a[117,115,101,114],nil),c[91,124,93]/2(c[91,124,93]/2(a[117,115,101,114],nil),c[91,124,93]/2(nil,nil))))"
 ]
 
@@ -498,26 +502,29 @@ end
     @test length(ld.module_enums.states) == 1
 end
 
-@testset "the enumeration skips a destroyed module's record, not the new one of its name (H3)" begin
-    # kernel-side: the vector keeps the destroyed record (src/pl-incl.jl `module_table`), the walk (`advanceModuleEnum`) lists what the
-    # name index maps to. UNVERIFIED on the kernel: gate decides.
+@testset "a destroyed temporary module keeps its one record; the enumeration skips it as temporary (H3)" begin
+    # kernel-side: swipl cannot be asked about a module's index. UNVERIFIED on the kernel: gate decides.
+    # Before af9e2e7e `'$destroy_module'/1` took the name out of the table, and a second record took the name.
     f, names = _mm_file()
     _, _, gd, ld = _mm_kernel(f, names)
-    ms = [m for m in gd.modules if m.name == sym_key(_mms("mmx_t"))]
-    @test length(ms) == 2                         # d01 destroyed the first, d04 made a user module of the name
-    old, new = ms
-    @test (old.flags & LK.M_DESTROYED) != 0 && (new.flags & LK.M_DESTROYED) == 0
+    destroyed = LK.module_t{_MM}[]
+    for name in ("mmx_t", "mmx_t3")             # d01 destroyed mmx_t (d04 asserts into it), d05 destroyed mmx_t3
+        ms = [m for m in gd.modules if m.name == sym_key(_mms(name))]
+        @test length(ms) == 1
+        m = only(ms)
+        @test LK.isCurrentModule(gd.modules, _mms(name)) === m
+        @test sym_key(m.class) == sym_key(_mms("temporary"))
+        @test (m.flags & LK.M_DESTROYED) == 0 && m.references == 0
+        push!(destroyed, m)
+    end
     en = LK.module_enum()
     seen = Int[]
     while (m = LK.advanceModuleEnum(gd, ld, en)) !== nothing
         push!(seen, m.index)
     end
-    @test old.index ∉ seen && new.index in seen
+    @test all(m -> m.index ∉ seen, destroyed)
     @test allunique(seen)
     @test LK.MODULE_user(gd).index in seen && LK.MODULE_system(gd).index in seen
-    t3 = [m for m in gd.modules if m.name == sym_key(_mms("mmx_t3"))]     # d05: destroyed, then made again by import_module/2
-    @test length(t3) == 2 && (t3[1].flags & LK.M_DESTROYED) != 0 && t3[2].index ∈ seen
-    @test t3[1].index ∉ seen
     # a temporary module is listed only with MENUM_TEMP, and then referenced, the reference released when the enumeration moves on
     t4 = LK.lookupModule(gd, _mms("mmx_tt"))
     t4.class = _mms("temporary")
@@ -534,7 +541,6 @@ end
     seen2 = Int[]
     while (m = LK.advanceModuleEnum(gd, ld, en2)) !== nothing
         push!(seen2, m.index)
-        @test (m.flags & LK.M_DESTROYED) == 0                     # a destroyed record is never returned, temporary or not
         if m === t4
             found = true
             @test t4.references == r0 + 1 && en2.current == t4.index
@@ -544,7 +550,7 @@ end
         end
     end
     @test found && found5
-    @test old.index ∉ seen2 && allunique(seen2)
+    @test all(m -> m.index in seen2, destroyed) && allunique(seen2)   # with MENUM_TEMP the abolished modules are listed
     @test t5.references == r5 + 1                 # still held by the enumeration (`current`), which is the last temporary one
     @test t4.references == r0                     # released when the walk moved on to t5
     LK.freeModuleEnum(gd, ld, k)

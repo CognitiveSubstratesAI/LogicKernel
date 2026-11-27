@@ -4,7 +4,7 @@
 # test/core_lang/test_export_import_swipl.jl): the first declaration (class, file, line, the source module), re-declaration (same file,
 # another file with and without `Redefine`, the class set before the refusal, the public table cleared, the super module replaced),
 # the six classes, the argument errors, `'$destroy_module'/1` (a temporary module; every other class refused; a name of no module
-# succeeds), what is left after a destroy (the name is free for a new module, the source and typein modules go back to `user`)
+# succeeds), what is left after a destroy (the module stays, abolished; it may be declared again; the source and typein modules stay on it)
 # and the compiler's refusal of a temporary module named in a clause body (`getTargetModule!`).
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run IN ORDER in one database, each wrapped in
 #     `catch(Goal, error(F, _), R = raised(F))` and followed by `mb_done` (the source and typein modules back to `user`).
@@ -268,6 +268,13 @@ function _mb_file()::Tuple{String, Vector{String}}
 end
 
 # the swipl answers: filled by evidence/MOD5b/gen_rows.py --fill
+# d01, d02, d03 and f04 are swipl 11.1.0's (af9e2e7e): `'$destroy_module'/1` abolishes a temporary module, which keeps its name, its
+# class and its place in the table (the source and typein modules stay on it; a clause body still may not name it). 10.1.19's, in order
+# (gone; mtd2-user; user; ok):
+#   t_d01 c[116,95,100,48,49]/1(a[103,111,110,101])
+#   t_d02 c[116,95,100,48,50]/1(c[45]/2(a[109,116,100,50],a[117,115,101,114]))
+#   t_d03 c[116,95,100,48,51]/1(a[117,115,101,114])
+#   t_f04 c[116,95,102,48,52]/1(a[111,107])
 const _MB_PINNED = [
     "ok",
     "t_a01 c[116,95,97,48,49]/1(c[91,124,93]/2(a[109,110,97],c[91,124,93]/2(a[117,115,101,114],c[91,124,93]/2(a[47,109,98,47,102,49,46,112,108],c[91,124,93]/2(i3,nil)))))",
@@ -300,9 +307,9 @@ const _MB_PINNED = [
     "t_b06 c[116,95,98,48,54]/1(c[45]/2(i8,c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[112,114,111,99,101,100,117,114,101],c[58]/2(a[109,110,115,53],c[47]/2(a[115,117,112,95,115],i1)))))",
     "t_c01 c[116,95,99,48,49]/1(a[115,121,115,116,101,109])",
     "t_c02 c[116,95,99,48,50]/1(a[117,115,101,114])",
-    "t_d01 c[116,95,100,48,49]/1(a[103,111,110,101])",
-    "t_d02 c[116,95,100,48,50]/1(c[45]/2(a[109,116,100,50],a[117,115,101,114]))",
-    "t_d03 c[116,95,100,48,51]/1(a[117,115,101,114])",
+    "t_d01 c[116,95,100,48,49]/1(c[115,116,105,108,108]/1(a[116,101,109,112,111,114,97,114,121]))",
+    "t_d02 c[116,95,100,48,50]/1(c[45]/2(a[109,116,100,50],a[109,116,100,50]))",
+    "t_d03 c[116,95,100,48,51]/1(a[109,116,100,51])",
     "t_d04 c[116,95,100,48,52]/1(a[111,107])",
     "t_d05 c[116,95,100,48,53]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[100,101,115,116,114,111,121],a[109,111,100,117,108,101],a[109,110,97])))",
     "t_d06 c[116,95,100,48,54]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[100,101,115,116,114,111,121],a[109,111,100,117,108,101],a[117,115,101,114])))",
@@ -319,7 +326,7 @@ const _MB_PINNED = [
     "t_f01 c[116,95,102,48,49]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,102,101,114,101,110,99,101],a[109,111,100,117,108,101],a[109,116,100,56]))",
     "t_f02 c[116,95,102,48,50]/1(a[111,107])",
     "t_f03 c[116,95,102,48,51]/1(a[111,107])",
-    "t_f04 c[116,95,102,48,52]/1(a[111,107])",
+    "t_f04 c[116,95,102,48,52]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[114,101,102,101,114,101,110,99,101],a[109,111,100,117,108,101],a[109,116,100,56])))",
     "t_f05 c[116,95,102,48,53]/1(a[116,101,109,112,111,114,97,114,121])"
 ]
 
@@ -438,25 +445,25 @@ end
     @test count(l -> !occursin(" ", l), _MB_PINNED) == 1                                # only "ok" has no answer; no row fails
 end
 
-@testset "a destroyed module keeps its record; its name is free (H3)" begin
+@testset "a destroyed module keeps its identity: it is abolished, not replaced (H3)" begin
     # kernel-side: swipl cannot be asked about a module's index. UNVERIFIED on the kernel: gate decides.
+    # Before af9e2e7e the name left the table and a second record took it (two records of mtd7, the old one `M_DESTROYED`).
     f, names = _mb_file()
     _, gd, _ = _mb_kernel(f, names)
     ms = [m for m in gd.modules if m.name == sym_key(_mbs("mtd7"))]
-    @test length(ms) == 2
-    old, new = ms
-    @test (old.flags & LK.M_DESTROYED) != 0
-    @test (new.flags & LK.M_DESTROYED) == 0
-    @test new.index > old.index
-    @test LK.isCurrentModule(gd.modules, _mbs("mtd7")) === new
-    @test old.references == 0
-    @test old.file == 0                       # unlinkSourceFilesModule released the file
-    tq = old.procedures[(sym_key(_mbs("tq")), 1)]
-    @test tq.definition.module_ == old.index  # the old definitions still name the old record
-    # the row's call `mtd7:tq(_)` in the NEW module makes an undefined procedure there (lookupProcedure): never the old one
-    newtq = get(new.procedures, (sym_key(_mbs("tq")), 1), nothing)
-    @test newtq === nothing ||
-        (newtq.definition !== tq.definition && newtq.definition.module_ == new.index)
+    @test length(ms) == 1                     # e02 destroyed it and declared the name again: the same module
+    m7 = only(ms)
+    @test LK.isCurrentModule(gd.modules, _mbs("mtd7")) === m7
+    @test (m7.flags & LK.M_DESTROYED) == 0
+    @test m7.references == 0
+    @test m7.file != 0                        # abolishModule unlinked /mb/t.pl; the re-declaration linked /mb/t2.pl
+    tq = m7.procedures[(sym_key(_mbs("tq")), 1)]
+    @test tq.definition.module_ == m7.index
+    @test !LK.isDefinedProcedure(gd, tq)      # abolished: the row's call `mtd7:tq(_)` raised existence_error
+    # d12 destroyed mtd5 twice and nothing declared it again: abolished, still temporary, no file, still in the table
+    m5t = LK.isCurrentModule(gd.modules, _mbs("mtd5"))
+    @test m5t !== nothing && sym_key(m5t.class) == sym_key(_mbs("temporary"))
+    @test m5t.file == 0 && m5t.references == 0 && (m5t.flags & LK.M_DESTROYED) == 0
     mna = LK.isCurrentModule(gd.modules, _mbs("mna"))
     @test mna !== nothing && (mna.flags & LK.M_DESTROYED) == 0 && mna.file != 0
     # b06 (abolishProcedure's imported branch): user's sup_s/1 was linked into mns5 by a call, the re-declaration removed the link:
@@ -469,6 +476,7 @@ end
     @test p5.definition.module_ == m5.index && p5.definition !== ss.definition
     @test p5.definition.shared == 1                         # upstream's newDefinition (b94d7de5; its memset left 0)
     mtd8 = LK.isCurrentModule(gd.modules, _mbs("mtd8"))     # f04 destroyed it, f05 declared it again as temporary
+    @test count(m -> m.name == sym_key(_mbs("mtd8")), gd.modules) == 1
     @test mtd8 !== nothing && sym_key(mtd8.class) == sym_key(_mbs("temporary"))
 end
 
