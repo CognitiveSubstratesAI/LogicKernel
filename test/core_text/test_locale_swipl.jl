@@ -111,9 +111,9 @@ end
 # KNOWN DIFFERENCE, with swipl 11.1.0's own answer (af9e2e7e; LC-C2 of tools/mutants/LOCALE.py waits on it, ATOM1 is the port item): for the atom of
 # length 3, [0'a, 0, 0'b], `locale_create(L, "C", [decimal_point(A)])` raises representation_error(nul_terminated_string(A)) (f22d8c51: pl-locale.c
 # set_chars reads it with PL_get_wchars and no length). 10.1.20 (evidence 2026-11-19) ACCEPTED it and stored `a` (the string cut at the first NUL;
-# locale_property gave decimal_point(a), atom_length 1), the same for thousands_sep. `set_chars` of src/os/pl-locale.jl still cuts (`_cstr`); that line
-# is not reached with such an atom while the kernel refuses to make one. The kernel's exact answer here is the refusal below (the line `t12 notported`).
-# (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
+# locale_property gave decimal_point(a), atom_length 1), the same for thousands_sep. `set_chars` of src/os/pl-locale.jl calls `nul_terminated_text`
+# as upstream does; that check is not reached with such an atom while the kernel refuses to make one. The kernel's exact answer here is the refusal
+# below (the line `t12 notported`). (DIVERGES, settled, user 2026-10-10: src/pl-read.jl `_atom_from_text`): swipl's atoms hold the
 # character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"), whether the
 # reader makes it from program text (`'a\000\b'` loses the whole consult) or atom_codes/2 makes it at run time. t12 is the row
 # of a decimal_point holding the character 0 (it was part of t10); its atom is built at run time, so only t12 meets the

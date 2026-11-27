@@ -11,8 +11,13 @@
 # mutants are the report's (lk-y1-report.md) and join this list when it lands.
 # The `old` strings were written BEFORE `tools/warm.sh fmt`: re-check them after it (mutate_drive.py refuses a string that
 # does not occur exactly once).
-TARGETS = ["test/core_lang/test_sys_swipl.jl"]
-T = TARGETS
+# the union of every mutant's `targets`
+TARGETS = [
+    "test/core_lang/test_sys_swipl.jl",
+    "test/core_lang/test_q10_swipl.jl",
+]
+T = ["test/core_lang/test_sys_swipl.jl"]
+TS5 = T + ["test/core_lang/test_q10_swipl.jl"]         # shell/2 reads its command through _sys_chars
 S = "src/pl-sys.jl"
 O = "src/os/pl-os.jl"
 F = "src/os/pl-files.jl"
@@ -36,9 +41,10 @@ MUTANTS = [
     dict(id="Y1-4 unsetenv/1 deletes nothing", file=S, targets=T,
          old='''    return Unsetenv(ld, n) ? FTRUE : FFALSE''',
          new='''    return FTRUE'''),
-    dict(id="Y1-5 a C string is not cut at its NUL", file=S, targets=T,
-         old='''    return i === nothing ? s : s[1:prevind(s, i)]''',
-         new='''    return s'''),
+    # (re-fitted: since swipl-devel af9e2e7e a text with a 0-code is refused, no longer cut)
+    dict(id="Y1-5 _sys_chars: no nul_terminated_text (KILL t45, t111-t115)", file=S, targets=TS5,
+         old='''    nul_terminated_text(ld, t, txt, CVT_ALL | CVT_EXCEPTION) || return nothing\n''',
+         new=''),
     dict(id="Y1-6 get_time/1 unifies a constant", file=S, targets=T,
          old='''    return PL_unify_float(ld, A1, WallTime()) ? FTRUE : FFALSE''',
          new='''    return PL_unify_float(ld, A1, 1.0) ? FTRUE : FFALSE'''),

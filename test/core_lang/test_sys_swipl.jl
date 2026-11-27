@@ -7,6 +7,8 @@
 # TAG1: row t85 is swipl 11.1.0's (pin af9e2e7e): representation_error(nul_terminated_string([97,0,98])),
 # context(system:delete_file/1, _); was (10.1.20) domain_error(file_name, [97,0,98]), the context's message
 # 'file name contains a 0-code'. When `swipl` is on PATH the .out is checked against a live run as well, so it cannot go stale.
+# The lines of t45 and t111-t115 are swipl 11.1.0's (af9e2e7e) too, printed by the same driver (the .pl says what
+# 10.1.20 answered).
 # The values the machine decides — the time, the CPU, the stacks, the environment — are compared by TYPE or by an
 # order in the rows themselves; the error rows are swipl's formal term AND context, the message of `errno` included.
 # The program works in a fresh directory that holds the files delete_file/1 removes (lk_y1_victim, lk_y1_emptydir) and
@@ -260,4 +262,35 @@ end
     r = seen["w5"]                                                 # clause GC: nothing erased, nothing registered
     @test r.erased == 0 && r.statistic == 0 && r.unregistered == 0 && r.stale == 0 &&
         r.dirty == 0
+end
+
+# WHITE BOX (hand-written from pl-fli.c nul_terminated_text, af9e2e7e): swipl cannot be asked about it from Prolog — every
+# caller of the kernel passes CVT_EXCEPTION and none holds a wide text; the errors the predicates raise are rows t111-t115.
+@testset "nul_terminated_text: a text with a 0-code, per encoding and per CVT_EXCEPTION (pl-fli.c)" begin
+    gd = LK.PL_global_data{_TL}()
+    ld = LK.PL_local_data{_TL}(gd)
+    wide(cs) = LK.PL_chars_t(
+        Vector{UInt8}(reinterpret(UInt8, UInt32.(cs))), length(cs), LK.ENC_WCHAR, true
+    )
+    latin1(cs) = LK.PL_chars_t(UInt8.(cs), length(cs), LK.ENC_ISO_LATIN_1, true)
+    # (a wide text without a 0-code has 0 BYTES: it is read by its 4-byte units)
+    for (txt, free) in (
+        (latin1([97, 98]), true), (latin1([97, 0, 98]), false),
+        (latin1([97, 98, 0]), false), (wide([97, 0x100]), true),
+        (wide([97, 0, 98]), false), (wide([97, 98, 0]), false)
+    ), flags in (UInt32(0), UInt32(LK.CVT_EXCEPTION))
+        fid = LK.PL_open_foreign_frame(ld)
+        culprit = LK.PL_new_term_ref(ld)
+        @test LK.nul_terminated_text(ld, culprit, txt, flags) == free
+        ex = LK.PL_exception(ld, 0)
+        raised = !free && (flags & LK.CVT_EXCEPTION) != 0
+        @test (ex != 0) == raised
+        if raised && ex != 0
+            ball = enc(lk_answers(ld, ex)[1])
+            @test occursin(_codes("representation_error"), ball)
+            @test occursin(_codes("nul_terminated_string"), ball)
+        end
+        LK.PL_clear_exception(ld)
+        LK.PL_discard_foreign_frame(ld, fid)
+    end
 end

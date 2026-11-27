@@ -14,15 +14,14 @@
 # upstream, src/os/pl-ctype.jl, is loaded before the FLI that a predicate needs. Its category table is in that file.
 
 # ORIGINAL (Y1): `PL_get_chars(t, &s, CVT_ALL|REP_FN|CVT_EXCEPTION)` — the text of an atom, a string, a number or
-# a code list, as a `String`. A C string ends at its first NUL, so does this one; a conversion failure
-# raises the error and answers `nothing`.
+# a code list, as a `String`. No length is asked for, so a text with a 0-code is refused (`nul_terminated_text`, since
+# swipl-devel af9e2e7e); a conversion failure raises the error and answers `nothing`.
 "The text the term reference `t` holds as pl-sys.c reads it (`CVT_ALL|CVT_EXCEPTION`), or `nothing` after the error."
 function _sys_chars(ld::PL_local_data{T}, t::term_t)::Union{Nothing, String} where {T}
     txt = PL_get_text(ld, t, CVT_ALL | CVT_EXCEPTION)
     txt === nothing && return nothing
-    s = text_string(txt)
-    i = findfirst(==('\0'), s)
-    return i === nothing ? s : s[1:prevind(s, i)]
+    nul_terminated_text(ld, t, txt, CVT_ALL | CVT_EXCEPTION) || return nothing
+    return text_string(txt)
 end
 
 # PORT: pl-sys.c getenv as pl_getenv2_va

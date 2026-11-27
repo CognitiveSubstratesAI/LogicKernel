@@ -570,6 +570,29 @@ function PL_get_uint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where
     return Int(val)
 end
 
+# PORT: pl-fli.c nul_terminated_text
+# (SYNC3, af9e2e7e: new function, called by `PL_get_nchars`, `PL_get_wchars` when no length is asked for)
+# DIVERGES: the kernel has no `PL_get_nchars`/`PL_get_wchars`: a caller that asks for no length calls this after
+# `PL_get_text`. No `PL_free_text` (Julia's GC owns the bytes). `text` is a `PL_chars_t`, left unannotated: the type is
+# src/os/pl-text.jl's, included after this file.
+"""
+True when the text `text` of the term reference `culprit` holds no 0-code. Else false, after raising
+`representation_error(nul_terminated_string(Culprit))` when `flags` has `CVT_EXCEPTION` (pl-fli.c).
+"""
+function nul_terminated_text(
+    ld::PL_local_data{T}, culprit::term_t, text, flags::UInt32
+)::Bool where {T}
+    nul = if text.encoding === ENC_WCHAR
+        any(i -> _wchar_at(text, i) == 0, 0:(text.length - 1))
+    else
+        0x00 in text.text                                   # memchr(text->text.t, 0, text->length)
+    end
+    nul || return true
+    (flags & CVT_EXCEPTION) != 0 &&
+        PL_error(ld, ERR_REPRESENTATION_CULPRIT, mk_sym(T, :nul_terminated_string), culprit)
+    return false
+end
+
 # PORT: pl-fli.c PL_cvt_i_uint
 # (pl-fli.c:1252-1263 at the pin, since MOD4)
 # (SYNC3, af9e2e7e: `return int_range_error(t, ATOM_uint, true)` replaces `PL_representation_error("uint")`;

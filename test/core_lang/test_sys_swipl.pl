@@ -61,9 +61,15 @@ t41(R) :- setenv(lk_y1_a, "str"), getenv(lk_y1_a, R).
 t42(R) :- setenv(lk_y1_a, one), setenv(lk_y1_a, two), getenv(lk_y1_a, R).
 t43(R) :- setenv(lk_y1_a, ''), getenv(lk_y1_a, R).
 t44(R) :- setenv(lk_y1_a, abc), res(getenv(lk_y1_a, xyz), R).
+% t45, t111-t115: 11.1.0 (af9e2e7e: PL_get_chars asks for no length); 10.1.20: t45 was a[x].
 t45(R) :- setenv(lk_y1_a, [120, 0, 121]), getenv(lk_y1_a, R).
 t46(R) :- res(setenv(lk_y1_a, f(x)), R).
 t47(R) :- res(setenv(_, a), R).
+t111(R) :- res(setenv(lk_y1_a, [120, 0, 121]), R).
+t112(R) :- res(setenv([120, 0, 121], a), R).
+t113(R) :- res(getenv([120, 0, 121], _), R).
+t114(R) :- res(unsetenv([120, 0, 121]), R).
+t115(R) :- res(shell([101, 120, 105, 116, 0], _), R).
 t48(R) :- res(setenv(a, _), R).
 t49(R) :- res(setenv('a=b', c), R).
 t50(R) :- res(setenv('', c), R).

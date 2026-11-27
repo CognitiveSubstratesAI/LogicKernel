@@ -662,11 +662,16 @@ _locale_text_string(txt::PL_chars_t)::String =
 
 # PORT: pl-locale.c set_chars
 # DIVERGES: returns the new text or `nothing` (after the type error), where upstream stores it in `*valp`.
-"The atom text of `t` (`type_error(atom, T)` when `t` is no atom) for `decimal_point` or `thousands_sep` (pl-locale.c)."
+"""
+The atom text of `t` for `decimal_point` or `thousands_sep` (pl-locale.c), or `nothing` after `type_error(atom, T)`
+(`t` is no atom) or `representation_error(nul_terminated_string(T))` (a text with a 0-code).
+"""
 function set_chars(ld::PL_local_data{T}, t::term_t)::Union{Nothing, String} where {T}
-    txt = PL_get_text(ld, t, UInt32(CVT_ATOM | CVT_EXCEPTION))  # PL_get_wchars(t, NULL, &s, CVT_ATOM|CVT_EXCEPTION)
+    flags = UInt32(CVT_ATOM | CVT_EXCEPTION)
+    txt = PL_get_text(ld, t, flags)                         # PL_get_wchars(t, NULL, &s, CVT_ATOM|CVT_EXCEPTION)
     txt === nothing && return nothing
-    return _cstr(_locale_text_string(txt))
+    nul_terminated_text(ld, t, txt, flags) || return nothing    # (no length: SYNC3, af9e2e7e)
+    return _locale_text_string(txt)
 end
 
 # PORT: pl-locale.c get_group_size_ex
