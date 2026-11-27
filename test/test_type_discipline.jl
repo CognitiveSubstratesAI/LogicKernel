@@ -51,6 +51,72 @@ end
 good4(v::Vector{T}, a::T)::T where {T} = mk_expr(T, T[a])
 """
 
+# THE ONE NAMED `Any` EXCEPTION (audit D-1083 (1)), beside the empty `ANY_ALLOWED` of
+# static_analysis_gates.jl: the two C-signature data arguments of the event function in
+# src/pl-event.jl (the database and the local data), in the `@cfunction` of `event_function`
+# and the `ccall` of `_call_event_function`, one C signature written twice. Two comparisons
+# hold it, both through `any_uses`'s scanner: the file's count (one `Any` more fails it, and
+# so does one less, so the entry cannot outlive its reason) and, per top-level definition,
+# WHERE those uses stand: only in these two functions, and only in that signature.
+const _TD_ANY_ALLOWED = Dict(
+    "pl-event.jl" =>
+        (4, fill("C ABI: @cfunction cannot name an abstract or parametric type", 4))
+)
+const _TD_CABI_FILE = "pl-event.jl"
+const _TD_CABI_SIGNATURE = :((Any, Any, term_t, term_t, Int))
+const _TD_CABI_SITES = Dict(
+    "event_function" => (2, [("@cfunction", _TD_CABI_SIGNATURE)]),
+    "_call_event_function" => (2, [("ccall", _TD_CABI_SIGNATURE)])
+)
+
+"The name of the function `ex` defines (through its docstring), else the text of `ex`."
+function _td_definition_name(ex)::String
+    ex isa Expr || return string(ex)
+    ex.head === :macrocall && ex.args[1] == GlobalRef(Core, Symbol("@doc")) &&
+        return _td_definition_name(last(ex.args))
+    ex.head in (:function, :(=)) || return string(ex)
+    sig = ex.args[1]
+    while sig isa Expr && sig.head in (:where, :(::))
+        sig = sig.args[1]
+    end
+    return sig isa Expr && sig.head === :call ? string(sig.args[1]) : string(ex)
+end
+
+"Add to `out` the `(form, types)` of each C call in `ex` with an `Any` argument type."
+function _td_c_signatures!(
+    out::Vector{Tuple{String, Expr}}, ex
+)::Vector{Tuple{String, Expr}}
+    ex isa Expr || return out
+    form, at = if ex.head === :call && ex.args[1] === :ccall
+        "ccall", 4
+    elseif ex.head === :macrocall && ex.args[1] === Symbol("@cfunction")
+        "@cfunction", 5
+    else
+        "", 0
+    end
+    if at != 0 && length(ex.args) >= at
+        hits = String[]
+        _scan_any!(hits, ex.args[at], "", 0)
+        isempty(hits) || push!(out, (form, ex.args[at]))
+    end
+    foreach(a -> _td_c_signatures!(out, a), ex.args)
+    return out
+end
+
+"Per top-level definition of `path` using `Any`: its uses and its C signatures with one."
+function _td_any_by_definition(path::AbstractString)
+    out = Dict{String, Tuple{Int, Vector{Tuple{String, Expr}}}}()
+    for ex in Meta.parseall(read(path, String); filename=path).args
+        hits = String[]
+        _scan_any!(hits, ex, "", 0)
+        isempty(hits) && continue
+        name = _td_definition_name(ex)
+        n, sigs = get(out, name, (0, Tuple{String, Expr}[]))
+        out[name] = (n + length(hits), _td_c_signatures!(sigs, ex))
+    end
+    return out
+end
+
 # The ALLOWLIST of unchecked constructs in src/ (user, 2026-10-04): `"file construct" => (count,
 # reason)`. A new one fails the rule until it is listed here with a measured reason; a listed one
 # that is gone fails it too — so the list cannot go stale.
@@ -223,11 +289,17 @@ const _TD_FIELD_ALLOWED = Dict(
     end
 
     @testset "no Any in LogicKernel's src beyond the allowlist" begin
-        hits = any_uses_beyond(joinpath(pkgdir(LogicKernel), "src"))
+        src = joinpath(pkgdir(LogicKernel), "src")
+        allowed = merge(ANY_ALLOWED, _TD_ANY_ALLOWED)
+        hits = any_uses_beyond(src, allowed)
         isempty(hits) || foreach(h -> println(stderr, "  Any at src/", h), hits)
         @test isempty(hits)
-        @test all(v -> length(v[2]) == v[1], values(ANY_ALLOWED))           # a reason per site
-        @test all(v -> all(r -> length(r) > 20, v[2]), values(ANY_ALLOWED)) # every reason says why
+        @test all(v -> length(v[2]) == v[1], values(allowed))           # a reason per site
+        @test all(v -> all(r -> length(r) > 20, v[2]), values(allowed)) # each says why
+        sites = _td_any_by_definition(joinpath(src, _TD_CABI_FILE))
+        sites == _TD_CABI_SITES ||
+            println(stderr, "  Any by definition in src/", _TD_CABI_FILE, ": ", sites)
+        @test sites == _TD_CABI_SITES   # the exception covers those two C signatures only
     end
 
     @testset "fixture: the Any allowlist fails a new site, a removed one and an unlisted file" begin
