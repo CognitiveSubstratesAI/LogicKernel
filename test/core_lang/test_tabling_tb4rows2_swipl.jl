@@ -341,7 +341,7 @@ end
     function is_false(wl)
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, 1)
-        wl.owner = ld                                  # a hand-built worklist is the thread's own (new_worklist: owner = LD)
+        wl.owner = ld.identity                         # a hand-built worklist is the thread's own (new_worklist: owner = LD)
         LK.PL_put_int64(ld, a, LK.worklist_handle(ld, wl))
         rc = LK.pl_tbl_wkl_is_false1_va(ld, a, 1, ctx)
         LK.PL_close_foreign_frame(ld, fid)

@@ -3359,12 +3359,21 @@ mutable struct delay_usage
     answers::Vector{Int}                                # trie_node ids of conditional answers
 end
 
+# ORIGINAL (TAG1, audit D-1086 (1)): the identity of an engine, for the tabling records that name their thread (`owner` of a
+# `worklist` and of a `tbl_component`). Every `PL_local_data` makes one and keeps it (`ld.identity`, `const`). It is compared
+# with `===` only, never `==`, `hash` or `isequal`, and holds nothing to read. `mutable`: each one is then its own object (an
+# immutable struct without fields is a singleton, and every engine's would be the same).
+"The identity of an engine, compared with `===` only (`PL_local_data.identity`)."
+mutable struct ld_identity end
+
 # PORT: pl-tabling.h worklist
 # DIVERGES: `C` is the type of `component` (`tbl_component{T}`, alias `tbl_worklist{T}` below) only to break the cycle
 # worklist -> tbl_component -> worklist_set -> worklist; `delays`, `pos_undefined` are typed vectors (`pos_undefined`
-# holds trie node ids); `predicate` is `Union{Nothing, definition{T}}`, `table` an index into the trie table; `owner` is the
-# thread's local data (`nothing`: NULL), `handle` the integer Prolog sees (0: none yet; src/pl-tabling.jl `worklist_handle`,
-# SYNC3 P11: pl-tabling.h af9e2e7e).
+# holds trie node ids); `predicate` is `Union{Nothing, definition{T}}`, `table` an index into the trie table; `handle` is the
+# integer Prolog sees (0: none yet; src/pl-tabling.jl `worklist_handle`, SYNC3 P11: pl-tabling.h af9e2e7e).
+# DIVERGES (representation; TAG1, audit D-1086 (1)): upstream's `struct PL_local_data *owner` (pl-tabling.h af9e2e7e) is the
+# engine's `ld_identity`, not its local data (`nothing`: NULL): `PL_local_data{T}` is defined after this struct, and the field
+# is only ever compared with the asking engine's (`wl.owner === ld.identity`).
 "The worklist of a table under evaluation (pl-tabling.h `struct worklist`): its answer and suspension clusters."
 mutable struct worklist{T, C}
     head::Union{Nothing, cluster{T}}                    # answer and dependency clusters
@@ -3373,7 +3382,7 @@ mutable struct worklist{T, C}
     free_clusters::Union{Nothing, cluster{T}}           # clusters to reuse
     magic::Int                                          # WORKLIST_MAGIC
     handle::Int                                         # Prolog handle (integer) or 0
-    owner::Union{Nothing, AbstractLocalData}            # Thread completing my table
+    owner::Union{Nothing, ld_identity}                  # Thread completing my table
     ground::Bool                                        # Ground call (early completion)
     executing::Bool                                     # $tbl_wkl_work/3 in progress
     in_global_wl::Bool                                  # already in global worklist
@@ -3414,13 +3423,14 @@ component_set{C}() where {C} = component_set{C}(C[])
 # PORT: pl-tabling.h tbl_component
 # DIVERGES: `drop` (an anonymous struct) is flattened to `drop_symbol`, `drop_size`, `drop_gen_calls`, `drop_recompute`;
 # `leader` is a trie index; `children` and `merged` are `component_set`s.
-# `owner` is the thread's local data (`nothing`: NULL), `handle` the integer Prolog sees (0: none yet; src/pl-tabling.jl
-# `component_handle`; SYNC3 P11: pl-tabling.h af9e2e7e).
+# `handle` is the integer Prolog sees (0: none yet; src/pl-tabling.jl `component_handle`; SYNC3 P11: pl-tabling.h af9e2e7e).
+# DIVERGES (representation; TAG1, audit D-1086 (1)): upstream's `struct PL_local_data *owner` (pl-tabling.h af9e2e7e) is the
+# engine's `ld_identity` (`nothing`: NULL), as `worklist.owner`.
 "A strongly connected component of the tabling evaluation (pl-tabling.h `struct tbl_component`)."
 mutable struct tbl_component{T}
     magic::Int                                          # COMPONENT_MAGIC
     handle::Int                                         # Prolog handle (integer) or 0
-    owner::Union{Nothing, AbstractLocalData}            # Thread that created me
+    owner::Union{Nothing, ld_identity}                  # Thread that created me
     status::Int                                         # SCC_*
     neg_status::Int                                     # SCC_NEG_*
     simplifications::Int                                # # simplifications

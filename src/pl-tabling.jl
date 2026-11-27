@@ -367,7 +367,7 @@ function release_obj_handle(
     ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
 )::Nothing where {T}
     if obj.handle != 0
-        obj.owner === ld && free_tbl_handle(ld, obj.handle)
+        obj.owner === ld.identity && free_tbl_handle(ld, obj.handle)
         obj.handle = 0
     end
 
@@ -457,7 +457,7 @@ end
 function new_component(ld::PL_local_data{T})::tbl_component{T} where {T}
     r = tbl_alloc(ld, Val(TBL_FREE_COMPONENT))
     c = r === nothing ? tbl_component{T}() : _zero_component!(r)    # memset; c->magic = COMPONENT_MAGIC
-    c.owner = ld
+    c.owner = ld.identity
     ld.tabling.active_components += 1
 
     return c
@@ -1491,7 +1491,7 @@ end
 function new_worklist(ld::PL_local_data{T}, atrie::trie{T})::tbl_worklist{T} where {T}
     r = tbl_alloc(ld, Val(TBL_FREE_WORKLIST))
     wl = r === nothing ? tbl_worklist{T}() : _zero_worklist!(r)  # memset(wl, 0, sizeof(*wl)); wl->magic = WORKLIST_MAGIC
-    wl.owner = ld
+    wl.owner = ld.identity
     wl.table = atrie.serial
     w = atrie.worklist
     (w isa Int && w == WL_GROUND) && (wl.ground = true)
@@ -1916,9 +1916,9 @@ function tbl_add_worklist(
     w = atrie.worklist
     if w isa tbl_worklist{T}
         wl = w
-        if wl.owner !== ld                          # taken over from another thread
+        if wl.owner !== ld.identity                 # taken over from another thread
             wl.handle = 0                           # in the slots of the old owner
-            wl.owner = ld
+            wl.owner = ld.identity
         end
     else
         wl = new_worklist(ld, atrie)
@@ -3814,7 +3814,7 @@ function unify_table_status(
                 tripwire_scc_subgoals(ld, wl, size0) || return false
             end
 
-            wl.owner !== ld && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))    # another thread completes it
+            wl.owner !== ld.identity && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))    # another thread completes it
             return unify_worklist(ld, t, wl)
         end
         if wl isa Int && wl == WL_DYNAMIC

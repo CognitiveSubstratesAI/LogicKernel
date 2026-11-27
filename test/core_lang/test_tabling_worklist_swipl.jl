@@ -376,7 +376,7 @@ end
     function follower!(wl)
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, 1)
-        wl.owner = ld                                  # a hand-built worklist is the thread's own (new_worklist: owner = LD)
+        wl.owner = ld.identity                         # a hand-built worklist is the thread's own (new_worklist: owner = LD)
         LK.PL_put_int64(ld, a, LK.worklist_handle(ld, wl))
         rc = LK.pl_tbl_wkl_make_follower1_va(ld, a, 1, ctx)
         LK.PL_close_foreign_frame(ld, fid)
@@ -427,7 +427,7 @@ end
     tr = LK.trie_create(_TW)
     LK.trie_serial!(gd, tr)
     c = LK.tbl_component{_TW}()
-    c.owner = ld                                    # new_component: owner = LD
+    c.owner = ld.identity                           # new_component: owner = LD
     c.leader = tr.serial
     ld.tabling.component = c
     ld.tabling.has_scheduling_component = true      # tbl_create_subcomponent: a leader was created
@@ -446,4 +446,69 @@ end
     @test !ld.tabling.has_scheduling_component         # kills TB2-Q3
     @test ld.tabling.active_components == 0
     LK.PL_close_foreign_frame(ld, fid)
+end
+
+# ORIGINAL (TAG1, audit D-1086 (1)(c)): upstream's `struct PL_local_data *owner` (pl-tabling.h af9e2e7e) is the engine's
+# `ld_identity` in the kernel. Two engines of ONE database, each owning a worklist and a component: every owner check is run by
+# both engines. Their first handles are the same integer in their own slot arrays, so only `owner` tells them apart.
+@testset "TAG1 white-box: the owner check passes for the owning engine and fails for the other (D-1086)" begin
+    gd = LK.PL_global_data{_TW}()
+    lds = (LK.PL_local_data{_TW}(gd), LK.PL_local_data{_TW}(gd))
+    @test lds[1].identity !== lds[2].identity
+    tries = map(1:2) do _
+        tr = LK.trie_create(_TW)
+        LK.trie_serial!(gd, tr)
+        return tr
+    end
+    wls = [LK.new_worklist(lds[i], tries[i]) for i in 1:2]
+    comps = [LK.new_component(lds[i]) for i in 1:2]
+    # THE ONE EXTRACTOR of the status check: what `unify_table_status` answers engine `e` about the table of trie `i`
+    function status(e::Int, i::Int)
+        ld = lds[e]
+        fid = LK.PL_open_foreign_frame(ld)
+        a = LK.PL_new_term_refs(ld, 1)
+        @test LK.unify_table_status(ld, a, tries[i], nothing, false)
+        h = LK.PL_get_int64(ld, a)
+        r = if h === nothing
+            sym_text(LK.PL_get_atom(ld, a))
+        elseif h == wls[i].handle
+            "its handle"
+        else
+            "another integer"
+        end
+        LK.PL_close_foreign_frame(ld, fid)
+        return r
+    end
+    statuses() = [status(e, i) for e in 1:2, i in 1:2]         # (engine, table)
+    @test statuses() == ["its handle" "incomplete"; "incomplete" "its handle"]
+    # THE ONE EXTRACTOR of the release: the slots in use of each engine
+    live() = [ld.tabling.handles.live for ld in lds]
+    hc = [LK.component_handle(lds[i], comps[i]) for i in 1:2]
+    @test live() == [2, 2]
+    @test wls[1].handle == wls[2].handle != 0
+    @test hc[1] == hc[2] != 0
+    # takeover: the owner adding its worklist again keeps the handle
+    h1 = wls[1].handle
+    LK.tbl_add_worklist(lds[1], tries[1], comps[1])
+    @test wls[1].handle == h1
+    # release by the other engine drops the object's handle and frees no slot; by the owner it frees one
+    LK.release_worklist_handle(lds[2], wls[1])
+    @test live() == [2, 2] && wls[1].handle == 0
+    LK.release_worklist_handle(lds[2], wls[2])
+    @test live() == [2, 1] && wls[2].handle == 0
+    LK.release_component_handle(lds[2], comps[1])
+    @test live() == [2, 1] && comps[1].handle == 0
+    LK.release_component_handle(lds[1], comps[2])
+    @test live() == [2, 1] && comps[2].handle == 0
+    # the owner's component (a new handle: the release above left its slot in use)
+    LK.component_handle(lds[1], comps[1])
+    @test live() == [3, 1]
+    LK.release_component_handle(lds[1], comps[1])
+    @test live() == [2, 1] && comps[1].handle == 0
+    # takeover: the other engine adding the worklist owns it from then on, and the status answers swap for that table
+    LK.worklist_handle(lds[1], wls[1])
+    LK.tbl_add_worklist(lds[2], tries[1], comps[2])
+    @test wls[1].handle == 0                                    # it was a slot of the old owner
+    @test wls[1].owner === lds[2].identity
+    @test statuses() == ["incomplete" "incomplete"; "its handle" "its handle"]
 end

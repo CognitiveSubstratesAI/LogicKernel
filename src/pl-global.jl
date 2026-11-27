@@ -998,6 +998,7 @@ mutable struct PL_local_data{T} <: AbstractLocalData
     gc::ld_gc                                                   # gc: the stack collector's state (G1-1)
     shift_status::pl_shift_status_t                             # shift_status: the shifter's counters (G1-1)
     trail_size::Int                                             # ORIGINAL stacks.trail's size in entries, MODELLED: the trail vector has no capacity; only `_growTrail!`'s shift count reads it (G1, D-0966)
+    const identity::ld_identity                                 # ORIGINAL: this engine's own; upstream compares the `PL_local_data *` (`owner`, pl-tabling.h) (TAG1, D-1086)
 end
 function PL_local_data{T}(gd::PL_global_data{T}) where {T}
     ld = _bare_local_data(gd)
@@ -1130,7 +1131,8 @@ function _bare_local_data(gd::PL_global_data{T}) where {T}
         Symbol[],                               # gc_safe_hits: none (G1-2)
         ld_gc(),                                # gc: nothing collected, policies at init_stack's (G1-1)
         pl_shift_status_t(),                    # shift_status: nothing shifted (G1-1)
-        0                                       # trail_size: set by allocStacks! (G1, D-0966)
+        0,                                      # trail_size: set by allocStacks! (G1, D-0966)
+        ld_identity()                           # identity: this engine's own (TAG1, D-1086)
     )
     allocStacks!(ld)                            # the initial local stack, its spare reserved
     emptyStacks!(ld)

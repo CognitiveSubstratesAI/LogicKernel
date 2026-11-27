@@ -1,0 +1,105 @@
+# ORIGINAL: TAG1's mutant list of the tabling owner field — no swipl-devel counterpart.
+# tools/mutants/TAG1OWN.py — the mutation battery of `worklist.owner` and `tbl_component.owner` as the engine's `ld_identity`
+# (audit D-1086 (1)(c): the owner check passes for the owning engine and fails for the other). Run ONCE, in CI
+# (.github/workflows/mutation.yml); locally one mutant at a time with tools/mutate.sh. The format is mutate_drive.py's: `id`,
+# `file`, `old` (must occur EXACTLY once), `new`, optional `equivalent` and `targets`.
+#
+# Each of the three owner checks has a mutant that compares the WRONG token (a new one: no engine passes) and one that is
+# ALWAYS TRUE for ownership (every engine passes); each of the three places that store the owner stores a new token; and one
+# makes every engine's token the same object. The killing rows are the two-engine testset at the end of the first target.
+# TARGETS (D-0238) are every test file that tables a predicate, the killing one first. The one-engine files cannot tell an
+# always-true check from the real one. The baseline of the whole list is long: the workflow input `targets` narrows a run.
+W = "test/core_lang/test_tabling_worklist_swipl.jl"
+TARGETS = [
+    W,
+    "test/core_lang/test_tabling_a1_guard.jl",
+    "test/core_lang/test_tabling_abolish_bulk_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_delay_deps_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_depending_table_upstream_swipl.jl",
+    "test/core_lang/test_tabling_abolish_swipl.jl",
+    "test/core_lang/test_tabling_abstract_completion_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answer_insert_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answer_subsumption_upstream_swipl.jl",
+    "test/core_lang/test_tabling_answers_swipl.jl",
+    "test/core_lang/test_tabling_delay_after_simplify_upstream_swipl.jl",
+    "test/core_lang/test_tabling_drop_intermediate_upstream_swipl.jl",
+    "test/core_lang/test_tabling_engine_finding_cleanup_throw_swipl.jl",
+    "test/core_lang/test_tabling_events_swipl.jl",
+    "test/core_lang/test_tabling_idg_sets_upstream_swipl.jl",
+    "test/core_lang/test_tabling_idg_swipl.jl",
+    "test/core_lang/test_tabling_incr_answer_subsumption_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_dyn_nodes_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_retractall_upstream_swipl.jl",
+    "test/core_lang/test_tabling_incr_subsumptive_upstream_swipl.jl",
+    "test/core_lang/test_tabling_min_swipl.jl",
+    "test/core_lang/test_tabling_mono_reuse_upstream_swipl.jl",
+    "test/core_lang/test_tabling_mono_subsumptive_upstream_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_lazy_upstream_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_swipl.jl",
+    "test/core_lang/test_tabling_monotonic_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_exceptions_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_upstream_swipl.jl",
+    "test/core_lang/test_tabling_reeval_wfs_upstream_swipl.jl",
+    "test/core_lang/test_tabling_restraint_wb_swipl.jl",
+    "test/core_lang/test_tabling_s5_guard.jl",
+    "test/core_lang/test_tabling_sdg_swipl.jl",
+    "test/core_lang/test_tabling_simplify_completed_upstream_swipl.jl",
+    "test/core_lang/test_tabling_state_swipl.jl",
+    "test/core_lang/test_tabling_tabled_shortest_path_upstream_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_a_swipl.jl",
+    "test/core_lang/test_tabling_tabling_upstream_c_swipl.jl",
+    "test/core_lang/test_tabling_tb3rows_swipl.jl",
+    "test/core_lang/test_tabling_tb4_tb5_guard_swipl.jl",
+    "test/core_lang/test_tabling_tb4_tb5_swipl.jl",
+    "test/core_lang/test_tabling_tb4rows2_swipl.jl",
+    "test/core_lang/test_tabling_tb4rows_swipl.jl",
+    "test/core_lang/test_tabling_tb5rows_swipl.jl",
+    "test/core_lang/test_tabling_tb5wrap_swipl.jl",
+    "test/core_lang/test_tabling_tb6rows_swipl.jl",
+    "test/core_lang/test_tabling_tb7rows_swipl.jl",
+    "test/core_lang/test_tabling_tb8rows_swipl.jl",
+    "test/core_lang/test_tabling_tb9rows_swipl.jl",
+    "test/core_lang/test_tabling_tbl_sdg_upstream_swipl.jl",
+    "test/core_lang/test_tabling_transaction_nested_swipl.jl",
+    "test/core_lang/test_tabling_transaction_swipl.jl",
+    "test/core_lang/test_tabling_transaction_wb_swipl.jl",
+    "test/core_lang/test_tabling_triech_swipl.jl",
+    "test/core_lang/test_tabling_variant_swipl.jl",
+    "test/core_lang/test_tabling_w2_swipl.jl",
+    "test/core_lang/test_tabling_wfs_swipl.jl",
+    "test/core_lang/test_tabling_wfs_upstream_swipl.jl",
+    "test/core_lang/test_cont_run_swipl.jl",
+    "test/core_lang/test_det_ssu_swipl.jl",
+    "test/core_lang/test_trie_property_idg_swipl.jl",
+]
+P = "src/pl-tabling.jl"
+I = "src/pl-incl.jl"
+RELEASE = "        obj.owner === ld.identity && free_tbl_handle(ld, obj.handle)\n"
+TAKE = "        if wl.owner !== ld.identity                 # taken over from another thread\n"
+STATUS = "            wl.owner !== ld.identity && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))"
+MUTANTS = [
+    dict(id="TAG1OWN-1 release_obj_handle compares the wrong token", file=P, old=RELEASE,
+         new="        obj.owner === ld_identity() && free_tbl_handle(ld, obj.handle)\n"),
+    dict(id="TAG1OWN-2 release_obj_handle's owner check is always true", file=P, old=RELEASE,
+         new="        free_tbl_handle(ld, obj.handle)\n"),
+    dict(id="TAG1OWN-3 tbl_add_worklist compares the wrong token (every add is a takeover)", file=P, old=TAKE,
+         new="        if wl.owner !== ld_identity()\n"),
+    dict(id="TAG1OWN-4 tbl_add_worklist takes every engine for the owner", file=P, old=TAKE,
+         new="        if false\n"),
+    dict(id="TAG1OWN-5 unify_table_status compares the wrong token", file=P, old=STATUS,
+         new="            wl.owner !== ld_identity() && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))"),
+    dict(id="TAG1OWN-6 unify_table_status takes every engine for the owner", file=P, old=STATUS,
+         new="            false && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))"),
+    dict(id="TAG1OWN-7 new_worklist stores a token that is not the engine's", file=P,
+         old="    wl.owner = ld.identity\n    wl.table = atrie.serial\n",
+         new="    wl.owner = ld_identity()\n    wl.table = atrie.serial\n"),
+    dict(id="TAG1OWN-8 new_component stores a token that is not the engine's", file=P,
+         old="    c.owner = ld.identity\n",
+         new="    c.owner = ld_identity()\n"),
+    dict(id="TAG1OWN-9 a takeover stores a token that is not the engine's", file=P,
+         old="            wl.owner = ld.identity\n",
+         new="            wl.owner = ld_identity()\n"),
+    dict(id="TAG1OWN-10 every engine has the same token (an immutable one is a singleton)", file=I,
+         old="mutable struct ld_identity end\n",
+         new="struct ld_identity end\n"),
+]
