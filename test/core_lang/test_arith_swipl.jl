@@ -263,16 +263,17 @@ end
 
 # ── integer size and shifts too far (V8) — pinned to swipl 10.1.16 (probed) ──────────────────────
 # `1 << 20000` passes int_bits_ok's second bound: over 10000 bits, under the stacks limit. A shift
-# amount beyond `long` is shift_to_far: 0 for a right shift, or for a left one by a negative amount,
-# even of a negative number. A left one is int_too_big: resource_error(stack), swipl's and, since L1f
-# f2, the kernel's. `1 << (1 << 40)` fails int_bits_ok.
+# amount beyond `long` is shift_to_far: a right shift, or a left one by a negative amount, rounds
+# towards -inf: 0, and -1 for a negative number (swipl 11.1.0, probed; 10.1.16 answered 0 for both).
+# A left one is int_too_big: resource_error(stack), swipl's and, since L1f f2, the kernel's.
+# `1 << (1 << 40)` fails int_bits_ok.
 # A right shift of a big integer floors (mpz_fdiv_q_2exp).
 @testset "integer size, shifts too far, the floor of a right shift (V8)" begin
     v(e) = lk_value(_ais(e))
     @test v(_af(:<<, _ag(1), _ag(20000))) == big(2)^20000
-    @test v(_af(:>>, _ag(-1), _ag(big(2)^70))) == 0
+    @test v(_af(:>>, _ag(-1), _ag(big(2)^70))) == -1         # 10.1.16: 0
     @test v(_af(:>>, _ag(5), _ag(big(2)^70))) == 0
-    @test v(_af(:<<, _ag(-5), _ag(-big(2)^70))) == 0
+    @test v(_af(:<<, _ag(-5), _ag(-big(2)^70))) == -1        # 10.1.16: 0
     @test v(_af(:<<, _ag(0), _ag(big(2)^70))) == 0
     # a left shift by LONG_MIN is a right shift by the unsigned 2^63 (swipl 10.1.18: 0, and -1 for a negative base)
     @test v(_af(:<<, _ag(1), _ag(typemin(Int64)))) == 0
@@ -796,7 +797,7 @@ const _A_ARITHA_EXPECT = String[
     "ok:i-3",  # integer(-5r2)
     "ok:i0",  # integer(1r3)
     "ok:i0",  # integer(-1r3)
-    "ok:i9223372036854775807",  # integer(9.223372036854776e18)
+    "ok:i9223372036854775808",  # integer(9.223372036854776e18); 10.1.20: i9223372036854775807
     "ok:i-9223372036854775808",  # integer(-9.223372036854776e18)
     "ok:i9223372036854774784",  # integer(9.223372036854775e18)
     "ok:i10000000000000000000",  # integer(1.0e19)
@@ -815,7 +816,7 @@ const _A_ARITHA_EXPECT = String[
     "ok:i3",  # round(3)
     "ok:i4",  # round(7r2)
     "ok:i-4",  # round(-7r2)
-    "ok:i9223372036854775807",  # round(9.223372036854776e18)
+    "ok:i9223372036854775808",  # round(9.223372036854776e18); 10.1.20: i9223372036854775807
     "ok:i10000000000000000000",  # round(1.0e19)
     "ok:i1000000000000000000000000000000",  # round(1000000000000000000000000000000)
     "ok:i2",  # round(2.4999999999999996)

@@ -10,8 +10,8 @@
 #     of the function). `idg_size` is pinned EXACTLY: 80 (= sizeof(idg_node), the edge sets hold at most one pointer) and 136 (80 + the 56 bytes of a
 #     block of four, `sizeof_block(4, 0)`), because the kernel computes it from the same sizes (SIZEOF_IDG_NODE, `idg_set_sizeof`).
 #   * Every pinned line is swipl's (two byte-identical runs, 2026-11-14); with `swipl` on PATH the live lines are compared with the pins too.
-#   * tp05 is a monotonic chain (`tm_q` calls `tm_p`): the child's `idg_mono` adds `sizeof(idg_mono)` 24 and `sizeofTablePP` 136 (32 + 40 + 4 * 16, one
-#     entry in a table of four slots) to the 80, so the kernel's modelled capacity (`sizeofTablePP`, white-box testset below) is pinned at one entry.
+#   * tp05 is a monotonic chain (`tm_q` calls `tm_p`): the child's `idg_mono` adds `sizeof(idg_mono)` 24 and `sizeofTablePP` 144 (32 + 48 + 4 * 16, one
+#     entry in a table of four slots; 136 while `struct kvs` had 40 bytes, before swipl 11.1.0) to the 80, so the kernel's modelled capacity (`sizeofTablePP`, white-box testset below) is pinned at one entry.
 #     KNOWN DIFFERENCE (named): with more entries swipl's capacity follows its reprobe history, the kernel's a doubling rule; no row grows the table.
 #   * UNVERIFIED on the kernel (nothing was compiled when this file was written): every kernel answer; the gate decides.
 # allow-new-artifact: TBP, the rows of the '$trie_property' branches, after test/core_lang/test_tabling_idg_swipl.jl
@@ -71,8 +71,8 @@ const _TP_PINNED = [
     "r(t([1,1,0,3,136,int]),q([1,1,1,1,80,int]),s([1,1,1,1,80,int]),p([1,1,2,1,136,int]),d([1,0,2,0,136,none]))",
     # tp04: a plain trie has no IDG node (the four branches fail); `compiled_size` fails until the trie is compiled
     "r([none,none,none,none,none,none],[none,none,none,none,none,int])",
-    # tp05: a monotonic table with a monotonic child: the child's `mono` holds one dependency table, so `idg_size` is 80 + 24 + sizeofTablePP (136) = 240
-    "r(q([0,0,0,1,80,none]),p([0,0,1,0,240,none]))"
+    # tp05: a monotonic table with a monotonic child: the child's `mono` holds one dependency table, so `idg_size` is 80 + 24 + sizeofTablePP (144) = 248 (swipl 11.1.0; 10.1.20: 240)
+    "r(q([0,0,0,1,80,none]),p([0,0,1,0,248,none]))"
 ]
 
 "The `~q` text of each case's answer, in order, from swipl at the pin."
@@ -165,21 +165,22 @@ end
 
 @testset "tp05: the mono dependency table is part of idg_size (pl-trie.c:4341-4351: sizeof(*idg->mono) + sizeofTablePP(idg->mono->deps))" begin
     @test _TP_KERNEL[5] == _TP_PINNED[5]
-    @test _TP_KERNEL[5] != replace(_TP_PINNED[5], "240" => "80")      # the mono part dropped: 80 only
-    @test _TP_KERNEL[5] != replace(_TP_PINNED[5], "240" => "104")     # the table part dropped: 80 + 24
+    @test _TP_KERNEL[5] != replace(_TP_PINNED[5], "248" => "80")      # the mono part dropped: 80 only
+    @test _TP_KERNEL[5] != replace(_TP_PINNED[5], "248" => "104")     # the table part dropped: 80 + 24
 end
 
+# swipl 11.1.0's `struct kvs` has 48 bytes (40 before): one entry was 136 and three were 200
 @testset "sizeofTablePP: the modelled capacity (os/pl-table.c sizeofTable; DIVERGES documented)" begin
     N = LK.idg_node{_TP}
     ht = IdDict{N, LK.idg_mdep{_TP, N}}()
     @test LK.sizeofTablePP(ht) == LK.SIZEOF_TABLE + LK.SIZEOF_KVS + 4 * LK.SIZEOF_SYMBOL ==
-        136     # newHTablePP(4)
-    @test LK.SIZEOF_TABLE == 32 && LK.SIZEOF_KVS == 40 && LK.SIZEOF_SYMBOL == 16
+        144     # newHTablePP(4)
+    @test LK.SIZEOF_TABLE == 32 && LK.SIZEOF_KVS == 48 && LK.SIZEOF_SYMBOL == 16
     @test LK.SIZEOF_IDG_NODE == 80 && LK.SIZEOF_IDG_MONO == 24
-    @test LK.sizeofTablePP(ht) != 135
-    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2)) == 136                 # 2 * 2 > 4 is false: still four slots
-    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2, 3 => 3)) == 32 + 40 + 8 * 16 ==
-        200   # doubled once
+    @test LK.sizeofTablePP(ht) != 143
+    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2)) == 144                 # 2 * 2 > 4 is false: still four slots
+    @test LK.sizeofTablePP(IdDict{Int, Int}(1 => 1, 2 => 2, 3 => 3)) == 32 + 48 + 8 * 16 ==
+        208   # doubled once
 end
 
 if Sys.which("swipl") !== nothing

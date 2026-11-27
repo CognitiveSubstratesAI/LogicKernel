@@ -5,8 +5,8 @@
 # NOT RUN (written edit-only on wip/tbp, 2026-11-14, nothing compiled): every KILL below is read off the rows of the file TP.
 # KILL ROWS: TP = test/core_lang/test_trie_property_idg_swipl.jl: the cases tp01 (after the first evaluation: counters 0, edge counts, sizes 80/136),
 #   tp02 (after `assertz(tp_d(2))`: invalidated 1), tp03 (after the re-evaluation: reevaluated 1, compiled_size an integer), tp04 (a plain trie: the
-#   four IDG branches fail, compiled_size fails until the trie is compiled), tp05 (a monotonic chain: idg_size 240 = 80 + 24 + 136) and the testset
-#   `sizeofTablePP` (the modelled capacity: 136 for up to two entries, 200 for three).
+#   four IDG branches fail, compiled_size fails until the trie is compiled), tp05 (a monotonic chain: idg_size 248 = 80 + 24 + 144) and the testset
+#   `sizeofTablePP` (the modelled capacity: 144 for up to two entries, 208 for three).
 # EQUIVALENT: none. TBP-E1 was declared one (the number of `compiled_size` as a machine size, pinned only as "an integer > 0"); the audit ruled it a KILL
 #   row (D-1028 (2)): the kernel's number is deterministic and the mutant moves it by the factor 8; the row tp06 pins it (swipl's 192 in a comment).
 # TARGETS (audit D-0238): TP for every mutant; TG (the trie rows that call `'$trie_property'/2`) and TZ (`compiled_size` of the answer-discard rows)
@@ -80,11 +80,11 @@ MUTANTS = [
          file=TR, targets=[TP, TG, TZ],
          old='            size += idg_set_sizeof(idg.dependent)\n',
          new=''),
-    dict(id='TBP-S4 idg_size omits sizeof(idg_mono) (KILL TP tp05 p: 216 against 240)',
+    dict(id='TBP-S4 idg_size omits sizeof(idg_mono) (KILL TP tp05 p: 224 against 248)',
          file=TR, targets=[TP, TG, TZ],
          old='size += SIZEOF_IDG_MONO ',
          new='size += 0 '),
-    dict(id='TBP-S5 idg_size omits the table of the mono dependencies (KILL TP tp05 p: 104 against 240)',
+    dict(id='TBP-S5 idg_size omits the table of the mono dependencies (KILL TP tp05 p: 104 against 248)',
          file=TR, targets=[TP, TG, TZ],
          old='size += sizeofTablePP(mdeps) ',
          new='size += 0 '),
@@ -92,15 +92,15 @@ MUTANTS = [
          file=TR, targets=[TP, TG, TZ],
          old='            return PL_unify_int64(ld, arg, size) ? FTRUE : FFALSE\n',
          new='            return FFALSE\n'),
-    dict(id='TBP-T1 sizeofTablePP starts from eight slots (KILL TP testset sizeofTablePP: 136 is pinned for up to two entries; tp05 p: 368 against 240)',
+    dict(id='TBP-T1 sizeofTablePP starts from eight slots (KILL TP testset sizeofTablePP: 144 is pinned for up to two entries; tp05 p: 312 against 248)',
          file=TR, targets=[TP],
          old='    len = 4\n',
          new='    len = 8\n'),
-    dict(id='TBP-T2 sizeofTablePP doubles at half full (`>=`) (KILL TP testset sizeofTablePP: two entries must stay 136)',
+    dict(id='TBP-T2 sizeofTablePP doubles at half full (`>=`) (KILL TP testset sizeofTablePP: two entries must stay 144)',
          file=TR, targets=[TP],
          old='while 2 * length(ht) > len\n',
          new='while 2 * length(ht) >= len\n'),
-    dict(id='TBP-T3 sizeofTablePP quadruples (KILL TP testset sizeofTablePP: three entries must be 200)',
+    dict(id='TBP-T3 sizeofTablePP quadruples (KILL TP testset sizeofTablePP: three entries must be 208)',
          file=TR, targets=[TP],
          old='        len <<= 1\n',
          new='        len <<= 2\n'),
@@ -108,7 +108,7 @@ MUTANTS = [
          file=TR, targets=[TP],
          old='SIZEOF_KVS + len * SIZEOF_SYMBOL',
          new='SIZEOF_KVS + SIZEOF_SYMBOL'),
-    dict(id='TBP-K1 SIZEOF_TABLE is 33 (KILL TP testset sizeofTablePP: the constant and 136)',
+    dict(id='TBP-K1 SIZEOF_TABLE is 33 (KILL TP testset sizeofTablePP: the constant and 144)',
          file=INC, targets=[TP],
          old='const SIZEOF_TABLE = 32\n',
          new='const SIZEOF_TABLE = 33\n'),

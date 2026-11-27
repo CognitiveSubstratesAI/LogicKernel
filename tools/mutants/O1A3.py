@@ -17,8 +17,8 @@
 # The rows were generated from swipl 10.1.19, so a survivor means the kernel's format cannot be told from swipl's on that path.
 # NOT LISTED (each with its reason):
 #   * (nothing is NOT LISTED for do_format's `argument overflow` any more: pl-fmt.c:553-556's `int arg2 = arg*10+dw` wraps, the
-#     compiled swipl 10.1.19 does not raise (`~3000000000d` of [1] prints 1), the port raises: the KNOWN DIFFERENCE row k03 pins
-#     the kernel's answer with swipl's beside it, and O1A-C8 is its mutant.)
+#     compiled swipl 10.1.19 did not raise (`~3000000000d` of [1] printed 1) where the port raises; swipl 11.1.0 raises as the
+#     port does, so row k03 is an ordinary case of test_format_swipl.jl, and O1A-C8 is its mutant.)
 #   * formatInteger's fraction padding of a bignum with fewer digits than `div` (`UInt8('0')`): upstream reads before its buffer,
 #     swipl's answer varies between runs (`~25d` of 2^64), so no row.
 #   * outtext's Latin-1 branch (`outstring`) with rubber pending and a byte above 0x7f: upstream stores the raw byte and emit_rubber

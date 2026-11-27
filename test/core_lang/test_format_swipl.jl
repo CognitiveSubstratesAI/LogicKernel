@@ -271,10 +271,14 @@ const _FM_CASES = [
         "f106",
         raw"""with_output_to(atom(R), (open('/dev/null', write, S), format(S, "a~@b", [hello_out]), write(x), format(S, "~w", [y]), write(z), close(S)))"""
     ),  # current output after a call-back on another stream
-    ("e25", raw"""format(atom(R), "abc~", [])""")  # a text ending in the tilde: the NUL terminator is read as the directive
+    ("e25", raw"""format(atom(R), "abc~", [])"""),  # a text ending in the tilde: the NUL terminator is read as the directive
+    # a numeric argument past `int` (pl-fmt.c:553-556): format('argument overflow') (swipl 11.1.0; 10.1.19 printed `1`, and the
+    # row was a known difference, flag (k), D-0283 item 4)
+    ("k03",
+        raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""")
 ]
 
-# swipl 10.1.19's answer to each case, in order (the driver's whole output)
+# swipl 10.1.19's answer to each case, in order (the driver's whole output); the last row, k03, is swipl 11.1.0's
 const _FM_PINNED = [
     "ok",
     "t_f01 c[116,95,102,48,49]/1(a[104,101,108,108,111])",
@@ -407,10 +411,12 @@ const _FM_PINNED = [
     "t_f104 c[116,95,102,49,48,52]/1(a[49,46,48,101,43,48,53,124,49,46,48,101,45,48,53,124,49,50,51,52,53,54,46,48,124,49,46,48,101,43,48,54])",
     "t_f105 c[116,95,102,49,48,53]/1(a[48,46,49,50,51,52,53,55,124,49,46,50,101,43,48,50,124,49,50,51,52,46,53,55,124,48,46,48,48,48,49])",
     "t_f106 c[116,95,102,49,48,54]/1(a[120,122])",
-    "t_e25 c[116,95,101,50,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[102,111,114,109,97,116,95,99,104,97,114,97,99,116,101,114],a[0])))"
+    "t_e25 c[116,95,101,50,53]/1(c[114,97,105,115,101,100]/1(c[101,120,105,115,116,101,110,99,101,95,101,114,114,111,114]/2(a[102,111,114,109,97,116,95,99,104,97,114,97,99,116,101,114],a[0])))",
+    "t_k03 c[116,95,107,48,51]/1(a[97,114,103,117,109,101,110,116,32,111,118,101,114,102,108,111,119])"  # swipl 11.1.0; 10.1.19: a[49]
 ]
 
-# rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k01-k02: the kernel prints the C locale (D9); k03: flag (k), the numeric-argument overflow
+# rows whose swipl answer differs and the kernel's is pinned: (id, goal, kernel's answer, swipl's answer); k01-k02: the kernel prints the C locale (D9)
+# (k03, flag (k), the numeric-argument overflow, was one until swipl 11.1.0; it is now an ordinary case, the last of _FM_CASES)
 const _FM_KNOWN = [
     (
         "k01",
@@ -423,15 +429,6 @@ const _FM_KNOWN = [
         raw"""format(atom(R), "~:f|~2:e", [1234567.5, 1234567.5])""",
         "1234567.500000|1.23e+06",
         "1,234,567.500000|1.23e+06"
-    ),
-    # flag (k): a numeric argument past `int` (pl-fmt.c:553-556). swipl 10.1.19's `int arg2 = arg*10 + dw` wraps and its
-    # overflow test `(arg2 - dw)/10 != arg` is undefined behaviour the compiler removes, so swipl prints `1` (the wrapped
-    # column argument is no column at all); the port raises format('argument overflow') as the source's test says (D-0283 item 4).
-    (
-        "k03",
-        raw"""catch(format(atom(R), "~3000000000d", [1]), error(format(R), _), true)""",
-        "argument overflow",
-        "1"
     )
 ]
 
@@ -509,7 +506,7 @@ const _FM_E25 = "t_e25"
 _fm_not_e18(l) = !startswith(l, _FM_E18 * " ") && !startswith(l, _FM_E25 * " ")
 _fm_not_unstable(l) = !startswith(l, _FM_E18 * " ")
 
-@testset "format/2,3 as swipl's (f01-f74, e01-e19)" begin
+@testset "format/2,3 as swipl's (f01-f74, e01-e19, k03)" begin
     f, names = _fm_file(filter(c -> c[1] != "e18" && c[1] != "e25", _FM_CASES))
     kl, _, _ = _fm_kernel(f, names)
     pinned = filter(_fm_not_e18, _FM_PINNED)
@@ -534,7 +531,7 @@ _fm_not_unstable(l) = !startswith(l, _FM_E18 * " ")
     )  # caught(boom)
 end
 
-@testset "known differences on the kernel: the C locale (D9, k01-k02) and the numeric-argument overflow (flag k, k03), swipl's answer noted per row" begin
+@testset "known differences on the kernel: the C locale (D9, k01-k02), swipl's answer noted per row" begin
     f, names = _fm_file([(id, g) for (id, g, _, _) in _FM_KNOWN])
     kl, _, _ = _fm_kernel(f, names)
     @test length(kl) == length(_FM_KNOWN) + 1

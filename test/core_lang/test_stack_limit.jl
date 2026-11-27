@@ -417,8 +417,10 @@ end
     @test ld.global_spare == 0 && ld.trail_spare == 256 && ld.exception_processing
     LK.PL_clear_exception(ld)
     @test ld.global_spare == 512 && ld.trail_spare == 256 && !ld.exception_processing
-    # upstream's trim_stack: a reserve the room cannot hold is kept WHOLE (`room > 0 && room < reduce`) —
-    # room 100 takes 100, no room (past the limit) takes the whole spare back (D-0049: as upstream)
+    # upstream's trim_stack: a reserve the room cannot hold is cut to the room, and to 0 if there is none
+    # (`room < reduce`; pl-setup.c at the pin, src/pl-setup.jl `trim_stack!`) — room 100 takes 100, no room (past the
+    # limit) takes nothing (until the newer pin the whole spare was taken back, 512: D-0049).
+    # Written by hand: white-box, these are fields of the C stack structures, which swipl cannot be asked about.
     ld.global_spare = 0
     ld.stacks_limit = LK._stacks_in_use(ld, 0) + 100
     LK.trim_stack_global!(ld)
@@ -426,7 +428,7 @@ end
     ld.global_spare = 0
     ld.stacks_limit = LK._stacks_in_use(ld, 0) - 100
     LK.trim_stack_global!(ld)
-    @test ld.global_spare == 512
+    @test ld.global_spare == 0
 end
 
 # ── L1f f1b: copy_exception!'s three fallbacks (pl-fli.c) — WHITE-BOX: a ball copy fails only before

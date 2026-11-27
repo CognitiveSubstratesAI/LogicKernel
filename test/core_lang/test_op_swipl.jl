@@ -105,7 +105,8 @@ const _OP_GOALS = [
         _operr("type_error(integer,1.5)")
     ),
     ((_opg(99999999999), _ops(:xfx), _ops(:foo)), "op(99999999999,xfx,foo)",
-        _operr("representation_error(int)")),
+        # swipl 11.1.0 (probed) adds the culprit; 10.1.16: representation_error(int)
+        _operr("representation_error(int(99999999999))")),
     ((_opg(500), _ops(:xfx), _ops(",")), "op(500,xfx,',')",
         _operr("permission_error(modify,operator,',')")),
     ((_opg(500), _ops(:xfx), _ops("|")), "op(500,xfx,'|')",

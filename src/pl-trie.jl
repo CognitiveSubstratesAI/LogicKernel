@@ -3236,10 +3236,10 @@ end
 
 # PORT: pl-table.h sizeofTablePP
 # (os/pl-table.c sizeofTable)
-# DIVERGES: upstream's is `sizeof(struct table) + sizeof(struct kvs) + ht->kvs->len * sizeof(struct symbol)` (32, 40 and 16 bytes at the pin);
+# DIVERGES: upstream's is `sizeof(struct table) + sizeof(struct kvs) + ht->kvs->len * sizeof(struct symbol)` (32, 48 and 16 bytes at the pin);
 # the kernel's table is an `IdDict` that keeps no `kvs->len`, so the capacity is modelled: `newHTablePP(4)` (pl-tabling.c:8267, :10117), doubled
 # while the table holds more than half of it; upstream's `len` follows its resize and reprobe history (os/pl-table.c:259-272 `htable_resize`, :334 and
-# :380 the reprobe limit), the kernel's follows the rule above. The ONE row that compares it with swipl's pins a table of one entry, 136 bytes
+# :380 the reprobe limit), the kernel's follows the rule above. The ONE row that compares it with swipl's pins a table of one entry, 144 bytes
 # (test/core_lang/test_trie_property_idg_swipl.jl tp05): beyond one entry no row compares the number.
 "`sizeofTablePP(ht)`: the bytes a pointer table takes, with the capacity modelled (pl-table.h)."
 function sizeofTablePP(ht::IdDict)::Int
