@@ -361,7 +361,7 @@ try:
     sts = [s for s in d.get("statuses") or [] if s.get("context") == "land/approved"]
     if not sts:
         print("FAIL\tno land/approved status on the commit"); sys.exit(0)
-    s = sts[0]  # the combined status answers the latest per context: a later failure revokes
+    s = sts[0]  # read_statuses keeps only the newest post per context: a later failure revokes
     who = ((s.get("creator") or {}).get("login") or "").lower()
     if s.get("state") != "success":
         print("FAIL\tland/approved is %s, not success" % s.get("state"))

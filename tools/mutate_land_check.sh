@@ -94,6 +94,14 @@ M = [
  ("S16", "verdicts: the status answer and the approvers file are never handed to the reader (the land/local status route is dead)", '${stat:+--statuses "$stat" --approvers "$ROOT/evidence/land_approvers.txt"}', ''),
  ("S17", "verdicts: --statuses is handed over even when gh could not answer (a stale or empty file is read)", 'local rel="" stat="" repo=', 'local rel="" stat="$LAND_WORK/release.json" repo='),
  ("S18", "verdicts: --approvers is not handed over (the reader sees no approvers: only a closed route, never a wider one; this one widens nothing, so it must still be KILLED by the argument test)", ' --approvers "$ROOT/evidence/land_approvers.txt"}', '}'),
+ # read_statuses (audit D-1077 (1)): the statuses come from the LIST endpoint, paged, and the newest post per context is kept
+ ("ST1", "statuses: the old URL (the combined answer, whose entries carry no creator) is read", 'commits/$sha/statuses?per_page=100&page=$page', 'commits/$sha/status?per_page=100&page=$page'),
+ ("ST2", "statuses: the oldest post wins", '(when, key) > latest[ctx][0]', '(when, key) < latest[ctx][0]'),
+ ("ST3", "statuses: no collapsing to one post per context", 'if ctx not in latest or (when, key) > latest[ctx][0]:\n                latest[ctx] = ((when, key), s)', 'if True:\n                latest[len(latest)] = ((when, key), s)'),
+ ("ST4", "statuses: only page 1 is read", '[ "$n" -lt 100 ] && break', 'n=0; break'),
+ ("ST5", "statuses: the 10-page guard is removed", 'echo "10 full pages of statuses: the list may go on" >> "$err"; return 1; }', ':; }'),
+ ("ST6", "statuses: a gh failure is ignored (the page is read as an empty list)", '2> "$err" || return 1', '2> "$err" || echo "[]" > "$out.page$page"'),
+ ("ST7", "statuses: the id tie-break is dropped (two posts of the same second)", '(when, key) > latest[ctx][0]', 'when > latest[ctx][0][0]'),
 ]
 # `old` occurs exactly once in tools/verdict_read.py (mutated COPY, checked by tools/test_verdict_read.py, D-1006 (2))
 VM = [
