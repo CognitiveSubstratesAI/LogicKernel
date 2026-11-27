@@ -618,11 +618,10 @@ function pl_engine_fetch(ld::PL_local_data{T}, A1::term_t)::foreign_t where {T}
     info = ld.thread_info
     if info !== nothing && info.is_engine
         th = symbol_thread_handle(gd, info.symbol)::thread_handle{T}
-        if th.interactor_package !== nothing
+        package = th.interactor_package             # a local: JET narrows it, not the field read twice
+        if package !== nothing
             tmp = PL_new_term_ref(ld)
-            rc =
-                tmp != 0 && PL_recorded(ld, th.interactor_package, tmp) &&
-                PL_unify(ld, A1, tmp)
+            rc = tmp != 0 && PL_recorded(ld, package, tmp) && PL_unify(ld, A1, tmp)
             th.interactor_package = nothing         # PL_erase(th->interactor.package)
             return rc ? FTRUE : FFALSE
         end
@@ -1084,8 +1083,9 @@ function thread_thread_property(
     (info === nothing || !info.is_engine) && return false
     th = symbol_thread_handle(gd, info.symbol)
     (th === nothing || th.interactor_thread === nothing) && return false
-    alias = symbol_alias(gd, th.interactor_thread)
-    return PL_unify_atom(ld, prop, alias === nothing ? th.interactor_thread : alias)
+    caller = th.interactor_thread::T                    # a local: JET narrows it, not the field read twice
+    alias = symbol_alias(gd, caller)
+    return PL_unify_atom(ld, prop, alias === nothing ? caller : alias)
 end
 
 # PORT: pl-thread.c system_thread_id
