@@ -375,6 +375,10 @@ _manifest_per_type(T) = (
 # as a real caller's is.
 _manifest_sink(cl) = true
 
+# A concrete stand-in for the callable `register_event_function` and `PL_thread_at_exit` take (TH1), as `_manifest_sink` is for the
+# sinks. `event_function` calls it as `func(gd, ld, closure[, argv+1[, argv+2]])`; the closure value in those rows is a `Symbol`.
+_manifest_event_fn(gd, ld, closure, a1=nothing, a2=nothing) = nothing
+
 # The clause index, its head compiler and the clause database (src/pl-incl.jl, pl-funct.jl,
 # pl-global.jl, pl-inline.jl, pl-vmi.jl, pl-comp.jl, pl-index.jl, pl-thread.jl, pl-gc.jl,
 # pl-proc.jl), every method once, over term type T. The entry points are also checked for the other two payload
@@ -2545,7 +2549,11 @@ function _manifest_index(T)
         ),
         (LK._create_engine, Tuple{LK.PL_global_data{T}, LD, Int}, false),
         (LK.thread_init_goals!, Tuple{LK.PL_global_data{T}, LD}, false),
-        (LK.PL_thread_at_exit, Tuple{LK.PL_global_data{T}, LD, Any, Any, Bool}, false),
+        (
+            LK.PL_thread_at_exit,
+            Tuple{LK.PL_global_data{T}, LD, typeof(_manifest_event_fn), Symbol, Bool},
+            false
+        ),
         (LK.PL_thread_self, Tuple{LD}, false),
         (LK.PL_unify_thread_id, Tuple{LK.PL_global_data{T}, LD, Int, Int}, false),
         (LK.PL_get_thread_id_ex, Tuple{LK.PL_global_data{T}, LD, Int}, false),
@@ -2886,7 +2894,15 @@ function _manifest_index(T)
         (
             LK.register_event_function,
             Tuple{
-                GD, LD, LK.event_location{T}, Union{Nothing, T}, Bool, Any, Any, Int, UInt32
+                GD,
+                LD,
+                LK.event_location{T},
+                Union{Nothing, T},
+                Bool,
+                typeof(_manifest_event_fn),
+                Symbol,
+                Int,
+                UInt32
             },
             false
         ),
