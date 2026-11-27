@@ -182,7 +182,10 @@ const _BI_KERNEL_COLUMNS = String[]       # rows on both sides whose columns dif
 # G1 (chunk 1, the gc_statistics port): the kernel registers '$gc_statistics'/5 (pl-gc.c:4592, PL_FA_VARARGS), one foreign row of `system` that
 # swipl's boot list has: 210 - 1 = 209, MEASURED in CI on gate/wip-g1c2 f023834b, 9895c698 being chunk 1 (all three types: `missing_foreign == _BI_KERNEL_MISSING_FOREIGN`:
 # 209 == 210 failed; 2026-11-21, D-0083, internal identity: the count of a registration table, read from the run's own answer).
-const _BI_KERNEL_MISSING_FOREIGN = 209    # RT: 322 - 43 - 69 - 1 (G1 '$gc_statistics'/5), MEASURED; see the comment lines above
+# TH1 (2026-11-27, audit D-1071): the kernel registers twelve more foreign rows of `system` that swipl's boot list has: thread_property/2,
+# is_engine/1, '$engine_create'/3, engine_destroy/1, engine_post/2 and /3, engine_fetch/1, engine_next/2, '$gc_wait'/1, '$gc_clear'/1,
+# '$gc_stop'/0 (the pl-ext.jl tables) and '$can_yield'/0 (pl-pro.jl:647): 209 - 12 = 197 (D-0083, internal identity: a count of a registration table).
+const _BI_KERNEL_MISSING_FOREIGN = 197    # RT: 322 - 43 - 69 - 1 (G1 '$gc_statistics'/5) - 12 (TH1); see the comment lines above
 const _BI_KERNEL_MODULES_LACKING = String[] # every boot module the oracle has, the kernel has
 # T3, `(row, kernel, swipl)`: load.pl's clause count only (22 vs 23): swipl's 23 count the `'$load_context_module'/3` fact of
 # threads.pl, which load.pl:78-80 does not consult in the single-thread configuration (FLAG F6); the T3 config rows leave
