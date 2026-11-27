@@ -50,8 +50,8 @@ how many of the upstream file's functions are ported.
 | swipl-bench `programs/nreverse.pl` | design | `d74163e6d756` | `bench/programs/nreverse.jl` | 4 | 0 |
 | swipl-bench `programs/poly_10.pl` | design | `d74163e6d756` | `bench/programs/poly_10.jl` | 12 | 0 |
 | swipl-bench `programs/qsort.pl` | design | `d74163e6d756` | `bench/programs/qsort.jl` | 4 | 0 |
-| swipl-devel `src/ATOMS` | code | `18168e629eab` | `src/pl-atom.jl` | 0 | 0 |
-| swipl-devel `src/ATOMS` | code | `18168e629eab` | `src/pl-funct.jl` | 0 | 0 |
+| swipl-devel `src/ATOMS` | code | `af9e2e7ed0be` | `src/pl-atom.jl` | 0 | 0 |
+| swipl-devel `src/ATOMS` | code | `af9e2e7ed0be` | `src/pl-funct.jl` | 0 | 0 |
 | swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/SWI-Prolog.jl` | 141 | 4 |
 | swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/os/pl-table.jl` | 2 | 0 |
 | swipl-devel `src/SWI-Prolog.h` | code | `18168e629eab` | `src/pl-dict.jl` | 1 | 0 |
@@ -208,7 +208,7 @@ how many of the upstream file's functions are ported.
 | swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-gmp.jl` | 1 | 0 |
 | swipl-devel `src/pl-inline.h` | code | `18168e629eab` | `src/pl-inline.jl` | 19 | 16 |
 | swipl-devel `src/pl-list.c` | code | `18168e629eab` | `src/pl-list.jl` | 18 | 10 |
-| swipl-devel `src/pl-modul.c` | code | `af9e2e7ed0be` | `src/pl-modul.jl` | 70 | 47 |
+| swipl-devel `src/pl-modul.c` | code | `af9e2e7ed0be` | `src/pl-modul.jl` | 68 | 46 |
 | swipl-devel `src/pl-mutex.c` | code | `18168e629eab` | `src/pl-mutex.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `18168e629eab` | `src/pl-incl.jl` | 1 | 1 |
 | swipl-devel `src/pl-op.c` | code | `af9e2e7ed0be` | `src/pl-op.jl` | 27 | 19 |
@@ -312,7 +312,7 @@ checkout is pulled.
 | swipl-bench `programs/nreverse.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/nreverse.jl |
 | swipl-bench `programs/poly_10.pl` | `d74163e6d756` | 11 | 11 | 0 | bench/programs/poly_10.jl |
 | swipl-bench `programs/qsort.pl` | `d74163e6d756` | 3 | 3 | 0 | bench/programs/qsort.jl |
-| swipl-devel `src/ATOMS` | `18168e629eab` | 0 | 0 | 0 | src/pl-atom.jl, src/pl-funct.jl |
+| swipl-devel `src/ATOMS` | `af9e2e7ed0be` | 0 | 0 | 0 | src/pl-atom.jl, src/pl-funct.jl |
 | swipl-devel `src/SWI-Prolog.h` | `18168e629eab` | 0 | 1 | 0 | src/SWI-Prolog.jl, src/os/pl-table.jl, src/pl-dict.jl, src/pl-incl.jl, src/pl-setup.jl |
 | swipl-devel `src/Unicode/prolog_syntax_map.pl` | `18168e629eab` | 0 | 125 | 0 | src/pl-umap.jl |
 | swipl-devel `src/os/SWI-Stream.h` | `18168e629eab` | 0 | 2 | 0 | src/os/pl-stream.jl |
@@ -406,7 +406,7 @@ checkout is pulled.
 | swipl-devel `src/pl-init.h` | `18168e629eab` | 0 | 0 | 0 | src/pl-global.jl |
 | swipl-devel `src/pl-inline.h` | `18168e629eab` | 19 | 54 | 14 | src/pl-arith.jl, src/pl-gmp.jl, src/pl-inline.jl |
 | swipl-devel `src/pl-list.c` | `18168e629eab` | 11 | 13 | 7 | src/pl-list.jl |
-| swipl-devel `src/pl-modul.c` | `af9e2e7ed0be` | 53 | 105 | 41 | src/pl-modul.jl |
+| swipl-devel `src/pl-modul.c` | `af9e2e7ed0be` | 52 | 105 | 41 | src/pl-modul.jl |
 | swipl-devel `src/pl-mutex.c` | `18168e629eab` | 1 | 33 | 1 | src/pl-mutex.jl |
 | swipl-devel `src/pl-op.c` | `18168e629eab` | 0 | 21 | 0 | src/pl-incl.jl |
 | swipl-devel `src/pl-op.c` | `af9e2e7ed0be` | 21 | 26 | 18 | src/pl-op.jl |
@@ -473,7 +473,7 @@ checkout is pulled.
 | swipl-devel `tests/db/test_db.pl` | `18168e629eab` | 2 | 10 | 0 | test/db/test_db.jl |
 | swipl-devel `tests/db/test_jit.pl` | `18168e629eab` | 16 | 21 | 0 | test/db/test_jit.jl |
 | swipl-devel `tests/rational/test_ieee754.pl` | `18168e629eab` | 0 | 15 | 0 | test/rational/test_ieee754.jl |
-| **total** | | **3114** | **7834** | **1829** | |
+| **total** | | **3113** | **7834** | **1829** | |
 <!-- END GENERATED coverage -->
 
 ### Not ported: unreachable upstream
