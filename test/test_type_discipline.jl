@@ -180,7 +180,32 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         1,
         "_c_string_bytes: copies one NUL-terminated string of that `struct lconv` into a Julia vector, at " *
         "once and only when the pointer is not NULL (a NULL gives no bytes), as pl-locale.c's strdup does"
+    ),
+    "pl-event.jl ccall" => (
+        1,
+        "TH1 (D-1072): _call_event_function, upstream's `(*function)(closure, ...)`: the call goes through the " *
+        "pointer of the typed `Base.CFunction` that `event_function` made with `@cfunction`, with that same " *
+        "signature; the `CFunction` is held by `GC.@preserve fn` for the whole call"
+    ),
+    "pl-event.jl unsafe_convert" => (
+        1,
+        "TH1 (D-1072): _call_event_function takes the raw pointer of that `Base.CFunction` as the argument of " *
+        "its one ccall, inside the same `GC.@preserve fn`, so the pointer cannot outlive the object that owns it"
+    ),
+    "pl-thread.jl ccall" => (
+        1,
+        "TH1 (D-1072): system_thread_id, the C library's `gettid` (Base has none): no argument, returns a " *
+        "`Cint`, no pointer and no buffer; called on Linux only (checked first, else -1)"
     )
+)
+
+# The ALLOWLIST of abstractly typed struct fields (D-1072), compared EXACTLY with what the check finds: a new field
+# fails the rule until it is listed with its reason, and a listed one that is gone or narrowed fails it too.
+const _TD_FIELD_ALLOWED = Dict(
+    "PL_thread_info.thread_data::Union{Nothing, LogicKernel.AbstractLocalData}" =>
+        "the engine's local data: PL_local_data{T} is defined after this record (src/pl-global.jl), so the " *
+        "field names its abstract supertype; the reads in src/pl-thread.jl that use a member of it assert " *
+        "`::PL_local_data{T}`"
 )
 
 @testset "type discipline" begin
@@ -220,10 +245,14 @@ const _TD_UNCHECKED_ALLOWED = Dict(
         end
     end
 
-    @testset "no abstractly typed struct field in LogicKernel" begin
+    @testset "no abstractly typed struct field in LogicKernel beyond the allowlist" begin
         bad = nonconcrete_fields(LogicKernel)
-        isempty(bad) || foreach(b -> println(stderr, "  abstract field: ", b), bad)
-        @test isempty(bad)
+        foreach(
+            b -> println(stderr, "  abstract field NOT on the allowlist: ", b),
+            setdiff(bad, keys(_TD_FIELD_ALLOWED))
+        )
+        @test bad == sort!(collect(keys(_TD_FIELD_ALLOWED)))
+        @test all(v -> length(v) > 20, values(_TD_FIELD_ALLOWED))   # every entry says why
     end
 
     @testset "no unchecked memory access in src beyond the allowlist" begin
