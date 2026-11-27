@@ -1745,6 +1745,10 @@ function _manifest_index(T)
         (LK.extract_key_cells, Tuple{LD, Int, Vector{Union{Int, T}}}, false),
         (LK.get_key_arg_ex, Tuple{LD, Int, Bool}, false),
         (LK.PL_existence_error3, Tuple{LD, T, Int, Int}, false),
+        # TH1 engines: the same function with the leading arguments of PL_error (pred, arity, msg), as engine_fetch/1 passes them
+        (LK.PL_existence_error3, Tuple{LD, T, Int, Int, String}, false),
+        (LK.PL_existence_error3, Tuple{LD, T, Int, Int, String, Int}, false),
+        (LK.PL_existence_error3, Tuple{LD, T, Int, Int, String, Int, String}, false),
         # the sort family on cells (L1d step 9)
         (LK.skip_list_cells, Tuple{LD, Int}, false),
         (LK._is_list_word, Tuple{LD, UInt8, UInt64}, true),
@@ -2630,6 +2634,11 @@ function _manifest_index(T)
             false
         ),
         (LK.system_thread_id, Tuple{}, false),
+        # TH1: the status test, the handle's serial bytes, and the typed event function's call and database copy (pl-event.jl)
+        (LK.THREAD_STATUS_INVALID, Tuple{Int}, false),
+        (LK._thread_bytes, Tuple{Int}, false),
+        (LK._call_event_function, Tuple{LK.event_function, GD, LD, Int, Int, Int}, false),
+        (Base.deepcopy_internal, Tuple{LK.event_function, IdDict{Any, Any}}, false),
         (
             LK.thread_tid_property,
             Tuple{LD, Union{Nothing, LK.PL_thread_info{T}}, Int},
@@ -4868,6 +4877,7 @@ const _MANIFEST_LB7_FREE = (
 _manifest_gd_template(::Type{T}) where {T} = (
     (LK.copy_global_data, Tuple{LK.PL_global_data{T}}, false),
     (LK._copy_stream_free, Tuple{IdDict{LK.IOSTREAM, T}}, false),
+    (LK._copy_main_thread, Tuple{LK.thread_state{T}, IdDict{Any, Any}}, false),
     (LK.gd_template, Tuple{Type{T}}, false),
     (LK.gd_template, Tuple{Type{T}, Type{LK.PL_global_data{T}}}, false),
     (LK.gd_template_built, Tuple{Type{T}}, false),
