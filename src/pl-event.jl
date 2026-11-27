@@ -188,9 +188,13 @@ end
 "The `event_function` of the Julia callable `func` and its closure value: a C-callable pointer over both."
 function event_function(func::F, closure::C)::event_function where {F, C}
     entry =
-        (gd, ld, a1::term_t, a2::term_t, nargs::Int) ->
-            nargs == 0 ? func(gd, ld, closure) :
-            nargs == 1 ? func(gd, ld, closure, a1) : func(gd, ld, closure, a1, a2)
+        (gd, ld, a1::term_t, a2::term_t, nargs::Int) -> if nargs == 0
+            func(gd, ld, closure)
+        elseif nargs == 1
+            func(gd, ld, closure, a1)
+        else
+            func(gd, ld, closure, a1, a2)
+        end
     return event_function(
         @cfunction($entry, Any, (Any, Any, term_t, term_t, Int))
     )
