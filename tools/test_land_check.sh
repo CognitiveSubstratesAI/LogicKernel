@@ -7,6 +7,10 @@
 # points it at a mutated COPY. LAND_TEST_FAILFAST=1 ends the run at the first FAIL row (the mutation script's use).
 # The D-0164 terms below are assembled from pieces ('cra''sh') so that this file does not match the grep.
 set -uo pipefail
+# inside an Actions job (CI.yml `land_check_tools`) the runner sets some of these, and land_check.sh reads them: unset here, so
+# the rows run as they do outside Actions and the fixtures' `decide` tables stay out of the job's own summary and outputs
+unset GITHUB_OUTPUT GITHUB_STEP_SUMMARY GITHUB_REPOSITORY GH_TOKEN RUNNER_TEMP LAND_WORK LAND_BASE LAND_IDENTITY \
+    LAND_BRANCH_GLOB LAND_BUDGET LAND_DRY_RUN LAND_SET_MAY_SHRINK LAND_CHANNEL LAND_VERDICT_READ
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 UNDER="${LAND_CHECK_UNDER_TEST:-$HERE/land_check.sh}"

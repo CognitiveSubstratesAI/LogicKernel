@@ -740,3 +740,22 @@ jobs:
           merge-multiple: true
       - name: Every shard ran, none failed, the passes sum to the whole run's
         run: python3 tools/evidence_ci.py warm warm-out
+
+  # THE LAND CHECK'S OWN TESTS (audit D-1080 (4)(f): no workflow ran them). On every run of this workflow, whatever changed: no
+  # Julia, no oracle, no network use by the test (temporary repositories, a fake `gh`). In no gather's `needs`. The two commands
+  # are bare, so each one's exit status is its step's. `--check` fails when a mutant's old text no longer occurs exactly once (it
+  # does not apply). NOT RUN HERE: the mutants themselves (tools/mutate_land_check.sh with no --check), so no job here fails on a
+  # SURVIVOR: one process runs them in sequence, and the whole list is far past one job's 60 minutes.
+  land_check_tools:
+    name: Land check tool tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tools/mutate_land_check.sh --check (every mutant applies)
+        run: tools/mutate_land_check.sh --check
+      - name: tools/test_land_check.sh
+        if: ${{ !cancelled() }}
+        run: tools/test_land_check.sh
