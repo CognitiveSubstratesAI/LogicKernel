@@ -256,11 +256,6 @@ thread_state{T}() where {T} = thread_state{T}(
     Dict{UInt64, Int}(), 1, 0, 0
 )
 
-# ORIGINAL (TH1): the C signature of an event listener's function (`event_function`, src/pl-event.jl) is one for every term
-# type, so it declares the database by a supertype that names no parameter, as it declares the local data (`AbstractLocalData`).
-"The supertype of `PL_global_data{T}`."
-abstract type AbstractGlobalData end
-
 # PORT: pl-global.h PL_global_data
 """
     PL_global_data{T}()
@@ -272,7 +267,7 @@ table), registered once, when the database is created, as upstream registers the
 and the `user` module, whose procedure table holds the database's predicates. Field names are
 upstream's, nesting flattened (`procedures.dirty` is `procedures_dirty`).
 """
-mutable struct PL_global_data{T} <: AbstractGlobalData
+mutable struct PL_global_data{T}
     _generation::gen_t                                          # generation of the database
     procedures_dirty::Dict{Definition{T}, dirty_def_info{T}}    # procedures.dirty
     clauses_cgc_active::Bool                                    # clauses.cgc_active: CGC running
