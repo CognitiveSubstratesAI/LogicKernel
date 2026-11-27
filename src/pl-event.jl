@@ -183,20 +183,27 @@ function add_event_hook(
 end
 
 # ORIGINAL: upstream stores the C function pointer and the `void *` closure; here both go into one pointer, made at registration. Its one C
-# signature is `(gd, ld, argv+1, argv+2, nargs)`, and the closure under it passes the first `nargs` term references to the callable. A
-# typed pointer, as measured in src/pl-ext.jl (THE DISPATCH): there for the built-ins' table, here for the functions a caller registers.
+# signature is `(gd, ld, argv+1, argv+2, nargs)` with an `int` answer, and the closure under it passes the first `nargs` term references
+# to the callable. The database and the local data are declared by their abstract supertypes: the signature names no term type. The
+# `int` is 1 or 0 for the callable's `true` or `false`, and -1 for any other value (a void callback's, which no caller reads). A typed
+# pointer, as measured in src/pl-ext.jl (THE DISPATCH): there for the built-ins' table, here for the functions a caller registers.
 "The `event_function` of the Julia callable `func` and its closure value: a C-callable pointer over both."
 function event_function(func::F, closure::C)::event_function where {F, C}
     entry =
-        (gd, ld, a1::term_t, a2::term_t, nargs::Int) -> if nargs == 0
-            func(gd, ld, closure)
-        elseif nargs == 1
-            func(gd, ld, closure, a1)
-        else
-            func(gd, ld, closure, a1, a2)
+        (gd, ld, a1::term_t, a2::term_t, nargs::Int) -> begin
+            rval = if nargs == 0
+                func(gd, ld, closure)
+            elseif nargs == 1
+                func(gd, ld, closure, a1)
+            else
+                func(gd, ld, closure, a1, a2)
+            end
+            return rval === true ? Cint(1) : rval === false ? Cint(0) : Cint(-1)
         end
     return event_function(
-        @cfunction($entry, Any, (Any, Any, term_t, term_t, Int))
+        @cfunction(
+            $entry, Cint, (AbstractGlobalData, AbstractLocalData, term_t, term_t, Int)
+        )
     )
 end
 
@@ -205,16 +212,18 @@ end
 Base.deepcopy_internal(f::event_function, ::IdDict)::event_function = f
 
 # ORIGINAL: the C call `(*function)(closure, ...)` through the pointer.
-"Call `f` through its pointer; the callable gets the first `nargs` of the two term references. Its return value is the callable's."
+"Call `f` through its pointer; the callable gets the first `nargs` of the two term references. Its `Bool`, else `nothing`."
 function _call_event_function(
     f::event_function, gd::PL_global_data{T}, ld::PL_local_data{T},
     a1::term_t, a2::term_t, nargs::Int
-) where {T}
+)::Union{Nothing, Bool} where {T}
     fn = f.fn
-    return GC.@preserve fn ccall(
-        Base.unsafe_convert(Ptr{Cvoid}, fn), Any, (Any, Any, term_t, term_t, Int),
+    rc = GC.@preserve fn ccall(
+        Base.unsafe_convert(Ptr{Cvoid}, fn), Cint,
+        (AbstractGlobalData, AbstractLocalData, term_t, term_t, Int),
         gd, ld, a1, a2, nargs
     )
+    return rc < 0 ? nothing : rc != 0
 end
 
 # PORT: pl-event.c register_event_function
