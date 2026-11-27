@@ -520,7 +520,7 @@ end
     end
 end
 
-@testset "the mask (D3): 36 bits, the table's Booleans, a new local data copies the database's" begin
+@testset "the mask (D3): 38 bits, the table's Booleans, a new local data copies the database's" begin
     gd = LK.PL_global_data{_TL}()
     ld = LK.PL_local_data{_TL}(gd)
     bits = [
@@ -538,10 +538,11 @@ end
         LK.PLFLAG_MITIGATE_SPECTRE, LK.PLFLAG_TABLE_INCREMENTAL, LK.PLFLAG_TABLE_SHARED,
         LK.PLFLAG_RATIONAL, LK.PLFLAG_DEBUG_ON_INTERRUPT, LK.PLFLAG_OPTIMISE_UNIFY,
         LK.PLFLAG_SHIFT_CHECK, LK.PLFLAG_AGC_CLOSE_STREAMS, LK.PLFLAG_EPILOG,
-        LK.PLFLAG_VALIDATE_API
+        LK.PLFLAG_VALIDATE_API, LK.PLFLAG_GC_GENERATIONAL
     ]
-    @test sort(bits) == collect(1:37)                            # pl-incl.h enum plflag: the bit number plus one
-    @test LK.prologFlagMask(1) == UInt64(1) && LK.prologFlagMask(37) == UInt64(1) << 36
+    # before TAG1 (the V10.1.20 pin): 37 bits, the last `PLFLAG_VALIDATE_API`
+    @test sort(bits) == collect(1:38)                            # pl-incl.h enum plflag: the bit number plus one
+    @test LK.prologFlagMask(1) == UInt64(1) && LK.prologFlagMask(38) == UInt64(1) << 37
 
     # the mask holds the value of every Boolean flag that owns a bit (the compiler and the VM read these bits since R2 F1b)
     owned = Int[]

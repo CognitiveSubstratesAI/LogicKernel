@@ -8,7 +8,7 @@
 #   * the word: `isFunctor` (TAG_ATOM | STG_GLOBAL), not an atom word (same tag, other storage);
 #     `indexFunctor`/`arityFunctor` round trip at arities 0, 1, 30, 31, 32, 1000 — 31 and up read
 #     from the table (`_arityFunc_(w) == F_ARITY_MASK`); `isAtomFunctor` iff arity 0;
-#   * the built-ins: 336 functors in src/ATOMS order, index 1 first (defatom.c's `int functor=1`),
+#   * the built-ins: 340 functors in src/ATOMS order, index 1 first (defatom.c's `int functor=1`),
 #     each found again by lookup without creating; `CONTROL_F` on exactly `,/2 ;/2 |/2 ->/2 *->/2
 #     \+/1 :/2 $/1 @/2` (O_CALL_AT_MODULE is defined, pl-incl.h:236), `ARITH_F` on exactly
 #     `=:=/2 =\=/2 </2 >/2 =</2 >=/2 is/2`;
@@ -46,8 +46,9 @@ if isdir(joinpath(_FT_CHECKOUT, ".git"))
         reg = Base.invokelatest(m.functor_region, fs, ids, commit)
         @test Base.invokelatest(m.rewrite, dst, reg; begin_mark=m.FBEGIN_MARK) ==
             read(dst, String)
-        @test length(fs) == 336 == length(LK._BUILTIN_FUNCTORS)
-        @test count(l -> startswith(l, 'F'), split(src, '\n')) == 336
+        # the counts at the pin af9e2e7e (before TAG1, the V10.1.20 pin: 336)
+        @test length(fs) == 340 == length(LK._BUILTIN_FUNCTORS)
+        @test count(l -> startswith(l, 'F'), split(src, '\n')) == 340
         # each generated entry names the atom of its `F` line, at the line's arity
         @test all(
             k ->
@@ -105,9 +106,11 @@ end
     end
 end
 
-@testset "the built-ins: 336 in src/ATOMS order, index 1 first; CONTROL_F and ARITH_F exactly" begin
+@testset "the built-ins: 340 in src/ATOMS order, index 1 first; CONTROL_F and ARITH_F exactly" begin
     functors = _ft_table()
-    @test functors.highest == 337 && functors.statistics_functors == 336
+    # before TAG1 (the V10.1.20 pin): 336 built-ins, `highest` 337; after the rehash below 3_336
+    # and 3_337
+    @test functors.highest == 341 && functors.statistics_functors == 340
     @test functors.table.buckets == LK.FUNCTORHASHSIZE
     for (k, (a, arity)) in enumerate(LK._BUILTIN_FUNCTORS)
         fd = LK.fetchFunctorArray(functors, k)
@@ -116,7 +119,7 @@ end
         @test LK.lookupFunctorDef(functors, fd.name, arity) == fd.functor     # found, not made
         @test LK.builtin_functor(LK._BUILTIN_ATOM_IDS[a], arity) == fd.functor
     end
-    @test functors.highest == 337 && functors.statistics_functors == 336
+    @test functors.highest == 341 && functors.statistics_functors == 340
     @test_throws ArgumentError LK.builtin_functor("comma", 3)
     @test_throws ArgumentError LK.builtin_functor("no_such_atom_id", 2)
     flagged(flag) = Set(
@@ -132,7 +135,7 @@ end
         ("ar_equals", 2), ("ar_not_equal", 2), ("smaller", 2), ("larger", 2),
         ("smaller_equal", 2), ("larger_equal", 2), ("is", 2)
     ])
-    @test length(flagged(LK.VALID_F)) == 336
+    @test length(flagged(LK.VALID_F)) == 340
     # the flagged ones by their text: the atom table's names of the CONTROL_F definitions
     atoms = LK.do_init_atoms!(LK.atoms_t())
     texts = Set(
@@ -142,7 +145,7 @@ end
             ),
             fd.arity
         )
-        for fd in (LK.fetchFunctorArray(functors, k) for k in 1:336) if
+        for fd in (LK.fetchFunctorArray(functors, k) for k in 1:340) if
         fd.flags & LK.CONTROL_F != 0
     )
     @test texts == Set([
@@ -154,18 +157,18 @@ end
 
 @testset "rehash: 3,000 new functors, each found again; the built-ins unmoved" begin
     functors = _ft_table()
-    builtins = [LK.fetchFunctorArray(functors, k) for k in 1:336]
+    builtins = [LK.fetchFunctorArray(functors, k) for k in 1:340]
     atoms = LK.do_init_atoms!(LK.atoms_t())
     names = [_ft_atom("f_$i", atoms) for i in 1:3_000]
     ws = [LK.lookupFunctorDef(functors, names[i], i % 7) for i in 1:3_000]
     @test allunique(ws)
     @test functors.table.buckets > LK.FUNCTORHASHSIZE                     # it rehashed
     @test functors.table.buckets * 2 >= functors.statistics_functors
-    @test functors.statistics_functors == 3_336 && functors.highest == 3_337
+    @test functors.statistics_functors == 3_340 && functors.highest == 3_341
     @test all(i -> LK.lookupFunctorDef(functors, names[i], i % 7) == ws[i], 1:3_000)
     @test all(i -> LK.isCurrentFunctor(functors, names[i], i % 7) == ws[i], 1:3_000)
-    @test all(k -> LK.fetchFunctorArray(functors, k) === builtins[k], 1:336)
-    @test functors.statistics_functors == 3_336                          # nothing made again
+    @test all(k -> LK.fetchFunctorArray(functors, k) === builtins[k], 1:340)
+    @test functors.statistics_functors == 3_340                          # nothing made again
     # every valid definition is on exactly one chain of the new table
     chained = 0
     for f0 in functors.table.table
@@ -175,7 +178,7 @@ end
             f = f.next
         end
     end
-    @test chained == 3_336
+    @test chained == 3_340
 end
 
 @testset "a database holds its own functor table" begin
@@ -184,16 +187,16 @@ end
     @test gd1.functors !== gd2.functors
     # the INVARIANT, not the total (user, 2026-10-15: the total moves whenever a boot clause adds a
     # functor — two more than the built-ins since L1c, `findall_loop/4` registered through its functor-word operand when the
-    # boot clauses are compiled at creation): the 336 built-ins at indices 1..336 as generated from
+    # boot clauses are compiled at creation): the 340 built-ins at indices 1..340 as generated from
     # the pin, and every later functor resolving to its own name/arity
     for g in (gd1, gd2)
-        @test g.functors.highest >= 337
+        @test g.functors.highest >= 341
         for (k, (a, arity)) in enumerate(LK._BUILTIN_FUNCTORS)
             fd = LK.fetchFunctorArray(g.functors, k)
             @test fd.name == _ft_atom_word(a) && fd.arity == arity &&
                 LK.indexFunctor(fd.functor) == k
         end
-        for k in 337:(g.functors.highest - 1)
+        for k in 337:(g.functors.highest - 1)                            # 337..340 too
             fd = LK.fetchFunctorArray(g.functors, k)
             @test LK.indexFunctor(fd.functor) == k
             @test LK.lookupFunctorDef(g.functors, fd.name, fd.arity) == fd.functor   # found, not made

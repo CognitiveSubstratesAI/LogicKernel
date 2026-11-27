@@ -208,7 +208,8 @@ t_e26(R) :- cat(current_prolog_flag(ci_min_clauses, 10), R).
 t_e27(R) :- cat(current_prolog_flag(ci_min_clauses, 11), R).
 t_e28(R) :- cat(current_prolog_flag(ci_min_speedup, 1.5), R).
 t_e29(R) :- cat(current_prolog_flag(stack_limit, 1073741824), R).
-t_e30(R) :- cat(current_prolog_flag(version_data, swi(10, _, _, _)), R).
+% t_e30: the pin's major version, 11 (before TAG1, the V10.1.20 pin: swi(10, _, _, _))
+t_e30(R) :- cat(current_prolog_flag(version_data, swi(11, _, _, _)), R).
 t_e31(R) :- cat(current_prolog_flag(user:unknown, _), R).
 t_e32(R) :- cat(current_prolog_flag(system:unknown, _), R).
 t_e33(R) :- cat(current_prolog_flag(user:character_escapes, _), R).
