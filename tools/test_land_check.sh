@@ -132,20 +132,61 @@ cd "$W" || exit 3
 FAKEBIN="$T/bin"; mkdir -p "$FAKEBIN"
 cat > "$FAKEBIN/gh" << 'EOF'
 #!/usr/bin/env bash
-# fake gh: `gh api repos/R/commits/SHA/status?per_page=100` answers the file named by FAKE_GH_JSON; FAKE_GH_FAIL=1 fails
+# fake gh, answering BY ENDPOINT as GitHub does. FAKE_GH_JSON = FILE: the LIST `commits/SHA/statuses?` serves FILE.pageN for page N
+# (page 1: FILE itself when there is no FILE.page1), `[]` past the last, and fails on a page that has a FILE.pageN.fail. The COMBINED
+# `commits/SHA/status?` serves FILE.combined, else makes it from the pages (combine.py): newest post per context, NO creator.
+# FAKE_GH_FAIL=1 fails every call; FAKE_GH_LOG (if set) records every URL.
 [ "${FAKE_GH_FAIL:-0}" = 1 ] && { echo "HTTP 403: fake failure" >&2; exit 1; }
-cat "$FAKE_GH_JSON"
+url="$2" j="$FAKE_GH_JSON"
+[ -n "${FAKE_GH_LOG:-}" ] && echo "$url" >> "$FAKE_GH_LOG"
+[ -f "$j" ] || { echo "HTTP 404: fake: no such answer" >&2; exit 1; }
+case "$url" in
+    repos/*/commits/*/statuses\?*)
+        n=1; [[ "$url" == *"&page="* ]] && n="${url##*&page=}"
+        if [ -f "$j.page$n.fail" ]; then echo "HTTP 502: fake failure on page $n" >&2; exit 1
+        elif [ -f "$j.page$n" ]; then cat "$j.page$n"
+        elif [ "$n" = 1 ]; then cat "$j"
+        else echo '[]'; fi ;;
+    repos/*/commits/*/status\?*)
+        if [ -f "$j.combined" ]; then cat "$j.combined"; else python3 -I "$(dirname "$0")/combine.py" "$j"; fi ;;
+    *) echo "HTTP 404: fake: unknown endpoint" >&2; exit 1 ;;
+esac
 EOF
 chmod +x "$FAKEBIN/gh"
-status_json() {   # status_json SHA STATE DESCRIPTION LOGIN [CONTEXT] > file
-    python3 -I - "$@" << 'PY'
+cat > "$FAKEBIN/combine.py" << 'EOF'
+import json, os, sys
+base, posts, n = sys.argv[1], [], 1
+while True:
+    path = "%s.page%d" % (base, n)
+    if n == 1 and not os.path.exists(path):
+        path = base
+    if not os.path.exists(path):
+        break
+    posts += json.load(open(path))
+    n += 1
+latest = {}
+for s in sorted(posts, key=lambda s: (s["created_at"], s["id"])):
+    latest[s["context"]] = {k: v for k, v in s.items() if k != "creator"}
+print(json.dumps({"state": "success", "statuses": list(latest.values()), "total_count": len(latest)}))
+EOF
+# the two RECORDED answers of GitHub for one SHA (only whole unused fields removed): the LIST entries carry creator.login, the
+# COMBINED entries do not. Every entry the fixtures below build is the recorded LIST entry with some fields set.
+REC_SHA=9a8a07bca046b948a78a13c29d6156ad1e7aff2e
+REC_LIST="$HERE/fixtures/land_check/commits_${REC_SHA}_statuses.json"
+REC_COMB="$HERE/fixtures/land_check/commits_${REC_SHA}_status.json"
+post() {   # post STATE DESCRIPTION LOGIN CONTEXT CREATED_AT ID: one LIST entry as JSON
+    python3 -I - "$REC_LIST" "$@" << 'PY'
 import json, sys
-sha, state, desc, login = sys.argv[1:5]
-ctx = sys.argv[5] if len(sys.argv) > 5 else "land/approved"
-print(json.dumps({"state": state, "sha": sha, "statuses": [
-    {"context": "other/thing", "state": "success", "description": "x", "creator": {"login": "AuditBot"}},
-    {"context": ctx, "state": state, "description": desc, "creator": {"login": login}}]}))
+rec, state, desc, login, ctx, when, ident = sys.argv[1:8]
+e = json.load(open(rec))[0]
+e.update(state=state, description=desc, context=ctx, created_at=when, updated_at=when, id=int(ident))
+e["creator"] = dict(e["creator"], login=login)
+print(json.dumps(e))
 PY
+}
+as_list() { python3 -I -c 'import json, sys; print(json.dumps([json.loads(a) for a in sys.argv[1:]]))' "$@"; }   # as_list ENTRY...
+status_json() {   # status_json SHA STATE DESCRIPTION LOGIN [CONTEXT] > file: the LIST answer, that post and an older unrelated one
+    as_list "$(post "$2" "$3" "$4" "${5:-land/approved}" 2026-11-26T22:50:33Z 2)" "$(post success x AuditBot other/thing 2026-11-26T22:00:00Z 1)"
 }
 cat > "$T/vr_ok.py" << 'EOF'
 import json, os, subprocess, sys
@@ -352,7 +393,7 @@ if grep -qxF -- "--channel" "$T/lw/vr_args.txt" && grep -qxF -- "$T/chan_agent.m
 else bad "verdicts: --channel argument" "$(cat "$T/lw/vr_args.txt")"; fi
 vd "$GOOD" "$T/vr_src.py"
 if grep -qxF -- "--channel" "$T/lw/vr_args.txt"; then bad "verdicts: --channel passed with LAND_CHANNEL unset"; else ok "verdicts: LAND_CHANNEL unset, no --channel argument (the reader's default)"; fi
-# LAND-TOOL-3: the answer of commits/<sha>/status (which may hold a `land/local/<ROW>` status) and the approvers file reach the reader as
+# LAND-TOOL-3: the statuses of the SHA (which may hold a `land/local/<ROW>` status) and the approvers file reach the reader as
 # --statuses / --approvers, and ONLY when the answer was read (gh failed, no approvers file: neither argument, the status route stays closed)
 LOCVER="LOCAL VERDICT G1GC3-T3 tree $(git rev-parse "$GOOD^{tree}") caught (hang) site pl-gc.c:1234"
 status_json "$GOOD" success "$LOCVER" AuditBot "land/local/G1GC3-T3" > "$T/loc.json"
@@ -360,7 +401,7 @@ vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/loc.json"
 if grep -qxF -- "--statuses" "$T/lw/vr_args.txt" && grep -qxF -- "$T/lw/release.json" "$T/lw/vr_args.txt" &&
     grep -qxF -- "--approvers" "$T/lw/vr_args.txt" && grep -qxF -- "$W/evidence/land_approvers.txt" "$T/lw/vr_args.txt"; then ok "verdicts: the status answer and the approvers file reach the reader (--statuses, --approvers)"
 else bad "verdicts: --statuses/--approvers arguments" "$(cat "$T/lw/vr_args.txt")"; fi
-if grep -q 'land/local/G1GC3-T3' "$T/lw/release.json"; then ok "verdicts: the saved answer is the whole status answer (the land/local status is in it)"; else bad "verdicts: release.json lacks the land/local status"; fi
+if grep -q 'land/local/G1GC3-T3' "$T/lw/release.json"; then ok "verdicts: the saved answer holds the other contexts too (the land/local status is in it)"; else bad "verdicts: release.json lacks the land/local status"; fi
 # LAND-TOOL-3b: a `land/ruling/D-NNNN` status rides in the same answer (no workflow or land_check.sh change: the reader reads it); the item's
 # D-entry is accepted from it by tools/verdict_read.py (tools/test_verdict_read.py), here only the plumbing: answer, --statuses, --approvers
 status_json "$GOOD" success "D-1010 (audit): a ruling title" AuditBot "land/ruling/D-1010" > "$T/rul.json"
@@ -399,8 +440,8 @@ status_json "$GOOD" failure "LAND $GOOD" AuditBot > "$T/s_fail.json"; mk "$T/s_f
 status_json "$GOOD" pending "LAND $GOOD" AuditBot > "$T/s_pend.json"; mk "$T/s_pend.json"; expect "marker: pending is no release" marker FAIL
 status_json "$GOOD" success "LAND $GOOD" stranger > "$T/s_who.json"; mk "$T/s_who.json"; expect "marker: a login that is not an approver" marker FAIL "not in land_approvers"
 status_json "$GOOD" success "LAND $GOOD" AuditBot "ci/other" > "$T/s_ctx.json"; mk "$T/s_ctx.json"; expect "marker: another context" marker FAIL "no land/approved"
-echo '{"state":"pending","statuses":[]}' > "$T/s_none.json"; mk "$T/s_none.json"; expect "marker: no status at all" marker FAIL "no land/approved"
-echo 'not json' > "$T/s_bad.json"; mk "$T/s_bad.json"; expect "marker: unreadable answer" marker FAIL "unreadable"
+echo '[]' > "$T/s_none.json"; mk "$T/s_none.json"; expect "marker: no status at all" marker FAIL "no land/approved"
+echo 'not json' > "$T/s_bad.json"; mk "$T/s_bad.json"; expect "marker: unreadable answer" marker FAIL "could not be read: page 1 of the status list is not a JSON list"
 mk "$T/s_ok.json" FAKE_GH_FAIL=1; expect "marker: gh fails (API error, rate limit)" marker FAIL "could not be read"
 NOGH="$T/nogh"; mkdir -p "$NOGH"
 for c in git python3 bash sed awk grep tr cut sort wc mv mkdir head cat env dirname rm; do ln -sf "$(command -v "$c")" "$NOGH/$c"; done
@@ -473,8 +514,131 @@ done
 status_json "$GOOD" success "LAND $GOOD [ids: $STD,stand: TB5 @D-1011 from $OLDS]" AuditBot > "$T/r11.json"; mk "$T/r11.json"; expect "marker stand: one list named twice" marker FAIL "stand list twice"
 status_json "$GOOD" success "LAND $GOOD [ids: $STD]" stranger > "$T/r12.json"; mk "$T/r12.json"; expect "marker stand: a stranger's release is still refused" marker FAIL "not in land_approvers"
 
+echo "== the statuses are read from the LIST endpoint (audit D-1077 (1)) =="
+# fixture shapes: GitHub's combined answer has no creator, its list has one; the fake makes the first from the second as GitHub did
+if python3 -I - "$REC_LIST" "$REC_COMB" << 'PY'
+import json, sys
+lst, comb = (json.load(open(p)) for p in sys.argv[1:3])
+assert lst and all(e["creator"]["login"] for e in lst)
+assert comb["statuses"] == [{k: v for k, v in e.items() if k != "creator"} for e in lst]
+PY
+then ok "recorded: the list entries carry creator.login, the combined entries are the same without it"; else bad "recorded fixtures have another shape"; fi
+cp "$REC_LIST" "$T/rec.json"; cp "$REC_COMB" "$T/rec.json.combined"
+cp "$W/evidence/land_approvers.txt" "$T/ap.keep3"; cp "$REPO/evidence/land_approvers.txt" "$W/evidence/land_approvers.txt"
+fresh; : > "$LAND_WORK/added_ids.txt"; : > "$T/gh.log"
+env PATH="$FAKEBIN:$PATH" FAKE_GH_JSON="$T/rec.json" FAKE_GH_LOG="$T/gh.log" GITHUB_REPOSITORY=o/r bash "$W/tools/land_check.sh" marker "$REC_SHA" > /dev/null 2>&1
+expect "recorded: the real answers, the real approvers file, no row added: the marker PASSES" marker PASS "set by sivaji1012"
+if [ "$(cat "$T/gh.log")" = "repos/o/r/commits/$REC_SHA/statuses?per_page=100&page=1" ]; then ok "recorded: one call, the list endpoint, page 1 (a short page ends the read)"
+else bad "recorded: the calls made" "$(cat "$T/gh.log")"; fi
+fresh; echo B1 > "$LAND_WORK/gate_set.txt"
+env PATH="$FAKEBIN:$PATH" FAKE_GH_JSON="$T/rec.json" GITHUB_REPOSITORY=o/r LAND_VERDICT_READ="$T/vr_src.py" bash "$W/tools/land_check.sh" verdicts "$REC_SHA" > /dev/null 2>&1
+if grep -qxF -- "LAND $REC_SHA" "$T/lw/vr_args.txt"; then ok "recorded: the verdicts step reads the release from the real answers"
+else bad "recorded: no release in the verdicts step" "$(cat "$T/lw/vr_args.txt")"; fi
+python3 -I -c 'import json, sys; e = json.load(open(sys.argv[1])); e[0]["creator"]["login"] = "stranger"; print(json.dumps(e))' "$REC_LIST" > "$T/rec_who.json"
+fresh; : > "$LAND_WORK/added_ids.txt"
+env PATH="$FAKEBIN:$PATH" FAKE_GH_JSON="$T/rec_who.json" GITHUB_REPOSITORY=o/r bash "$W/tools/land_check.sh" marker "$REC_SHA" > /dev/null 2>&1
+expect "recorded: the same entry by another creator is refused" marker FAIL "set by 'stranger', who is not in land_approvers"
+cp "$T/ap.keep3" "$W/evidence/land_approvers.txt"
+
+# the list is NOT collapsed per context: the newest post of a context decides, by (created_at, id), whatever the order of the entries
+MKSHA="$GOOD"
+OLD_OK="$(post success "LAND $GOOD" AuditBot land/approved 2026-11-26T10:00:00Z 10)"
+NEW_NO="$(post failure "revoked" AuditBot land/approved 2026-11-26T11:00:00Z 11)"
+OLD_NO="$(post failure "not yet" AuditBot land/approved 2026-11-26T10:00:00Z 10)"
+NEW_OK="$(post success "LAND $GOOD" AuditBot land/approved 2026-11-26T11:00:00Z 11)"
+as_list "$NEW_NO" "$OLD_OK" > "$T/h1.json"; mk "$T/h1.json"; expect "revoke: a later failure revokes (newest first)" marker FAIL "is failure"
+as_list "$OLD_OK" "$NEW_NO" > "$T/h2.json"; mk "$T/h2.json"; expect "revoke: a later failure revokes (entries out of order)" marker FAIL "is failure"
+as_list "$OLD_NO" "$NEW_OK" > "$T/h3.json"; mk "$T/h3.json"; expect "revoke: a later success after a failure releases (entries out of order)" marker PASS "auditbot"
+SEC=2026-11-26T12:00:00Z    # two posts in the SAME second: the higher id is the later one (9 and 10: compared as numbers, not text)
+SAME_OK="$(post success "LAND $GOOD" AuditBot land/approved "$SEC" 9)"; SAME_NO="$(post failure revoked AuditBot land/approved "$SEC" 10)"
+as_list "$SAME_OK" "$SAME_NO" > "$T/h4.json"; mk "$T/h4.json"; expect "same second: the higher id revokes (listed last)" marker FAIL "is failure"
+as_list "$SAME_NO" "$SAME_OK" > "$T/h5.json"; mk "$T/h5.json"; expect "same second: the higher id revokes (listed first)" marker FAIL "is failure"
+as_list "$(post failure x AuditBot land/approved "$SEC" 9)" "$(post success "LAND $GOOD" AuditBot land/approved "$SEC" 10)" > "$T/h6.json"
+mk "$T/h6.json"; expect "same second: the higher id releases" marker PASS
+LATER_STRANGER="$(post success "LAND $GOOD" stranger land/approved 2026-11-26T13:00:00Z 30)"
+as_list "$OLD_OK" "$LATER_STRANGER" > "$T/h7.json"; mk "$T/h7.json"; expect "a stranger's LATER post decides: no release" marker FAIL "set by 'stranger'"
+
+# pages. full_page FILE PREFIX [ENTRY...]: a page of exactly 100 entries, the given ones and unrelated contexts
+full_page() {
+    local out="$1" prefix="$2"; shift 2
+    python3 -I - "$REC_LIST" "$prefix" "$@" > "$out" << 'PY'
+import json, sys
+base, prefix = json.load(open(sys.argv[1]))[0], sys.argv[2]
+given = [json.loads(a) for a in sys.argv[3:]]
+print(json.dumps(given + [dict(base, context="ci/%s-%d" % (prefix, i), id=1000 + i) for i in range(100 - len(given))]))
+PY
+}
+full_page "$T/p2.json" a; as_list "$NEW_OK" > "$T/p2.json.page2"
+mk "$T/p2.json"; expect "pages: a success that is only on page 2 is read" marker PASS "auditbot"
+full_page "$T/p3.json" a "$OLD_OK"; as_list "$NEW_NO" > "$T/p3.json.page2"
+mk "$T/p3.json"; expect "pages: a revocation on page 2 counts" marker FAIL "is failure"
+no_marker_json() { if [ -e "$T/lw/marker.json" ]; then bad "$1: a marker.json was written" "$(head -c 200 "$T/lw/marker.json")"; else ok "$1: no output file"; fi; }
+# page 1 holds a good release in each of these: only the page-2 failure can refuse
+full_page "$T/p4.json" a "$NEW_OK"; : > "$T/p4.json.page2.fail"
+mk "$T/p4.json"; expect "bad page 2: gh fails: no release, the row shows gh's line" marker FAIL "could not be read: HTTP 502: fake failure on page 2"
+no_marker_json "bad page 2 (gh fails)"
+full_page "$T/p5.json" a "$NEW_OK"; echo '{"message":"x"}' > "$T/p5.json.page2"
+mk "$T/p5.json"; expect "bad page 2: not a JSON list" marker FAIL "page 2 of the status list is not a JSON list"
+no_marker_json "bad page 2 (not a list)"
+full_page "$T/p6.json" a "$NEW_OK"; printf '[{"id": 1,' > "$T/p6.json.page2"
+mk "$T/p6.json"; expect "bad page 2: cut-off JSON" marker FAIL "page 2 of the status list is not a JSON list"
+for key in context created_at id; do
+    python3 -I -c 'import json, sys; good, e = json.loads(sys.argv[1]), json.loads(sys.argv[2]); del e[sys.argv[3]]; print(json.dumps([good, e]))' \
+        "$NEW_OK" "$(post success x AuditBot other/thing "$SEC" 5)" "$key" > "$T/k_$key.json"
+    mk "$T/k_$key.json"; expect "an entry without $key: nothing is read" marker FAIL "lacks context, created_at or id"
+    no_marker_json "an entry without $key"
+done
+full_page "$T/ten.json" p1 "$NEW_OK"
+for i in 2 3 4 5 6 7 8 9 10; do full_page "$T/ten.json.page$i" "p$i"; done
+: > "$T/gh.log"; mk "$T/ten.json" FAKE_GH_LOG="$T/gh.log"
+expect "10 full pages: the list may go on: no release" marker FAIL "10 full pages"
+no_marker_json "10 full pages"
+if [ "$(wc -l < "$T/gh.log")" = 10 ]; then ok "10 full pages: ten calls, no eleventh"; else bad "10 full pages: calls" "$(cat "$T/gh.log")"; fi
+echo '[]' > "$T/ten.json.page10"
+mk "$T/ten.json"; expect "nine full pages and a short tenth: read to the end" marker PASS
+mk "$REC_COMB"; expect "a combined-shaped body at the list URL is refused" marker FAIL "page 1 of the status list is not a JSON list"
+
+# the same reading in the verdicts step: what is released, and no file at all when the read fails
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/h2.json"
+if grep -qxF -- "--release" "$T/lw/vr_args.txt"; then bad "verdicts: a revoked release reached the reader"; else ok "verdicts: a revoked release (out of order) does not reach the reader"; fi
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/p2.json"
+if grep -qxF -- "LAND $GOOD" "$T/lw/vr_args.txt"; then ok "verdicts: a release that is only on page 2 reaches the reader"; else bad "verdicts: page 2 release" "$(cat "$T/lw/vr_args.txt")"; fi
+for j in p4 p5 ten_full; do
+    [ "$j" = ten_full ] && full_page "$T/ten.json.page10" p10
+    [ "$j" = ten_full ] && j=ten
+    vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/$j.json"
+    if grep -qxE -- '--release|--statuses' "$T/lw/vr_args.txt" || [ -e "$T/lw/release.json" ]; then bad "verdicts: a partial read ($j) was used" "$(cat "$T/lw/vr_args.txt")"
+    else ok "verdicts: a failed read ($j): no --release, no --statuses, no release.json"; fi
+done
+# the saved release.json, read by the REAL ruling_status and status_candidates of tools/verdict_read.py: revoked and renewed contexts,
+# each given out of order
+TREE="$(git rev-parse "$GOOD^{tree}")"
+LL="LOCAL VERDICT G1GC3-T3 tree $TREE caught (hang) site pl-gc.c:1234"
+as_list "$(post success t AuditBot land/ruling/D-1010 2026-11-26T10:00:00Z 1)" "$(post failure t AuditBot land/ruling/D-1010 2026-11-26T11:00:00Z 2)" \
+    "$(post failure t AuditBot land/ruling/D-1011 2026-11-26T10:00:00Z 3)" "$(post success t AuditBot land/ruling/D-1011 2026-11-26T11:00:00Z 4)" \
+    "$(post failure no AuditBot land/local/G1GC3-T3 2026-11-26T10:00:00Z 5)" "$(post success "$LL" AuditBot land/local/G1GC3-T3 2026-11-26T11:00:00Z 6)" \
+    "$(post success "$LL" AuditBot land/local/B2-X 2026-11-26T10:00:00Z 7)" "$(post failure no AuditBot land/local/B2-X 2026-11-26T11:00:00Z 8)" > "$T/saved.json"
+vd "$GOOD" "$T/vr_src.py" FAKE_GH_JSON="$T/saved.json"
+if python3 -I - "$HERE" "$T/lw/release.json" "$W/evidence/land_approvers.txt" "$GOOD" "$TREE" > "$T/real.out" 2>&1 << 'PY'
+import json, sys
+here, saved, ap, sha, tree = sys.argv[1:6]
+sys.path.insert(0, here)
+import verdict_read as v
+d = json.load(open(saved))
+assert d["sha"] == sha, d["sha"]
+ctx = [s["context"] for s in d["statuses"]]
+assert len(ctx) == len(set(ctx)) == 4, ctx
+assert v.ruling_status(saved, ap, "D-1010")[0] is False, "a revoked ruling releases"
+assert v.ruling_status(saved, ap, "D-1011") == (True, []), v.ruling_status(saved, ap, "D-1011")
+got = v.status_candidates(saved, ap, "G1GC3-T3")[0]
+assert got == [(tree, "caught (hang)", "pl-gc.c:1234")], got
+assert v.status_candidates(saved, ap, "B2-X")[0] == [], "a revoked local verdict releases"
+PY
+then ok "verdicts: the real ruling_status and status_candidates read the saved release.json (newest per context)"
+else bad "verdicts: the real reader on release.json" "$(tail -5 "$T/real.out")"; fi
+
 echo "== decide =="
-fill() {   # fill ROW=STATUS... : write a full table with the given statuses (default PASS)
+fill() {  # fill ROW=STATUS... : write a full table with the given statuses (default PASS)
     fresh; local n; for n in input gate-tip ancestry linear author d0164 gateset verdicts marker; do printf '%s\tPASS\tfixture\n' "$n" >> "$LAND_WORK/rows.tsv"; done
     local kv; for kv in "$@"; do sed -i "s/^${kv%%=*}\tPASS/${kv%%=*}\t${kv#*=}/" "$LAND_WORK/rows.tsv"; done
 }

@@ -20,6 +20,8 @@
 #   verdicts SHA               (b) tools/verdict_read.py (from the TRUSTED tree: main) with --set and --json: CI, Evidence and
 #                              every battery of the set read at that exact SHA; the equivalents come from evidence/equivalents.tsv
 #   marker  SHA                (c) the audit's release: the ONLY step that knows how the marker is read (see evidence/R2/land_yml_design.md);
+#                              the statuses are read from the LIST endpoint `commits/<sha>/statuses` (paged; read_statuses keeps the newest
+#                              of each context);
 #                              the status description is `LAND <sha>` or `LAND <sha> [ids: D-NNNN:MUTANT,D-NNNN,...]` and the ids it names
 #                              must be exactly the rows the SHA adds to the evidence files (a bare D-NNNN covers every added row citing it)
 #   decide                     print the decision table; LAND_DRY_RUN=true: exit 0 whatever it says; else exit 1 unless every row is PASS
@@ -32,8 +34,9 @@
 # to a file or an argument), LAND_VERDICT_READ and LAND_BUDGET (test seams / API budget), LAND_CHANNEL (the channel file the reader
 # reads for a `local: <row id> @<A-entry ref>` release item of a cap-cancelled battery row, D-1009 (5); unset = the reader's default, and
 # a missing file fails that item closed; the item's format is in the header of tools/verdict_read.py; a `:`-separated list names several files,
-# the D-entry headings of a `tree-ruling` / `stand` item are read from them too). The verdicts step also hands the reader the answer of
-# `commits/<sha>/status` (--statuses) and evidence/land_approvers.txt (--approvers): a `land/local/<ROW>` status releases a `local:` item (LAND-TOOL-3).
+# the D-entry headings of a `tree-ruling` / `stand` item are read from them too). The verdicts step also hands the reader the statuses of
+# `commits/<sha>/statuses`, collapsed by read_statuses to the newest per context (--statuses), and evidence/land_approvers.txt
+# (--approvers): a `land/local/<ROW>` status releases a `local:` item (LAND-TOOL-3).
 # A token is never printed. Only GET calls are made, apart from the final `git push`.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,6 +65,46 @@ row() {
 valid_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]; }
 # OWNER/REPO of origin, used when GITHUB_REPOSITORY is unset (never printed raw: only the slug leaves the pipe)
 repo_slug() { git remote get-url origin 2> /dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##'; }
+
+# read_statuses REPO SHA OUT ERR: the commit statuses of SHA from the LIST endpoint `commits/<sha>/statuses` (its entries carry
+# creator.login; the combined answer `commits/<sha>/status` does not), written to OUT as {"sha": SHA, "statuses": [...]} with the
+# newest entry of each context only. The list is not collapsed per context: that is done here, by the greatest (created_at, id),
+# so a later post revokes an earlier one. Fail closed: return 1 and no OUT if a page cannot be read or is no JSON list, if an
+# entry lacks context, created_at or id, or if all 10 pages (1000 statuses) are full: the list may go on. ERR's last line says why.
+read_statuses() {
+    local repo="$1" sha="$2" out="$3" err="$4" page n=100
+    local -a pages=()
+    rm -f "$out"
+    : > "$err"
+    for page in 1 2 3 4 5 6 7 8 9 10; do
+        gh api "repos/$repo/commits/$sha/statuses?per_page=100&page=$page" > "$out.page$page" 2> "$err" || return 1
+        n="$(python3 -I -c 'import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+if not isinstance(d, list):
+    sys.exit(1)
+print(len(d))' "$out.page$page" 2> /dev/null)" || { echo "page $page of the status list is not a JSON list" >> "$err"; return 1; }
+        pages+=("$out.page$page")
+        [ "$n" -lt 100 ] && break
+    done
+    [ "$n" -lt 100 ] || { echo "10 full pages of statuses: the list may go on" >> "$err"; return 1; }
+    python3 -I - "$out" "$sha" "${pages[@]}" 2>> "$err" << 'PY'
+import json, sys
+out, sha = sys.argv[1:3]
+latest = {}
+try:
+    for path in sys.argv[3:]:
+        for s in json.load(open(path, encoding="utf-8")):
+            ctx, when, key = s["context"], s["created_at"], int(s["id"])
+            if not (isinstance(ctx, str) and isinstance(when, str)):
+                raise ValueError(ctx)
+            if ctx not in latest or (when, key) > latest[ctx][0]:
+                latest[ctx] = ((when, key), s)
+except (KeyError, TypeError, ValueError):
+    sys.exit("a status entry lacks context, created_at or id")
+text = json.dumps({"sha": sha, "statuses": [s for _, s in latest.values()]})
+open(out, "w", encoding="utf-8").write(text + "\n")
+PY
+}
 
 step_input() {
     if valid_sha "$1"; then row input PASS "$1"; else row input FAIL "not 40 lower-case hex digits"; return 1; fi
@@ -241,7 +284,7 @@ step_verdicts() {
     local rel="" stat="" repo="${GITHUB_REPOSITORY:-}"
     [ -n "$repo" ] || repo="$(repo_slug)"
     if [ -n "$repo" ] && [ -s "$ROOT/evidence/land_approvers.txt" ] && command -v gh > /dev/null 2>&1 &&
-        gh api "repos/$repo/commits/$sha/status?per_page=100" > "$LAND_WORK/release.json" 2> /dev/null; then
+        read_statuses "$repo" "$sha" "$LAND_WORK/release.json" "$LAND_WORK/release.err"; then
         # LAND-TOOL-3: the same answer also carries the `land/local/<ROW>` statuses; the reader checks their creator against the approvers
         # file itself (no answer, no gh, no approvers file: no --statuses, and the status route of a `local:` item stays closed)
         stat="$LAND_WORK/release.json"
@@ -296,6 +339,7 @@ PY
 
 # THE ONLY STEP THAT KNOWS HOW THE AUDIT'S RELEASE IS READ. Option C of the design note: a commit status on the exact SHA, context
 # `land/approved`, state success, description `LAND <sha>`, created by a login listed in evidence/land_approvers.txt of the trusted tree.
+# Read through read_statuses (the list endpoint: only its entries carry the creator); the newest land/approved post decides.
 # Replacing this function (a tag `land/<sha>`, a repository variable) changes nothing else.
 step_marker() {
     local sha="$1" repo="${GITHUB_REPOSITORY:-}" ap="$ROOT/evidence/land_approvers.txt" json="$LAND_WORK/marker.json" res
@@ -304,8 +348,8 @@ step_marker() {
         row marker FAIL "evidence/land_approvers.txt names no approver (fail closed)"; return 0
     fi
     if ! command -v gh > /dev/null 2>&1; then row marker FAIL "gh is not available"; return 0; fi
-    if ! gh api "repos/$repo/commits/$sha/status?per_page=100" > "$json" 2> "$LAND_WORK/marker.err"; then
-        row marker FAIL "the status of the commit could not be read: $(head -c 150 "$LAND_WORK/marker.err")"; return 0
+    if ! read_statuses "$repo" "$sha" "$json" "$LAND_WORK/marker.err"; then
+        row marker FAIL "the status of the commit could not be read: $(tail -n 1 "$LAND_WORK/marker.err" | cut -c1-150)"; return 0
     fi
     res="$(python3 -I - "$json" "$sha" "$ap" "$LAND_WORK/added_ids.txt" << 'PY'
 import json, re, sys

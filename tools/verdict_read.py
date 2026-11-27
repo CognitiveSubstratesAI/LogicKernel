@@ -16,7 +16,9 @@
 #   --channel PATH the audit channel file (default ~/code/lk-channel/agent.md) read for `local:` and `stand:` release items; repeatable,
 #                  and a value may hold several files separated by `:` (the D-entry of a ruling lives in audit.md, the LOCAL VERDICT
 #                  lines in agent.md); a line or heading found in any readable file counts
-#   --statuses FILE  the GitHub answer of `commits/<sha>/status` (LAND-TOOL-3: a `land/local/<ROW>` status releases a `local:` item)
+#   --statuses FILE  {"sha", "statuses": [...]}: the entries of GitHub's `commits/<sha>/statuses` list (each with creator.login), the
+#                  newest of each context only, as tools/land_check.sh read_statuses writes it (LAND-TOOL-3: a `land/local/<ROW>`
+#                  status releases a `local:` item)
 #   --approvers FILE the creator logins allowed to set that status (evidence/land_approvers.txt); none = the status route is closed
 #   --json         the same facts as one JSON object, `landable` included (for the auto-land workflow)
 #   --budget N     at most N API requests (default 40; the anonymous API allows 60 an hour for everyone on this address)
@@ -499,7 +501,7 @@ def ruling_status(statuses, approvers, did):
     sts = [x for x in (d.get("statuses") or []) if x.get("context") == "land/ruling/" + did] if isinstance(d, dict) else []
     if not sts:
         return False, []
-    x = sts[0]                                         # the combined status answers the latest per context
+    x = sts[0]                                         # the file holds the newest entry of each context (land_check.sh read_statuses)
     who = ((x.get("creator") or {}).get("login") or "").lower()
     if who not in allowed:
         return False, ["the land/ruling/%s status was set by %r, who is not in land_approvers.txt (ignored)" % (did, who)]
@@ -533,7 +535,7 @@ def status_candidates(statuses, approvers, row):
     sts = [x for x in (d.get("statuses") or []) if x.get("context") == "land/local/" + row] if isinstance(d, dict) else []
     if not sts:
         return [], []
-    x = sts[0]                                         # the combined status answers the latest per context
+    x = sts[0]                                         # the file holds the newest entry of each context (land_check.sh read_statuses)
     who = ((x.get("creator") or {}).get("login") or "").lower()
     if who not in allowed:
         return [], ["the land/local/%s status was set by %r, who is not in land_approvers.txt (ignored)" % (row, who)]
@@ -935,7 +937,7 @@ def main(argv):
     ap.add_argument("--channel", action="append", default=None,
                     help="the audit channel file(s) holding the LOCAL VERDICT lines and D-entry headings (repeatable; `:` separates paths); "
                          "default ~/code/lk-channel/agent.md")
-    ap.add_argument("--statuses", default=None, help="the answer of commits/<sha>/status (a land/local/<ROW> status releases a `local:` item)")
+    ap.add_argument("--statuses", default=None, help="the commits/<sha>/statuses entries, newest per context, as {\"statuses\": [...]} (a land/local/<ROW> status releases a `local:` item)")
     ap.add_argument("--approvers", default=None, help="the logins allowed to set that status (evidence/land_approvers.txt)")
     ap.add_argument("--release", default=None, help="the text of the audit's release of this SHA (land/approved description)")
     try:

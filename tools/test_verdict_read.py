@@ -1051,7 +1051,8 @@ class LocalVerdict(unittest.TestCase):
 
     # ---- LAND-TOOL-3b (audit D-1013 (1)): a `land/ruling/D-NNNN` status stands for the D-entry heading ------------------------------
     def rstatuses(self, w, *specs, name="rstatus.json"):
-        """The answer of commits/<sha>/status with the given (context, state, login, description) statuses, plus an unrelated one."""
+        """The --statuses file (the commits/<sha>/statuses entries, newest per context) with the given (context, state, login,
+        description) statuses, plus an unrelated one."""
         path = os.path.join(w.dir, name)
         with open(path, "w") as f:
             json.dump({"state": "success", "sha": w.sha, "statuses": [

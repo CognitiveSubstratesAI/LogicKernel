@@ -17,7 +17,8 @@
 #             (landable: blocking none, every declared equivalent in evidence/equivalents.tsv)
 #   marker    the audit's release of THAT SHA: a commit status `land/approved` on the SHA, description `LAND <sha>` (+ ` [ids: D-NNNN:MUTANT,...]`
 #             naming exactly the rows the SHA adds to the evidence files), set by a login listed in evidence/land_approvers.txt
-#             (the one step that knows how a release is read)
+#             (the one step that knows how a release is read: the list endpoint `commits/<sha>/statuses`, whose entries carry the
+#             creator; the newest post of the context decides, so a later one revokes)
 # dry_run (default true): the table is printed and the run ends green WITHOUT a push. A real run adds ONE step after the
 # table: `git push origin <sha>:refs/heads/main` (non-force, no other ref), with the conditions read again first.
 # After the push the workflow does nothing else: the main-push run (CI + Evidence on main) is read by name by the audit.
