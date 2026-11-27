@@ -198,6 +198,7 @@ t60(R) :- abs(3, [f(g(h(i(a)))), f(g(h(i(b)))), f(g(h(i(j(a))))), f(g(h(i(j(b)))
 t61(R) :- trie_new(T), trie_insert(T, a, 1, _), rt(T, '$trie_insert_abstract'(T, 1, b), R1), R = R1.
 t62(R) :- trie_new(T), mapres(['$trie_insert_abstract'(T, foo, a), '$trie_insert_abstract'(T, -1, a), '$trie_insert_abstract'(T, _, a),
     '$trie_insert_abstract'(T, 1.5, a), '$trie_insert_abstract'(T, "1", a), '$trie_insert_abstract'(T, f(x), a)], R).
+% t63: 11.1.0 adds the culprit (f22d8c51, pl-error.c int_range_error at af9e2e7e:1191); 10.1.20: representation_error(size_t).
 t63(R) :- trie_new(T), X is 1 << 70, res('$trie_insert_abstract'(T, X, f(a)), R1), res('$trie_insert_abstract'(T, 9223372036854775807, f(a)), R2),
     R = [R1, R2].
 t64(R) :- trie_new(T), '$trie_insert_abstract'(T, 1, f(g(a))), res(trie_insert(T, f(g(a))), R1), res(trie_insert(T, f(g(b))), R2),

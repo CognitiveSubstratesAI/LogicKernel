@@ -219,7 +219,7 @@ MUTANTS = [
          file=P, targets=TS,
          old='    txt = PL_get_text(ld, t, UInt32(CVT_ATOM | CVT_EXCEPTION))',
          new='    txt = PL_get_text(ld, t, UInt32(CVT_ATOM | CVT_STRING | CVT_EXCEPTION))'),
-    dict(id="LC-C2 set_chars: no cut at the first NUL (DEFERRED KILL: ATOM1 (the kernel refuses NUL atoms: swipl accepts and cuts at the first NUL, evidence 2026-11-19 swipl 10.1.20; the kill row t12 needs ATOM1))",
+    dict(id="LC-C2 set_chars: no cut at the first NUL (DEFERRED KILL: ATOM1 (the kernel refuses NUL atoms; 10.1.20 accepted and cut at the first NUL, evidence 2026-11-19; 11.1.0 raises representation_error(nul_terminated_string(A)), so ATOM1 has to port set_chars's 0-code check and re-fit this mutant; the kill row t12 needs ATOM1))",
          file=P, targets=TS,
          old='    return _cstr(_locale_text_string(txt))\nend\n\n# PORT: pl-locale.c get_group_size_ex',
          new='    return _locale_text_string(txt)\nend\n\n# PORT: pl-locale.c get_group_size_ex'),

@@ -108,9 +108,11 @@ function kernel_lines(
     return out
 end
 
-# KNOWN DIFFERENCE, with swipl 10.1.20's own answer (evidence 2026-11-19; LC-C2 of tools/mutants/LOCALE.py waits on it, ATOM1 is the port item): swipl
-# ACCEPTS the atom of length 3, [0'a, 0, 0'b]: `locale_create(L, "C", [decimal_point(A)])` stores `a` (the string is cut at the first NUL; locale_property
-# gives decimal_point(a), atom_length 1), the same for thousands_sep. The kernel's exact answer here is the refusal below (the line `t12 notported`).
+# KNOWN DIFFERENCE, with swipl 11.1.0's own answer (af9e2e7e; LC-C2 of tools/mutants/LOCALE.py waits on it, ATOM1 is the port item): for the atom of
+# length 3, [0'a, 0, 0'b], `locale_create(L, "C", [decimal_point(A)])` raises representation_error(nul_terminated_string(A)) (f22d8c51: pl-locale.c
+# set_chars reads it with PL_get_wchars and no length). 10.1.20 (evidence 2026-11-19) ACCEPTED it and stored `a` (the string cut at the first NUL;
+# locale_property gave decimal_point(a), atom_length 1), the same for thousands_sep. `set_chars` of src/os/pl-locale.jl still cuts (`_cstr`); that line
+# is not reached with such an atom while the kernel refuses to make one. The kernel's exact answer here is the refusal below (the line `t12 notported`).
 # (DIVERGES, settled, user 2026-10-10: src/pl-read.jl:2061-2064 `_atom_from_text`): swipl's atoms hold the
 # character 0, the kernel's do not and it REFUSES one (`NotPortedError`: "an atom containing the character 0"), whether the
 # reader makes it from program text (`'a\000\b'` loses the whole consult) or atom_codes/2 makes it at run time. t12 is the row
@@ -214,7 +216,9 @@ end
           "c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(a[102,97,108,115,101],c[91,124,93]/2(a[59],nil)))))))"
 
     @test all(r -> r in names, _LCS_NUL_ROWS)                                 # the known-difference rows are rows
-    @test occursin(_codes("true"), expected[findfirst(startswith("t12 "), expected)])  # swipl answers: the decimal point was made
+    # swipl 11.1.0 answers with the error of the 0-code; 10.1.20 answered `true-a` (the decimal point was made)
+    t12 = expected[findfirst(startswith("t12 "), expected)]
+    @test occursin(_codes("nul_terminated_string"), t12)
 
     kl = kernel_lines_all(_TL, _LCS_PL, names)
     @test length(kl) == length(expected)

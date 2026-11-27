@@ -101,6 +101,7 @@ t81(R) :- res(delete_file('lk_y1_no_dir/x'), R).
 t82(R) :- res(delete_file("lk_y1_nonexistent_s"), R).
 t83(R) :- res(delete_file([108, 107]), R).
 t84(R) :- res(delete_file(''), R).
+% t85: 11.1.0 (f22d8c51); 10.1.20: domain_error(file_name, [97,0,98]), context message 'file name contains a 0-code'.
 t85(R) :- res(delete_file([97, 0, 98]), R).
 t86(R) :- rep(5000, L), res(delete_file(L), R).
 t87(R) :- res(delete_file(lk_y1_nonempty_dir), R).

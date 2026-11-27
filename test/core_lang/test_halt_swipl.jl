@@ -140,7 +140,8 @@ const _HCTX = "context(:(system,/(halt,1)),_)"       # PL_error's context: the r
         (_hatom("foo"), "domain_error(signal,foo)", true),                    # h05
         (_rf("halt", _rv(1)), "instantiation_error", true),                   # h06
         (_rf("halt", _rg(1.5)), "type_error(integer,1.5)", true),             # h07
-        (_hint(99999999999), "representation_error(int)", true),              # h08
+        # h08: 11.1.0 adds the culprit (f22d8c51, pl-error.c int_range_error at af9e2e7e:1191); 10.1.20: representation_error(int)
+        (_hint(99999999999), "representation_error(int(99999999999))", true), # h08
         (_rf("halt", _rg("3")), "type_error(integer,\"3\")", true),           # h24
         (_rf("halt", _rf("foo", _rg(1))), "type_error(integer,foo(1))", true),   # g05
         (_rf("halt", _rnil()), "type_error(signal,[])", true),                # g06: [] is no text atom

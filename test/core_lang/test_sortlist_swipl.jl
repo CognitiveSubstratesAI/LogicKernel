@@ -441,9 +441,10 @@ const _RB_CASES = let T = _rbv(1), L = _rbv(2), foo = _rbs("foo")
             "functor", _RB[T, foo, _rbg(-big2(64))],
             "exception(domain_error(not_less_than_zero,-18446744073709551616))", nothing
         ),
+        # 11.1.0 adds the culprit (f22d8c51, pl-error.c int_range_error at af9e2e7e:1191); 10.1.20: representation_error(size_t)
         (
             "functor", _RB[T, foo, _rbg(big2(64))],
-            "exception(representation_error(size_t))", nothing
+            "exception(representation_error(size_t(18446744073709551616)))", nothing
         ),
         # KNOWN DIFFERENCE (design decision 5; an R2 checklist item, "functor/3 arity past
         # Int64"): 2^63 fits `uint64` (pl-error.c `mpz_to_uint64`, case 0), so swipl reads it as
