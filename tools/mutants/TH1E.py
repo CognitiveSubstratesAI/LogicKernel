@@ -22,8 +22,8 @@
 # THE C FUNCTIONS OF AN EVENT LIST (AE1..AE9: src/pl-event.jl `register_event_function` and the C-function branch of `call_event_list`,
 # src/pl-thread.jl `PL_thread_at_exit`; pl-thread.c:3598-3620): TARGETS is the engines test alone: no other file registers a C function
 # (test_event_swipl.jl reaches only the Prolog-listener branches of call_event_list, none a mutant here touches). No equivalent among
-# AE1-AE9. NOT LISTED: the `ev.argc == 1`/`== 2` branches of the void call and the `argc == 2` branch of the bool call (no registrar
-# gives them an event: PL_thread_at_exit's argc is 0, the bool test's event has argc 1), the `@assert argc >= ev.argc` (the rows' events
+# AE1-AE9. NOT LISTED: the `nargs == 2` call of `event_function`'s closure (no registrar gives a function an event of two arguments:
+# PL_thread_at_exit's argc is 0, the bool test's event has argc 1), the `@assert argc >= ev.argc` (the rows' events
 # always satisfy it), `argv + 1` -> `argv + 2` of the bool call (the row checks only that the term reference is nonzero).
 # THE THREAD IDENTIFIER API (ID1..ID7: src/pl-thread.jl `PL_thread_self`, `PL_unify_thread_id`, `PL_get_thread_id_ex`, `PL_get_thread_alias`;
 # pl-thread.c:1444, :1745-1780): TARGETS is the engines test alone (the white-box testset "the thread identifier API"; no other file calls them).
@@ -371,8 +371,8 @@ MUTANTS = [
          new="                    if false\n                        rc = false\n"),
     dict(id="TH1E-AE3 a void function is gated by an earlier listener's result (KILL the white-box S3)",
          file=EV, targets=TARGETS,
-         old="                        f.fn(gd, ld, f.closure)\n",
-         new="                        rc && f.fn(gd, ld, f.closure)\n"),
+         old="                        _call_event_function(f, gd, ld, argv + 1, argv + 2, ev.argc)\n",
+         new="                        rc && _call_event_function(f, gd, ld, argv + 1, argv + 2, ev.argc)\n"),
     dict(id="TH1E-AE4 PL_thread_at_exit registers at the tail (KILL the white-box S1: the order of the log)",
          file=T, targets=TARGETS,
          old="nothing, false, func, closure, 0, EV_CALLBACK_VOID\n",
@@ -387,8 +387,8 @@ MUTANTS = [
          new="nothing, false, func, closure, 1, EV_CALLBACK_VOID\n"),
     dict(id="TH1E-AE7 the result of a bool function is dropped (KILL the white-box S5: a false result must skip the Prolog listener)",
          file=EV, targets=TARGETS,
-         old="                        rc = f.fn(gd, ld, f.closure, argv + 1)::Bool\n",
-         new="                        f.fn(gd, ld, f.closure, argv + 1)::Bool\n"),
+         old="                        rc = _call_event_function(f, gd, ld, argv + 1, argv + 2, argc)::Bool\n",
+         new="                        _call_event_function(f, gd, ld, argv + 1, argv + 2, argc)::Bool\n"),
     dict(id="TH1E-AE8 every registered function is the first function's (KILL the white-box S1: the second function's tag)",
          file=EV, targets=TARGETS,
          old="        name, 0, nothing, length(fns), nothing, argc, flags\n",
@@ -510,8 +510,8 @@ MUTANTS = [
          new=""),
     dict(id="TH1E-TM6 a copied database has no main thread entry (KILL mn1-mn7, tp05, the white-box testset, the template test)",
          file="src/gd_template.jl", targets=TARGETS + ["test/db/test_gd_template.jl"],
-         old="        register_main_thread!(gd2)",
-         new="        nothing"),
+         old="    push!(copied.handles, main)\n",
+         new="    return copied\n    push!(copied.handles, main)\n"),
     dict(id="TH1E-TM7 a database made by setupProlog (no copy) has no main thread entry (KILL the white-box testset: g3)",
          file="src/pl-setup.jl", targets=TARGETS,
          old="    register_main_thread!(gd)",

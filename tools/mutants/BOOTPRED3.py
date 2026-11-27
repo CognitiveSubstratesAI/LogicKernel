@@ -31,13 +31,13 @@ MUTANTS = [
          new='    PL_extension("\\$garbage_collectx", 1, pl_garbage_collect, 0x00),'),
     # ── pl-thread.c pl_thread_self ──
     dict(id="BOOTPRED-T1 thread_self/1 answers another atom (KILL bp01, bp02, bp04, bp06-bp08)", file=TH, targets=TB,
-         old="    return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE\n",
+         old="    return unify_thread_id(_query_gd(ld), ld, self, ld.thread_info) ? FTRUE : FFALSE\n",
          new="    return PL_unify_atom(ld, self, mk_sym(T, :other)) ? FTRUE : FFALSE\n"),
     dict(id="BOOTPRED-T2 thread_self/1 inverts its verdict: the unification result is negated (KILL bp01, bp03)", file=TH, targets=TB,
-         old="    return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE\n",
-         new="    return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FFALSE : FTRUE\n"),
+         old="    return unify_thread_id(_query_gd(ld), ld, self, ld.thread_info) ? FTRUE : FFALSE\n",
+         new="    return unify_thread_id(_query_gd(ld), ld, self, ld.thread_info) ? FFALSE : FTRUE\n"),
     dict(id="BOOTPRED-T3 thread_self/1 succeeds without unifying (KILL bp03, bp05)", file=TH, targets=TB,
-         old="    return PL_unify_atom(ld, self, mk_sym(T, :main)) ? FTRUE : FFALSE\n",
+         old="    return unify_thread_id(_query_gd(ld), ld, self, ld.thread_info) ? FTRUE : FFALSE\n",
          new="    return FTRUE\n"),
     # ── pl-mutex.c pl_with_mutex ──
     dict(id="BOOTPRED-M1 with_mutex/2 calls the mutex term instead of the goal (KILL bp09-bp16, bp19)", file=MX, targets=TB,
