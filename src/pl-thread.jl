@@ -403,8 +403,8 @@ end
 # thread that registers), at the head of its list (`last` false, as upstream), before the Prolog listeners that are registered later.
 "Run `func(gd, ld, closure)` when this thread (`is_global` false) or any thread (true) exits, while Prolog queries still work (pl-thread.c)."
 function PL_thread_at_exit(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, func, closure, is_global::Bool
-)::Bool where {T}
+    gd::PL_global_data{T}, ld::PL_local_data{T}, func::F, closure::C, is_global::Bool
+)::Bool where {T, F, C}
     loc = event_location{T}(is_global ? PLEV_THREAD_EXIT : PLEV_THIS_THREAD_EXIT, nothing)
     return register_event_function(
         gd, ld, loc, nothing, false, func, closure, 0, EV_CALLBACK_VOID

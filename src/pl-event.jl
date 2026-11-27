@@ -233,8 +233,8 @@ end
 "Register the C function `func` with `closure` as a listener at `loc`, first or `last`, taking `argc` event arguments (pl-event.c)."
 function register_event_function(
     gd::PL_global_data{T}, ld::PL_local_data{T}, loc::event_location{T},
-    name::Union{Nothing, T}, last::Bool, func, closure, argc::Int, flags::UInt32
-)::Bool where {T}
+    name::Union{Nothing, T}, last::Bool, func::F, closure::C, argc::Int, flags::UInt32
+)::Bool where {T, F, C}
     fns = gd.event_hook.functions
     push!(fns, event_function(func, closure))
     cb = event_callback{T, definition{T}}(
