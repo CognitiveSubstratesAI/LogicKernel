@@ -198,7 +198,13 @@ function event_function(func::F, closure::C)::event_function where {F, C}
             else
                 func(gd, ld, closure, a1, a2)
             end
-            return rval === true ? Cint(1) : rval === false ? Cint(0) : Cint(-1)
+            return if rval === true
+                Cint(1)
+            elseif rval === false
+                Cint(0)
+            else
+                Cint(-1)
+            end
         end
     return event_function(
         @cfunction($entry, Cint, (Any, Any, term_t, term_t, Int))
