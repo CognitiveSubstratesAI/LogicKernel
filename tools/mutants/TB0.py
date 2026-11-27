@@ -50,7 +50,8 @@ TD = "test/core_lang/test_debug_flag_swipl.jl"
 TY = "test/core_lang/test_sys_swipl.jl"
 TCORE = [TT, TS, TP]                      # every mutant that no flag-table row can see differently
 TFLAG = [TT, TS, TP, TD]                  # the boot-path flag defaults: the files that read the flag table
-TARGETS = [TT, TS, TP, TD, TY]            # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
+TQ = "test/core_lang/test_q10_swipl.jl"   # row sl06: a negative stack_limit (LEFT2-I4)
+TARGETS = [TT, TS, TP, TD, TY, TQ]        # the baseline's targets (mutate_ci.py plan reads TARGETS): every file a mutant lists
 POOL = "src/pl-allocpool.jl"
 TAB = "src/pl-tabling.jl"
 PF = "src/os/pl-prologflag.jl"
@@ -155,7 +156,7 @@ MUTANTS = [
          file=PF, targets=TCORE,
          old="            setMonotonicMode(ld, a) || return false\n",
          new="            setMonotonicMode(ld, a)\n"),
-    dict(id="TB0-G3 table_space accepts -1, the range check is `i < -1` (KILL TT:133 row t_space_neg: representation_error(size_t) is pinned)",
+    dict(id="TB0-G3 table_space accepts -1, the range check is `i < -1` (KILL TT:133 row t_space_neg: domain_error(not_less_than_zero,-1) is pinned)",
          file=PF, targets=TCORE,
          old=SPACE,
          new=SPACE.replace("if i < 0", "if i < -1")),
@@ -175,16 +176,39 @@ MUTANTS = [
          file=PF, targets=TCORE,
          old='        elseif name == "table_drop_intermediate"\n            if i < 0\n',
          new='        elseif name == "table_drop_intermediate"\n            if i <= 0\n'),
-    dict(id="TB0-G9 table_compile_threshold goes on after the representation_error, no `return false` (KILL TT:133 row t_thresh_after, TT:62 `32`, row R8: the stored -1 is read back whatever the VM does with the true answer and its pending exception, else 'exception' and also not 32)",
+    dict(id="TB0-G9 table_compile_threshold goes on after the range error, no `return` (KILL TT:133 row t_thresh_after, TT:62 `32`, row R8: the stored -1 is read back whatever the VM does with the true answer and its pending exception, else 'exception' and also not 32)",
          file=PF, targets=TCORE,
          old='        elseif name == "table_compile_threshold"\n            if i < 0\n'
-             '                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))\n                return false\n            end\n',
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), true)\n            end\n',
          new='        elseif name == "table_compile_threshold"\n            if i < 0\n'
-             '                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))\n            end\n'),
+             '                int_range_error(ld, value, mk_sym(T, :size_t), true)\n            end\n'),
     dict(id="TB0-G10 table_compile_threshold is stored in the drop_intermediate field (KILL TT:136 `table_flags_compile_threshold == 5` and TT:137)",
          file=PF, targets=TCORE,
          old="            ld.table_flags_compile_threshold = Int(i)\n",
          new="            ld.table_flags_drop_intermediate = Int(i)\n"),
+    # ── LEFT2 (SYNC3, pl-prologflag.c:1474, :1494, :1499, :1504 at af9e2e7e): `int_range_error` for a negative size ──
+    dict(id="LEFT2-I1 table_space raises representation_error(size_t) for -1 again, no `int_range_error` (KILL TT row t_space_neg: domain_error(not_less_than_zero,-1) is pinned)",
+         file=PF, targets=TCORE,
+         old=SPACE + "                return int_range_error(ld, value, mk_sym(T, :size_t), true)\n",
+         new=SPACE + "                return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))\n"),
+    dict(id="LEFT2-I2 table_compile_threshold calls int_range_error as for a signed type, `is_unsigned` false (KILL TT row t_thresh_neg: representation_error(size_t(-1)) is not the pinned domain_error)",
+         file=PF, targets=TCORE,
+         old='        elseif name == "table_compile_threshold"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), true)\n',
+         new='        elseif name == "table_compile_threshold"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), false)\n'),
+    dict(id="LEFT2-I3 table_drop_intermediate calls int_range_error as for a signed type, `is_unsigned` false (KILL TT row t_drop_neg)",
+         file=PF, targets=TCORE,
+         old='        elseif name == "table_drop_intermediate"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), true)\n',
+         new='        elseif name == "table_drop_intermediate"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), false)\n'),
+    dict(id="LEFT2-I4 stack_limit calls int_range_error as for a signed type, `is_unsigned` false (KILL TQ row sl06: domain_error(not_less_than_zero,-1) is pinned)",
+         file=PF, targets=[TQ],
+         old='        elseif name == "stack_limit"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), true)\n',
+         new='        elseif name == "stack_limit"\n            if i < 0\n'
+             '                return int_range_error(ld, value, mk_sym(T, :size_t), false)\n'),
     # ── BOOT-PATH: the defaults of the flag table (pl-prologflag.c:2582, :2587-2592; initTabling's table_monotonic). Judged ONLY by `tools/mutate_ci.py one` or CI ──
     dict(id="TB0-B1 [BOOT] table_monotonic starts as `lazy` (KILL TT:133 row t_defaults: f(1073741824,32,0,eager); TP oracle row t_defaults too)",
          file=PF, targets=TFLAG,

@@ -8,6 +8,9 @@
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
+# SYNC3 LEFT2 (pl-prologflag.c at af9e2e7e): the `int_range_error` calls of `set_flag_value` are ported for the four size flags the kernel has
+# (pl-prologflag.c:1474, :1494, :1499, :1504); the `agc_margin` and `string_stack_tripwire` branches (:1468, :1509) stay refused by name, and the
+# kernel has no `shared_table_space` branch (:1483). The header's pin is unchanged: this note is for these calls only.
 # PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-prologflag.c: flags validate_api and the tabling restraint flags ported, 1412ce49 ported; pl-incl.h: access-only (d755bdc4) ported; ATOM_RESERVE_BATCH is pl-incl.jl:460 (commit 5); the PLFLAG_EPILOG comma is no value; pl-read.c: access-only (d755bdc4) and the ported backport 7f8024cc; pl-tabling.c: the ported bodies are text-identical at the pin, the unported groups T1-T5 are the TAB1 row (cfile:pl-tabling.c, docs/r2_owners.tsv), S_TABLED stays the named refusal. Also re-cited: pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners).
 # PROLOG FLAGS (pl-prologflag.c). Since R1e's write_term/2,3: `setBackQuotes` and (read_term_from_atom/3)
 # `setDoubleQuotes`. Since R2 F1a (design evidence/r2/design/flags_rest.md): the flag TABLE
@@ -1397,8 +1400,7 @@ function set_flag_value(
         elseif name == "table_space"
             # DIVERGES: `i > SIZE_MAX` cannot happen for an `Int64`; `shared_table_space` is TH1's (the kernel has no such flag).
             if i < 0
-                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
-                return false
+                return int_range_error(ld, value, mk_sym(T, :size_t), true)
             end
             if ld.tabling.node_pool === nothing
                 ld.tabling.node_pool = new_alloc_pool("private_table_space", Int(i))
@@ -1407,20 +1409,17 @@ function set_flag_value(
             end
         elseif name == "table_compile_threshold"
             if i < 0
-                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
-                return false
+                return int_range_error(ld, value, mk_sym(T, :size_t), true)
             end
             ld.table_flags_compile_threshold = Int(i)
         elseif name == "table_drop_intermediate"
             if i < 0
-                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
-                return false
+                return int_range_error(ld, value, mk_sym(T, :size_t), true)
             end
             ld.table_flags_drop_intermediate = Int(i)
         elseif name == "stack_limit"
             if i < 0
-                PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
-                return false
+                return int_range_error(ld, value, mk_sym(T, :size_t), true)
             end
             set_stack_limit!(ld, Int(i)) || return false
         elseif name == "string_stack_tripwire"

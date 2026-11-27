@@ -3,7 +3,8 @@
 # test/core_lang/test_q10_swipl.jl — vr01-cb22 (and sh21, ti14, ti15, pt26) against swipl 10.1.20 (the pin 18168e62):
 #   * A PROGRAM consulted by the kernel's loader and cases `t_<id>(R)` run in order in one database, each wrapped in
 #     `catch(Goal, error(SsuE, _), R = raised(SsuE))`; the driver is test_style_check_swipl.jl's (`enc`oded answers).
-#   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11); with
+#   * Every answer line is swipl's, PINNED (the pin's swipl, ~/.local/swipl-pin1-18168e62/bin/swipl, two identical runs, 2026-11-11; the lines
+#     t_sl06 and t_sl10 are 10.1.21-86-gaf9e2e7e's, ~/.local/swipl-pin2-af9e2e7e/bin/swipl, 2026-11-27, those two cases alone); with
 #     `swipl` on PATH the live answers are compared with the pins too.
 #   * UNVERIFIED on the kernel (nothing was compiled when these rows were written): every kernel answer; the gate decides.
 
@@ -430,11 +431,11 @@ const _QX_CASES = [
     ("sl03", "q_with(set_prolog_flag(stack_limit, 1000))"),   # a limit below what the stacks hold: permission_error(limit, stacks, Limit) after the trim
     ("sl04", "catch(set_prolog_flag(stack_limit, 1000), _, true), q_cur(X), R = X"),   # and the flag is unchanged after it
     ("sl05", "q_with(set_prolog_flag(stack_limit, 0))"),   # a limit of 0
-    ("sl06", "q_with(set_prolog_flag(stack_limit, -1))"),   # a negative limit: representation_error(size_t)
+    ("sl06", "q_with(set_prolog_flag(stack_limit, -1))"),   # a negative limit: int_range_error, domain_error(not_less_than_zero,-1) (pl-prologflag.c:1504 at af9e2e7e; 10.1.20: representation_error(size_t))
     ("sl07", "q_with(set_prolog_flag(stack_limit, a))"),   # a limit that is no integer
     ("sl08", "q_with(set_prolog_flag(stack_limit, 1.5))"),   # a float limit
     ("sl09", "q_with(set_prolog_flag(stack_limit, _))"),   # an unbound limit
-    ("sl10", "q_with(set_prolog_flag(stack_limit, 100000000000000000000))"),   # a limit beyond int64: representation_error(int64_t)
+    ("sl10", "q_with(set_prolog_flag(stack_limit, 100000000000000000000))"),   # a limit beyond int64: representation_error(int64_t(Limit)) (PL_get_int64_ex, int_range_error, at af9e2e7e; 10.1.20: representation_error(int64_t))
     (
         "sl11",
         "q_with(('\$set_prolog_stack'(global, limit, O, 8388608), q_cur(X))), R = O-X"
@@ -653,11 +654,11 @@ const _QX_PINNED = [
     "t_sl03 c[116,95,115,108,48,51]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i1000)))",
     "t_sl04 c[116,95,115,108,48,52]/1(i1073741824)",
     "t_sl05 c[116,95,115,108,48,53]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i0)))",
-    "t_sl06 c[116,95,115,108,48,54]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[115,105,122,101,95,116])))",
+    "t_sl06 c[116,95,115,108,48,54]/1(c[114,97,105,115,101,100]/1(c[100,111,109,97,105,110,95,101,114,114,111,114]/2(a[110,111,116,95,108,101,115,115,95,116,104,97,110,95,122,101,114,111],i-1)))",
     "t_sl07 c[116,95,115,108,48,55]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],a[97])))",
     "t_sl08 c[116,95,115,108,48,56]/1(c[114,97,105,115,101,100]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[105,110,116,101,103,101,114],f1.5)))",
     "t_sl09 c[116,95,115,108,48,57]/1(c[114,97,105,115,101,100]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
-    "t_sl10 c[116,95,115,108,49,48]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(a[105,110,116,54,52,95,116])))",
+    "t_sl10 c[116,95,115,108,49,48]/1(c[114,97,105,115,101,100]/1(c[114,101,112,114,101,115,101,110,116,97,116,105,111,110,95,101,114,114,111,114]/1(c[105,110,116,54,52,95,116]/1(i100000000000000000000))))",
     "t_sl11 c[116,95,115,108,49,49]/1(c[45]/2(i1073741824,i8388608))",
     "t_sl12 c[116,95,115,108,49,50]/1(c[114,97,105,115,101,100]/1(c[112,101,114,109,105,115,115,105,111,110,95,101,114,114,111,114]/3(a[108,105,109,105,116],a[115,116,97,99,107,115],i100)))",
     "t_sl13 c[116,95,115,108,49,51]/1(c[45]/2(a[110,111],i1073741824))",

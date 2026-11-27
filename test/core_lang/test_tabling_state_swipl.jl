@@ -3,6 +3,8 @@
 # test/core_lang/test_tabling_state_swipl.jl
 #   * Rows `t_<id>(R)` of a program the kernel consults; the answers are PINNED lines, each swipl's own (10.1.20-1-g18168e629, the oracle
 #     ~/.local/swipl-pin1-18168e62/bin/swipl, probed 2026-11-09), and with `swipl` on PATH they are compared live with the same program.
+#     The rows t_space_neg, t_thresh_neg and t_drop_neg are 11.1.0's (10.1.21-86-gaf9e2e7e, ~/.local/swipl-pin2-af9e2e7e/bin/swipl, probed
+#     2026-11-27, all 15 rows run there: the other 12 answers are the same lines; 10.1.20 answers those three representation_error(size_t)).
 #   * White-box rows on what no predicate reaches (the pool's accounting, the free lists, the restraint defaults, the `TF_*` flag bits):
 #     their values are upstream's code (pl-allocpool.c:41-93, pl-tabling.c:396-452, :12696-12706, :11471-11485), each cited at its row.
 #   * Every kill row is an @test INSIDE a @testset (a failing top-level @test gives no verdict in CI mode).
@@ -55,9 +57,10 @@ const _TS_ROWS = [
     ("t_mono", "f(lazy,eager)"),
     ("t_mono_bad", "f(domain_error(table_monotonic,foo),eager)"),
     ("t_mono_type", "type_error(atom,1)"),
-    ("t_space_neg", "representation_error(size_t)"),
-    ("t_thresh_neg", "representation_error(size_t)"),
-    ("t_drop_neg", "representation_error(size_t)"),
+    # a negative size is `int_range_error` (pl-prologflag.c:1474, :1494, :1499 at af9e2e7e); these three are 11.1.0's answers (10.1.20: representation_error(size_t))
+    ("t_space_neg", "domain_error(not_less_than_zero,-1)"),
+    ("t_thresh_neg", "domain_error(not_less_than_zero,-1)"),
+    ("t_drop_neg", "domain_error(not_less_than_zero,-1)"),
     ("t_space_type", "type_error(integer,a)"),
     # a failed set changes nothing (R8, TB0-G9: the setter returns false before it stores) and 0 is no size_t error (R7, TB0-G4, G8)
     ("t_thresh_after", "32"),
@@ -127,7 +130,7 @@ function _ts_query(gd, ld, name::String)::String
     return out
 end
 
-@testset "TB0: the tabling flags, pinned from swipl 10.1.20 and run in order in one database" begin
+@testset "TB0: the tabling flags, pinned from swipl and run in order in one database" begin
     path = joinpath(mktempdir(), "tabling_state.pl")
     write(path, _TS_PROGRAM)
     gd = LK.PL_global_data{_TS}()
