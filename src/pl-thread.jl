@@ -184,8 +184,8 @@ end
 # (aliasThread(PL_thread_self(), ATOM_thread, ATOM_main), pl-init.c:1606 at the pin).
 # DIVERGES (TH1): the main thread has no record here (`info === nothing`, engine id 1, `ld.thread_info === nothing`), so its handle is made with no
 # `info` and `alias` `main` and is entered in `thread_table` directly (`aliasThread!` takes a thread record). It is the FIRST handle of the
-# database (`handles[1]`): called when a database is made (`setupProlog`) and when one is copied from the template (`copy_global_data`: the
-# copy starts with a fresh `thread_state`). A handle that is no engine (no `TH_IS_INTERACTOR`, no record) is no interactor: `get_interactor`
+# database (`handles[1]`): called when a database is made (`setupProlog`); a database copied from the template gets a copy of that handle
+# (`_copy_main_thread`, src/gd_template.jl). A handle that is no engine (no `TH_IS_INTERACTOR`, no record) is no interactor: `get_interactor`
 # raises `type_error(engine, main)` for it, as upstream does. Idempotent.
 "Register the main thread: its handle (id 1, alias `main`) is the first of `gd.thread.handles` and `main` is in the thread table."
 function register_main_thread!(gd::PL_global_data{T})::Nothing where {T}

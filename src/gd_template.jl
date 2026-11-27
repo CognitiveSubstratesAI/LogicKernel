@@ -29,21 +29,24 @@
 #              the one field: upstream sets `GD->paths.CWDdir = NULL` at start (pl-os.c:989-990, initExpand) and computes it at the first
 #              `PL_cwd` (cwd_unlocked: `CWDlen == 0`, pl-os.c:1827; stored at :1860-1866), so a database made after the
 #              boot has no cached directory yet, and the template's (the directory the boot ran in) must not reach it.
+#   :main_thread — a copied database starts with no engine (the handles name local data of the template's process; TH1 engines): the
+#              copy gets a fresh `thread_state` that holds only a copy of the template's main-thread handle (`register_main_thread!`)
+#              and its `thread_table` entry, and a template with any other handle or a thread record is REFUSED. The handle is copied
+#              through the shared `IdDict`, not made again after the copy: a term made then would hold the term type's one shared
+#              empty child vector, which the template's terms hold too.
 # Any field not named here is :deep.
-"How `copy_global_data` copies a `PL_global_data` field, when it is not a deep copy (`:streams`, `:reset`: see the comment above)."
+"How `copy_global_data` copies a `PL_global_data` field, when it is not a deep copy (`:streams`, `:reset`, `:main_thread`: see the comment above)."
 const GD_COPY_POLICY = (
     stream_filenames=:streams,
     stream_aliases=:streams,
     stream_table=:streams,
     ld_table=:streams,
     paths_CWDdir=:reset,             # pl-os.c:989, :1864-1866 at cbf4e189
-    thread=:reset                    # a copied database starts with no engine (the handles name local data of the template's process; TH1 engines); `copy_global_data` then registers the main thread
+    thread=:main_thread              # only the main thread's handle is copied (`_copy_main_thread`; TH1 engines)
 )
 
 "The start-up value of each `:reset` field of `GD_COPY_POLICY`, as `setupProlog` (src/pl-setup.jl) passes it to the constructor."
-# `thread` is an Expr, evaluated in the body of `copy_global_data` (`T` is its type parameter): a fresh `thread_state{T}()`, as the
-# constructor gives it (a mutable value must not be one literal shared by every copy).
-const GD_COPY_RESET = (paths_CWDdir="", thread=:(thread_state{T}()))   # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
+const GD_COPY_RESET = (paths_CWDdir="",)    # "" = none, src/pl-setup.jl `paths.CWDdir: none until the first PL_cwd`
 
 # The copy of one stream table: empty, and the same shape. `x` is the template's field.
 function _copy_stream_free(x::AbstractVector)
@@ -56,6 +59,23 @@ end
 function _copy_stream_free(x::AbstractDict)
     isempty(x) || error("copy_global_data: the template holds an open stream")
     return typeof(x)()
+end
+
+# The thread state of a copy (policy `:main_thread`): `stay` is the one dictionary of the whole copy.
+function _copy_main_thread(
+    state::thread_state{T}, stay::IdDict
+)::thread_state{T} where {T}
+    length(state.handles) == 1 && all(isnothing, state.infos) ||
+        error("copy_global_data: the template holds a thread or engine handle")
+    main = Base.deepcopy_internal(state.handles[1], stay)::thread_handle{T}
+    copied = thread_state{T}()
+    push!(copied.handles, main)
+    for (alias, serial) in state.thread_table
+        serial == main.serial ||
+            error("copy_global_data: the template's thread table names another handle")
+        copied.thread_table[alias] = serial
+    end
+    return copied
 end
 
 """
@@ -75,6 +95,8 @@ field in the struct's order, each by its policy, so the copy follows the struct.
             push!(args, :(_copy_stream_free(getfield(gd, $(QuoteNode(f))))::$ft))
         elseif policy === :reset
             push!(args, :($(getfield(GD_COPY_RESET, f))::$ft))     # the start-up value, a literal of the field's type
+        elseif policy === :main_thread
+            push!(args, :(_copy_main_thread(getfield(gd, $(QuoteNode(f))), stay)::$ft))
         elseif policy === :deep
             push!(args, :(Base.deepcopy_internal(getfield(gd, $(QuoteNode(f))), stay)::$ft))
         else
@@ -83,9 +105,7 @@ field in the struct's order, each by its policy, so the copy follows the struct.
     end
     return quote
         stay = IdDict()   # deepcopy_internal's own stack-dict type (`deepcopy` makes it so)
-        gd2 = PL_global_data{T}($(args...))
-        register_main_thread!(gd2)   # the fresh `thread_state` holds no handle: the main thread's is the first (src/pl-thread.jl)
-        gd2
+        PL_global_data{T}($(args...))
     end
 end
 
