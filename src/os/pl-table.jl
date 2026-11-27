@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/os/pl-table.c @ af9e2e7ed0be
-# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2024, University of Amsterdam

@@ -46,7 +46,8 @@
 # `volatileProcedure`, `acquireTableProcedure`, `pinProcedureRef`, `unpinProcedure`, `abolishedProcedure`, `resolveVolatileProcedure`,
 # `lookupBodyProcedureRef`, `isCurrentProcedureRef`, `lookupProcedureRef`, `lookupProcedureToDefineRef`, `visibleProcedureRef`,
 # `hasVisibleProcedure`, `acquireProcedureRef`, `releaseProcedureRef`, `freeOrphanProcedure`, `collectVolatileProcedures`, ...). It needs
-# functor GC (`permanentFunctor`, `acquireFunctor`: pl-funct, held behind G1), the thread's hazard pointer, the `PROC_PINNED`/
+# functor GC (its collector, `markFunctor` and `collectFunctors`, is held behind G1; `permanentFunctor` and `acquireFunctor` are ported in
+# src/pl-funct.jl), the thread's hazard pointer, the `PROC_PINNED`/
 # `PROC_VOLATILE`/`PROC_CANDIDATE`/`PROC_DESTROY` flags, `procedure.references`, `definition.clause_refs`/`functor_ref` and
 # `module.definitions`. Here every procedure is permanent (as upstream's pinned ones): the `PROC_PINNED` tests, `unvolatileProcedure` calls
 # and the `newDefinition(fd, m, permanent)` argument of the changed functions below are therefore not ported, and named only where a

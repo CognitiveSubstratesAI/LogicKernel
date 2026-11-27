@@ -1688,7 +1688,8 @@ end
 # SYNC3 (af9e2e7e, 0fa79d80/cc3f74fa) DIVERGES: upstream's `trie_blob` has the flags `PL_BLOB_LOCAL|PL_BLOB_OWNED|PL_BLOB_NOCOPY` (a private
 # answer trie's symbol is a thread-local blob; an owned blob releases the trie) and its `release` slot `release_trie_ref` has three
 # cases (a shared trie: `trie_destroy`; TRIE_LOCAL and TRIE_ORPHANED: `t->symbol = ATOM_nil` and `trie_destroy`; TRIE_LOCAL otherwise: a
-# compare-and-swap of `t->symbol` to 0): PL_BLOB_LOCAL, PL_BLOB_OWNED, TRIE_LOCAL and TRIE_ORPHANED do not exist in the kernel (HELD, pl-atom).
+# compare-and-swap of `t->symbol` to 0). TRIE_LOCAL and TRIE_ORPHANED are declared (src/pl-incl.jl); in src/*.jl and src/os/*.jl, searched
+# by name, no other code line names them, and PL_BLOB_LOCAL and PL_BLOB_OWNED are named in comments only (HELD, pl-atom).
 "The blob type of a trie (pl-trie.c `trie_blob`): not unique (one atom per trie, made by `trie_symbol`), non-text, named `trie`."
 const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, "trie")
 
@@ -3431,8 +3432,10 @@ add_indirect!(st::trie_compile_state{T}, op::code, v::T) where {T} =
 # PORT: pl-trie.c add_smallint
 # DIVERGES (SYNC3, af9e2e7e, 0bf03c7f): upstream's new `add_int(state, w)` emits `T_PTRINT` (operand `valInt(w)`) when `isPtrInt(w)` and
 # else `add_smallint(state, T_SMALLINT, T_SMALLINTW, w)`, and `compile_trie_value`, its `children:` value case and the key case
-# TAGEX_PTRINT (`T_TRY_PTRINT` with `state->try`) call it instead of `add_smallint`: the kernel has no pointer integers and declares no
-# T_PTRINT or T_TRY_PTRINT, so `add_int` is E-tier, not ported: every call keeps `add_smallint!`.
+# TAGEX_PTRINT (`T_TRY_PTRINT` with `state->try`) call it instead of `add_smallint`. `isPtrInt` and `consPtrInt` are declared
+# (src/pl-incl.jl), but this file emits no pointer-integer opcode (T_PTRINT and T_TRY_PTRINT are not declared in src/pl-vmi.jl; pointer
+# integers are held for the user's decision). `add_int` is E-tier: in src/*.jl and src/os/*.jl, searched by name, it occurs in comments
+# only, and the compile sites call `add_smallint!`.
 # DIVERGES: CODES_PER_WORD == 1, so always `c1` (`c2`, the W form, is never emitted: the kernel declares no T_SMALLINTW); the operand
 # is the TAGGED word `w` (as H_SMALLINT's, see the OPERANDS note in src/pl-vmi.jl), where upstream writes `valInt(w)`.
 "Add the small integer `w` with the instruction `c1` (pl-trie.c `add_smallint`)."

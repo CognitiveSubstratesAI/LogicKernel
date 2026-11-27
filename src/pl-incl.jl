@@ -27,7 +27,7 @@
 # UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-thread.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-idgset.h @ 18168e629eab
-# UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.h @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-coverage.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-prof.c @ af9e2e7ed0be

@@ -180,8 +180,8 @@ function clause_dbref(gd::PL_global_data{T}, aref::T)::Union{Nothing, Clause{T}}
     return gd.clause_refs[Int(serial)]
 end
 
-# ORIGINAL: the name `clause_clref` kept for its callers in src/pl-cont.jl, pl-trie.jl, pl-wam.jl, pl-tabling.jl and
-# pl-coverage.jl (other packets' files, SYNC3 P01 does not edit them); to be renamed to `clause_dbref` there and removed.
+# ORIGINAL: the name `clause_clref` kept for its callers in src/pl-cont.jl, pl-wam.jl and pl-tabling.jl (it also has a row in
+# test/static_analysis_manifest.jl); to be renamed to `clause_dbref` there and removed.
 "Alias of `clause_dbref` (pl-dbref.c's name before swipl-devel 0fa79d80)."
 clause_clref(gd::PL_global_data{T}, aref::T) where {T} = clause_dbref(gd, aref)
 

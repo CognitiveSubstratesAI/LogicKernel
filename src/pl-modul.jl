@@ -1,5 +1,5 @@
 # UPSTREAM: swipl-devel src/pl-modul.c @ af9e2e7ed0be
-# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -36,7 +36,7 @@ const UNKNOWN_ERROR = 0x00004000
 const UNKNOWN_MASK = UNKNOWN_ERROR | UNKNOWN_WARNING | UNKNOWN_FAIL
 
 # PORT: pl-incl.h ReadingSource
-# DIVERGES: a function of the local data. LB2: the test is upstream's, `source_line_no >= 0` (pl-incl.h:2734)
+# DIVERGES: a function of the local data. LB2: the test is upstream's, `source_line_no >= 0` (pl-incl.h:2884)
 # — it was `> 0`, which differs only at line 0, the line `'$set_source_location'(File, 0)` (init.pl:1933) sets
 # and source_location/2 must then answer; every read sets a line of at least 1, or -1 on a stream without positions.
 "Whether a file is being loaded: `LD->read_source` has a file and a line (pl-incl.h)."
