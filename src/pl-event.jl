@@ -184,7 +184,7 @@ end
 
 # ORIGINAL: upstream stores the C function pointer and the `void *` closure; here both go into one pointer, made at registration. Its one C
 # signature is `(gd, ld, argv+1, argv+2, nargs)` with an `int` answer, and the closure under it passes the first `nargs` term references
-# to the callable. The database and the local data are declared by their abstract supertypes: the signature names no term type. The
+# to the callable. The database and the local data are declared `Any`: the signature names no term type. The
 # `int` is 1 or 0 for the callable's `true` or `false`, and -1 for any other value (a void callback's, which no caller reads). A typed
 # pointer, as measured in src/pl-ext.jl (THE DISPATCH): there for the built-ins' table, here for the functions a caller registers.
 "The `event_function` of the Julia callable `func` and its closure value: a C-callable pointer over both."
@@ -201,9 +201,7 @@ function event_function(func::F, closure::C)::event_function where {F, C}
             return rval === true ? Cint(1) : rval === false ? Cint(0) : Cint(-1)
         end
     return event_function(
-        @cfunction(
-            $entry, Cint, (AbstractGlobalData, AbstractLocalData, term_t, term_t, Int)
-        )
+        @cfunction($entry, Cint, (Any, Any, term_t, term_t, Int))
     )
 end
 
@@ -219,8 +217,7 @@ function _call_event_function(
 )::Union{Nothing, Bool} where {T}
     fn = f.fn
     rc = GC.@preserve fn ccall(
-        Base.unsafe_convert(Ptr{Cvoid}, fn), Cint,
-        (AbstractGlobalData, AbstractLocalData, term_t, term_t, Int),
+        Base.unsafe_convert(Ptr{Cvoid}, fn), Cint, (Any, Any, term_t, term_t, Int),
         gd, ld, a1, a2, nargs
     )
     return rc < 0 ? nothing : rc != 0
