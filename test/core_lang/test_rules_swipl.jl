@@ -1529,7 +1529,10 @@ end
         (_rf("e5", X), _rf("==", _rv(9), X)),                                      # a void side
         (_rf("n1", X), _rf("\\==", X, fa)),
         (_rf("n2", X), _rf("\\==", _rv(9), X)),
-        (_rf("n3", X), _rf("\\==", X, _rg(-16777217)))
+        (_rf("n3", X), _rf("\\==", X, _rg(-16777217))),
+        # TAG1: the portable range is -2^23 <= i < 2^23 (LMASK_BITS 8): 2^23 and -2^23-1 are the first that fall back
+        (_rf("e6", X), _rf("==", X, _rg(8388608))),
+        (_rf("n4", X), _rf("\\==", X, _rg(-8388609)))
     ]
     db = _rdb(clauses)
     goals = [
@@ -1537,7 +1540,9 @@ end
         _rf("e1", fa), _rf("e1", _rf("f", _rs("b"))), _rf("e1", _rv(100)),
         _rf("e2", _rg(16777216)), _rf("e2", _rg(16777215)), _rf("e3", _rg(1.5)), _rs("e4"),
         _rf("e5", _rs("a")), _rf("n1", fa), _rf("n1", _rs("g")), _rf("n2", _rs("a")),
-        _rf("n3", _rg(-16777217)), _rf("n3", _rg(3))
+        _rf("n3", _rg(-16777217)), _rf("n3", _rg(3)),
+        _rf("e6", _rg(8388608)), _rf("e6", _rg(8388607)), _rf("n4", _rg(-8388609)),
+        _rf("n4", _rg(3))
     ]
     ours = _rlines(db, goals)
     @test ours[1:2] == ["u1(a,b) det", "end"]

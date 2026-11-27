@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-tabling.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-vmi.c @ 18168e629eab
@@ -187,62 +187,237 @@ function setMonotonicMode(ld::PL_local_data{T}, a::T)::Bool where {T}
 end
 
 # TAB1 TB2 (worklists, components, completion; pl-tabling.c at 18168e629eab, in its order). The handle of a worklist or a
-# component that Prolog sees is an index into `ld.tabling.pointers` (DIVERGES: upstream the address, `PL_unify_pointer`).
-# Functions of later steps are named refusals (`NotPortedError`, owner TB3/TB4/TB5/TB6), never a wrong answer.
+# component that Prolog sees is an integer of the thread's slot array (SYNC3 P11, pl-tabling.c af9e2e7e fddce091, cebee51a:
+# upstream's PROLOG HANDLES). Functions of later steps are named refusals (`NotPortedError`, owner TB3/TB4/TB5/TB6), never a
+# wrong answer.
 
-# ORIGINAL (TAB1 TB2): upstream's `PL_unify_pointer(t, wl)` makes the ADDRESS an integer; the kernel gives the object a
-# handle, an index into `ld.tabling.pointers` (a freed slot is reused, as freed memory is).
-"The handle of the worklist or component `obj` that Prolog sees (upstream: its address)."
-function tbl_pointer!(
-    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
+# SYNC3 P11 (pl-tabling.c af9e2e7e, the section PROLOG HANDLES, its comment):
+# Prolog refers to worklists and components using integer handles.  A handle is a small integer that combines an index in
+# the thread's slot array (`LD->tabling.handles`) with a check: a serial of the thread and the kind of object.  An object
+# gets its handle on demand and keeps it in `handle`.  Freeing the object frees its slot, so a stale handle no longer matches
+# the check of its slot, also if the slot is reused (by an object that `tbl_alloc` may have recycled).  Worklists and
+# components are private to the thread that created them (`owner`) and handles are only valid in that thread (the slots are
+# per thread).  Other threads never get a handle: a table whose worklist belongs to another thread has status `incomplete`
+# for them (see `unify_table_status`).  When no slot is in use, which is typically the case after the leader completes, the
+# array is truncated.  The serial is never reset, so old handles do not match the check of new ones until it wraps.
+# DIVERGES: `TBL_HANDLE_BITS` is the bits of a positive tagged integer of the kernel's word (`TAGGED_INT_BITS` = 64 -
+# `LMASK_BITS`, as `PLMINTAGGEDINT`), so the serial wraps at 26 bits (upstream's comment: 25, with the cell kind bits of
+# bb4ccf71, held behind pl-atom/pl-funct).
+
+"`kind` of the handle of a worklist (pl-tabling.c `TBL_HANDLE_WORKLIST`)."
+const TBL_HANDLE_WORKLIST = 0
+"`kind` of the handle of a component (pl-tabling.c `TBL_HANDLE_COMPONENT`)."
+const TBL_HANDLE_COMPONENT = 1
+"Bits of the slot index in a handle (pl-tabling.c `TBL_HANDLE_INDEX_BITS`)."
+const TBL_HANDLE_INDEX_BITS = 28
+"Mask of the slot index (pl-tabling.c `TBL_HANDLE_INDEX_MASK`)."
+const TBL_HANDLE_INDEX_MASK = (1 << TBL_HANDLE_INDEX_BITS) - 1
+"Bits of a handle: a positive small integer (pl-tabling.c `TBL_HANDLE_BITS`, `TAGGED_INT_BITS-1`)."
+const TBL_HANDLE_BITS = (64 - LMASK_BITS) - 1
+"Bits of the check of a handle (pl-tabling.c `TBL_HANDLE_CHECK_BITS`)."
+const TBL_HANDLE_CHECK_BITS = TBL_HANDLE_BITS - 1 - TBL_HANDLE_INDEX_BITS
+"Mask of the serial in a check (pl-tabling.c `TBL_HANDLE_SERIAL_MASK`)."
+const TBL_HANDLE_SERIAL_MASK = (1 << (TBL_HANDLE_CHECK_BITS - 1)) - 1
+"The check of a free slot (pl-tabling.c `TBL_HANDLE_FREE`, `(size_t)-1`)."
+const TBL_HANDLE_FREE = -1
+"Free an array of more slots than this when it is empty (pl-tabling.c `TBL_HANDLE_SHRINK`)."
+const TBL_HANDLE_SHRINK = 1024
+
+# PORT: pl-tabling.c new_tbl_handle
+# DIVERGES: the handle is an `Int` (upstream: `consInt()` of a word); the array grows by `resize!` and is filled with free
+# slots; `0` is returned when it cannot grow (out of slots), as upstream.
+"A handle for the worklist or component `obj` of `kind`, or 0 if we are out of slots (pl-tabling.c `new_tbl_handle`)."
+function new_tbl_handle(
+    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}, kind::Int
 )::Int where {T}
-    obj.ptr != 0 && return obj.ptr
-    tab = ld.tabling
-    if isempty(tab.free_pointers)
-        push!(tab.pointers, obj)
-        i = length(tab.pointers)
+    h = ld.tabling.handles
+    if h.free != 0
+        idx = h.free - 1
+        slot = h.slots[idx + 1]
+        h.free = slot.next
     else
-        i = pop!(tab.free_pointers)
-        tab.pointers[i] = obj
+        if h.top == h.size
+            size = h.size != 0 ? h.size * 2 : 256
+            size > TBL_HANDLE_INDEX_MASK + 1 && (size = TBL_HANDLE_INDEX_MASK + 1)
+            size == h.size && return 0
+            resize!(h.slots, size)                  # PL_realloc()
+            for i in (h.size + 1):size
+                h.slots[i] = tbl_handle_slot{T}(nothing, TBL_HANDLE_FREE, 0)
+            end
+            h.size = size
+        end
+        idx = h.top
+        h.top += 1
+        slot = h.slots[idx + 1]
     end
-    obj.ptr = i
 
-    return i
+    h.serial += 1
+    check = ((h.serial & TBL_HANDLE_SERIAL_MASK) << 1) | kind
+    slot.object = obj
+    slot.check = check
+    h.live += 1
+
+    return (check << TBL_HANDLE_INDEX_BITS) | idx
 end
 
-# ORIGINAL (TAB1 TB2): the handle of a freed object is freed with it (upstream: the address of freed memory).
-"Free the handle of the worklist or component `obj` (upstream: its memory is freed)."
-function tbl_pointer_release!(
-    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
-)::Nothing where {T}
-    i = obj.ptr
-    i == 0 && return nothing
-    ld.tabling.pointers[i] = nothing
-    push!(ld.tabling.free_pointers, i)
-    obj.ptr = 0
+# PORT: pl-tabling.c free_tbl_handle
+# DIVERGES: the freed slot drops its object (upstream: `object` holds the free list link, here `next`); `PL_free` of the array
+# is a new empty one.
+"Free the slot of `handle` (pl-tabling.c `free_tbl_handle`)."
+function free_tbl_handle(ld::PL_local_data{T}, handle::Int)::Nothing where {T}
+    h = ld.tabling.handles
+    idx = handle & TBL_HANDLE_INDEX_MASK
+
+    isempty(h.slots) && return nothing              # thread terminated
+    @assert idx < h.top
+    slot = h.slots[idx + 1]
+    @assert slot.check == handle >> TBL_HANDLE_INDEX_BITS
+    slot.check = TBL_HANDLE_FREE
+    slot.object = nothing
+
+    h.live -= 1
+    if h.live == 0
+        h.top = 0
+        h.free = 0
+        if h.size > TBL_HANDLE_SHRINK
+            h.slots = tbl_handle_slot{T}[]          # PL_free(LD->tabling.handles.slots)
+            h.size = 0
+        end
+    else
+        slot.next = h.free
+        h.free = idx + 1
+    end
 
     return nothing
 end
 
-# ORIGINAL (TAB1 TB2): upstream's `PL_unify_pointer(t, obj)` (pl-fli.c) for a worklist or a component.
-"Unify `t` with the handle of the worklist or component `obj` (pl-fli.c `PL_unify_pointer`)."
-function tbl_unify_pointer(
-    ld::PL_local_data{T}, t::term_t, obj::Union{tbl_worklist{T}, tbl_component{T}}
-)::Bool where {T}
-    return PL_unify_int64(ld, t, tbl_pointer!(ld, obj))
+# PORT: pl-tabling.c free_tbl_handles
+"Free the slot array of the thread `ld` (pl-tabling.c `free_tbl_handles`)."
+function free_tbl_handles(ld::PL_local_data{T})::Nothing where {T}
+    if !isempty(ld.tabling.handles.slots)
+        ld.tabling.handles = tbl_handles{T}()       # PL_free(slots); memset(&handles, 0, ...)
+    end
+
+    return nothing
 end
 
-# ORIGINAL (TAB1 TB2): upstream's `PL_get_pointer(t, &ptr)` (pl-fli.c:2461, an int64) followed by the cast; `nothing` when `t`
-# is no integer or names no live object (upstream: a garbage pointer).
-"The worklist or component whose handle is `t`, or `nothing` (pl-fli.c `PL_get_pointer`)."
-function tbl_get_pointer(
-    ld::PL_local_data{T}, t::term_t
-)::Union{Nothing, tbl_worklist{T}, tbl_component{T}} where {T}
-    i = PL_get_int64(ld, t)
-    i === nothing && return nothing
-    1 <= i <= length(ld.tabling.pointers) || return nothing
+# PORT: pl-tabling.c tbl_handle_object
+# DIVERGES: returns `(object, stale)`, `stale` upstream's `*stale`; a negative `w` is no handle (upstream: `w` is unsigned, a
+# negative integer is a huge check that matches no slot); `isTaggedInt(w)` is the caller's integer.
+"The object of the handle `w` of `kind`: `nothing` if `w` is not a handle of `kind`, and `stale` set if it is one of an object that was freed (pl-tabling.c `tbl_handle_object`)."
+function tbl_handle_object(
+    ld::PL_local_data{T}, w::Int, kind::Int
+)::Tuple{Union{Nothing, tbl_worklist{T}, tbl_component{T}}, Bool} where {T}
+    w < 0 && return (nothing, false)
+    idx = w & TBL_HANDLE_INDEX_MASK
+    check = w >> TBL_HANDLE_INDEX_BITS
 
-    return ld.tabling.pointers[i]
+    if (check & 1) == kind
+        h = ld.tabling.handles
+        if idx < h.top && h.slots[idx + 1].check == check
+            return (h.slots[idx + 1].object, false)
+        end
+        return (nothing, true)
+    end
+
+    return (nothing, false)
+end
+
+# PORT: pl-tabling.c worklist_handle
+# DIVERGES: upstream asserts `wl->owner == LD` in a debug build only.
+"The handle of the worklist `wl`, 0 if we are out of slots (pl-tabling.c `worklist_handle`)."
+function worklist_handle(ld::PL_local_data{T}, wl::tbl_worklist{T})::Int where {T}
+    wl.handle == 0 && (wl.handle = new_tbl_handle(ld, wl, TBL_HANDLE_WORKLIST))
+
+    return wl.handle
+end
+
+# PORT: pl-tabling.c component_handle
+# DIVERGES: upstream asserts `c->owner == LD` in a debug build only.
+"The handle of the component `c`, 0 if we are out of slots (pl-tabling.c `component_handle`)."
+function component_handle(ld::PL_local_data{T}, c::tbl_component{T})::Int where {T}
+    c.handle == 0 && (c.handle = new_tbl_handle(ld, c, TBL_HANDLE_COMPONENT))
+
+    return c.handle
+end
+
+# PORT: pl-tabling.c unify_handle
+# DIVERGES: `PL_unify_atomic(t, h)` of a tagged integer is `PL_unify_int64`.
+"Unify `t` with the handle `h`, or raise `resource_error(table_handles)` if there is none (pl-tabling.c `unify_handle`)."
+function unify_handle(ld::PL_local_data{T}, t::term_t, h::Int)::Bool where {T}
+    h != 0 && return PL_unify_int64(ld, t, h)
+
+    return PL_resource_error(ld, "table_handles")
+end
+
+# PORT: pl-tabling.c unify_worklist
+"Unify `t` with the handle of the worklist `wl` (pl-tabling.c `unify_worklist`, a macro)."
+unify_worklist(ld::PL_local_data{T}, t::term_t, wl::tbl_worklist{T}) where {T} =
+    unify_handle(ld, t, worklist_handle(ld, wl))
+
+# PORT: pl-tabling.c unify_component
+"Unify `t` with the handle of the component `c` (pl-tabling.c `unify_component`, a macro)."
+unify_component(ld::PL_local_data{T}, t::term_t, c::tbl_component{T}) where {T} =
+    unify_handle(ld, t, component_handle(ld, c))
+
+# PORT: pl-tabling.c release_obj_handle
+# DIVERGES: the object is passed (upstream: the address of its `handle` and its `owner`).
+"Release the handle of the worklist or component `obj` that is freed or, for a worklist, taken over by another thread; only the owner frees the slot (pl-tabling.c `release_obj_handle`)."
+function release_obj_handle(
+    ld::PL_local_data{T}, obj::Union{tbl_worklist{T}, tbl_component{T}}
+)::Nothing where {T}
+    if obj.handle != 0
+        obj.owner === ld && free_tbl_handle(ld, obj.handle)
+        obj.handle = 0
+    end
+
+    return nothing
+end
+
+# PORT: pl-tabling.c release_worklist_handle
+"Release the handle of the worklist `wl` (pl-tabling.c `release_worklist_handle`, a macro)."
+release_worklist_handle(ld::PL_local_data{T}, wl::tbl_worklist{T}) where {T} =
+    release_obj_handle(ld, wl)
+
+# PORT: pl-tabling.c release_component_handle
+"Release the handle of the component `c` (pl-tabling.c `release_component_handle`, a macro)."
+release_component_handle(ld::PL_local_data{T}, c::tbl_component{T}) where {T} =
+    release_obj_handle(ld, c)
+
+# PORT: pl-tabling.c word_worklist
+# DIVERGES: the word is the integer `w`; returns `(wl, stale)`; the debug-build assert of the magic and the handle is not made.
+"The worklist of the handle `w`, and whether `w` is one of a freed worklist (pl-tabling.c `word_worklist`)."
+function word_worklist(
+    ld::PL_local_data{T}, w::Int
+)::Tuple{Union{Nothing, tbl_worklist{T}}, Bool} where {T}
+    (obj, stale) = tbl_handle_object(ld, w, TBL_HANDLE_WORKLIST)
+
+    return (obj isa tbl_worklist{T} ? obj : nothing, stale)
+end
+
+# PORT: pl-tabling.c handle_worklist
+# DIVERGES: returns `(wl, stale)`; `PL_get_int64` is `deRef` and the integer test (a term that is no integer is no handle).
+"The worklist whose handle is the term `t`, and whether it is the handle of a freed worklist (pl-tabling.c `handle_worklist`)."
+function handle_worklist(
+    ld::PL_local_data{T}, t::term_t
+)::Tuple{Union{Nothing, tbl_worklist{T}}, Bool} where {T}
+    w = PL_get_int64(ld, t)
+    w === nothing && return (nothing, false)
+
+    return word_worklist(ld, w)
+end
+
+# PORT: pl-tabling.c handle_component
+# DIVERGES: as `handle_worklist`; the debug-build assert of the magic and the handle is not made.
+"The component whose handle is the term `t`, and whether it is the handle of a freed component (pl-tabling.c `handle_component`)."
+function handle_component(
+    ld::PL_local_data{T}, t::term_t
+)::Tuple{Union{Nothing, tbl_component{T}}, Bool} where {T}
+    w = PL_get_int64(ld, t)
+    w === nothing && return (nothing, false)
+    (obj, stale) = tbl_handle_object(ld, w, TBL_HANDLE_COMPONENT)
+
+    return (obj isa tbl_component{T} ? obj : nothing, stale)
 end
 
 # ORIGINAL (TAB1 TB2): the answer trie of a worklist; upstream's `wl->table` is the pointer, the kernel's `wl.table` the trie's
@@ -270,17 +445,19 @@ function _zero_component!(c::tbl_component{T})::tbl_component{T} where {T}
     c.drop_size = 0
     c.drop_gen_calls = UInt64(0)
     c.drop_recompute = 0
-    c.ptr = 0
+    c.handle = 0
+    c.owner = nothing
 
     return c
 end
 
 # PORT: pl-tabling.c new_component
-# (pl-tabling.c:465-475 at the pin)
+# (pl-tabling.c:465-475 at the pin; `c->owner = LD` since af9e2e7e cebee51a, pl-tabling.c:695)
 "A new active component (pl-tabling.c `new_component`): reused from the freed ones or made; counts `active_components`."
 function new_component(ld::PL_local_data{T})::tbl_component{T} where {T}
     r = tbl_alloc(ld, Val(TBL_FREE_COMPONENT))
     c = r === nothing ? tbl_component{T}() : _zero_component!(r)    # memset; c->magic = COMPONENT_MAGIC
+    c.owner = ld
     ld.tabling.active_components += 1
 
     return c
@@ -336,7 +513,7 @@ end
 # PORT: pl-tabling.c free_component
 # (pl-tabling.c:516-560 at the pin)
 # DIVERGES: `PL_unregister_atom(c->drop.symbol)` is not done (the kernel's atoms have no reference counts, audit D-0453
-# item 5); the handle of each freed component is freed (`tbl_pointer_release!`).
+# item 5); the handle of each freed component is released (`release_component_handle`, af9e2e7e fddce091).
 "Free the component `c`, its children and merged components (pl-tabling.c `free_component`)."
 function free_component(
     ld::PL_local_data{T}, c::tbl_component{T}, flags::Int
@@ -372,7 +549,7 @@ function free_component(
         cch !== nothing && push_component_set(stack, cch)
         cme = c.merged
         cme !== nothing && push_component_set(stack, cme)
-        tbl_pointer_release!(ld, c)
+        release_component_handle(ld, c)
         tbl_free(ld, Val(TBL_FREE_COMPONENT), c)
     end
 
@@ -1300,19 +1477,21 @@ function _zero_worklist!(wl::tbl_worklist{T})::tbl_worklist{T} where {T}
     wl.predicate = nothing
     empty!(wl.delays)                               # initBuffer(&wl->delays)
     empty!(wl.pos_undefined)                        # initBuffer(&wl->pos_undefined)
-    wl.ptr = 0
+    wl.handle = 0
+    wl.owner = nothing
 
     return wl
 end
 
 # PORT: pl-tabling.c new_worklist
-# (pl-tabling.c:3884-3899 at the pin)
+# (pl-tabling.c:3884-3899 at the pin; `wl->owner = LD` since af9e2e7e cebee51a, pl-tabling.c:4182: `GET_LD` is the argument `ld`)
 # DIVERGES: `wl.table` is the trie's number in `gd.tries` (`atrie.serial`, TB1); `atrie.worklist` holds a worklist, NULL
 # (`nothing`) or a sentinel (an `Int`, TB1's widening of TR1's field).
 "A new worklist for the answer trie `atrie`, which then points at it (pl-tabling.c `new_worklist`)."
 function new_worklist(ld::PL_local_data{T}, atrie::trie{T})::tbl_worklist{T} where {T}
     r = tbl_alloc(ld, Val(TBL_FREE_WORKLIST))
     wl = r === nothing ? tbl_worklist{T}() : _zero_worklist!(r)  # memset(wl, 0, sizeof(*wl)); wl->magic = WORKLIST_MAGIC
+    wl.owner = ld
     wl.table = atrie.serial
     w = atrie.worklist
     (w isa Int && w == WL_GROUND) && (wl.ground = true)
@@ -1323,7 +1502,7 @@ end
 
 # PORT: pl-tabling.c free_worklist
 # (pl-tabling.c:3902-3929 at the pin)
-# DIVERGES: the handle Prolog saw is freed with the worklist (`tbl_pointer_release!`); upstream's "Oops" print for a trie that
+# DIVERGES: the handle Prolog saw is released with the worklist (`release_worklist_handle`, af9e2e7e fddce091); upstream's "Oops" print for a trie that
 # points elsewhere is an `@warn`.
 "Free the worklist `wl` and its clusters; its answer trie no longer points at it (pl-tabling.c `free_worklist`)."
 function free_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where {T}
@@ -1357,7 +1536,7 @@ function free_worklist(ld::PL_local_data{T}, wl::tbl_worklist{T})::Nothing where
     empty!(wl.delays)                               # discardBuffer(&wl->delays)
     empty!(wl.pos_undefined)                        # discardBuffer(&wl->pos_undefined)
 
-    tbl_pointer_release!(ld, wl)
+    release_worklist_handle(ld, wl)
     tbl_free(ld, Val(TBL_FREE_WORKLIST), wl)
 
     return nothing
@@ -1640,8 +1819,10 @@ function wkl_add_suspension(
     return true
 end
 
-# The `create` branch of unify_fresh (pl-tabling.c:4219-4259 at the pin; TB1 ports the function and its `create` false branch)
-# DIVERGES: the two pointers are handles (`tbl_pointer!`), so upstream's fast path that builds `fresh(SCC, WL)` from two tagged
+# The `create` branch of unify_fresh (pl-tabling.c:4219-4259 at the pin; 4523-4552 at af9e2e7e; TB1 ports the function and its
+# `create` false branch)
+# SYNC3 P11 (af9e2e7e fddce091): the handles are taken first (`component_handle`, `worklist_handle`), no handle is the
+# resource error `table_handles` before `t` is touched. DIVERGES: upstream's fast path that builds `fresh(SCC, WL)` from two
 # integers on the global stack and its `PL_unify_term` fallback are one unification; `tripwire_incomplete_subgoals`
 # (pl-tabling.c:11943, TB8's port with the restraint) is below. TB1's `unify_fresh` calls it for `create`.
 "The `create` branch of `unify_fresh`: a component and a worklist for the new table `atrie`, `t` unified with `fresh(SCC, WL)` (pl-tabling.c)."
@@ -1655,48 +1836,47 @@ function _unify_fresh_create(
 
     fname = (atrie.flags & TRIE_ISSHARED) != 0 ? :fresh_shared : :fresh
     wl.predicate = def
+    (component_handle(ld, scc) != 0 && worklist_handle(ld, wl) != 0) ||
+        return PL_resource_error(ld, "table_handles")
     PL_unify_functor(ld, t, mk_sym(T, fname), 2) || return false
     a = PL_new_term_ref(ld)
     _PL_get_arg(ld, 1, t, a)
-    tbl_unify_pointer(ld, a, scc) || return false
+    unify_component(ld, a, scc) || return false
     _PL_get_arg(ld, 2, t, a)
 
-    return tbl_unify_pointer(ld, a, wl)
+    return unify_worklist(ld, a, wl)
 end
 
 # PORT: pl-tabling.c get_scc
-# (pl-tabling.c:4392-4407 at the pin)
-# DIVERGES: the handle is read by `tbl_get_pointer`: no integer is `PL_get_pointer_ex`'s type_error(address, T); an integer
-# that names no live component (upstream: its magic differs) is the existence error. The component is returned, `nothing`
-# with the error raised (upstream: `*cp` and the truth value).
-"The component whose handle is `t`, or `nothing` after raising the error (pl-tabling.c `get_scc`)."
+# (pl-tabling.c:4690-4706 at af9e2e7e; was 4392-4407 at the pin)
+# DIVERGES: the component is returned, `nothing` with the error raised (upstream: `*cp` and the truth value).
+"The component whose handle is `t`, or `nothing` after raising the error: existence_error(table_component, T) for the handle of a freed one, else type_error (pl-tabling.c `get_scc`)."
 function get_scc(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, tbl_component{T}} where {T}
-    if PL_get_int64(ld, t) === nothing              # PL_get_pointer_ex(t, &ptr)
-        PL_error(ld, ERR_TYPE, mk_sym(T, :address), t)
+    (c, stale) = handle_component(ld, t)
+    c !== nothing && return c
+    if stale
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :table_component), t)
         return nothing
     end
-    c = tbl_get_pointer(ld, t)
-    if !(c isa tbl_component{T}) || c.magic != COMPONENT_MAGIC
-        PL_error(ld, ERR_EXISTENCE, mk_sym(T, Symbol("table component")), t)
-        return nothing
-    end
+    PL_type_error(ld, "table_component", t)
 
-    return c
+    return nothing
 end
 
 # PORT: pl-tabling.c get_worklist
-# (pl-tabling.c:4409-4422 at the pin)
-# DIVERGES: a handle that names no live worklist (upstream: `assert(wl->magic == WORKLIST_MAGIC)` on the address) raises
-# type_error(worklist, T) as a non-integer does.
-"The worklist whose handle is `t`, or `nothing` after raising type_error(worklist, T) (pl-tabling.c `get_worklist`)."
+# (pl-tabling.c:4707-4721 at af9e2e7e; was 4409-4422 at the pin)
+# DIVERGES: the worklist is returned, `nothing` with the error raised (upstream: `*wlp` and the truth value).
+"The worklist whose handle is `t`, or `nothing` after raising existence_error(worklist, T) for the handle of a freed one, else type_error(worklist, T) (pl-tabling.c `get_worklist`)."
 function get_worklist(
     ld::PL_local_data{T}, t::term_t
 )::Union{Nothing, tbl_worklist{T}} where {T}
-    wl = tbl_get_pointer(ld, t)
-    if wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC
-        return wl
+    (wl, stale) = handle_worklist(ld, t)
+    wl !== nothing && return wl
+    if stale
+        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :worklist), t)
+        return nothing
     end
     PL_type_error(ld, "worklist", t)
 
@@ -1704,21 +1884,21 @@ function get_worklist(
 end
 
 # PORT: pl-tabling.c tnot_get_worklist
-# (pl-tabling.c:4425-4453 at the pin)
-# DIVERGES: returns `(wl, is_tnot)`, `wl` `nothing` after raising type_error(worklist, T); a handle that names no live worklist
-# is that error (upstream: an assert).
+# (pl-tabling.c:4722-4748 at af9e2e7e; was 4425-4453 at the pin)
+# DIVERGES: returns `(wl, is_tnot)`, `wl` `nothing` after raising type_error(worklist, T) (a freed worklist's handle too, as
+# upstream: `stale` is not used here).
 "The worklist of `t`, a handle or `tnot(Handle)`, and whether it is the tnot/1 form (pl-tabling.c `tnot_get_worklist`)."
 function tnot_get_worklist(
     ld::PL_local_data{T}, t::term_t
 )::Tuple{Union{Nothing, tbl_worklist{T}}, Bool} where {T}
-    wl = tbl_get_pointer(ld, t)
-    (wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC) && return (wl, false)
+    (wl, _) = handle_worklist(ld, t)
+    wl !== nothing && return (wl, false)
 
     if PL_is_functor(ld, t, mk_sym(T, :tnot), 1)
         a = PL_new_term_ref(ld)
         _PL_get_arg(ld, 1, t, a)
-        wl = tbl_get_pointer(ld, a)
-        (wl isa tbl_worklist{T} && wl.magic == WORKLIST_MAGIC) && return (wl, true)
+        (wl, _) = handle_worklist(ld, a)
+        wl !== nothing && return (wl, true)
     end
     PL_type_error(ld, "worklist", t)
 
@@ -1726,7 +1906,7 @@ function tnot_get_worklist(
 end
 
 # PORT: pl-tabling.c tbl_add_worklist
-# (pl-tabling.c:4455-4469 at the pin)
+# (pl-tabling.c:4455-4469 at the pin; 4747-4766 at af9e2e7e, which takes a worklist over from another thread: cebee51a)
 # DIVERGES: `WL_IS_WORKLIST(atrie->data.worklist)` is `atrie.worklist isa tbl_worklist{T}` (the field holds a worklist, NULL
 # or a sentinel `Int`).
 "The worklist of `atrie` (made when it has none) in the component `scc`, scheduled and created there; the table is incomplete (pl-tabling.c `tbl_add_worklist`)."
@@ -1734,7 +1914,15 @@ function tbl_add_worklist(
     ld::PL_local_data{T}, atrie::trie{T}, scc::tbl_component{T}
 )::tbl_worklist{T} where {T}
     w = atrie.worklist
-    wl = w isa tbl_worklist{T} ? w : new_worklist(ld, atrie)
+    if w isa tbl_worklist{T}
+        wl = w
+        if wl.owner !== ld                          # taken over from another thread
+            wl.handle = 0                           # in the slots of the old owner
+            wl.owner = ld
+        end
+    else
+        wl = new_worklist(ld, atrie)
+    end
 
     wl.component = scc
     add_global_worklist(ld, wl)
@@ -1745,9 +1933,10 @@ function tbl_add_worklist(
 end
 
 # PORT: pl-tabling.c frame_worklist
-# (pl-tabling.c:4914-4931 at the pin)
-# DIVERGES: `fr` is the frame's index in `ld.frames`; the handle in argument 4 is read by `get_worklist` alone (upstream: a
-# tagged integer cast to the address, `get_worklist` otherwise; both are a handle here).
+# (pl-tabling.c:4914-4931 at the pin; 5211-5226 at af9e2e7e)
+# DIVERGES: `fr` is the frame's index in `ld.frames`; the handle in argument 4 is read by `get_worklist` alone (upstream, SYNC3
+# P11: `word_worklist(*p, &stale)` on the dereferenced word first, `get_worklist` for the error otherwise; `get_worklist` is
+# `handle_worklist` and then the existence or type error, so the result and the errors are the same).
 "The worklist of argument 4 of the `'\$tbl_reset'/6` frame `fr`, or `nothing` after raising the error (pl-tabling.c `frame_worklist`)."
 function frame_worklist(
     ld::PL_local_data{T}, fr::Int
@@ -1807,11 +1996,11 @@ function pl_tbl_pop_worklist2_va(
     if scc !== nothing
         if scc.status == SCC_ACTIVE
             wl = pop_worklist(ld, scc)
-            wl !== nothing && return tbl_unify_pointer(ld, A2, wl) ? FTRUE : FFALSE
+            wl !== nothing && return unify_worklist(ld, A2, wl) ? FTRUE : FFALSE
 
             if scc.neg_status != SCC_NEG_NONE
                 wl = negative_worklist(ld, scc)
-                wl !== nothing && return tbl_unify_pointer(ld, A2, wl) ? FTRUE : FFALSE
+                wl !== nothing && return unify_worklist(ld, A2, wl) ? FTRUE : FFALSE
             end
         end
     end
@@ -2518,7 +2707,7 @@ function tbl_leader_finished(
         (sym_key(a) == sym_key(mk_sym(T, :exit)) || sym_key(a) == sym_key(mk_sym(T, :fail)))
         c = ld.tabling.component
         if sym_key(a) == sym_key(mk_sym(T, :exit)) && c !== nothing &&
-            tbl_get_pointer(ld, scc) === c &&   # PL_get_pointer(scc, &ptr) && ptr == (void*)c
+            handle_component(ld, scc)[1] === c &&   # handle_component(scc, &discarded) == c
             c.status == SCC_COMPLETED && c.parent === nothing
             free_component(ld, c, Int(FC_DESTROY))
             @assert ld.tabling.component === nothing
@@ -2638,7 +2827,7 @@ function pl_tbl_scc1_va(
 )::foreign_t where {T}
     A1 = PL__t0
     c = ld.tabling.component
-    c !== nothing && return tbl_unify_pointer(ld, A1, c) ? FTRUE : FFALSE
+    c !== nothing && return unify_component(ld, A1, c) ? FTRUE : FFALSE
 
     return FFALSE
 end
@@ -2655,7 +2844,7 @@ function unify_wl_set(
     tail = PL_copy_term_ref(ld, l)
     head = PL_new_term_ref(ld)
     for i in 1:n
-        if !PL_unify_list(ld, tail, head, tail) || !tbl_unify_pointer(ld, head, p[i])
+        if !PL_unify_list(ld, tail, head, tail) || !unify_worklist(ld, head, p[i])
             return false
         end
     end
@@ -2675,7 +2864,7 @@ function unify_scc_set(
         head = PL_new_term_ref(ld)
 
         for c in cs.members
-            if !PL_unify_list(ld, tail, head, tail) || !tbl_unify_pointer(ld, head, c)
+            if !PL_unify_list(ld, tail, head, tail) || !unify_component(ld, head, c)
                 return false
             end
         end
@@ -2684,14 +2873,14 @@ function unify_scc_set(
     return PL_unify_nil(ld, tail)
 end
 
-# PORT: pl-tabling.c unify_pointer_or_nil
-# (pl-tabling.c:6818-6826 at the pin)
-"Unify `t` with the handle of the component `ptr`, or the atom `null` for none (pl-tabling.c `unify_pointer_or_nil`)."
-function unify_pointer_or_nil(
-    ld::PL_local_data{T}, t::term_t, ptr::Union{Nothing, tbl_component{T}}
+# PORT: pl-tabling.c unify_component_or_null
+# (pl-tabling.c:6818-6826 at the pin; renamed from `unify_pointer_or_nil` in af9e2e7e, SYNC3 P12)
+"Unify `t` with the handle of the component `c`, or the atom `null` for none (pl-tabling.c `unify_component_or_null`)."
+function unify_component_or_null(
+    ld::PL_local_data{T}, t::term_t, c::Union{Nothing, tbl_component{T}}
 )::Bool where {T}
-    if ptr !== nothing
-        return tbl_unify_pointer(ld, t, ptr)
+    if c !== nothing
+        return unify_component(ld, t, c)
     else
         return PL_unify_atom(ld, t, mk_sym(T, :null))   # PL_unify_atom_chars(t, "null")
     end
@@ -2712,7 +2901,7 @@ function pl_tbl_scc_data2_va(
         scc5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :scc)), 5)   # FUNCTOR_scc5
 
         return if (
-            unify_pointer_or_nil(ld, av + 0, scc.parent) &&
+            unify_component_or_null(ld, av + 0, scc.parent) &&
             unify_scc_set(ld, av + 1, scc.children) &&
             unify_component_status(ld, av + 2, scc) &&
             unify_wl_set(ld, av + 3, scc.worklist) &&
@@ -2811,7 +3000,7 @@ function pl_tbl_worklist_data2_va(
         worklist5 = lookupFunctorDef(ld.functors, _atom_word!(ld, mk_sym(T, :worklist)), 5)   # FUNCTOR_worklist5
         c = wl.component
         comp_ok =
-            c === nothing ? PL_unify_int64(ld, av + 0, 0) : tbl_unify_pointer(ld, av + 0, c)
+            c === nothing ? PL_unify_int64(ld, av + 0, 0) : unify_component(ld, av + 0, c)
 
         return if (
             comp_ok &&
@@ -3451,6 +3640,10 @@ end
 # limit, so the lookup is never abstracted without one). The retry of upstream after a global stack overflow
 # (`Undo`, `makeMoreStackSpace`) is not needed: no stack overflows here. A moded trie's `value_count` and the node's value
 # are as upstream's; `clrefp` is the `O_PLMT` clause-reference protection (a trie clause is TR4): dropped.
+# DIVERGES (SYNC3, pl-tabling.c af9e2e7e): not ported: `set(atrie, TRIE_LOCAL)` on a new private answer trie (the flag and its
+# thread-local trie symbol, pl-trie.h and the blob work of cc3f74fa, are held behind pl-atom/pl-funct), and the `O_PLMT`
+# `stack_epoch` re-lookup after `claim_answer_table` (`stacks_moved`: waiting or compiling moved the stacks, `vars` is invalid,
+# the lookup is made again with `trie_lookup_abstract`): `claim_answer_table` is TH1's here and no stack moves.
 """
     get_answer_table(ld, def, t, ret, flags) -> Union{Nothing, trie}
 
@@ -3602,7 +3795,8 @@ function unify_complete_or_invalid(
 end
 
 # PORT: pl-tabling.c unify_table_status
-# DIVERGES: the worklist is unified as its handle (`tbl_unify_pointer`, upstream `PL_unify_pointer(t, wl)`).
+# DIVERGES: the worklist is unified as its handle (`unify_worklist`). SYNC3 P11 (af9e2e7e cebee51a): the worklist of
+# another thread is `incomplete` for this one (`wl->owner != LD`).
 "Unify `t` with the status of `atrie`: `complete`, `invalid`, `dynamic` or `fresh`, a worklist for an incomplete table (pl-tabling.c)."
 function unify_table_status(
     ld::PL_local_data{T}, t::term_t, atrie::trie{T}, def::Union{Nothing, Definition{T}},
@@ -3620,7 +3814,8 @@ function unify_table_status(
                 tripwire_scc_subgoals(ld, wl, size0) || return false
             end
 
-            return tbl_unify_pointer(ld, t, wl)
+            wl.owner !== ld && return PL_unify_atom(ld, t, mk_sym(T, :incomplete))    # another thread completes it
+            return unify_worklist(ld, t, wl)
         end
         if wl isa Int && wl == WL_DYNAMIC
             return PL_unify_atom(ld, t, mk_sym(T, :dynamic))
@@ -5113,6 +5308,11 @@ end
 # (pl-tabling.c:12484-12565 at the pin.)
 # DIVERGES: the supervisor frame `fr` is an argument; the result is an atom word (0: none); the variables of the flat lookup are a
 # vector; `hasStackSpace` is true (the stacks grow on demand); the `O_PLMT` `shared` is false.
+# DIVERGES (SYNC3, pl-tabling.c af9e2e7e): upstream records a `stack_epoch` (`get_stack_epoch`: `gc.stats.totals.collections`,
+# `gBase`, `lBase`) after the flat lookup and, when `complete_answer_clause` compiled a clause (not `error`) and `stacks_moved`,
+# empties `vars`, sets `clref = 0` and retries the lookup once (`retry_flat`; `fr = LD->query->registers.fr` is read again), else
+# returns 0. Not ported: compiling moves no stack here (frames are `ld.frames` indices, `vars` a Julia vector, no stack shift or
+# garbage collector of the stacks), so `stacks_moved` is never true (held with pl-comp and the pl-gc family, G1).
 "The fast path of `S_TABLED` for the variant tabled `def` called in frame `fr`: a clause reference, `fail`, `error` or 0 (pl-tabling.c)."
 function tbl_complete_answer_clause(
     ld::PL_local_data{T}, def::Definition{T}, fr::Int
@@ -5166,6 +5366,8 @@ end
 # (pl-tabling.c:12567-12636 at the pin.)
 # DIVERGES: as `tbl_complete_answer_clause`; the `retry` after a global stack overflow (`makeMoreStackSpace`) is dropped
 # (`unify_trie_ret` is a Bool: the stacks grow on demand); `deRef(sp); w = *sp` is `_slot_link!` of the skeleton onto itself.
+# DIVERGES (SYNC3, pl-tabling.c af9e2e7e): the `stack_epoch` check after `complete_answer_clause(atrie)` (`stacks_moved`: empty
+# `vars`, `clref = 0`, one `retry`, else `out_buf`) is not ported, as in `tbl_complete_answer_clause`.
 "The slow path of `tbl_complete_answer_clause`: look up `M:Head` with `trie_lookup_abstract` (pl-tabling.c)."
 function complete_answer_clause_term(
     ld::PL_local_data{T}, def::Definition{T}, fr::Int, variants::trie{T}
@@ -5522,6 +5724,7 @@ end
 
 # PORT: pl-tabling.c word_to_answer
 # (pl-tabling.c:1313 at the pin)
+# DIVERGES (SYNC3, af9e2e7e): the `O_BIG_ADDRESS` branch (`consPtrInt`, a pointer integer) does not apply: the integer is a handle.
 # DIVERGES: the tagged integer is the answer's handle `trie_node_handle` = `serial << 32 | nid` (upstream: the node's address, the
 # integer `trie_term/2` takes); the caller knows the trie, so the node id is the low 32 bits (gate 13 class M).
 "The answer node id of the tagged integer `w`, the low half of its handle (pl-tabling.c)."
@@ -5773,6 +5976,8 @@ end
 
 # PORT: pl-tabling.c delay_to_data
 # (pl-tabling.c:1660 at the pin)
+# DIVERGES (SYNC3, af9e2e7e): upstream builds the ground-node integer with `consPtrInt(pointerToInt(answer))` (a pointer integer:
+# `O_BIG_ADDRESS` builds); the kernel's is the node handle below, no pointer integer (held with pl-atom/pl-funct, G1).
 # DIVERGES: the data goes to the term reference `out`; a ground answer is its handle `trie_node_handle` (upstream: its address,
 # which `trie_term/2` reads in `delay_goals`, boot/tabling.pl:1060; gate 13 class M: the node id alone named no trie); `at` is the
 # answer's trie (for `is_ground_trie_node`; `nothing` with `answer` 0, T_DELAY's NULL node).
@@ -9913,7 +10118,8 @@ end
 
 # PORT: pl-tabling.c sort_table_values
 # DIVERGES: `sort!` on the values: a value that names a trie is `(serial << 3) | 7`, so its order is the creation order of the tries
-# (upstream sorts by address with an LSD radix sort for the cache; no cache here).
+# (upstream sorts by address with an LSD radix sort for the cache; no cache here). SYNC3 P11 (af9e2e7e): upstream sorts fewer than
+# `RADIX_MIN_VALUES` (16384) values with `qsort()` and `compare_table_values` (an unsigned word compare): the same order as `sort!`.
 "Sort the taken values of a variant table in creation order of the tables (pl-tabling.c)."
 function sort_table_values!(values::Vector{word})::Nothing
     sort!(values)
@@ -10041,7 +10247,8 @@ function clear_variant_table(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-tabling.c clearThreadTablingData
-# DIVERGES: `exit` is kept for the callers (no thread exit in the kernel); `idg_release_registry(ld)` is TB6's.
+# DIVERGES: `exit` is kept for the callers (no thread exit in the kernel); upstream's `idg_release_registry(ld)` before
+# `free_tbl_handles(ld)` (both under `if (exit)`) is TB6's and not called here.
 "Reset the components, the worklists and the tables of this thread (pl-tabling.c)."
 function clearThreadTablingData(ld::PL_local_data{T}, exit::Bool)::Nothing where {T}
     c = ld.tabling.component
@@ -10049,6 +10256,7 @@ function clearThreadTablingData(ld::PL_local_data{T}, exit::Bool)::Nothing where
     reset_newly_created_worklists(ld, c, Int(WLFS_KEEP_COMPLETE))
     clear_variant_table(ld)
     free_tbl_free_objects(ld, exit)
+    exit && free_tbl_handles(ld)
 
     return nothing
 end
@@ -10484,19 +10692,26 @@ end
 
 # TAB1 TB8 part 2: `'$tbl_sdg'/3` and `'$tbl_incomplete'/3` (pl-tabling.c:9526-9820 at the pin). The graph is built from the
 # live objects: the components, tables and edges are insertion-ordered vectors with an `IdDict` as their index (upstream's
-# `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is TB2's `tbl_pointer!`.
+# `pair_map` iterates by hash: its tests `msort`), the handle of a worklist or a component is `worklist_handle`, `component_handle`.
 
 # pl-tabling.c `sdg_atom` (the enum, pl-tabling.c:9553) and `sdg_atoms[]` have no Julia definition, so no PORT marker: they are
 # the symbols `null`, `positive`, `negative`, `pending`, `executing`, `delays`; `sdg_init` is not needed (`mk_sym` interns on
 # first use, the functors are looked up where they are built).
 
-# ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle of
-# TB2's `tbl_pointer!`.
+# ORIGINAL (TAB1 TB8): upstream's `PL_put_pointer(t, obj)` (pl-fli.c) for a worklist or a component, 0 for NULL: the handle
+# (`worklist_handle`, `component_handle`; upstream still puts the address at af9e2e7e: the sdg display, nothing reads it back).
 "Put the handle of the worklist or component `obj` (0 for none) into `t` (pl-fli.c `PL_put_pointer`)."
 function _tbl_put_pointer(
     ld::PL_local_data{T}, t::term_t, obj::Union{Nothing, tbl_worklist{T}, tbl_component{T}}
 )::Bool where {T}
-    return PL_put_int64(ld, t, obj === nothing ? 0 : tbl_pointer!(ld, obj))
+    obj === nothing && return PL_put_int64(ld, t, 0)
+    h = if obj isa tbl_worklist{T}
+        worklist_handle(ld, obj)
+    else
+        component_handle(ld, obj::tbl_component{T})
+    end
+
+    return PL_put_int64(ld, t, h)
 end
 
 # PORT: pl-tabling.c sdg_push_root
@@ -10552,7 +10767,7 @@ end
 
 # PORT: pl-tabling.c sdg_count_edges
 # DIVERGES: `tables` is the index of the tables (`tindex`, worklist -> position), `edges` the counts by (caller, callee, negative)
-# with their order in `eorder`; the caller is the worklist `tbl_get_pointer` finds for the handle (upstream: a pointer, accepted
+# with their order in `eorder`; the caller is the worklist `handle_worklist` finds for the handle (upstream: the same, af9e2e7e, accepted
 # only when it is in `tables`); `UNTNOT(sp->term)` is `sp.term`, the sign `IS_TNOT`'s field `is_tnot`.
 "Count the suspensions on the callee `wl` by caller in `edges` (pl-tabling.c `sdg_count_edges`)."
 function sdg_count_edges(
@@ -10574,8 +10789,8 @@ function sdg_count_edges(
                     return false
                 end
                 if PL_is_functor(ld, t, dependency, 5) && _PL_get_arg(ld, 4, t, a)
-                    caller = tbl_get_pointer(ld, a)
-                    if caller isa tbl_worklist{T} && haskey(tindex, caller)
+                    (caller, _) = handle_worklist(ld, a)        # caller=handle_worklist(a, &discarded)
+                    if caller !== nothing && haskey(tindex, caller)
                         key = (tindex[caller], tindex[wl], sp.is_tnot)
                         if haskey(edges, key)
                             edges[key] += 1

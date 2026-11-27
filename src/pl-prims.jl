@@ -881,6 +881,10 @@ function _push_compound_pair!(
     return false                                    # two `$expr` of different arity, or f/n ≠ g/m
 end
 
+# DIVERGES (SYNC3, 6bd4bad3): upstream splits `do_unify` into `unify_simple` (the body of `unify_simple_ptrs`, now `static inline`, which
+# `unify_simple_ptrs` wraps) and `do_unify_compound` (`NOINLINE`, the agenda part below `rc != DO_COMPOUND`), so that unifying two
+# simple terms needs no large stack frame. That is a C frame-size measure: `unify_simple_cells` is the shared callee here and
+# the compound part stays in `do_unify_cells`; no behaviour differs.
 # PORT: pl-prims.c do_unify as do_unify_cells
 # DIVERGES: on locations (above); the agenda holds pairs of global positions (`cell_agendaLR`); a
 # cycle link overwrites the compound's functor cell with a reference to the other's, as upstream's,
@@ -954,11 +958,12 @@ unify_ptrs_cells(ld::PL_local_data{T}, l1::Int, l2::Int) where {T} =
 
 # ── is_acyclic on CELLS (L1d step 3; the workspace's L1_plan/stageL1d_design.md) ─────────────────
 # THE BITS (user, 2026-10-16: name them): a word is tag (bits 0-2, TAG_MASK) | storage (bits 3-4,
-# STG_MASK) | MARK_MASK (bit 5) | FIRST_MASK (bit 6) | payload from bit LMASK_BITS = 7. A functor word
-# keeps its arity at bits 7-11 (F_ARITY_BITS) and its index above; a cycle link (`_link_cells!`) is a
-# reference word, its position also from bit 7. So ACYCLIC_TEMP_MASK = FIRST_MASK (bit 6) and
-# ACYCLIC_PERM_MASK = MARK_MASK (bit 5) are free in every word: `arityFunctor`/`indexFunctor` shift
-# past them, `isFunctor`/`tagex` read bits 0-4, `isRef`/`tag` bits 0-2. THE ORDER (upstream: do_compare
+# STG_MASK) | VARIANT_BIT (bit 5) | MARK_MASK (bit 6) | FIRST_MASK (bit 7) | payload from bit LMASK_BITS = 8
+# (TAG1, swipl-devel af9e2e7e: the mask bits were 5-6 and the payload started at bit 7). A functor word
+# keeps its arity at bits 8-12 (F_ARITY_BITS) and its index above; a cycle link (`_link_cells!`) is a
+# reference word, its position also from bit 8. So ACYCLIC_TEMP_MASK = FIRST_MASK (bit 7) and
+# ACYCLIC_PERM_MASK = MARK_MASK (bit 6) are free in every word: `arityFunctor`/`indexFunctor` shift
+# past them, `isFunctor`/`tagex` read bits 0-5, `isRef`/`tag` bits 0-2. THE ORDER (upstream: do_compare
 # exits its links before compare_std calls is_acyclic): no cycle link may be in place while the marks
 # are — a linked functor cell holds a reference, not its functor; asserted at the entry.
 "ACYCLIC_TEMP_MASK (pl-prims.c): a functor cell whose term chain is being walked (= FIRST_MASK)."
@@ -1085,7 +1090,7 @@ end
 # puts a shared compound's functor word into its `Var` and a reference to it into the functor cell;
 # `link_shared` links every location of a shared compound into a reference chain (assignments
 # trailed: `TrailAssignment!`); `restore_shared_functors` puts the functor words back and makes the
-# end of each chain a real variable. MARK_MASK and FIRST_MASK are bits 5 and 6, free in every word
+# end of each chain a real variable. MARK_MASK and FIRST_MASK are bits 6 and 7, free in every word
 # (see `is_acyclic_cells`). A location is `_deref_loc`'s (a global position, or `-i` for slot `i`:
 # only the walk's start, a fresh wrapper, is a slot). The agenda is a fresh `cell_agenda` per pass.
 
@@ -1215,7 +1220,10 @@ function reverse_factor_pointers(ld::PL_local_data{T}, vars::Int)::Nothing where
 end
 
 # PORT: pl-prims.c restore_shared_functors
-# DIVERGES: `vars` is a location.
+# DIVERGES: `vars` is a location. SYNC3 (8783a5bd): upstream restores `t->definition` with `restoreHiddenFunctor(&t->definition, *p)`
+# (and `PL_factorize_term` brackets the three calls with `startHideFunctors()`/`endHideFunctors()`): the functor GC hides the
+# functor words that the factorisation parks in the chain from `markFunctors`. Functor GC is HELD (pl-funct); this
+# kernel's functor table is never collected, so the plain store below stands.
 "For each `Var = Term` of the list at location `vars`: Term's functor word back from the end of Var's chain, which becomes a variable (pl-prims.c)."
 function restore_shared_functors(ld::PL_local_data{T}, vars::Int)::Nothing where {T}
     while _fz_word(ld, vars) != ld.atom_nil_w
@@ -1432,6 +1440,10 @@ end
     return k == DU_VALUE ? _value_term(ld, w) : _atom_value(ld, w)   # a tagged word too (L1d-4)
 end
 
+# SYNC3 (0bf03c7f): upstream's inline-integer arm now falls through when the values are equal: with `CMP_MODE_EQUAL` the words
+# differ, so one is a POINTER integer and the result is CMP_NOTEQ, else `SCALAR_TO_CMP(isPtrInt(w1), isPtrInt(w2))` orders them.
+# Pointer integers (`PL_unify_pointer`, `is_address/1`) are HELD with pl-atom/pl-funct; no term here is one, so equal
+# integers compare equal as before.
 # PORT: pl-prims.c compare_primitives as compare_primitives_cells
 # DIVERGES: (1) two unbound cells are ordered by POSITION, upstream's address order
 # (`SCALAR_TO_CMP(p1, p2)`; F3B f3b-2): allocation is LIFO at `gTop + 1`, so of two live cells the
@@ -1635,7 +1647,7 @@ end
 # exactly as upstream (bit 6, which the functor's index and arity ignore), the positions stacked to
 # clear it (`occurs_cells`, upstream's `visited` segstack); the walk is the cell agenda on one side.
 # No MEMORY_OVERFLOW.
-# FIRST_MASK is bit 6, free in every word (see `is_acyclic_cells`); no cycle link may be in place
+# FIRST_MASK is bit 7, free in every word (see `is_acyclic_cells`); no cycle link may be in place
 # while it is set — asserted: the trail walk runs after `do_unify_cells` exited its links.
 "Whether the cell at position `v` occurs in the term at location `t` (pl-prims.c `var_occurs_in`)."
 function var_occurs_in_cells(ld::PL_local_data{T}, v::Int, t::Int)::Bool where {T}
@@ -1784,7 +1796,8 @@ function failed_unify_with_occurs_check_cells(
     if t2[1] == DU_CELL                             # isVar(*t2): try to make Var = Term
         t1, t2 = t2, t1
     end
-    return PL_error(ld, ERR_OCCURS_CHECK, t1, t2) ? BOOLEX_TRUE : BOOLEX_FALSE
+    PL_error(ld, ERR_OCCURS_CHECK, t1, t2)          # SYNC3: the value is not used, upstream returns false
+    return BOOLEX_FALSE
 end
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1805,6 +1818,9 @@ function pl_unify2_va(
     return PL_unify(ld, A1, A2) ? FTRUE : FFALSE
 end
 
+# SYNC3 (5fef1b09): upstream reads `handle_exception = !ex` first and pushes `t1`/`t2` (`PushPtr`) around the frame and the new
+# term reference, which may shift the stacks; locations do not move here, so only the order of the tests is the same. `\=`
+# re-reads `p1`/`p2` after `PL_new_term_ref()` for the same reason.
 # PORT: pl-prims.c can_unify as can_unify_cells
 # DIVERGES: on LOCATIONS (L1e e4): `unify_ptrs_cells`. Since AV4 the wakeup runs (`foreignWakeup`);
 # from AV3 to AV4 a pending one was refused (a `NotPortedError` naming AV4).
@@ -3017,6 +3033,13 @@ end
 # ── ground/1, functor/3, term_variables/2,3, '$free_variable_set'/3, '$skip_list'/3 (pl-prims.c),
 # since V9g-b: what boot/bags.pl's bagof/3 and setof/3 and boot/init.pl's length/2 call ───────────
 
+# E-tier, not ported (SYNC3, 0bf03c7f): `is_address/1` (`PL_get_pointer(A1, &ptr)`: true for a pointer integer). Pointer integers are
+# HELD with pl-atom/pl-funct (no `PL_get_pointer`/`PL_unify_pointer` in the kernel), so the predicate is neither defined here nor
+# in `PL_predicates_from_prims`.
+# DIVERGES (SYNC3, 8783a5bd): upstream makes the functors of `functor/3,4`, `compound_name_arity/3`, `$filled_array/4`, `=../2` and
+# `compound_name_arguments/3` with `lookupVolatileFunctor(name, arity)` instead of `PL_new_functor`: a functor that no term and no
+# clause keeps is reclaimed by the functor GC. Functor GC is HELD (pl-funct); `lookupFunctorDef` here is the one lookup and nothing is
+# collected, so the sites of those of the five predicates that are ported are unchanged.
 # PORT: pl-prims.c ground as pl_ground1_va
 # (PRED_IMPL("ground", 1, ground, PL_FA_ISO))
 "`ground(@Term)`: `Term` holds no unbound variable (pl-prims.c)."
@@ -3995,8 +4018,8 @@ end
 # PORT: pl-prims.c seek_list as pl_seek_list4_va
 # (PRED_IMPL("$seek_list", 4, seek_list, 0))
 # DIVERGES: on a LOCATION (`valTermRef(A2)` is `-(A2 + 1)`, a list cell's tail is `valPtr(w) + 2`, as
-# `skip_list_cells`); no signals: upstream's `PL_handle_signals()` at every 1024th cell (it can only
-# fail on a cancelled run) has no twin (the kernel has no signal queue).
+# `skip_list_cells`); no signals: upstream's `if ( size%1024 == 0 && is_signalled() )` block has no twin (the kernel
+# has no signal queue and positions stay put).
 """
 `'\$seek_list'(+Count, +List, -RestCount, -Rest)` (pl-prims.c): `Rest` is the tail of `List` after
 `Count` cells, or after the cells it has when it has fewer; `RestCount` is the count left over.
@@ -4381,6 +4404,8 @@ function swi_statistics(ld::PL_local_data{T}, key::Symbol, v::number)::Int where
         v.f = 0.0
     elseif key === :collections                 # LD->gc.stats.totals.collections
         v.i = ld.gc.stats.totals.collections
+    elseif key === :minor_collections           # 25ebf765: generational GC counts; G1's collector has no generational part (work item "pl-gc delta af9e2e7e"), so 0 (SYNC3)
+        v.i = ld.gc.stats.totals.minor_collections       # LD->gc.stats.totals.minor_collections (gc_stat_end!(.., minor) counts it; never true yet)
     elseif key === :collected                   # trail_gained + global_gained
         v.i = ld.gc.stats.totals.trail_gained + ld.gc.stats.totals.global_gained
     elseif key === :global_shifts               # LD->shift_status.*
@@ -4508,12 +4533,17 @@ function unify_vp(ld::PL_local_data{T}, vp::Int, val::Int)::Nothing where {T}
 end
 
 # PORT: pl-prims.c may_share_in_duplicate
-# DIVERGES: the global position `p` of the cell; the new reference holds the compound's word.
-"A new term reference holding the compound the cell at global position `p` holds, or 0 (pl-prims.c)."
-function may_share_in_duplicate(ld::PL_local_data{T}, p::Int)::term_t where {T}
-    k, w, _ = _deref_loc(ld, p)                             # deRef(p)
+# SYNC3 (5fef1b09): upstream takes the compound's term reference and the argument number, makes the new reference FIRST and
+# only then takes pointers (`PL_new_term_ref()` may shift the stacks); positions stay put here, the order is kept.
+# DIVERGES: the argument's global position is `valPtr(w) + argn`; the new reference holds the compound's word.
+"A new term reference holding the compound that argument `argn` of `term` holds, or 0 (pl-prims.c)."
+function may_share_in_duplicate(
+    ld::PL_local_data{T}, term::term_t, argn::Int
+)::term_t where {T}
+    share = PL_new_term_ref(ld)                             # may shift: take pointers after
+    _, wt, _ = _deref_loc(ld, -(term + 1))                  # p = valTermRef(term); deRef(p)
+    k, w, _ = _deref_loc(ld, valPtr(wt) + argn)             # p = argTermP(*p, argn-1); deRef(p)
     if k == DU_WORD && _is_gcompound(w)                     # if ( isTerm(*p) )
-        share = PL_new_term_ref(ld)
         ld.slots[share + 1] = w                             # *valTermRef(share) = *p
         return share
     end
@@ -4555,7 +4585,7 @@ function setarg(
             (kv == DU_VALUE && (_is_vword(wv) || _is_side_word(wv)))   # if ( storage(*v) == STG_GLOBAL )
             if kv == DU_WORD && (flags & SETARG_LINK) == 0  # if ( isTerm(*v) && !(flags & SETARG_LINK) )
                 copy = PL_new_term_ref(ld)
-                keep = may_share_in_duplicate(ld, apos)
+                keep = may_share_in_duplicate(ld, term, argn)
                 nshare = keep != 0 ? 1 : 0
                 duplicate_term(ld, value, copy, nshare, keep) || return false
                 value = copy
@@ -4564,6 +4594,10 @@ function setarg(
         end
     end
     # this is unify(), but the assignment must *not* be trailed
+    # DIVERGES (SYNC3, 25ebf765): upstream remembers an untrailed assignment below the generational GC's bar:
+    # `if ( !(flags & SETARG_BACKTRACKABLE) && a < LD->gen_bar ) gen_remember(a)`. The collector (src/pl-gc.jl) is G1's, the one of the
+    # 18168e62 pin; its generational part (`gen_bar`, `gen_remember`, `gc_generational`, swipl-devel 25ebf765) is NOT ported on this
+    # stack (work item "pl-gc delta af9e2e7e", evidence/R2/all_int_handoff.md): no `gen_bar` exists, the line belongs at this site then.
     unify_vp(ld, apos, -(value + 1))
     freeze && freezeGlobal!(ld)
     return true

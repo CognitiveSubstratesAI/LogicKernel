@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-arith.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-arith.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-arith.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-inline.h @ 18168e629eab
@@ -372,7 +372,7 @@ function toIntegerNumber(ld::PL_local_data, n::number, flags::Integer)::Bool
         return false
     end
     check_float(ld, n) || return false                      # V_FLOAT
-    if (flags & TOINT_CONVERT_FLOAT) != 0
+    if (flags & TOINT_CONVERT_FLOAT) != 0 && isfinite(n.f)
         if double_in_int64_range(n.f)
             l = trunc(Int64, n.f)                           # (int64_t)n->value.f: in range
             if (flags & TOINT_TRUNCATE) != 0 || Float64(l) == n.f
@@ -406,10 +406,12 @@ function ar_sign_i(n1::number)::Int
 end
 
 # PORT: pl-arith.c shift_to_far
-"A shift by more than a `long` (pl-arith.c): a left one is too big, a right one gives 0."
-function shift_to_far(ld::PL_local_data, shift::number, r::number, dir::Int)::Bool
+"A shift by more than a `long` (pl-arith.c): a left one is too big, a right one gives 0 (-1 for a negative `n`: it rounds towards -inf)."
+function shift_to_far(
+    ld::PL_local_data, n::number, shift::number, r::number, dir::Int
+)::Bool
     ar_sign_i(shift) * dir < 0 && return int_too_big(ld)    # <<
-    r.i = 0
+    r.i = (ar_sign_i(n) < 0 ? -1 : 0)                       # >>: rounds towards -inf
     r.type = V_INTEGER
     return true
 end
@@ -421,10 +423,10 @@ MSB64(i::Int64)::Int = 63 - leading_zeros(i)
 # PORT: pl-arith.c ar_shift
 # DIVERGES: upstream's `V_INTEGER` branch checks the amount against `LONG_MIN`/`LONG_MAX`; the
 # kernel takes LP64's `long`, an `Int64`, where that check can never fire, and drops it. A negative
-# amount is negated as C does (`-LONG_MIN` stays `LONG_MIN`: two's complement wraps) and then READ AS
+# amount is negated (`LONG_MIN` goes to `shift_to_far` first) and then READ AS
 # UNSIGNED where upstream's `size_t`/`uint64_t`/`mp_bitcnt_t` arithmetic does (`reinterpret`, not
 # `UInt64(shift)`, which throws an InexactError for a negative: `1 >> -9223372036854775808` — group F's
-# fuzzer, 2026-10-23; swipl answers resource_error(stack)). Otherwise as
+# fuzzer, 2026-10-23; swipl 10.1.20 answered resource_error(stack)). Otherwise as
 # upstream, `O_BIGNUM_PRECHECK_ALLOCATIONS` on (pl-arith.c:84): a left shift's size is checked
 # before GMP is asked. Julia's `BigInt` needs no `mpz_init`/`mpz_clear`.
 "`n1 << n2` (`dir` -1) or `n1 >> n2` (`dir` 1) (pl-arith.c `ar_shift`)."
@@ -445,10 +447,12 @@ function ar_shift(
         shift = n2.i
     else
         (n2.mpz < typemin(Int64) || n2.mpz > typemax(Int64)) &&
-            return shift_to_far(ld, n2, r, dir)
+            return shift_to_far(ld, n1, n2, r, dir)
         shift = Int64(n2.mpz)
     end
     if shift < 0
+        shift == typemin(Int64) &&                          # LONG_MIN: -shift is undefined
+            return shift_to_far(ld, n1, n2, r, dir)
         shift = -shift
         dir = -dir
     end
@@ -996,12 +1000,10 @@ function ar_abs(n1::number, r::number)::Bool
 end
 
 # PORT: pl-arith.c ar_integer
-# DIVERGES: `lround` of the doubles up to and including 2^63 (the test is against `(float)PLMAXINT`,
-# which is 2^63): the double 2^63 is out of range, glibc on x86-64 answers `LONG_MIN`, which the
-# sign check below turns into `PLMAXINT` (probed: `integer(9223372036854775808.0)` is
-# 9223372036854775807). Julia's `round(Int64, …)` throws there, so the rounded double is converted
-# in range and 2^63 is given `typemin`. `mpq_t`s and `mpz_set_q` (truncation toward zero) are
-# `Rational`s and `div` on the parts.
+# SYNC3: the range test is `f < -(double)PLMININT && f >= (double)PLMININT` (the doubles in [-2^63, 2^63)); any other
+# double, 2^63 included, goes to the `mpz_init_set_d` branch, so the `lround` result is always in range
+# (`trunc(Int64, …)` cannot throw) and the sign fix-ups below stay as upstream's.
+# DIVERGES: `mpq_t`s and `mpz_set_q` (truncation toward zero) are `Rational`s and `div` on the parts.
 "`integer/1` and `round/1` (pl-arith.c `ar_integer`): round to the nearest integer, halves away from zero."
 function ar_integer(n1::number, r::number)::Bool
     t = n1.type
@@ -1020,9 +1022,10 @@ function ar_integer(n1::number, r::number)::Bool
         cpNumber(r, n1)
         return true
     end
-    if f <= Float64(Float32(typemax(Int64))) && f >= Float64(Float32(typemin(Int64)))
+    # (double)PLMAXINT rounds up to 2^63, which does not fit
+    if f < -Float64(typemin(Int64)) && f >= Float64(typemin(Int64))
         rf = round(f, RoundNearestTiesAway)                 # lround
-        r.i = rf >= 9.223372036854775808e18 ? typemin(Int64) : trunc(Int64, rf)
+        r.i = trunc(Int64, rf)
         if f > 0 && r.i < 0
             r.i = typemax(Int64)                            # PLMAXINT
         elseif f < 0 && r.i > 0
@@ -1421,8 +1424,9 @@ function get_int_exponent(ld::PL_local_data, n::number)::Tuple{Bool, UInt64}
         i = v
     end
     if i < 0
+        i == typemin(Int64) &&                              # INT64_MIN: -i is undefined
+            return (int_too_big(ld), UInt64(0))
         i = -i
-        i < 0 && return (int_too_big(ld), UInt64(0))        # INT64_MIN
     end
     return (true, UInt64(i))                                # FITS_ULONG(i): always on LP64
 end
@@ -1603,10 +1607,14 @@ function ar_pow(ld::PL_local_data, n1::number, n2::number, r::number)::Bool
         op1_bits = 0
         if n1.type === V_INTEGER
             v = n1.i
-            if v < 0
-                v = -v
+            if v == typemin(Int64)                          # PLMININT: -v is undefined
+                op1_bits = 64                               # sizeof(v)*8
+            else
+                if v < 0
+                    v = -v
+                end
+                op1_bits = MSB64(v) + 1                     # # bits, as mpz_sizeinbase()
             end
-            op1_bits = MSB64(v) + 1                         # # bits, as mpz_sizeinbase()
         else
             op1_bits = ndigits(n1.mpz; base=2)              # V_MPZ
         end
@@ -2664,6 +2672,12 @@ function ar_compare(ld::PL_local_data, n1::number, n2::number, what::Int)::Bool
     return diff == CMPEX_EQUAL
 end
 
+# PORT: pl-arith.c own_number
+# DIVERGES: a `BigInt`/`Rational` here is a Julia heap value the number holds by reference, and no operation mutates it in
+# place: nothing is copied and the function answers true (the call is kept at upstream's site).
+"Make `n` not refer to a big integer or rational on the global stack (pl-arith.c `own_number`): always true here."
+own_number(n::number)::Bool = true
+
 # PORT: pl-arith.c compareNumbers
 "Evaluate `n1` and `n2` (left first) and compare them as `what` (pl-arith.c)."
 function compareNumbers(
@@ -2672,7 +2686,9 @@ function compareNumbers(
     left = _number_alloc!(ld)
     right = _number_alloc!(ld)
     rc =
-        valueExpression(ld, n1, left) && valueExpression(ld, n2, right) &&
+        valueExpression(ld, n1, left) &&
+        own_number(left) &&                                 # evaluating n2 may GC
+        valueExpression(ld, n2, right) &&
         ar_compare(ld, left, right, what)
     _number_free!(ld, 2)
     return rc
@@ -2808,13 +2824,10 @@ function pl_between3_va(
             return FFALSE
         end
 
-        if !PL_unify(ld, n, low)
-            _number_free!(ld, 3)
-            return FFALSE
-        end
+        # l and h may point into the global stack. Copy before PL_unify()
         if !hinf && cmpNumbers(ld, l, h) == 0
             _number_free!(ld, 3)
-            return FTRUE
+            return PL_unify(ld, n, low) ? FTRUE : FFALSE
         end
 
         k = alloc_foreign_state!(ld.between_states)    # allocForeignState(sizeof(*state))
@@ -2823,6 +2836,10 @@ function pl_between3_va(
         cpNumber(state.high, h)
         state.hinf = hinf
         _number_free!(ld, 3)
+        if !PL_unify(ld, n, low)
+            free_foreign_state!(ld.between_states, k)   # clearInteger x2, freeForeignState(state)
+            return FFALSE
+        end
         return PL_retry_address(k)                      # ForeignRedoPtr(state)
     elseif ctl == FRG_REDO
         k = PL_foreign_context_address(PL__ctx)         # state = CTX_PTR

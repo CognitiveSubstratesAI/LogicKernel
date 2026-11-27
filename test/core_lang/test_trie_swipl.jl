@@ -287,14 +287,21 @@ function _tr_children_rows(::Type{T}) where {T}
     @test LK.block_find(b, k2) == 18 && LK.block_find(b, _tk(10)) == 1
     @test all(0 .<= [LK.child_hash(_tk(k), 6) for k in (1, 10, 77, 12345)] .< 64)
 
-    # a probe that runs off the end of the index wraps to slot 0: keys 36 and 73 both start at slot 31 of a 32-slot index, so the second is
+    # a probe that runs off the end of the index wraps to slot 0: keys 21 and 55 both start at slot 31 of a 32-slot index, so the second is
     # stored at slot 0 (index_entry) and a lookup that does not wrap reads past the index (block_find)
+    # TAG1: child_hash hashes the value (key >> CELL_VAL_SHIFT = k for _tk(k)), not the word:
+    # h(k, b) = ((k * 0x9e3779b97f4a7c15) mod 2^64) >> (64 - b); computed with python3 -I:
+    # h(21, 5) = h(55, 5) = 31 (the first colliding pair at slot 31; 76 and 110 too); the pair
+    # 36 and 73 of the 7-bit layout hash to 7 and 3 now; h(1,6) = 39, h(10,6) = 11, h(77,6) = 37,
+    # h(12345,6) = 40; the fillers 1..7 land on 19, 7, 27, 15, 2, 22, 10 at 5 bits: none on 31 or 0
     trw = LK.trie_create(T)
-    @test LK.child_hash(_tk(36), 5) == 31 && LK.child_hash(_tk(73), 5) == 31
-    idw = [LK.insert_child(trw, 1, _tk(k)) for k in (36, 73, 1, 2, 3, 4, 5, 6, 7)]
+    @test LK.child_hash(_tk(21), 5) == 31 && LK.child_hash(_tk(55), 5) == 31
+    @test LK.child_hash(_tk(36), 5) == 7 && LK.child_hash(_tk(73), 5) == 3
+    @test [LK.child_hash(_tk(k), 6) for k in (1, 10, 77, 12345)] == [39, 11, 37, 40]
+    idw = [LK.insert_child(trw, 1, _tk(k)) for k in (21, 55, 1, 2, 3, 4, 5, 6, 7)]
     bw = _tr_block(trw, 1)
     @test bw.index_bits == 5 && bw.count == 9 && bw.index[32] == 1 && bw.index[1] == 2
-    @test LK.get_child(trw, 1, _tk(73)) == idw[2] && LK.get_child(trw, 1, _tk(36)) == idw[1]
+    @test LK.get_child(trw, 1, _tk(55)) == idw[2] && LK.get_child(trw, 1, _tk(21)) == idw[1]
 
     # a dead entry: the key stays in the block, the child is 0, the others are intact
     @test !LK.delete_child(tr, 1, ids[15], false)

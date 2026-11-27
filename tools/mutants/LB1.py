@@ -17,14 +17,14 @@ F = "src/os/pl-file.jl"
 MUTANTS = [
     # ---- the position terms
     dict(id="LB1-1 an atomic token's position is not unified", file=R, targets=TP + TU,
-         old='''    return _unify_position!(ld, positions, :-, (token.start, token.end_), ())  # FUNCTOR_minus2''',
-         new='''    return true                                     # FUNCTOR_minus2'''),
+         old='    unify_range_position(ld, positions, :-, token.start, token.end_)    # FUNCTOR_minus2',
+         new='    true    # FUNCTOR_minus2'),
     dict(id="LB1-2 a string's position is From-To", file=R, targets=TP + TU,
-         old='''    return _unify_position!(ld, positions, :string_position, (token.start, token.end_), ())''',
-         new='''    return _unify_position!(ld, positions, :-, (token.start, token.end_), ())'''),
+         old='unify_range_position(ld, positions, :string_position, token.start, token.end_)',
+         new='unify_range_position(ld, positions, :-, token.start, token.end_)'),
     dict(id="LB1-3 an atomic token's end is its start", file=R, targets=TP + TU,
-         old='''    return _unify_position!(ld, positions, :-, (token.start, token.end_), ())  # FUNCTOR_minus2''',
-         new='''    return _unify_position!(ld, positions, :-, (token.start, token.start), ())  # FUNCTOR_minus2'''),
+         old='    unify_range_position(ld, positions, :-, token.start, token.end_)    # FUNCTOR_minus2',
+         new='    unify_range_position(ld, positions, :-, token.start, token.start)    # FUNCTOR_minus2'),
     dict(id="LB1-4 a position term's integers are left unbound", file=R, targets=TP + TU,
          old='''        v == _POS_VARIABLE && continue              # PL_VARIABLE''',
          new='''        continue                                    # PL_VARIABLE'''),
@@ -102,8 +102,8 @@ MUTANTS = [
     if pv != 0
         set_range_position(rd.ld, f.pin, -1, tk.end_ - 1)'''),
     dict(id="LB1-23 a list's start is the first element's", file=R, targets=TP + TU,
-         old='''                (token.start, _POS_VARIABLE), (pv + 1, pv + 2)  #   PL_TERM, P_LIST, PL_TERM, P_TAIL''',
-         new='''                (token.end_, _POS_VARIABLE), (pv + 1, pv + 2)  #   PL_TERM, P_LIST, PL_TERM, P_TAIL'''),
+         old='ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.start))    # argp[0] = consInt(token->start)\n        ld.slots[pv + 2] = makeRefG(argp + 2)',
+         new='ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.end_))    # argp[0] = consInt(token->start)\n        ld.slots[pv + 2] = makeRefG(argp + 2)'),
     dict(id="LB1-24 a parenthesised term is a brace term", file=R, targets=TP,
          old='''        fpos = :parentheses_term_position           # FUNCTOR_parentheses_term_position3''',
          new='''        fpos = :brace_term_position                 # FUNCTOR_parentheses_term_position3'''),
@@ -116,10 +116,8 @@ MUTANTS = [
          new='''    req.maxpri = OP_MAXPRIORITY + 1
     req.positions = 0'''),
     dict(id="LB1-27 a compound's name range is its start only", file=R, targets=TP + TU,
-         old='''                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
-                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,''',
-         new='''                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
-                (token.start, _POS_VARIABLE, token.start, token.start),  # PL_INT64 ×2,'''),
+         old='# argp[2] = consInt(token->start)\n        ld.gstack[argp + 3] = _gnd_word!(ld, mk_gnd(T, token.end_))',
+         new='# argp[2] = consInt(token->start)\n        ld.gstack[argp + 3] = _gnd_word!(ld, mk_gnd(T, token.start))'),
     dict(id="LB1-28 a compound's argument list is left open", file=R, targets=TP + TU,
          old='''    pv = f.compound_pv
     if pv != 0

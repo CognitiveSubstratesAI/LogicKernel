@@ -717,12 +717,14 @@ unicode_quoted_escape(c::Int)::Bool = PL_wcwidth(c) < 0
 "Write `c` inside a text quoted by `quote`: the number of characters written, or -1 (pl-write.c)."
 function putQuoted(c::Int, qc::Int, flags::Int, stream::IOSTREAM)::Int
     if (flags & PL_WRT_CHARESCAPES) != 0
-        if !unicode_quoted_escape(c) && c != qc && c != Int('\\') &&
+        if c != 0 && !unicode_quoted_escape(c) && c != qc && c != Int('\\') &&
             Scanrepresent(c, stream) == 0
             Putc(c, stream) || return -1
         else
             esc = if c == qc
                 string(Char(c))
+            elseif c == 0                           # dbda2e54: writeq/1 writes a 0-code as \0\
+                "0\\"
             elseif c == 7
                 "a"
             elseif c == Int('\b')

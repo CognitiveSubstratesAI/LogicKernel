@@ -1,7 +1,7 @@
 # UPSTREAM: swipl-devel src/pl-string.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-prims.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-privitf.c @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-error.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-error.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-text.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-text.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
@@ -491,14 +491,14 @@ function PL_get_char(ld::PL_local_data{T}, c::term_t)::Union{Nothing, Int} where
 end
 
 # PORT: pl-error.c PL_get_int64_ex
-# DIVERGES: returns the value, or `nothing` with the error raised; `representation_error(int64_t)` as swipl 10.1.19
-# raises it (the kernel's `PL_get_long_ex` names `long`).
-"The 64-bit integer term reference `t` holds, or `nothing` after raising `representation_error(int64_t)` or `type_error(integer, T)` (pl-error.c)."
+# DIVERGES: returns the value, or `nothing` with the error raised; `representation_error(int64_t(T))` as swipl af9e2e7e
+# raises it (`int_range_error`; the kernel's `PL_get_long_ex` names `long`).
+"The 64-bit integer term reference `t` holds, or `nothing` after raising `representation_error(int64_t(T))` or `type_error(integer, T)` (pl-error.c)."
 function PL_get_int64_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     i = PL_get_long(ld, t)
     i === nothing || return i
     if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int64_t))
+        int_range_error(ld, t, mk_sym(T, :int64_t), false)
         return nothing
     end
     PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
@@ -820,17 +820,42 @@ function utf16_to_text(text::PL_chars_t)::Union{PL_chars_t, Int}
 end
 
 # PORT: pl-error.c PL_syntax_error
-# (the form without a stream)
-# DIVERGES: only `in == NULL`: the location is left unbound (no stream table).
-"Raise `error(syntax_error(Msg), _)` (pl-error.c `PL_syntax_error(msg, NULL)`); false."
-function PL_syntax_error(ld::PL_local_data{T}, msg::String, ::Nothing)::Bool where {T}
+# (SYNC3, af9e2e7e: raises through the new `PL_syntax_error_term`, its culprit the atom of `msg`)
+"Raise `error(syntax_error(Msg), Location)`, `Location` the position in `in` if given (pl-error.c `PL_syntax_error`); false."
+function PL_syntax_error(
+    ld::PL_local_data{T}, msg::String, in::Union{Nothing, IOSTREAM}
+)::Bool where {T}
+    culprit = PL_new_term_ref(ld)
+    PL_put_atom(ld, culprit, mk_sym(T, Symbol(msg)))        # PL_put_atom_chars(culprit, msg)
+    return PL_syntax_error_term(ld, culprit, in)
+end
+
+# PORT: pl-error.c PL_syntax_error_term
+# (SYNC3, af9e2e7e: new function, called by `PL_syntax_error` and `reportStreamError`)
+# DIVERGES: `PL_unify_term` is not ported: the terms are built by `PL_cons_functor` (the location is made, not unified
+# with the fresh variable `loc`); `PL_unify_stream_or_alias` is src/os/pl-file.jl's.
+"Raise `error(syntax_error(Culprit), Location)`, `Location` `stream(S, Line, LinePos, CharNo)` (`stream(S)` without a position) of `in` if given (pl-error.c)."
+function PL_syntax_error_term(
+    ld::PL_local_data{T}, culprit::term_t, in::Union{Nothing, IOSTREAM}
+)::Bool where {T}
     ex = PL_new_term_ref(ld)
     formal = PL_new_term_ref(ld)
     loc = PL_new_term_ref(ld)
-    PL_cons_functor(
-        ld, formal, _err_functor(ld, :syntax_error, 1),
-        _err_atom(ld, mk_sym(T, Symbol(msg)))
-    )
+    PL_cons_functor(ld, formal, _err_functor(ld, :syntax_error, 1), culprit)
+    if in !== nothing
+        s = PL_new_term_ref(ld)
+        PL_unify_stream_or_alias(ld, s, in) || return false
+        pos = in.position
+        if pos !== nothing
+            PL_cons_functor(                                # PL_FUNCTOR, FUNCTOR_stream4, PL_TERM, s,
+                ld, loc, _err_functor(ld, :stream, 4), s,   #   PL_INT, lineno, PL_INT, linepos, PL_INT64, charno
+                _err_int(ld, pos.lineno), _err_int(ld, pos.linepos),
+                _err_int(ld, pos.charno)
+            )
+        else
+            PL_cons_functor(ld, loc, _err_functor(ld, :stream, 1), s)   # FUNCTOR_stream1, PL_TERM, s
+        end
+    end
     PL_cons_functor(ld, ex, _err_functor(ld, :error, 2), formal, loc)
     return PL_raise_exception(ld, ex)
 end
@@ -869,6 +894,7 @@ end
 # `PL_get_text` gives canonical texts, the kernel's does not, see `PL_chars_t`). The bytes go into `text.text`
 # (a Julia vector: no buffers), the `length` is in bytes for UTF-8 and UTF-16, in characters for the others.
 # NOT PORTED: the `ENC_ANSI` source and target (the locale; `string_bytes/3` refuses it by name first).
+# SYNC3 (53193b3f): upstream now also refuses `mbrtowc` = (size_t)-2 (incomplete sequence) in the `ENC_ANSI` source branch: that branch has no twin here.
 "Recode the canonical `text` to `encoding` in place; false after the error (pl-text.c)."
 function PL_text_recode(
     ld::PL_local_data{T}, text::PL_chars_t, encoding::IOENC

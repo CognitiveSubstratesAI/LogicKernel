@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-attvar.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-attvar.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-attvar.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2004-2025, University of Amsterdam
@@ -33,7 +33,8 @@
 # ball's slot word is copied as upstream copies the cell (f3b-1: `_slot_copy!`, a side value with it;
 # until then the ball was read as a term and stored as a slot's side value). The wakeup list (AV3):
 # `*valTermRef(LD->attvar.head)` is the head's PERMANENT cell (`_attvar_head_cell`), `setVar` clears it
-# (AV1, audit D-0122 Q1 (a)).
+# (AV1, audit D-0122 Q1 (a)). SYNC3 (6297c4b3): upstream re-reads the head pointer after `PL_new_term_refs(2)` ("may have been
+# shifted"): a position never moves, so there is nothing to re-read.
 """
     saveWakeup(ld, forceframe) -> wakeup_state, or nothing
 
@@ -135,6 +136,8 @@ end
 # PORT: pl-attvar.h varBindConst as _bind_const!
 # DIVERGES: positions, 1-based, and `gTop` the last cell in use, so upstream's `p < mark_bar` is
 # `p <= mark_bar` (as `Trail!`); only global cells (a frame slot is never bound: no unbound slot).
+# DIVERGES (SYNC3, 25ebf765): upstream adds `if ( p < LD->gen_bar ) gen_remember(p)` (old generation, flag gc_generational): the collector (src/pl-gc.jl) is
+# G1's, whose generational part is not ported (work item "pl-gc delta af9e2e7e"), left out here; `static inline int` -> `bool` has no Julia effect.
 "Bind the unbound cell at global position `p` to word `c`, trailed below `mark_bar` (pl-attvar.h)."
 @inline function _bind_const!(ld::PL_local_data, p::Int, c::word)::Nothing
     ld.gstack[p] = c                                # *p = (c)
@@ -214,6 +217,28 @@ function registerWakeup(ld::PL_local_data{T}, name::Int, vw::word)::Nothing wher
         ld.alerted |= ALERT_WAKEUP                          #   LD->alerted |= ALERT_WAKEUP
     end
     return nothing
+end
+
+# PORT: pl-attvar.c appendWakeupHook
+# DIVERGES: positions, `name` an atom, `value` a term reference whose slot is dereferenced (`_deref_loc`, `_link_val_loc!`); the five
+# cells from `allocGlobalCells!` (`gTop += 5`), no `ensureStackSpace(5+6, 4)` (the stacks grow on demand, see `registerWakeup`);
+# `registerWakeup(&p[4], &p[3])` is `registerWakeup(ld, p+4, [])`: the value cell `p[3]` holds `[]`, so its word is `[]`.
+# Upstream's only caller is pl-proc.c `retract` (bf84a5ec, `ATOM_dretract`): ported here for it (SYNC3 L4), nothing in this file calls it.
+"""
+    appendWakeupHook(ld, name, value) -> Bool
+
+Append `uhook(Name, Value, [])` to the wakeup list, after the goals already scheduled (pl-attvar.c, bf84a5ec): retract/1 erases a
+clause only after the constraints of the pattern accepted it; `Name` must be handled by a clause of `uhook/3` in boot/attvar.pl.
+"""
+function appendWakeupHook(ld::PL_local_data{T}, name::T, value::term_t)::Bool where {T}
+    p = allocGlobalCells!(ld, 5)                            # p = gTop; gTop += 5
+    ld.gstack[p] = _functor_att3(ld)                        # p[0] = FUNCTOR_att3
+    ld.gstack[p + 1] = _atom_word!(ld, name)                # p[1] = name
+    ld.gstack[p + 2] = _link_val_loc!(ld, _deref_loc(ld, -(value + 1)))   # p[2] = linkValI(valTermRef(value))
+    ld.gstack[p + 3] = ld.atom_nil_w                        # p[3] = ATOM_nil: also the value: []
+    ld.gstack[p + 4] = consPtr(p, TAG_COMPOUND | STG_GLOBAL)    # p[4] = consCompound(p)
+    registerWakeup(ld, p + 4, ld.atom_nil_w)                # registerWakeup(&p[4], &p[3])
+    return true
 end
 
 # PORT: pl-attvar.c assignAttVar
@@ -988,8 +1013,8 @@ end
 # saw, so upstream's `p >= ch->mark.globaltop` (at or above the first free cell then) is
 # `p > ch.mark.globaltop`; a mark's `trailtop` is the trail's length then, so the entries above it
 # are `trailtop+1:length(ld.trail)`. THE MARK (representation question, answered AS IS): upstream's
-# MARK_MASK, bit 5 of the assigned cell's word — free in every word here (src/pl-prims.jl, "THE
-# BITS"; `isRef`/`isAttVar`/`isTermW` read the tag bits 0-2, `unRef`/`valPtr` the payload from bit 7),
+# MARK_MASK, bit 6 of the assigned cell's word — free in every word here (src/pl-prims.jl, "THE
+# BITS"; `isRef`/`isAttVar`/`isTermW` read the tag bits 0-2, `unRef`/`valPtr` the payload from bit 8),
 # and `TrailAssignment!` asserts it clear, which `scan_trail(ld, ch, false)` restores before the
 # predicate returns, as upstream's. No side set.
 

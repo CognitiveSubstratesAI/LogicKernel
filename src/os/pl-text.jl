@@ -311,6 +311,8 @@ end
 # PORT: pl-text.c textToAtom
 # DIVERGES: the atom table is an argument (`GD->atoms`); a canonicalisation error returns 0 without
 # raising (`text_error` is NOT PORTED: no caller yet — stage C's boundary is the first).
+# DIVERGES (SYNC3, 67b81104): upstream's NEW `textToLocalAtom` (a new atom local to the calling thread: `lookupLocalAtom`,
+# `lookupLocalUCSAtom`, used by `unify_text` for PL_ATOM) is held with the thread-local atoms of pl-atom (G1), left out here.
 """
     textToAtom(atoms, text) -> atom_t
 

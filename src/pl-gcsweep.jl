@@ -40,8 +40,8 @@
 #
 # TRAIL (ruling D2, option (a)): the sweep expects the trail in upstream's TAGGED form (pl-gc.c `tag_trail`,
 # G1-4): an address entry is `consPtr(position, STG_GLOBAL)`, a value entry `consPtr(position,
-# STG_GLOBAL | TAG_TRAILVAL)`, a deleted entry 0. The kernel's entry word keeps bits 5-6 inside its position
-# field, so the re-encoding is the two bits' only home.
+# STG_GLOBAL | TAG_TRAILVAL)`, a deleted entry 0. The kernel's entry word keeps bits 6-7 (MARK_MASK, FIRST_MASK since TAG1;
+# 5-6 before) inside its position field, so the re-encoding is the two bits' only home.
 #
 # INDIRECTS (ruling D1, the box cell is the unit): a float, string or bigint is a value-table word whose
 # payload is a TABLE INDEX, not a position: nothing references a box cell by position, so a vword is never
@@ -172,6 +172,12 @@ end
 # PORT: pl-gc.c update_relocation_chain
 # DIVERGES: `head` is the address of the head cell and `dest` the NEW POSITION it moves to (an Int `> 0`);
 # the debug statistics are `sw.relocated_cells` and `sw.relocation_chains`.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; TAG1 bb4ccf71/68cef48b): upstream reads the kind of the referrer as
+# `tag = (int)indKind(val)` (`tagex(w) & ~STG_MASK`: the extended tag bits of an indirect-aware cell) where the
+# pin reads `tag(val)`; the kernel keeps `tag(val)`: a referrer here is a reference, compound or attributed variable (no
+# indirect cell is on its stacks, D1), whose word carries no variant bit, so `indKind(val)` and `tag(val)` give the same
+# kind (`indKind` is defined since TAG1, src/pl-incl.jl). The same holds for `into_relocation_chain`, `sweep_global_mark`
+# and `downskip_combine_garbage` (`isMarkedOrIndHdr`, defined; its `INDHDR_BIT` = `STG_LOCAL` is no header here).
 """
     update_relocation_chain(ld, sw, head, dest)
 
@@ -203,6 +209,8 @@ end
 # PORT: pl-gc.c into_relocation_chain
 # DIVERGES: `current` is an address (see the header); `stg` must be its storage class (upstream passes the
 # class of the referrer's stack; here it follows from the address and a mismatch is a bug: an error).
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; TAG1): upstream builds the head word as
+# `consPtr(current, stg|indKind(val))` where the pin has `stg|tag(val)`; the same word here, see `update_relocation_chain`.
 """
     into_relocation_chain(ld, sw, current, stg)
 
@@ -287,6 +295,11 @@ end
 # is `consVar(height)` in the cells above it, and a cell with a non-zero `TAG_VAR` word is such a filler,
 # as upstream's. Upstream's scan also steps over a LARGE cell by its header: the kernel has none (D1).
 # The bottom of the stack needs no dummy marked cell: the scan stops at position 0.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; TAG1): upstream's scan-down test is `!isMarkedOrIndHdr(*prev)`
+# (`w & (MARK_MASK|FIRST_MASK|INDHDR_BIT)`, pl-data.h) where the pin spells the three masks out; the kernel keeps
+# the mask test (no `INDHDR_BIT` = `STG_LOCAL`: no indirect header is on its global stack, D1; a local reference word is not
+# on it either). The generational `gm < young_base`
+# early exit is the GEN-GC DIVERGES of pl-gc.jl (`young_base == gBase` always).
 """
     sweep_global_mark(ld, st, sw, a)
 
@@ -393,6 +406,9 @@ end
 # PORT: pl-gc.c sweep_trail
 # DIVERGES: the trail is expected in upstream's tagged form (header), walked by INDEX, newest first; there
 # are no local-stack trail entries, so the only entries that stay out of a chain are the deleted ones (0).
+# PORT (TAG1, swipl-devel af9e2e7e): upstream's `ttag(x)` is now `tag(x) & TAG_TRAILMASK` (was
+# `x & TAG_TRAILMASK`, the same value), see `gc_trail_tagged_isval` (pl-gctrail.jl); the generational `valPtr(..) >= young_base`
+# and `isGlobalRef` tests are the GEN-GC DIVERGES of pl-gc.jl (`young_base == gBase`).
 "Put the trail entries (tagged form) that point into the global stack into the chains of the cells they name (pl-gc.c)."
 function sweep_trail(
     ld::PL_local_data{T}, st::gc_mark_counts, sw::gc_sweep_counts

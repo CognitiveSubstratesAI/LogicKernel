@@ -42,6 +42,11 @@
 # the engine branch of `I_YIELD` (TH1), which is refused by name; the tabled branches of `I_RESET` /
 # `I_EXITRESET` run since TB2c (pl-vmi.c:5768, :5812 at the pin).
 #
+# SYNC3 H1, VMIs NOT declared: `H_PTRINT`, `B_PTRINT`, `T_TRY_PTRINT`, `T_PTRINT` (TAG1, held: the kernel has no C
+# pointers in terms) and `A_CMP_VV`, `A_CMP_VI` (they belong to the AR1 stack: compileArith!/the `A_*` family are not
+# in this base, see the H1 handoff). The sync's other run-loop edits are in src/pl-wam.jl; its C-internal ones (helpers
+# that keep values in registers, `clearWordsScalar`, the order of the `lTop` writes) have no counterpart here.
+#
 # NOT EMITTED, so not declared: H_SMALLINTW/B_SMALLINTW/L_SMALLINTW (only where a code word is
 # narrower than a word, `CODES_PER_WORD > 1`: on 64-bit swipl every tagged integer is a SMALLINT,
 # probed in 10.1.16); `I_USERCALL0` (its work is `I_CALL1`'s

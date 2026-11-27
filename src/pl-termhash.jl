@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-termhash.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-termhash.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-termhash.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2010-2023, University of Amsterdam
@@ -40,7 +40,16 @@
 #      (`hash_prefix`), no `E_ATTVAR`/`E_CYCLE`/`E_RESOURCE`. Variables are numbered in a map
 #      where upstream overwrites their cells and restores them afterwards.
 #   4. BYTE ORDER. A word goes into the digest as its little-endian bytes — what upstream hashes
-#      on the machines it runs on — on every host.
+#      on the machines it runs on — on every host. Since swipl-devel af9e2e7e (7ee122f5) upstream does the same on purpose:
+#      its `le32()`/`le64()` make the data hashed fixed-width little-endian on every machine, so the `le32`/`le64` calls
+#      are no-ops here (our words are always little-endian bytes).
+#   5. (SYNC3, swipl-devel af9e2e7e, 7ee122f5) NUMBERS, STRINGS AND TEXT BY VALUE. Upstream's `term_hash/2` and
+#      `variant_sha1/2` now hash a number by value (`number_hash_data()`: an integer that fits in 64 bits as an
+#      `int64_t`, a larger integer as its sign and big-endian magnitude, a rational as numerator and denominator, a float
+#      as its double), a string and an atom name as their length (64-bit) and characters (wide text as 32-bit code
+#      points: `hash_text()`, `hash_wide_text()`, `hash_atom_text()`). The term interface hides the payload of a grounded
+#      value and an atom's name (item 1), so none of this is ported: `gnd_key` and `sym_hash` stand where it was and the
+#      digests stay ours. A variable IS hashed as upstream now does (`HASH_VAR`: its number, not its marked cell).
 
 # ── term_hash/2 ─────────────────────────────────────────────────────────────────────────────────
 # PORT: pl-termhash.c th_data
@@ -56,6 +65,11 @@ mutable struct th_data{T}
 end
 
 # PORT: pl-termhash.c primitiveHashValue
+# DIVERGES (SYNC3): upstream (af9e2e7e) hashes an atom's `hash_value` as `le32()` (no-op here, header item 4) and an integer or float
+# BY VALUE through `number_hash_data()` (small integers as `le64(valInt)`, big ones as sign and magnitude bytes, a float as
+# its double, a rational as its two parts: pl-termhash.c "Numbers are hashed by value") where it hashed the cell's
+# payload. Held back by header items 1 and 5: the term interface hides the number, a grounded value contributes
+# its `gnd_key`.
 """
 Fold the atomic term `term` into `hval`; `nothing` for a variable (pl-termhash.c). An atom adds the
 4 low bytes of its `sym_hash` (upstream: its `unsigned int` name hash), a grounded value the 8
@@ -113,6 +127,10 @@ function th_next_arg!(
 end
 
 # PORT: pl-termhash.c termHashValue
+# DIVERGES (SYNC3): upstream (af9e2e7e) brackets the walk with `startHideFunctors()` ... `restoreHiddenFunctor()` ...
+# `endHideFunctors()` (the cell of a compound being hashed holds a marker where its functor was, and the functor GC must not
+# collect the functor meanwhile: 8783a5bd, held behind G1/pl-funct). Interface terms are not marked (header item 3), so
+# there is nothing to hide or restore.
 "The hash of `p`, or `nothing` when it is not ground (pl-termhash.c)."
 function termHashValue(p)::Union{Nothing, UInt32}
     if kind(p) !== EXPR
@@ -522,9 +540,17 @@ function _HASH_word!(state::sha1_state, w::UInt64)::Nothing
     return HASH!(state, state.word, 8)
 end
 
+# PORT: pl-termhash.c HASH_VAR as _HASH_VAR!
+# A variable numbered by variant_sha1/2 or variant_hash/2 is hashed by its number (little-endian 64-bit word), not by the marked
+# cell, which depends on the cell layout (swipl-devel af9e2e7e). `i` is `valTagged(*p)`.
+"`HASH(\"V\", 1); HASH(&vnum, sizeof(vnum))`: a variable's tag and its number."
+function _HASH_VAR!(state::sha1_state, vnum::UInt64)::Nothing
+    _HASH_char!(state, 'V')
+    return _HASH_word!(state, vnum)
+end
+
 # PORT: pl-termhash.c variant_sha1 as variant_sha1_walk
-# DIVERGES: what each kind of subterm writes (see the file header): a variable `V` and its numbered
-# word, as upstream; an atom `A`, its `sym_hash` and — as upstream — its blob type's name, `text`
+# DIVERGES: what each kind of subterm writes (see the file header): a variable `V` and its number (`HASH_VAR`, as upstream); an atom `A`, its `sym_hash` and — as upstream — its blob type's name, `text`
 # or `reserved_symbol`; a grounded value `G` and its `gnd_key`, or `g` alone when it has none; a
 # compound `T`, its head's `sym_hash` and its arity, or `C` and its child count when its head is
 # not a symbol. What follows each letter is self-delimiting (fixed widths; the type names begin
@@ -540,8 +566,7 @@ function variant_sha1_walk!(agenda::ac_term_agenda{T}, state::sha1_state)::Nothi
             if i == state.var_count[]       # isVar(w): the first occurrence, numbered now
                 state.var_count[] += 1
             end
-            _HASH_char!(state, 'V')
-            _HASH_word!(state, (UInt64(i) << LMASK_BITS) | TAG_VAR | MARK_MASK)
+            _HASH_VAR!(state, UInt64(i))
         elseif k === SYM
             _HASH_char!(state, 'A')
             _HASH_word!(state, sym_hash(p))

@@ -47,7 +47,7 @@ MUTANTS = [
     # decompileBodyNoShift var_common (6526): nested -> unifyVar into the argument cell at once
     dict(id="FD4 a variable inside a body compound written as a var-ref word", file=CMP,
          targets=["test/compile/test_body_code_swipl.jl"],
-         old="        unifyVar(di.ld, di.argpos, di.variables, index) ||\n"
+         old="        unifyVar(di, di.argpos, index) ||\n"
              "            error(\"Decompiler: unifyVar failed\")\n"
              "        di.argpos += 1                                          # ARGP++\n",
          new="        _dpush!(di, makeVarRef(index))\n"),

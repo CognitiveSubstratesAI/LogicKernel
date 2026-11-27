@@ -1,7 +1,7 @@
 # ORIGINAL: the unit test of the pl-table.c port (src/os/pl-table.jl); the tables are not observable from Prolog, so no swipl row exists.
 # test/core_lang/test_htable.jl — upstream's hash tables, word -> word (os/pl-table.c). UNTESTED when written (lane F, edit-only,
 # nothing compiled). The expected values are DERIVED from upstream's algorithm, each with its derivation:
-#   - `pointerHashValue(p, size)` is `((p >> 7) ⊻ (p >> 12) ⊻ p) & (size - 1)`, so for a key < 128 it is `key & (size - 1)`:
+#   - `pointerHashValue(p, size)` is `((p >> LMASK_BITS) ⊻ (p >> (LMASK_BITS + 5)) ⊻ p) & (size - 1)` (LMASK_BITS 8 since TAG1: >> 8, >> 13), so for a key < 256 it is `key & (size - 1)`:
 #     the bucket order of the keys used here is computable by hand;
 #   - an insert reprobes (`stride 1`) from its bucket; a map of `len` buckets resizes when an insert has reprobed
 #     `10 + (len >> 2)` times; the new length is `len << 1`, or `len << 2` once the table holds half its buckets (htable_resize).

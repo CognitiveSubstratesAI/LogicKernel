@@ -93,7 +93,7 @@ end
 # ORIGINAL: the `needsRelocation(&mark.trailtop); alien_into_relocation_chain(&mark.trailtop, STG_TRAIL,
 # STG_LOCAL)` of `mark_foreign_frame` and `early_reset_choicepoint` (pl-gc.c:1695, :2370), left to the sweep
 # by G1-3 (`# G1-5:` comments) and by G1-5 to G1-4: ONE pass over the marks after `tag_trail` and before
-# `compact_trail`. It cannot run inside the mark phase (the trail is untagged until `tag_trail`, and bits 5-6
+# `compact_trail`. It cannot run inside the mark phase (the trail is untagged until `tag_trail`, and bits 6-7
 # of an untagged entry are its position). Each field holds the plain entry COUNT: `alien_into_relocation_chain`
 # chains the entry at index count + 1 itself. `mark_foreign_frame` already counted `needs_relocation` for the
 # foreign frames, so only the choicepoints are counted here. The choicepoints are walked in place, as
@@ -197,6 +197,8 @@ end
 # `dest` is the count of marked cells at or below the cell, as in `compact_global`; the bottom of the stack is
 # position 1 (upstream's dummy marked cell below it is not needed: the loop stops at 0); the hole is made by
 # `make_gc_hole` (G1-5) over `bottom..current` inclusive.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; TAG1): upstream's stop test is `isMarkedOrIndHdr(*current)`
+# (`w & (MARK_MASK|FIRST_MASK|INDHDR_BIT)`, pl-data.h); the kernel keeps the two-mask test, see `sweep_global_mark`.
 """
     downskip_combine_garbage(ld, sw, current, dest) -> Int
 

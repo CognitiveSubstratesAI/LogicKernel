@@ -214,8 +214,8 @@ MUTANTS = [
          new="            holder.supervisor_crefs = ClauseRef{T}[]\n"),
     dict(id="WRAP1-M9e unwrap does not retract the wrapper's clause (KILL W: row t20, the clauses of `$wrap$p20` left: 1 then 0; named row t20)",
          file=WRP, targets=[W],
-         old="        retractClauseDefinition!(gd, cl.predicate, cl, false)\n",
-         new="\n"),
+         old='\n        retractClauseDefinition!(gd, cl.predicate, cl, false)\n',
+         new='\n\n'),
     # ── '$wrapped_predicate'/2 (pl-wrap.c wrapped_predicate) ──
     dict(id="WRAP1-M18 '$wrapped_predicate'/2 lists only the outermost wrapper (KILL W: t5 :223, t3 :201, row t16)",
          file=WRP, targets=[W],

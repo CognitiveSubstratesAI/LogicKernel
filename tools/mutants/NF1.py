@@ -28,10 +28,10 @@ MUTANTS = [
          new='''        ld.frames[FR].fctx = UInt(0)                # FR->clause = NULL
         @goto exit_checking_wakeup'''),
     dict(id="NF1-6 FALSE keeps the choice point", file=W, targets=T,
-         old='''        @assert ld.choices[ld.BFR].value_pc == PC
+         old='''        DiscardMark(ld, ld.choices[ld.BFR].mark)    # DiscardMark(BFR->mark)
         ld.BFR = ld.choices[ld.BFR].parent
         @goto deep_backtrack                        # FRAME_FAILED''',
-         new='''        @assert ld.choices[ld.BFR].value_pc == PC
+         new='''        DiscardMark(ld, ld.choices[ld.BFR].mark)    # DiscardMark(BFR->mark)
         @goto deep_backtrack                        # FRAME_FAILED'''),
     dict(id="NF1-7 shallow_backtrack reloads a clause for a foreign frame", file=W, targets=T,
          old='''            if (sb_def.flags & P_FOREIGN) != 0''',
@@ -49,8 +49,8 @@ MUTANTS = [
          new='''    nothing
 '''),
     dict(id="NF1-10 the context survives its FRG_CUTTED call", file=W, targets=T,
-         old='''            f.fctx = UInt(0)                        # fr->clause = NULL''',
-         new='''            nothing                                 # fr->clause = NULL'''),
+         old='''    f.fctx = UInt(0)                                # fr->clause = NULL (42951bca)''',
+         new='''    nothing                                         # fr->clause = NULL (42951bca)'''),
     dict(id="NF1-11 a retry exit keeps the foreign frame", file=W, targets=T,
          old='''    setLTop!(ld, ld.choices[ld.BFR].base + SIZEOF_CHOICE)   # lTop = (LocalFrame)(BFR+1)''',
          new='''    nothing                                                 # lTop = (LocalFrame)(BFR+1)'''),

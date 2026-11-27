@@ -376,7 +376,8 @@ end
     function follower!(wl)
         fid = LK.PL_open_foreign_frame(ld)
         a = LK.PL_new_term_refs(ld, 1)
-        LK.PL_put_int64(ld, a, LK.tbl_pointer!(ld, wl))
+        wl.owner = ld                                  # a hand-built worklist is the thread's own (new_worklist: owner = LD)
+        LK.PL_put_int64(ld, a, LK.worklist_handle(ld, wl))
         rc = LK.pl_tbl_wkl_make_follower1_va(ld, a, 1, ctx)
         LK.PL_close_foreign_frame(ld, fid)
         return rc
@@ -426,6 +427,7 @@ end
     tr = LK.trie_create(_TW)
     LK.trie_serial!(gd, tr)
     c = LK.tbl_component{_TW}()
+    c.owner = ld                                    # new_component: owner = LD
     c.leader = tr.serial
     ld.tabling.component = c
     ld.tabling.has_scheduling_component = true      # tbl_create_subcomponent: a leader was created
@@ -435,7 +437,7 @@ end
         ld.tabling.has_scheduling_component   # the non-empty side
     fid = LK.PL_open_foreign_frame(ld)
     a = LK.PL_new_term_refs(ld, 3)
-    LK.PL_put_int64(ld, a, LK.tbl_pointer!(ld, c))
+    LK.PL_put_int64(ld, a, LK.component_handle(ld, c))
     LK.PL_put_variable(ld, a + 1)
     LK.PL_put_variable(ld, a + 2)
     @test LK.table_complete_all(ld, a, a + 1, a + 2, 0)

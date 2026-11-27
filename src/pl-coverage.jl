@@ -68,13 +68,16 @@ end
 _cov_key(serial::Int, offset::Int)::UInt64 = (UInt64(serial) << 32) | UInt64(offset)
 
 # PORT: pl-coverage.c pc_call_site
+# DIVERGES (SYNC3, 0fa79d80): the coverage object keeps `lookup_shared_clref(cl)` (a clause reference that other threads may read:
+# upstream promotes the thread-local blob `lookup_clref` made to a global one); the kernel has no local blobs and one thread,
+# so `lookup_clref` is the shared reference (`lookup_shared_clref` is not defined in src/pl-dbref.jl).
 # DIVERGES: file-wide 1 and 2; the pc is an `offset` into `cl`'s code, the database `gd` an argument. Another engine
 # that adds the same key first (`obj2 != obj`) cannot exist here: the branch is kept, the object is dropped.
 "The record of the call site at `offset` in `cl`, made if there is none (pl-coverage.c)."
 function pc_call_site(
     gd::PL_global_data{T}, cov::coverage{T}, cl::Clause{T}, offset::Int
 )::cov_obj{T} where {T}
-    cref = lookup_clref(gd, cl)                         # lookup_clref(cl): the clause gets its number here
+    cref = lookup_clref(gd, cl)                         # lookup_shared_clref(cl): the clause gets its number here (SYNC3, 0fa79d80)
     if offset < 0 || offset >= COV_KEY_CLAUSE
         throw(
             NotPortedError{T}(
@@ -108,7 +111,7 @@ function clause_site(
     gd::PL_global_data{T}, cov::Union{Nothing, coverage{T}}, cl::Clause{T}
 )::Union{Nothing, cov_obj{T}} where {T}
     cov === nothing && return nothing
-    cref = lookup_clref(gd, cl)
+    cref = lookup_clref(gd, cl)                         # lookup_shared_clref(cl) (SYNC3, 0fa79d80)
     serial = gd.clause_serials[cl]
     key = _cov_key(serial, COV_KEY_CLAUSE)
     v = lookupHTable(cov.table, key)                    # lookupHTablePP(cov->table, cl)
@@ -194,7 +197,7 @@ function unify_cov(
     gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t, obj::cov_obj{T}
 )::Bool where {T}
     if obj.type == COV_PC
-        clause_clref(gd, obj.cref) === nothing && return false     # clause_clref(cov->cref) == NULL
+        clause_dbref(gd, obj.cref) === nothing && return false     # Clause cl = clause_dbref(cov->cref); if ( cl ) ... (SYNC3, 0fa79d80)
         r = PL_new_term_ref(ld)
         PL_cons_functor(
             ld, r, _err_functor(ld, :call_site, 2), _err_atom(ld, obj.cref),

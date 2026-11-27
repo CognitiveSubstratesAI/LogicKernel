@@ -467,11 +467,19 @@ function _gv_expect(cl, base::Int, pc::Int)
             ad += 1
         elseif op == LK.B_FUNCTOR || op == LK.B_LIST
             ad += 1
+        elseif op == LK.H_RFUNCTOR || op == LK.H_RLIST
+            if ad == 0                                               # a compound in the last head argument: no H_POP follows (110adeab)
+                a0 = ap
+                ap += 1
+                ad = LK.GC_NO_ADEPTH
+            end
         elseif op == LK.H_POP || op == LK.B_POP
             ad -= 1
             ad == 0 && (a0 = 0)
         elseif op == LK.I_ENTER || op == LK.I_SSU_COMMIT || op == LK.I_SSU_CHOICE
             body = true
+            ad = 0
+            a0 = 0
         end
         # H_RFUNCTOR/H_RLIST/B_RFUNCTOR/B_RLIST: NO case in the pin's setStartOfVMI (18168e62:src/pl-gc.c:3608-3690, the switch lists H_FUNCTOR/H_LIST/B_FUNCTOR/B_LIST
         # only): neither adepth nor argp changes, they have no H_POP/B_POP. The union's H1 changes the R-form rule for the LAST head argument: this table then gets its branches.
@@ -497,6 +505,12 @@ end
             db, _rf("w1", _rf("f", _rs("a"), B), _rs("c"), D), nothing
         ),
         "void run" => _radd!(db, _rf("w2", _rv(1), _rv(2), _rv(3), _rs("a")), nothing),
+        # a compound in the LAST head argument is H_RFUNCTOR (no H_POP): adepth NO_ADEPTH to the end of the head, argp0 = its slot (110adeab)
+        "last-argument compound, rule" => _radd!(
+            db,
+            _rf("w5", _rs("a"), _rf("f", B, _rf("g", D, _rs("c")))),
+            _rf("q", B)
+        ),
         "list head, body" => _radd!(
             db,
             _rf("w3", A, _rcons(B, D)),
@@ -544,6 +558,7 @@ end
     # compound, src/pl-comp.jl:1752-1754); `A = f(B, g(B))` on a seen A gives B_UNIFY_VAR and the head-style H_FUNCTOR/H_RFUNCTOR
     @test LK.B_UNIFY_FIRSTVAR in seen && LK.B_FUNCTOR in seen && LK.B_RFUNCTOR in seen
     @test LK.B_UNIFY_VAR in seen && LK.H_RFUNCTOR in seen
+    @test LK.H_RFUNCTOR in seen && LK.I_ENTER in seen              # the last-argument compound (110adeab)
     @test LK.H_LIST in seen || LK.H_LIST_FF in seen
 
     # the hand-pinned table of `w1(f(a,B), c, D)`: instructions H_FUNCTOR H_ATOM H_POP H_ATOM I_EXITFACT; the state BEFORE each of them.

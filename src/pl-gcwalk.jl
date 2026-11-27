@@ -86,8 +86,17 @@ end
 # (`H_SMALLINTW`, `A_VAR`, `A_VAR0`-`A_VAR2`, `A_FIRSTVAR_IS`, `A_MPZ`, `A_MPQ` and `D_BREAK` have no
 # counterpart: the kernel declares none of them), a literal operand is the table's `arguments`
 # (`code_get_indirect` is not needed), and the `assert`s on `adepth` at `B_UNIFY_EXIT`/`I_ENTER`/
-# `I_SSU_*` are not carried. `COUNT(...)` statistics are not kept. `I_RATIONAL` has no variable operand
-# to mark, as upstream's list of the type tests has no `I_RATIONAL`.
+# `I_SSU_*` are not carried (the reset `adepth = 0` after them is: SYNC3 110adeab, a head may end in an `H_RFUNCTOR`/`H_RLIST` compound). `COUNT(...)` statistics are not kept.
+# swipl-devel af9e2e7e (SYNC3): `I_RATIONAL` is in the list of the type tests (its variable operand is
+# marked; bb4ccf71/dc03437b), and `I_ENTER`/`I_SSU_COMMIT`/`I_SSU_CHOICE` reset `adepth` to 0 (the assert
+# allows `NO_ADEPTH` as well); the `H_RFUNCTOR`/`H_RLIST` arm (110adeab: the LAST head argument, no `H_POP` follows:
+# `if adepth == 0 { mark_argp; adepth = NO_ADEPTH }`) is written below, after the `H_FUNCTOR`/`H_LIST` arm, with `GC_NO_ADEPTH` (packet H1).
+# DIVERGES (SYNC3): upstream's new arms `A_CMP_VV` (mark `PC[2]`, fall through), `A_CMP_VI` (mark `PC[1]`; 8ef8f3b7),
+# `A_ROUNDTOWARDS_V` (mark `PC[0]`; dc03437b) and `H_PTRINT` (a `mark_argp` arm, with `H_SMALLINT`; 0bf03c7f, the
+# pointer integers of TAG1) are NOT written here: the kernel declares none of these opcodes (the A_* comparison/rounding
+# VMIs come with AR1, `H_PTRINT` with the TAG1 pointer-integer rework). The landing that adds an opcode adds its arm
+# here and in `walk_and_mark` of pl-gc.jl (the `A_*` ones only there: no `mark_argp`) and `H_PTRINT` also in
+# `gc_walk_start_of_vmi!` (pl-gcdriver.jl).
 """
     walk_and_mark_gc(ld, st, ws, codes, pc, end_op) -> Int
 
@@ -171,8 +180,9 @@ function walk_and_mark_gc(
             op == B_ARG_VF && mark_frame_var_gc(ld, st, ws, codes[pc + 1])
             mark_frame_var_gc(ld, st, ws, codes[pc + 2])
             clear_frame_var_gc(ld, ws, codes[pc + 3])
-        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_FLOAT ||
-            op == I_NUMBER || op == I_ATOMIC || op == I_ATOM || op == I_STRING ||
+        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
+            op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
+            op == I_STRING ||
             op == I_COMPOUND || op == I_CALLABLE || op == I_CALLCONT || op == I_SHIFT ||
             op == I_SHIFTCP
             mark_frame_var_gc(ld, st, ws, codes[pc + 1])
@@ -225,12 +235,19 @@ function walk_and_mark_gc(
             ws.adepth += 1
         elseif op == B_FUNCTOR || op == B_LIST
             ws.adepth += 1
+        elseif op == H_RFUNCTOR || op == H_RLIST    # last head argument: no H_POP (SYNC3, 110adeab)
+            if ws.adepth == 0
+                mark_argp_gc(ld, st, ws)
+                ws.adepth = GC_NO_ADEPTH
+            end
         elseif op == H_VOID
             ws.adepth == 0 && (ws.ARGP += 1)
         elseif op == H_VOID_N
             ws.adepth == 0 && (ws.ARGP += Int(codes[pc + 1]))
         elseif op == H_POP || op == B_POP
             ws.adepth -= 1
+        elseif op == I_ENTER || op == I_SSU_COMMIT || op == I_SSU_CHOICE
+            ws.adepth = 0       # assert(adepth == 0 || adepth == NO_ADEPTH), then adepth = 0 (110adeab: the head may end in an H_R* compound)
         end
         pc += 1 + codeTable(op).arguments           # for( ; ; PC += codeTable[op].arguments)
     end

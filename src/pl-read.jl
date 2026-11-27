@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-read.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-read.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -462,7 +462,9 @@ function addToBuffer(c::Int, rd::read_data)::Nothing
 end
 
 # PORT: pl-read.c setCurrentSourceLocation
-# DIVERGES: `LD->read_source` gets a copy (a struct assignment upstream).
+# DIVERGES: `LD->read_source` gets a copy (a struct assignment upstream). Upstream takes the file name with
+# `fileNameStreamLocked(s)` (6c5460da: the reader holds the stream's lock, so no L_FILE lock is needed); the
+# kernel has no locks, `fileNameStream` is the same lookup.
 "Record where the term starts: the stream's position less the character just read (pl-read.c)."
 function setCurrentSourceLocation(rd::read_data{T})::Nothing where {T}
     s = rd._rb.stream
@@ -1590,6 +1592,101 @@ function skip_decimal_separator(
     return (false, s)
 end
 
+# Big integers are converted using mpz_set_str() rather than adding the digits one by one, as the
+# latter is quadratic in the number of digits. The digits are copied to a buffer as plain ASCII
+# digits, removing digit group separators.
+const digit_chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+# PORT: pl-read.c mpz_from_digits
+# DIVERGES: the digits are a `Vector{UInt8}` (no 0 terminator), `mpz_set_str` is `tryparse(BigInt)`.
+"Set `n` to the big integer of the ASCII `digits` in `base`, negated if `negative` (pl-read.c)."
+function mpz_from_digits(
+    digits::Vector{UInt8}, base::Int, negative::Bool, n::number
+)::strnumstat
+    v = tryparse(BigInt, String(copy(digits)); base=base)
+    v === nothing && return NUM_IOVERFLOW
+    n.type = V_MPZ
+    n.mpz = negative ? -v : v
+    return NUM_OK
+end
+
+# PORT: pl-read.c scan_decimal_mpz
+# DIVERGES: takes the start `s` and returns `(status, next, grouped)`, where upstream moves `*sp`
+# (only on success) and writes `*grouped`.
+"Scan the decimal digits from `zero` at `s` into the big integer `n` (pl-read.c)."
+function scan_decimal_mpz(
+    b::AbstractVector{UInt8}, s::Int, zero::Int, negative::Bool, n::number, grouped::Bool
+)::Tuple{strnumstat, Int, Bool}
+    s0 = s
+    count = 0
+    while true
+        sn, c = utf8_get_char(b, s)
+        while isDecimal(zero, c)
+            s = sn
+            count += 1
+            sn, c = utf8_get_char(b, s)
+        end
+        ok, s2 = skip_decimal_separator(b, s, zero)
+        ok || break
+        s = s2
+        grouped = true
+    end
+    digits = Vector{UInt8}(undef, count)
+    o = 0
+    s = s0
+    while true
+        sn, c = utf8_get_char(b, s)
+        while isDecimal(zero, c)
+            s = sn
+            o += 1
+            digits[o] = UInt8(digit_chars[c - zero + 1])
+            sn, c = utf8_get_char(b, s)
+        end
+        ok, s2 = skip_decimal_separator(b, s, zero)
+        ok || break
+        s = s2
+    end
+    rc = mpz_from_digits(digits, 10, negative, n)
+    return (rc, rc == NUM_OK ? s : s0, grouped)
+end
+
+# PORT: pl-read.c scan_number_mpz
+# DIVERGES: takes the start `q` and returns `(status, next)`, where upstream moves `*sp`
+# (only on success).
+"Scan the digits of base `base` at `q` into the big integer `n` (pl-read.c)."
+function scan_number_mpz(
+    bf::AbstractVector{UInt8}, q::Int, negative::Bool, base::Int, n::number
+)::Tuple{strnumstat, Int}
+    q0 = q
+    count = 0
+    while true
+        while digitValue(base, _byte(bf, q)) >= 0
+            q += 1
+            count += 1
+        end
+        ok, q2 = skip_digit_separator(bf, q, base)
+        ok || break
+        q = q2
+    end
+    digits = Vector{UInt8}(undef, count)
+    o = 0
+    q = q0
+    while true
+        d = digitValue(base, _byte(bf, q))
+        while d >= 0
+            q += 1
+            o += 1
+            digits[o] = UInt8(digit_chars[d + 1])
+            d = digitValue(base, _byte(bf, q))
+        end
+        ok, q2 = skip_digit_separator(bf, q, base)
+        ok || break
+        q = q2
+    end
+    rc = mpz_from_digits(digits, base, negative, n)
+    return (rc, rc == NUM_OK ? q : q0)
+end
+
 # PORT: pl-read.c scan_decimal
 # DIVERGES: returns `(status, next, grouped)`, where upstream moves `*sp` and writes `*grouped`.
 """
@@ -1605,6 +1702,7 @@ function scan_decimal(
     minlastdigit = typemin(Int64) % 10
     t = Int64(0)
     grouped = false
+    s0 = s                                  # upstream's `*sp`: only moved on success
     sn, c = utf8_get_char(b, s)
     isDecimal(zero, c) || return (NUM_ERROR, s, grouped)
     while true
@@ -1612,22 +1710,7 @@ function scan_decimal(
         while isDecimal(zero, c)
             if (negative && ((t < mini) || (t == mini && zero - c < minlastdigit))) ||
                 (!negative && ((t > maxi) || (t == maxi && c - zero > maxlastdigit)))
-                n.i = t
-                n.type = V_INTEGER
-                promoteToMPZNumber(n)
-                while true
-                    sn, c = utf8_get_char(b, s)
-                    while isDecimal(zero, c)
-                        s = sn
-                        n.mpz = n.mpz * 10 + (negative ? -(c - zero) : (c - zero))
-                        sn, c = utf8_get_char(b, s)
-                    end
-                    ok, s2 = skip_decimal_separator(b, s, zero)
-                    ok || break
-                    s = s2
-                    grouped = true
-                end
-                return (NUM_OK, s, grouped)
+                return scan_decimal_mpz(b, s0, zero, negative, n, grouped)
             else
                 s = sn
                 t = negative ? t * 10 - (c - zero) : t * 10 + (c - zero)
@@ -1655,27 +1738,14 @@ function scan_number(
     mini = typemin(Int64) ÷ b
     minlastdigit = Int(typemin(Int64) % b)
     t = Int64(0)
+    q0 = q                                  # upstream's `*s`: only moved on success
     digitValue(b, _byte(bf, q)) < 0 && return (NUM_ERROR, q)    # syntax error
     while true
         d = digitValue(b, _byte(bf, q))
         while d >= 0
             if (negative && ((t < mini) || (t == mini && d > minlastdigit))) ||
                 (!negative && ((t > maxi) || (t == maxi && d > maxlastdigit)))
-                n.i = t
-                n.type = V_INTEGER
-                promoteToMPZNumber(n)
-                while true
-                    d = digitValue(b, _byte(bf, q))
-                    while d >= 0
-                        q += 1
-                        n.mpz = n.mpz * b + (negative ? -d : d)
-                        d = digitValue(b, _byte(bf, q))
-                    end
-                    ok, q2 = skip_digit_separator(bf, q, b)
-                    ok || break
-                    q = q2
-                end
-                return (NUM_OK, q)
+                return scan_number_mpz(bf, q0, negative, b, n)
             else
                 q += 1
                 t = negative ? t * b - d : t * b + d
@@ -2156,6 +2226,13 @@ end
 # policies other than accept (S_UATOMS_ACCEPT, SWI-7's default). The `quasi_quotations` flag is
 # `truePrologFlag(rd.ld, PLFLAG_QUASI_QUOTES)` (since R2 F1a; ON, SWI-7's default, until then without the
 # test): `{|` is TK_QQ_OPEN and `||` TK_QQ_BAR.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held behind G1, pl-atom): upstream makes the atoms of unquoted
+# names (also those of a label functor, `textToLocalAtom()`) with `textToLocalAtom()`, a thread-local atom
+# (67b81104), where here `textToAtom` is `_atom_from_text`; and with `unicode_atoms(nfc)` it normalises the
+# name by `atom_text_to_nfc()` before that (in place, or into a malloc'ed buffer when the NFC form is
+# longer); `atom_text_to_nfc()` and the new `atom_text_not_in_nfc()` (a hook of the new signature
+# `hook(in, len, out, &size)`, f9fb44f9) are NOT PORTED: the policies nfc and error are refused (see
+# `read_term_from_stream`), the reader has no normalisation hook.
 """
 The next token of the raw text (pl-read.c), or `nothing` after a syntax error (recorded inp `rd`).
 `must_be_op`: an operator is expected here, so `-` before a digit is not a sign.
@@ -2470,6 +2547,9 @@ end
 # ── term building (pl-read.c) ───────────────────────────────────────────────────────────────────
 
 # PORT: pl-read.c readValHandle
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held behind G1, pl-gc): upstream stores the pointer cells with
+# `gen_assign(argp, w)` (the generational stack GC's write barrier, 25ebf765); there is no generational GC
+# here, so a plain store. (`readValHandleConst` stores a constant, `*argp = w`: no pointer, no barrier.)
 # (L1e e6: as upstream, into the global cell `argp`) A variable record's FIRST placement leaves `argp`
 # unbound and makes the variable's term reference reference it (`makeRefG(argp)`), so a variable IS its
 # first cell, as upstream's — the variables' order (by position) is swipl's; a later placement copies
@@ -2508,6 +2588,9 @@ function _ts_link_word!(term::Int, rd::read_data)::word
 end
 
 # PORT: pl-read.c build_term
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held behind G1, pl-funct): upstream makes the functor with
+# `lookupVolatileFunctor(atom, arity)` (8783a5bd: garbage collection of functors: a functor that lives only
+# as long as the term built), where here `lookupFunctorDef`.
 # DIVERGES: no global stack to run out of (`ensureGlobalSpace`, `ensureSpaceForTermRefs` cannot fail);
 # `arity` 0 is SWI-7's `f()`, a compound with no arguments. On the CELLS (L1e e6): laid out at gTop.
 "Replace the top `arity` terms of the term stack by `atom` applied to them (pl-read.c)."
@@ -3243,23 +3326,51 @@ function name_token(
     return _token_atom(token)
 end
 
-# PORT: pl-read.c unify_atomic_position
-"Unify `positions` (0: none) with `From-To`, the character range of `token` (pl-read.c)."
-function unify_atomic_position(
-    ld::PL_local_data{T}, positions::term_t, token::token{T}
-)::Bool where {T}
-    positions == 0 && return true
-    return _unify_position!(ld, positions, :-, (token.start, token.end_), ())  # FUNCTOR_minus2
+# PORT: pl-read.c new_position
+# DIVERGES: the functor is its word (`_err_functor`) and the result is the global stack position of
+# the compound's FIRST ARGUMENT cell (upstream: `argTermP(*p, 0)`, a pointer), 0 where upstream
+# gives NULL; `ld` is an argument (upstream: `DECL_LD`).
+"""
+Bind the variable `positions` to a new term with the functor word `f` and return the position of
+its arguments, which are all unbound, or 0 if that fails (pl-read.c). Filling the arguments
+directly is a lot cheaper than building the term from a description (`_unify_position!`). This is
+safe because `positions` is always a fresh variable: complex_term() creates a new term reference
+for each token and unifies it with the caller's position term when the level is done. The caller
+must fill the arguments before anything else can allocate on the global stack.
+"""
+function new_position(ld::PL_local_data, positions::term_t, f::word)::Int
+    PL_unify_compound(ld, positions, f) || return 0
+    k, w, _ = _deref_loc(ld, -(positions + 1))      # p = valTermRef(positions); deRef(p)
+    @assert k == DU_WORD && _is_gcompound(w) "new_position: no position term"
+    return valPtr(w) + 1                            # argTermP(*p, 0)
 end
 
-# PORT: pl-read.c unify_string_position
-"Unify `positions` (0: none) with `string_position(From, To)`, the range of `token` (pl-read.c)."
-function unify_string_position(
-    ld::PL_local_data{T}, positions::term_t, token::token{T}
+# PORT: pl-read.c unify_range_position
+# DIVERGES: the functor is given as the name `f` of an arity 2 term (upstream: `functor_t`); an
+# integer's word as `_gnd_word!` lays it (upstream: `consInt`); `ld` is an argument.
+"If `positions` is not 0, bind it to `f(Start, End)` (pl-read.c)."
+function unify_range_position(
+    ld::PL_local_data{T}, positions::term_t, f::Symbol, start::Int64, end_::Int64
 )::Bool where {T}
     positions == 0 && return true
-    return _unify_position!(ld, positions, :string_position, (token.start, token.end_), ())
+    argp = new_position(ld, positions, _err_functor(ld, f, 2))
+    argp == 0 && return false
+    ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, start))      # argp[0] = consInt(start)
+    ld.gstack[argp + 1] = _gnd_word!(ld, mk_gnd(T, end_))   # argp[1] = consInt(end)
+    return true
 end
+
+# PORT: pl-read.c unify_atomic_position
+# DIVERGES: a function, where upstream has a macro of `unify_range_position`.
+"Unify `positions` (0: none) with `From-To`, the character range of `token` (pl-read.c)."
+unify_atomic_position(ld::PL_local_data{T}, positions::term_t, token::token{T}) where {T} =
+    unify_range_position(ld, positions, :-, token.start, token.end_)    # FUNCTOR_minus2
+
+# PORT: pl-read.c unify_string_position
+# DIVERGES: a function, where upstream has a macro of `unify_range_position`.
+"Unify `positions` (0: none) with `string_position(From, To)`, the range of `token` (pl-read.c)."
+unify_string_position(ld::PL_local_data{T}, positions::term_t, token::token{T}) where {T} =
+    unify_range_position(ld, positions, :string_position, token.start, token.end_)
 
 # PORT: pl-read.c prepare_op
 # DIVERGES: returns the result and the construct to read (`*kind`); no atom locks (`Unlock`: no
@@ -3620,13 +3731,12 @@ function read_list_start(
     ld = rd.ld
     if f.pin != 0
         pv = PL_new_term_refs(ld, 3)
-        (
-            pv != 0 &&
-            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_list_position4,
-                ld, f.pin, :list_position,          #   PL_INT64, token->start, PL_VARIABLE,
-                (token.start, _POS_VARIABLE), (pv + 1, pv + 2)  #   PL_TERM, P_LIST, PL_TERM, P_TAIL
-            )
-        ) || return 0
+        pv != 0 || return 0
+        argp = new_position(ld, f.pin, _err_functor(ld, :list_position, 4))
+        argp != 0 || return 0                       # list_position(S,_E,Elems,Tail)
+        ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.start))    # argp[0] = consInt(token->start)
+        ld.slots[pv + 2] = makeRefG(argp + 2)       # setHandle(P_LIST, makeRefG(&argp[2]))
+        ld.slots[pv + 3] = makeRefG(argp + 3)       # setHandle(P_TAIL, makeRefG(&argp[3]))
     else
         pv = 0
     end
@@ -3731,10 +3841,11 @@ function read_bracket_start(
     if f.pin != 0
         ld = rd.ld
         pa = PL_new_term_ref(ld)
-        (
-            pa != 0 &&                              # PL_FUNCTOR, fpos, PL_INT64, token->start,
-            _unify_position!(ld, f.pin, fpos, (token.start, _POS_VARIABLE), (pa,))
-        ) || return 0                               #   PL_VARIABLE, PL_TERM, pa
+        pa != 0 || return 0
+        argp = new_position(ld, f.pin, _err_functor(ld, fpos, 3))
+        argp != 0 || return 0                       # fpos(S,_E,Arg)
+        ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.start))    # argp[0] = consInt(token->start)
+        ld.slots[pa + 1] = makeRefG(argp + 2)       # setHandle(pa, makeRefG(&argp[2]))
     else
         pa = 0
     end
@@ -3806,14 +3917,13 @@ function read_compound_start(
     if f.pin != 0
         ld = rd.ld
         pv = PL_new_term_refs(ld, 2)
-        (
-            pv != 0 &&
-            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_term_position5,
-                ld, f.pin, :term_position,          #   PL_INT64, token->start, PL_VARIABLE,
-                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,
-                (pv + 1,)                           #   PL_TERM, P_ARG
-            )
-        ) || return 0
+        pv != 0 || return 0
+        argp = new_position(ld, f.pin, _err_functor(ld, :term_position, 5))
+        argp != 0 || return 0                       # term_position(S,_E,FS,FE,Args)
+        ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.start))        # argp[0] = consInt(token->start)
+        ld.gstack[argp + 2] = _gnd_word!(ld, mk_gnd(T, token.start))    # argp[2] = consInt(token->start)
+        ld.gstack[argp + 3] = _gnd_word!(ld, mk_gnd(T, token.end_))     # argp[3] = consInt(token->end)
+        ld.slots[pv + 2] = makeRefG(argp + 4)       # setHandle(P_ARG, makeRefG(&argp[4]))
     else
         pv = 0
     end
@@ -3847,7 +3957,6 @@ function read_compound_resume(
 end
 
 # PORT: pl-read.c is_key_token
-# DIVERGES: a token's atom is a field (`atom`), where upstream reads the value union; see `_key_atom`.
 "Can `token` be a dict key, or the `:` after it (pl-read.c): a name, a quoted name, a functor or dict name, or a punctuation character other than the paired brackets, `|` and `,`."
 function is_key_token(token::token, rd::read_data)::Bool
     t = token.type
@@ -3861,14 +3970,6 @@ function is_key_token(token::token, rd::read_data)::Bool
         )
     end
     return false
-end
-
-# ORIGINAL: `token->value.atom` of a token `is_key_token` accepts. A punctuation token has no atom
-# field here (upstream reads its character through the union): its atom is the character's, the
-# atom upstream's `codeToAtom` makes.
-function _key_atom(token::token{T})::T where {T}
-    token.type == TK_PUNCTUATION && return mk_sym(T, Symbol(Char(token.character)))
-    return _token_atom(token)
 end
 
 # read_dict_*() reads <class>{key:value, ...} into a dict as defined in pl-dict.c
@@ -3911,8 +4012,9 @@ function read_dict_key(f::pframe{T}, req::ct_request, rd::read_data{T})::Int whe
 
     local key_term::Int
     if is_key_token(key, rd)
+        name = name_token(key, nothing, rd)         # (a punctuation token's atom is its character's)
         key_term = alloc_term(rd)
-        _setHandle!(key_term, _key_atom(key), rd)   # PL_put_atom(key_term, key->value.atom)
+        _setHandle!(key_term, name, rd)             # PL_put_atom(key_term, name)
     elseif key.type == TK_NUMBER
         n = key.number
         if n.type == V_INTEGER && valInt(consInt(n.i)) == n.i
@@ -3930,7 +4032,8 @@ function read_dict_key(f::pframe{T}, req::ct_request, rd::read_data{T})::Int whe
     sep = get_token(false, rd)
     sep === nothing && return 0
 
-    if !is_key_token(sep, rd) || sym_key(_key_atom(sep)) != sym_key(mk_sym(T, :(:)))
+    if !is_key_token(sep, rd) ||
+        sym_key(name_token(sep, nothing, rd)) != sym_key(mk_sym(T, :(:)))
         return Int(syntaxError("colon_expected", rd))
     end
 
@@ -3974,14 +4077,13 @@ function read_dict_start(
     ld = rd.ld
     if f.pin != 0
         pv = PL_new_term_refs(ld, 3)
-        (
-            pv != 0 &&
-            _unify_position!(                       # PL_FUNCTOR, FUNCTOR_dict_position5,
-                ld, f.pin, :dict_position,          #   PL_INT64, token->start, PL_VARIABLE,
-                (token.start, _POS_VARIABLE, token.start, token.end_),  # PL_INT64 ×2,
-                (pv + 1,)                           #   PL_TERM, P_ARG
-            )
-        ) || return 0
+        pv != 0 || return 0
+        argp = new_position(ld, f.pin, _err_functor(ld, :dict_position, 5))
+        argp != 0 || return 0                       # dict_position(S,_E,TS,TE,KVs)
+        ld.gstack[argp] = _gnd_word!(ld, mk_gnd(T, token.start))        # argp[0] = consInt(token->start)
+        ld.gstack[argp + 2] = _gnd_word!(ld, mk_gnd(T, token.start))    # argp[2] = consInt(token->start): class position
+        ld.gstack[argp + 3] = _gnd_word!(ld, mk_gnd(T, token.end_))     # argp[3] = consInt(token->end)
+        ld.slots[pv + 2] = makeRefG(argp + 4)       # setHandle(P_ARG, makeRefG(&argp[4]))
     else
         pv = 0
     end

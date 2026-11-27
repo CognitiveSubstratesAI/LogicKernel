@@ -590,6 +590,10 @@ function PL_call_event_hook(
 end
 
 # PORT: pl-event.c PL_call_event_hook_va
+# (swipl-devel 5f69f2e6: the PLEV_FRAMEFINISHED frame is kept as a term reference `frref` and read back after the
+# `saveWakeup`/`PL_new_term_refs` calls, which may shift the stacks)
+# DIVERGES (SYNC3): the kernel's frame is already an index (`event_arg(Int, ..)`), which no stack shift moves, so the
+# frame is read from `args` where it is used; `PL_new_term_refs` returning 0 releases the wakeup state as upstream now does.
 # DIVERGES: `args` are the event's values; the thread events raise a `NotPortedError` naming TH1 (`unify_thread_id`: no
 # thread table); an unknown event is `false` (upstream warns).
 "Raise the event `ev`: put its arguments and call its listeners; false iff there is an exception in a hook (pl-event.c)."
@@ -608,6 +612,10 @@ function PL_call_event_hook_va(
     wstate = saveWakeup(ld, true)
     wstate === nothing && return false
     av = PL_new_term_refs(ld, event_decl.argc + 1)
+    if av == 0                                  # if ( !(av = PL_new_term_refs(..)) )
+        restoreWakeup(ld, wstate)
+        return false
+    end
 
     if ev == PLEV_ABORT
         # nothing to put

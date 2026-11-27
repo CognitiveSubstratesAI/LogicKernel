@@ -1,4 +1,4 @@
 # The upstream commit the files beside this one were copied from, byte for byte (tools/vendor_swipl.sh).
-commit: 18168e629eab641c3ff5ff6359db5855a0128c96
-version: 10.1.20
+commit: af9e2e7ed0be4e80d2b60b70bb09e91fa087d116
+version: 11.1.0
 upstream: https://github.com/SWI-Prolog/swipl-devel

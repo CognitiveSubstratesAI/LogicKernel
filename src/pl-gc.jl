@@ -41,11 +41,16 @@ is_pointer_like(ptr::Union{Nothing, Definition})::Bool = ptr !== nothing
 # referenced explicitly (`markAccessedPredicates`): clause/2 and retract/1 (foreign predicates since
 # NF2, and their sinks) reference theirs with `pushPredicateAccessObj!`. The test of the frame's predicate is upstream's
 # `is_pointer_like(def) && lookupHTablePP(...)`, `is_pointer_like` above (a Julia reference has no alignment: only the NULL arm remains).
+# swipl-devel af9e2e7e (SYNC3): the scan also covers a frame AT `lTop` (`lend++`, when there is room above it: the new note (*)): a new frame is
+# created at `lTop` and gets its generation before `lTop` is moved over it (`pushFrame!` records it first), and a clause erased after that could be
+# reclaimed before the frame selects its clauses; a stale record can only keep clauses longer. The room test
+# (`local.max - lend > 2*ARGOFFSET/sizeof(word)`) has no twin: the record vector always has the record or none. NOT PORTED: `if (!ld->magic) return`
+# (a thread that is exiting: one thread), and the `atom_mark_ctx`/`markFunctor` changes of `markAtomsOnStacks` (atom GC REFUSED, D5).
 "Record the generations every predicate is being run or accessed in, for clause GC (pl-gc.c)."
 function markPredicatesInEnvironments!(
     ld::PL_local_data{T}, gd::PL_global_data{T}
 )::Nothing where {T}
-    lend = ld.lTop                                  # see (*): frames are never written above lTop
+    lend = ld.lTop + 1                              # see (*): also the frame at lTop (`lend++`)
     for i in 1:ld.nframes
         fr = ld.frames[i]
         if fr.base < lend && isFrame(fr)
@@ -448,8 +453,14 @@ end
 # operand is one word (`code_get_indirect`'s block is the table's `arguments`), and `D_BREAK`
 # (`replacedBreak`) is left out (the debugger is deferred). Left to the stack collector: `mark_argp`,
 # `adepth`, `GCM_ALTCLAUSE` (so the control constructs are always walked) and `I_FREDO`'s
-# `mark_arguments`. A variable operand of `I_RATIONAL` is not marked, as upstream's list of the type
-# tests has no `I_RATIONAL` (10.1.19).
+# `mark_arguments`. swipl-devel af9e2e7e (SYNC3): the variable operand of `I_RATIONAL` is marked, as upstream's
+# list of the type tests now has `I_RATIONAL` (bb4ccf71/dc03437b; it had none at 10.1.19).
+# (`walk_and_mark` of the ACTIVE walk has no `H_*` head arms: no `H_RFUNCTOR`/`H_RLIST` case is due here; those of the stack
+# walk, `walk_and_mark_gc`, carry them, written with the pl-comp.c 110adeab compiler change: pl-gcwalk.jl and pl-gcdriver.jl.)
+# DIVERGES (SYNC3): upstream's new arms `A_CMP_VV` (mark `PC[2]`, fall through to) `A_CMP_VI` (mark `PC[1]`; 8ef8f3b7)
+# and `A_ROUNDTOWARDS_V` (mark `PC[0]`; dc03437b) are NOT written: the kernel declares no such opcode (the `A_*`
+# comparison/rounding VMIs come with AR1). The AR1 landing adds both arms here and in `walk_and_mark_gc`
+# (pl-gcwalk.jl).
 """
     walk_and_mark(state, codes, pc, end_op) -> Int
 
@@ -519,8 +530,9 @@ function walk_and_mark(state::walk_state, codes::Vector{code}, pc::Int, end_op::
             op == B_ARG_VF && mark_frame_var(state, codes[pc + 1])
             mark_frame_var(state, codes[pc + 2])
             clear_frame_var(state, codes[pc + 3])
-        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_FLOAT ||
-            op == I_NUMBER || op == I_ATOMIC || op == I_ATOM || op == I_STRING ||
+        elseif op == I_VAR || op == I_NONVAR || op == I_INTEGER || op == I_RATIONAL ||
+            op == I_FLOAT || op == I_NUMBER || op == I_ATOMIC || op == I_ATOM ||
+            op == I_STRING ||
             op == I_COMPOUND || op == I_CALLABLE || op == I_CALLCONT || op == I_SHIFT ||
             op == I_SHIFTCP || op == H_VAR || op == B_UNIFY_VC || op == B_EQ_VC ||
             op == B_NEQ_VC || op == B_ARGVAR || op == B_VAR
@@ -1287,6 +1299,44 @@ function PL_check_stacks(ld::PL_local_data)::Bool
     return false
 end
 
+# ── GENERATIONAL GC and the trace_gc queue: NOT PORTED (SYNC3, swipl-devel af9e2e7e; commits 25ebf765, ef5d47a0) ─────────────────────────
+# DIVERGES (SYNC3) GEN-GC: upstream (flag `gc_generational`, default true; doc/gc-generational.md) splits the global stack at `LD->gen_bar`: after a
+# collection the survivors are the OLD generation, a MINOR collection (`gen_minor_gc(reason)`) marks and compacts only the cells at or above
+# `LD->gc.young_base = LD->gen_bar`, and the old cells that may point up (trail entries below `mark_bar`, the remembered set `LD->gc.remembered` filled by
+# `gen_remember` at the store sites) are copied into term references first (`gen_roots_to_term_refs`) and written back after
+# (`gen_term_refs_to_roots`, `gen_remember_trailed_assignments`). This kernel has no minor collector: EVERY collection is a major one and
+# `young_base == gBase` for the whole collection, so every young-generation test below is true/false as the code stands and is NOT written:
+#   (1) `vm_state.global_argp` (a term being written on the global stack; set in `get_vmi_state`/`setStartOfVMI` of upstream's pl-gc.c hunk, read
+#       by `argument_stack_to_term_refs`, `gen_term_refs_to_roots`, `garbageCollect`);
+#   (2) `isGlobalRef(w)` (= `isGlobalPtr(w) && valPtr(w) >= young_base`) and (3) `isOldCell(p)` (= `p < young_base && onGlobalArea(p)`): the
+#       former is `isGlobalPtr` here, the latter is false; used by `gvars_to_term_refs` (`found++`), `early_reset_vars` (five tests, and the new
+#       `ttag(te[-1].as_word) != TAG_TRAILVAL` guard), `sweep_trail` (`valPtr(te->as_word) >= young_base` for a value entry) and `queryOfFrame`;
+#   (4) `mark_variable`: `Word yb = young_base`, the four `next < yb` BACKWARD tests and the `start < yb` return;
+#   (5) `untag_trail`: `avp >= young_base` before `*avp |= MARK_MASK`; (6) `clean_attvar_chain`: the loop bound `p >= young_base` (the chain is newest
+#       first);
+#   (7) `sweep_global_mark`: the `gm < young_base` early exit; (8) `is_downward_ref`: `d >= young_base`; (9) `check_marked`/`compact_global`:
+#       `base = young_base` instead of `gBase`; (10) `collect_phase`: the sentinel `yb[-1] |= MARK_MASK` and its restore;
+#   (11) `gcEnsureSpace`: `lneeded += sizeof(struct fliFrame) + gen_scan_roots(false)*sizeof(word)` when `young_base > gBase`;
+#   (12) `garbageCollect`: `minor = gen_minor_gc(reason)`, `LD->gc.young_base = minor ? LD->gen_bar : gBase`, `old_size`, `LD->gen_bar = gBase` for a
+#       major one, `genroots = gen_roots_to_term_refs()`, `gen_term_refs_to_roots`, `gen_remember_trailed_assignments`, `gen_verify_enabled`,
+#       `LD->gc.minor_count`/`major_live`, the `gen_bar` policy after the collection (`gBase` without the flag, `gTop` when nothing was written on the
+#       global stack, else kept for a minor one), `gen_forget()`, and the retry `LD->gc.force_major = true; return garbageCollect(reason)` when a
+#       minor GC freed too little;
+#   (13) `update_stacks`: `update_pointer(&LD->gen_bar, gs)` and the remembered addresses (the stacks are Julia vectors here: no `update_stacks`);
+#   (14) the new functions `gen_remember`, `gen_forget`, `gen_minor_gc`, `gen_points_young`, `gen_scan_roots`, `gen_verify`, `gen_check_no_marks` (O_DEBUG),
+#       `gen_roots_to_term_refs`, `gen_remember_trailed_assignments`, `gen_term_refs_to_roots`, and the `gen_remember(p)` barrier at the store sites
+#       (`Trail`, `varBindConst`, `GTrail`, `TrailAssignment`, `nb_setarg`, `gen_assign`; `LD->gen_bar` in pl-global/pl-inline/pl-alloc/pl-prims: ENGINE-CORE);
+#   (15) the `PLFLAG_GC_GENERATIONAL` guard of those paths. The flag itself is registered (src/os/pl-prologflag.jl) and `totals.minor_collections`
+#       exists (always 0); the full port is a later step of the plan in evidence/R2/sync_h2_handoff.md section 3.
+# DIVERGES (SYNC3) TRACE_GC: with `trace_gc` upstream no longer prints `% GC: ...` while collecting (the `Sdprintf("%% GC: ")` and the `gained ...`
+# line are gone); `garbageCollect` and `grow_stacks` QUEUE a `gc_trace_event` (`queue_gc_trace`, type `GC_TRACE_GC`, `GC_TRACE_MINOR_GC` or
+# `GC_TRACE_SHIFT`, six size values and the time; `LD->gc.trace` holds `GC_TRACE_QUEUE_SIZE`, an overflow is counted as `dropped`) and `SIG_TRACE_GC`
+# prints them at a safe point (`print_gc_trace`, declared in pl-gc.h) as the messages `gc(done(...))`, `gc(minor(...))`, `shift(done(...))` and
+# `gc(dropped(N))` to user_error (ef5d47a0). The kernel has no `trace_gc` output at all (src/pl-gcdriver.jl, DIVERGES (8)), so none of
+# `queue_gc_trace`, `print_gc_trace`, `gc_trace_event`, `GC_TRACE_*`, `SIG_TRACE_GC` and the `LD->gc.trace` fields is written; the `trace_gc` flag stays
+# a flag nobody reads, as at the pin. `checkGCWalk`/`gc_walk_ignored` (O_DEBUG, pl-gc.h) and the `MSG_GC_STRESS` branch of `considerGarbageCollect` are
+# debug-only: no twin. `unify_gc_reason`, `unify_gc_stats`, `is_dead_attvar`, `is_start`: `int` became `bool` only.
+
 # ── the stack collector's statistics and scheduler (G1-GC, piece G1-1; pl-gc.c:524-703, :3834-3909, :4592-4606) ──
 # DIVERGES (D8, audit D-0634): the pinned build answers `current_prolog_flag(gc_thread, true)` (its collector thread, O_PLMT); the flag is read-only
 # `false` here (src/os/pl-prologflag.jl) and `enterGC`/`leaveGC` (pl-gc.c, O_PLMT only: they hold `LD->gc.active` against a thread suspended by the
@@ -1397,8 +1447,10 @@ end
 # PORT: pl-gc.c gc_stat_end as gc_stat_end!
 # DIVERGES: `LD->stacks.global.gced_size` and `.trail.gced_size` are `ld.gc.global_policy.gced_size` and `ld.gc.trail_policy.gced_size`; `PL_raise(SIG_TUNE_GC)`
 # is `raiseGcSignal!` (a pending bit: the handler, `gc_tune_handler` pl-setup.c:838, is src/pl-setup.jl's, run by `handleSignals`).
+# swipl-devel af9e2e7e (SYNC3, 25ebf765): `gc_stat_end(stats, minor)` also counts `totals.minor_collections` for a minor (generational) collection.
+# DIVERGES: `minor` defaults to `false` and the driver always passes `false` (no generational collector: GEN-GC block below), so the counter stays 0.
 "End the statistics of a collection: the sizes after, the time it took, the totals; asks for `prolog:tune_gc/3` above 20% (pl-gc.c `gc_stat_end`)."
-function gc_stat_end!(ld::PL_local_data, stats::gc_stats)::gc_stat
+function gc_stat_end!(ld::PL_local_data, stats::gc_stats, minor::Bool=false)::gc_stat
     this = stats.last[stats.last_index + 1]
     cpu = ThreadCPUTime(CPU_USER)
 
@@ -1415,6 +1467,7 @@ function gc_stat_end!(ld::PL_local_data, stats::gc_stats)::gc_stat
     stats.totals.trail_gained += this.trail_before - this.trail_after
     stats.totals.time += this.gc_time
     stats.totals.collections += 1
+    minor && (stats.totals.minor_collections += 1)
 
     if gc_percentage(this) > 0.2
         raiseGcSignal!(ld, SIG_TUNE_GC)

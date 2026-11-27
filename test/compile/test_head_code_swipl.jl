@@ -54,10 +54,10 @@ end
 "A list cell `[h|t]` — written `'[|]'(h,t)` by `_htext`, which swipl reads as the same cell."
 _hcons(h::_H, t::_H) = mk_expr(_H, _H[_hs("[|]"), h, t])
 
-"Integers at the edges of the tagged range (±2^56) and of Int64, and in between."
+"Integers at the edges of the tagged range (±2^55 since TAG1, it was ±2^56; the old edges stay as plain big integers) and of Int64, and in between."
 const _HINTS = (
-    0, 1, -1, 7, 2^31, -2^31 - 1, 2^56 - 1, 2^56, -2^56, -2^56 - 1, typemax(Int64),
-    typemin(Int64)
+    0, 1, -1, 7, 2^31, -2^31 - 1, 2^55 - 1, 2^55, -2^55, -2^55 - 1, 2^56 - 1, 2^56, -2^56,
+    -2^56 - 1, typemax(Int64), typemin(Int64)
 )
 
 "A random number of every kind: Int64 and BigInt integers, canonical rationals, floats."
@@ -254,12 +254,21 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         ("lp4([X|Y],f(X,Y))", _he(:lp4, [_hcons(vX2, vY3), _he(:f, [vX2, vY3])])),
         ("lp5(f(a,[b]))", _he(:lp5, [_he(:f, [_hs(:a), _hcons(_hs(:b), mk_nil(_H))])])),
         (
-            "lp6(72057594037927935,72057594037927936)",
-            _he(:lp6, [lk_gnd(_H, 2^56 - 1), lk_gnd(_H, 2^56)])
+            "lp6(36028797018963967,36028797018963968)",
+            _he(:lp6, [lk_gnd(_H, 2^55 - 1), lk_gnd(_H, 2^55)])
         ),
         (
-            "lp7(-72057594037927936,-72057594037927937)",
-            _he(:lp7, [lk_gnd(_H, -2^56), lk_gnd(_H, -2^56 - 1)])
+            "lp7(-36028797018963968,-36028797018963969)",
+            _he(:lp7, [lk_gnd(_H, -2^55), lk_gnd(_H, -2^55 - 1)])
+        ),
+        # TAG1: the pre-TAG1 edges 2^56-1 and -2^56 are past the tagged range now: both of a pair are h_mpz
+        (
+            "lp8(72057594037927935,72057594037927936)",
+            _he(:lp8, [lk_gnd(_H, 2^56 - 1), lk_gnd(_H, 2^56)])
+        ),
+        (
+            "lp9(-72057594037927936,-72057594037927937)",
+            _he(:lp9, [lk_gnd(_H, -2^56), lk_gnd(_H, -2^56 - 1)])
         )
     ]
     a, b, f2 = "h_atom($(_ha("a")))", "h_atom($(_ha("b")))", "h_functor($(_hF("f", 2)))"
@@ -269,8 +278,10 @@ const _HSWIPL_REQUIRED = get(ENV, "LOGICKERNEL_REQUIRE_SWIPL", "") == "1"
         ["h_list", a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
         ["h_list_ff(2,3)", f2, "h_var(2)", "h_var(3)", "h_pop", "i_exitfact"],
         [f2, a, "h_rlist", b, "h_nil", "h_pop", "i_exitfact"],
-        ["h_smallint(i:72057594037927935)", "h_mpz(i:72057594037927936)", "i_exitfact"],
-        ["h_smallint(i:-72057594037927936)", "h_mpz(i:-72057594037927937)", "i_exitfact"]
+        ["h_smallint(i:36028797018963967)", "h_mpz(i:36028797018963968)", "i_exitfact"],
+        ["h_smallint(i:-36028797018963968)", "h_mpz(i:-36028797018963969)", "i_exitfact"],
+        ["h_mpz(i:72057594037927935)", "h_mpz(i:72057594037927936)", "i_exitfact"],
+        ["h_mpz(i:-72057594037927936)", "h_mpz(i:-72057594037927937)", "i_exitfact"]
     ]
     @test [_hcode(h) for (_, h) in lists] == want
     @test _hcode(lists[1][2]) == _hcode(lists[2][2])

@@ -57,6 +57,10 @@ end
 # unbound or attributed cell its reference, any other term its word). No `ensureTrailSpace` (the
 # trail is a vector).
 # Its tracer callers (pl-trace.c:1165, :1282, :1334, :2583) are not ported; SSU's error is the first.
+# DIVERGES (SYNC3, 25ebf765): upstream's `else argp[i] = *a` is `gen_assign(&argp[i], *a)` ("ensureTrailSpace() may have
+# GCed"): the generational stack GC remembers the store; held with the GC family (see `_cell_link!`). The other af9e2e7e
+# hunks of pl-trace.c (5f69f2e6: frames and contexts kept as term references across calls that may shift the stacks:
+# `canUnifyTermWithGoal`, `traceAction` '/', `saveGoal`, `writeContextFrameSafe`) have no twin: positions never move here.
 """
     put_frame_goal(ld, goal, fr) -> Bool
 

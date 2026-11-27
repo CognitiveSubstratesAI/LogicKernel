@@ -464,6 +464,27 @@ function _manifest_index(T)
         (LK._cb_next, Tuple{LK.cb_frame{T}, LK.cb_kind}, false),
         (LK.allocChoiceVar!, Tuple{LD, CInfo}, false),
         (LK.try_fast_condition!, Tuple{CInfo, Int}, false),
+        # SYNC3 b9caf216 (af9e2e7e) — frame-slot sharing of branch-local variables: analysis, slot assignment, decompiler renewal
+        (LK.an_node_ptr, Tuple{CInfo, Int}, false),
+        (LK.an_disj_ptr, Tuple{CInfo, Int}, false),
+        (LK.an_new_node!, Tuple{CInfo, Int, Int}, false),
+        (LK.an_enter_disjunction!, Tuple{CInfo, T}, false),                  # SYNC3 f475b538: the term
+        (LK.an_next_alternative!, Tuple{CInfo}, false),
+        (LK.an_leave_disjunction!, Tuple{CInfo}, false),
+        (LK.an_var_occurs!, Tuple{CInfo, LK.VarDef}, false),
+        (LK.is_branch_local, Tuple{LK.VarDef}, false),
+        (LK.assign_shared_slots!, Tuple{CInfo, Vector{LK.VarDef}, Int}, false),
+        (LK.unifyVar, Tuple{LK.decompileInfo{T}, Int, UInt64}, false),
+        (LK.renew_shared_vars!, Tuple{LK.decompileInfo{T}, UInt64}, false),
+        # SYNC3 f475b538 (af9e2e7e) — sorted slot sets of the alternatives (balanceSlots! replaces the scan of balanceVars)
+        (LK.an_record!, Tuple{CInfo, LK.VarDef}, false),
+        (LK.an_slot_sets!, Tuple{CInfo}, false),
+        (LK.an_find_slot_sets, Tuple{CInfo, T}, false),
+        (LK.balanceSlots!, Tuple{BitVector, LK.slot_set, LK.slot_set, CInfo}, false),
+        (LK.setSlots!, Tuple{BitVector, LK.slot_set}, false),
+        (LK.balance_after_a, Tuple{LK.cb_frame{T}, CInfo}, false),
+        (LK.balance_after_b, Tuple{LK.cb_frame{T}, CInfo}, false),
+        (LK.join_vars, Tuple{LK.cb_frame{T}, CInfo}, false),
         (LK.in_continuation, Tuple{LD, Int, Int, Int}, true),
         (LK.killFrame, Tuple{LK.localFrame{T}}, true),
         (LK.makeVarRef, Tuple{UInt64}, true), (LK.isVarRef, Tuple{UInt64}, true),
@@ -473,6 +494,12 @@ function _manifest_index(T)
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int, Int}, false),
         (LK.build_term!, Tuple{LK.decompileInfo{T}, T, Int}, false),
         (LK.decompileBodyNoShift!, Tuple{LK.decompileInfo{T}, UInt64, Int}, false),
+        (
+            LK.decompileBodyIter!,
+            Tuple{LK.decompileInfo{T}, UInt64, Int, Vector{LK.dc_frame}},
+            false
+        ),   # SYNC3 f2fdb8cf
+        (LK._dc_next, Tuple{LK.dc_frame, LK.dc_kind, UInt64, Int, Int, Int}, false),
         (LK._type_test_name, Tuple{UInt64}, false),
         (LK.decompileBody!, Tuple{LD, LK.decompileInfo{T}, Int, UInt64, Int}, false),
         (LK.decompile!, Tuple{LD, C, Int, Int}, false),
@@ -646,11 +673,15 @@ function _manifest_index(T)
         (LK.deleteIndex!, Tuple{D, CL, CI}, false),
         (LK.next_clause_index, Tuple{CIP, Int}, true),
         (LK.insertIndex!, Tuple{D, CL, CI}, false),
-        (LK.best_hash_assessment, Tuple{UInt8, UInt8, CL}, true),
-        (LK.sort_assessments!, Tuple{CL, Vector{UInt8}, Int}, false),
+        (LK.best_hash_assessment, Tuple{UInt8, UInt8, Vector{LK.arg_info}}, true),
+        (LK.sort_assessments!, Tuple{Vector{LK.arg_info}, Vector{UInt8}, Int}, false),
         (LK.skipToTerm, Tuple{C, NT8, Int}, true),
-        (LK.assess_scan_clauses!, Tuple{CL, Int, Vector{HA}, Int, CTX}, false),
-        (LK.assess_candidate_indexes!, Tuple{Int, CL, LK.assessment_set, CTX}, false),
+        (LK.assess_scan_clauses!, Tuple{CL, Int, Vector{HA}, Int, Bool, CTX}, false),
+        (
+            LK.assess_candidate_indexes!,
+            Tuple{Int, CL, Vector{LK.arg_info}, Bool, LK.assessment_set, CTX},
+            false
+        ),
         (LK.ensure_arg_info!, Tuple{CL, Int}, false),
         (LK.better_index, Tuple{CI, Float32, Float32}, true),
         (LK.better_index, Tuple{Nothing, Float32, Float32}, true),
@@ -660,7 +691,7 @@ function _manifest_index(T)
         (LK.bestHash!, Tuple{AC, Int, CL, CI, HH, CTX}, false),
         (
             LK.find_multi_argument_hash!,
-            Tuple{Int, CL, Vector{UInt8}, Int, Nothing, HH, CTX},
+            Tuple{Int, CL, Vector{LK.arg_info}, Bool, Vector{UInt8}, Int, Nothing, HH, CTX},
             false
         ),
         (LK.assess_all_arguments!, Tuple{Int, CL, CTX}, false),
@@ -671,9 +702,10 @@ function _manifest_index(T)
         ),
         (LK.create_deep_indexes!, Tuple{CL, VIEW, Int, Vector{HH}, Int, Int}, false),
         (LK.candidate_indexes!, Tuple{Int, CL, Vector{HH}, Int, CTX}, false),
-        (LK.get_existing_index, Tuple{CIP, Int, HH}, false),
-        (LK.get_existing_index, Tuple{Nothing, Int, HH}, true),
-        (LK.set_candidate_indexes!, Tuple{D, CL, Int, Bool}, false),
+        (LK.get_existing_index, Tuple{CIP, HH}, false),
+        (LK.get_existing_index, Tuple{Nothing, HH}, true),
+        (LK.set_candidate_indexes!, Tuple{D, CL, Int, Bool, UInt64}, false),
+        (LK.sort_indexes!, Tuple{CIP, Int}, false),
         (LK.can_be_primary_index, Tuple{CL, Int}, true),
         (LK.preferred_primary_index, Tuple{D}, true),
         (LK.modify_primary_index_arg!, Tuple{D, Int}, true),
@@ -691,6 +723,32 @@ function _manifest_index(T)
         (LK.deleteActiveClauseFromBucket!, Tuple{CB, UInt64}, true),
         (LK.deleteActiveClauseFromIndex!, Tuple{CI, C}, true),
         (LK.deleteActiveClauseFromIndexes!, Tuple{D, C}, false),
+        # TAG1 (pl-index.c af9e2e7e): the erased clauses an index keeps or skips, and the index fill counter
+        (LK.UNUSABLECI, Tuple{CI}, false),
+        (LK.is_clean_definition, Tuple{D}, true),
+        (LK.matching_clause, Tuple{Nothing, UInt64}, false),
+        (LK.matching_clause, Tuple{CR, UInt64}, false),
+        (LK.index_good_from, Tuple{CI}, true),
+        (LK.set_index_good_from!, Tuple{CI, Int}, false),
+        (LK.sees_erased, Tuple{CTX}, false),
+        (LK.index_keeps_erased, Tuple{CTX}, false),
+        (LK.assessed_clauses, Tuple{CL, Bool}, false),
+        (LK.erased_arg_info!, Tuple{D}, false),
+        (LK.clear_erased_assessments!, Tuple{D}, false),
+        (LK.indexed_clauses, Tuple{CI, CL}, false),
+        (LK.no_visible_clause, Tuple{CL, CTX}, false),
+        (LK.index_covers, Tuple{CI, CTX}, false),
+        (LK.index_after, Tuple{CL, CI}, false),
+        (LK.first_clause_scan!, Tuple{AF, CL, CTX}, false),
+        (LK.first_clause_scan!, Tuple{AC, CL, CTX}, false),
+        (LK.erased_args_unindexable!, Tuple{Int, CL, CI, CTX}, false),
+        (LK.index_in_clist, Tuple{CL, CI}, false),
+        (LK.start_index_fill!, Tuple{D}, false),
+        (LK.done_index_fill!, Tuple{D}, false),
+        (LK.waitForIndexFills, Tuple{D}, false),
+        (LK.waitIndexFills, Tuple{D}, false),
+        (LK.fill_erased_clause!, Tuple{CI, C, Bool, LK.erased_fill}, false),
+        (LK.retireIndex!, Tuple{D, CL, CI}, false),
         # src/pl-incl.jl, src/pl-inline.jl
         (LK.GLOBALLY_VISIBLE_CLAUSE, Tuple{C, UInt64}, true),
         (LK.global_generation, Tuple{GD}, true),
@@ -706,6 +764,7 @@ function _manifest_index(T)
         (LK.cgcActivatePredicate!, Tuple{GD, D, UInt64}, false),
         (LK.pushPredicateAccessObj!, Tuple{LD, GD, D}, false),
         (LK.popPredicateAccess!, Tuple{LD, D}, false),
+        (LK.popPredicateAccessOutOfOrder!, Tuple{LD, D}, false), # TAG1
         (LK.markAccessedPredicates!, Tuple{LD, GD}, false),
         (LK.is_pointer_like, Tuple{Int}, true), (LK.is_pointer_like, Tuple{Nothing}, true),
         (LK.is_pointer_like, Tuple{D}, true),
@@ -720,13 +779,21 @@ function _manifest_index(T)
         (LK._head_compound!, Tuple{LD, Int, UInt64}, false),
         (LK.next_arg_ref!, Tuple{LD, Int}, false),
         (LK.set_bvar_argp!, Tuple{LD, Int}, false),
-        (LK.unifyVar, Tuple{LD, Int, Int, UInt64}, false),
         (LK.unifyVarGC, Tuple{LD, Int, Int, UInt64}, false),
         (LK._next_arg!, Tuple{LD, Int, Int, Int, Bool}, false),
         (LK.PL_unify_compound, Tuple{LD, Int, UInt64}, false),
         # src/pl-proc.jl
         (LK.MODULE_user, Tuple{GD}, true),
         (LK.lookupProcedure, Tuple{T, Int, MOD}, false),
+        # TAG1 (pl-proc.c af9e2e7e): procedures are not counted or collected here, these are the no-op ports
+        (LK.isVolatileProcedure, Tuple{PR}, false),
+        (LK.acquireTableProcedure, Tuple{MOD, Tuple{UInt64, Int}, PR}, false),
+        (LK.pinProcedureRef, Tuple{PR}, false),
+        (LK.acquireProcedureRef, Tuple{PR}, false),
+        (LK.releaseProcedureRef, Tuple{PR}, false),
+        (LK.unpinProcedure, Tuple{PR, MOD}, false),
+        (LK.purgeProcedureCandidates, Tuple{MOD}, false),
+        (LK.initProcedureGC, Tuple{}, false),
         # V5c — the module path (src/pl-modul.jl, pl-proc.jl, pl-wam.jl, pl-comp.jl, pl-fli.jl,
         # pl-supervisor.jl)
         (LK.isCurrentModule, Tuple{MT, T}, false),
@@ -749,6 +816,7 @@ function _manifest_index(T)
         (LK.clearSupersModule, Tuple{MOD}, false),
         (LK.setSuperModule, Tuple{MT, LD, MOD, MOD}, false),
         (LK.setSuperModule, Tuple{MT, Nothing, MOD, MOD}, false),
+        (LK.hasProceduresModule, Tuple{GD, MOD}, false),
         (LK.get_module, Tuple{GD, LD, Int, Bool}, false),
         (LK.set_module, Tuple{GD, LD, MOD, Int}, false),
         (LK.unify_export_list, Tuple{LD, Int, MOD}, false),
@@ -810,19 +878,23 @@ function _manifest_index(T)
         # MOD5b — declaring and destroying modules (pl-modul.c), unlinkSourceFileModule (pl-srcfile.c)
         (LK.acquireModule, Tuple{GD, T}, false),
         (LK.acquireModulePtr, Tuple{MOD}, false),
+        (LK.isPermanentModule, Tuple{MOD}, false),
         (LK.unallocModule, Tuple{GD, LD, MOD}, false),
         (LK.markSourceFilesProcedure, Tuple{PR, BitVector}, false),
         (LK.unlinkSourceFilesModule, Tuple{GD, MOD}, false),
         (LK.unlinkSourceFileModule, Tuple{LK.SourceFile{T}, MOD}, false),
         (LK.releaseModule_unlocked, Tuple{GD, LD, MOD}, false),
         (LK.releaseModule, Tuple{GD, LD, MOD}, false),
-        (LK.destroyModule, Tuple{GD, LD, MOD}, false),
+        (LK.destroyTemporaryModule, Tuple{GD, LD, MOD}, false),
+        (LK.abolishProceduresModule, Tuple{GD, LD, MOD, Bool}, false),
+        (LK.abolishModule, Tuple{GD, LD, MOD, Bool}, false),
+        (LK.clearOperatorsModule, Tuple{MOD}, false),
         (LK._text_summary, Tuple{String, Int}, false),
         (LK.declareModule, Tuple{GD, LD, T, T, T, LK.SourceFile{T}, Int, Bool}, false),
         (LK._message_term, Tuple{LD, Symbol, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
-                LK.pl_declare_module6_va, LK.pl_destroy_module1_va
+                LK.pl_declare_module6_va, LK.pl_destroy_module1_va, LK.pl_abolish_module1_va
             )
         ]...,
         # MOD6 — the module enumerations (pl-modul.c): the module_enum functions, import_module/2, $current_module/2
@@ -872,6 +944,10 @@ function _manifest_index(T)
             ) for N in (Nothing, T)
         ]...,
         (LK.initOperators!, Tuple{GD}, false),
+        (LK.addOperatorName!, Tuple{GD, T}, false),             # TAG1: the operator-name filter (pl-op.c af9e2e7e)
+        (LK.maybeOperatorName, Tuple{GD, T}, false),
+        (LK.cleanupOperators!, Tuple{GD}, false),
+        (LK.hasOperatorsModule, Tuple{MOD}, false),
         (LK.pl_op3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.PL_get_atom, Tuple{LD, Int}, false),
         (LK.PL_get_integer, Tuple{LD, Int}, false),
@@ -1038,6 +1114,8 @@ function _manifest_index(T)
         (LK._position_list, Tuple{LD, NTuple{3, Int64}}, false),
         (LK.get_int_arg, Tuple{LD, Int64, Int64}, false),
         (LK.opPos, Tuple{LK.op_entry{T}, Int64, LK.read_data{T}}, false),
+        (LK.new_position, Tuple{LD, Int64, LK.word}, false),
+        (LK.unify_range_position, Tuple{LD, Int64, Symbol, Int64, Int64}, false),
         (LK.unify_atomic_position, Tuple{LD, Int64, LK.token{T}}, false),
         (LK.unify_string_position, Tuple{LD, Int64, LK.token{T}}, false),
         (LK.set_range_position, Tuple{LD, Int64, Int64, Int64}, false),
@@ -1456,7 +1534,14 @@ function _manifest_index(T)
         (LK.ddi_oldest_generation, Tuple{DDI}, true),
         (LK.registerDirtyDefinition!, Tuple{GD, D}, false),
         (LK.unregisterDirtyDefinition!, Tuple{GD, D}, false),
-        (LK.maybeUnregisterDirtyDefinition!, Tuple{GD, D}, false),
+        (LK.maybeUnregisterDirtyDefinition!, Tuple{GD, D, DDI}, false),   # SYNC3 (af9e2e7e): `ddi` argument (P06)
+        (LK.no_older_goal, Tuple{GD, D, DDI}, false),                      # SYNC3 (af9e2e7e)
+        (LK.setLastErased!, Tuple{D, UInt64}, true),                       # SYNC3 (af9e2e7e)
+        (LK.implicitDynamicProcedure!, Tuple{GD, LD, PR}, false),
+        (LK.hasVisibleProcedure, Tuple{GD, T, Int, MOD}, false),
+        (LK.pinCurrentProcedure, Tuple{UInt64, Int, MOD}, false),
+        (LK.assertDynamicProcedure!, Tuple{GD, LD, PR, C, Int}, false),
+        (LK.assertDynamicProcedure!, Tuple{GD, LD, PR, C, CR}, false),
         (LK.pl_garbage_collect_clauses!, Tuple{GD, LD}, false),
         (LK.pl_retract!, Tuple{GD, LD, D, Int, SNK}, false),
         (LK.allVars, Tuple{LD, Int}, false),
@@ -1546,6 +1631,7 @@ function _manifest_index(T)
         (LK._attvar_head_cell, Tuple{LD}, true),
         (LK._functor_wakeup3, Tuple{LD}, false),
         (LK.registerWakeup, Tuple{LD, Int, UInt64}, false),      # a wakeup cell and its trail entries
+        (LK.appendWakeupHook, Tuple{LD, T, Int}, false),         # TAG1
         (LK.assignAttVar, Tuple{LD, Int, Tuple{UInt8, UInt64, Int}}, false),
         (LK.bind_attvar_const, Tuple{LD, Int, UInt64}, false),
         (LK.restore_wakeup, Tuple{LD, Int}, true),
@@ -1956,7 +2042,7 @@ function _manifest_index(T)
         (LK.double_in_int64_range, Tuple{Float64}, true),
         (LK.toIntegerNumber, Tuple{LD, LK.number, Int}, false),
         (LK.ar_sign_i, Tuple{LK.number}, true),
-        (LK.shift_to_far, Tuple{LD, LK.number, LK.number, Int}, false),
+        (LK.shift_to_far, Tuple{LD, LK.number, LK.number, LK.number, Int}, false),
         (LK.MSB64, Tuple{Int64}, true),
         (LK.ar_shift, Tuple{LD, LK.number, LK.number, LK.number, Int}, false),
         [
@@ -2054,6 +2140,7 @@ function _manifest_index(T)
         (LK._ar_type_error_cells, Tuple{LD, Symbol, Tuple{UInt8, LK.word, Int}}, false),
         (LK.valueExpression, Tuple{LD, Int, LK.number}, false),
         (LK.ar_compare, Tuple{LD, LK.number, LK.number, Int}, false),
+        (LK.own_number, Tuple{LK.number}, true),
         (LK.compareNumbers, Tuple{LD, Int, Int, Int}, false),
         [
             (f, Tuple{LD, Int, Int, LK.foreign_context{T}}, false) for f in (
@@ -2239,6 +2326,17 @@ function _manifest_index(T)
         (LK.pl_retract1_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.alloc_retract_context!, Tuple{LD, LK.retract_context{T}}, false),
         (LK.free_retract_context!, Tuple{LD, LK.retract_context{T}, Int}, false),
+        # SYNC3 (af9e2e7e): retract/1's second access object and the constraint filter of retractall/1
+        (LK.findPredicateAccessObj, Tuple{LD, D}, false),
+        (LK.retract_find_lost!, Tuple{LD, LK.retract_context{T}, C, Int, Int}, false),
+        (
+            LK.retract_move_generation!,
+            Tuple{GD, LD, LK.retract_context{T}, C, Int, Int, Int},
+            false
+        ),
+        (LK.WAKEUP_PENDING, Tuple{LD}, false),
+        (LK.clause_constraints_run, Tuple{LD}, false),
+        (LK.CONSTRAINTS_HOLD, Tuple{LD}, false),
         (
             LK.alloc_foreign_state!,
             Tuple{LK.foreign_state_pool{LK.retract_context{T}}},
@@ -2312,6 +2410,42 @@ function _manifest_index(T)
         # LB4 b2 `load_file!` is `user:load_files/2` through query_answers (src/pl-wam.jl)
         (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, Nothing, Nothing, Int}, false),
         (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, T, LK.sourceloc{T}, Int}, false),
+        # SYNC3 (af9e2e7e, 93a1afc0): `ref::term_t = 0` (the 9-argument method, the 5-argument convenience of assert/2) and the new `assert_proc!`
+        # (ff01f74d's split of assert_term: types from its signature; `mhead` a module_t, `hflags` UInt32)
+        (LK.assert_term!, Tuple{GD, LD, Int, Int, Int}, false),
+        (LK.assert_term!, Tuple{GD, LD, Int, Int, Int, Nothing, Nothing, Int, Int}, false),
+        (
+            LK.assert_term!,
+            Tuple{GD, LD, Int, Int, Int, T, LK.sourceloc{T}, Int, Int},
+            false
+        ),
+        (
+            LK.assert_proc!,
+            Tuple{
+                GD, LD, PR, MOD, Int, Int, Int, Int, Nothing, Nothing, Int, Int, Int, UInt32
+            },
+            false
+        ),
+        (
+            LK.assert_proc!,
+            Tuple{
+                GD,
+                LD,
+                PR,
+                MOD,
+                Int,
+                Int,
+                Int,
+                Int,
+                T,
+                LK.sourceloc{T},
+                Int,
+                Int,
+                Int,
+                UInt32
+            },
+            false
+        ),
         (LK.record_clause, Tuple{LD, Int, Int, Int, Int}, false),
         (LK.pl_record_clause3_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
         (LK.pl_record_clause4_va, Tuple{LD, Int, Int, LK.foreign_context{T}}, false),
@@ -2324,6 +2458,9 @@ function _manifest_index(T)
         (LK.release_clause_blob, Tuple{GD, T}, false),
         (LK.lookup_clref, Tuple{GD, C}, false),
         (LK.clause_clref, Tuple{GD, T}, false),
+        (LK.clause_dbref, Tuple{GD, T}, false),             # SYNC3 P01: pl-dbref.c's name; clause_clref is its alias
+        (LK.foreignLocalClause, Tuple{C}, false),
+        (LK.foreign_local_clause_error, Tuple{LD, Int}, false),
         (LK.PL_unify_clref, Tuple{GD, LD, Int, C}, false),
         (LK.PL_put_clref, Tuple{GD, LD, Int, C}, false),
         (LK.PL_is_dbref, Tuple{GD, LD, Int}, false),
@@ -2351,7 +2488,9 @@ function _manifest_index(T)
         # R2 LB6a — reconsult: the leaf functions, the reload context and the assert path (pl-srcfile.c, pl-thread.c, pl-proc.c)
         (LK.popNPredicateAccess!, Tuple{LD, Int}, false),
         (LK.acquireSourceFileNo, Tuple{GD, Int}, false),
+        (LK.acquireIndexSourceFile, Tuple{GD, Int}, false),
         (LK.releaseSourceFileNo, Tuple{GD, Int}, false),
+        (LK.hasClausesFromSourceFile, Tuple{LK.Definition{T}, LK.SourceFile{T}}, false),
         (LK.freeClause!, Tuple{GD, C}, false),
         (LK.find_clause, Tuple{CR, UInt64}, false),
         (LK.find_clause, Tuple{Nothing, UInt64}, false),
@@ -2402,6 +2541,7 @@ function _manifest_index(T)
         (LK.pl_fixup_reconsult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.pl_end_consult1_va, Tuple{LD, Int64, Int64, LK.foreign_context{T}}, false),
         (LK.fileNameStream, Tuple{GD, LK.IOSTREAM}, false),
+        (LK.fileNameStreamLocked, Tuple{GD, LK.IOSTREAM}, false),    # TAG1
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, T}, false),
         (LK.setFileNameStream, Tuple{GD, LK.IOSTREAM, Nothing}, false),
         (LK.printMessage, Tuple{LD, Symbol, Int}, false),
@@ -2541,7 +2681,7 @@ function _manifest_index(T)
         ]...,
         # SETARG — pl-prims.c setarg/3, nb_setarg/3, nb_linkarg/3; pl-copyterm.c duplicate_term's nshare/share
         (LK.unify_vp, Tuple{LD, Int, Int}, false),
-        (LK.may_share_in_duplicate, Tuple{LD, Int}, false),
+        (LK.may_share_in_duplicate, Tuple{LD, Int, Int}, false),
         (LK.setarg, Tuple{LD, Int, Int, Int, UInt32}, false),
         (LK.setarg_t, Tuple{LD, Int, Int, Int, UInt32}, false),
         (LK.share_for_duplicate_cells, Tuple{LD, Int, LK.cp_options}, false),
@@ -2575,6 +2715,7 @@ function _manifest_index(T)
         (LK.get_chr_from_text, Tuple{Vector{Int}, Int}, false),
         (LK.get_int_expression, Tuple{LD, Int, LK.number}, false),
         (LK._fmt_need_arg, Tuple{LD, Int}, false),
+        (LK._fmt_arg_max, Tuple{LD, Int, Int, String}, false),
         (LK._rub!, Tuple{FST, Int}, false),
         (LK.do_format, Tuple{LD, LK.IOSTREAM, LK.PL_chars_t, Int, Int, Int}, false),
         (LK.distribute_rubber, Tuple{Vector{LK.rubber}, Int, Int}, false),
@@ -2752,6 +2893,7 @@ function _manifest_index(T)
         (LK.table_answer_event, Tuple{GD, LD, D, T, Int}, false),
         (LK.retractall_event, Tuple{GD, LD, D, Int, Symbol}, false),
         (LK.term_to_fastheap, Tuple{LD, Int}, false),
+        (LK.term_to_fastheap_ex, Tuple{LD, Int, Bool}, false),   # TAG1
         (LK.free_fastheap, Tuple{LK.fastheap_term{T}}, false),
         (LK.put_fastheap, Tuple{LD, LK.fastheap_term{T}, Int}, false),
         (LK.PL_put_frame, Tuple{LD, Int, Int}, false),
@@ -2793,7 +2935,6 @@ function _manifest_index(T)
         # RDDICT — the reader's dict branch (src/pl-read.jl), dict_order_term_refs (src/pl-dict.jl) and the
         # var_tag flag helpers (src/os/pl-prologflag.jl)
         (LK.is_key_token, Tuple{LK.token{T}, LK.read_data{T}}, false),
-        (LK._key_atom, Tuple{LK.token{T}}, false),
         (LK.read_dict_end, Tuple{LK.pframe{T}, LK.token{T}, LK.read_data{T}}, false),
         (LK.read_dict_key, Tuple{LK.pframe{T}, LK.ct_request, LK.read_data{T}}, false),
         (
@@ -2977,13 +3118,24 @@ function _manifest_index(T)
         # TAB1 TB2: the components, worklists, clusters, suspension index, '$tbl_wkl_work'/6, completion, inspection
         # (src/pl-tabling.jl) and push_continuation_list (src/pl-cont.jl); the UNTESTED relay (nothing compiled or run)
         (LK.push_continuation_list, Tuple{GD, LD, Int, Int, PCd}, false),
-        (LK.tbl_pointer!, Tuple{LD, LK.tbl_worklist{T}}, false),
-        (LK.tbl_pointer!, Tuple{LD, LK.tbl_component{T}}, false),
-        (LK.tbl_pointer_release!, Tuple{LD, LK.tbl_worklist{T}}, false),
-        (LK.tbl_pointer_release!, Tuple{LD, LK.tbl_component{T}}, false),
-        (LK.tbl_unify_pointer, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
-        (LK.tbl_unify_pointer, Tuple{LD, Int, LK.tbl_component{T}}, false),
-        (LK.tbl_get_pointer, Tuple{LD, Int}, false),
+        # SYNC3 P11 (pl-tabling.c af9e2e7e): the PROLOG HANDLES that replace tbl_pointer! and friends
+        (LK.new_tbl_handle, Tuple{LD, LK.tbl_worklist{T}, Int}, false),
+        (LK.new_tbl_handle, Tuple{LD, LK.tbl_component{T}, Int}, false),
+        (LK.free_tbl_handle, Tuple{LD, Int}, false),
+        (LK.free_tbl_handles, Tuple{LD}, false),
+        (LK.tbl_handle_object, Tuple{LD, Int, Int}, false),
+        (LK.worklist_handle, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.component_handle, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.unify_handle, Tuple{LD, Int, Int}, false),
+        (LK.unify_worklist, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
+        (LK.unify_component, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK.release_obj_handle, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.release_obj_handle, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.release_worklist_handle, Tuple{LD, LK.tbl_worklist{T}}, false),
+        (LK.release_component_handle, Tuple{LD, LK.tbl_component{T}}, false),
+        (LK.word_worklist, Tuple{LD, Int}, false),
+        (LK.handle_worklist, Tuple{LD, Int}, false),
+        (LK.handle_component, Tuple{LD, Int}, false),
         (LK.wl_table, Tuple{LD, LK.tbl_worklist{T}}, false),
         (LK._zero_component!, Tuple{LK.tbl_component{T}}, false),
         (LK.new_component, Tuple{LD}, false),
@@ -3125,8 +3277,8 @@ function _manifest_index(T)
         (LK.unify_component_status, Tuple{LD, Int, LK.tbl_component{T}}, false),
         (LK.unify_wl_set, Tuple{LD, Int, LK.worklist_set{LK.tbl_worklist{T}}}, false),
         (LK.unify_scc_set, Tuple{LD, Int, LK.component_set{LK.tbl_component{T}}}, false),
-        (LK.unify_pointer_or_nil, Tuple{LD, Int, LK.tbl_component{T}}, false),
-        (LK.unify_pointer_or_nil, Tuple{LD, Int, Nothing}, false),
+        (LK.unify_component_or_null, Tuple{LD, Int, LK.tbl_component{T}}, false),
+        (LK.unify_component_or_null, Tuple{LD, Int, Nothing}, false),
         (LK.unify_cluster, Tuple{LD, Int, LK.trie{T}, LK.cluster{T}, Bool}, false),
         (LK.unify_clusters, Tuple{LD, Int, LK.tbl_worklist{T}}, false),
         [
@@ -3562,6 +3714,8 @@ _index_entry_points(T) = (
     (LK.unify_text, Tuple{LK.PL_local_data{T}, Int, LK.PL_chars_t, Int}, false),
     (LK.string_x, Tuple{LK.PL_local_data{T}, Int, Int, Int}, false),
     (LK.get_positive_integer_or_unbound, Tuple{LK.PL_local_data{T}, Int}, false),
+    (LK.is_negative_integer, Tuple{LK.PL_local_data{T}, Int}, false),   # TAG1 (pl-error.c af9e2e7e)
+    (LK.int_range_error, Tuple{LK.PL_local_data{T}, Int, T, Bool}, false),
     (
         LK.sub_text,
         Tuple{LK.PL_local_data{T}, Int, Int, Int, Int, Int, LK.control_t{T}, Int},
@@ -3572,6 +3726,8 @@ _index_entry_points(T) = (
     (LK.PL_get_int64_ex, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.PL_get_pointer_ex, Tuple{LK.PL_local_data{T}, Int}, false),   # TB4e: pl-error.c PL_get_pointer_ex
     (LK.PL_syntax_error, Tuple{LK.PL_local_data{T}, String, Nothing}, false),
+    (LK.PL_syntax_error_term, Tuple{LK.PL_local_data{T}, Int, Nothing}, false),   # TAG1
+    (LK.PL_syntax_error_term, Tuple{LK.PL_local_data{T}, Int, LK.IOSTREAM}, false),
     (LK.string_bytes_text_error, Tuple{LK.PL_local_data{T}, Int}, false),
     (LK.text_representation_error, Tuple{LK.PL_local_data{T}, LK.IOENC}, false),
     (LK.PL_text_recode, Tuple{LK.PL_local_data{T}, LK.PL_chars_t, LK.IOENC}, false),
@@ -4235,6 +4391,7 @@ _manifest_tx1(T) = begin
         (LK.update_gen, Tuple{UP}, true),
         (LK.cmp_updates, Tuple{UP, UP}, true),
         (LK.is_trie_clause, Tuple{GD, C}, true),
+        (LK.setTransactionStart, Tuple{GD, LD}, false),
         (LK.transaction_updates, Tuple{GD, LD}, false),
         (LK.announce_updates, Tuple{GD, LD, Vector{UP}}, false),
         (LK.transaction, Tuple{GD, LD, Int, Int, Int, UInt32}, false),
@@ -4306,7 +4463,7 @@ _manifest_table(T) = begin
 end
 _manifest_table_plain() = (
     (LK.symbol, Tuple{UInt64, UInt64}, false),
-    (LK.KVS, Tuple{Int, Bool, Int, Nothing, Nothing, Vector{LK.symbol}}, false),
+    (LK.KVS, Tuple{Int, Bool, Bool, Int, Nothing, Nothing, Vector{LK.symbol}}, false),
     (LK.Table, Tuple{Int, Bool, Nothing, Nothing, LK.KVS}, false),
     (LK.TableEnum, Tuple{LK.Table{Nothing, Nothing}, LK.KVS, Int}, false),
     (LK._htable_kvs_in_use, Tuple{LK.KVS}, true),
@@ -4316,6 +4473,7 @@ _manifest_table_plain() = (
     (LK.htable_cas_value, Tuple{LK.KVS, Int, UInt64, UInt64}, false),
     (LK.htable_cas_new_kvs, Tuple{LK.KVS, LK.KVS}, false),
     (LK.htable_cas_cleanup, Tuple{LK.Table{Nothing, Nothing}, Bool, Bool}, false),
+    (LK.htable_advance_kvs, Tuple{LK.Table{Nothing, Nothing}}, false),   # TAG1
     (LK.htable_alloc_kvs, Tuple{Int}, false),
     (LK.htable_free_kvs, Tuple{LK.KVS}, false),
     (LK.htable_free_all_kvs, Tuple{LK.Table{Nothing, Nothing}}, false),
@@ -4475,6 +4633,9 @@ _manifest_prof(T) = begin
     NODE = LK.call_node{T}
     SUM = LK.node_sum{T}
     REF = LK.prof_ref{T}
+    IDX = LK.prof_index{T}
+    HN = LK.prof_handle_nodes{T}
+    MEM = LK.prof_mem
     (
         (LK._prof_refuse, Tuple{LD, Symbol, String}, false),
         (LK.new_call_node!, Tuple{LD, Union{Nothing, DEF}, Int}, false),
@@ -4489,7 +4650,17 @@ _manifest_prof(T) = begin
         (LK.add_parent_ref!, Tuple{SUM, NODE, Int, Union{Nothing, DEF}, Int, Int}, false),
         (LK.add_recursive_ref!, Tuple{SUM, Int, Int}, false),
         (LK.add_sibling_ref!, Tuple{SUM, NODE, Int}, false),
-        (LK.sumProfile, Tuple{LD, NODE, DEF, SUM, Int}, false),
+        (LK.free_prof_index, Tuple{Union{Nothing, IDX}}, false),
+        (LK.handle_nodes, Tuple{IDX, Union{Nothing, DEF}}, false),
+        (LK.add_occurrence, Tuple{HN, NODE}, false),
+        (LK.get_prof_index, Tuple{LD}, false),
+        (LK.sum_node, Tuple{LD, NODE, SUM, Int}, false),
+        (LK.prof_unify_mem4, Tuple{LD, Int, Int, Int, Int, Int}, false),
+        (LK.prof_gc_global_gained, Tuple{LD}, false),
+        (LK.prof_gc_collections, Tuple{LD}, false),
+        (LK.prof_mem_clock, Tuple{LD}, false),
+        (LK.prof_mem_charge, Tuple{LD, Int, Int}, false),
+        (LK.profBacktrack, Tuple{LD}, false),
         (LK.unify_relatives, Tuple{GD, LD, Int, Vector{REF}}, false),
         (LK.get_def, Tuple{GD, LD, Int}, false),
         (LK.get_handle, Tuple{GD, LD, Int}, false),
@@ -4506,7 +4677,7 @@ _manifest_prof(T) = begin
         (LK.node_sum{T}, Tuple{}, false),
         (
             LK.prof_ref{T},
-            Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, Int, Int, Int},
+            Tuple{Int, Union{Nothing, DEF}, Int, Int, Int, Int, MEM, MEM, Int, Int, Int},
             false
         ),
         (LK.ld_profile{T}, Tuple{}, false),
@@ -4537,8 +4708,8 @@ _manifest_prof(T) = begin
         [
             (f, Tuple{LD, Int, Int, LK.control_t{T}}, false) for f in (
                 LK.pl_prof_sibling_of2_va, LK.pl_prof_node8_va,
-                LK.pl_prof_procedure_data8_va,
-                LK.pl_prof_statistics8_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va,
+                LK.pl_prof_procedure_data9_va, LK.pl_prof_procedures1_va,
+                LK.pl_prof_statistics9_va, LK.pl_reset_profiler0_va, LK.pl_profiler2_va,
                 LK.pl_profile4_va,
                 LK.pl_prof_exact_ok1_va, LK.pl_prof_clock_cost1_va
             )
@@ -4547,6 +4718,11 @@ _manifest_prof(T) = begin
 end
 _manifest_prof_plain() = (
     (LK.ld_profile_clock, Tuple{}, false),
+    (LK.ld_profile_mem, Tuple{}, false),
+    (LK.prof_mem, Tuple{}, false),
+    (LK.add_prof_mem, Tuple{LK.prof_mem, LK.prof_mem}, false),
+    (LK.sub_prof_mem, Tuple{LK.prof_mem, LK.prof_mem}, false),
+    (Base.copy, Tuple{LK.prof_mem}, false),   # TAG1
     (LK._llround, Tuple{Float64}, false)
 )
 
@@ -4584,7 +4760,7 @@ _manifest_lb2b(T) = begin
                 LK.pl_read_link3_va, LK.pl_exists_file1_va, LK.pl_exists_directory1_va,
                 LK.pl_is_absolute_file_name1_va, LK.pl_same_file2_va,
                 LK.pl_file_base_name2_va, LK.pl_file_directory_name2_va,
-                LK.pl_tmp_file2_va,
+                LK.pl_tmp_file2_va, LK.pl_tmp_directory2_va,
                 LK.pl_tmp_file_stream4_va, LK.pl_delete_directory1_va,
                 LK.pl_make_directory1_va, LK.pl_rename_file2_va,
                 LK.pl_absolute_file_name2_va, LK.pl_cwd1_va, LK.pl_chdir1_va,
@@ -4901,6 +5077,7 @@ _manifest_g1gc1(::Type{T}) where {T} = begin
         # the statistics of a collection
         (LK.gc_stat_start!, Tuple{LD, LK.gc_stats, UInt64}, false),
         (LK.gc_stat_end!, Tuple{LD, LK.gc_stats}, false),
+        (LK.gc_stat_end!, Tuple{LD, LK.gc_stats, Bool}, false),
         (LK.unify_gc_reason, Tuple{LD, Int, LK.gc_stat}, false),
         (LK.unify_gc_stats, Tuple{LD, Int, Vector{LK.gc_stat}, Int}, false),
         (LK.pl_dgc_statistics5_va, Tuple{LD, Int, Int, LK.control_t{T}}, false),
@@ -5425,6 +5602,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK._HASH_char!, Tuple{LK.sha1_state, Char}, false),
     (LK._HASH_word!, Tuple{LK.sha1_state, UInt64}, false),
     (LK._HASH_str!, Tuple{LK.sha1_state, String}, false),
+    (LK._HASH_VAR!, Tuple{LK.sha1_state, UInt64}, false),
     (LK._precompile_workload, Tuple{}, false),
     (LK.FLAG64, Tuple{Int}, true), (LK.tagex, Tuple{UInt64}, true),
     (LK.isFunctor, Tuple{UInt64}, true), (LK.MK_ATOM, Tuple{UInt64}, true),
@@ -5564,6 +5742,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # R2 S1 — the stream layer's files (pl-stream.c): references, size, BOM, Sopen_file
     (LK.Sreference, Tuple{LK.IOSTREAM}, false),
     (LK.Sunreference, Tuple{LK.IOSTREAM}, false),
+    (LK.SIO_REF_COUNT, Tuple{Int}, true),                       # TAG1 (pl-stream.h af9e2e7e)
+    (LK.S__mark_closed, Tuple{LK.IOSTREAM}, false),
+    (LK.Sunreference_free, Tuple{LK.IOSTREAM}, false),
     (LK.Sacquire, Tuple{LK.IOSTREAM}, false), (LK.Srelease, Tuple{LK.IOSTREAM}, false),
     (LK.Ssize, Tuple{LK.IOSTREAM}, false),
     (LK.ScheckBOM, Tuple{LK.IOSTREAM}, false), (LK.SwriteBOM, Tuple{LK.IOSTREAM}, false),
@@ -5718,6 +5899,9 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.put_byte, Tuple{Int64, LK.IOSTREAM}, false),
     (LK.put_code, Tuple{Int64, LK.IOSTREAM}, false),
     (LK.reperror, Tuple{Int64, LK.IOSTREAM}, false),
+    (LK.mpz_from_digits, Tuple{Vector{UInt8}, Int64, Bool, LK.number}, false),
+    (LK.scan_decimal_mpz, Tuple{Vector{UInt8}, Int64, Int64, Bool, LK.number, Bool}, false),
+    (LK.scan_number_mpz, Tuple{Vector{UInt8}, Int64, Bool, Int64, LK.number}, false),
     (LK.scan_decimal, Tuple{Vector{UInt8}, Int64, Int64, Bool, LK.number}, false),
     (LK.scan_number, Tuple{Vector{UInt8}, Int64, Bool, Int64, LK.number}, false),
     (LK.skipSpaces, Tuple{Vector{UInt8}, Int64}, true),
@@ -5746,6 +5930,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # the enums R1c adds
     (Base.Enums._enum_hash, Tuple{LK.av_action, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.cb_kind, UInt64}, false),
+    (Base.Enums._enum_hash, Tuple{LK.dc_kind, UInt64}, false),   # SYNC3 f2fdb8cf
     (Base.Enums._enum_hash, Tuple{LK.target_module_type, UInt64}, false),   # MOD3a
     (Base.Enums._enum_hash, Tuple{LK.IOENC, UInt64}, false),
     (Base.Enums._enum_hash, Tuple{LK.IOFUNCTIONS, UInt64}, false),
@@ -5985,6 +6170,8 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.reserveAtom, Tuple{LK.atoms_t}, false),
     (LK.same_name, Tuple{LK.atom, Vector{UInt8}, Int, LK.PL_blob_t}, false),
     (LK.lookupBlob, Tuple{LK.atoms_t, Vector{UInt8}, Int, LK.PL_blob_t}, false),
+    (LK.lookupBlobEx, Tuple{LK.atoms_t, Vector{UInt8}, Int, LK.PL_blob_t, Bool}, false),
+    (LK.atomTableNeedsRehash, Tuple{LK.atoms_t}, false),
     (LK.lookupAtom, Tuple{LK.atoms_t, Vector{UInt8}}, false),
     (LK.lookupAtom, Tuple{LK.atoms_t, Vector{UInt8}, Int}, false),
     (LK.rehashAtoms, Tuple{LK.atoms_t}, false),
@@ -6009,7 +6196,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.FUNCTOR_IS_VALID, Tuple{UInt32}, true),
     (LK.pointerHashValue, Tuple{UInt64, Int}, true),
     (LK.allocateFunctorBlock, Tuple{LK.functors_t, Int}, false),
-    (LK.registerFunctor, Tuple{LK.functors_t, LK.functorDef}, false),
+    (LK.addFunctorToArray, Tuple{LK.functors_t, LK.functorDef}, false),
     (LK.lookupFunctorDef, Tuple{LK.functors_t, UInt64, Int}, false),
     (LK.rehashFunctors, Tuple{LK.functors_t}, false),
     (LK.isCurrentFunctor, Tuple{LK.functors_t, UInt64, Int}, false),
@@ -6026,6 +6213,17 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.isAtomFunctor, Tuple{LK.functors_t, UInt64}, true),
     (LK.nameFunctor, Tuple{LK.functors_t, UInt64}, true),
     (LK.fetchFunctorArray, Tuple{LK.functors_t, Int}, true),
+    # TAG1 (pl-funct.c af9e2e7e): the reference counts of the functors
+    (LK.FUNCTOR_REF_COUNT, Tuple{UInt32}, true),
+    (LK.find_functor, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.find_functor_locked, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.is_live_functor, Tuple{LK.functorDef, UInt64, Int}, false),
+    (LK.create_functor, Tuple{LK.functors_t, UInt64, Int, UInt32}, false),
+    (LK.lookupFunctorRef, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.lookupVolatileFunctor, Tuple{LK.functors_t, UInt64, Int}, false),
+    (LK.permanentFunctor, Tuple{LK.functors_t, UInt64}, false),
+    (LK.acquireFunctor, Tuple{LK.functors_t, UInt64}, false),
+    (LK.releaseFunctor, Tuple{LK.functors_t, UInt64}, false),
     # the words of the stacks (L1b stage C1: pl-data.h, pl-inline.h's consPtr/valPtr, pl-gmp.h's
     # size words) — pure bit operations: none allocates
     (LK._slot_word_error, Tuple{UInt64}, false),  # (builds its error: the slot words' bad case)
@@ -6051,6 +6249,7 @@ const _DISPATCH_MANIFEST_TUPLE = (
     # L1f f1a — reading a record's code (src/pl-rec.jl)
     (LK.fetchSizeInt, Tuple{Vector{UInt8}, LK.copy_info}, true),
     (LK.fetchInt64, Tuple{Vector{UInt8}, LK.copy_info}, true),
+    (LK.int64_from_bytes, Tuple{Vector{UInt8}, Int, Int}, true),     # SYNC3 P01
     (LK.fetchWord, Tuple{Vector{UInt8}, LK.copy_info}, true),
     (LK.clearCellAgenda!, Tuple{LK.cell_agenda}, true),
     (LK.nextCellAgendaNoDeRef!, Tuple{LK.cell_agenda}, true),
@@ -6071,14 +6270,16 @@ const _DISPATCH_MANIFEST_TUPLE = (
     (LK.wsizeofInd, Tuple{UInt64}, true),
     (LK.padHdr, Tuple{UInt64}, true),
     (LK.mpz_stack_size, Tuple{UInt64}, true),
-    (LK.mpq_stack_size, Tuple{UInt64}, true),
+    (LK.hasTag, Tuple{UInt64, UInt64}, true), (LK.indKind, Tuple{UInt64}, true),
+    (LK.isPtrInt, Tuple{UInt64}, true), (LK.isMarkedOrIndHdr, Tuple{UInt64}, true),
+    (LK.nonFunctorKey, Tuple{UInt64}, true),
     (LK.valPtr, Tuple{UInt64}, true),
     (LK.unRef, Tuple{UInt64}, true),
     (LK.consInt, Tuple{Int64}, true), (LK.consUInt, Tuple{UInt64}, true),
     (LK.consPtr, Tuple{Int, UInt64}, true), (LK.makeRefG, Tuple{Int}, true),
     (LK.makeRefLok, Tuple{Int}, true), (LK.mkIndHdr, Tuple{Int, UInt64}, true),
     (LK.mkPadHdr, Tuple{Int}, true), (LK.mkBlobHdr, Tuple{Int, Int, UInt64}, true),
-    (LK.mpz_size_stack, Tuple{Int32}, true), (LK.mpq_size_stack, Tuple{Int32}, true),
+    (LK.mpz_size_stack, Tuple{Int32}, true), (LK.consPtrInt, Tuple{Int64}, true),
     (LK.AtomNotRepresentableError, Tuple{Vector{UInt32}}, false),
     (LK.tagTrailPtr, Tuple{Int}, true), (LK.isTrailVal, Tuple{UInt64}, true),
     (LK.trailValP, Tuple{UInt64}, true), (LK._trail_addr, Tuple{Int, Int}, true),

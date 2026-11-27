@@ -54,6 +54,14 @@
 # is the same commit everywhere), and `oracle:` is that result — the commit the binary's `version_git` names
 # (the pin checks read `oracle:` where it is present, `commit:` otherwise). The next full sync absorbs them:
 # the three lines move to the new `commit:` and `backports:`/`oracle:` go.
-version: 10.1.20
-commit: 18168e629eab641c3ff5ff6359db5855a0128c96
-plunit: bdac3ecf684bb34e1cf8d30f57fa992fcd2b4895
+# The SYNC3 sync (audit D-0954, D-0960; written 2026-11-21 on wip/sync-vendor): 18168e62 (V10.1.20 + 1) -> af9e2e7e (master; `git describe
+# --match "V*"` there is V10.1.21-86-gaf9e2e7e, so the oracle's version_git is 10.1.21-86-gaf9e2e7e; the VERSION file at the commit says
+# 11.1.0, so `swipl --version` and the `version` flag say 11.1.0 / 110100; the tip of master is e67af4ba 'Preparing version 11.1.0' and is NOT
+# the pin). FROZEN target. plunit moves with it: packages-plunit bdac3ecf -> 5d986bf9 (one commit, plunit.pl +28/-15). `sync-from:` is the
+# previous pin while a ported file's header still cites it; the sync's last commit removes it, tools/fetch_sync_from.sh's CI steps and
+# test/sync_expected_mismatch.jl. The kernel's own version constants (src/os/pl-prologflag.jl PLVERSION, GIT_VERSION) move at the landing,
+# with the oracle (evidence/R2/sync_vendor_handoff.md).
+version: 11.1.0
+commit: af9e2e7ed0be4e80d2b60b70bb09e91fa087d116
+sync-from: 18168e629eab641c3ff5ff6359db5855a0128c96
+plunit: 5d986bf9e8f22777103f230472505834e28986c8

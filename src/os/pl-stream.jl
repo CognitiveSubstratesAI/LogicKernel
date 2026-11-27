@@ -1,6 +1,7 @@
-# UPSTREAM: swipl-devel src/os/pl-stream.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-stream.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/SWI-Stream.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-stream.h @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -904,7 +905,9 @@ function Scanrepresent(c::Int, s::IOSTREAM)::Int
 end
 
 # PORT: pl-stream.c Sgetcode
-# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported); no `tee`.
+# (swipl-devel e23f9ceb: ENC_ASCII `>= 128`, the UTF-8 decoder rejects overlong forms, > UNICODE_MAX and a continuation EOF)
+# DIVERGES: ENC_ANSI, ENC_UTF16* and ENC_WCHAR are refused (not ported); no `tee`. (SYNC3) The new
+# `VALID_CODE_POINT(chr)` test of upstream's ENC_UTF16/ENC_WCHAR branches ("Illegal UCS character") has no twin for that reason.
 "The next character of `s` in its encoding, or -1 at end of file (pl-stream.c)."
 function Sgetcode(s::IOSTREAM)::Int
     while true                                  # retry:
@@ -913,23 +916,24 @@ function Sgetcode(s::IOSTREAM)::Int
             c = get_byte(s)
         elseif enc == ENC_ASCII
             c = get_byte(s)
-            c > 128 && Sseterr(s, SIO_WARN, "non-ASCII character")
+            c >= 128 && Sseterr(s, SIO_WARN, "non-ASCII character")
         elseif enc == ENC_UTF8
             c = get_byte(s)
             if c != EOF && (c & 0x80) != 0
                 extra = UTF8_FBN(c)
-                if extra < 0
+                if extra < 1 || extra > 3                   # only up to UNICODE_MAX
                     Sseterr(s, SIO_WARN, "Illegal UTF-8 start")
                     c = UTF8_MALFORMED_REPLACEMENT
                 else
+                    bytes = extra
                     code = UTF8_FBV(c, extra)
                     malformed = false
                     while extra > 0
                         c2 = get_byte(s)
-                        if !ISUTF8_CB(c2)
+                        if c2 == EOF || !ISUTF8_CB(c2)
                             Sseterr(s, SIO_WARN, "Illegal UTF-8 continuation")
                             c = UTF8_MALFORMED_REPLACEMENT
-                            Sungetc(c2, s)
+                            c2 != EOF && Sungetc(c2, s)
                             malformed = true
                             break
                         end
@@ -937,7 +941,10 @@ function Sgetcode(s::IOSTREAM)::Int
                         extra -= 1
                     end
                     if !malformed
-                        if IS_UTF16_SURROGATE(code)
+                        if code < UTF8_MIN_CODE[bytes + 1] || code > UNICODE_MAX
+                            Sseterr(s, SIO_WARN, "Illegal UTF-8 sequence")
+                            c = UTF8_MALFORMED_REPLACEMENT
+                        elseif IS_UTF16_SURROGATE(code)
                             Sseterr(s, SIO_WARN, "UTF-8 surrogate code point")
                             c = UTF8_MALFORMED_REPLACEMENT
                         else
@@ -1115,10 +1122,26 @@ function Snew(
     return s
 end
 
+# PORT: pl-stream.h SIO_REF_CLOSED
+const SIO_REF_CLOSED = Int(0x40000000)
+
+# PORT: pl-stream.h SIO_REF_COUNT
+"The reference count of `r`, without the closed bit (pl-stream.h)."
+SIO_REF_COUNT(r::Integer)::Int = Int(r) & ~SIO_REF_CLOSED
+
+# PORT: pl-stream.c S__mark_closed
+# DIVERGES: not atomic (no threads): `__atomic_fetch_or`.
+"Add SIO_REF_CLOSED to the references of `s` and return the old value (pl-stream.c)."
+function S__mark_closed(s::IOSTREAM)::Int
+    old = s.references
+    s.references |= SIO_REF_CLOSED
+    return old
+end
+
 # PORT: pl-stream.c S__close
 # DIVERGES: no locks, no filter streams, no close hooks (the closers call pl-file.c's `freeStream`,
 # src/os/pl-file.jl), no `reportStreamError` on a failed close (the closers do); the stream is
-# marked closed, and `erased` when a reference is held.
+# marked closed (`SIO_REF_CLOSED` in the references); unallocStream() frees nothing: Julia's GC frees it.
 "Close `s`: 0, or -1 on error (pl-stream.c)."
 function S__close(s::IOSTREAM)::Int
     rval = 0
@@ -1132,7 +1155,8 @@ function S__close(s::IOSTREAM)::Int
     end
     s.magic = SIO_CMAGIC
     s.message = nothing
-    s.references == 0 || (s.erased = true)      # else unallocStream(): Julia's GC frees it
+    s.erased = true
+    S__mark_closed(s)                           # SIO_REF_COUNT(..) == 0: unallocStream(), a no-op here
     return rval
 end
 
@@ -1148,6 +1172,10 @@ Sreference(s::IOSTREAM)::Int = (s.references += 1)
 "Count one reference to `s` less: the references left (SWI-Stream.h)."
 Sunreference(s::IOSTREAM)::Int = (s.references -= 1)
 
+# PORT: pl-stream.h Sunreference_free
+"Drop one reference; true if only the closed bit is left (pl-stream.h)."
+Sunreference_free(s::IOSTREAM)::Bool = Sunreference(s) == SIO_REF_CLOSED
+
 # PORT: pl-stream.c Sacquire
 "Take a reference to `s`, which keeps a closed stream from being freed (pl-stream.c)."
 function Sacquire(s::IOSTREAM)::IOSTREAM
@@ -1158,9 +1186,9 @@ end
 # PORT: pl-stream.c Srelease
 # DIVERGES: `unallocStream` frees nothing (Julia's GC owns the stream): the result says whether it
 # would have.
-"Release a reference to `s`; true if `s` was erased and this was the last (pl-stream.c)."
+"Release a reference to `s`; true if `s` was closed and this was the last reference (pl-stream.c)."
 function Srelease(s::IOSTREAM)::Bool
-    return Sunreference(s) == 0 && s.erased
+    return Sunreference_free(s)
 end
 
 # PORT: pl-stream.c Ssize

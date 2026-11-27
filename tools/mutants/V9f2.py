@@ -190,8 +190,8 @@ MUTANTS = [
          new='''        else                                                   # $(Goal)
             nothing'''),                           # kill: test_body_code_swipl.jl (`$ sets a variable`)
     dict(id="MD19 the decompiler rebuilds `$(Goal)` as `\\+ Goal`", file=C,
-         old='''            build_term!(di, mk_sym(T, Symbol("\\$")), 1)''',
-         new='''            build_term!(di, mk_sym(T, Symbol("\\\\+")), 1)'''),
+         old='''        build_term!(di, mk_sym(T, Symbol("\\$")), 1)''',
+         new='''        build_term!(di, mk_sym(T, Symbol("\\\\+")), 1)'''),
     dict(id="MD20 the goal clauses' predicate is `$call`, not upstream's `<meta-call>`", file=E,
          old='''Symbol("<meta-call>")''',
          new='''Symbol("\\$call")'''),               # kill: d32's context

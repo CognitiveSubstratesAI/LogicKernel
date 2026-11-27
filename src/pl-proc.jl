@@ -1,11 +1,26 @@
-# UPSTREAM: swipl-devel src/pl-proc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-proc.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-proc.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
 # PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-proc.c: ported (b94d7de5 commit 3, 38281d6b commit 2, ea1b569b backport).
+# SYNC3 (swipl-devel af9e2e7e; the `UPSTREAM:` lines above stay the pin 18168e62 until the pin moves): pl-proc.c was compared
+# 18168e62..af9e2e7e (`git diff --histogram`, 31 commits). Ported: the logic that holds with one thread (assertDefinition AD_DYNAMIC,
+# the erased-clause order and `setLastErased!`, `implicitDynamicProcedure!`, the retract/retractall changes `RETRACT_MOVED` and
+# `CONSTRAINTS_HOLD`, `ddi_is_garbage`, `no_older_goal`, `hasClausesDefinition`, `hasVisibleProcedure`). Not ported, each named by a
+# `DIVERGES (SYNC3, ...)` block at its site: procedure GC and the `GP_REF` family, thread-safety locks, local clause GC, `$local_clauses`/2,
+# `reconsultFinalizePredicate` hunks, `copy_predicate_clauses` reference counting.
+# E-TIER (neither function exists in the kernel; `sf_reload`/`copy_predicate_clauses` have no port, `endReconsult` comes with LB6b, see
+# src/pl-srcfile.jl): `reconsultFinalizePredicate` upstream, per predicate with changes: `LOCKDEF(def); waitIndexFills(def)` before the
+# generation lock; for each clause erased by the reload `setLastErased(def, update)`, `erased_clauses++`, `MEMORY_RELEASE()`, then
+# `number_of_clauses--` (the order of `removeClausesPredicate!`); `if deleted && !(P_DYNAMIC|P_LOCKED_SUPERVISOR) freeCodesDefinition(def,
+# true)`; after `GD->_generation = update`: `was_dirty = P_DIRTYREG`, `if added||deleted: def->last_modified = update;
+# registerDirtyDefinition(def)` under the lock, `UNLOCKDEF`; the `clauses.dirty` accounting uses `was_dirty`; `if added && !deleted &&
+# !isSignalledGCThread(SIG_CLAUSE_GC) signalGCThread(SIG_CLAUSE_GC)`. `copy_predicate_clauses` upstream: `clear(copy, CL_DEF_REF)` and
+# `forAtomsAndFunctorsInClause(copy, register[_local]_atom_clause, NULL, acquireFunctor, acquireProcedureRef, acquireModulePtr)`.
 # PREDICATES AND THEIR CLAUSE LISTS — SWI-Prolog's pl-proc.c, as far as the clause database goes:
 # allocating a predicate (`lookupProcedure`); the checks `assert_term` (src/pl-comp.jl) makes
 # before it compiles a clause (`get_head_functor`, `checkModifySystemProc`, since V9c); adding a
@@ -26,6 +41,19 @@
 # predicate (`pl_retract1_va`, its state in a pool, docs/architecture.md "Non-deterministic built-ins");
 # the sink `pl_retract!` stays for its Julia callers until they are re-pointed (audit D-0136 Q3).
 #
+# DIVERGES (SYNC3, swipl-devel af9e2e7e): PROCEDURE GARBAGE COLLECTION is not ported (upstream ff01f74d, 77c3148d, with functor GC 8783a5bd;
+# the `PROCEDURE GC` block of pl-proc.c: `pinProcedure`, `lookupProcTable`, `allocProcedure`, `visibleProcedureNoPin`, `protectProcedure`,
+# `volatileProcedure`, `acquireTableProcedure`, `pinProcedureRef`, `unpinProcedure`, `abolishedProcedure`, `resolveVolatileProcedure`,
+# `lookupBodyProcedureRef`, `isCurrentProcedureRef`, `lookupProcedureRef`, `lookupProcedureToDefineRef`, `visibleProcedureRef`,
+# `hasVisibleProcedure`, `acquireProcedureRef`, `releaseProcedureRef`, `freeOrphanProcedure`, `collectVolatileProcedures`, ...). It needs
+# functor GC (`permanentFunctor`, `acquireFunctor`: pl-funct, held behind G1), the thread's hazard pointer, the `PROC_PINNED`/
+# `PROC_VOLATILE`/`PROC_CANDIDATE`/`PROC_DESTROY` flags, `procedure.references`, `definition.clause_refs`/`functor_ref` and
+# `module.definitions`. Here every procedure is permanent (as upstream's pinned ones): the `PROC_PINNED` tests, `unvolatileProcedure` calls
+# and the `newDefinition(fd, m, permanent)` argument of the changed functions below are therefore not ported, and named only where a
+# function changed for them. The other upstream changes of this range that this file does not port are the thread-safety ones (memory
+# barriers and `STORE_RELEASE`, `LOCKDEF` around a re-test, reference counts of clauses and indexes, `waitIndexFills` in `assertDefinition!`
+# and `cleanDefinition!`; `retract_clause!` and `removeClausesPredicate!` call it), local clause GC
+# of thread-local predicates (`registerErasedClauses`, `localClauseGC`) and the `P_LOCALISED` handling: no threads here.
 # NOT PORTED: reload (the `fromfile` use of `removeClausesPredicate!`), transactions, update
 # events, the clause GC thread and its trigger (`considerClauseGC`: clause GC runs when
 # `pl_garbage_collect_clauses!` is called), memory accounting and reclamation (the garbage
@@ -37,7 +65,9 @@
 # procedure it sets the debugger's `TRACE_ME`, which the kernel has no debugger for (`resetProcedure!`, since PR1, omits it
 # too), and `SUPERVISOR(virgin)`, which the new definition starts with. No
 # program-space limit, statistics or lock: there are no threads, so the table cannot gain the
-# functor between the lookup and the add.
+# functor between the lookup and the add. SYNC3 (af9e2e7e): upstream now takes the procedure from `allocProcedure()` (reuse of collected
+# ones), creates the definition with `newDefinition(fd, m, true)` (a permanent functor) and the procedure `PROC_PINNED`, and on losing the
+# race to `addHTableWP` calls `pinProcedure(m, f, oproc, true)` in a loop: procedure GC is not ported (see the head of this file).
 """
     lookupProcedure(name, arity, m) -> Procedure{T}
 
@@ -65,13 +95,42 @@ function lookupProcedure(name::T, arity::Int, m::module_t{T})::Procedure{T} wher
 end
 
 # PORT: pl-proc.c isCurrentProcedure
-# DIVERGES: the functor is its name's `sym_key` and its arity.
+# DIVERGES: the functor is its name's `sym_key` and its arity. SYNC3 (af9e2e7e): upstream pins an unpinned procedure
+# (`pinProcedure(m, f, proc, false)`; a volatile one is NULL) and has the new `pinCurrentProcedure` (`lookupProcTable`): procedure GC is
+# not ported, every procedure here is pinned, so both are this lookup.
 "The procedure `name/arity` of module `m`, or `nothing` if `m` has none (pl-proc.c)."
 function isCurrentProcedure(
     name::UInt64, arity::Int, m::module_t{T}
 )::Union{Nothing, Procedure{T}} where {T}
     return get(m.procedures, (name, arity), nothing)
 end
+
+# PORT: pl-proc.c pinCurrentProcedure
+# SYNC3 (af9e2e7e): new upstream function (`lookupProcTable(m, f)`: as isCurrentProcedure(), but a volatile stub becomes permanent).
+# DIVERGES: the functor is its parts; without procedure GC (see the head of this file) it is `isCurrentProcedure`.
+"The procedure `name/arity` of module `m`, or `nothing`; for callers that add procedures when the lookup fails (pl-proc.c)."
+pinCurrentProcedure(name::UInt64, arity::Int, m::module_t{T}) where {T} =
+    isCurrentProcedure(name, arity, m)
+
+# PROCEDURE GC SHIMS (SYNC3, swipl-devel af9e2e7e; DIVERGES, no upstream function of this body): the kernel has no procedure GC, so
+# every procedure is what upstream calls pinned (permanent, never volatile). These are the entry points the other files' ported
+# code calls (pl-modul.c module GC and `abolish_module`: `isVolatileProcedure`, `acquireTableProcedure`, `releaseProcedureRef`,
+# `unpinProcedure`, `purgeProcedureCandidates`, `initProcedureGC`), with upstream's names and argument order (the functor `f` of
+# `acquireTableProcedure` is the table key `(name key, arity)`). When procedure GC is ported, the bodies become upstream's.
+"True if `proc`, found by enumerating a module's table, is volatile (undefined, may be collected): never (pl-proc.h)."
+isVolatileProcedure(proc::Procedure) = false
+"Access `proc` found in `m`'s table under key `f` without losing it to GC: always true (pl-proc.c `acquireTableProcedure`)."
+acquireTableProcedure(m::module_t, f::Tuple{UInt64, Int}, proc::Procedure) = true
+"No counted references (pl-proc.c `pinProcedureRef`, `acquireProcedureRef`, `releaseProcedureRef`)."
+pinProcedureRef(proc::Procedure) = nothing
+acquireProcedureRef(proc::Procedure) = nothing
+releaseProcedureRef(proc::Procedure) = nothing
+"Drop the pin of `proc` of module `m` (temporary modules, destroy_module): procedures are not collected here (pl-proc.c)."
+unpinProcedure(proc::Procedure, m::module_t) = nothing
+"Remove the collection candidates of module `m` before its table is destroyed (pl-modul.c `unallocModule`): there are none (pl-proc.c)."
+purgeProcedureCandidates(m::module_t) = nothing
+"`initModules` calls this before the module table is created (pl-proc.c): nothing to initialise."
+initProcedureGC() = nothing
 
 # PORT: pl-proc.c isStaticSystemProcedure
 # DIVERGES: the functor is its name's `sym_key` and its arity, the `system` module is `gd`'s and `ld` an argument
@@ -113,7 +172,8 @@ end
 
 # PORT: pl-proc.c getDefinitionProc
 # DIVERGES: the database `gd` is an argument; the functor is the definition's name key and arity, its module
-# an index into `gd`'s table.
+# an index into `gd`'s table. SYNC3 (af9e2e7e): upstream reads the table with `lookupHTableWP` ("may be volatile; def is alive")
+# instead of `isCurrentProcedure`, which would pin: no difference without procedure GC.
 "The procedure of `def`'s functor in `def`'s module (pl-proc.c); asserted to exist."
 function getDefinitionProc(
     gd::PL_global_data{T}, def::Definition{T}
@@ -164,6 +224,8 @@ function get_head_functor(
 end
 
 # PORT: pl-proc.c hasClausesDefinition
+# SYNC3 (af9e2e7e): the shortcut also needs `erased_clauses == 0`: abolish/1 may run after retract/1 erased the last clause and before it
+# registered the predicate dirty (abolish/1 erases no clauses, so it does not register it).
 # DIVERGES: no `acquire_def`/`release_def` around the walk — with no threads, clause GC cannot run
 # during it. DIVERGES (representation): global field standing in for LD->reload.generation, owner TH1 (the function has the database
 # only: `gd.reload_generation`, written by `startReconsultFile`). The `P_FOREIGN|P_THREAD_LOCAL` test is upstream's: a built-in is foreign since V5a2, so
@@ -180,6 +242,7 @@ function hasClausesDefinition(
     if (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) == 0 &&
         def.impl_clauses.first_clause !== nothing
         if (def.flags & P_DIRTYREG) == 0 && (def.flags & P_DYNAMIC) == 0 &&
+            def.impl_clauses.erased_clauses == 0 &&             # SYNC3 (af9e2e7e): erased but not yet registered dirty
             gd.reload_generation == GEN_INVALID
             return def.impl_clauses.first_clause
         else
@@ -260,6 +323,13 @@ function visibleProcedure(
     end
 end
 
+# PORT: pl-proc.c hasVisibleProcedure
+# SYNC3 (af9e2e7e): new upstream function (procedure GC: `visibleProcedure` without pinning, for callers that only test existence).
+# DIVERGES: no pins here, so it is `visibleProcedure(...) !== nothing`; the functor is its parts, the database an argument.
+"True if a defined procedure `name/arity` is visible in module `m` (pl-proc.c)."
+hasVisibleProcedure(gd::PL_global_data{T}, name::T, arity::Int, m::module_t{T}) where {T} =
+    visibleProcedure(gd, name, arity, m) !== nothing
+
 # PORT: pl-proc.c resolveProcedure
 # DIVERGES: the functor is its parts (name, arity); the database `gd` is an argument.
 """
@@ -323,6 +393,10 @@ function autoImport(
     end
     if proc.definition !== def                          # Nope, we must link the def
         odef = proc.definition
+        # SYNC3 (af9e2e7e): `LOCKDEF(odef)`, then: another thread may have defined the procedure meanwhile (See (*)); we leave it alone.
+        if proc.definition !== odef || isDefinedProcedure(gd, proc)
+            return proc.definition                      # defined concurrently
+        end
         shareDefinition(def)
         proc.definition = def
         unshareDefinition(odef)                         # == 0: unallocDefinition/lingerDefinition: the GC's
@@ -456,7 +530,11 @@ function trapUndefined(
         if truePrologFlag(ld, PLFLAG_AUTOLOAD) && !gd.bootsession   # Trap via exception/3
             test_autoload_loop(gd, ld, def) || return def
             answer = autoLoader(gd, ld, def)
-            def = lookupProcedure(name, arity, m).definition        # lookupDefinition(functor, module)
+            # SYNC3 (af9e2e7e): the definition is looked up again unless it is still the one of our volatile stub
+            proc = isCurrentProcedure(sym_key(name), arity, m)      # lookupHTableWP(module->procedures, functor)
+            if proc === nothing || proc.definition !== def || !isVolatileProcedure(proc)
+                def = lookupProcedure(name, arity, m).definition    # lookupDefinition(functor, module)
+            end
             if answer !== nothing
                 key = sym_key(answer)
                 key == sym_key(mk_sym(T, :fail)) && return def
@@ -510,6 +588,30 @@ function setDynamicDefinition!(
     return _setDynamicDefinition!(gd, def, isdyn)
 end
 
+# PORT: pl-proc.c implicitDynamicProcedure
+# SYNC3 (af9e2e7e): new upstream function (assert/1, retract/1, retractall/1 make an undefined predicate dynamic and raise a permission
+# error on a static one, deciding under the lock abolish/1 and assert/1 use). DIVERGES: no LOCKDEF (no second thread can make the
+# predicate dynamic between the test and `setDynamicDefinition_unlocked`); the database and the local data are arguments.
+"Make the undefined predicate `proc` dynamic; a defined static one raises `permission_error(modify, static_procedure, PI)` and fails (pl-proc.c)."
+function implicitDynamicProcedure!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}
+)::Bool where {T}
+    def = proc.definition
+    rc = true
+    if (def.flags & P_DYNAMIC) == 0
+        if isDefinedProcedure(gd, proc)
+            rc = false
+        elseif !setDynamicDefinition!(gd, def, true)    # setDynamicDefinition_unlocked(def, true)
+            return false
+        end
+    end
+    if !rc
+        PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
+        return false
+    end
+    return true
+end
+
 # ORIGINAL (TAB1 TB5): the body of both `setDynamicDefinition!` methods; `gd === nothing` selects the 2-argument `freeCodesDefinition!`.
 function _setDynamicDefinition!(
     gd::Union{Nothing, PL_global_data{T}}, def::Definition{T}, isdyn::Bool
@@ -536,14 +638,16 @@ newClauseRef(clause::Clause{T}, key::word) where {T} =
     ClauseRef{T}(nothing, key, clause, nothing)
 
 # PORT: pl-proc.c setLastModifiedPredicate as setLastModifiedPredicate!
-# DIVERGES: only the module's `last_modified` (the definition has no such field), no wakeup of waiting threads. The form with `ld`
+# SYNC3 (af9e2e7e): `def->last_modified = gen` is set first (the field came with P07's merge, pl-incl.jl), then the module's rises.
+# DIVERGES: no wakeup of waiting threads (no threads), no compare-and-swap. The form with `ld`
 # and `flags` is upstream's (pl-proc.c:1340-1357): a generation of the transaction's space (`>= GEN_TRANSACTION_BASE`) is recorded
 # in the transaction (`transaction_set_last_modified`); the form without them is for a generation of the global space only.
-"Record that a clause of `def` was added or erased at generation `gen`: the module's `last_modified` rises to it (pl-proc.c)."
+"Record that a clause of `def` was added or erased at generation `gen`: `def.last_modified` is `gen`, the module's `last_modified` rises to it (pl-proc.c)."
 function setLastModifiedPredicate!(
     gd::PL_global_data{T}, def::Definition{T}, gen::gen_t
 )::Nothing where {T}
     m = gd.modules[def.module_]
+    def.last_modified = gen
     if m.last_modified < gen
         m.last_modified = gen
     end
@@ -601,6 +705,9 @@ end
 # the blob's release call `unallocClause` (the kernel's blobs are freed by Julia's GC, which releases nothing). What stays is the
 # source-file references `assert_term!` took (`source_no`, `owner_no`): they are given back here, so that the acquire/release
 # pairs of the reload (`copy_clause_source`, `keep_clause`) stay balanced. Wiring this into clause reclamation is LB6b.
+# SYNC3 (af9e2e7e) DIVERGES, not ported: upstream's `freeClause` now releases the functors, procedure and module references the clause holds
+# (`forAtomsAndFunctorsInClause(..., releaseFunctor, releaseProcedureRef, releaseModuleCodeRef)`: functor, procedure and module GC), sets
+# `DBREF_ERASED_CLAUSE` with a compare-and-swap loop, and `unallocClause` calls `releaseDefinitionClause` for a `CL_DEF_REF` clause.
 "Release the source-file references of a clause that is not used (pl-proc.c `freeClause`)."
 function freeClause!(gd::PL_global_data{T}, c::Clause{T})::Nothing where {T}
     (c.flags & DBREF_CLAUSE) != 0 && return nothing
@@ -611,6 +718,8 @@ function freeClause!(gd::PL_global_data{T}, c::Clause{T})::Nothing where {T}
     return nothing
 end
 
+const AD_DYNAMIC = 1                                    # assert/1: make dynamic (pl-proc.c, SYNC3 af9e2e7e)
+
 # PORT: pl-proc.c assertDefinition
 # DIVERGES: no transactions; the predicate's update event is raised (EV1); `nothing` is upstream's NULL (since SSU1: `add_ssu_clause`
 # refused the clause, its error raised, or, since EV1, a listener of the predicate raised: the clause is left to Julia's
@@ -618,6 +727,13 @@ end
 # selects clauses outside the VM (clause/2, retract/1, the index tests) runs `reconsiderIndexes!` and
 # `update_primary_index!` itself before the next call of a static predicate, as the VM's `S_VIRGIN`
 # does through `setDefaultSupervisor`.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e): upstream's `assertDefinition` is now `assertDefinition_(def, clause, where, flags, proc)`;
+# `flags` (`AD_DYNAMIC`) and `proc` are the trailing arguments here (default `0`, `nothing`: `assertDefinition`'s own call).
+# Not ported, as there are no threads: the clause reference held during the call (`acquire_clause`/`release_clause`, see (**)),
+# `STORE_RELEASE` publication of the clause links, `waitIndexFills(def)` (the index fill is not concurrent), the `LOCKDEF`, and
+# making an unpinned `proc` non-volatile (`unvolatileProcedure`: procedure GC is not ported, see the head of this file).
+# The permission error for `def != proc->definition` (see (*****)) is not ported: a definition replaced by `autoImport` between
+# the caller's fetch and the lock needs a second thread, and `P_LOCALISED` (a thread's local instance) does not exist here.
 """
     assertDefinition!(gd, ld, def, clause, where_) -> ClauseRef, or nothing
 
@@ -629,10 +745,11 @@ mix SSU and normal clauses in `def` (`add_ssu_clause`).
 """
 function assertDefinition!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, def::Definition{T}, clause::Clause{T},
-    where_::Union{Int, ClauseRef{T}}
+    where_::Union{Int, ClauseRef{T}}, flags::Int=0,
+    proc::Union{Nothing, Procedure{T}}=nothing
 )::Union{Nothing, ClauseRef{T}} where {T}
     add_ssu_clause(ld, def, clause) || return nothing         # freeClause(clause); return NULL
-    return _assertDefinition!(gd, ld, def, clause, where_)
+    return _assertDefinition!(gd, ld, def, clause, where_, flags, proc)
 end
 
 # DIVERGES (no upstream function): a caller without local data — the tests' database builders —
@@ -667,7 +784,8 @@ end
 function _assertDefinition!(
     gd::PL_global_data{T}, ld::Union{Nothing, PL_local_data{T}}, def::Definition{T},
     clause::Clause{T},
-    where_::Union{Int, ClauseRef{T}}
+    where_::Union{Int, ClauseRef{T}}, flags::Int=0,
+    proc::Union{Nothing, Procedure{T}}=nothing
 )::Union{Nothing, ClauseRef{T}} where {T}
     key = argKey(Code(clause, 1), Int(def.impl_clauses.primary_index))
     cref = newClauseRef(clause, key)
@@ -675,6 +793,11 @@ function _assertDefinition!(
         ld === nothing ? max_generation(def) : max_generation(ld, def)   # invisible while it is linked in
     clause.generation_erased = gen_t(1)
     cl = def.impl_clauses
+    # (the `proc` permission check of upstream (*****) is not ported: see the DIVERGES (SYNC3) above)
+    if (flags & AD_DYNAMIC) != 0 && (def.flags & P_DYNAMIC) == 0 &&   # See (****)
+        def.impl_clauses.number_of_clauses == 0
+        setDynamicDefinition!(gd, def, true)                    # setDynamicDefinition_unlocked(def, true)
+    end
     if cl.last_clause === nothing
         cl.first_clause = cl.last_clause = cref
     elseif where_ === CL_START || where_ === cl.first_clause
@@ -700,6 +823,7 @@ function _assertDefinition!(
     if (clause.flags & UNIT_CLAUSE) == 0
         cl.number_of_rules += 1
     end
+    created = gen_t(0)                                  # gen_t created
     if (def.flags & (P_DYNAMIC | P_LOCKED_SUPERVISOR)) == 0     # see (*) above
         freeCodesDefinition!(gd, def, true)
     end
@@ -708,21 +832,27 @@ function _assertDefinition!(
         tr = ld.transaction
         if tr.generation < tr.gen_max
             tr.generation += 1
-            clause.generation_created = tr.generation
-            clause.generation_erased = max_generation(ld, def)
+            created = tr.generation
+            clause.generation_created = created
+            if (clause.flags & CL_ERASED) == 0                  # See (***)
+                clause.generation_erased = max_generation(ld, def)
+            end
         else
             PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :transaction_generations))   # PL_representation_error("transaction_generations")
             retractClauseDefinition!(gd, ld, def, clause, false)      # goto error
             return nothing
         end
     else
-        gd._generation += 1                             # PL_LOCK(L_GENERATION)
-        clause.generation_created = gd._generation
-        clause.generation_erased =
-            ld === nothing ? max_generation(def) : max_generation(ld, def)
+        created = gd._generation + 1                    # PL_LOCK(L_GENERATION): as retract_clause(): stamp,
+        clause.generation_created = created
+        if (clause.flags & CL_ERASED) == 0                      # See (***)
+            clause.generation_erased =
+                ld === nothing ? max_generation(def) : max_generation(ld, def)
+        end
+        gd._generation = created                        # then publish the generation (STORE_RELEASE)
     end
     if ld === nothing
-        setLastModifiedPredicate!(gd, def, clause.generation_created)   # setLastModifiedPredicate(def, …created, TWF_ASSERT)
+        setLastModifiedPredicate!(gd, def, created)             # setLastModifiedPredicate(def, created, TWF_ASSERT)
         return cref
     end
     if def.events !== nothing && (ld.transaction.flags & TR_BULK) == 0 &&   # def->events && !(LD->transaction.flags&TR_BULK)
@@ -737,9 +867,9 @@ function _assertDefinition!(
         retractClauseDefinition!(gd, ld, def, clause, false)          # error: retractClauseDefinition(def, clause, false)
         return nothing
     end
-    setLastModifiedPredicate!(gd, ld, def, clause.generation_created, TWF_ASSERT)
+    setLastModifiedPredicate!(gd, ld, def, created, TWF_ASSERT)
     if ld.transaction.generation != 0 &&
-        clause.generation_created >= ld.transaction.gen_base
+        created >= ld.transaction.gen_base
         transaction_assert_clause(ld, clause, where_)
     end
     return cref
@@ -748,12 +878,21 @@ end
 # PORT: pl-proc.c assertProcedure as assertProcedure!
 # DIVERGES: the database `gd` is an argument (upstream: GD), and the local data `ld` (since SSU1:
 # `assertDefinition!` may raise); `getProcDefinition(proc)` is `proc.definition` (no thread-local
-# predicates).
+# predicates). SYNC3 (af9e2e7e): upstream passes `proc` on, `assertDefinition_(def, clause, where, 0, proc)`.
 "Add `clause` to procedure `proc` at `where_` (pl-proc.c): see [`assertDefinition!`](@ref); `nothing` when refused."
 assertProcedure!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, clause::Clause{T},
     where_::Union{Int, ClauseRef{T}}
-) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_)
+) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_, 0, proc)
+
+# PORT: pl-proc.c assertDynamicProcedure as assertDynamicProcedure!
+# SYNC3 (af9e2e7e): new upstream function. DIVERGES: as `assertProcedure!`. The caller that makes the predicate dynamic for assert/1
+# (`assert_proc!`, src/pl-comp.jl) calls this instead of `setDynamicDefinition!` + `assertProcedure!` (packet H1).
+"As `assertProcedure!`, for assert/1: the predicate is made dynamic under the lock, if it has no clauses (pl-proc.c)."
+assertDynamicProcedure!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, clause::Clause{T},
+    where_::Union{Int, ClauseRef{T}}
+) where {T} = assertDefinition!(gd, ld, proc.definition, clause, where_, AD_DYNAMIC, proc)
 
 # PORT: pl-proc.c retract_clause
 # DIVERGES: no statistics, breakpoints or incremental-tabling notification. `ld` is `nothing` where there is no local data (the
@@ -761,6 +900,10 @@ assertProcedure!(
 # the global generation. The transaction branch (pl-proc.c:1652-1664) gives the clause its erase generation from the transaction's
 # space for a predicate with P_TRANSACT; `GEN_TR_DISCARD_ASSERT` (a discarded transaction's clause) does not set the last-modified
 # mark (pl-proc.c:1701).
+# SYNC3 (af9e2e7e): (*) a clause erased at the current generation (a concurrent abolish/1) is already invisible: the test is `>`, not `>=`,
+# else moving its erased generation to the next one would make it visible again. `setLastErased!(def, egen)` and `waitIndexFills(def)`
+# are called (SYNC3 integration: `definition.last_erased` came with P05; erased_clauses is raised before number_of_clauses is lowered).
+# DIVERGES, not ported: the memory release between the two counts, and `registerErasedClauses(def, 1)` (local clause GC of thread-local predicates): `registerDirtyDefinition!`.
 """
     retract_clause!(gd, ld, clause, generation) -> Bool
 
@@ -787,7 +930,7 @@ function retract_clause!(
             return PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :transaction_generations))
         end
     else
-        if clause.generation_erased >= gd._generation  # PL_LOCK(L_GENERATION)
+        if clause.generation_erased > gd._generation   # PL_LOCK(L_GENERATION); See (*): erased AT this generation is invisible already
             egen = gd._generation + 1
             clause.generation_erased = egen
             gd._generation = egen
@@ -796,10 +939,12 @@ function retract_clause!(
     if (clause.flags & CL_ERASED) != 0
         return false
     end
+    waitIndexFills(def)
     clause.flags |= CL_ERASED
+    setLastErased!(def, clause.generation_erased)
     deleteActiveClauseFromIndexes!(def, clause)        # just updates "dirtyness"
+    def.impl_clauses.erased_clauses += 1               # before number_of_clauses--: see setLastErased
     def.impl_clauses.number_of_clauses -= 0x00000001
-    def.impl_clauses.erased_clauses += 1
     if (clause.flags & UNIT_CLAUSE) == 0
         def.impl_clauses.number_of_rules -= 0x00000001
     end
@@ -882,6 +1027,8 @@ function announceErasedClause(
 end
 
 # PORT: pl-proc.c cleanDefinition
+# SYNC3 (af9e2e7e) DIVERGES, not ported: the assertion now also accepts `LD->clauses.local.active` (local clause GC), `waitIndexFills(def)` before
+# `cleanClauseIndexes` and `sync_local_definitions()` for a `P_LOCALISED` definition with lingering references: no threads here.
 # DIVERGES: no transactions (`tr_starts`); the `erase` event (`announceErasedClause`) is raised when `gd` and `ld` are
 # given (EV1), `rcp` (upstream's `bool *`) a `Ref`; the method without them is the tests' (no listeners), and the
 # unlinked references are left to the garbage collector (upstream lingers them and frees what no
@@ -1039,14 +1186,15 @@ end
 
 # PORT: pl-proc.c ddi_is_garbage
 # DIVERGES: no transactions, so no `tr_starts`: a clause erased at or after `start` is never
-# garbage.
+# garbage. SYNC3 (af9e2e7e): a clause erased AT `start` is invisible at `start` (GLOBALLY_VISIBLE_CLAUSE()), so only `> start` stops it.
 """
 True when erased clause `cl` can be collected: erased before clause GC started, and invisible in
 every generation the predicate is accessed in (pl-proc.c).
 """
 function ddi_is_garbage(ddi::dirty_def_info, start::gen_t, cl::clause)::Bool
     @assert (ddi.flags & DDI_MARKING) != 0
-    if cl.generation_erased >= start
+    # A clause erased at `start` is invisible at `start` (GLOBALLY_VISIBLE_CLAUSE())
+    if cl.generation_erased > start
         return false
     end
     if (ddi.flags & DDI_INTERVALS) == 0
@@ -1117,19 +1265,36 @@ function unregisterDirtyDefinition!(
     return nothing
 end
 
+# PORT: pl-proc.c no_older_goal
+# SYNC3 (af9e2e7e): new upstream function. SYNC3 integration: reads `def.last_modified` (the field came with P07's merge, written by
+# `setLastModifiedPredicate!`); P07's own version read the module's, as the definition had no such field.
+"True when `ddi` marked the stacks in this run and no goal of `def` is older than its last modification (pl-proc.c)."
+function no_older_goal(
+    gd::PL_global_data{T}, def::Definition{T}, ddi::dirty_def_info
+)::Bool where {T}
+    return (ddi.flags & DDI_MARKING) != 0 &&
+           ddi_oldest_generation(ddi) > def.last_modified
+end
+
 # PORT: pl-proc.c maybeUnregisterDirtyDefinition
-# DIVERGES: no erased predicates to destroy (abolish is not ported).
+# DIVERGES: no erased predicates to destroy (abolish is not ported); no `LOCKDEF` and no second test under it (no threads).
+# SYNC3 (af9e2e7e): `ddi` is an argument: a predicate with no erased clauses is only unregistered if it is dynamic or no
+# goal older than its last modification runs (`no_older_goal`).
 "Unregister `def` when clause GC left it no erased clauses (pl-proc.c)."
 function maybeUnregisterDirtyDefinition!(
-    gd::PL_global_data{T}, def::Definition{T}
+    gd::PL_global_data{T}, def::Definition{T}, ddi::dirty_def_info
 )::Nothing where {T}
-    if (def.flags & P_DIRTYREG) != 0 && def.impl_clauses.erased_clauses == 0
+    if (def.flags & P_DIRTYREG) != 0 && def.impl_clauses.erased_clauses == 0 &&
+        ((def.flags & P_DYNAMIC) != 0 || no_older_goal(gd, def, ddi))
         unregisterDirtyDefinition!(gd, def)
     end
     return nothing
 end
 
 # PORT: pl-proc.c pl_garbage_collect_clauses
+# SYNC3 (af9e2e7e) DIVERGES: not ported: the `gc_code` flag test (`gcCodeLevel() == GC_CODE_FALSE` makes the call a no-op: the flag is not
+# in the kernel), `localClauseGC` (thread-local definitions), the `MEMORY_BARRIER`, and the collection of volatile procedures and modules
+# (`collectVolatileProcedures`, `collectVolatileModules`: procedure and module GC are not ported, see the head of this file).
 # DIVERGES: false when a listener of the `erase` event raised (`cleanDefinition`'s `rcp`); no messages, statistics, transactions or lingering references; the predicates a
 # running enumeration accesses are those it registered with `pushPredicateAccessObj!`.
 """
@@ -1154,7 +1319,7 @@ function pl_garbage_collect_clauses!(
             if (def.flags & P_FOREIGN) == 0 && def.impl_clauses.erased_clauses > 0
                 cleanDefinition!(gd, ld, def, ddi, start_gen, rcp)
             end
-            maybeUnregisterDirtyDefinition!(gd, def)
+            maybeUnregisterDirtyDefinition!(gd, def, ddi)
         end
         rc = rcp[]
         gd.clauses_cgc_active = false
@@ -1204,15 +1369,39 @@ function _resetProcedure!(
     return nothing
 end
 
+# PORT: pl-proc.c setLastErased
+# SYNC3 (af9e2e7e): new upstream inline function (pl-proc.c, before removeClausesPredicate). `definition.last_erased` is the latest
+# generation at which a clause of `def` was erased: a goal of that generation or later sees no erased clause, which
+# pl-index.c's `no_visible_clause` uses. The functions that erase a clause call this BEFORE they update the clause counts, and
+# increment `erased_clauses` before they decrement `number_of_clauses`. The field `last_erased::gen_t` (default 0) of `definition`
+# (pl-incl.jl) came with P05; this is its only writer (SYNC3 integration: the one definition, P07's, at upstream's place).
+"Record `egen` as the latest generation a clause of `def` was erased at (pl-proc.c)."
+function setLastErased!(def::Definition{T}, egen::gen_t)::Nothing where {T}
+    if egen < GEN_MAX && egen > def.last_erased
+        def.last_erased = egen
+    end
+    return nothing
+end
+
 # PORT: pl-proc.c removeClausesPredicate
 # DIVERGES: no threads, statistics (`erased_size`, `erased`, `dirty`, `code_size`), debug registration (`registerRetracted`)
 # or final-cleanup branch (`CLN_DATA`); the database `gd` is an argument.
+# SYNC3 (af9e2e7e): a static predicate with clauses is registered dirty BEFORE goals can see the erasure; `setLastErased!` and
+# the `erased_clauses`-before-`number_of_clauses` order as in `retract_clause!` (see there); (*) the supervisor of a static predicate
+# is reset to S_VIRGIN before the new generation is published (the S_TRUSTME/S_LIST supervisors embed clauses and do not check
+# visibility). `waitIndexFills(def)` is called as upstream calls it (pl-proc.c:2606), before the new generation is read and any clause is
+# marked erased; no thread fills an index here, so it returns at once (src/pl-index.jl). DIVERGES, not ported: `registerErasedClauses(def,
+# deleted)` (local clause GC of thread-local predicates, held): `registerDirtyDefinition!` after the loop as before.
 "Mark every clause of `def` that comes from source file `sfindex` (0: any) erased; the number marked (pl-proc.c)."
 function removeClausesPredicate!(
     gd::PL_global_data{T}, def::Definition{T}, sfindex::Integer, fromfile::Bool
 )::Int where {T}
     (def.flags & P_THREAD_LOCAL) != 0 && return 0
+    if (def.flags & P_DYNAMIC) == 0 && def.impl_clauses.number_of_clauses != 0
+        registerDirtyDefinition!(gd, def)               # before goals can see the erasure
+    end
     deleted = 0
+    waitIndexFills(def)
     update = global_generation(gd) + 1
     c = def.impl_clauses.first_clause
     while c !== nothing
@@ -1223,15 +1412,19 @@ function removeClausesPredicate!(
             (cl.flags & CL_ERASED) == 0
             cl.flags |= CL_ERASED
             cl.generation_erased = update
+            setLastErased!(def, update)
             deleted += 1
+            def.impl_clauses.erased_clauses += 1       # before number_of_clauses--: see setLastErased
             def.impl_clauses.number_of_clauses -= 0x00000001
-            def.impl_clauses.erased_clauses += 1
             if (cl.flags & UNIT_CLAUSE) == 0
                 def.impl_clauses.number_of_rules -= 0x00000001
             end
             deleteActiveClauseFromIndexes!(def, cl)
         end
         c = next
+    end
+    if deleted > 0 && (def.flags & (P_DYNAMIC | P_LOCKED_SUPERVISOR)) == 0
+        freeCodesDefinition!(gd, def, true)             # see (*)
     end
     gd._generation = update
     deleted > 0 && registerDirtyDefinition!(gd, def)
@@ -1242,6 +1435,9 @@ end
 # DIVERGES: no locks, statistics or code-size accounting, no `lingerDefinition` (Julia's garbage collector); the fresh
 # definition of an imported link has `shared` 1, as upstream's `newDefinition` (b94d7de5; it was 0, a definition another
 # module imported then lost its sharer's count); `proc`'s module is given as `m`.
+# SYNC3 (af9e2e7e): `newDefinition(fd, m, true)` is the permanent definition (every definition is, here). DIVERGES, not ported: `abolishedProcedure(proc)`
+# (marks the procedure a candidate for procedure GC under LOCKDEF) and `considerProcedureGC()` (may start the gc thread): procedure GC is held, see
+# the head of this file. Upstream's new inline `setLastErased` is `setLastErased!` (before `removeClausesPredicate!`).
 "Abolish `proc` of module `m`: an imported link is removed, a foreign predicate made normal, else its clauses erased (pl-proc.c)."
 function abolishProcedure!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, m::module_t{T}
@@ -1368,6 +1564,9 @@ function allVars(ld::PL_local_data{T}, head::term_t)::Bool where {T}
 end
 
 # PORT: pl-proc.c retractall as pl_retractall
+# SYNC3 (af9e2e7e): a head that unifies with a clause only counts if the constraint goals it scheduled hold (`CONSTRAINTS_HOLD`, run
+# before the clause is erased; the all-variables branch unifies nothing); `head_arguments` is re-read by `_head_argv` where a search reads
+# it. `pushPredicateAccessObj` after the start event is as before. DIVERGES, not ported: `GP_REF` / `releaseProcedureRef` (procedure GC).
 # DIVERGES: the predicate is given (no module lookup). The update events are upstream's (pl-proc.c:3308, :3397): `start` before,
 # `end` after unless the call returned early (no first clause, or the last of the clause choice). A clause is unified by its
 # head (`decompileHead!`) and the bindings are undone before the next (`PL_rewind_foreign_frame`).
@@ -1422,7 +1621,7 @@ function pl_retractall!(
                 m = Mark(ld)
                 stop = false
                 try
-                    if decompileHead!(ld, cl, head)
+                    if decompileHead!(ld, cl, head) && CONSTRAINTS_HOLD(ld)     # SYNC3 (af9e2e7e): the constraints are a filter
                         if !retractClauseDefinition!(gd, ld, def, cl, true)
                             stop = ld.exception_term != 0   # if ( PL_exception(0) ) break
                             stop && (rc = false)            # rc = retractClauseDefinition(...)
@@ -1638,6 +1837,12 @@ end
 # `stripModuleName_cells` gives it); the module is returned, `contextModule(environment_frame)` an index into
 # `gd`'s table. `lookupModule` (a `GP_CREATE`/`GP_DEFINE` qualifier) creates the module, `isCurrentModule` (the
 # others) never does.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with module GC, upstream ff01f74d/77c3148d and the module reference counts):
+# upstream's `get_module(mname, how, Module *ref)` takes a third argument, and with `GP_REF` in `how` returns a COUNTED reference to the
+# module (`lookupModuleRef(mname, ref)` for `GP_CREATE`/`GP_DEFINE`, `acquireModuleRef(mname, ref)` for `GP_FIND`/`GP_FINDHERE`/
+# `GP_RESOLVE`; the caller releases it with `releaseModuleRef`); without `GP_REF` it is the old `lookupModule`/`isCurrentModule`. The
+# kernel has no module GC (a module is never removed from the table, so every module is "pinned"): there is no `GP_REF` (pl-incl.h
+# has none here), no `ref` argument, and this function is the non-`GP_REF` branch only. Behaviour is the same.
 "The module `get_procedure` looks in: the qualifier `mname` names (created for `GP_CREATE`/`GP_DEFINE`), else the context module (pl-proc.c)."
 function get_module_how(
     gd::PL_global_data{T}, ld::PL_local_data{T}, mname::word, how::Int
@@ -1663,6 +1868,18 @@ end
 # `term_t h`, since MOD4; 0: none) receives the plain term. The split `get_procedure_*` functions below are kept for their
 # callers (they take the context module, or no `h`, as arguments); this is every mode of the C function: `GP_FIND`,
 # `GP_FINDHERE`, `GP_CREATE`, `GP_DEFINE`, `GP_RESOLVE`, with or without `GP_NAMEARITY`, `GP_TYPE_QUIET`, `GP_EXISTENCE_ERROR`.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with procedure and module GC): upstream's `get_procedure` now starts with
+# `if ( (how&GP_REF) ) return get_procedure_ref(descr, proc, h, how);` and passes `NULL` as the new third argument of `get_module`. The
+# new static `get_procedure_ref` (declared above `get_procedure`) is the same function with COUNTED references: the module comes from
+# `PL_strip_module_ref` (`GP_NAMEARITY`; then `get_functor(plain, ..., GF_PROCEDURE|GP_NOT_QUALIFIED|...)`) or from `get_module(mname,
+# how, &mref)`, and the procedure from `lookupBodyProcedureRef` + `unvolatileProcedure` (`GP_CREATE`: "caller will define it"),
+# `isCurrentProcedureRef` (`GP_FINDHERE`), `visibleProcedureRef` (`GP_FIND`), `lookupProcedureToDefineRef` (`GP_DEFINE`: a permission error
+# is a failure) or `resolveProcedure` + `acquireProcedureRef` (`GP_RESOLVE`); the module reference is released before returning, the
+# procedure's by the caller (`releaseProcedureRef`); `GP_EXISTENCE_ERROR` is raised at `notfound` as here. The kernel has no `GP_REF`
+# and no `get_procedure_ref`: without procedure GC (`isVolatileProcedure(proc) == false`, the shims at the head of this file) every
+# procedure is pinned and this function is `get_procedure` for every `how`. The callers that upstream now gives `GP_REF`
+# (`$set_predicate_attribute`/3, pl-proc.c; others in pl-comp.c, pl-srcfile.c, pl-trie.c, pl-tabling.c) keep calling it without.
+# The `GP_NAMEARITY` branch of the non-`GP_REF` path is unchanged upstream.
 "The procedure the term `descr` (`M:Head` or, with `GP_NAMEARITY`, `M:Name/Arity`) names, found or made as `how` says; the plain term into `h` (pl-proc.c)."
 function get_procedure(
     gd::PL_global_data{T}, ld::PL_local_data{T}, descr::term_t, how::Int, h::term_t=0
@@ -1736,6 +1953,11 @@ end
 # (PRED_IMPL("$set_predicate_attribute", 3, set_predicate_attribute, PL_FA_TRANSPARENT))
 # DIVERGES: `spy` is refused (it needs `GP_RESOLVE`); `ReadingSource` is `LD->read_source`'s file and line (src/pl-modul.jl), `MODULE_parse` the source
 # module while reading, else the typein module.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with procedure GC): upstream now calls `get_procedure(pred, &proc, 0, GP_RESOLVE|GP_REF)`
+# (spy) and `get_procedure(pred, &proc, 0, GP_DEFINE|GP_NAMEARITY|GP_REF)`: `proc` is a counted reference. In the source-administration
+# branch it does `pinProcedureRef(proc)` ("source administration keeps it") before `setAttrProcedureSource`, and at the end of both
+# branches `releaseProcedureRef(proc)`, returning the result through a local `rc`. The kernel has no `GP_REF` (see `get_procedure`) and
+# its `pinProcedureRef`/`releaseProcedureRef` are the no-op shims at the head of this file: the calls are not written, behaviour is the same.
 "`'\$set_predicate_attribute'(:Head, +Key, +Value)` (pl-proc.c): set a predicate attribute."
 function pl_set_predicate_attribute3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -2304,26 +2526,143 @@ function alloc_retract_context!(
     ctx.def = ctx0.def                                  # *ctx = *ctx0
     ctx.chp.cref = ctx0.chp.cref
     ctx.chp.key = ctx0.chp.key
-    ctx.allocated = true
+    ctx.flags = ctx0.flags | RETRACT_ALLOCATED          # SYNC3 (af9e2e7e): ctx->flags |= RETRACT_ALLOCATED (the copy keeps RETRACT_MOVED)
     return k
 end
 
 # PORT: pl-proc.c free_retract_context as free_retract_context!
 # DIVERGES: the context is its record and its pool index `k` (0 for the first call's buffer, which is not
-# `allocated`). `leaveDefinition` is a no-op upstream (pl-incl.h:1348).
+# `RETRACT_ALLOCATED`). `leaveDefinition` is a no-op upstream (pl-incl.h:1348).
 "Release retract/1's context `ctx` (index `k`): pop its predicate access, free its record if it is one (pl-proc.c)."
 function free_retract_context!(
     ld::PL_local_data{T}, ctx::retract_context{T}, k::Int
 )::Nothing where {T}
     popPredicateAccess!(ld, ctx.def::Definition{T})
     # leaveDefinition(ctx->def): (void)0 upstream
-    if ctx.allocated
-        free_foreign_state!(ld.retract_contexts, k)     # freeForeignState(ctx, sizeof(*ctx))
+    if ctx.flags != 0
+        if (ctx.flags & RETRACT_MOVED) != 0
+            popPredicateAccess!(ld, ctx.def::Definition{T})   # the second access object, see retract_move_generation!
+        end
+        if (ctx.flags & RETRACT_ALLOCATED) != 0
+            free_foreign_state!(ld.retract_contexts, k) # freeForeignState(ctx, sizeof(*ctx))
+        end
     end
     return nothing
 end
 
+# PORT: pl-proc.c WAKEUP_PENDING
+# SYNC3 (af9e2e7e): new upstream macro: constraint goals are scheduled (`LD->alerted & ALERT_WAKEUP` and the wakeup list is not
+# empty). The head cell is `updateAlerted`'s test (pl-wam.jl), `ld.attvar_head != 0` its set-up guard.
+"True while attributed-variable wakeup goals are pending (pl-proc.c `WAKEUP_PENDING`)."
+WAKEUP_PENDING(ld::PL_local_data)::Bool =
+    (ld.alerted & ALERT_WAKEUP) != 0 && ld.attvar_head != 0 &&
+    ld.gstack[_attvar_head_cell(ld)] != 0
+
+# PORT: pl-proc.c clause_constraints_run
+# SYNC3 (af9e2e7e): new upstream function. Run the scheduled constraint goals; false if they fail or raise (an exception is left pending).
+"Run the pending constraint goals of a unification with a clause head; true if they hold (pl-proc.c)."
+function clause_constraints_run(ld::PL_local_data{T})::Bool where {T}
+    ex = PL_new_term_ref(ld)
+    rc = ex != 0 && foreignWakeup(ld, ex)
+    if !rc && ex != 0 && !PL_is_variable(ld, ex)
+        PL_raise_exception(ld, ex)
+    end
+    return rc && PL_exception(ld, 0) == 0
+end
+
+# PORT: pl-proc.c CONSTRAINTS_HOLD
+"True without pending constraint goals, else if they run successfully (pl-proc.c `CONSTRAINTS_HOLD`)."
+CONSTRAINTS_HOLD(ld::PL_local_data)::Bool =
+    !WAKEUP_PENDING(ld) || clause_constraints_run(ld)
+
+# PORT: pl-thread.c findPredicateAccessObj
+# SYNC3 (af9e2e7e): new function of pl-thread.c (pl-thread.jl is in no SYNC3 packet; it belongs there when one takes the file). DIVERGES:
+# the index into `ld.predicate_references` of the topmost access object of `def`, 0 if none (`definition_ref` is immutable: the caller
+# replaces the entry, upstream writes `dref->generation`).
+"The index of the topmost predicate access object of `def` in this thread, or 0 (pl-thread.c)."
+function findPredicateAccessObj(ld::PL_local_data{T}, def::Definition{T})::Int where {T}
+    refs = ld.predicate_references
+    top = length(refs)
+    while top > 0
+        refs[top].predicate === def && return top
+        top -= 1
+    end
+    return 0
+end
+
+# PORT: pl-proc.c retract_find_lost
+# SYNC3 (af9e2e7e): new upstream function, see (*) in pl-proc.c (retract/1 continues at the current generation after it lost a clause
+# it found at an older one). Position `ctx.chp` at `lost`, which is visible at the generation of the frame `fr`, in a walk that has
+# every clause added since. DIVERGES: the frame is `fr` (an index), the head argument cells are `_head_argv(ld, def, head)`.
+"Position `ctx.chp` at the clause `lost` (pl-proc.c)."
+function retract_find_lost!(
+    ld::PL_local_data{T}, ctx::retract_context{T}, lost::Clause{T}, head::term_t, fr::Int
+)::Nothing where {T}
+    def = ctx.def::Definition{T}
+    gen = generationFrame(ld.frames[fr])
+    chp = ClauseChoice{T}(nothing, word(0))
+    c = firstClause!(ld, _head_argv(ld, def, head), gen, def, chp)
+    while c !== nothing
+        if c.clause === lost
+            ctx.chp.cref = c
+            ctx.chp.key = chp.key
+            return nothing
+        end
+        c = nextClause!(ld, chp, _head_argv(ld, def, head), gen, def)
+    end
+    # the walk did not reach it: the clause list has every clause (acquire_def/release_def: no thread)
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        if c.clause === lost
+            ctx.chp.cref = c
+            ctx.chp.key = if def.arity == 0
+                word(0)
+            else
+                _argv_key(_head_argv(ld, def, head), Int(def.impl_clauses.primary_index))   # argv ? index_of_word(argv[primary_index]) : 0
+            end   # argv ? index_of_word(argv[primary_index]) : 0
+            break
+        end
+        c = c.next
+    end
+    return nothing
+end
+
+# PORT: pl-proc.c retract_move_generation
+# SYNC3 (af9e2e7e): new upstream function, see (*) in pl-proc.c. The clause `lost` was not erased (another thread was first, or an update
+# event refused): retract/1 continues at the CURRENT generation. A second access object publishes it first and stays until retract/1 is
+# done (`RETRACT_MOVED`); if this happens again, a third publishes the newer one, the second takes it and the third goes. DIVERGES:
+# no `scan_lock` (no second thread scans the access objects); `definition_ref` is immutable, so the second one's entry is replaced;
+# `now == NULL` (an exception) cannot happen (`pushPredicateAccessObj!` has no depth limit), the NULL return is not needed.
+"The next candidate of retract/1 at the current generation after it lost `lost`, `nothing` when none is left (pl-proc.c)."
+function retract_move_generation!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, ctx::retract_context{T}, lost::Clause{T},
+    head::term_t, fid::Int, fr::Int
+)::Union{Nothing, ClauseRef{T}} where {T}
+    def = ctx.def::Definition{T}
+    movedi = (ctx.flags & RETRACT_MOVED) != 0 ? findPredicateAccessObj(ld, def) : 0
+    now = pushPredicateAccessObj!(ld, gd, def)
+    PL_rewind_foreign_frame(ld, fid)
+    retract_find_lost!(ld, ctx, lost, head, fr)
+    ld.frames[fr].generation = now.generation           # setGenerationFrameVal(environment_frame, now->generation)
+    cref = nextClause!(ld, ctx.chp, _head_argv(ld, def, head), now.generation, def)
+    if cref !== nothing && cref.clause === lost         # an event refused to erase
+        cref = nextClause!(ld, ctx.chp, _head_argv(ld, def, head), now.generation, def)
+    end
+    if movedi != 0
+        ld.predicate_references[movedi] = definition_ref{T}(def, now.generation)
+        popPredicateAccess!(ld, def)                    # the topmost one, `now`
+    else
+        ctx.flags |= RETRACT_MOVED
+    end
+    return cref
+end
+
 # PORT: pl-proc.c retract as pl_retract1_va
+# SYNC3 (af9e2e7e): an undefined static predicate goes through `implicitDynamicProcedure!`; the context has `flags` (RETRACT_ALLOCATED,
+# RETRACT_MOVED); a clause that was not erased moves the enumeration to the current generation (`retract_move_generation!`, with a second
+# predicate access object) instead of only resetting the frame's generation; `head_arguments` is `_head_argv`, read where a search reads
+# it. DIVERGES, not ported: `PL_strip_module_ex_ref`/`isCurrentProcedureRef`/`releaseModuleRef`/`releaseProcedureRef` (module and
+# procedure GC: no counted references here), `retract_after_wakeup` (see the call).
 # The pin cbf4e189 plus upstream fix ea1b569bd (BP2, a named backport): `cl` takes the SSU neck of the flags.
 # (PRED_IMPL("retract", 1, retract, PL_FA_TRANSPARENT|PL_FA_NONDETERMINISTIC|PL_FA_ISO))
 # DIVERGES: the context is a record of `ld.retract_contexts`, its index the `REDO_PTR` context (design D3);
@@ -2391,10 +2730,7 @@ function pl_retract1_va(
             return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE
         end
         if (def.flags & P_DYNAMIC) == 0
-            if isDefinedProcedure(gd, proc)
-                return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE
-            end
-            setDynamicDefinition!(gd, def, true)        # implicit
+            implicitDynamicProcedure!(gd, ld, proc)     # fails or raises error (SYNC3 af9e2e7e)
             return FFALSE                               # no clauses
         end
 
@@ -2416,7 +2752,7 @@ function pl_retract1_va(
 
         ctx = ctxbuf
         ctx.def = def
-        ctx.allocated = false
+        ctx.flags = 0
         k = 0
     else
         k = PL_foreign_context_address(PL__ctx)          # ctx = CTX_PTR
@@ -2453,8 +2789,12 @@ function pl_retract1_va(
                 neck_ok && decompile!(ld, clause, head, body)
             end
         if matched
-            if retractClauseDefinition!(gd, ld, def, clause, true) ||
-                PL_foreign_control(PL__ctx) != FRG_FIRST_CALL
+            # SYNC3 (af9e2e7e) DIVERGES, not ported: `if ( WAKEUP_PENDING() ) { if ( !retract_after_wakeup(clause) ) break; erased = true; }`:
+            # with constraint goals pending upstream appends `'$retract'(ClauseRef, false)` to them (appendWakeupHook(ATOM_dretract, ...))
+            # and erases the clause from uhook/3 in boot/attvar.pl once they succeeded. The kernel has neither the hook, `PL_unify_clref`
+            # nor that boot clause (held with the attributed-variable boot files), so a clause is erased as before.
+            erased = retractClauseDefinition!(gd, ld, def, clause, true)
+            if erased || PL_foreign_control(PL__ctx) != FRG_FIRST_CALL
                 if ctx.chp.cref === nothing             # deterministic last one
                     free_retract_context!(ld, ctx, k)
                     PL_close_foreign_frame(ld, fid)
@@ -2469,8 +2809,11 @@ function pl_retract1_va(
                 # protectCRef(ctx->chp.cref): (void)0
                 PL_close_foreign_frame(ld, fid)
                 return PL_retry_address(k)              # ForeignRedoPtr(ctx)
-            else
-                setGenerationFrame(gd, ld, fr)          # the first clause was retracted meanwhile
+            elseif PL_exception(ld, 0) == 0
+                # The clause was not erased, usually because another thread erased it first (or an event refused):
+                # continue at the current generation. See (*) in pl-proc.c.
+                cref = retract_move_generation!(gd, ld, ctx, clause, head, fid, fr)
+                continue
             end
         end
 
@@ -2509,11 +2852,7 @@ function pl_retractall1_va(
         return FFALSE
     end
     if (def.flags & P_DYNAMIC) == 0
-        if isDefinedProcedure(gd, proc)
-            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
-            return FFALSE
-        end
-        return setDynamicDefinition!(gd, def, true) ? FTRUE : FFALSE  # nothing to retract
+        return implicitDynamicProcedure!(gd, ld, proc) ? FTRUE : FFALSE   # nothing to retract (SYNC3 af9e2e7e)
     end
     return pl_retractall!(gd, ld, def, thehead) ? FTRUE : FFALSE
 end
@@ -2542,6 +2881,9 @@ function get_arity(
 end
 
 # PORT: pl-proc.c do_abolish
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with procedure GC): upstream now uses `isCurrentProcedureRef(f, m)` and releases it with
+# `releaseProcedureRef(proc)` after the call; the ISO error is `rc = PL_error(NULL, 0, NULL, ERR_MODIFY_STATIC_PROC, proc)` (instead of
+# an early `return`) so that the reference is released on every path. The kernel has no procedure references: same behaviour.
 # DIVERGES: the functor is its parts; `isCurrentFunctor` (no functor, so no procedure: success) is the lookup of the
 # procedure itself, `checkModifySystemProc` of a name that has no functor having nothing to refuse.
 "Abolish the procedure `atom`/`arity` of module `m` (pl-proc.c)."
@@ -2567,6 +2909,9 @@ end
 
 # PORT: pl-proc.c pl_abolish
 # (FRG("abolish", 2, pl_abolish, META), pl-ext.c:126)
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with module GC): upstream strips the module with a counted reference,
+# `PL_strip_module_ref(name, &m, name, &mref, 0)`, and calls `releaseModuleRef(mref)` ("see module GC") after `do_abolish`, returning `rc`.
+# The kernel has no module references (a module is never collected): `PL_strip_module` and no release, same behaviour.
 # DIVERGES: the database is the query's (`_query_gd`); the module an index into its table.
 "`abolish(:Name, +Arity)`: abolish the predicate `Name/Arity` (pl-proc.c)."
 function pl_abolish(
@@ -2581,6 +2926,8 @@ end
 
 # PORT: pl-proc.c pl_abolish1
 # (FRG("abolish", 1, pl_abolish1, META|ISO), pl-ext.c:125)
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with module GC): as pl_abolish: `PL_strip_module_ref(spec, &m, spec, &mref, 0)` and
+# `releaseModuleRef(mref)` on every path (the type error is now `rc = PL_error(...)`, not a `return`): no module references here.
 # DIVERGES: as pl_abolish.
 "`abolish(:PredicateIndicator)`: abolish the predicate `Name/Arity` (pl-proc.c)."
 function pl_abolish1(ld::PL_local_data{T}, spec::term_t)::foreign_t where {T}
@@ -2659,6 +3006,8 @@ function _cp_get_functor(
 end
 
 # PORT: pl-proc.c pl_current_predicate
+# SYNC3 (af9e2e7e): the volatile-procedure tests below are upstream's (procedure GC, see the head of this file); the `references`
+# counts they combine with `isVolatileProcedure` are not read: the kernel's `procedure` has none, and none is volatile.
 # (FRG("\$c_current_predicate", 2, pl_current_predicate, NDET|META), pl-ext.c:132)
 # DIVERGES: the state is a record of the local data's pool (`ld.cur_pred_enums`), its index the `REDO_PTR` context; the
 # procedures are the keys of the module's table at the first call, in its order (upstream's hash order), each looked up again
@@ -2691,7 +3040,11 @@ function pl_current_predicate(
 
     if ctl == FRG_FIRST_CALL
         if f !== nothing
-            isCurrentProcedure(sym_key(f[1]), f[2], m) === nothing && return FFALSE
+            # SYNC3 (af9e2e7e): upstream reads the table without pinning and rejects a volatile procedure no code references
+            # (`!isVolatileProcedure(proc) || proc->references > 0`): none is volatile here, so the shim `isVolatileProcedure` is false
+            # (the `references` count is not a field of the kernel's `procedure`: the test is the first half only).
+            proc = isCurrentProcedure(sym_key(f[1]), f[2], m)
+            (proc === nothing || isVolatileProcedure(proc)) && return FFALSE
             return PL_unify_atom(ld, name, f[1]) ? FTRUE : FFALSE   # PL_unify_atom(name, nameFunctor(f))
         end
         idx = alloc_foreign_state!(pool)                    # e = newTableEnumWP(m->procedures)
@@ -2709,6 +3062,10 @@ function pl_current_predicate(
         e.next += 1
         proc = get(m.procedures, key, nothing)
         proc === nothing && continue
+        # SYNC3 (af9e2e7e): a volatile procedure no code references (`proc->references == 0`) is not reported: none is volatile here (the
+        # `references` count is no field of `procedure`); the functor is the table key `tk` (`valueFunctor((functor_t)tk)`), not
+        # `proc->definition->functor`: the same name and arity here.
+        isVolatileProcedure(proc) && continue
         fname = proc.definition.name                        # fdef->name
         (n !== nothing && sym_key(n) != sym_key(fname)) && continue
         PL_unify_atom(ld, name, fname) || continue
@@ -2851,9 +3208,7 @@ function pl_current_predicate1_va(
 
         if e.has_functor
             if e.emod == 0                                  # fully specified
-                rval =
-                    visibleProcedure(gd, e.name::T, e.arity, gd.modules[e.module_]) !==
-                    nothing
+                rval = hasVisibleProcedure(gd, e.name::T, e.arity, gd.modules[e.module_])   # SYNC3 (af9e2e7e): was visibleProcedure() != NULL
                 _cur_enum_clean!(gd, ld, idx)
                 return rval ? FTRUE : FFALSE
             end
@@ -2873,7 +3228,7 @@ function pl_current_predicate1_va(
     while true
         mod = gd.modules[e.module_]
         if e.has_functor                                    # _M:foo/2
-            if visibleProcedure(gd, e.name::T, e.arity, mod) !== nothing
+            if hasVisibleProcedure(gd, e.name::T, e.arity, mod)     # SYNC3 (af9e2e7e): was visibleProcedure()
                 PL_unify_atom(ld, mt, mod.atom)
 
                 mm = advanceModuleEnum(gd, ld, ld.module_enums.states[e.emod])
@@ -2889,16 +3244,25 @@ function pl_current_predicate1_va(
             # e->epred enumerates the table of `e->super` once the walk moved to a super module (else of `e->module`)
             tmod = e.super != 0 ? gd.modules[e.super] : mod
             while e.epred_next <= length(e.epred_keys)      # advanceTableEnum(e->epred, &tk, &tv)
-                proc = get(tmod.procedures, e.epred_keys[e.epred_next], nothing)
+                tkey = e.epred_keys[e.epred_next]
+                proc = get(tmod.procedures, tkey, nothing)
                 e.epred_next += 1
                 proc === nothing && continue
                 fdname = proc.definition.name               # fd = valueFunctor(f)
                 fdarity = proc.definition.arity
 
+                # SYNC3 (af9e2e7e): `!isVolatileProcedure(proc) && acquireTableProcedure(e->super ? e->super : e->module, f, proc)`, then
+                # `defined = isDefinedProcedure(proc); releaseProcedureRef(proc); if !defined continue` (the shims are no-ops, see the head).
                 if (e.name === nothing || sym_key(e.name::T) == sym_key(fdname)) &&
                     (e.arity < 0 || e.arity == fdarity) &&
                     fdarity >= aextra &&
-                    isDefinedProcedure(gd, proc)
+                    !isVolatileProcedure(proc) &&
+                    acquireTableProcedure(tmod, tkey, proc) &&
+                    (
+                        defined=isDefinedProcedure(gd, proc);
+                        releaseProcedureRef(proc);
+                        defined
+                    )
                     mt != 0 && PL_unify_atom(ld, mt, mod.atom)
                     e.name === nothing && PL_unify_atom(ld, nt, fdname)
                     e.arity < 0 && PL_unify_integer(ld, at, fdarity - aextra)
@@ -3076,11 +3440,18 @@ end
 # PORT: pl-proc.c get_predicate_attribute as pl_get_predicate_attribute3_va
 # (PRED_IMPL("$get_predicate_attribute", 3, get_predicate_attribute, PL_FA_TRANSPARENT))
 # DIVERGES: `indexed` is refused by name (`NotPortedError`: its value is a Prolog dict per index and dicts are NOT PORTED);
-# `last_modified_generation` is the module's (`last_modified`, `setLastModifiedPredicate!`'s rise: the definition has no such
-# field; pl-proc.c:3642-3645 reads `def->last_modified`); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
+# `last_modified_generation` is `def.last_modified` (pl-proc.c:3642-3645 reads `def->last_modified`; SYNC3 integration: the field
+# came with P07's merge, P07's own version read the module's); `size` is `sizeof_predicate`, the kernel's own count (pl-proc.c:3657-3659);
 # `erased_clause_space` is `sizeof_erased_clauses`, the kernel's own bytes (swipl: 112 a clause);
 # the tabling keys (`tbl_is_predicate_attribute`) are `tbl_get_predicate_attribute`'s (src/pl-tabling.jl), which fails for a
 # definition without `tabling` properties, as upstream does; the `P_TRANSACT` branch (3639-3641) is left to a transactions step.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e; held with procedure and module GC): upstream split the function. The body (from `def =
+# proc->definition`) is the new `get_predicate_attribute(module, proc, what, value)` (logic UNCHANGED, a static `bool`), and the
+# `PRED_IMPL` is a wrapper that strips the module with a counted reference (`PL_strip_module_ref(A1, &module, head, &ref, 0)`),
+# `PL_get_functor`, then: no `ref` (the module is pinned) -> `visibleProcedure` else `isCurrentProcedure` with no procedure reference
+# ("avoid refs"); with `ref` -> `visibleProcedureRef` else `isCurrentProcedureRef`, `get_predicate_attribute(...)`, `releaseProcedureRef(proc)`,
+# `releaseModuleRef(ref)`. The kernel keeps the body inline with the one lookup order (visible, then current) and no references (no module
+# or procedure GC): the wrapper adds nothing without GC. Checked against the diff: the 50 changed lines are this split only.
 "`'\$get_predicate_attribute'(:Head, +Key, -Value)`: a property of the predicate `Head` names (pl-proc.c)."
 function pl_get_predicate_attribute3_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -3160,12 +3531,10 @@ function pl_get_predicate_attribute3_va(
         (def.flags & P_FOREIGN) != 0 && return FFALSE
         g = if (def.flags & P_TRANSACT) != 0 && ld.transaction.generation != 0     # pl-proc.c:3696-3697
             Int(
-                transaction_last_modified_predicate(
-                    ld, def, gd.modules[def.module_].last_modified
-                )
+                transaction_last_modified_predicate(ld, def, def.last_modified)
             )
         else
-            Int(gd.modules[def.module_].last_modified)
+            Int(def.last_modified)
         end
         return PL_unify_int64(ld, value, g) ? FTRUE : FFALSE
     elseif k == sym_key(mk_sym(T, :number_of_rules))

@@ -164,7 +164,7 @@ end
 ''', r'''                        nothing
 '''),
     m("O1A-C3 the digits of a numeric argument are not shifted (KILL f28, f56)",
-      r'''arg2 = arg * 10 + dw''', r'''arg2 = arg * 10'''),
+      r'''arg = arg * 10 + dw''', r'''arg = arg * 10'''),
     m("O1A-C4 `*` leaves the argument it consumed on the list (KILL f26, f08)",
       r'''                argc -= 1                       # SHIFT
 ''', r'''                nothing
@@ -177,8 +177,8 @@ end
       r'''            elseif c == Int('`') && here < flen
 ''', r'''            elseif c == Int('`')
 ''', equivalent="src/os/pl-fmt.jl:485 (do_format's `elseif c == Int('`') && here < flen`) — read, not run: c is `get_chr_from_text(fmt, here)` (the line before the numeric-argument branch), which returns 0 for `here >= length(fmt)` (pl-fmt.jl:316-317), and 0 is no backquote, so c == '`' already implies here < flen; upstream's `here < fmt.length` is the same guard on a NUL-terminated text (pl-fmt.c)"),
-    m("O1A-C8 a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03; swipl 10.1.19 prints 1, flag k)",
-      r'''                        arg2 > typemax(Int32) &&
+    m("O1A-C8 a numeric argument past `int` is not refused: the kernel's raise of format('argument overflow') is gone (KILL k03)",
+      r'''                        arg > div(Int(typemax(Int32)) - dw, 10) &&
                             return PL_format_error(ld, "argument overflow")
 ''', r'''                        nothing
 '''),

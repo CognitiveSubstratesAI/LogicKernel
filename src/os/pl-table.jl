@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-table.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-table.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # CLASS: code
@@ -100,7 +100,9 @@ end
 # PORT: pl-table.c htable_alloc_kvs
 "A new, empty key-value map of `len` entries."
 function htable_alloc_kvs(len::Int)::KVS
-    return KVS(len, false, 0, nothing, nothing, fill(symbol(NULL_KEY, NULL_VALUE), len))
+    return KVS(
+        len, false, false, 0, nothing, nothing, fill(symbol(NULL_KEY, NULL_VALUE), len)
+    )
 end
 
 # PORT: pl-table.c htable_free_kvs
@@ -188,6 +190,17 @@ function htable_copy_kvs(ht::Table, old_kvs::KVS, new_kvs::KVS)::Nothing
     return nothing
 end
 
+# PORT: pl-table.c htable_advance_kvs
+# DIVERGES: the CAS on `ht->kvs` is a store (one thread; the precedent: `htable_cas_new_kvs`).
+"Make `ht.kvs` the first map that is not completely copied to its successor: operations start at `ht.kvs` and only look forward (pl-table.c)."
+function htable_advance_kvs(ht::Table)::Nothing
+    while true
+        kvs = ht.kvs
+        kvs.copied || return nothing
+        ht.kvs = kvs.next::KVS                      # COMPARE_AND_SWAP_PTR(&ht->kvs, kvs, kvs->next)
+    end
+end
+
 # PORT: pl-table.c htable_resize
 "Resize the table whose map `kvs` is full or reprobed too often: the new map (`kvs.next` when one exists)."
 function htable_resize(ht::Table, kvs::KVS)::KVS
@@ -213,7 +226,8 @@ function htable_resize(ht::Table, kvs::KVS)::KVS
         htable_copy_kvs(ht, kvs, new_kvs)
         new_kvs.resizing = false
 
-        ht.kvs = new_kvs
+        kvs.copied = true
+        htable_advance_kvs(ht)
 
         htable_maybe_free_kvs(ht)
     else

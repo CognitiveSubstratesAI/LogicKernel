@@ -215,6 +215,9 @@ _pc_codes(vs) = sort!([
         isempty(r.violations) ||
             foreach(v -> println(stderr, "  port_check: ", v), r.violations)
         @test isempty(r.violations)
+        # where the upstream names were looked up, exactly the declared keeps are missing there
+        "swipl-devel" in r.existence_checked &&
+            @test length(r.kept) == length(KEPT_NAMES) == 2
         isempty(r.existence_checked) &&
             @info "port_check: no upstream checkout here — structure and inventory checked, upstream existence NOT (checked on local runs with ~/dev-zone/swipl-devel)"
         # M1: with every checkout the headers name, the coverage block WAS compared — not skipped
@@ -918,6 +921,132 @@ _pc_codes(vs) = sort!([
             @test split_parts_dangling(
                 root; table=Dict("swipl-devel src/pl-gc.c" => ("src/pl-gcdriver.jl",))
             ) == String[]
+        end
+    end
+
+    # THE DECLARED KEEPS (KEPT_NAMES): two markers name what upstream removed. Every row is verdict level on a fixture tree
+    # with the REAL table through the default (so no swipl-devel checkout of this machine is needed), and its verdict goes
+    # through ONE extractor (`verdict`) on both sides.
+    @testset "KEPT_NAMES: the listed (file, name, upstream path) may miss upstream, nothing else; a stale row fails" begin
+        # the table is pinned: a row added, dropped or changed shows here
+        @test [(k.file, k.name, k.upstream, k.removed_by) for k in KEPT_NAMES] == [
+            ("src/pl-incl.jl", "M_DESTROYED", "src/pl-incl.h", "77c3148d"),
+            ("src/pl-modul.jl", "releaseModule_unlocked", "src/pl-modul.c", "77c3148d")
+        ]
+        @test all(k -> k.reason == "P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move", KEPT_NAMES)
+        mktempdir() do base
+            up = joinpath(base, "swipl-devel")
+            for f in ("pl-incl.h", "pl-modul.c", "pl-inline.h")
+                _pc_write(up, "src/$f", "int still_here;\n")
+            end
+            _pc_git(up, "init", "-q")
+            _pc_git(up, "add", "-A")
+            _pc_git(up, "commit", "-qm", "fixture")
+            sha = String(strip(read(`git -C $up rev-parse HEAD`, String)))
+            # a second commit whose pl-incl.h still has the name: the tree that cites it has a stale row
+            _pc_write(up, "src/pl-incl.h", "int still_here;\n#define M_DESTROYED 1\n")
+            _pc_git(up, "add", "-A")
+            _pc_git(up, "commit", "-qm", "the name is back")
+            sha_has = String(strip(read(`git -C $up rev-parse HEAD`, String)))
+            dirs = Dict("swipl-devel" => up)
+            hdr(path, at=sha) = "# UPSTREAM: swipl-devel $path @ $at\n# CLASS: design\n"
+            mark(file, name) = "# PORT: $file $name\n$name() = 1\n"
+            m_incl = mark("pl-incl.h", "M_DESTROYED")
+            m_modul = mark("pl-modul.c", "releaseModule_unlocked")
+            # `kernel`: with src/pl-inline.jl the fixture is the kernel's own tree to port_check, so the default rows apply
+            function tree(
+                label; kernel=true, incl=[m_incl], incl_at=sha, modul=true,
+                other=nothing
+            )
+                root = joinpath(base, label)
+                kernel && _pc_write(root, "src/pl-inline.jl", hdr("src/pl-inline.h"))
+                _pc_write(
+                    root,
+                    "src/pl-incl.jl",
+                    hdr("src/pl-incl.h", incl_at) * "\n" * join(incl, "\n")
+                )
+                modul &&
+                    _pc_write(
+                        root, "src/pl-modul.jl", hdr("src/pl-modul.c") * "\n" * m_modul
+                    )
+                other === nothing ||
+                    _pc_write(
+                        root,
+                        "src/parts.jl",
+                        "# ORIGINAL: fixture\n# UPSTREAM-PARTS: swipl-devel src/pl-modul.c @ $sha\n\n" *
+                        other
+                    )
+                return root
+            end
+            function verdict(root; upstream_dirs=dirs, kw...)
+                res = port_check(root; upstream_dirs=upstream_dirs, kw...)
+                # the fixture carries no docs/: those two verdicts, and only those, are set aside
+                vs = filter(
+                    v -> !occursin(r"^(INVENTORY|ARCHITECTURE)-MISSING ", v),
+                    res.violations
+                )
+                return _pc_codes(vs), _pc_codes(res.kept), res
+            end
+            both = [("KEPT-NAME", "pl-incl.jl"), ("KEPT-NAME", "pl-modul.jl")]
+
+            # ROW 1: listed and missing upstream: no violation, two KEPT-NAME lines
+            got, kept, r = verdict(tree("listed"))
+            @test r.existence_checked == ["swipl-devel"]
+            @test sum(f -> length(f.markers), r.files) == 2     # both sides non-empty
+            @test got == []
+            @test length(r.kept) == 2 && kept == both
+            @test all(l -> occursin("77c3148d", l), r.kept)
+            # with no checkout the name is not looked up: the rows count neither as kept nor as stale
+            got, kept, r = verdict(tree("nocheckout"); upstream_dirs=Dict{String, String}())
+            @test isempty(r.existence_checked) && sum(f -> length(f.markers), r.files) == 2
+            @test got == [] && kept == []
+            # the default rows are the kernel tree's only: elsewhere both names are missing, and no row is stale
+            got, kept, _ = verdict(tree("notkernel"; kernel=false))
+            @test got == [
+                ("UPSTREAM-NAME-MISSING", "pl-incl.jl"),
+                ("UPSTREAM-NAME-MISSING", "pl-modul.jl")
+            ]
+            @test kept == []
+
+            # ROW 2: a third missing name fails: in a listed file (the match is not by file alone), and a LISTED name in
+            # another file that cites the SAME upstream path (the match is not by name, nor by name and path, alone)
+            got, kept, _ = verdict(
+                tree(
+                    "third"; incl=[m_incl, mark("pl-incl.h", "M_THIRD_GONE")],
+                    other=mark("pl-modul.c", "releaseModule_unlocked")
+                )
+            )
+            @test got == [
+                ("UPSTREAM-NAME-MISSING", "parts.jl"),
+                ("UPSTREAM-NAME-MISSING", "pl-incl.jl")
+            ]
+            @test kept == both
+
+            # ROW 3: a stale row fails. (a) the name IS in the upstream file the header cites
+            got, kept, _ = verdict(tree("present"; incl_at=sha_has))
+            @test got == [("KEPT-NAME-STALE", "pl-incl.jl")]
+            @test kept == [("KEPT-NAME", "pl-modul.jl")]
+            # (b) the marker is gone (another marker of the same file stays), with and without a checkout
+            gone = tree("nomarker"; incl=[mark("pl-incl.h", "still_here")])
+            got, kept, _ = verdict(gone)
+            @test got == [("KEPT-NAME-STALE", "pl-incl.jl")]
+            @test kept == [("KEPT-NAME", "pl-modul.jl")]
+            got, kept, _ = verdict(gone; upstream_dirs=Dict{String, String}())
+            @test got == [("KEPT-NAME-STALE", "pl-incl.jl")] && kept == []
+            # (c) the whole kernel file is gone
+            got, kept, _ = verdict(tree("nofile"; modul=false))
+            @test got == [("KEPT-NAME-STALE", "pl-modul.jl")]
+            @test kept == [("KEPT-NAME", "pl-incl.jl")]
+            # (d) no header line names the row's upstream PATH (same basename): the row is stale and covers nothing
+            moved = KeptName[
+                merge(KEPT_NAMES[1], (upstream="src/os/pl-incl.h",)), KEPT_NAMES[2]
+            ]
+            got, kept, _ = verdict(tree("otherpath"); kept_names=moved)
+            @test got == [
+                ("KEPT-NAME-STALE", "pl-incl.jl"),
+                ("UPSTREAM-NAME-MISSING", "pl-incl.jl")
+            ]
+            @test kept == [("KEPT-NAME", "pl-modul.jl")]
         end
     end
 end

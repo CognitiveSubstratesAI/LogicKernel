@@ -1,5 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-prof.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prof.c @ af9e2e7ed0be
+# UPSTREAM: swipl-devel src/pl-prof.h @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -9,7 +9,9 @@
 #
 # PROF1 (pl-prof.c), lane F, FIRST HALF: the data layer of the profiler: the call tree (`call_node`, src/pl-incl.jl), the status
 # atoms, the node pointer, and the foreign predicates that read it ('$prof_sibling_of'/2, '$prof_node'/8,
-# '$prof_procedure_data'/8, '$prof_statistics'/8) or reset it (reset_profiler/0), with `profiler/2` and `'$profile'/4`.
+# '$prof_procedure_data'/9, '$prof_procedures'/1, '$prof_statistics'/9) or reset it (reset_profiler/0), with `profiler/2` and
+# `'$profile'/4`. SYNC3 (swipl-devel af9e2e7e): the global stack accounting (`prof_mem`, `mem(Allocated, ..)` in the summaries), the
+# index of the tree by handle (`get_prof_index`: collecting all data was quadratic in the size of the tree), `'$prof_procedures'/1`.
 #
 # THE COLLECTION ITSELF IS A NAMED REFUSAL (NotPortedError, step PROF1). Upstream samples with SIGPROF/SIGALRM and `setitimer`
 # (pl-prof.c:759-816 `startProfiler`, `sig_profile`), reads the thread's CPU time (`ThreadCPUTime`, `prof_thread_cpu_ns`), the
@@ -29,6 +31,8 @@
 #   4. `get_def`: `get_procedure(..., GP_FIND|GP_NAMEARITY|GP_TYPE_QUIET)` is `get_procedure_namearity` (src/pl-proc.jl), which has no
 #      quiet flag; GP_TYPE_QUIET only silences the "no Name/Arity" error in upstream's get_functor (pl-proc.c:661), so `get_def`
 #      checks for `/`/2 or `//`/2 first and fails without an error, every other error (bad name, arity) is raised as upstream.
+#   6. NO GC (SYNC3): `prof_mem_clock` adds `LD->gc.stats.totals.global_gained` to the global stack in use; this kernel has no
+#      stack garbage collector (statistics/2 reports 0 for it), so `prof_gc_global_gained` and `prof_gc_collections` are 0.
 #   5. MEMORY: no `allocHeap`, no `releaseModule` (`prof_release_def`: no module GC), the `prof_ref` chains are vectors
 #      (new references are pushed at the end and unified from the end, upstream's order of `r->next = callers; callers = r`).
 
@@ -219,6 +223,8 @@ mutable struct prof_ref{T}
     cycle::Int
     ticks::Int
     sibling_ticks::Int
+    mem::prof_mem
+    sibling_mem::prof_mem
     calls::Int                                  # calls to/from this predicate
     redos::Int                                  # redos to/from this predicate
     exits::Int                                  # exits to/from this predicate
@@ -229,6 +235,8 @@ end
 mutable struct node_sum{T}
     ticks::Int
     sibling_ticks::Int
+    mem::prof_mem
+    sibling_mem::prof_mem
     calls::Int
     redos::Int
     exits::Int
@@ -236,7 +244,8 @@ mutable struct node_sum{T}
     callers::Vector{prof_ref{T}}
     callees::Vector{prof_ref{T}}
 end
-node_sum{T}() where {T} = node_sum{T}(0, 0, 0, 0, 0, 0, prof_ref{T}[], prof_ref{T}[])
+node_sum{T}() where {T} =
+    node_sum{T}(0, 0, prof_mem(), prof_mem(), 0, 0, 0, 0, prof_ref{T}[], prof_ref{T}[])
 
 # PORT: pl-prof.c node_redos
 "The redos of a node: its exits and fails beyond its calls (a call still running counts none; pl-prof.c)."
@@ -262,6 +271,8 @@ function add_parent_ref!(
             r.exits += self.exits
             r.ticks += self.ticks
             r.sibling_ticks += self.sibling_ticks
+            add_prof_mem(r.mem, self.mem)
+            add_prof_mem(r.sibling_mem, self.sibling_mem)
             return nothing
         end
     end
@@ -275,6 +286,8 @@ function add_parent_ref!(
             cycle,
             self.ticks,
             self.sibling_ticks,
+            copy(self.mem),
+            copy(self.sibling_mem),
             self.calls,
             node_redos(self),
             self.exits
@@ -293,7 +306,10 @@ function add_recursive_ref!(sum::node_sum{T}, count::Int, cycle::Int)::Nothing w
         end
     end
     push!(
-        sum.callers, prof_ref{T}(PROF_REF_RECURSIVE, nothing, 0, cycle, 0, 0, count, 0, 0)
+        sum.callers,
+        prof_ref{T}(
+            PROF_REF_RECURSIVE, nothing, 0, cycle, 0, 0, prof_mem(), prof_mem(), count, 0, 0
+        )
     )
     return nothing
 end
@@ -310,6 +326,8 @@ function add_sibling_ref!(
             r.exits += sibling.exits
             r.ticks += sibling.ticks
             r.sibling_ticks += sibling.sibling_ticks
+            add_prof_mem(r.mem, sibling.mem)
+            add_prof_mem(r.sibling_mem, sibling.sibling_mem)
             return nothing
         end
     end
@@ -317,62 +335,153 @@ function add_sibling_ref!(
         sum.callees,
         prof_ref{T}(
             PROF_REF_DEF, sibling.handle, sibling.type, cycle, sibling.ticks,
-            sibling.sibling_ticks,
+            sibling.sibling_ticks, copy(sibling.mem), copy(sibling.sibling_mem),
             sibling.calls, node_redos(sibling), sibling.exits
         )
     )
     return nothing
 end
 
-# PORT: pl-prof.c sumProfile
-# DIVERGES: file-wide 2 (`PL_handle_signals`, which can only fail on a run cut short, has no twin).
-"Sum the procedure `handle` over the subtree of the node `n`: the number of nodes of it (pl-prof.c)."
-function sumProfile(
-    ld::PL_local_data{T}, n::call_node{T}, handle::Definition{T}, sum::node_sum{T},
-    seen::Int
-)::Int where {T}
-    count = 0
+# prof_index (pl-prof.c; its PORT marker and the type are in src/pl-incl.jl): `$prof_procedure_data/9` sums the nodes of one handle. Walking the whole call tree for each predicate makes collecting all data
+# quadratic, so upstream indexes the tree once: for each handle the nodes in depth-first order and, for each node, the number of its
+# ancestors with the same handle (`seen`, the cycle). The index only depends on the shape of the tree, which only changes when a
+# node is added or all nodes are freed: it is valid as long as `LD->profile.nodes` is unchanged. The types are in src/pl-incl.jl.
 
-    if n.handle === handle
-        count += 1
-        sum.ticks += n.ticks
-        if seen == 0
-            sum.sibling_ticks += n.sibling_ticks
-        else                                            # nested: n's ticks are in the outer siblings
-            sum.sibling_ticks -= n.ticks
-        end
-
-        if n.parent != 0
-            p = prof_node_at(ld, n.parent)::call_node{T}
-            add_parent_ref!(sum, n, PROF_REF_DEF, p.handle, p.type, seen)
-        else
-            add_parent_ref!(sum, n, PROF_REF_SPONTANEOUS, nothing, 0, seen)
-        end
-
-        n.recur != 0 && add_recursive_ref!(sum, n.recur, seen)
-
-        s = n.siblings
-        while s != 0
-            sn = prof_node_at(ld, s)::call_node{T}
-            add_sibling_ref!(sum, sn, seen)
-            s = sn.next
-        end
-
-        seen += 1
+# PORT: pl-prof.c free_prof_index
+# DIVERGES: file-wide 5: the memory is the garbage collector's; the function empties the containers.
+"Free the index `idx` (pl-prof.c)."
+function free_prof_index(idx::Union{Nothing, prof_index{T}})::Nothing where {T}
+    if idx !== nothing
+        empty!(idx.all)
+        empty!(idx.table)
     end
+    return nothing
+end
+
+# PORT: pl-prof.c handle_nodes
+"The `prof_handle_nodes` of `handle` in `idx`, created if there is none (pl-prof.c)."
+function handle_nodes(
+    idx::prof_index{T}, handle::Union{Nothing, Definition{T}}
+)::prof_handle_nodes{T} where {T}
+    h = get(idx.table, handle, nothing)
+    if h === nothing
+        h = prof_handle_nodes{T}()
+        push!(idx.all, h)
+        idx.table[handle] = h
+    end
+    return h
+end
+
+# PORT: pl-prof.c add_occurrence
+# DIVERGES: file-wide 5: the vector grows by itself; no out-of-memory result (upstream: `realloc` failing).
+"Add the node `n` to the occurrences of `h`, with the current depth as its `seen` (pl-prof.c)."
+function add_occurrence(h::prof_handle_nodes{T}, n::call_node{T})::Bool where {T}
+    push!(h.occurrences, prof_occurrence{T}(n, h.depth))
+    return true
+end
+
+# PORT: pl-prof.c get_prof_index
+# DIVERGES: file-wide 2: upstream checks for signals every 64K nodes (`PL_handle_signals`) and returns NULL with an exception; and
+# `PL_no_memory`: the function returns the index.
+"Get the index of the call tree, building it if the tree changed (pl-prof.c)."
+function get_prof_index(ld::PL_local_data{T})::prof_index{T} where {T}
+    idx = ld.profile.index
+    if idx !== nothing && idx.nodes == ld.profile.nodes
+        return idx
+    end
+
+    free_prof_index(idx)
+    ld.profile.index = nothing
+    idx = prof_index{T}()
+
+    rootp = ld.profile.roots
+    while rootp != 0
+        root = prof_node_at(ld, rootp)::call_node{T}
+        n = root
+        done = false
+
+        while !done
+            h = handle_nodes(idx, n.handle)                     # enter n
+            add_occurrence(h, n)
+            h.depth += 1
+            if n.siblings != 0
+                n = prof_node_at(ld, n.siblings)::call_node{T}
+                continue
+            end
+
+            while true                                          # leave n
+                h = idx.table[n.handle]
+                h.depth -= 1
+                if n === root
+                    done = true
+                    break
+                end
+                if n.next != 0
+                    n = prof_node_at(ld, n.next)::call_node{T}
+                    break
+                end
+                n = prof_node_at(ld, n.parent)::call_node{T}
+            end
+        end
+        rootp = root.next
+    end
+
+    idx.nodes = ld.profile.nodes
+    ld.profile.index = idx
+    return idx
+end
+
+# PORT: pl-prof.c sum_node
+# DIVERGES: `ld` is passed to follow the node pointers (upstream's are C pointers).
+"Add the node `n`, with `seen` ancestors of the same handle, to the summary `sum` (pl-prof.c)."
+function sum_node(
+    ld::PL_local_data{T}, n::call_node{T}, sum::node_sum{T}, seen::Int
+)::Nothing where {T}
+    sum.ticks += n.ticks
+    add_prof_mem(sum.mem, n.mem)
+    if seen == 0
+        sum.sibling_ticks += n.sibling_ticks
+        add_prof_mem(sum.sibling_mem, n.sibling_mem)
+    else                                                # nested: n's ticks are in the outer siblings
+        sum.sibling_ticks -= n.ticks
+        sub_prof_mem(sum.sibling_mem, n.mem)
+    end
+
+    if n.parent != 0
+        p = prof_node_at(ld, n.parent)::call_node{T}
+        add_parent_ref!(sum, n, PROF_REF_DEF, p.handle, p.type, seen)
+    else
+        add_parent_ref!(sum, n, PROF_REF_SPONTANEOUS, nothing, 0, seen)
+    end
+
+    n.recur != 0 && add_recursive_ref!(sum, n.recur, seen)
 
     s = n.siblings
     while s != 0
         sn = prof_node_at(ld, s)::call_node{T}
-        count += sumProfile(ld, sn, handle, sum, seen)
+        add_sibling_ref!(sum, sn, seen)
         s = sn.next
     end
+    return nothing
+end
 
-    return count
+# ORIGINAL: the `PL_FUNCTOR, FUNCTOR_mem4, PL_INT64 x 4` of upstream's `PL_unify_term` calls: unify `t` with `mem(A, B, C, D)`.
+"Unify `t` with `mem(A, B, C, D)` (the four counters of a global stack accounting; pl-prof.c `FUNCTOR_mem4`)."
+function prof_unify_mem4(
+    ld::PL_local_data{T}, t::term_t, A::Int, B::Int, C::Int, D::Int
+)::Bool where {T}
+    PL_unify_functor(ld, t, mk_sym(T, :mem), 4) || return false
+    a = PL_new_term_ref(ld)
+    vals = (A, B, C, D)
+    for i in 1:4
+        _PL_get_arg(ld, i, t, a)
+        PL_unify_int64(ld, a, vals[i]) || return false
+    end
+    return true
 end
 
 # PORT: pl-prof.c unify_relatives
-"Unify the list `list` with the `node/7` terms of the references `refs` (pl-prof.c)."
+"Unify the list `list` with the `node/8` terms of the references `refs` (pl-prof.c)."
 function unify_relatives(
     gd::PL_global_data{T}, ld::PL_local_data{T}, list::term_t, refs::Vector{prof_ref{T}}
 )::Bool where {T}
@@ -393,7 +502,7 @@ function unify_relatives(
         end
 
         rc || return false
-        PL_unify_functor(ld, head, mk_sym(T, :node), 7) || return false
+        PL_unify_functor(ld, head, mk_sym(T, :node), 8) || return false     # FUNCTOR_node8
         a = PL_new_term_ref(ld)
         vals = (nothing, r.cycle, r.ticks, r.sibling_ticks, r.calls, r.redos, r.exits)
         for i in 1:7
@@ -401,6 +510,11 @@ function unify_relatives(
             ok = i == 1 ? PL_unify(ld, a, tmp) : PL_unify_int64(ld, a, vals[i]::Int)
             ok || return false
         end
+        _PL_get_arg(ld, 8, head, a)
+        prof_unify_mem4(
+            ld, a, r.mem.allocated, r.sibling_mem.allocated, r.mem.discarded,
+            r.sibling_mem.discarded
+        ) || return false
     end
 
     return PL_unify_nil(ld, tail)
@@ -432,27 +546,26 @@ end
 get_handle(gd::PL_global_data{T}, ld::PL_local_data{T}, t::term_t) where {T} =
     get_def(gd, ld, t)
 
-# PORT: pl-prof.c prof_procedure_data as pl_prof_procedure_data8_va
-# (PRED_IMPL("$prof_procedure_data", 8, prof_procedure_data, PL_FA_TRANSPARENT))
+# PORT: pl-prof.c prof_procedure_data as pl_prof_procedure_data9_va
+# (PRED_IMPL("$prof_procedure_data", 9, prof_procedure_data, PL_FA_TRANSPARENT))
 # DIVERGES: the context module of the transparent predicate is `user` (as compile_predicates/1: the caller's context is left out).
-"`'\$prof_procedure_data'(+PI, -Ticks, -TicksSiblings, -Calls, -Redos, -Exits, -Callers, -Callees)` (pl-prof.c)."
-function pl_prof_procedure_data8_va(
+# DIVERGES: file-wide 2: upstream checks for signals every 64K occurrences (`PL_handle_signals`, freeing the relatives when cut short).
+"`'\$prof_procedure_data'(+PI, -Ticks, -TicksSiblings, -Calls, -Redos, -Exits, -Callers, -Callees, -Memory)` (pl-prof.c); `Memory` is `mem(Allocated, AllocatedSiblings, Discarded, DiscardedSiblings)`, in bytes of global stack."
+function pl_prof_procedure_data9_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     gd = _query_gd(ld)
     handle = get_handle(gd, ld, PL__t0)
     handle === nothing && return FFALSE
     collectSiblingsTime(ld)
-    sum = node_sum{T}()
-    count = 0
-    n = ld.profile.roots
-    while n != 0
-        nn = prof_node_at(ld, n)::call_node{T}
-        count += sumProfile(ld, nn, handle, sum, 0)
-        n = nn.next
-    end
+    idx = get_prof_index(ld)
+    h = get(idx.table, handle, nothing)
+    h === nothing && return FFALSE                      # nothing known about this one
 
-    count == 0 && return FFALSE                         # nothing known about this one
+    sum = node_sum{T}()
+    for o in h.occurrences
+        sum_node(ld, o.node, sum, o.seen)
+    end
 
     return if (
         PL_unify_int64(ld, PL__t0 + 1, sum.ticks) &&
@@ -461,7 +574,11 @@ function pl_prof_procedure_data8_va(
         PL_unify_int64(ld, PL__t0 + 4, sum.redos) &&
         PL_unify_int64(ld, PL__t0 + 5, sum.exits) &&
         unify_relatives(gd, ld, PL__t0 + 6, sum.callers) &&
-        unify_relatives(gd, ld, PL__t0 + 7, sum.callees)
+        unify_relatives(gd, ld, PL__t0 + 7, sum.callees) &&
+        prof_unify_mem4(
+            ld, PL__t0 + 8, sum.mem.allocated, sum.sibling_mem.allocated, sum.mem.discarded,
+            sum.sibling_mem.discarded
+        )
     )
         FTRUE
     else
@@ -469,10 +586,10 @@ function pl_prof_procedure_data8_va(
     end
 end
 
-# PORT: pl-prof.c prof_statistics as pl_prof_statistics8_va
-# (PRED_IMPL("$prof_statistics", 8, prof_statistics, 0))
-"`'\$prof_statistics'(-Samples, -Ticks, -AccountingTicks, -Time, -Nodes, -Period, -Ports, -Mode)` (pl-prof.c)."
-function pl_prof_statistics8_va(
+# PORT: pl-prof.c prof_statistics as pl_prof_statistics9_va
+# (PRED_IMPL("$prof_statistics", 9, prof_statistics, 0))
+"`'\$prof_statistics'(-Samples, -Ticks, -AccountingTicks, -Time, -Nodes, -Period, -Ports, -Mode, -Memory)` (pl-prof.c); `Memory` is `mem(Allocated, Discarded, GCReclaimed, GCCount)`: the global stack (bytes) allocated, discarded by backtracking and reclaimed by GC while profiling and the number of garbage collections."
+function pl_prof_statistics9_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
 )::foreign_t where {T}
     p = ld.profile
@@ -491,7 +608,11 @@ function pl_prof_statistics8_va(
         PL_unify_int64(ld, PL__t0 + 4, p.nodes) &&
         PL_unify_integer(ld, PL__t0 + 5, p.sample_period) &&
         PL_unify_atom(ld, PL__t0 + 6, mk_sym(T, ports)) &&
-        PL_unify_atom(ld, PL__t0 + 7, prof_status_atom(T, p.mode))
+        PL_unify_atom(ld, PL__t0 + 7, prof_status_atom(T, p.mode)) &&
+        prof_unify_mem4(
+            ld, PL__t0 + 8, p.mem.allocated, p.mem.discarded, p.mem.gc_reclaimed,
+            p.mem.gc_count
+        )
     )
         FTRUE
     else
@@ -499,18 +620,61 @@ function pl_prof_statistics8_va(
     end
 end
 
-# PORT: pl-prof.c collectSiblingsNode
-"The ticks of the subtree of `n`, setting each node's `sibling_ticks` (pl-prof.c)."
-function collectSiblingsNode(ld::PL_local_data{T}, n::call_node{T})::Int where {T}
-    count = 0
-    s = n.siblings
-    while s != 0
-        sn = prof_node_at(ld, s)::call_node{T}
-        count += collectSiblingsNode(ld, sn)
-        n.sibling_ticks = count
-        s = sn.next
+# PORT: pl-prof.c prof_procedures as pl_prof_procedures1_va
+# (PRED_IMPL("$prof_procedures", 1, prof_procedures, 0))
+"`'\$prof_procedures'(-Ids:list)`: Ids holds the identifier of each procedure or other profiled object that has a node in the call tree, in no particular order (pl-prof.c)."
+function pl_prof_procedures1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    tail = PL_copy_term_ref(ld, PL__t0)
+    head = PL_new_term_ref(ld)
+    idx = get_prof_index(ld)
+
+    for h in Iterators.reverse(idx.all)                 # upstream's chain: the last created first
+        if !(
+            PL_unify_list(ld, tail, head, tail) &&
+            unify_node_id(gd, ld, head, h.occurrences[1].node)
+        )
+            return FFALSE
+        end
     end
-    return count + n.ticks
+
+    return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
+end
+
+# PORT: pl-prof.c collectSiblingsNode
+# DIVERGES: the node links are pointers (indexes): `prof_node_at` follows them. The `memset` of a `sibling_mem` is a fresh `prof_mem`.
+"Compute `sibling_ticks` and `sibling_mem` of the tree below `root`: the sums of the ticks and memory of all nodes below a node; a depth-first walk without recursion: each node adds its totals to its parent when we leave it (pl-prof.c)."
+function collectSiblingsNode(ld::PL_local_data{T}, root::call_node{T})::Nothing where {T}
+    n = root
+
+    root.sibling_ticks = 0
+    root.sibling_mem = prof_mem()
+
+    while true
+        if n.siblings != 0                              # enter the first child
+            n = prof_node_at(ld, n.siblings)::call_node{T}
+            n.sibling_ticks = 0
+            n.sibling_mem = prof_mem()
+            continue
+        end
+
+        while true                                      # leave n
+            n === root && return nothing
+            p = prof_node_at(ld, n.parent)::call_node{T}
+            p.sibling_ticks += n.ticks + n.sibling_ticks
+            add_prof_mem(p.sibling_mem, n.mem)
+            add_prof_mem(p.sibling_mem, n.sibling_mem)
+            if n.next != 0                              # enter the next child of p
+                n = prof_node_at(ld, n.next)::call_node{T}
+                n.sibling_ticks = 0
+                n.sibling_mem = prof_mem()
+                break
+            end
+            n = p
+        end
+    end
 end
 
 # PORT: pl-prof.c collectSiblingsTime
@@ -552,6 +716,8 @@ function freeProfileData(ld::PL_local_data{T})::Nothing where {T}
     n = ld.profile.roots
     ld.profile.roots = 0
     ld.profile.current = 0
+    free_prof_index(ld.profile.index)
+    ld.profile.index = nothing
 
     while n != 0
         nxt = (prof_node_at(ld, n)::call_node{T}).next
@@ -565,6 +731,13 @@ function freeProfileData(ld::PL_local_data{T})::Nothing where {T}
 end
 
 # PORT: pl-prof.c stopProfiler
+# DIVERGES (SYNC3): upstream, once the timer is stopped, charges the memory clock and totals the GC of the run before
+# `activateProfiler(PROF_INACTIVE)`:
+#     prof_mem_charge(LD->profile.current, LD->profile.current);
+#     LD->profile.mem.gc_reclaimed += LD->gc.stats.totals.global_gained - LD->profile.mem.gc_start;
+#     LD->profile.mem.gc_count     += LD->gc.stats.totals.collections   - LD->profile.mem.gc_count_start;
+# not written: the refusal below is raised first (the profiler cannot be started); the later step that lets a profiler run writes
+# them, with `prof_mem_charge`, `prof_gc_global_gained` and `prof_gc_collections` (this file).
 # DIVERGES: file-wide 2: `GD->profile.thread` has no field and the profiler cannot be started, so an active profiler (reachable
 # only by a test that sets `ld.profile.active`) is a named refusal at the clock it would read.
 "Stop the profiler: true when it is not running (pl-prof.c)."
@@ -580,6 +753,14 @@ function stopProfiler(ld::PL_local_data{T})::Bool where {T}
 end
 
 # PORT: pl-prof.c activateProfiler
+# DIVERGES (SYNC3): upstream (a) calls `disableProcedureGC()` (pl-proc.c: the profiler keeps `Definition` pointers, so procedures
+# created at run time are not collected after profiling once) for `active != PROF_INACTIVE`, before it takes `L_THREAD`; this kernel
+# has no procedure GC, so there is nothing to disable; (b) in the activation branch, after `LD->profile.mode = active`, sets
+#     LD->profile.mem.last           = prof_mem_clock();
+#     LD->profile.mem.gc_start       = LD->gc.stats.totals.global_gained;
+#     LD->profile.mem.gc_count_start = LD->gc.stats.totals.collections;
+# (b) is not written: the refusal below is raised first; the later step that lets a profiler run writes it with
+# `prof_mem_clock`, `prof_gc_global_gained` and `prof_gc_collections` (this file).
 "Mark the profiler active: refused by name, the profiler's clocks and signals have no equivalent (pl-prof.c:549-630)."
 function activateProfiler(ld::PL_local_data{T}, active::Int)::Bool where {T}
     _prof_refuse(
@@ -616,6 +797,7 @@ function resetProfiler(ld::PL_local_data{T})::Bool where {T}
     ld.profile.ticks = 0
     ld.profile.accounting_ticks = 0
     ld.profile.time = 0.0
+    ld.profile.mem = ld_profile_mem()                       # memset(&LD->profile.mem, 0, ..)
     ld.profile.mode = PROF_INACTIVE
     ld.profile.accounting = false
 
@@ -894,6 +1076,51 @@ function prof_charge(ld::PL_local_data{T}, ptr::Int, accounting::Bool)::Nothing 
     return nothing
 end
 
+# Global stack accounting (pl-prof.c). Like the exact time modes, we read a clock each time the current node of the call tree changes
+# and charge the difference to the node we leave. The clock is the global stack in use plus what GC has reclaimed, such that GC does
+# not make it go back. It does go back if backtracking discards global stack. On backtracking we read the clock before the stacks
+# are reset (`profBacktrack`), charging what was allocated to the current node, and after (`profFail`), charging what was discarded
+# to the node that created the choicepoint. E.g., for `p :- \+ \+ q`, q allocated X and p discarded X. Other events that make the
+# clock go back, such as exceptions, charge the discarded memory to the current node.
+
+# ORIGINAL: `LD->gc.stats.totals.global_gained`, `LD->gc.stats.totals.collections`: this kernel has no stack garbage collector
+# (file-wide 6), the totals are 0.
+"The global stack gained by GC in total (pl-gc.c `LD->gc.stats.totals.global_gained`): 0, no collector runs."
+prof_gc_global_gained(ld::PL_local_data)::Int = 0
+"The number of garbage collections in total (`LD->gc.stats.totals.collections`): 0, no collector runs."
+prof_gc_collections(ld::PL_local_data)::Int = 0
+
+# PORT: pl-prof.c prof_mem_clock
+"The global stack in use plus what GC has reclaimed (pl-prof.c)."
+prof_mem_clock(ld::PL_local_data)::Int =
+    _used_stack(ld, :global) + prof_gc_global_gained(ld)
+
+# PORT: pl-prof.c prof_mem_charge
+# DIVERGES: the nodes are node pointers (0 = NULL; `prof_node_at` is upstream's `magic == PROFNODE_MAGIC` check).
+"Charge the change of the memory clock: an increase to `alloc_node`, a decrease to `discard_node` (pl-prof.c)."
+function prof_mem_charge(
+    ld::PL_local_data{T}, alloc_node::Int, discard_node::Int
+)::Nothing where {T}
+    now = prof_mem_clock(ld)
+    last = ld.profile.mem.last
+
+    ld.profile.mem.last = now
+    if now > last
+        delta = now - last
+
+        ld.profile.mem.allocated += delta
+        an = prof_node_at(ld, alloc_node)
+        an !== nothing && (an.mem.allocated += delta)
+    elseif now < last
+        delta = last - now
+
+        ld.profile.mem.discarded += delta
+        dn = prof_node_at(ld, discard_node)
+        dn !== nothing && (dn.mem.discarded += delta)
+    end
+    return nothing
+end
+
 # PORT: pl-prof.c prof_accounting_begin
 "Start counting the profiler's own work (pl-prof.c)."
 function prof_accounting_begin(ld::PL_local_data{T})::Nothing where {T}
@@ -901,6 +1128,7 @@ function prof_accounting_begin(ld::PL_local_data{T})::Nothing where {T}
         ld.profile.samples += 1
         prof_charge(ld, ld.profile.current, false)
     end
+    prof_mem_charge(ld, ld.profile.current, ld.profile.current)
     ld.profile.accounting = true
     return nothing
 end
@@ -1090,9 +1318,18 @@ function profFailToCP(ld::PL_local_data{T}, current::Int, cp_node::Int)::Nothing
     return nothing
 end
 
+# PORT: pl-prof.c profBacktrack
+# Called on backtracking before the stacks are reset (see profFail()). The call is upstream's VM (pl-vmi.c, before `Undo()`).
+"Charge the global stack allocated since the last switch to the current node, on backtracking before the stacks are reset (pl-prof.c)."
+function profBacktrack(ld::PL_local_data{T})::Nothing where {T}
+    prof_mem_charge(ld, ld.profile.current, 0)
+    return nothing
+end
+
 # PORT: pl-prof.c profFail
 "Fail to the choicepoint's node: the nodes of the branch from the current one back to the common ancestor have failed (pl-prof.c)."
 function profFail(ld::PL_local_data{T}, cp_node::Int)::Nothing where {T}
+    prof_mem_charge(ld, ld.profile.current, cp_node)
     prof_accounting_begin(ld)
 
     if ld.profile.ports_control != PROFC_FALSE
@@ -1154,9 +1391,10 @@ const PL_predicates_from_profile = (
     ),
     PL_extension(
         "\$prof_procedure_data",
-        8,
-        pl_prof_procedure_data8_va,
+        9,
+        pl_prof_procedure_data9_va,
         PL_FA_TRANSPARENT | PL_FA_VARARGS
     ),
-    PL_extension("\$prof_statistics", 8, pl_prof_statistics8_va, PL_FA_VARARGS)
+    PL_extension("\$prof_procedures", 1, pl_prof_procedures1_va, PL_FA_VARARGS),
+    PL_extension("\$prof_statistics", 9, pl_prof_statistics9_va, PL_FA_VARARGS)
 )

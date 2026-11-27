@@ -15,13 +15,11 @@ MUTANTS = [
          old='''    PL_extension("retractall", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),''',
          new='''    PL_extension("retractall_unregistered", 1, pl_retractall1_va, PL_FA_ISO | PL_FA_VARARGS),'''),
     dict(id="RA2 a static predicate is made dynamic", file=P, targets=T,
-         old='''        if isDefinedProcedure(gd, proc)
-            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)''',
-         new='''        if false
-            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)'''),
+         old='        if isDefinedProcedure(gd, proc)\n            rc = false\n',
+         new='        if false\n            rc = false\n'),
     dict(id="RA3 a new predicate is not made dynamic", file=P, targets=T,
-         old='''        return setDynamicDefinition!(gd, def, true) ? FTRUE : FFALSE  # nothing to retract''',
-         new='''        return FTRUE      # nothing to retract'''),
+         old='        return implicitDynamicProcedure!(gd, ld, proc) ? FTRUE : FFALSE   # nothing to retract (SYNC3 af9e2e7e)',
+         new='        return FTRUE   # nothing to retract (SYNC3 af9e2e7e)'),
     dict(id="RA4 the plain head is not handed on", file=P, targets=T,
          old='''    PL_put_term(ld, h, head)                            # if ( h ) PL_put_term(h, head)''',
          new='''    nothing'''),

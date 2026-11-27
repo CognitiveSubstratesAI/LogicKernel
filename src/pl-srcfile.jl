@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-srcfile.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-srcfile.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2014-2026, VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -90,7 +90,26 @@ function acquireSourceFileNo(gd::PL_global_data, index::Integer)::Nothing
     return nothing
 end
 
+# PORT: pl-srcfile.c acquireIndexSourceFile
+# DIVERGES: new at af9e2e7e (swipl-devel 6db40cf6, SYNC3), called by `unlinkSourceFilesModule` (pl-modul.c) and `$time_source_file`; no
+# `L_SRCFILE` lock (no threads: upstream takes it because `releaseSourceFile()` destroys a file under it). The caller must call
+# `releaseSourceFile`. (SYNC3 integration: P10's and L2's definitions were the same function; this one, with the `SF_MAGIC` test as C, is kept.)
+"The source file with index `index`, counted, or `nothing` if there is none or it is not live (pl-srcfile.c)."
+function acquireIndexSourceFile(
+    gd::PL_global_data{T}, index::Integer
+)::Union{Nothing, SourceFile{T}} where {T}
+    sf = indexToSourceFile(gd, index)
+    if sf !== nothing && sf.magic == SF_MAGIC
+        acquireSourceFile(sf)
+        return sf
+    end
+    return nothing
+end
+
 # PORT: pl-srcfile.c releaseSourceFile
+# DIVERGES (SYNC3, swipl-devel af9e2e7e, 6db40cf6): upstream now drops a reference that is not the last with a compare-and-swap
+# loop and takes `L_SRCFILE` only for the last one, so the destruction cannot race `acquireIndexSourceFile()`; its "Oops"
+# message is for 0 references only. One thread: the decrement below is the same, see the next block.
 # DIVERGES (TEMPORARY, until LB6: destroySourceFile; audit D-0248): an unreferenced, empty file is NOT destroyed
 # (`destroySourceFile` and `clearSourceAdmin` are not ported), so this only counts: an empty file consulted once
 # keeps load_count 1 and is listed by `$time_source_file` (swipl: no record; pinned in test_source_file_swipl.jl); a release with no reference — upstream
@@ -656,6 +675,9 @@ highSourceFileIndex(gd::PL_global_data)::Int = length(gd.files_array) + 1
 
 # PORT: pl-srcfile.c addModuleSourceFile
 # DIVERGES: `modules` is a vector (src/pl-incl.jl); no lock, no allocation failure.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e, 77c3148d): upstream does `ATOMIC_INC(&m->source_refs)` when it links the module ("see
+# module GC"); the kernel has no module GC (every module is permanent) and no `source_refs` field: held behind G1 (pl-modul),
+# as are the matching decrements in delModuleSourceFile, delAllModulesSourceFile__unlocked and unlinkSourceFileModule.
 "Add module `m` to the modules of `sf`, at the END, if it is not there yet (pl-srcfile.c:465)."
 function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
     for x in sf.modules
@@ -665,14 +687,34 @@ function addModuleSourceFile(sf::SourceFile{T}, m::module_t{T})::Bool where {T}
     return true
 end
 
+# PORT: pl-srcfile.c hasClausesFromSourceFile
+# (swipl-devel af9e2e7e, src/pl-srcfile.c:567-590; new)
+# DIVERGES: no `acquire_def`/`release_def` (threads only).
+"True if `def` has a clause from `sf` that is not erased (pl-srcfile.c)."
+function hasClausesFromSourceFile(def::Definition{T}, sf::SourceFile{T})::Bool where {T}
+    (def.flags & (P_FOREIGN | P_THREAD_LOCAL)) != 0 && return false
+    c = def.impl_clauses.first_clause
+    while c !== nothing
+        cl = c.clause::Clause{T}
+        (cl.owner_no == sf.index && (cl.flags & CL_ERASED) == 0) && return true
+        c = c.next
+    end
+    return false
+end
+
 # PORT: pl-srcfile.c unlinkSourceFileModule
-# DIVERGES: the test of upstream's loop, `lookupHTableWP(m->procedures, def->functor->functor) || PROCEDURE_dinit_goal->definition == def`,
-# is its first half: the `$init_goal/3` clauses belong to the loader (L6), which adds the second; no lock.
-"Remove from the procedures of `sf` those whose functor module `m` has a procedure of (pl-srcfile.c)."
+# DIVERGES: the test of upstream's loop, `lookupHTableWP(m->procedures, def->functor->functor) == proc || PROCEDURE_dinit_goal->definition == def
+# || (!sf->modules && !hasClausesFromSourceFile(def, sf))`, lacks its second term: the `$init_goal/3` clauses belong to the
+# loader (L6), which adds it; no lock. The `ATOMIC_DEC(&m->source_refs)` of the unlinked module: see `addModuleSourceFile`.
+"Unlink `m` from `sf`: the procedures of `m`, and `m` from the modules of `sf`; with no module left also the procedures `sf` has no clauses of (pl-srcfile.c)."
 function unlinkSourceFileModule(sf::SourceFile{T}, m::module_t{T})::Nothing where {T}
+    filter!(sf.modules) do x                            # upstream's first loop: unlink `m` from `sf->modules`
+        return x !== m
+    end
     filter!(sf.procedures) do proc
         def = proc.definition
-        if haskey(m.procedures, (def.functor_name, def.arity))
+        if get(m.procedures, (def.functor_name, def.arity), nothing) === proc ||
+            (isempty(sf.modules) && !hasClausesFromSourceFile(def, sf))
             sf.current_procedure === proc && (sf.current_procedure = nothing)
             return false
         end
@@ -781,10 +823,14 @@ function pl_time_source_file3_va(
     end
     fid = PL_open_foreign_frame(ld)
     while index < mx
-        f = indexToSourceFile(gd, index)
-        if f !== nothing && f.count != 0                    # (not `!(f === nothing || …)`: JET cannot narrow that)
-            if PL_unify_atom(ld, file, f.name) && unify_src_file_time(ld, time_, f) &&
+        f = acquireIndexSourceFile(gd, index)               # (swipl-devel af9e2e7e: with a reference, released below)
+        if f !== nothing                                    # (not `!(f === nothing || …)`: JET cannot narrow that)
+            rc =
+                f.count > 0 && PL_unify_atom(ld, file, f.name) &&
+                unify_src_file_time(ld, time_, f) &&
                 PL_unify_atom(ld, type, mk_sym(T, f.system ? :system : :user))
+            releaseSourceFile(f)
+            if rc
                 PL_close_foreign_frame(ld, fid)
                 return PL_retry(index + 1)
             end

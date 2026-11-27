@@ -85,7 +85,8 @@ push_overflow_context(::Type{T}, stack::Symbol) where {T} = mk_sym(T, :stack_ove
 # the "no room for
 # exception term" abort (`gTop+5 < gMax`: the global stack grows on demand and the spares are enabled
 # first, so the five cells are always laid); the longjmp
-# of `STACK_OVERFLOW_THROW` — every caller that throws a local-stack overflow sets `LD->outofstack`
+# of `STACK_OVERFLOW_THROW` (since 222dfae0 `PL_LONGJMP(...)`, a macro for the signal-mask-free jump; the same here) —
+# every caller that throws a local-stack overflow sets `LD->outofstack`
 # first, so the fatal branch runs before it, and the other stacks do not overflow here.
 """
     outOfStack!(ld, how) -> false
@@ -264,7 +265,9 @@ end
 # collector's one entry from Prolog), so `long` trims the stacks as the collector's
 # trim request would (`trimStacks!`) and `short` trims them as upstream's `trimStacks(true)`. As upstream, a `How` that is
 # neither atom `short` nor atom `long` does the housekeeping of neither and still runs `Goal`; a `How` that is no atom raises
-# `type_error(atom, How)` before `Goal` runs. `Goal` runs in the context module as `sig_atomic/1`'s does (`callProlog(NULL, …)`),
+# `type_error(atom, How)` before `Goal` runs. DIVERGES (SYNC3, 9ceb6ca6): since af9e2e7e upstream calls `idleLocalSweep()` after the
+# trim of either `How` (idle threads and engines release their thread-local blobs, pl-atom.c: not ported, work item "pl-gc delta af9e2e7e"; no thread-local
+# blobs here). `Goal` runs in the context module as `sig_atomic/1`'s does (`callProlog(NULL, …)`),
 # its exception passed on (`PL_Q_PASS_EXCEPTION`); the kernel's query keeps the goal's bindings, as upstream's.
 "`thread_idle(:Goal, +How)`: do the idle-time housekeeping `How` (`short` or `long`) asks for, then call `Goal` once (pl-alloc.c)."
 function pl_thread_idle2_va(

@@ -222,8 +222,8 @@ MUTANTS = [
          new="const TF_MONOTONIC_LAZY = UInt32(0x0002)\n"),
     dict(id="TB0-C5 a new tbl_component starts SCC_MERGED, not SCC_ACTIVE (KILL TT:304 `(c.status, c.neg_status) == (SCC_ACTIVE, SCC_NEG_NONE) == (0, 0)`, row R9)",
          file=INC, targets=[TT],
-         old="    COMPONENT_MAGIC, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing,",
-         new="    COMPONENT_MAGIC, SCC_MERGED, SCC_NEG_NONE, 0, nothing,"),
+         old="    COMPONENT_MAGIC, 0, nothing, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing,",
+         new="    COMPONENT_MAGIC, 0, nothing, SCC_MERGED, SCC_NEG_NONE, 0, nothing,"),
     # ── pl-tabling.jl: the sentinels and modes of pl-tabling.c:283-300 ──
     dict(id="TB0-K1 WL_GROUND is even, so it is no sentinel (KILL TT:287 `WL_IS_SPECIAL(WL_GROUND)`; TT:302 `(WL_GROUND, WL_DYNAMIC) == (0x21, 0x41)`)",
          file=TAB, targets=[TT],

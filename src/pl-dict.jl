@@ -808,6 +808,8 @@ function pl_select_dict3_va(
 end
 
 # PORT: pl-dict.c pl_get_dict
+# DIVERGES (SYNC3, bc05e82f): upstream re-derefs `A2` and re-takes the dict pointer `f` after each value unification, because that may
+# shift the stacks or run the garbage collector; here position `f` of the global stack never shifts, so it is read once.
 # DIVERGES: `i` is the 0-based index into the ARGUMENTS as upstream's (`f->arguments[i]` is position `f + 1 + i`);
 # `exception_term` is `PL_exception(ld, 0) != 0`. `ex` as upstream's: `get_dict/3` is `ex = false`, which raises
 # `type_error(dict, …)` for a non-dict (`get_dict_ex(A2, &dict, !ex)`); `$get_dict_ex/3` (`ex = true`) is `pl_get_dict_ex3_va`.
@@ -1422,6 +1424,8 @@ function pl_dict_same_keys2_va(
 end
 
 # PORT: pl-dict.c get_dict_kv
+# DIVERGES (SYNC3, bc05e82f): upstream keeps the dict's functor word `df` instead of the pointer `f` across the unifications (a shift or a
+# GC may move the dict); this twin already compares the dereferenced compound word's functor cell (`fw`), so nothing changes.
 # DIVERGES: `PL_is_functor(dict, f->definition)` (a functor WORD) is the dereferenced compound word's functor cell compared.
 # (SYNC3, bc05e82f: upstream now keeps `functor_t df = functorTerm(*p)` instead of `Functor f` so that the functor survives
 # a stack shift in `PL_is_functor(dict, df)`; `fw` below is that functor word already.)

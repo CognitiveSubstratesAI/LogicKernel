@@ -1,12 +1,12 @@
-# UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-data.h @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-incl.h @ af9e2e7ed0be
+# UPSTREAM: swipl-devel src/pl-data.h @ af9e2e7ed0be
+# UPSTREAM: swipl-devel src/pl-global.h @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-builtin.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/SWI-Prolog.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-bag.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gmp.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-arith.c @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-proc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-proc.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-op.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-prologflag.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-prologflag.c @ 18168e629eab
@@ -21,7 +21,7 @@
 # UPSTREAM: swipl-devel src/pl-allocpool.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-wrap.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-trie.c @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-trie.h @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-trie.h @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-indirect.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-transaction.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
@@ -30,7 +30,7 @@
 # UPSTREAM: swipl-devel src/os/pl-table.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-coverage.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-coverage.c @ 18168e629eab
-# UPSTREAM: swipl-devel src/pl-prof.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-prof.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -186,6 +186,11 @@ const SSU_CHOICE_CLAUSE = UInt32(0x0200)
 # PORT: pl-incl.h CL_HEAD_TERMS
 "Clause flag: the head contains terms used in the body — a unification moved into it (pl-incl.h)."
 const CL_HEAD_TERMS = UInt32(0x0400)
+# PORT: pl-incl.h CL_SHARED_SLOTS
+# (b9caf216 af9e2e7e) Variables local to one alternative of a disjunction share frame slots (`assign_shared_slots`, src/pl-comp.jl); the
+# slots from `shared_base` on are those, and `decompile!` makes a new variable of one when it enters the next alternative.
+"Clause flag: branch-local variables share slots, from `shared_base` on (pl-incl.h)."
+const CL_SHARED_SLOTS = UInt32(0x0800)
 # PORT: pl-incl.h CLAUSE_TYPE_MASK
 "The clause flags that say which neck a clause has: a fact, `=>` or `?=>` (pl-incl.h)."
 const CLAUSE_TYPE_MASK = UNIT_CLAUSE | SSU_COMMIT_CLAUSE | SSU_CHOICE_CLAUSE
@@ -379,8 +384,8 @@ const END_INDEX_POS = 0xff
 # Keys are words laid out as SWI lays out atoms and functors, so `isFunctor` tells a functor key
 # from every other key exactly as upstream does (see `indexOfWord` in src/pl-index.jl).
 # PORT: pl-data.h LMASK_BITS
-"Total number of tag + storage bits in a word (pl-data.h)."
-const LMASK_BITS = 7
+"Total number of mask bits in a word (pl-data.h): the tag (bits 0-2), the storage (3-4), `VARIANT_BIT` (5), `MARK_MASK` (6) and `FIRST_MASK` (7); the value starts at bit 8."
+const LMASK_BITS = 8
 # PORT: pl-data.h TAG_MASK
 "Mask of the tag bits (pl-data.h)."
 const TAG_MASK = UInt64(0x00000007)
@@ -391,11 +396,17 @@ const TAG_VAR = UInt64(0x00000000)
 "Tag of an atom — and, with `STG_GLOBAL`, of a functor (pl-data.h)."
 const TAG_ATOM = UInt64(0x00000005)
 # PORT: pl-data.h MARK_MASK
-"The GC mark bit (pl-data.h); variant_sha1 sets it in the words it numbers variables with."
-const MARK_MASK = UInt64(0x1) << 5
+"The GC mark bit (pl-data.h; bit 6); variant_sha1 sets it in the words it numbers variables with."
+const MARK_MASK = UInt64(0x1) << 6
 # PORT: pl-data.h STG_MASK
 "Mask of the storage bits (pl-data.h)."
 const STG_MASK = UInt64(0x3) << 3
+# PORT: pl-data.h VARIANT_BIT
+"The bit (5) that tells kinds apart which share tag and storage: `KIND_MPQ` (a rational, not an integer) and `TAGEX_PTRINT` (a pointer integer, not a plain one) (pl-data.h)."
+const VARIANT_BIT = UInt64(0x1) << 5
+# PORT: pl-data.h TAGEX_MASK
+"Mask of the extended tag: the tag, the storage and `VARIANT_BIT` (pl-data.h)."
+const TAGEX_MASK = TAG_MASK | STG_MASK | VARIANT_BIT
 # PORT: pl-data.h STG_STATIC
 "Storage: static (pl-data.h)."
 const STG_STATIC = UInt64(0x0) << 3
@@ -409,17 +420,23 @@ const F_ARITY_BITS = 5
 "Mask of the inline arity (pl-data.h)."
 const F_ARITY_MASK = UInt64((1 << F_ARITY_BITS) - 1)
 # PORT: pl-data.h tagex
-"The tag and storage bits of `w` (pl-data.h)."
-tagex(w::word)::word = w & (TAG_MASK | STG_MASK)
+"The tag, storage and variant bits of `w`, a value in 0..`TAGEX_COUNT`-1 (pl-data.h)."
+tagex(w::word)::word = w & TAGEX_MASK
 # PORT: pl-data.h isFunctor
 "True when the key `w` is a functor (pl-data.h)."
 isFunctor(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_GLOBAL)
+# PORT: pl-data.h consTagged
+"A cell with extended tag `tx` holding the number `n` (pl-data.h `consTagged`)."
+consTagged(n::Integer, tx::word)::word = (UInt64(n) << LMASK_BITS) | tx
+# PORT: pl-data.h valTagged
+"The number a `consTagged` cell holds (pl-data.h `valTagged`)."
+valTagged(w::word)::UInt64 = w >> LMASK_BITS
 # PORT: pl-incl.h MK_ATOM
 """
 The atom word of atom number `n` (pl-incl.h). At V10.1.20 upstream's body is `consTagged(n, TAGEX_ATOM)`
 (`(n << LMASK_BITS) | (TAG_ATOM | STG_STATIC)`, pl-data.h): the same word, structure only, d755bdc4.
 """
-MK_ATOM(n::UInt64)::word = (n << 7) | TAG_ATOM | STG_STATIC
+MK_ATOM(n::UInt64)::word = consTagged(n, TAG_ATOM | STG_STATIC)
 # PORT: pl-data.h indexAtom
 "The index of atom word `w` in the atom table (pl-data.h)."
 indexAtom(w::word)::Int = Int(w >> LMASK_BITS)
@@ -451,7 +468,7 @@ nameFunctor(functors, w::word)::UInt64 = valueFunctor(functors, w).name
 # PORT: pl-data.h MK_FUNCTOR
 "The functor word of functor number `n` with arity `a` (pl-data.h)."
 MK_FUNCTOR(n::UInt64, a::UInt64)::word =
-    (((n << F_ARITY_BITS) | a) << LMASK_BITS) | TAG_ATOM | STG_GLOBAL
+    consTagged((n << F_ARITY_BITS) | a, TAG_ATOM | STG_GLOBAL)
 # PORT: pl-incl.h PLMINTAGGEDINT
 """
 The smallest integer a word holds tagged — inline, `STG_INLINE` (pl-incl.h; 64-bit words). Upstream's body at V10.1.20
@@ -464,7 +481,7 @@ const PLMAXTAGGEDINT = -PLMINTAGGEDINT - 1
 # PORT: pl-incl.h PLMINTAGGEDINT32
 """
 The smallest integer a 32-bit word holds tagged (pl-incl.h): the range of old 32-bit versions, FIXED at `1<<24` since
-V10.1.20 (`term_hash/2` values depend on it); it is `32 - LMASK_BITS - 1` for `LMASK_BITS = 7`.
+V10.1.20 (`term_hash/2` values depend on it); it was `32 - LMASK_BITS - 1` while `LMASK_BITS` was 7, and stays `1<<24` at LMASK_BITS 8.
 """
 const PLMINTAGGEDINT32 = -(Int64(1) << 24)
 # PORT: pl-incl.h PLMAXTAGGEDINT32
@@ -516,11 +533,20 @@ const STG_RESERVED = UInt64(0x3) << 3
 "Storage of an inline value: `STG_STATIC` (pl-data.h)."
 const STG_INLINE = STG_STATIC
 # PORT: pl-data.h FIRST_MASK
-"The GC first-mark bit (pl-data.h)."
-const FIRST_MASK = UInt64(0x2) << 5
+"The GC first-mark bit (pl-data.h; bit 7)."
+const FIRST_MASK = UInt64(0x2) << 6
+# PORT: pl-data.h KIND_MPQ
+"The kind of a rational indirect: the integer tag with `VARIANT_BIT` (pl-data.h)."
+const KIND_MPQ = TAG_INTEGER | VARIANT_BIT
 # PORT: pl-data.h tag
 "The tag bits of `w` (pl-data.h)."
 tag(w::word)::word = w & TAG_MASK
+# PORT: pl-data.h hasTag
+"Whether the tag bits of `w` are `t` (pl-data.h)."
+hasTag(w::word, t::word)::Bool = tag(w) == t
+# PORT: pl-data.h indKind
+"The kind of an indirect cell or header `w`: `tagex(w)` without the storage bits, `TAG_FLOAT`, `TAG_INTEGER`, `KIND_MPQ` or `TAG_STRING` (pl-data.h)."
+indKind(w::word)::word = tagex(w) & ~STG_MASK
 # PORT: pl-data.h storage
 "The storage bits of `w` (pl-data.h)."
 storage(w::word)::word = w & STG_MASK
@@ -528,15 +554,19 @@ storage(w::word)::word = w & STG_MASK
 "The integer a tagged-integer word holds (pl-data.h): an arithmetic shift."
 valInt(w::word)::Int64 = reinterpret(Int64, w) >> LMASK_BITS
 # PORT: pl-data.h valUInt
-"The unsigned value above the tag and storage bits of `w` (pl-data.h)."
+"The unsigned value above the mask bits of `w` (pl-data.h)."
 valUInt(w::word)::UInt64 = w >> LMASK_BITS
+# PORT: pl-data.h CELL_VAL_SHIFT
+"The lowest bit of the value of a small integer or atom cell (pl-data.h); hashes of keys shift it away."
+const CELL_VAL_SHIFT = LMASK_BITS
 # PORT: pl-data.h EXBIT
 "Bit `w` of the extended-tag bitmap (pl-data.h)."
 EXBIT(w::word)::UInt64 = UInt64(1) << w
 # PORT: pl-data.h INDIRECT_BM
-"The extended tags of an indirect: an integer, float or string on a stack (pl-data.h)."
+"The extended tags of an indirect: an integer, rational, float or string on a stack (pl-data.h)."
 const INDIRECT_BM =
     EXBIT(STG_GLOBAL | TAG_INTEGER) | EXBIT(STG_LOCAL | TAG_INTEGER) |
+    EXBIT(STG_GLOBAL | KIND_MPQ) | EXBIT(STG_LOCAL | KIND_MPQ) |
     EXBIT(STG_GLOBAL | TAG_FLOAT) | EXBIT(STG_LOCAL | TAG_FLOAT) |
     EXBIT(STG_GLOBAL | TAG_STRING) | EXBIT(STG_LOCAL | TAG_STRING)
 # PORT: pl-data.h isIndirect
@@ -550,28 +580,31 @@ isVar(w::word)::Bool = w == word(0)
 isAtomW(w::word)::Bool = tagex(w) == (TAG_ATOM | STG_STATIC)
 # PORT: pl-data.h isRational as isRationalW
 "Whether `w` is an integer or a rational (pl-data.h)."
-isRationalW(w::word)::Bool = tag(w) == TAG_INTEGER
+isRationalW(w::word)::Bool = hasTag(w, TAG_INTEGER)
 # PORT: pl-data.h isFloat as isFloatW
 "Whether `w` is a float (pl-data.h)."
-isFloatW(w::word)::Bool = tag(w) == TAG_FLOAT
+isFloatW(w::word)::Bool = hasTag(w, TAG_FLOAT)
 # PORT: pl-data.h isString as isStringW
 "Whether `w` is a string (pl-data.h)."
-isStringW(w::word)::Bool = tag(w) == TAG_STRING
+isStringW(w::word)::Bool = hasTag(w, TAG_STRING)
 # PORT: pl-data.h isTerm as isTermW
 "Whether `w` is a compound term (pl-data.h)."
-isTermW(w::word)::Bool = tag(w) == TAG_COMPOUND
+isTermW(w::word)::Bool = hasTag(w, TAG_COMPOUND)
 # PORT: pl-data.h isTaggedInt as isTaggedIntW
-"Whether `w` is a tagged small integer (pl-data.h)."
-isTaggedIntW(w::word)::Bool = tagex(w) == (TAG_INTEGER | STG_INLINE)
+"Whether `w` is a tagged small integer (pl-data.h): the tag and storage bits only, so a pointer integer (`VARIANT_BIT` set) is one too."
+isTaggedIntW(w::word)::Bool = (w & (TAG_MASK | STG_MASK)) == (TAG_INTEGER | STG_INLINE)
+# PORT: pl-data.h isPtrInt
+"Whether `w` is a pointer integer: a tagged small integer with `VARIANT_BIT` (pl-data.h)."
+isPtrInt(w::word)::Bool = tagex(w) == TAGEX_PTRINT
 # PORT: pl-data.h isConst
 "Whether `w` is an atom or a tagged small integer (pl-data.h)."
 isConst(w::word)::Bool = isAtomW(w) || isTaggedIntW(w)
 # PORT: pl-data.h isRef
 "Whether `w` is a reference pointer (pl-data.h)."
-isRef(w::word)::Bool = tag(w) == TAG_REFERENCE
+isRef(w::word)::Bool = hasTag(w, TAG_REFERENCE)
 # PORT: pl-data.h isAttVar
 "Whether `w` is an attributed variable (pl-data.h)."
-isAttVar(w::word)::Bool = tag(w) == TAG_ATTVAR
+isAttVar(w::word)::Bool = hasTag(w, TAG_ATTVAR)
 # PORT: pl-data.h needsRef
 "Whether `w` must be reached through a reference: a variable or attributed variable (pl-data.h, O_ATTVAR)."
 needsRef(w::word)::Bool = tag(w) <= TAG_ATTVAR
@@ -581,6 +614,9 @@ consInt(n::Int64)::word = (reinterpret(word, n) << LMASK_BITS) | TAG_INTEGER
 # PORT: pl-data.h consUInt
 "The tagged-integer word of the unsigned `n` (pl-data.h)."
 consUInt(n::UInt64)::word = (n << LMASK_BITS) | TAG_INTEGER
+# PORT: pl-data.h consPtrInt
+"The pointer-integer word of `i` (pl-data.h): the tagged integer with `VARIANT_BIT`."
+consPtrInt(i::Int64)::word = consInt(i) | VARIANT_BIT
 # PORT: pl-data.h PADBITS
 "Bits of an indirect header holding its pad count (pl-data.h; 8-byte words)."
 const PADBITS = 3
@@ -588,37 +624,36 @@ const PADBITS = 3
 "Mask of an indirect header's pad count (pl-data.h)."
 const PADMASK = UInt64(sizeof(word) - 1)
 # PORT: pl-data.h mkIndHdr
-"The header word of an indirect of `size` data words with tag `tag` (pl-data.h)."
-mkIndHdr(size::Int, tag::word)::word =
-    (UInt64(size) << (LMASK_BITS + PADBITS)) | tag | STG_LOCAL
+"The header word of an indirect of `size` data words and kind `tag` (`TAG_FLOAT`, `TAG_INTEGER`, `KIND_MPQ`, `TAG_STRING`; pl-data.h)."
+mkIndHdr(size::Int, tag::word)::word = consTagged(UInt64(size) << PADBITS, tag | STG_LOCAL)
 # PORT: pl-data.h wsizeofInd
 "The number of data words of the indirect whose header is `w` (pl-data.h)."
-wsizeofInd(w::word)::Int = Int(w >> (LMASK_BITS + PADBITS))
+wsizeofInd(w::word)::Int = Int(valTagged(w) >> PADBITS)
 # PORT: pl-data.h padHdr
 "The pad bytes of a blob indirect's header `iw`: 1-7, and 0 means 8 (pl-data.h)."
 padHdr(iw::word)::Int =
-    (iw >> LMASK_BITS) & PADMASK != 0 ? Int((iw >> LMASK_BITS) & PADMASK) : sizeof(word)
+    (valTagged(iw) & PADMASK) != 0 ? Int(valTagged(iw) & PADMASK) : sizeof(word)
 # PORT: pl-data.h mkPadHdr
 "The pad-count bits of a blob header for `n` pad bytes (pl-data.h)."
-mkPadHdr(n::Int)::word = (UInt64(n) & PADMASK) << LMASK_BITS
+mkPadHdr(n::Int)::word = consTagged(UInt64(n) & PADMASK, UInt64(0))
 # PORT: pl-data.h mkBlobHdr
 "The header of a blob indirect of `n` data words, `pad` pad bytes and tag `tag` (pl-data.h)."
 mkBlobHdr(n::Int, pad::Int, tag::word)::word = mkIndHdr(n, tag) | mkPadHdr(pad)
-# PORT: pl-data.h MP_RAT_MASK
-"The low bit of a big number's size word: set for a rational (pl-data.h)."
-const MP_RAT_MASK = UInt64(0x1)
 # PORT: pl-gmp.h mpz_size_stack
-"The size word of an integer of `sz` limbs (negative: a negative integer) on a stack (pl-gmp.h)."
-mpz_size_stack(sz::Int32)::word = (reinterpret(word, Int64(sz)) << 1) & ~MP_RAT_MASK
-# PORT: pl-gmp.h mpq_size_stack
-"The size word of a rational's numerator of `sz` limbs on a stack (pl-gmp.h)."
-mpq_size_stack(sz::Int32)::word = (reinterpret(word, Int64(sz)) << 1) | MP_RAT_MASK
+"The size word of an integer of `sz` limbs (negative: a negative integer) on a stack (pl-gmp.h); a rational has its own cell kind, `KIND_MPQ`, so the size word carries no rational bit."
+mpz_size_stack(sz::Int32)::word = reinterpret(word, Int64(sz))
 # PORT: pl-gmp.h mpz_stack_size
-"The limb count (signed) a size word holds (pl-gmp.h): `(int)w >> 1`."
-mpz_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
-# PORT: pl-gmp.h mpq_stack_size
-"The limb count (signed) a rational's size word holds (pl-gmp.h)."
-mpq_stack_size(w::word)::Int32 = reinterpret(Int32, w % UInt32) >> 1
+"The limb count (signed) a size word holds (pl-gmp.h): `(int)(sword)w`."
+mpz_stack_size(w::word)::Int32 = w % Int32
+# PORT: pl-data.h INDHDR_BIT
+"The storage bit that marks an indirect header: `STG_LOCAL` (pl-data.h)."
+const INDHDR_BIT = STG_LOCAL
+# PORT: pl-data.h isMarkedOrIndHdr
+"Whether the cell `w` is marked, first-marked or an indirect header (pl-data.h): the stop test of the GC's downward scans."
+isMarkedOrIndHdr(w::word)::Bool = (w & (MARK_MASK | FIRST_MASK | INDHDR_BIT)) != 0
+# PORT: pl-data.h nonFunctorKey
+"The hash key `k` changed so that it differs from any functor word (pl-data.h): the functor's `STG_GLOBAL` bit cleared."
+nonFunctorKey(k::word)::word = k & ~consTagged(0, STG_GLOBAL)
 # PORT: pl-data.h TAG_TRAILMASK
 "The tag bit of a trail entry (pl-data.h)."
 const TAG_TRAILMASK = UInt64(0x1)
@@ -725,7 +760,8 @@ end
 # `Procedure` pointer itself (user, 2026-10-04: decoding stays local to the clause, as with the
 # literals). The source-file fields (`line_no`, `source_no`, `owner_no`) since R1f; no `references` (no
 # reference-counted clause references) and no `tr_erased_no` (transactions); `code_size` is the
-# length of `codes`. D is the predicate's type — `definition{T}` — a parameter only to break the
+# length of `codes`. `shared_base` (b9caf216 af9e2e7e; at the END here, upstream puts it after `code_size`, which is `clsize_t` there now: the
+# header size `sizeofClause` is unchanged) is 0 unless `CL_SHARED_SLOTS` is set. D is the predicate's type — `definition{T}` — a parameter only to break the
 # struct cycle.
 """
 A clause (pl-incl.h `struct clause`): its predicate, generations, frame size, flags, VM code, and
@@ -744,6 +780,7 @@ mutable struct clause{T, D}
     line_no::UInt32                 # Source line-number
     source_no::UInt32               # Index of source-file
     owner_no::UInt32                # Index of owning source-file
+    shared_base::clsize_t           # First shared slot (CL_SHARED_SLOTS)
 end
 
 # DIVERGES: a clause is hashed by its address, as upstream's `newHTablePW` tables (`tr->clauses`, pl-transaction.c:120)
@@ -788,10 +825,13 @@ mutable struct clause_index{R}
     is_list::Bool                                   # Index with lists
     incomplete::Bool                                # Index is incomplete
     invalid::Bool                                   # Index is invalid
-    good::Bool                                      # Index is (near) perfect
+    keeps_erased::Bool                              # Filled with the erased clauses
+    skipped_tr::Bool                                # Skipped clause erased in transaction
     args::NTuple{MAX_MULTI_INDEX, iarg_t}           # Indexed arguments
     position::NTuple{MAXINDEXDEPTH + 1, iarg_t}     # Deep index position
     speedup::Float32                                # Estimated speedup
+    skipped_erased::gen_t                           # Erased clauses not in the index
+    good_from::Int64                                # (Near) perfect for goals from gen
     entries::Union{Nothing, Vector{clause_bucket{R}}}   # chains holding the clauses
 end
 
@@ -982,11 +1022,16 @@ mutable struct definition{T}
     impl_foreign_function::Int                              # impl.foreign.function (0: none)
     module_::Int                                            # module (an index: see below)
     shared::Int                                             # #procedures sharing this def
+    filling::UInt32                                         # #clause indexes being filled
+    last_modified::gen_t                                    # Generation I was last modified
+    last_erased::gen_t                                      # Generation I last erased a clause
+    erased_args::Union{Nothing, Vector{arg_info}}           # Assessments of old goals (nothing: NULL)
     events::Union{Nothing, event_list{T, definition{T}}}    # Forward update events (EV1; nothing: NULL)
     tabling::Union{Nothing, table_props}                    # Extended properties for tabling (TAB1-min; nothing: NULL)
 end
-# DIVERGES (no upstream function): `events` and `tabling` are NULL in a new definition, as upstream's memset: the
-# constructors of the definition's other fields do not name them.
+# DIVERGES (no upstream function): `filling`, `last_modified`, `last_erased`, `erased_args`, `events` and `tabling` are 0/NULL in a
+# new definition, as upstream's memset: the constructors of the definition's other fields do not name them. (SYNC3 af9e2e7e: the
+# merged order is upstream's, shared, filling, last_modified, last_erased, erased_args, events, tabling.)
 definition{T}(
     functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
     impl_foreign_function,
@@ -994,7 +1039,7 @@ definition{T}(
 ) where {T} = definition{T}(
     functor_name, arity, impl_clauses, flags, name, codes, codes_crefs, code_data,
     impl_foreign_function,
-    module_, shared, nothing, nothing
+    module_, shared, UInt32(0), gen_t(0), gen_t(0), nothing, nothing, nothing
 )
 
 # PORT: pl-incl.h module as module_t
@@ -1375,6 +1420,15 @@ const TAGEX_INDIRECT_FLOAT = TAG_FLOAT | STG_GLOBAL
 # PORT: pl-data.h TAGEX_INDIRECT_INT
 "The extended tag of an integer indirect (pl-data.h): `TAG_INTEGER|STG_GLOBAL`."
 const TAGEX_INDIRECT_INT = TAG_INTEGER | STG_GLOBAL
+# PORT: pl-data.h TAGEX_INDIRECT_MPQ
+"The extended tag of a rational indirect (pl-data.h): `KIND_MPQ|STG_GLOBAL`."
+const TAGEX_INDIRECT_MPQ = KIND_MPQ | STG_GLOBAL
+# PORT: pl-data.h TAGEX_PTRINT
+"The extended tag of a pointer integer (pl-data.h): `TAG_INTEGER|STG_INLINE|VARIANT_BIT`."
+const TAGEX_PTRINT = TAG_INTEGER | STG_INLINE | VARIANT_BIT
+# PORT: pl-data.h TAGEX_COUNT
+"The number of values `tagex(w)` takes: 0..`TAGEX_COUNT`-1 (pl-data.h)."
+const TAGEX_COUNT = 64
 # PORT: pl-data.h TAGEX_INDIRECT_STRING
 "The extended tag of a string indirect (pl-data.h): `TAG_STRING|STG_GLOBAL`."
 const TAGEX_INDIRECT_STRING = TAG_STRING | STG_GLOBAL
@@ -1387,12 +1441,6 @@ const TAGEX_TRIE_ATTVAR = TAG_ATTVAR | STG_STATIC
 # PORT: pl-data.h TAGEX_TRIE_ATTVAR_END
 "The extended tag of `<end_attvar N>` (pl-data.h): `TAG_ATTVAR|STG_RESERVED`."
 const TAGEX_TRIE_ATTVAR_END = TAG_ATTVAR | STG_RESERVED
-# PORT: pl-data.h consTagged
-"A cell with extended tag `tx` holding the number `n` (pl-data.h `consTagged`)."
-consTagged(n::Integer, tx::word)::word = (UInt64(n) << LMASK_BITS) | tx
-# PORT: pl-data.h valTagged
-"The number a `consTagged` cell holds (pl-data.h `valTagged`)."
-valTagged(w::word)::UInt64 = w >> LMASK_BITS
 
 # PORT: pl-trie.h TRIE_MAGIC
 "`trie.magic` of a live trie (pl-trie.h)."
@@ -1469,6 +1517,12 @@ const TRIE_DISCARDED = UInt32(0x0200)
 # PORT: pl-trie.h TRIE_ISVARIANT
 "`trie.flags`: the trie is a variant table (pl-trie.h)."
 const TRIE_ISVARIANT = UInt32(0x0400)
+# PORT: pl-trie.h TRIE_LOCAL
+"`trie.flags`: a private answer trie: its symbol is thread-local (pl-trie.h, cc3f74fa; set by pl-tabling.c, nothing in the kernel yet)."
+const TRIE_LOCAL = UInt32(0x0800)
+# PORT: pl-trie.h TRIE_ORPHANED
+"`trie.flags`: with `TRIE_LOCAL`, the symbol owns the trie (pl-trie.h, cc3f74fa)."
+const TRIE_ORPHANED = UInt32(0x1000)
 # PORT: pl-trie.h TRIE_ABSTRACTED
 "`trie_lookup_abstract` result: ok, but abstracted (pl-trie.h)."
 const TRIE_ABSTRACTED = 2
@@ -2383,13 +2437,21 @@ between_state() = between_state(number(), number(), false)
 # DIVERGES: a record in the local data's pool (`foreign_state_pool`, `ld.retract_contexts`), where upstream's
 # is `malloc`'d (`alloc_retract_context`); the first call's C-stack buffer is the local data's scratch record
 # (`ld.retract_ctxbuf`). `def` is `nothing` only in a record never used.
-"retract/1's state between answers (pl-proc.c `retract_context`): the predicate, where its clause search resumes, whether it is a heap copy."
+# SYNC3 (af9e2e7e): `allocated::Bool` became `flags::Int`, RETRACT_* (upstream's `int flags`).
+"retract/1's state between answers (pl-proc.c `retract_context`): the predicate, where its clause search resumes, the RETRACT_* flags."
 mutable struct retract_context{T}
     def::Union{Nothing, Definition{T}}
     chp::ClauseChoice{T}
-    allocated::Bool
+    flags::Int
 end
-retract_context{T}() where {T} = retract_context{T}(nothing, ClauseChoice{T}(), false)
+retract_context{T}() where {T} = retract_context{T}(nothing, ClauseChoice{T}(), 0)
+
+# PORT: pl-proc.c RETRACT_ALLOCATED
+"retract/1's context is a pool record, made by `alloc_retract_context!` (pl-proc.c `RETRACT_ALLOCATED`)."
+const RETRACT_ALLOCATED = 0x1
+# PORT: pl-proc.c RETRACT_MOVED
+"retract/1 holds a second predicate access object, see (*) in pl-proc.c (`RETRACT_MOVED`)."
+const RETRACT_MOVED = 0x2
 
 # PORT: pl-op.c op_enum
 # DIVERGES: a record in the local data's pool (`foreign_state_pool`, `ld.op_enums`), where upstream's is
@@ -2737,6 +2799,10 @@ const PLFLAG_EPILOG = 36
 # (enum plflag, swipl-devel V10.1.20 src/pl-incl.h:2936)
 "Mask bit: validate the arguments of the PL_*() functions (pl-incl.h); the flag `validate_api`."
 const PLFLAG_VALIDATE_API = 37
+# PORT: pl-incl.h PLFLAG_GC_GENERATIONAL
+# (enum plflag, swipl-devel af9e2e7e src/pl-incl.h:3084)
+"Mask bit: use minor (generational) GCs (pl-incl.h); the flag `gc_generational`. DIVERGES (SYNC3): only the flag exists; no collector reads it (GEN-GC, pl-gc.jl)."
+const PLFLAG_GC_GENERATIONAL = 38
 
 # PORT: pl-incl.h prologFlagMask
 # DIVERGES: the mask is one 64-bit word (bit `flag-1`), where upstream's is two `unsigned int`s and the macro
@@ -2834,6 +2900,7 @@ end
 mutable struct KVS
     len::Int                        # size of key-value map
     resizing::Bool                  # true while resizing
+    copied::Bool                    # all entries are in next
     accesses::Int                   # number of accesses
     next::Union{Nothing, KVS}       # next map
     prev::Union{Nothing, KVS}       # last map
@@ -2967,6 +3034,33 @@ const DEFAULT_SAMPLE_PERIOD = 5000              # usecs: 200 samples/sec
 PROF_IS_CPU(m::Int)::Bool = m == PROF_CPU || m == PROF_CPU_EXACT
 PROF_IS_EXACT(m::Int)::Bool = m == PROF_WALL_EXACT || m == PROF_CPU_EXACT
 
+# PORT: pl-prof.c prof_mem
+# DIVERGES: the counters (`uint64_t`) are `Int` (file-wide above); a struct embedded in a node is a mutable struct the node owns
+# (copy it with `copy` where upstream assigns the struct).
+"Global stack accounting of a node (pl-prof.c `struct prof_mem`; see `prof_mem_charge`): bytes allocated and discarded."
+mutable struct prof_mem
+    allocated::Int                              # bytes allocated
+    discarded::Int                              # bytes discarded by backtracking
+end
+prof_mem() = prof_mem(0, 0)
+Base.copy(m::prof_mem) = prof_mem(m.allocated, m.discarded)
+
+# PORT: pl-prof.c add_prof_mem
+"Add the counters of `from` to `to` (pl-prof.c `add_prof_mem`)."
+function add_prof_mem(to::prof_mem, from::prof_mem)::Nothing
+    to.allocated += from.allocated
+    to.discarded += from.discarded
+    return nothing
+end
+
+# PORT: pl-prof.c sub_prof_mem
+"Subtract the counters of `from` from `to` (pl-prof.c `sub_prof_mem`)."
+function sub_prof_mem(to::prof_mem, from::prof_mem)::Nothing
+    to.allocated -= from.allocated
+    to.discarded -= from.discarded
+    return nothing
+end
+
 # PORT: pl-prof.c call_node
 "A node of the dynamic call tree (pl-prof.c `struct call_node`); the links are indexes into `ld.profile.node_table`."
 mutable struct call_node{T}
@@ -2981,13 +3075,47 @@ mutable struct call_node{T}
     ticks::Int                                  # time-statistics (nsec)
     sibling_ticks::Int                          # ticks in a siblings
     raw::Int                                    # PROF_*_EXACT: prof_clock() units
+    mem::prof_mem                               # global stack used by the node
+    sibling_mem::prof_mem                       # global stack used by siblings
     win_next::Int                               # PROF_CPU_EXACT: window chain
     in_window::Bool                             # in LD->profile.clock.win_nodes
     next::Int                                   # next in siblings chain
     siblings::Int                               # my offspring
 end
 call_node{T}(handle::Union{Nothing, Definition{T}}, type::Int) where {T} =
-    call_node{T}(PROFNODE_MAGIC, 0, handle, type, 0, 0, 0, 0, 0, 0, 0, 0, false, 0, 0)
+    call_node{T}(
+        PROFNODE_MAGIC, 0, handle, type, 0, 0, 0, 0, 0, 0, 0, prof_mem(), prof_mem(), 0,
+        false,
+        0, 0
+    )
+
+# PORT: pl-prof.c prof_occurrence
+"One occurrence of a handle in the call tree: the node and the number of its ancestors with the same handle (pl-prof.c)."
+struct prof_occurrence{T}
+    node::call_node{T}
+    seen::Int                                   # # ancestors with the same handle
+end
+
+# PORT: pl-prof.c prof_handle_nodes
+# DIVERGES: no `next` chain, no `count` and no `allocated`: the index keeps its `prof_handle_nodes` in a vector (`prof_index.all`,
+# in creation order: upstream's chain is newest first) and the occurrences in a growing `Vector`.
+"The occurrences of one handle, in depth-first order (pl-prof.c `struct prof_handle_nodes`)."
+mutable struct prof_handle_nodes{T}
+    depth::Int                                  # building: # open nodes
+    occurrences::Vector{prof_occurrence{T}}
+end
+prof_handle_nodes{T}() where {T} = prof_handle_nodes{T}(0, prof_occurrence{T}[])
+
+# PORT: pl-prof.c prof_index
+# DIVERGES: `table` (a `TablePP`) is an `IdDict` keyed by the handle (`===`: a `Definition`'s identity is the pointer's).
+"The index of the call tree by handle, valid as long as `ld.profile.nodes` is unchanged (pl-prof.c `struct prof_index`)."
+mutable struct prof_index{T}
+    nodes::Int                                  # LD->profile.nodes when built
+    table::IdDict{Any, prof_handle_nodes{T}}    # handle -> prof_handle_nodes
+    all::Vector{prof_handle_nodes{T}}           # all prof_handle_nodes, in creation order (upstream's chain: the reverse)
+end
+prof_index{T}() where {T} =
+    prof_index{T}(0, IdDict{Any, prof_handle_nodes{T}}(), prof_handle_nodes{T}[])
 
 # PORT: pl-global.h clock as ld_profile_clock
 "The `PROF_*_EXACT` clock of a thread's profile (pl-global.h `LD->profile.clock`)."
@@ -3006,6 +3134,19 @@ mutable struct ld_profile_clock
 end
 ld_profile_clock() = ld_profile_clock(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
+# PORT: pl-global.h mem as ld_profile_mem
+"The global stack accounting of a thread's profile (pl-global.h `LD->profile.mem`)."
+mutable struct ld_profile_mem
+    last::Int                                   # prof_mem_clock() at last switch
+    allocated::Int                              # total allocated (bytes)
+    discarded::Int                              # total discarded by backtracking
+    gc_reclaimed::Int                           # total reclaimed by GC
+    gc_start::Int                               # GC gained at activation
+    gc_count::Int                               # # GCs while profiling
+    gc_count_start::Int                         # # GCs at activation
+end
+ld_profile_mem() = ld_profile_mem(0, 0, 0, 0, 0, 0, 0)
+
 # PORT: pl-global.h profile as ld_profile
 "The profiler fields of a thread's local data (pl-global.h `LD->profile`; the field order is upstream's)."
 mutable struct ld_profile{T}
@@ -3020,17 +3161,20 @@ mutable struct ld_profile{T}
     samples::Int                                # profile samples
     ticks::Int                                  # profile ticks total (nsec)
     accounting_ticks::Int                       # Ticks in profCall() and friends
+    index::Union{Nothing, prof_index{T}}        # handle -> nodes, for summing
     nodes::Int                                  # #Recorded nodes
     time_at_last_tick::Int                      # nsec since time_at_start
     time_at_start::Float64                      # Time at last start
     time::Float64                               # recorded CPU time
     clock::ld_profile_clock                     # PROF_*_EXACT clock
+    mem::ld_profile_mem                         # global stack accounting
     node_table::Vector{Union{Nothing, call_node{T}}}   # the nodes a pointer indexes (ORIGINAL: `malloc`'d memory upstream)
 end
 ld_profile{T}() where {T} = ld_profile{T}(
-    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, 0, 0,
+    false, false, PROF_INACTIVE, PROF_INACTIVE, PROFC_FALSE, 0, 0, 0, 0, 0, 0, nothing,
+    0, 0,
     0.0, 0.0,
-    ld_profile_clock(), Union{Nothing, call_node{T}}[]
+    ld_profile_clock(), ld_profile_mem(), Union{Nothing, call_node{T}}[]
 )
 
 # ── pl-allocpool.h and the table state of pl-tabling.h (TAB1 TB0) ───────────────────────────────────
@@ -3214,7 +3358,9 @@ end
 # PORT: pl-tabling.h worklist
 # DIVERGES: `C` is the type of `component` (`tbl_component{T}`, alias `tbl_worklist{T}` below) only to break the cycle
 # worklist -> tbl_component -> worklist_set -> worklist; `delays`, `pos_undefined` are typed vectors (`pos_undefined`
-# holds trie node ids); `predicate` is `Union{Nothing, definition{T}}`, `table` an index into the trie table.
+# holds trie node ids); `predicate` is `Union{Nothing, definition{T}}`, `table` an index into the trie table; `owner` is the
+# thread's local data (`nothing`: NULL), `handle` the integer Prolog sees (0: none yet; src/pl-tabling.jl `worklist_handle`,
+# SYNC3 P11: pl-tabling.h af9e2e7e).
 "The worklist of a table under evaluation (pl-tabling.h `struct worklist`): its answer and suspension clusters."
 mutable struct worklist{T, C}
     head::Union{Nothing, cluster{T}}                    # answer and dependency clusters
@@ -3222,6 +3368,8 @@ mutable struct worklist{T, C}
     riac::Union{Nothing, cluster{T}}                    # rightmost inner answer cluster
     free_clusters::Union{Nothing, cluster{T}}           # clusters to reuse
     magic::Int                                          # WORKLIST_MAGIC
+    handle::Int                                         # Prolog handle (integer) or 0
+    owner::Union{Nothing, AbstractLocalData}            # Thread completing my table
     ground::Bool                                        # Ground call (early completion)
     executing::Bool                                     # $tbl_wkl_work/3 in progress
     in_global_wl::Bool                                  # already in global worklist
@@ -3237,14 +3385,12 @@ mutable struct worklist{T, C}
     predicate::Union{Nothing, definition{T}}            # Predicate we are associated with
     delays::Vector{delay}                               # Delayed answers
     pos_undefined::Vector{Int}                          # Positive undefined (trie node ids)
-    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, wl)`: upstream the address), 0: none yet;
-    # see `tbl_pointer!` in src/pl-tabling.jl.
-    ptr::Int                                            # the handle of this worklist in `LD->tabling.pointers`
 end
 worklist{T, C}() where {T, C} = worklist{T, C}(
-    nothing, nothing, nothing, nothing, WORKLIST_MAGIC, false, false, false, false,
+    nothing, nothing, nothing, nothing, WORKLIST_MAGIC, 0, nothing, false, false, false,
+    false,
     false, false,
-    false, false, false, 0, nothing, 0, nothing, delay[], Int[], 0
+    false, false, false, 0, nothing, 0, nothing, delay[], Int[]
 )
 
 # PORT: pl-tabling.h worklist_set
@@ -3264,9 +3410,13 @@ component_set{C}() where {C} = component_set{C}(C[])
 # PORT: pl-tabling.h tbl_component
 # DIVERGES: `drop` (an anonymous struct) is flattened to `drop_symbol`, `drop_size`, `drop_gen_calls`, `drop_recompute`;
 # `leader` is a trie index; `children` and `merged` are `component_set`s.
+# `owner` is the thread's local data (`nothing`: NULL), `handle` the integer Prolog sees (0: none yet; src/pl-tabling.jl
+# `component_handle`; SYNC3 P11: pl-tabling.h af9e2e7e).
 "A strongly connected component of the tabling evaluation (pl-tabling.h `struct tbl_component`)."
 mutable struct tbl_component{T}
     magic::Int                                          # COMPONENT_MAGIC
+    handle::Int                                         # Prolog handle (integer) or 0
+    owner::Union{Nothing, AbstractLocalData}            # Thread that created me
     status::Int                                         # SCC_*
     neg_status::Int                                     # SCC_NEG_*
     simplifications::Int                                # # simplifications
@@ -3282,15 +3432,14 @@ mutable struct tbl_component{T}
     drop_size::Int                                      # drop.size: Memory of the table
     drop_gen_calls::UInt64                              # drop.gen_calls: gen_call at completion
     drop_recompute::Int64                               # drop.recompute: Cost to recompute if dropped
-    # DIVERGES (TAB1 TB2): `ptr` is the handle Prolog sees (`PL_unify_pointer(t, c)`: upstream the address), 0: none yet.
-    ptr::Int                                            # the handle of this component in `LD->tabling.pointers`
 end
 # ORIGINAL: upstream's `tbl_alloc` hands out zeroed memory (`PL_malloc` + the caller's init); a new component is `COMPONENT_MAGIC`
 # with every other field NULL or 0.
 tbl_component{T}() where {T} = tbl_component{T}(
-    COMPONENT_MAGIC, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing, nothing, nothing, nothing,
+    COMPONENT_MAGIC, 0, nothing, SCC_ACTIVE, SCC_NEG_NONE, 0, nothing, nothing, nothing,
+    nothing,
     nothing, nothing, 0, 0,
-    nothing, 0, UInt64(0), 0, 0
+    nothing, 0, UInt64(0), 0
 )
 # ORIGINAL: the worklist type of a term type `T`, the alias that closes the cycle `worklist` -> `tbl_component` -> `worklist_set`.
 "A worklist of a term type `T` (pl-tabling.h `struct worklist`, its `component` a `tbl_component{T}`)."
@@ -3333,8 +3482,8 @@ const SIZEOF_IDG_NODE = 80
 const SIZEOF_IDG_MONO = 24
 "`sizeof(struct table)` at the pin (os/pl-table.h): 32 (two `int`s and three pointers)."
 const SIZEOF_TABLE = 32
-"`sizeof(struct kvs)` at the pin (os/pl-table.h): 40."
-const SIZEOF_KVS = 40
+"`sizeof(struct kvs)` (os/pl-table.h): 48, with the `int copied` after `resizing`."
+const SIZEOF_KVS = 48
 "`sizeof(struct symbol)` at the pin (os/pl-table.h): 16 (a key and a value)."
 const SIZEOF_SYMBOL = 16
 
@@ -3626,6 +3775,9 @@ end
 # DIVERGES (TAB1 TB6): a record of `ld.tabling.idg_edge_states` (upstream: on the C stack, copied to `allocForeignState`
 # memory by `save_idg_edge_state`), its index the REDO_PTR context; `atrie`, `set`, `dir` (an atom, upstream `atom_t` 0) and
 # `dependencies` are `nothing` for NULL; `deptrie_symbol` is the trie blob word (`trie_symbol`); the ints are `Bool`s.
+# DIVERGES (SYNC3, pl-tabling.c af9e2e7e): upstream keeps the trie itself, `trie *deptrie`, and makes its symbol only where it is unified
+# (`trie_symbol(state->deptrie)`; an answer trie that is not a root has no symbol, thread-local blobs, held with pl-atom): the kernel's
+# tries all have a symbol word, so the field stays the word.
 "The state of an enumeration of IDG edges, `'\$idg_edge'/3` and `'\$idg_false_edge'/3` (pl-tabling.c `idg_edge_state`)."
 mutable struct idg_edge_state{T}
     atrie::Union{Nothing, trie{T}}
@@ -3728,8 +3880,9 @@ mutable struct gc_totals
     global_gained::Int64                                        # global stack bytes gained
     trail_gained::Int64                                         # trail stack bytes gained
     time::Float64                                               # time spent in GC
+    minor_collections::Int64                                    # of which generational (swipl-devel af9e2e7e; always 0 here, see GEN-GC in pl-gc.jl)
 end
-gc_totals() = gc_totals(0, 0, 0, 0.0)
+gc_totals() = gc_totals(0, 0, 0, 0.0, 0)
 
 # PORT: pl-incl.h gc_stats
 "The statistics of the stack collector of one thread (pl-incl.h `struct gc_stats`): the last three collections, the aggregates over them, the CPU clock, the pending request."

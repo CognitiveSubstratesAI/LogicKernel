@@ -1043,10 +1043,14 @@ const _BC_IS_CELLS = [
     ("== var == atom", _bf("eb4", _bv(1)), _bf("==", _bv(1), _bs("a")), "b_eq_vc"),
     ("== atom == var", _bf("eb5", _bv(1)), _bf("==", _bs("a"), _bv(1)), "b_eq_vc"),
     ("== var == []", _bf("eb6", _bv(1)), _bf("==", _bv(1), mk_nil(_B)), "b_eq_vc"),
-    ("== var == 2^24-1", _bf("eb7", _bv(1)), _bf("==", _bv(1), _bg(16777215)), "b_eq_vc"),
-    ("== var == 2^24", _bf("eb8", _bv(1)), _bf("==", _bv(1), _bg(16777216)), ""),
-    ("== var == -2^24", _bf("eb9", _bv(1)), _bf("==", _bv(1), _bg(-16777216)), "b_eq_vc"),
-    ("== var == -2^24-1", _bf("eb10", _bv(1)), _bf("==", _bv(1), _bg(-16777217)), ""),
+    # TAG1: is_portable_constant tests the WORD (i << LMASK_BITS | TAG_INTEGER) through int32, LMASK_BITS 8: -2^23 <= i < 2^23 (it was +-2^24 at LMASK_BITS 7;
+    # the 2^24 rows below are the old boundary, now two refused rows). The swipl comparison of these cells needs the oracle at af9e2e7e.
+    ("== var == 2^23-1", _bf("eb7", _bv(1)), _bf("==", _bv(1), _bg(8388607)), "b_eq_vc"),
+    ("== var == 2^23", _bf("eb8", _bv(1)), _bf("==", _bv(1), _bg(8388608)), ""),
+    ("== var == -2^23", _bf("eb9", _bv(1)), _bf("==", _bv(1), _bg(-8388608)), "b_eq_vc"),
+    ("== var == -2^23-1", _bf("eb10", _bv(1)), _bf("==", _bv(1), _bg(-8388609)), ""),
+    ("== var == 2^24-1", _bf("eb16", _bv(1)), _bf("==", _bv(1), _bg(16777215)), ""),
+    ("== var == -2^24", _bf("eb17", _bv(1)), _bf("==", _bv(1), _bg(-16777216)), ""),
     ("== var == 1.5", _bf("eb11", _bv(1)), _bf("==", _bv(1), _bg(1.5)), ""),
     ("== var == string", _bf("eb12", _bv(1)), _bf("==", _bv(1), _bg("s")), ""),
     ("== var == compound", _bf("eb13", _bv(1)), _bf("==", _bv(1), _bf("f", _bs("a"))), ""),
@@ -1205,6 +1209,34 @@ const _BC_IS_REFUSED = ()
             end
         end
     end
+end
+
+# TAG1: is_portable_constant (pl-comp.c) boundary cases, no swipl needed. Under `portable_vmi` the WORD of a tagged integer
+# (i << LMASK_BITS | TAG_INTEGER, LMASK_BITS 8) must survive `(word)(sword)(int32_t)(uint32_t)w == w`: -2^23 <= i < 2^23
+# (-2^23: the word is -2^31 + 3, an int32; 2^23: the word is 2^31 + 3, not one; before TAG1 the bound was +-2^24 at LMASK_BITS 7).
+# Without the flag every tagged integer is portable; an atom always is; a float, a string and a compound never are.
+@testset "is_portable_constant: the int32 round trip of the word (TAG1)" begin
+    ldp = LK.PL_local_data{_B}(_BGD)                          # portable_vmi is swipl's default: on
+    @test LK.truePrologFlag(ldp, LK.PLFLAG_PORTABLE_VMI)
+    ldn = LK.PL_local_data{_B}(_BGD)
+    LK.clearPrologFlagMask!(ldn, LK.PLFLAG_PORTABLE_VMI)
+    for (i, want) in (
+        (0, true), (1, true), (-1, true), (8388607, true), (-8388608, true),   # 2^23-1, -2^23
+        (8388608, false), (-8388609, false),                                   # 2^23, -2^23-1
+        (16777215, false), (16777216, false), (-16777216, false),              # the old +-2^24 bound: refused now
+        (2147483647, false), (-2147483648, false), (2^40, false)
+    )
+        @test LK.is_portable_constant(ldp, _bg(i)) == want
+        @test LK.is_portable_constant(ldn, _bg(i))                      # no flag: any tagged integer
+    end
+    @test LK.is_portable_constant(ldp, _bs("a")) && LK.is_portable_constant(ldn, _bs("a"))
+    @test LK.is_portable_constant(ldp, mk_nil(_B))
+    for ld in (ldp, ldn), t in (_bg(1.5), _bg("s"), _bf("f", _bs("a")))
+        @test !LK.is_portable_constant(ld, t)
+    end
+    # the word, not the integer, is what is compared: the same bound in terms of the mask
+    @test (UInt64(8388607) << LK.LMASK_BITS | LK.TAG_INTEGER) < UInt64(2)^31
+    @test (UInt64(8388608) << LK.LMASK_BITS | LK.TAG_INTEGER) >= UInt64(2)^31
 end
 
 # ── the unifications moved into the head (V9b; user, 2026-10-06) ───────────────────────────────

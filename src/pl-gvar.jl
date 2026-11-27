@@ -13,7 +13,9 @@
 # (`auto_define_gvar`, design D8).
 #
 # NOT PORTED: `destroyGlobalVars` (a thread's end), `PL_register_atom`/`PL_unregister_atom` of a name or
-# an atom value (the kernel has no atom GC), the table's `free_symbol` hook (`free_nb_linkval_symbol`),
+# an atom value (the kernel has no atom GC; since 67b81104 upstream calls `registerAtomLocally()` instead of
+# `PL_register_atom()` in `new_gvar` and `setval`, because global variables are thread-local: thread-local atoms,
+# held behind G1, DIVERGES the same way), the table's `free_symbol` hook (`free_nb_linkval_symbol`),
 # and `duplicate_term`'s `nshare`/`share` arguments (src/pl-copyterm.jl).
 
 # PORT: pl-gvar.c SETVAL_BACKTRACKABLE
@@ -390,7 +392,7 @@ function pl_nb_current2_va(
         (val != 0 && is_gval(ld, val)) || continue
         tmp = PL_new_term_ref(ld)
         ld.slots[tmp + 1] = val                     # unify_ptrs(valTermRef(A2), &val, 0)
-        if PL_unify_atom(ld, A1, _atom_value(ld, name)) && PL_unify(ld, A2, tmp)
+        if PL_unify(ld, A2, tmp) && PL_unify_atom(ld, A1, _atom_value(ld, name))   # unify_ptrs before PL_unify_atom: `val` may move (upstream order; here nothing moves)
             PL_close_foreign_frame(ld, fid)
             return PL_retry_address(idx)            # ForeignRedoPtr(e)
         else

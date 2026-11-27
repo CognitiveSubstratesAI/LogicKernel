@@ -39,7 +39,9 @@
 #   that mirror swipl-devel (the snapshot below is itself verified against the checkout) · no PORT
 #   marker in an ORIGINAL file without UPSTREAM-PARTS · each PORT names one of the file's upstream files and is followed by
 #   a definition / @testset of exactly that name (found by PARSING) · every DIVERGES has a reason ·
-#   commit exists · upstream file exists at it · each PORT name occurs in it · each COPYRIGHT line
+#   commit exists · upstream file exists at it · each PORT name occurs in it, or its marker is a
+#   declared keep (KEPT_NAMES: printed as KEPT-NAME; a row that stops describing the tree is
+#   KEPT-NAME-STALE) · each COPYRIGHT line
 #   occurs in it · every swipl-devel header cites THE PIN (tools/SWIPL_VERSION `commit:`; during a
 #   sync the previous pin too, `sync-from:`) · no ORIGINAL file shadows an upstream file · docs/port_inventory.md's generated
 #   table equals the headers · its VM inventory's `declared` column equals the `# PORT: pl-vmi.c`
@@ -168,6 +170,21 @@ function split_parts_dangling(root::AbstractString; table=SPLIT_PORTS)::Vector{S
     end
     return dangling
 end
+
+# A marker KEPT ON PURPOSE although upstream removed its name: the kernel has not followed the removal yet. The keeps are
+# DECLARED, one row per (kernel file, marker name, upstream path), never matched by a pattern or by the name alone, so
+# any other missing name is still UPSTREAM-NAME-MISSING. A row that no longer describes the tree is KEPT-NAME-STALE: its
+# marker or its upstream header line is gone (checked without a checkout), or the name IS in the upstream file the header
+# cites (checked where the checkout is). `removed_by` and `reason` are for the reader and the KEPT-NAME line.
+const KeptName = @NamedTuple{
+    file::String, name::String, upstream::String, removed_by::String, reason::String
+}
+const KEPT_NAMES = KeptName[
+    (file="src/pl-incl.jl", name="M_DESTROYED", upstream="src/pl-incl.h",
+        removed_by="77c3148d", reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move"),
+    (file="src/pl-modul.jl", name="releaseModule_unlocked", upstream="src/pl-modul.c",
+        removed_by="77c3148d", reason="P10 (a): port 11.1.0 destroyTemporaryModule/abolishModule with the pin move")
+]
 
 "Upstream paths an ORIGINAL file at `rel` would shadow (swipl-devel)."
 function shadowed_paths(rel::AbstractString)::Vector{String}
@@ -756,7 +773,9 @@ end
 
 `violations` are strings starting with a CODE (HEADER-MISSING, PATH-MISMATCH, DEF-MISMATCH, …) so a
 test can assert exactly which checks fired. `existence_checked` lists the repos whose checkout was
-found; ports into any other repo were checked for structure only.
+found; ports into any other repo were checked for structure only. `kept` lists the declared keeps
+(`kept_names`; `KEPT_NAMES` by default on the kernel's own tree, none on any other) whose name was
+looked up and is missing upstream: they are no violations.
 """
 # THE L1 RULE (user, 2026-10-13): SWI's term layout replaces the binding store at step L1 (after R2),
 # so until then new code reaches bindings only through `deRef`/`Trail!`/`Undo!` — no new DIRECT
@@ -859,9 +878,19 @@ end
 function port_check(pkgroot::AbstractString;
     upstream_dirs::Dict{String, String}=default_upstream_dirs(),
     inventory::AbstractString="docs/port_inventory.md",
-    architecture::AbstractString="docs/architecture.md")
+    architecture::AbstractString="docs/architecture.md",
+    kept_names::Union{Nothing, Vector{KeptName}}=nothing)
     root = abspath(pkgroot)
     v = String[]
+    # the default keeps are rows about the kernel's own tree: in any other tree each of them would be stale
+    keeps = if kept_names !== nothing
+        kept_names
+    elseif isfile(joinpath(root, "src", "pl-inline.jl"))
+        KEPT_NAMES
+    else
+        KeptName[]
+    end
+    kept = String[]
     pin = read_pin(root)                                 # the pinned upstream commit, if any
     files = [read_source(root, rel, v) for rel in _scan_files(root)]
     # `.git` is a FILE in a submodule checkout (swipl-devel/bench), a directory otherwise.
@@ -1030,11 +1059,29 @@ function port_check(pkgroot::AbstractString;
             end
             for m in f.markers
                 m.upstream_base == basename(u.path) || continue
-                _word_in(m.name, text) ||
+                i = findfirst(
+                    row ->
+                        row.file == f.rel && row.name == m.name && row.upstream == u.path,
+                    keeps
+                )
+                if _word_in(m.name, text)
+                    i === nothing ||
+                        push!(
+                            v,
+                            "KEPT-NAME-STALE $(f.rel):$(m.line): `$(m.name)` occurs in $(u.path) @ $(u.commit) — drop its KEPT_NAMES row"
+                        )
+                elseif i === nothing
                     push!(
                         v,
                         "UPSTREAM-NAME-MISSING $(f.rel):$(m.line): `$(m.name)` does not occur in $(u.path) @ $(u.commit)"
                     )
+                else
+                    e = keeps[i]
+                    push!(
+                        kept,
+                        "KEPT-NAME $(f.rel):$(m.line): `$(m.name)` is not in $(u.path) @ $(u.commit); removed upstream by $(e.removed_by) ($(e.reason))"
+                    )
+                end
             end
         end
         if parts_file && !isempty(part_texts)
@@ -1055,6 +1102,30 @@ function port_check(pkgroot::AbstractString;
                         "COPYRIGHT-MISMATCH $(f.rel): `$c` is in none of the UPSTREAM-PARTS files"
                     )
             end
+        end
+    end
+    # the declared keeps against what the loop above read: the same `f.markers` (`read_source`) and the same upstream
+    # list (`f.parts` for an ORIGINAL file, else `f.upstreams`). Needs no checkout.
+    for e in keeps
+        j = findfirst(f -> f.rel == e.file, files)
+        marked =
+            j !== nothing && any(
+                m -> m.name == e.name && m.upstream_base == basename(e.upstream),
+                files[j].markers
+            )
+        if !marked
+            push!(
+                v,
+                "KEPT-NAME-STALE $(e.file): no `PORT: $(basename(e.upstream)) $(e.name)` marker — drop its KEPT_NAMES row"
+            )
+        elseif !any(
+            u -> u.path == e.upstream,
+            files[j].original ? files[j].parts : files[j].upstreams
+        )
+            push!(
+                v,
+                "KEPT-NAME-STALE $(e.file): no upstream header line names $(e.upstream) (`$(e.name)`) — drop its KEPT_NAMES row"
+            )
         end
     end
     inv = joinpath(root, inventory)
@@ -1125,7 +1196,7 @@ function port_check(pkgroot::AbstractString;
         append!(v, stale_marker_violations(root, srcs, plan_steps(read(inv, String))))
     return (;
         violations=v, files=files, existence_checked=sort!(collect(available)),
-        coverage_checked=coverage_checked, markers=marker_counts(root, srcs)
+        coverage_checked=coverage_checked, markers=marker_counts(root, srcs), kept=kept
     )
 end
 
@@ -1341,5 +1412,7 @@ if abspath(PROGRAM_FILE) == @__FILE__
             join(r.existence_checked, ", ")
         end)
     foreach(x -> println("  ", x), r.violations)
+    println("port_check: $(length(r.kept)) declared kept name(s) (not violations)")
+    foreach(x -> println("  ", x), r.kept)
     exit(isempty(r.violations) && !isempty(r.files) ? 0 : 1)
 end

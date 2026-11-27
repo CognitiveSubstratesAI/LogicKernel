@@ -1,5 +1,5 @@
 # ORIGINAL: L1d step 4 — TAGGED SMALL INTEGERS (pl-data.h `consInt`, `TAG_INTEGER|STG_INLINE`): an
-# integer in the tagged range (`PLMINTAGGEDINT..PLMAXTAGGEDINT`, -2^56..2^56-1) is its own WORD — in
+# integer in the tagged range (`PLMINTAGGEDINT..PLMAXTAGGEDINT`, -2^55..2^55-1 since TAG1's 8-bit mask; -2^56..2^56-1 before) is its own WORD — in
 # a cell, a slot and a `*_SMALLINT` operand — and one past either end stays a value-table word
 # (upstream's indirect). test/core_lang/test_tagged_ints.jl — on every term type:
 #   * the words: 0, ±1 and the range's ends are tagged and read back as the same integer; one past
@@ -22,8 +22,8 @@ include(joinpath(@__DIR__, "..", "term_under_test.jl"))
 include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 include(joinpath(@__DIR__, "..", "db", "index_testlib.jl"))
 
-const _TI_MIN = LK.PLMINTAGGEDINT                   # -2^56 (swipl 10.1.16: h_smallint, probed)
-const _TI_MAX = LK.PLMAXTAGGEDINT                   #  2^56 - 1
+const _TI_MIN = LK.PLMINTAGGEDINT                   # -2^55 since TAG1 (LMASK_BITS 8; swipl 10.1.16 had -2^56, probed; the oracle at af9e2e7e has -2^55)
+const _TI_MAX = LK.PLMAXTAGGEDINT                   #  2^55 - 1
 # the edges, and one past each end (an indirect: H_MPZ, a value-table word)
 const _TI_VALUES = Int64[0, 1, -1, _TI_MIN, _TI_MAX, _TI_MIN - 1, _TI_MAX + 1]
 _ti_tagged(v::Int64)::Bool = _TI_MIN <= v <= _TI_MAX

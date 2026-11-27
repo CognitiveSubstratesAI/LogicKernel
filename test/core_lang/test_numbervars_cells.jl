@@ -97,7 +97,7 @@ _nv_clauses() = Tuple{_R, Union{Nothing, _R}}[
         _rf("nv", _rf("f", A), _rs("a"), E), _rf("nv", _rf("f", A), _rg(1.0), E),
         _rf("nv", _rf("f", A), B, E),
         _rf("nv", _rf("f", A), _ki(4611686018427387904), E),           # past the tagged range
-        _rf("nv", _rf("f", A, B), _ki(72057594037927935), E),          # the second overflows
+        _rf("nv", _rf("f", A, B), _ki(36028797018963967), E),          # the second overflows (2^55-1, the largest tagged integer since TAG1)
         _rf("nv4", _rf("f", A, B, A), _ki(0), E, _rlist(st)),
         _rf("nv4", _rf("f", _rf("\$VAR", B), B, A), _ki(0), E, _rlist(st)),
         _rf("nv4", _rf("f", _rf("\$VAR", B), A), _ki(0), E, _rlist(st)),

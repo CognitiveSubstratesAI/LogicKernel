@@ -131,7 +131,7 @@ const _RC_CASES = [
         "r10",
         raw"recordz(k, x, R1), recordz(k, y, R2), ( R1 = R2 -> R = unified ; R = apart )"
     ),
-    # r11-r31: the key (getKeyEx): an atom, a small integer (swipl's tagged range ends at 2^55: r16-r19), a compound by name and arity, `[]`, and what is no key (type_error(key, _), the context)
+    # r11-r31: the key (getKeyEx): an atom, a small integer (the tagged range ends at 2^55 - 1 since TAG1, it was 2^56 - 1: r16-r19 and r109-r110), a compound by name and arity, `[]`, and what is no key (type_error(key, _), the context)
     ("r11", raw"recordz(f(a, b), x), recorded(f(_, _), R)"),
     ("r12", raw"recordz(f(a, b), x), recorded(f(c, d), R)"),
     ("r13", raw"recordz(f(a, b), x), ( recorded(f(_), _) -> R = yes ; R = no )"),
@@ -361,7 +361,10 @@ const _RC_CASES = [
     (
         "r108",
         raw"length(L, 300), recordz(k, f(L)), recorded(k, f(M)), M = [A, B|_], ( A == B -> R = same ; R = apart )"
-    )
+    ),
+    # TAG1: the tagged range's edges as keys, now 2^55-1 (a key) and -2^55-1 (no key)
+    ("r109", raw"X is 2^55 - 1, recordz(X, x), recorded(X, R)"),
+    ("r110", raw"X is -(2^55) - 1, ex(recordz(X, x), R)")
 ]
 
 # swipl 10.1.19-1-gcbf4e189's answers to the program and cases above (the driver's lines; evidence/D2/d2_rows.out)
@@ -382,10 +385,11 @@ const _RC_PINNED = [
     "t_r13 c[116,95,114,49,51]/1(a[110,111])",
     "t_r14 c[116,95,114,49,52]/1(a[120])",
     "t_r15 c[116,95,114,49,53]/1(a[120])",
-    "t_r16 c[116,95,114,49,54]/1(a[120])",
+    # TAG1 (LMASK_BITS 8, tagged range -2^55..2^55-1; getKeyEx tests isTaggedInt): r16 (2^55) and r19 (-2^56) are no key now; r18 (-2^55) still is. HAND-DERIVED, to be re-recorded at the oracle af9e2e7e
+    "t_r16 c[116,95,114,49,54]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],i36028797018963968)))",
     "t_r17 c[116,95,114,49,55]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],i72057594037927936)))",
     "t_r18 c[116,95,114,49,56]/1(a[116,114,117,101])",
-    "t_r19 c[116,95,114,49,57]/1(a[116,114,117,101])",
+    "t_r19 c[116,95,114,49,57]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],i-72057594037927936)))",
     "t_r20 c[116,95,114,50,48]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],f1.5)))",
     "t_r21 c[116,95,114,50,49]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],s[97,98,99])))",
     "t_r22 c[116,95,114,50,50]/1(c[101,114,114]/1(a[105,110,115,116,97,110,116,105,97,116,105,111,110,95,101,114,114,111,114]))",
@@ -475,7 +479,10 @@ const _RC_PINNED = [
     "t_r105 c[116,95,114,49,48,53]/1(c[45]/2(i300,a[115,97,109,101]))",
     "t_r106 c[116,95,114,49,48,54]/1(c[45]/2(i300,a[115,104,97,114,101,100]))",
     "t_r107 c[116,95,114,49,48,55]/1(i300)",
-    "t_r108 c[116,95,114,49,48,56]/1(a[97,112,97,114,116])"
+    "t_r108 c[116,95,114,49,48,56]/1(a[97,112,97,114,116])",
+    # r109, r110: TAG1, hand-derived (not recorded from swipl): re-record at the oracle af9e2e7e
+    "t_r109 c[116,95,114,49,48,57]/1(a[120])",
+    "t_r110 c[116,95,114,49,49,48]/1(c[101,114,114]/1(c[116,121,112,101,95,101,114,114,111,114]/2(a[107,101,121],i-36028797018963969)))"
 ]
 
 "The program and cases as one file; the case predicates' names."
@@ -533,7 +540,7 @@ function _rc_kernel(path::String, names::Vector{String})
     return out, gd, ld
 end
 
-@testset "the recorded database == swipl's pinned answers (r01-r108)" begin
+@testset "the recorded database == swipl's pinned answers (r01-r110)" begin
     f, names = _rc_file()
     kl, _, ld = _rc_kernel(f, names)
     @test length(kl) == length(_RC_PINNED)

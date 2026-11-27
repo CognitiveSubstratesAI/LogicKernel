@@ -44,6 +44,10 @@ function pl_dlength2_va(
         if len > 0
             list = PL_new_term_ref(ld)
 
+            if UInt64(len) > typemax(UInt64) ÷ UInt64(3 * 8)
+                outOfStack!(ld, STACK_OVERFLOW_RAISE, :global)
+                return FFALSE                           # return outOfStack(&LD->stacks.global, STACK_OVERFLOW_RAISE)
+            end
             ensureGlobalSpace(ld, 3 * len, ALLOW_GC, :length2) || return FFALSE    # !ensureGlobalSpace(len*3) (L1f f2)   # G1-GC safe point: length2
 
             p0 = allocGlobalCells!(ld, 3 * len)         # p = allocGlobal(len*3) (L1e e4: on the cells)

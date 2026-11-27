@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-fmt.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-fmt.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-fmt.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
@@ -29,6 +29,14 @@ const BUFSIZE = 1024
 # PORT: pl-fmt.c DEFAULT as FMT_DEFAULT
 "The numeric argument of a directive when none is given: `INT_MIN` (pl-fmt.c)."
 const FMT_DEFAULT = Int(typemin(Int32))
+
+# PORT: pl-fmt.c MAX_PRECISION
+"The most digits `~Nd`, `~Ne`, `~Nf` and `~Ng` take (pl-fmt.c)."
+const MAX_PRECISION = 1000000
+
+# PORT: pl-fmt.c MAX_COLUMN
+"The largest numeric argument of `~Nc`, `~Nn`, `~Ns`, `~N|` and `~N+` (pl-fmt.c)."
+const MAX_COLUMN = 1000000
 
 # PORT: pl-fmt.c rubber
 "A fill point in the pending output: where, how big, and the pad character (pl-fmt.c `struct rubber`)."
@@ -462,6 +470,16 @@ end
 @inline _fmt_need_arg(ld::PL_local_data, argc::Int)::Bool =
     argc > 0 || (PL_format_error(ld, "not enough arguments"); false)
 
+# PORT: pl-fmt.c FMT_ARG_MAX as _fmt_arg_max
+# (a macro in upstream: `if ( arg != DEFAULT && arg > (max) ) FMT_ERROR(msg)`; here `true` = no error)
+@inline function _fmt_arg_max(ld::PL_local_data, arg::Int, max::Int, msg::String)::Bool
+    if arg != FMT_DEFAULT && arg > max
+        PL_format_error(ld, msg)
+        return false
+    end
+    return true
+end
+
 # PORT: pl-fmt.c do_format
 # DIVERGES: the format text is a vector of code points (`_text_code_points`); the lookup of a user-defined directive is a
 # loop over `gd.format_predicates`, whose directive and the built-in chain below are one chain (upstream's `else { switch }`); `~@` needs `callProlog`'s `ex` argument (O1B,
@@ -509,13 +527,9 @@ function do_format(
                     c = get_chr_from_text(fmt, here)
                     if isDigitW(c)
                         dw = c - Int('0')
-                        arg2 = arg * 10 + dw
-                        # DIVERGES (flag k, D-0283 item 4): upstream (pl-fmt.c:553-556) computes `int arg2 = arg*10 + dw` and tests
-                        # `(arg2 - dw)/10 != arg`; the signed wrap is undefined and the compiled swipl 10.1.19 never raises (it
-                        # prints `1` for `~3000000000d`). The port raises as the source's test says; pinned by row k03.
-                        arg2 > typemax(Int32) &&
+                        arg > div(Int(typemax(Int32)) - dw, 10) &&
                             return PL_format_error(ld, "argument overflow")
-                        arg = arg2
+                        arg = arg * 10 + dw
                         here += 1
                     else
                         neg && (arg = -arg)
@@ -586,6 +600,7 @@ function do_format(
                 outtext(state, txt) || return false
                 here += 1
             elseif c == Int('c')                # ~c: character code
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "repeat count too large") || return false
                 _fmt_need_arg(ld, argc) || return false
                 chr = PL_get_integer(ld, argv)
                 if chr !== nothing && VALID_CODE_POINT(chr)
@@ -620,6 +635,13 @@ function do_format(
                 here += 1
             elseif c == Int('d') || c == Int('D') || c == Int('r') || c == Int('R') ||
                 c == Int('I')
+                if c == Int('d') || c == Int('D')
+                    _fmt_arg_max(ld, arg, MAX_PRECISION, "precision too large") ||
+                        return false
+                elseif c == Int('I') && arg != FMT_DEFAULT && (arg < 0 || arg >= CHAR_MAX)
+                    # CHAR_MAX: none
+                    return PL_format_error(ld, "invalid digit group size")
+                end
                 _fmt_need_arg(ld, argc) || return false
                 i = number()
                 get_int_expression(ld, argv, i) ||
@@ -658,6 +680,7 @@ function do_format(
                 rc || return false
                 here += 1
             elseif c == Int('s')                # string
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "column too large") || return false
                 _fmt_need_arg(ld, argc) || return false
                 txt = PL_get_text(ld, argv, CVT_ATOM | CVT_LIST | CVT_STRING)
                 txt === nothing && return PL_format_arg_error(ld, "s", argv)
@@ -748,6 +771,7 @@ function do_format(
                 outchr(state, Int('~')) || return false
                 here += 1
             elseif c == Int('n')                # \n
+                _fmt_arg_max(ld, arg, MAX_COLUMN, "repeat count too large") || return false
                 arg == FMT_DEFAULT && (arg = 1)
                 while arg > 0
                     arg -= 1
@@ -773,7 +797,9 @@ function do_format(
                     arg = COLUMN(state)
                 end
                 arg == FMT_DEFAULT && (arg = 8)
+                arg > MAX_COLUMN && return PL_format_error(ld, "column too large")
                 stop = (c == Int('+') ? state.tab_stop + arg : arg)
+                stop > MAX_COLUMN && return PL_format_error(ld, "column too large")
                 if stop < COLUMN(state) && mod_colon
                     nl_and_reindent =
                         if state.pending_rubber != 0
@@ -818,6 +844,7 @@ function do_format(
         end
     end
 
+    # SYNC3: pending `~t` output is held in a garbage-collected vector, so each `return` below needs no clean-up.
     if state.pending_rubber != 0                # not closed ~t: flush out
         emit_rubber(state) || return false
     end
@@ -1444,6 +1471,8 @@ function formatFloat(
         a = PL_new_term_ref(ld)
         PL_put_integer(ld, a, arg)
         return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), a)
+    elseif arg > MAX_PRECISION
+        return PL_format_error(ld, "precision too large")
     end
 
     use_h && !promoteToFloatNumber(ld, f) && return false

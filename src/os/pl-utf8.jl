@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-utf8.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-utf8.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-utf8.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2021, University of Amsterdam
@@ -76,6 +76,10 @@ IS_UTF16_SURROGATE(c::Int)::Bool = c >= 0xD800 && c <= 0xDFFF
 "Is `c` a valid Unicode code point: in range, and not a surrogate (pl-utf8.h)?"
 VALID_CODE_POINT(c::Int)::Bool = c >= 0 && c <= UNICODE_MAX && !IS_UTF16_SURROGATE(c)
 
+# PORT: pl-utf8.c utf8_min_code as UTF8_MIN_CODE
+"The smallest code point a sequence with `n` continuation bytes may encode (index `n + 1`): shorter encodings are overlong (pl-utf8.c, e23f9ceb)."
+const UTF8_MIN_CODE = (0, 0x80, 0x800, 0x10000)
+
 # PORT: pl-utf8.c _PL__utf8_code_point
 # DIVERGES: `i` and `e` are indices into `b` (`e` 0 for upstream's NULL: no limit), and the moved
 # index is returned beside the count and the code point, where upstream moves `*i` and writes `*cp`.
@@ -101,13 +105,7 @@ function _PL__utf8_code_point(
     elseif c < 0xf8
         code = c & 0x07
         n = 3
-    elseif c < 0xfc
-        code = c & 0x03
-        n = 4
-    elseif c < 0xfe
-        code = c & 0x01
-        n = 5
-    else
+    else                                                    # e23f9ceb: the 5 and 6 byte forms are gone
         return (-1, i, cp)
     end
     for k in 0:(n - 1)
@@ -116,6 +114,7 @@ function _PL__utf8_code_point(
         (c < 0x80 || c >= 0xc0) && return (-1, i, cp)
         code = (code << 6) | (c & 0x3f)
     end
+    (code < UTF8_MIN_CODE[n + 1] || code > UNICODE_MAX) && return (-1, i, cp)   # overlong or too large (consumes one byte)
     i += n
     cp = code
     IS_UTF16_SURROGATE(code) && return (-1, i, UTF8_MALFORMED_REPLACEMENT)
@@ -180,14 +179,12 @@ end
 end
 
 # PORT: pl-utf8.h utf8_skip_char
-"The index after the character at index `i` of `b` (pl-utf8.h)."
+# DIVERGES: `PL_utf8_code_point(&in, NULL, &cp)` is `_PL__utf8_code_point(b, i, 0)` (there is no inline ASCII shortcut: it decodes
+# an ASCII byte in its first test). e23f9ceb: the skip functions agree with the decoder on invalid input.
+"The index after the character at index `i` of `b`, as the decoder sees it (pl-utf8.h)."
 function utf8_skip_char(b::AbstractVector{UInt8}, i::Int)::Int
-    (_byte(b, i) & 0x80) == 0 && return i + 1
-    i += 1
-    while ISUTF8_CB(_byte(b, i))
-        i += 1
-    end
-    return i
+    _, next, _ = _PL__utf8_code_point(b, i, 0)              # PL_utf8_code_point(&in, NULL, &cp)
+    return next
 end
 
 # PORT: pl-utf8.h utf8_backskip_char
@@ -225,12 +222,9 @@ function utf8_strlen(b::AbstractVector{UInt8}, s::Int, len::Int)::Int
 end
 
 # PORT: pl-utf8.h utf8_skip_char_e
-"The index after the character at index `i` of `b`, not beyond index `e` (pl-utf8.h)."
+# DIVERGES: see `utf8_skip_char`; `end` is the index `e` of the decoder.
+"The index after the character at index `i` of `b`, not beyond index `e`, as the decoder sees it (pl-utf8.h)."
 function utf8_skip_char_e(b::AbstractVector{UInt8}, i::Int, e::Int)::Int
-    (_byte(b, i) & 0x80) == 0 && return i + 1
-    i += 1
-    while i < e && ISUTF8_CB(_byte(b, i))
-        i += 1
-    end
-    return i
+    _, next, _ = _PL__utf8_code_point(b, i, e)              # PL_utf8_code_point(&in, end, &cp)
+    return next
 end

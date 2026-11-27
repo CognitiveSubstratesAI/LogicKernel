@@ -1,7 +1,7 @@
 # ORIGINAL: white-box tests of the TRAIL half of the stack collector (G1-GC G1-4: src/pl-gctrail.jl, upstream's pl-gc.c
 # `tag_trail`, `untag_trail`, `compact_trail`, `is_dead_attvar`, `clean_attvar_chain`); swipl observes the tagged trail only through its own collector.
 # test/core_lang/test_gc_trail.jl — each result compared with an INDEPENDENT model written here in plain Julia arithmetic:
-#   * the tagged word of an entry is computed by literal shifts (`(pos << 7) | 8` for an address, `| 9` for a value entry: storage
+#   * the tagged word of an entry is computed by literal shifts (`(pos << 8) | 8` for an address, `| 9` for a value entry; TAG1: the mask is 8 bits wide, it was 7: storage
 #     bits 3-4, TAG_TRAILVAL = bit 0), never by the kernel's `consPtr`; tag then untag is the identity (also when the MARK and FIRST
 #     bits were set meanwhile), a deleted entry (word 0) stays 0;
 #   * `compact_trail` keeps exactly the non-zero entries in order (the model filters a copy), counts them, hands every FIRST-marked
@@ -20,14 +20,14 @@ include(joinpath(@__DIR__, "..", "core_lang", "rules_common.jl"))
 
 _gt_atom(ld, n) = LK._atom_word!(ld, _rs(n))
 
-"The model of one tagged entry: literal shifts (position at bit 7, STG_GLOBAL = 8, TAG_TRAILVAL = 1); 0 stays 0."
+"The model of one tagged entry: literal shifts (position at bit 8 since TAG1, STG_GLOBAL = 8, TAG_TRAILVAL = 1); 0 stays 0."
 function _gt_tag_model(e::UInt64)::UInt64
     e == 0 && return UInt64(0)
-    return ((e & 1) == 1 ? (((e >> 3) << 7) | 0x09) : (((e >> 3) << 7) | 0x08))
+    return ((e & 1) == 1 ? (((e >> 3) << 8) | 0x09) : (((e >> 3) << 8) | 0x08))
 end
 
-"The model of an untagged entry from a tagged word: position at bit 7, bit 0 the value tag."
-_gt_untag_model(w::UInt64)::UInt64 = (w & 1) == 1 ? (((w >> 7) << 3) | 1) : ((w >> 7) << 3)
+"The model of an untagged entry from a tagged word: position at bit 8, bit 0 the value tag."
+_gt_untag_model(w::UInt64)::UInt64 = (w & 1) == 1 ? (((w >> 8) << 3) | 1) : ((w >> 8) << 3)
 
 "An engine with a trail of: an address entry per bound cell c1, c2, a trailed assignment (the pair) on cv, an address entry c3. `(ld, cells, tr0)`."
 function _gt_engine()
@@ -214,7 +214,7 @@ end
     ld.trail[tr0 + 1] = 0                                       # a deleted entry is not listed
     ts = LK.gc_trail_begin!(ld)
     LK.tag_trail(ld, ts)
-    ld.trail[tr0 + 5] = (UInt64(7) << 7) | 0x10                 # STG_LOCAL (2 << 3), tag 0: not a global pointer, not a value
+    ld.trail[tr0 + 5] = (UInt64(7) << 8) | 0x10                 # STG_LOCAL (2 << 3), tag 0: not a global pointer, not a value
     model = Int[
         i for i in (ts.top - 1):-1:1 if
         ld.trail[i] != 0 && ((ld.trail[i] & 1) == 1 || (ld.trail[i] & 0x18) == 0x08)
@@ -233,7 +233,7 @@ function _gt_chain(ld)
     p = ld.attvar_attvars
     while p != 0
         push!(links, p)
-        p = (ld.gstack[p] & 7) == 7 ? Int(ld.gstack[p] >> 7) : 0
+        p = (ld.gstack[p] & 7) == 7 ? Int(ld.gstack[p] >> 8) : 0
     end
     return links
 end

@@ -125,6 +125,10 @@ function build_graph(
 end
 
 # PORT: pl-bisim.c restore_graph
+# DIVERGES (SYNC3, 8783a5bd): upstream restores through `restoreHiddenFunctor(&n->term->definition, n->functor)`, and
+# `term_quotient` brackets build/setup/restore with `startHideFunctors()`/`endHideFunctors()`: the functor garbage
+# collector must not free a functor whose word is replaced by the graph numbering. There is no functor GC here (held with
+# the pl-funct/GC family): the plain assignment stays, as in src/pl-copyterm.jl `exitCyclicCopy`.
 "Put the functor words back; before anything can allocate, on every exit path (pl-bisim.c)."
 function restore_graph(ld::PL_local_data, b::Vector{bs_node})::Nothing
     for n in b
@@ -646,6 +650,8 @@ function setup_graph(
 end
 
 # PORT: pl-bisim.c term_quotient
+# DIVERGES (SYNC3, 8783a5bd): upstream calls `startHideFunctors()` before `build_graph` and `endHideFunctors()` after
+# `restore_graph` (functor GC, held; see `restore_graph`).
 # DIVERGES: `g` is a fresh `bs_graph()` (upstream's memset); `p` a location; returns Bool: false with an exception
 # raised (no MEMORY_OVERFLOW).
 "Leave `g` holding the coarsest bisimulation of the graph of the term at location `p` (pl-bisim.c)."

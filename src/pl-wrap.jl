@@ -125,9 +125,10 @@ function skipWrapperPrefix(codes::Vector{code}, pc::Int=1)::Int
 end
 
 # PORT: pl-wrap.c unregisterWrappedSupervisor
-# DIVERGES: a no-op. Upstream drops the references the supervisor holds on the closure atom and the wrapper name
-# (`PL_unregister_atom`); atoms live for ever here (see the file header).
-"Release the atoms a wrapper supervisor `codes` references (pl-wrap.c; a no-op here, see above)."
+# DIVERGES: a no-op. Upstream frees the supervisor's private clause reference and drops the references it holds on the
+# closure atom and the wrapper name (`PL_unregister_atom`); the private `ClauseRef` lives in the side table (`crefs`)
+# and atoms live for ever here (see the file header): Julia's garbage collector frees both.
+"Release the atoms and the private clause reference a wrapper supervisor `codes` holds (pl-wrap.c; a no-op here, see above)."
 unregisterWrappedSupervisor(codes::Vector{code})::Nothing = nothing
 
 # PORT: pl-wrap.c resetWrappedSupervisor
@@ -223,6 +224,9 @@ function innermost_supervisor(
 end
 
 # PORT: pl-wrap.c assert_wrapper
+# DIVERGES (SYNC3): upstream's `assert_term()` has a seventh argument `ref` (93a1afc0: the clause reference blob of assert/2,
+# created before the clause is added; assert_wrapper passes 0). `assert_term!` is in pl-comp.jl, held behind G1, and the
+# kernel has no clause garbage collection to race: the call stays as it is.
 # DIVERGES: the database and the local data are arguments; no `acquire_def`/`release_def` (threads only: left out, as
 # `getClauses`). `pushPredicateAccessObj!` cannot fail here (upstream's NULL is its reference-stack limit).
 "Assert the clause in `clause` at the end of its predicate; its clause reference (pl-wrap.c)."
@@ -307,10 +311,12 @@ function pl_c_wrap_predicate5_va(
 
         cref = assert_wrapper(gd, ld, A5)
         if cref !== nothing
-            old = crefs[Int(codes[i + 1])].clause::Clause{T}   # code2ptr(ClauseRef, codes[1])->value.clause
-            crefs[Int(codes[i + 1])] = cref                     # codes[1] = ptr2code(cref)
+            old = crefs[Int(codes[i + 1])]                      # ClauseRef old = code2ptr(ClauseRef, codes[1])
+            cl = old.clause::Clause{T}                          # Clause cl = old->value.clause
+            crefs[Int(codes[i + 1])] = newClauseRef(cref.clause::Clause{T}, word(0))  # codes[1] = ptr2code(newClauseRef(cref->value.clause, 0))
             codes[i] = wrapper_vmi(def, wname)
-            retractClauseDefinition!(gd, old.predicate, old, false)
+            retractClauseDefinition!(gd, cl.predicate, cl, false)
+            # linger(&def->lingering, free_wrapper_cref, old): `old` is left to Julia's garbage collector
             return FTRUE
         end
     else
@@ -324,7 +330,7 @@ function pl_c_wrap_predicate5_va(
                 codes = code[
                     wrapper_vmi(def, wname), code(1), _atom_word!(ld, aref), wnamew
                 ]                                               # allocCodes(4): the operand 1 indexes the side table
-                crefs = ClauseRef{T}[cref]
+                crefs = ClauseRef{T}[newClauseRef(cref.clause::Clause{T}, word(0))]  # codes[1] = ptr2code(newClauseRef(cref->value.clause, 0))
                 codes, crefs = chainPredicateSupervisor(def, (codes, crefs))
 
                 def.codes = codes                               # def->codes = SUPERVISOR(virgin); setSupervisor(def, codes)

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-error.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-error.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-error.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2024, University of Amsterdam
@@ -31,6 +31,9 @@
 
 # PORT: pl-error.h PL_error_code
 # DIVERGES: the codes raised so far; upstream's enum has some forty.
+# DIVERGES (SYNC3, af9e2e7e): `ERR_PTR_TYPE`, `ERR_PTR_DOMAIN` and `ERR_INCOMPARABLE` are not in the enum (no caller: the
+# kernel's callers hand `PL_error` a dereferenced location, or the terms, themselves; see the `ptrval` note at the
+# location form of `ERR_OCCURS_CHECK` below).
 "The kinds of error `PL_error` builds (pl-error.h); those raised so far."
 @enum PL_error_code::UInt8 begin
     ERR_INSTANTIATION               # void
@@ -64,6 +67,7 @@
     ERR_PERMISSION_SSU_DEF          # Definition def (SSU1: add_ssu_clause)
     ERR_IMPORT_PROC                 # Procedure proc, atom_t dest, atom_t old (MOD5a: import/1)
     ERR_PERMISSION_VMI              # const char *vmi (CONT1: I_YIELD outside an engine)
+    ERR_REPRESENTATION_CULPRIT      # atom_t what, term_t culprit (SYNC3 af9e2e7e: representation_error(What(Culprit)))
 end
 
 # The head of upstream's `PL_error`: nothing if an exception is pending ("do not overrule older
@@ -210,11 +214,16 @@ function PL_error(ld::PL_local_data{T}, id::PL_error_code, p1::T, p2::T)::Bool w
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
+# DIVERGES (SYNC3, af9e2e7e): upstream takes `ptrval[i] = linkValNoG(Word)` at the head of `PL_error`, BEFORE it opens the
+# foreign frame, because a `Word` argument becomes invalid when the stacks are shifted; here a location is an index,
+# which a shift does not move, so the cells are linked after the frame is open (the same words). `ERR_INCOMPARABLE`
+# (the same case upstream, `representation_error(standard_order(T1, T2))`) is not in the enum: no caller.
 """
     PL_error(ld, ERR_OCCURS_CHECK, var::loc, term::loc) -> false
 
 As the form on terms, the two terms DEREFERENCED locations `(k, w, p)` (upstream's `Word`s), the
-error built on the cells through `pushWordAsTermRef` (pl-error.c; f3b-4).
+error built on two term references made to hold the cells (pl-error.c; f3b-4; SYNC3 af9e2e7e: upstream no
+longer pushes and pops temporary references, `ptrval`).
 """
 function PL_error(
     ld::PL_local_data{T}, id::PL_error_code, p1::Tuple{UInt8, word, Int},
@@ -224,12 +233,13 @@ function PL_error(
     h === nothing && return false
     caller, fid, except, formal, swi = h
     @assert id == ERR_OCCURS_CHECK
+    t1 = new_term_ref(ld)                               # case ERR_OCCURS_CHECK: term_t t1 = PL_new_term_ref();
+    t2 = new_term_ref(ld)                               #   term_t t2 = PL_new_term_ref();
+    _slot_link_loc!(ld, t1 + 1, p1)                     # *valTermRef(t1) = ptrval[0];
+    _slot_link_loc!(ld, t2 + 1, p2)                     # *valTermRef(t2) = ptrval[1];
     PL_cons_functor(                                    # PL_unify_term(formal, …occurs_check2,
-        ld, formal, _err_functor(ld, :occurs_check, 2),
-        pushWordAsTermRef(ld, p1), pushWordAsTermRef(ld, p2)
+        ld, formal, _err_functor(ld, :occurs_check, 2), t1, t2
     )
-    popTermRef(ld)
-    popTermRef(ld)
     return _PL_error_close!(ld, caller, fid, except, formal, swi)
 end
 
@@ -366,12 +376,12 @@ function rewrite_callable(ld::PL_local_data{T}, expected::T, actual::term_t)::T 
 end
 
 """
-    PL_error(ld, ERR_TYPE | ERR_DOMAIN | ERR_EXISTENCE | ERR_STREAM_OP, atom, actual::term_t) -> false
+    PL_error(ld, ERR_TYPE | ERR_DOMAIN | ERR_EXISTENCE | ERR_STREAM_OP | ERR_REPRESENTATION_CULPRIT, atom, actual::term_t) -> false
 
 Raise `error(type_error(Atom, Actual), …)` or `error(domain_error(Atom, Actual), …)` — or
 `instantiation_error` when `actual` holds a variable (for `ERR_TYPE`, unless the expected type is
-`variable`) — or `error(existence_error(Atom, Actual), …)`, or `error(io_error(Atom, Actual), …)`
-(pl-error.c). A `callable` culprit is rewritten first (`rewrite_callable`).
+`variable`) — or `error(existence_error(Atom, Actual), …)`, or `error(io_error(Atom, Actual), …)`, or
+`error(representation_error(Atom(Actual)), …)` (`ERR_REPRESENTATION_CULPRIT`, since SYNC3) (pl-error.c). A `callable` culprit is rewritten first (`rewrite_callable`).
 """
 PL_error(ld::PL_local_data{T}, id::PL_error_code, a::T, actual::term_t) where {T} =
     PL_error(ld, "", 0, "", id, a, actual)
@@ -409,6 +419,12 @@ function PL_error(
         PL_cons_functor(
             ld, formal, _err_functor(ld, :io_error, 2), _err_atom(ld, a), actual
         )
+    elseif id == ERR_REPRESENTATION_CULPRIT         # representation_error(What(Culprit)); a = what, actual = culprit
+        inner = new_term_ref(ld)                    # PL_FUNCTOR, lookupFunctorDef(what, 1), PL_TERM, culprit
+        PL_cons_functor(
+            ld, inner, lookupFunctorDef(ld.functors, _atom_word!(ld, a), 1), actual
+        )
+        PL_cons_functor(ld, formal, _err_functor(ld, :representation_error, 1), inner)
     else
         @assert id == ERR_DOMAIN
         if var
@@ -775,17 +791,48 @@ function PL_get_atom_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, T} wher
     return nothing
 end
 
+# PORT: pl-error.c is_negative_integer
+# (SYNC3, af9e2e7e: new static function, called by `int_range_error`)
+# DIVERGES: `PL_get_number` on the words (as `PL_get_size_ex`): a tagged integer, an int64 or a bigint is tested for its
+# sign; a float, a rational, or anything that is no number, is not negative (`PL_get_number` fails, or `neg` stays false).
+"Whether the term reference `t` holds a negative integer (pl-error.c `is_negative_integer`)."
+function is_negative_integer(ld::PL_local_data{T}, t::term_t)::Bool where {T}
+    k, x, _ = _deref_loc(ld, -(t + 1))                      # PL_get_number(t, &n)
+    k == DU_VALUE || return false
+    isTaggedIntW(x) && return valInt(x) < 0                 # V_INTEGER: neg = n.value.i < 0
+    p = _value_term(ld, x)
+    isInteger(p) || return false                            # default: break
+    integer_is_int64(p) && return int64_value(p) < 0
+    return bigint_value(p) < 0                              # V_MPZ: neg = mpz_sgn(n.value.mpz) < 0
+end
+
+# PORT: pl-error.c int_range_error
+# (SYNC3, af9e2e7e: new function)
+"""
+Raise the error for the integer `t` that does not fit the C integer type named by the atom `type`: `domain_error(not_less_than_zero, T)`
+for a negative integer and an unsigned type, else `representation_error(Type(T))` (pl-error.c `int_range_error`); false.
+"""
+function int_range_error(
+    ld::PL_local_data{T}, t::term_t, type::T, is_unsigned::Bool
+)::Bool where {T}
+    if is_unsigned && is_negative_integer(ld, t)
+        return PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
+    end
+
+    return PL_error(ld, ERR_REPRESENTATION_CULPRIT, type, t)
+end
+
 # PORT: pl-error.c PL_get_integer_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_integer`).
 """
-The C `int` term reference `t` holds, or `nothing` after raising `representation_error(int)` (an
-integer out of range) or `type_error(integer, T)` (pl-error.c).
+The C `int` term reference `t` holds, or `nothing` after raising `representation_error(int(T))` (an
+integer out of range, `int_range_error`) or `type_error(integer, T)` (pl-error.c).
 """
 function PL_get_integer_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     i = PL_get_integer(ld, t)
     i === nothing || return i
     if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :int))
+        int_range_error(ld, t, mk_sym(T, :int), false)
         return nothing
     end
     PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
@@ -795,14 +842,14 @@ end
 # PORT: pl-error.c PL_get_long_ex
 # DIVERGES: returns the value, or `nothing` with the error raised (see `PL_get_long`).
 """
-The C `long` term reference `t` holds, or `nothing` after raising `representation_error(long)` (an
-integer out of range) or `type_error(integer, T)` (pl-error.c).
+The C `long` term reference `t` holds, or `nothing` after raising `representation_error(long(T))` (an
+integer out of range, `int_range_error`) or `type_error(integer, T)` (pl-error.c).
 """
 function PL_get_long_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     i = PL_get_long(ld, t)
     i === nothing || return i
     if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :long))
+        int_range_error(ld, t, mk_sym(T, :long), false)
         return nothing
     end
     PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
@@ -837,7 +884,7 @@ end
 # `instantiation_error`).
 """
 The size term reference `t` holds — a non-negative integer — or `nothing` after raising
-`domain_error(not_less_than_zero, T)`, `representation_error(size_t)` or `type_error(integer, T)`
+`domain_error(not_less_than_zero, T)`, `representation_error(size_t(T))` or `type_error(integer, T)`
 (pl-error.c).
 """
 function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
@@ -862,7 +909,7 @@ function PL_get_size_ex(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} wh
         if bigint_value(p) < 0                          # mpz_to_uint64: -1
             PL_error(ld, ERR_DOMAIN, mk_sym(T, :not_less_than_zero), t)
         else
-            PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :size_t))
+            int_range_error(ld, t, mk_sym(T, :size_t), true)    # case 1
         end
         return nothing
     end

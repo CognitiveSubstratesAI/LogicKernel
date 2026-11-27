@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-rec.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-rec.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -39,6 +39,12 @@
 # `PL_TYPE_EXT_*` opcodes), `term_complexity`,
 # atom references and their marking (`markAtomsRecord`: no atom GC), dicts (`PL_TYPE_DICT`), and
 # `freeRecord` (a record is freed by Julia's GC).
+#
+# SYNC3 (swipl-devel af9e2e7e, P01): the changes that need the HELD pl-atom/pl-funct work are DIVERGES blocks at their sites
+# (pointer integers: `PL_TYPE_PTRINT`; functor garbage collection: `permanentFunctor`, `acquireFunctor`, `startHideFunctors`,
+# `restoreHiddenFunctor`, `scanAtomsRecord`'s `ffunc`; `markAtomsRecord`'s new `mark` argument). The validation of untrusted
+# external records (`check_external`, `recorded_external` with `len`, `PL_recorded_external_len`, `read_record_body`) and the
+# dict offsets buffer of `copy_info` belong to the external records, NOT PORTED above. Ported: `int64_from_bytes`.
 #
 # ATTRIBUTED VARIABLES (AV6, as upstream's `O_ATTVAR` cases): `PL_TYPE_ATTVAR` records an attributed
 # variable as a numbered variable followed by its attribute list, so findall/3 and bagof/3 give back
@@ -145,7 +151,11 @@ end
 # PORT: pl-rec.c compile_term_to_heap
 # DIVERGES: on locations (`ld.walk_agenda`, dereferenced here); the cases of the kernel's words (see
 # the file header); always true (upstream fails only for an external record's blob: not ported). An
-# attributed variable's `goto again` on its attribute list is the inner loop.
+# attributed variable's `goto again` on its attribute list is the inner loop. SYNC3 (0bf03c7f, 8783a5bd): upstream
+# records a pointer integer (`isPtrInt(w)`, a C pointer handed to Prolog) of a non-external record as
+# `PL_TYPE_PTRINT` instead of `PL_TYPE_TAGGED_INTEGER`, and `addFunctor` calls `acquireFunctor(f)` for a locked record's
+# compound. HELD (pl-atom.c/pl-funct.c: pointer integers, functor GC): the kernel has neither, so every tagged integer
+# is `PL_TYPE_TAGGED_INTEGER` and a functor needs no reference.
 "Compile the term of agenda `a` into `info` (pl-rec.c `compile_term_to_heap`)."
 function compile_term_to_heap(
     ld::PL_local_data{T}, a::cell_agenda, info::compile_info{T}
@@ -202,6 +212,7 @@ function compile_term_to_heap(
                 addWord(info, w)
             end
         elseif isTaggedIntW(w)                              # TAG_INTEGER, isTaggedInt
+            # DIVERGES (SYNC3 0bf03c7f): upstream `addOpCode(info, isPtrInt(w) && !info->external ? PL_TYPE_PTRINT : PL_TYPE_TAGGED_INTEGER)`
             addOpCode(info, PL_TYPE_TAGGED_INTEGER)
             addInt64(info, valInt(w))
         elseif _is_gcompound(w)                             # TAG_COMPOUND
@@ -235,7 +246,10 @@ function compile_term_to_heap(
 end
 
 # PORT: pl-rec.c unvisit
-# DIVERGES: the marks are `info`'s (upstream: `LD->cycle.lstack`).
+# DIVERGES: the marks are `info`'s (upstream: `LD->cycle.lstack`). SYNC3 (8783a5bd): upstream puts the functor back with
+# `restoreHiddenFunctor(&mark.term->definition, mark.fdef)` and `compileTermToHeap_ex`/`compile_external_record` bracket the
+# compilation with `startHideFunctors()`/`endHideFunctors()` (a functor hidden under a visit mark must not be collected).
+# HELD (functor GC, pl-funct.c): no functor is ever collected here, so the plain store stays.
 "Give every compound `compile_term_to_heap` visited its functor back (pl-rec.c)."
 function unvisit(ld::PL_local_data, info::compile_info)::Nothing
     m = info.marks
@@ -266,7 +280,8 @@ end
 # PORT: pl-rec.c compileTermToHeap_ex as compileTermToHeap
 # DIVERGES: the record is the code with `gsize`, `nvars` and the indirects (see the file header). NOT
 # PORTED: `allocate` and `ctx` (the caller's allocator) and `flags` (`R_NOLOCK`, `R_DUPLICATE`,
-# `R_EXTERNAL`).
+# `R_EXTERNAL`). SYNC3 (8783a5bd): upstream calls `startHideFunctors()` before `initTermAgenda` and `endHideFunctors()` after
+# `unvisit()` (functor GC, HELD: see `unvisit`); no counterpart.
 """
     compileTermToHeap(ld, t) -> record
 
@@ -310,18 +325,27 @@ function fetchSizeInt(code::Vector{UInt8}, b::copy_info)::Int
     end
 end
 
+# PORT: pl-rec.c int64_from_bytes
+# DIVERGES: the bytes are `code[i:i+bytes-1]` (upstream: a `const char*` and the count); `bytes` is 1..8 (the caller's).
+"The signed integer of the `bytes` (1..8) bytes of `code` from `i`, most significant first, sign extended (pl-rec.c `int64_from_bytes`)."
+@inline function int64_from_bytes(code::Vector{UInt8}, i::Int, bytes::Int)::Int64
+    val = UInt64(0)
+    sign = UInt64(1) << (bytes * 8 - 1)
+    while (bytes -= 1) >= 0                                     # while(bytes-- > 0)
+        val = (val << 8) | code[i]                              # val = (val << 8) | (*data++ & 0xff)
+        i += 1
+    end
+    return reinterpret(Int64, (val ⊻ sign) - sign)
+end
+
 # PORT: pl-rec.c fetchInt64
 "The signed integer at the copy's position, advanced past it (pl-rec.c)."
 function fetchInt64(code::Vector{UInt8}, b::copy_info)::Int64
-    val = UInt64(0)
-    bytes = Int(code[b.data])
+    bytes = Int(code[b.data])                                   # uint bytes = *b->data++ & 0xff
     b.data += 1
-    sign = UInt64(1) << (bytes * 8 - 1)
-    while (bytes -= 1) >= 0
-        val = (val << 8) | code[b.data]
-        b.data += 1
-    end
-    return reinterpret(Int64, (val ⊻ sign) - sign)
+    val = int64_from_bytes(code, b.data, bytes)
+    b.data += bytes
+    return val
 end
 
 # PORT: pl-rec.c fetchWord
@@ -375,7 +399,8 @@ end
 # cell of the block, an indirect stored as `_slot_link_loc!` stores one; the agenda is
 # `ld.walk_agenda`; the cells were laid out unbound by `allocGlobalCells!` (setVar). `goto
 # right_recursion` (`PL_REC_ALLOCVAR`, `PL_TYPE_ATTVAR`) is `continue` with the new `p`. No external
-# opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`).
+# opcode; nothing allocates fallibly (no `MEMORY_OVERFLOW`). SYNC3 (fed7e297): upstream's `ext_compound` label
+# (the dict offsets `b->dicts` for `resortDict`) is of the external opcodes, NOT PORTED.
 "Lay record `r`'s code out from `b.gstore`, its root in slot `slot` (pl-rec.c `copy_record`)."
 function copy_record(
     ld::PL_local_data{T}, slot::Int, r::record{T}, b::copy_info
@@ -430,6 +455,8 @@ function copy_record(
             _rec_put!(ld, slot, p, fetchWord(code, b))
         elseif tag == PL_TYPE_TAGGED_INTEGER
             _rec_put!(ld, slot, p, consInt(fetchInt64(code, b)))
+            # DIVERGES (SYNC3 0bf03c7f): upstream's `case PL_TYPE_PTRINT: val = fetchInt64(b); *p = consPtrInt(val)`: pointer
+            # integers are HELD (pl-atom.c/pl-funct.c), no record carries the opcode.
         elseif tag == PL_REC_VALUE                          # (see the file header)
             box = b.gstore
             b.gstore += 1
@@ -469,7 +496,8 @@ end
 # PORT: pl-rec.c copyRecordToGlobal
 # DIVERGES: the block is `allocGlobalCells!`'s (it grows the stack on demand: `ensureGlobalSpace` is
 # the limit's check, see src/pl-alloc.jl); `flags` goes to `ensureGlobalSpace` (G1-GC: the safe
-# points of docs/g1gc_safe_points.md pass ALLOW_GC, the collector itself is left to G1-6).
+# points of docs/g1gc_safe_points.md pass ALLOW_GC, the collector itself is left to G1-6). SYNC3: upstream sets `b.dicts = NULL`
+# (the new `TmpBuffer` of dict offsets, external records only: `copy_info` here has no `dicts`).
 """
     copyRecordToGlobal(ld, copy, r, flags=0) -> Bool
 
@@ -496,7 +524,9 @@ end
 # for a key (no atom GC: `PL_register_atom`).
 
 # PORT: pl-rec.c lookupRecordList
-# DIVERGES: the database is the argument; a new list is appended to `gd.record_lists_order` too.
+# DIVERGES: the database is the argument; a new list is appended to `gd.record_lists_order` too. SYNC3 (8783a5bd): upstream
+# also makes a functor key permanent (`else if ( isFunctor(key) ) permanentFunctor((functor_t)key)`), so functor GC cannot
+# collect the key of a list; HELD (pl-funct.c): no functor GC here, so nothing to do.
 "The record list of `key` (a key word, `getKeyEx`), made if there is none (pl-rec.c)."
 function lookupRecordList(gd::PL_global_data{T}, key::word)::RecordList{T} where {T}
     l = get(gd.record_lists, key, nothing)                      # lookupHTableWP(…, key)
@@ -931,7 +961,7 @@ function pl_erase1_va(
     r === nothing && return FFALSE
     type, ptr = r
     if type == DB_REF_CLAUSE                                    # CLAUSE: the erase branch of a clause
-        clause = ptr::Clause{T}
+        clause = ptr::Clause{T}                                 # Clause clause = ptr (was cref->value.clause)
         def = clause.predicate
         if (def.flags & P_DYNAMIC) == 0
             PL_error(
@@ -1022,7 +1052,7 @@ function pl_instance2_va(
         end
         return FFALSE
     end
-    clause = ptr::Clause{T}
+    clause = ptr::Clause{T}                                     # Clause clause = ptr (was cref->value.clause)
     generation = generationFrame(ld.frames[ld.environment_frame])
 
     if (clause.flags & GOAL_CLAUSE) != 0 || !visibleClause(ld, clause, generation)

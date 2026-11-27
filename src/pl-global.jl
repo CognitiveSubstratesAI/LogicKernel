@@ -5,6 +5,7 @@
 # UPSTREAM: swipl-devel src/pl-variant.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-gc.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-tabling.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1997-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -254,6 +255,7 @@ mutable struct PL_global_data{T}
     stacks_params::Vector{stack_params_t}                       # stacks.<stack>.small/factor/min_free: local, global, trail, argument (Q10; DIVERGES, owner TH1)
     const locale::locale_state{T}                               # locale: the locale table, the default and the current locale (pl-locale.c; CT1 LOCALE)
     procedures_tune_gc3::Procedure{T}                           # procedures.tune_gc3: prolog:tune_gc/3, call_tune_gc_hook's (pl-global.h:364 at 18168e62; ALLOC-FIX f)
+    const op_names::Vector{UInt32}                              # op_names: bit set of the atoms that are or have been an operator in any module (pl-op.c; SYNC3 L1; DIVERGES: per database, see below)
 end
 # DIVERGES: `atoms` is upstream's `GD->atoms` as a struct of its own (src/pl-atom.jl), one table per
 # database, built first as upstream's `initAtoms` runs first; `functors` likewise `GD->functors` with
@@ -306,6 +308,11 @@ end
 # through `ld.GD`. TH1 moves the field into the local data when a thread has a local data of its own.
 # Since R2's LB7: `options` and `cmdline`, `GD->options` and `GD->cmdline` (pl-global.h, the records above), and `defaults_home`,
 # `GD->defaults.home` (`systemDefaults.home`, pl-init.c); the other members of `GD->defaults` are build constants (pl-init.c `initDefaults`).
+# Since L1 of SYNC3 (pl-op.c at af9e2e7e): `op_names`, upstream's file-static `op_names[OP_NAME_BITS/OP_NAME_WBITS]`, the bit set `addOperatorName`
+# fills and `maybeOperatorName` reads (src/pl-op.jl), appended LAST. DIVERGES (representation): upstream's is one per process; the kernel allows no
+# module-level mutable state (tools/lint_globals.jl) and a database made from the template (src/gd_template.jl) must carry the bits of the operators
+# it copied, so the set is the database's (deep-copied with it, generic copy: no `GD_COPY_POLICY` entry). Filled by `defOperator!`, so
+# `initOperators!` sets the bits of the defaults; `setupProlog` passes a zero set.
 # Since Q10: `signals_handlers` (`GD->signals.handlers`, the handler records `$on_signal/4` reads and writes) and `stacks_params` (the stacks'
 # `small`, `factor` and `min_free`, `$set_prolog_stack/4`'s): both filled by `setupProlog` (src/pl-setup.jl).
 
@@ -630,6 +637,30 @@ tbl_free_objects{T}() where {T} = tbl_free_objects{T}(
     cluster{T}[], false
 )
 
+# PORT: pl-tabling.c tbl_handle_slot
+# DIVERGES: upstream's `object` is also the free list link of a free slot (`next free slot + 1`): the link is its own field,
+# `next`; `check` is `serial<<1|kind`, or `TBL_HANDLE_FREE` (-1: upstream's `(size_t)-1`).
+"One slot of a thread's tabling handles: the worklist or component a handle names, and the check of the handle (pl-tabling.c)."
+mutable struct tbl_handle_slot{T}
+    object::Union{Nothing, tbl_worklist{T}, tbl_component{T}}   # Object (nothing if free)
+    check::Int                                                  # serial<<1|kind, or TBL_HANDLE_FREE
+    next::Int                                                   # If free: next free slot + 1, or 0
+end
+
+# PORT: pl-global.h tabling as tbl_handles
+# DIVERGES: `slots` is a vector of its `size` slots, filled when it grows (upstream: `PL_realloc`, memory not initialised);
+# `PL_free` of it is a new empty vector.
+"The Prolog handles of the worklists and components of one thread (pl-global.h `LD->tabling.handles`; pl-tabling.c)."
+mutable struct tbl_handles{T}
+    slots::Vector{tbl_handle_slot{T}}                           # Handle index --> object
+    size::Int                                                   # Allocated slots
+    top::Int                                                    # Slots in use or on the free list
+    free::Int                                                   # First free slot + 1, or 0
+    live::Int                                                   # # slots in use
+    serial::Int                                                 # Serial of the last handle
+end
+tbl_handles{T}() where {T} = tbl_handles{T}(tbl_handle_slot{T}[], 0, 0, 0, 0, 0)
+
 # PORT: pl-global.h tabling as ld_tabling
 # DIVERGES: only the private, single-thread fields; NOT PORTED, each to its owner (docs/architecture.md TB0):
 # `idg_registry` (TB6: `nothing` is NULL); `start_nodes` (`node_array`, TB1) is a nullable `Vector{Int}` of node ids by `start_id` (no blocks: DIVERGES, no concurrent readers). `variant_table`
@@ -655,11 +686,9 @@ mutable struct ld_tabling{T}
     idg_current::Int                                            # Current node in IDG (a term_t; 0: none)
     free_objects::tbl_free_objects{T}                           # Freed objects (TBL_FREE_*)
     restraint::tbl_restraint{T}                                 # the restraints
-    # DIVERGES (TAB1 TB2): upstream hands Prolog the ADDRESS of a worklist or component (`PL_unify_pointer`) and reads it
-    # back (`PL_get_pointer`, then a magic check); here the handle is an index into `pointers` (`nothing`: a freed slot,
-    # reused through `free_pointers`, as freed memory is). src/pl-tabling.jl `tbl_pointer!`, `tbl_pointer_release!`.
-    pointers::Vector{Union{Nothing, tbl_worklist{T}, tbl_component{T}}}  # handle -> worklist or component
-    free_pointers::Vector{Int}                                  # handles to reuse
+    # SYNC3 P11 (pl-global.h af9e2e7e): Prolog hands out integer handles of worklists and components (pl-tabling.c
+    # `new_tbl_handle`), no longer their address. src/pl-tabling.jl.
+    handles::tbl_handles{T}                                     # Prolog handles (see pl-tabling.c)
     # DIVERGES (TAB1 TB2): the states of `'$tbl_wkl_work'/6` (upstream: `allocForeignState`, its address the REDO_PTR context)
     # are records of this pool, the index the context (as between/3's `between_states`).
     wkl_states::foreign_state_pool{wkl_step_state{T}}           # ('$tbl_wkl_work'/6's REDO_PTR states)
@@ -678,7 +707,7 @@ ld_tabling{T}() where {T} = ld_tabling{T}(
     UInt32(0),
     0, 0,
     tbl_free_objects{T}(), tbl_restraint{T}(),
-    Union{Nothing, tbl_worklist{T}, tbl_component{T}}[], Int[],
+    tbl_handles{T}(),
     foreign_state_pool{wkl_step_state{T}}(), foreign_state_pool{idg_edge_state{T}}(),
     Dict{Int, idg_mdep{T, idg_node{T}}}(), IdDict{idg_mdep{T, idg_node{T}}, Int}(), 0
 )

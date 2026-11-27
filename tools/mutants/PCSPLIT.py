@@ -17,7 +17,7 @@ TARGETS = [
 ]
 F = "tools/port_check.jl"
 T = ["test/test_port_check.jl"]
-OK = "port_path_ok(f.rel, f.upstreams[1].repo, f.upstreams[1].path) || push!("
+OK = "port_path_ok(f.rel, ups[1].repo, ups[1].path) ||"
 MUTANTS = [
     # ── port_path_ok ──
     dict(id="PS1 the mirrored path stops being right", file=F, targets=T,
@@ -38,9 +38,9 @@ MUTANTS = [
          new='''"swipl-devel src/pl-gc.c", ())'''),
     # ── the call site in port_check ──
     dict(id="PS6 port_check ignores the table", file=F, targets=T,
-         old=OK, new='''f.rel == want || push!('''),
+         old=OK, new='''f.rel == want ||'''),
     dict(id="PS7 port_check accepts every path", file=F, targets=T,
-         old=OK, new='''true || push!('''),
+         old=OK, new='''true ||'''),
     # ── the table ──
     dict(id="PS8 a listed part dropped", file=F, targets=T,
          old='''"src/pl-gctrail.jl", "src/pl-gcwalk.jl"''',

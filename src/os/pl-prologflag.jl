@@ -2090,6 +2090,9 @@ function initPrologFlags!(gd::PL_global_data{T})::Nothing where {T}
     setPrologFlag(gd, "unload_foreign_libraries", FT_BOOL, false, 0)
     setPrologFlag(gd, "gc", FT_BOOL, true, PLFLAG_GC)
     setPrologFlag(gd, "trace_gc", FT_BOOL, false, PLFLAG_TRACE_GC)
+    # swipl-devel af9e2e7e (pl-prologflag.c:2609; 25ebf765). DIVERGES (SYNC3): the flag exists with upstream's default `true` but the kernel
+    # has no minor collector, so no code reads it (GEN-GC DIVERGES block, src/pl-gc.jl); a collection is always a major one.
+    setPrologFlag(gd, "gc_generational", FT_BOOL, true, PLFLAG_GC_GENERATIONAL)
     setPrologFlag(gd, "agc_margin", FT_INTEGER, 10000)
     setPrologFlag(gd, "agc_close_streams", FT_BOOL, false, PLFLAG_AGC_CLOSE_STREAMS)
     setPrologFlag(gd, "table_space", FT_INTEGER, 1 << 30)

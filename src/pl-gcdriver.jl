@@ -93,8 +93,11 @@ end
 # PORT: pl-gc.c setStartOfVMI as gc_walk_start_of_vmi!
 # DIVERGES: (1) the code is the clause's `codes` vector, `vm.pc`/`vm.pc_start_vmi` are 1-based indexes into it (0 = NULL), `argp`/`argp0` positions
 # (`argp` only a slot of the frame here: a write-mode ARGP on the global stack is never read at `adepth > 0`); (2) `stepPC` is `pc + 1 + codeTable(op).arguments`;
-# (3) the `assert`s are debug-only upstream and are not kept; (4) `H_SMALLINTW` and the other `CODES_PER_WORD` variants do not exist; (5) as at the pin there is NO case
-# for `H_RFUNCTOR`/`H_RLIST`/`B_RFUNCTOR`/`B_RLIST`: they neither change `adepth` nor move `argp` (ported as is). The pure part of `setStartOfVMI`: the walk over one clause's code;
+# (3) the `assert`s are debug-only upstream and are not kept; (4) `H_SMALLINTW` and the other `CODES_PER_WORD` variants do not exist; (5) `H_RFUNCTOR`/`H_RLIST` at
+# `adepth == 0` (a compound in the LAST head argument, no `H_POP` follows: SYNC3, 110adeab) set `argp0` and `adepth = GC_NO_ADEPTH`, and `I_ENTER`/`I_SSU_*` reset `adepth` and
+# `argp0`; at depth > 0, and `B_RFUNCTOR`/`B_RLIST`, they neither change `adepth` nor move `argp` (as upstream). DIVERGES (SYNC3): upstream's `H_PTRINT` (an `argp` step with
+# `H_SMALLINT`; 0bf03c7f, the pointer integers of TAG1) is NOT written: the kernel declares no `H_PTRINT`; the TAG1 landing adds it to the first arm.
+# The pure part of `setStartOfVMI`: the walk over one clause's code;
 # `as`: the C function is split in two, and `setStartOfVMI` below (the finder, which picks the clause's code) carries the C name.
 "Walk the clause code from its start to the instruction that holds `vm.pc`, tracking `argp`, `argp0`, `adepth`, `in_body`; sets `vm.pc_start_vmi` (0 when none holds it) (pl-gc.c `setStartOfVMI`)."
 function gc_walk_start_of_vmi!(vm::vm_state, codes::Vector{code}, base::Int)::Nothing
@@ -123,11 +126,19 @@ function gc_walk_start_of_vmi!(vm::vm_state, codes::Vector{code}, base::Int)::No
             vm.adepth += 1
         elseif op == B_FUNCTOR || op == B_LIST
             vm.adepth += 1
+        elseif op == H_RFUNCTOR || op == H_RLIST
+            if vm.adepth == 0                           # last head argument: no H_POP (110adeab)
+                vm.argp0 = vm.argp
+                vm.argp += 1
+                vm.adepth = GC_NO_ADEPTH                # no H_POP follows
+            end
         elseif op == H_POP || op == B_POP
             vm.adepth -= 1
             vm.adepth == 0 && (vm.argp0 = 0)
         elseif op == I_ENTER || op == I_SSU_COMMIT || op == I_SSU_CHOICE
             vm.in_body = true
+            vm.adepth = 0                               # assert(adepth == 0 || adepth == NO_ADEPTH), then reset
+            vm.argp0 = 0
         end                                             # B_UNIFY_EXIT: nothing (an assert upstream)
         pc = nxt
     end
@@ -367,11 +378,16 @@ end
 # the heap; (4) the kernel order of the trail half (`mark_phase` before `tag_trail`, `gc_trail_phase` for the
 # `compact_trail` call: see the header); (5) `assert(LD->mark_bar <= gTop)` (:4517, a debug assertion that would fail
 # for the `NO_MARK_BAR` case upstream restores right after) is a CLAMP: a bar above the new top is lowered to it (every
-# cell above a lowered bar is newer than the choicepoint, so only trailing becomes more eager, never less);
+# cell above a lowered bar is newer than the choicepoint, so only trailing becomes more eager, never less; swipl-devel af9e2e7e replaced the assert by
+# an unconditional `if ( LD->mark_bar > gTop ) LD->mark_bar = gTop` ("see gen_bar. Keep it safe"): the kernel's guard `!no_mark_bar` is equal in effect,
+# the `NO_MARK_BAR` value being restored by the `finally` right after);
 # (6) the flags (`blocked`, `active`, the bar) are restored by a `finally`: a collection that throws (a corrupted
 # heap, `error`) leaves the engine unblocked; (7) `trimStacks` takes `LD->trim_stack_requested` (G1-A; set by `outOfStack!`, cleared by `trimStacks!`;
-# the writers of pl-wam.c:1976 and :1995 are the resumeAfterException/exceptionUnwindGC edits of G1-C/D, thread_idle(long) is not a kernel predicate); (8) the `trace_gc` message (`verbose`) and the
-# `CHK_SECURE` checks are not kept; (9) `collect_phase`'s count of references to value-table boxes (ruling D1) is
+# the writers of pl-wam.c:1976 and :1995 are the resumeAfterException/exceptionUnwindGC edits of G1-C/D, thread_idle(long) is not a kernel predicate); (8) the `trace_gc` message (`verbose`; at af9e2e7e
+# a queued `gc_trace_event` and its `gc_trace_handler`: the TRACE_GC block of pl-gc.jl, work item "pl-gc delta af9e2e7e") and the
+# `CHK_SECURE` checks are not kept; swipl-devel af9e2e7e also moves `profExit(prof_node)` after `gc_stat_end` (the profiler adds the gained memory):
+# no twin, the kernel has no profiler (PROF1), and drops the `%% GC:` prefix print; the generational wiring (`minor`, `young_base`, `gen_bar`,
+# `gen_roots_to_term_refs`, the `force_major` retry) is the GEN-GC block of pl-gc.jl (`young_base == gBase` always); (9) `collect_phase`'s count of references to value-table boxes (ruling D1) is
 # non-negative by construction; the driver does not use it.
 """
     garbageCollect(ld, reason; vmi_state_of = nothing) -> boolex_t
@@ -463,7 +479,7 @@ function garbageCollect(
     trimStacks!(ld, ld.trim_stack_requested)        # trimStacks(LD->trim_stack_requested)
     ld.lTop = preShiftLTop
 
-    gc_stat_end!(ld, ld.gc.stats)
+    gc_stat_end!(ld, ld.gc.stats, false)            # gc_stat_end(&LD->gc.stats, minor): never a minor GC here (GEN-GC, pl-gc.jl)
 
     return shiftTightStacks!(ld)
 end

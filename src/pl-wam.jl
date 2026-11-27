@@ -178,6 +178,11 @@ function TrailAssignment!(ld::PL_local_data{T}, p::Int)::Nothing where {T}
         _trail_push!(ld, _trail_addr(p, TRAIL_GLOBAL))  # (tTop++)->address = p
         _trail_push!(ld, tagTrailPtr(old))          # (tTop++)->address = tagTrailPtr(old)
     end
+    # DIVERGES (SYNC3, 25ebf765): upstream adds `else if ( unlikely(p < LD->gen_bar) ) gen_remember(p);`
+    # (generational stack GC, flag gc_generational; `LD->gen_bar` is lowered in `__do_undo` too: `if (
+    # LD->gen_bar > ngtop ) LD->gen_bar = ngtop`). The kernel has no generational collector (G1 is a
+    # full mark/compact one), so there is no `gen_bar` and no remembered set; the old-generation branch
+    # and the `__do_undo` lowering are NOT PORTED.
     return nothing
 end
 
@@ -1300,6 +1305,10 @@ function m_qualify_argument(
                 w = aw                              # p = ap
                 depth -= 1
                 if depth == 0 && !is_acyclic_cells(ld, ap)  # if ( --depth == 0 && !is_acyclic(p) )
+                    # PL_error() uses the local stack (6eadd6b0)
+                    ld.lTop = argFrameP(
+                        ld.frames[fr].base, (ld.frames[fr].predicate::Definition{T}).arity
+                    )  # lTop = argFrameP(fr, arity)
                     t = pushWordAsTermRef(ld, (ak, aw, ap))  # term_t t = pushWordAsTermRef(p)
                     PL_error(ld, ERR_TYPE, mk_sym(T, :acyclic_term), t)
                     popTermRef(ld)
@@ -1410,20 +1419,21 @@ function discardForeignFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
         _fcall_ndet(func, ld, 0, context)           # CALL_FCUTTED(argc, function, &context)
     end
     PL_close_foreign_frame(ld, fid)
+    f.fctx = UInt(0)                                # fr->clause = NULL (42951bca): the frame is not discarded again,
+    # e.g. when the debugger handles the redo port and an exception unwinds it
     return nothing
 end
 
 # PORT: pl-wam.c discardFrame
 # DIVERGES: a foreign frame's redo context is its `fctx` (see `localFrame`), where upstream's is
-# `fr->clause`.
+# `fr->clause`. Since 42951bca `discardForeignFrame` clears it itself (upstream and here).
 "Frame `fr` is discarded (pl-wam.c)."
 function discardFrame(ld::PL_local_data{T}, fr::Int)::Nothing where {T}
     f = ld.frames[fr]
     def = f.predicate::Definition{T}
     if (def.flags & P_FOREIGN) != 0
         if f.fctx != 0
-            discardForeignFrame(ld, fr)
-            f.fctx = UInt(0)                        # fr->clause = NULL
+            discardForeignFrame(ld, fr)             # (clears fr->clause itself, 42951bca)
         end
     else
         f.clause = nothing              # leaveDefinition() may destroy clauses (no more)
@@ -2613,7 +2623,8 @@ function initVM(dc::Procedure{T})::Tuple{Clause{T}, ClauseRef{T}} where {T}
         code[I_EXITQUERY],              # cl->code_size = 1; cl->codes[0] = encode(I_EXITQUERY)
         T[],
         Procedure{T}[],
-        UInt32(0), UInt32(0), UInt32(0)  # no source
+        UInt32(0), UInt32(0), UInt32(0),  # no source
+        clsize_t(0)                     # cl->shared_base (b9caf216 af9e2e7e)
     )
     cref = ClauseRef{T}(nothing, word(0), cl, nothing)     # GD->clauses.top_cref.value.clause = cl
     return (cl, cref)
@@ -3042,6 +3053,7 @@ function PL_next_solution_guarded(
         fid = q.foreign_frame
         q.foreign_frame = 0
         PL_close_foreign_frame(ld, fid)
+        ld.environment_frame = FR                   # environment_frame = FR; shallow backtracking keeps it (e285ef04)
         @goto shallow_backtrack                     # BODY_FAILED
     else                                            # first call
         @goto depart_or_retry_continue
@@ -4140,6 +4152,9 @@ function PL_next_solution_guarded(
     # PORT: pl-vmi.c S_TRIE_GEN
     # (pl-vmi.c:5937-5980 at the pin.) The supervisor of `trie_gen_compiled/2,3`: the first argument is a trie, the clause
     # reference of its compiled clause, or `fail`; compile the trie once (`compile_trie`) and run its clause in this frame.
+    # SYNC3 (0fa79d80): upstream's `clause_clref(dbref)` is now `clause_dbref(dbref)` (returns the `Clause`, a thread-local blob) and a
+    # clause that is not a trie clause is a `trie_gen_type_error` (`is_trie_clause`); `trie_clause_cref(cl)` is `_trie_clause_cref`/a
+    # reference of its own, as below. `clause_clref` is the kernel's name (sync_p01 keeps it as an alias of `clause_dbref`).
     # DIVERGES: the argument's atom word is read with `_deref_loc`; `clause_clref` returns the clause, so a trie's reference is
     # the one `compile_trie` kept (`_trie_clause_cref`) and a clause reference argument runs from a reference of its own, as the
     # meta-call's clause does (`I_CALLN`); `lTop` is raised past the arguments (`setLTop!`) before `compile_trie` opens its foreign frame, where upstream sets
@@ -4175,6 +4190,8 @@ function PL_next_solution_guarded(
         stg_w == stg_fail && @goto deep_backtrack   # if ( dbref == ATOM_fail ) FRAME_FAILED
         trie_maybe_discard_nodes(gd, stg_tr)
         tc_cref = _trie_clause_cref(stg_tr)         # cref = clause_clref(dbref)
+    elseif !is_trie_clause(gd, stg_cl)              # } else if ( !is_trie_clause(cl) ) (0fa79d80)
+        @goto trie_gen_type_error                   # goto trie_gen_type_error
     else
         tc_cref = ClauseRef{T}(nothing, word(0), stg_cl, nothing)  # a clause reference argument: a reference of its own
     end
@@ -4486,7 +4503,7 @@ function PL_next_solution_guarded(
     # DIVERGES: the trail test as `I_SSU_CHOICE`'s. The pop of the frame's choice point (`lTop =
     # (LocalFrame)BFR; BFR = BFR->parent`) lowers `lTop` with `lowerLTop!`, which drops its record
     # (decision 3); no record lies above it — head unification makes no frame and no choice point
-    # (asserted, design H3). No `DiscardMark`, as upstream (design D2). NOT PORTED: the debugger's
+    # (asserted, design H3). `DiscardMark(BFR->mark)` before the pop. NOT PORTED: the debugger's
     # branch (`BFR->type = CHP_DEBUG`; its debugger branches are not taken: `debug/0` sets `debugstatus.debugging`
     # since R2 F1c, but the run loop reads it only in S_TABLED).
     @label I_SSU_COMMIT
@@ -4497,6 +4514,7 @@ function PL_next_solution_guarded(
     ssc_ch = ld.BFR
     ssc_base = ld.choices[ssc_ch].base
     @assert _no_record_above(ld, ssc_base) "I_SSU_COMMIT: a record above the frame's choice point"
+    DiscardMark(ld, ld.choices[ssc_ch].mark)        # DiscardMark(BFR->mark)
     ld.BFR = ld.choices[ssc_ch].parent              # BFR = BFR->parent
     lowerLTop!(ld, ssc_base)                        # lTop = (LocalFrame)BFR
     @goto I_ENTER                                   # VMI_GOTO(I_ENTER)
@@ -4685,6 +4703,7 @@ function PL_next_solution_guarded(
         if !da_rc
             @goto b_throw                           # THROW_EXCEPTION
         end
+        setGenerationFrame(gd, ld, FR)              # see the database as the undo left it (6fd5dd28)
     end
     da_depth = Int(levelFrame(ld.frames[FR]))                   # size_t depth = levelFrame(FR)
     if da_depth > ld.depth_info_reached
@@ -5256,6 +5275,7 @@ function PL_next_solution_guarded(
     @label I_EXITCLEANUP
     iecl_b = ld.BFR
     while iecl_b != 0 && ld.choices[iecl_b].type == CHP_DEBUG
+        DiscardMark(ld, ld.choices[iecl_b].mark)    # DiscardMark(BFR->mark)
         iecl_b = ld.choices[iecl_b].parent
     end
     if iecl_b != 0 && ld.choices[iecl_b].frame == FR && ld.choices[iecl_b].type == CHP_CATCH
@@ -5536,6 +5556,18 @@ function PL_next_solution_guarded(
     @label I_CUT
     ld.frames[FR].flags &= ~FR_SSU_DET              # clear(FR, FR_SSU_DET)
     if ld.BFR == 0 || ld.choices[ld.BFR].base <= ld.frames[FR].base   # (LocalFrame)BFR <= FR
+        @goto next_instruction
+    end
+    cu_ch = ld.choices[ld.BFR]
+    if cu_ch.frame == FR &&
+        (cu_ch.parent == 0 || ld.choices[cu_ch.parent].base <= ld.frames[FR].base)
+        # if ( BFR->frame == FR && (LocalFrame)BFR->parent <= FR ) (512cf0f0): only our own choice, no frames
+        # to discard (discardChoicesAfter()); a NULL parent (0) is below every frame
+        DiscardMark(ld, cu_ch.mark)                 # DiscardMark(BFR->mark)
+        ld.BFR = cu_ch.parent                       # BFR = BFR->parent
+        cu_clause = (ld.frames[FR].clause::ClauseRef{T}).clause::Clause{T}
+        setLTop!(ld, argFrameP(ld.frames[FR].base, Int(cu_clause.variables)))   # (the choice's record goes with the lowering)
+        ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.lTop, 0), ph)
         @goto next_instruction
     end
     @SAVE_REGISTERS(QID)
@@ -6290,7 +6322,7 @@ function PL_next_solution_guarded(
     ARGP = argp_t{T}(ARGP_SLOT, argFrameP(ld.frames[FR].base, 0), ph)      # ARGP = argFrameP(FR, 0)
     DEF = gd.procedures_trie_gen_compiled2.definition::Definition{T}       # FR->predicate = DEF = GD->procedures...
     setFramePredicate(ld.frames[FR], DEF)
-    st_cl = clause_clref(gd, _atom_value(ld, st_clref))                    # ClauseRef cref = clause_clref(clref)
+    st_cl = clause_clref(gd, _atom_value(ld, st_clref))                    # Clause cl = clause_dbref(clref) (0fa79d80; sync_p01's alias)
     if st_cl === nothing                            # single answer: VMH_GOTO(trie_gen_single, trie_single_value_node(symbol_trie(clref)))
         tgs_tr = symbol_trie(gd, st_clref)::trie{T}
         tgs_answer = trie_single_value_node(tgs_tr)
@@ -6486,6 +6518,7 @@ function PL_next_solution_guarded(
             PL_clear_foreign_exception(ld, FR)
         end
         @assert ld.choices[ld.BFR].value_pc == PC
+        DiscardMark(ld, ld.choices[ld.BFR].mark)    # DiscardMark(BFR->mark)
         ld.BFR = ld.choices[ld.BFR].parent
         ld.frames[FR].fctx = UInt(0)                # FR->clause = NULL
         @goto exit_checking_wakeup
@@ -6494,6 +6527,7 @@ function PL_next_solution_guarded(
         ld.frames[FR].fctx = UInt(0)                # FR->clause = NULL
         ld.exception_term != 0 && @goto b_throw     # THROW_EXCEPTION
         @assert ld.choices[ld.BFR].value_pc == PC
+        DiscardMark(ld, ld.choices[ld.BFR].mark)    # DiscardMark(BFR->mark)
         ld.BFR = ld.choices[ld.BFR].parent
         @goto deep_backtrack                        # FRAME_FAILED
     end

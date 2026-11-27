@@ -233,8 +233,8 @@ MUTANTS = [
          old='''            open(path; write=true, create=true, append=true)''',
          new='''            open(path; write=true, create=true)'''),
     dict(id="S1-47 a held reference does not erase a closed stream", file=S, targets=T,
-         old='''    s.references == 0 || (s.erased = true)      # else unallocStream(): Julia's GC frees it''',
-         new='''    nothing                                     # else unallocStream(): Julia's GC frees it''',
+         old='    s.erased = true\n    S__mark_closed(s) ',
+         new='    S__mark_closed(s) ',
          equivalent="`erased` is read only by get_stream_handle, whose stream comes from the table, and freeStream has cleared "
                     "the table entry of a closed stream (src/os/pl-file.jl:692; read at :310): its blob names no stream either way"),
     dict(id="S1-48 aliasStream takes no reference", file=F, targets=T,

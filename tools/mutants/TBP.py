@@ -114,7 +114,7 @@ MUTANTS = [
          new='const SIZEOF_TABLE = 33\n'),
     dict(id='TBP-K2 SIZEOF_KVS is 41 (KILL TP testset sizeofTablePP)',
          file=INC, targets=[TP],
-         old='const SIZEOF_KVS = 40\n',
+         old='const SIZEOF_KVS = 48\n',
          new='const SIZEOF_KVS = 41\n'),
     dict(id='TBP-K3 SIZEOF_SYMBOL is 17 (KILL TP testset sizeofTablePP and tp05)',
          file=INC, targets=[TP],

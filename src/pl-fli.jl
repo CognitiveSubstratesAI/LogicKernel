@@ -7,6 +7,7 @@
 # COPYRIGHT: VU University Amsterdam
 # COPYRIGHT: CWI, Amsterdam
 # COPYRIGHT: SWI-Prolog Solutions b.v.
+# SYNC3 L1 (pl-fli.c at af9e2e7e): only PL_cvt_i_uint is ported (int_range_error, from P02); the rest is plumbing or E-tier, see evidence/R2/sync_l1_handoff.md.
 # PIN1 ledger (V10.1.20): re-cite only, no code change (cbf4e189..18168e62 compared, D-0447 Q1) — pl-fli.c: access-only (d755bdc4), the validate_api flag ported; PL_get_arg_values, PL_get_list_slice and the validateAPI gate are owner FLI1 (docs/architecture.md, deferred owners); pl-fli.h: the validate_api flag ported; the validateAPI macros are owner FLI1 (docs/architecture.md, deferred owners).
 # THE TERM REFERENCES of SWI-Prolog's foreign language interface (pl-fli.c): a `term_t` is a
 # position on the local stack (src/pl-incl.jl § the local stack), allocated at `lTop` inside the
@@ -571,17 +572,19 @@ end
 
 # PORT: pl-fli.c PL_cvt_i_uint
 # (pl-fli.c:1252-1263 at the pin, since MOD4)
-# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`;
-# `PL_representation_error("uint")` is its `PL_error(..., ERR_REPRESENTATION, ATOM uint)` (pl-error.c:866-872).
+# (SYNC3, af9e2e7e: `return int_range_error(t, ATOM_uint, true)` replaces `PL_representation_error("uint")`;
+# depends on P02: `int_range_error` and `ERR_REPRESENTATION_CULPRIT` are in src/pl-error.jl, SYNC3 P02)
+# DIVERGES: returns the value, or `nothing` after the error, where upstream writes it through `c`.
 """
-The C `unsigned int` term reference `t` holds, or `nothing` after raising `representation_error(uint)`
-(an integer out of range) or `type_error(integer, T)` (pl-fli.c).
+The C `unsigned int` term reference `t` holds, or `nothing` after raising `representation_error(uint(Culprit))`
+(an integer out of range), `domain_error(not_less_than_zero, T)` (a negative integer: `int_range_error`) or
+`type_error(integer, T)` (pl-fli.c).
 """
 function PL_cvt_i_uint(ld::PL_local_data{T}, t::term_t)::Union{Nothing, Int} where {T}
     c = PL_get_uint(ld, t)
     c === nothing || return c                               # if ( PL_get_uint(t, c) ) return true
     if PL_is_integer(ld, t)
-        PL_error(ld, ERR_REPRESENTATION, mk_sym(T, :uint))  # PL_representation_error("uint")
+        int_range_error(ld, t, mk_sym(T, :uint), true)      # return int_range_error(t, ATOM_uint, true)
         return nothing
     end
     PL_error(ld, ERR_TYPE, mk_sym(T, :integer), t)
@@ -809,6 +812,10 @@ end
 # (0 for upstream's NULL), an unqualified term getting the context module when none is given (since MOD2;
 # `user` outside a frame); no `flags`
 # (`SM_NOCREATE`: its callers are not ported).
+# DIVERGES (SYNC3, af9e2e7e, 77c3148d): upstream pins the returned module (`pinnedContextModule`, `MG_PINNED`) and
+# has `PL_strip_module_ref` / `PL_strip_module_ex_ref`, which return an unpinned module the caller releases with
+# `releaseModuleRef`. The kernel's module is an index into `gd.modules` that is never collected, so the pin is a
+# no-op and the `_ref` variants would equal this function (not ported; held with module GC).
 """
     PL_strip_module(gd, ld, raw, m, plain) -> (ok, m)
 
@@ -866,6 +873,9 @@ end
 # DIVERGES: the module is an INDEX into `gd`'s table (0 for upstream's NULL), passed in and returned
 # with the result; with none given, an unqualified term gets the context module (since MOD2; see
 # `stripModule_cells`). No `globalizeTermRef` (a slot's variable is a global cell already).
+# DIVERGES (SYNC3, af9e2e7e, 77c3148d): upstream's `PL_strip_module_ex` calls `strip_module_ex(..., NULL)` and pins the
+# module (`MG_PINNED`); `PL_strip_module_ex_ref` returns it unpinned for `releaseModuleRef`. The kernel's module is an
+# index that is never collected: the pin is a no-op, the `_ref` variant equals this function (not ported).
 """
     PL_strip_module_ex(gd, ld, raw, m, plain) -> (ok, m)
 
@@ -1170,6 +1180,8 @@ end
 # Prolog term can hold); an atom that has none is skipped. NOT PORTED: the atom GC (`bump_atom_references`,
 # `PL_unregister_atom`, `ATOM_garbage_collected`, `CHK_ATOM_GARBAGE_COLLECTED`): with no AGC an atom of the
 # table is never freed under the enumeration, so the walk takes no reference.
+# swipl-devel af9e2e7e: upstream's `bump_atom_references(atom, refs)` is `bump_scanned_references(atom, refs,
+# btype)` (local-atom aware: a local atom of another thread is skipped); no twin, the list above names it.
 """
 The worker of `current_blob/2`: enumerate the atoms of the table by index, `state` the next index to try
 (pl-atom.c).
@@ -1258,6 +1270,12 @@ end
 # is left out: no atom is ever freed (src/pl-atom.jl: with the GC step), so a collection reclaims nothing and the call
 # succeeds; the `GD->halt.cleaning` and `gc_active` early returns (both `true`) have no twin (no halt, one thread). A program
 # that reads `statistics(agc, N)` after the call sees 0 where swipl counts the collection.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e): the atom GC stays REFUSED. Also held: `collectLocalAtoms` (the calling
+# thread's own local atoms are collected first), `collectFunctors()` after `markAtomsInTries()` (8783a5bd, functor
+# GC) and the reworked GC of the atom table (thread-local blobs, `atom_mark_ctx`). The same held set in pl-gc.c: `markAtomsOnStacks(ld, ctx)`
+# with an `atom_mark_ctx {mark, safe}` (the local sweep marks through `mark`; `safe` trusts the indirect headers), `markAtomsOnGlobalStack` and
+# `markAtomsOnLocalStack` taking `mark` and calling `markFunctor` for a functor cell (`ld->atoms.volatile_functor`, clauses compiled on the stack),
+# `markAtomsFindall(ld, mark)`, `markAtomsThreadMessageQueue(ld, mark)`.
 "`garbage_collect_atoms`: run the atom garbage collector (pl-atom.c); here no atom is freed, so it succeeds."
 function pl_garbage_collect_atoms0(ld::PL_local_data{T})::foreign_t where {T}
     return FTRUE
@@ -1426,6 +1444,10 @@ PL_get_float(ld::PL_local_data{T}, t::term_t) where {T} = get_float(ld, t, false
 "The float term reference `t` holds (a rational is promoted), or `nothing` after raising `type_error(float, T)` (pl-fli.c)."
 PL_get_float_ex(ld::PL_local_data{T}, t::term_t) where {T} = get_float(ld, t, true)
 
+# DIVERGES (SYNC3, af9e2e7e, 0bf03c7f), held with the pl-atom/pl-funct pointer-integer changes: upstream's
+# `PL_get_pointer` accepts only pointer integers (`isPtrInt`), and `PL_put_pointer` / `PL_unify_pointer` create them
+# (`consPtrInt`; a plain integer when `O_BIG_ADDRESS` and the address does not fit). The kernel has no
+# `PL_*_pointer`: it holds no C pointers (tabling hands out handle indices; `PL_get_pointer_ex` in src/pl-error.jl reads an int64).
 # PORT: pl-fli.h PL_put_intptr
 # DIVERGES: `PL_put_int64`'s work, inline: the reference holds the integer — its word since L1e e1 (a tagged
 # integer, or a value-table word under `_slot_store!`'s older-slot rule).

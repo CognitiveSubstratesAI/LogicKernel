@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-atom.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-atom.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/ATOMS @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
@@ -2365,6 +2365,10 @@ end
 # PORT: pl-atom.c allocateAtomBlock
 # DIVERGES: block `idx` is a vector of `2^idx` atoms, `blocks[idx + 1]`, indexed from 1
 # (upstream offsets the pointer by `-bs` to index it directly; see `fetchAtomArray`).
+# DIVERGES (SYNC3, swipl-devel af9e2e7e): upstream no longer initialises the slots of a new block
+# (`alloc_lazy_zeroed`: a virgin slot has references 0 and type NULL, i.e. `ATOM_TYPE_IS_INVALID`,
+# no `<virgin>` name); Julia must build the atom structs, so every slot is built here with
+# `ATOM_TYPE_INVALID` and the name `<virgin>`.
 "Allocate block `idx` of the atom array (pl-atom.c): `2^idx` invalid atoms."
 function allocateAtomBlock(atoms::atoms_t, idx::Int)::Nothing
     if atoms.array[idx + 1] === nothing
@@ -2382,6 +2386,8 @@ function allocateAtomBlock(atoms::atoms_t, idx::Int)::Nothing
 end
 
 # PORT: pl-atom.c reserveAtom
+# swipl-devel af9e2e7e: `assert(ATOM_TYPE_IS_INVALID(a->type))`; the kernel keeps the equal test
+# `a.type === ATOM_TYPE_INVALID` (the `ATOM_TYPE_IS_INVALID` macro is not in this base).
 "Reserve the next free atom slot (pl-atom.c): a hole below `highest`, else `highest`."
 function reserveAtom(atoms::atoms_t)::atom
     # O_ATOMGC: try to find a hole!
@@ -2428,6 +2434,8 @@ function reserveAtom(atoms::atoms_t)::atom
 end
 
 # PORT: pl-atom.c same_name
+# swipl-devel af9e2e7e: `int` became `bool`, and a comment on the CAS re-check of
+# `GD->atoms.rehashing` (races between lookupBlob and rehashAtoms; one thread here).
 "`a`'s name is the `length` bytes of `s` (pl-atom.c): never a C-string comparison."
 function same_name(a::atom, s::AbstractVector{UInt8}, length::Int, type::PL_blob_t)::Bool
     if type.flags & PL_BLOB_NOCOPY == 0
@@ -2437,19 +2445,51 @@ function same_name(a::atom, s::AbstractVector{UInt8}, length::Int, type::PL_blob
     end
 end
 
+# The atom table holds the ordinary `PL_BLOB_UNIQUE` atoms and (upstream, swipl-devel af9e2e7e) the
+# local ones, which are not in `GD->statistics.atoms`. `lookupBlob` and `rehashAtoms` must agree on
+# when the table needs a rehash, hence the one helper.
+# PORT: pl-atom.c atomTableNeedsRehash
+# DIVERGES (SYNC3): upstream tests `buckets * 2 < statistics.atoms + GD->atoms.local_unique`; the
+# kernel has no local atoms (one thread, no atom GC), so `local_unique` is 0 and not a field here.
+"Does the atom hash table need a rehash? (pl-atom.c)"
+atomTableNeedsRehash(atoms::atoms_t)::Bool =
+    atoms.table.buckets * 2 < atoms.statistics_atoms
+
 # PORT: pl-atom.c lookupBlob
-# DIVERGES: single-threaded (see the file header); returns `(atom_t, new)` where upstream writes
-# `*new`; `PL_BLOB_NOCOPY` types hash the bytes too (the kernel has no pointer to hash; NOCOPY
-# types are not ported). NOT PORTED: `considerAGC` every 128th atom, the type's `acquire` hook
-# (text types have none), `add_type_live`.
+# swipl-devel af9e2e7e: `lookupBlob(s, len, type, new)` is `lookupBlobEx(s, len, type, new,
+# ison(type, PL_BLOB_LOCAL))`.
+# DIVERGES (SYNC3): `PL_BLOB_LOCAL` is not defined in this kernel and no kernel type has it, so the
+# `local_` argument is always `false` here.
 """
     lookupBlob(atoms, s, length, type) -> (atom_t, new)
 
 The atom of type `type` whose name is the `length` bytes of `s`, created if there is none
 (pl-atom.c): `new` says it was created.
 """
-function lookupBlob(
+lookupBlob(
     atoms::atoms_t, s::AbstractVector{UInt8}, length::Int, type::PL_blob_t
+)::Tuple{UInt64, Bool} = lookupBlobEx(atoms, s, length, type, false)
+
+# PORT: pl-atom.c lookupBlobEx
+# DIVERGES: single-threaded (see the file header); returns `(atom_t, new)` where upstream writes
+# `*new`; `PL_BLOB_NOCOPY` types hash the bytes too (the kernel has no pointer to hash; NOCOPY
+# types are not ported). NOT PORTED: `considerAGC` every 128th atom, the type's `acquire` hook
+# (text types have none), `add_type_live`.
+# DIVERGES (SYNC3, swipl-devel af9e2e7e): `local_` (upstream `local`, a Julia keyword; a PL_BLOB_UNIQUE atom only the calling thread's data
+# refers to, `reserveLocalAtom`, promotion by a lookup of another thread, `lookupLocalBlob` for
+# `PL_BLOB_LOCAL|NOCOPY` non-unique types, `bump_local_references`) is accepted and IGNORED: one
+# thread, no atom GC, so a "local" atom is an ordinary atom (as `textToLocalAtom` already is).
+# The hash of a `PL_BLOB_WCHAR` type is upstream's `MurmurHashWide((pl_wchar_t*)s, length, seed)`;
+# on a little-endian 4-byte `wchar_t` that equals `MurmurHashAligned2` over the same bytes, which is
+# how `ucs_atom` stores its text: no code change, the one `MurmurHashAligned2` call stands for both.
+# Also not ported: the `goto redo` for an atom being GCed (`!bump_atom_references`).
+"""
+    lookupBlobEx(atoms, s, length, type, local_) -> (atom_t, new)
+
+`lookupBlob` with the `local` flag (pl-atom.c), named `local_` here (`local` is a keyword); ignored.
+"""
+function lookupBlobEx(
+    atoms::atoms_t, s::AbstractVector{UInt8}, length::Int, type::PL_blob_t, local_::Bool
 )::Tuple{UInt64, Bool}
     reg = _blob_registration(atoms, type)
     reg === nothing && (reg = PL_register_blob_type(atoms, type))   # avoid deadlock
@@ -2472,7 +2512,7 @@ function lookupBlob(
         end
     end
 
-    if atoms.table.buckets * 2 < atoms.statistics_atoms
+    if atomTableNeedsRehash(atoms)
         rehashAtoms(atoms)
         table = atoms.table.table                       # goto redo: the new table
         v = (v0 & UInt32(atoms.table.buckets - 1)) + 1
@@ -2502,6 +2542,8 @@ function lookupBlob(
 end
 
 # PORT: pl-atom.c lookupAtom
+# swipl-devel af9e2e7e: `int new` became `bool new`; the new `lookupLocalAtom` (= `lookupBlobEx(...,
+# true)`) is not ported (E-tier: `textToLocalAtom` is an alias of the ordinary lookup here).
 "The text atom whose name is the ISO Latin-1 bytes `s` (pl-atom.c), created if new."
 lookupAtom(atoms::atoms_t, s::AbstractVector{UInt8}, length::Int=Base.length(s))::UInt64 =
     first(lookupBlob(atoms, s, length, text_atom))
@@ -2509,9 +2551,12 @@ lookupAtom(atoms::atoms_t, s::AbstractVector{UInt8}, length::Int=Base.length(s))
 # PORT: pl-atom.c rehashAtoms
 # DIVERGES: no previous table is kept (`newtab->prev`: concurrent readers); always succeeds.
 # NOT PORTED: the `GD->halt.cleaning` early return (no halt).
+# swipl-devel af9e2e7e: the early return is `!atomTableNeedsRehash()`; `MEMORY_BARRIER` after
+# `rehashing = true` and `MEMORY_RELEASE` before the table is published (no twin: one thread);
+# `ATOM_TYPE_IS_INVALID(a->type)` (see `reserveAtom`).
 "Double the atom hash table and re-chain every unique atom (pl-atom.c)."
 function rehashAtoms(atoms::atoms_t)::Bool
-    atoms.table.buckets * 2 >= atoms.statistics_atoms && return true
+    !atomTableNeedsRehash(atoms) && return true
     newtab = atom_table(atoms.table.buckets * 2, Union{Nothing, atom}[])
     newtab.table = Union{Nothing, atom}[nothing for _ in 1:(newtab.buckets)]
     mask = UInt32(newtab.buckets - 1)

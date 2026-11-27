@@ -16,6 +16,13 @@
 # whole behaviour when no state is open. The other 15 predicates of the table read or write a QLF file and are
 # refused by name (`NotPortedError`). A message the C loop prints with `Sdprintf` is collected on the local
 # data's `messages` (`_qlf_Sdprintf!`), as printMessage's fallback branches are (src/pl-error.jl).
+# SYNC3 (af9e2e7e): the loader/saver half of pl-qlf.c has no twin; its hunks are NOT ported: `CLAUSE_SHARED_SLOTS` (0x10, a
+# clause's `CL_SHARED_SLOTS` flag and the `shared_base` word saved after the flags; the pl-comp.c side, `Clause.shared_base`
+# and the frame-slot sharing, IS ported (b9caf216); `PL_QLF_VERSION` 72 -> 73 has no Julia twin: the kernel has no .qlf saver/loader,
+# the ORACLE's boot image/.qlf must be rebuilt at af9e2e7e), `loadPredicate`'s
+# `register_clause_symbols()` instead of `PL_register_atom` per CA1_DATA, `loadQlfTerm`'s bounds checks on `nvars`/`id`
+# (`qlfLoadError`) and `tmp_malloc` for more than 32 variables, `qlf_mpq_load`'s `KIND_MPQ` header and `mpz_size_stack`
+# (the tagging rework TAG1), `savedXRConstant`'s key `w|0x1`, the clause fields `clsize_t` for `prolog_vars`/`variables`.
 
 # ── conditional compilation (pl-qlf.c:4582-4689) ───────────────────────────────────────────────────
 
@@ -184,6 +191,8 @@ addDirectiveWic(state::Nothing, term::term_t)::Bool = true
 
 # PORT: pl-qlf.c addClauseWic
 # (swipl-devel cbf4e189, src/pl-qlf.c:3220-3238)
+# DIVERGES (SYNC3, 93a1afc0): upstream's `assert_term()` has a seventh argument `ref` (0 here, as in `loadInclude`); see
+# pl-wrap.jl `assert_wrapper`: `assert_term!`/`assert_proc!` are in pl-comp.jl (the `ref` argument is unified there since packet H1).
 # DIVERGES: the clause is asserted as upstream's; with no state (LD2) `openPredicateWic` and `saveWicClause`
 # write nothing. `pl_write(term)` after "Failed to compile: " is the term collected as an `:error` message
 # (`_qlf_pl_write!`), the line end not collected.

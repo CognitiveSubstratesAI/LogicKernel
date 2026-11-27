@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-comp.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-comp.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-comp.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
@@ -185,6 +185,8 @@ mutable struct VarDef
     flags::UInt32       # VD_*
     arg_pos::Int        # the ordinal of the =/2 goal moved into the head (VD_ARGUMENT)
     name::Union{Nothing, Symbol}    # name (if available)
+    an_node::Int        # Branch node (see an_node); b9caf216 af9e2e7e
+    an_last::Int        # Last node it was seen in (f475b538 af9e2e7e)
 end
 
 # PORT: pl-comp.c VD_MAYBE_SINGLETON
@@ -206,6 +208,62 @@ const VD_ARGUMENT = UInt32(0x10)
 # PORT: pl-comp.c VD_ARGUMENT_DONE
 "`VarDef` flag: the moved unification's head code was generated (pl-comp.c)."
 const VD_ARGUMENT_DONE = UInt32(0x20)
+# PORT: pl-comp.c VD_NOSHARE
+"`VarDef` flag: cannot share its slot — it occurs in more than one branch node (pl-comp.c; b9caf216 af9e2e7e)."
+const VD_NOSHARE = UInt32(0x40)
+
+# PORT: pl-comp.c an_node
+# (b9caf216 af9e2e7e) Branch-local slot sharing. The body is seen as a tree of branch nodes. Node 0 is the clause. Each alternative of a
+# disjunction ((A;B), (C->T;E), (C*->T;E)) is a node whose parent is the node holding the disjunction. A variable whose occurrences are all in
+# the same branch node (other than the clause) is "branch-local". Branch-local variables of different alternatives of the same disjunction can
+# share a slot because alternatives never run concurrently: the next alternative starts only after the previous one has no more solutions.
+# Different disjunctions in the same node use disjoint slots: backtracking into an earlier disjunction may resume code that reads its
+# variables. Branch-local variables are given the slots from `clause.shared_base`. The decompiler uses this to create a new variable for
+# such slots when it enters an alternative (see `decompileBodyIter!`).
+# DIVERGES (SYNC3): nodes and disjunctions are numbered as upstream (0-based, node 0 the clause; `ci.an_nodes[n + 1]`), the sizes are `Int` where
+# upstream's are `clsize_t`; the `tmp_buffer`s are Vectors (no MEMORY_OVERFLOW).
+"A node of the branch tree of a clause body (pl-comp.c `an_node`)."
+mutable struct an_node
+    parent::Int         # Node holding the disjunction
+    disj::Int           # Disjunction I am an alternative of
+    own::Int            # # branch-local variables
+    acc::Int            # Size of nested disjunctions
+    size::Int           # own + acc
+    own_next::Int       # Next slot for own variables
+    disj_next::Int      # Next slot for nested disjunctions
+    slots::Int          # Offset in ci.an_slots (0-based; f475b538)
+    nslots::Int         # # slots used in the subtree (f475b538)
+end
+an_node(parent::Int, disj::Int) = an_node(parent, disj, 0, 0, 0, 0, 0, 0, 0)
+
+# PORT: pl-comp.c an_disj
+"A disjunction of the branch tree of a clause body (pl-comp.c `an_disj`)."
+mutable struct an_disj
+    parent::Int         # Node holding the disjunction
+    first::Int          # First alternative node
+    second::Int         # Second alternative node (f475b538)
+    size::Int           # Max size of the alternatives
+    start::Int          # First slot
+    placed::Bool        # start is assigned
+    term::Any           # The (A;B) term (f475b538; upstream's `Word term`, here the compound itself, found by `===`)
+end
+an_disj(parent::Int, term) = an_disj(parent, 0, 0, 0, 0, false, term)
+
+# PORT: pl-comp.c an_occ
+"An occurrence of a variable in a branch node (pl-comp.c `an_occ`; f475b538 af9e2e7e)."
+struct an_occ
+    node::Int           # Node the variable appears in
+    vd::VarDef          # The variable
+end
+
+# PORT: pl-comp.c slot_set
+# DIVERGES (SYNC3): upstream's `slots` is a pointer into `ci->an_slots`; here that vector and the 0-based offset into it.
+"A sorted set of slots: `size` entries of `slots` from the 0-based offset `off` (pl-comp.c `slot_set`; f475b538 af9e2e7e)."
+struct slot_set
+    slots::Vector{Int}
+    off::Int
+    size::Int
+end
 
 # PORT: pl-comp.c branch_var
 "A variable met inside a branch of `;` or the goal of `\\+` (pl-comp.c `branch_var`)."
@@ -286,6 +344,22 @@ const TARGET_MODULE_NONE = target_module(TM_NONE, 0, 0)
 # (`var` 0) until a condition sets a local one (since V9d). `variables` is `ci->clause->variables`,
 # the frame size: the Prolog variables, then one slot per condition (`allocChoiceVar!`). `module_` is
 # upstream's `module`, a Julia keyword.
+# DIVERGES (SYNC3, 9ad989e1 + 8783a5bd af9e2e7e; TAG1/TH1): upstream's `compileInfo` gets `bool local_atoms` (set from `ison(def, P_LOCALISED)` in `compileClause`,
+# false for a goal clause). 9ad989e1 added `registerClauseAtom(a, ci)` (`registerAtomLocally(a)` instead of `PL_register_atom(a)` for the clauses of a
+# thread-local predicate: only its owning thread reads them, so their atoms stay thread-local, `clause_dbref()`), called per site; 8783a5bd (functor GC)
+# REPLACED it: it deletes every `registerClauseAtom` call (compileArgument's `H_ATOM`/`B_ATOM`, `lco`'s `L_ATOM`, compileBodyUnify/EQ/NEQ's `B_*_VC`,
+# vm_compile_instruction) and registers once after the clause code is copied: `register_clause_symbols(cl, ci->local_atoms)` calls
+# `forAtomsAndFunctorsInClause` with `register_clause_atom`/`register_local_clause_atom` and `acquireFunctor`. NOT PORTED: the kernel registers no atom or
+# functor for a clause (no atom GC, no functor GC, no threads, no thread-local predicates: `assert_proc!` throws NotPortedError for
+# `PL_CREATE_THREAD_LOCAL`), so `local_atoms` has no field here and no call site has a registration to redirect; see the DIVERGES (SYNC3) block at the
+# finish of `compileClause`.
+# DIVERGES (SYNC3, ff01f74d af9e2e7e; procedure GC): `compileInfo` gets `tmp_buffer procs` ("Referenced procedures", `release_compile_procs()`):
+# the compiler holds a counted reference to each procedure it calls (`lookupBodyProcedureRef`, pushed with `addBuffer(&ci->procs, proc)`, not for a
+# local goal clause, `ci->islocal`: its code lives on the local stack, which procedure GC cannot scan, so it calls permanent procedures with
+# `lookupBodyProcedure`), `register_clause_symbols` adds one reference per `CA1_PROC`/`CA1_LPROC` call (`acquireProcedureRef`, `procedure->references`)
+# and `release_compile_procs` drops the compiler's own after the clause is registered or pushed (also at `exit_fail` and the NOMEM exit). NOT PORTED:
+# the kernel has no procedure GC (no `PROC_PINNED`/`PROC_VOLATILE`, no `references`, no `collectVolatileProcedures`): `ci.procedures` (the clause's
+# procedure table, `addProcedure!`) is the only holder and every procedure is permanent, as `lookupBodyProcedure` returns it.
 "The state of one clause compilation (pl-comp.c `compileInfo`)."
 
 mutable struct compileInfo{T}
@@ -303,7 +377,7 @@ mutable struct compileInfo{T}
     cut::cutInfo                                            # how to compile !
     variables::Int                                          # (ci->clause->variables: the frame size)
     head_unify::Bool                                        # In unifications against arguments
-    flags::UInt32                                           # (ci->clause's flags: CL_HEAD_TERMS)
+    flags::UInt32                                           # (ci->clause's flags: CL_HEAD_TERMS, CL_SHARED_SLOTS)
     av_unify::Int                                           # (=/2 goals the analysis met)
     cb_unify::Int                                           # (=/2 goals the compiler met)
     arg_value::Dict{Int, T}                                 # (vardef arg_value, by argument slot)
@@ -324,6 +398,14 @@ mutable struct compileInfo{T}
     at_context::target_module                               # Call@Context (MOD3b)
     progress::Int                                           # Progress counter (G1-C)
     ld::Union{Nothing, PL_local_data{T}}                    # (LD: is_signalled(), G1-C)
+    an_nodes::Vector{an_node}                               # an_node array (slot sharing; b9caf216)
+    an_disjs::Vector{an_disj}                               # an_disj array (slot sharing)
+    an_cur::Int                                             # Current an_node
+    shared_base::Int                                        # (ci->clause->shared_base)
+    an_occs::Vector{an_occ}                                 # an_occ array (slot sets; f475b538)
+    an_slots::Vector{Int}                                   # clsize_t array (slot sets)
+    an_index::IdDict{T, Tuple{Int, Int}}                    # Disjunctions by term -> (first, second) (upstream: `an_ref *`, sorted)
+    an_valid::Bool                                          # Slot sets are available
     const gd::PL_global_data{T}                             # (GD: its atom table, L1b C6b)
 end
 
@@ -343,6 +425,8 @@ compileInfo{T}(
         TARGET_MODULE_NONE,                                     # ci->colon_context.type = TM_NONE (c:2047)
         TARGET_MODULE_NONE,                                     # ci->at_context.type = TM_NONE (c:2049)
         0, nothing,                                             # no progress; LD: set by the compiling caller
+        an_node[an_node(-1, -1)], an_disj[], 0, 0,              # node 0 (the clause): `analyseVariables2!` called alone sees it, as upstream's analyse_variables makes it
+        an_occ[], Int[], IdDict{T, Tuple{Int, Int}}(), false,   # no slot sets yet (`an_slot_sets!`)
         gd
     )
 
@@ -645,6 +729,11 @@ function get_variable_names(ci::compileInfo{T})::Int where {T}
 end
 
 # PORT: pl-comp.c is_portable_smallint
+# DIVERGES (SYNC3, 0bf03c7f + bb4ccf71 af9e2e7e; TAG1): upstream's only change here is `static inline int` -> `bool` (9df2607f). The TAG1 tagging rework does NOT change its
+# answer: the tagged range shrinks (LMASK_BITS 8: `PLMAXTAGGEDINT` 2^56-1 -> 2^55-1) but stays far outside int32, so under `portable_vmi` the result is still
+# `INT32_MIN <= i <= INT32_MAX` for every tagged `i`, and without it any tagged `i`. test/compile/test_portable_smallint_swipl.jl: its hard-coded cases hold
+# (i32lo/i32hi, `PLMAXTAGGEDINT`/`PLMINTAGGEDINT` through the constants); its live-oracle testset compares `PLMINTAGGEDINT`/`PLMAXTAGGEDINT` with swipl's
+# `min_tagged_integer`/`max_tagged_integer` and so needs the oracle and LMASK_BITS to move together (LMASK_BITS is 8 since TAG1; the oracle moves at landing).
 # DIVERGES: takes the integer, not a cell — `isTaggedInt(w)` is then "within the tagged range" — and
 # the local data explicitly, where upstream reaches `LD` for the flag.
 """
@@ -668,21 +757,26 @@ function is_portable_smallint(ld::PL_local_data, i::Int64)::Bool
 end
 
 # PORT: pl-comp.c is_portable_constant
-# DIVERGES: takes the term, not a word — an atom is `isAtom`; a tagged integer is `isTaggedInt`, and
-# under `portable_vmi` its WORD must survive int32 (`(word)(sword)(int32_t)c == w`; 64-bit, so
-# `SIZEOF_CODE == SIZEOF_WORD`): the integer shifted by LMASK_BITS fits 32 bits, i.e.
-# `PLMINTAGGEDINT32 <= i <= PLMAXTAGGEDINT32` (±2^24; probed, memo § 0.6).
+# (TAG1, swipl-devel af9e2e7e: the code is unchanged but `int` -> `bool`; its answer follows the 8-bit mask: the
+# `(uint32_t)w` round trip tests the WORD (`i << LMASK_BITS | tag`), so with LMASK_BITS 8 the portable range is -2^23 <= i < 2^23, it was -2^24 <= i < 2^24 at
+# LMASK_BITS 7). `PLMINTAGGEDINT32` stays `-(1<<24)` upstream (term_hash/2 values depend on it) and is NOT this test's bound: the word is compared, as upstream does.
+# DIVERGES: takes the term, not a word — an atom is `isAtom`; a tagged integer is `isTaggedInt`, whose word is `consInt(i)` (the kernel has no pointer
+# integers at the term level, so the variant bit is never set), and under `portable_vmi` that WORD must survive int32 (`(word)(sword)(int32_t)c == w`;
+# 64-bit, so `SIZEOF_CODE == SIZEOF_WORD`).
 """
     is_portable_constant(ld, w) -> Bool
 
 Whether `w` stays the same as an inline code operand, and in 32-bit code under `portable_vmi`
-(pl-comp.c): an atom, or a tagged integer within ±2^24 under the flag, any tagged one without it.
+(pl-comp.c): an atom, or a tagged integer whose word survives an int32 round trip (-2^23 <= i < 2^23 at
+`LMASK_BITS` 8) under the flag, any tagged one without it.
 """
 function is_portable_constant(ld::PL_local_data, w)::Bool
     isAtom(w) && return true
     if isTaggedInt(w)
         if truePrologFlag(ld, PLFLAG_PORTABLE_VMI)
-            return PLMINTAGGEDINT32 <= int64_value(w) <= PLMAXTAGGEDINT32
+            ww = consInt(Int64(int64_value(w)))                 # the word of the integer
+            c = ww % UInt32                                     # uint32_t c = (uint32_t)w
+            return reinterpret(word, Int64(reinterpret(Int32, c))) == ww   # (word)(sword)(int32_t)c == w
         end
         return true
     end
@@ -913,6 +1007,127 @@ function in_branch(bvs::Vector{branch_var}, from::Int, to::Int, v::VarDef)::Bool
     return false
 end
 
+# PORT: pl-comp.c an_node_ptr
+"The record of branch node `n` (0-based; node 0 is the clause) (pl-comp.c; b9caf216 af9e2e7e)."
+an_node_ptr(ci::compileInfo, n::Int)::an_node = ci.an_nodes[n + 1]
+
+# PORT: pl-comp.c an_disj_ptr
+"The record of disjunction `d` (0-based) (pl-comp.c; b9caf216 af9e2e7e)."
+an_disj_ptr(ci::compileInfo, d::Int)::an_disj = ci.an_disjs[d + 1]
+
+# PORT: pl-comp.c an_new_node
+"Add a branch node, alternative of disjunction `disj` in node `parent`, and make it the current one (pl-comp.c; b9caf216 af9e2e7e)."
+function an_new_node!(ci::compileInfo, parent::Int, disj::Int)::Nothing
+    push!(ci.an_nodes, an_node(parent, disj))
+    ci.an_cur = length(ci.an_nodes) - 1
+    return nothing
+end
+
+# PORT: pl-comp.c an_enter_disjunction
+# (f475b538 af9e2e7e: records the term `(A;B)` of the disjunction, upstream `(Word)f`)
+"Enter the first alternative of a disjunction in the current node (pl-comp.c; b9caf216 af9e2e7e)."
+function an_enter_disjunction!(ci::compileInfo, term)::Nothing
+    push!(ci.an_disjs, an_disj(ci.an_cur, term))
+    di = length(ci.an_disjs) - 1
+    an_new_node!(ci, ci.an_cur, di)
+    an_disj_ptr(ci, di).first = ci.an_cur
+    return nothing
+end
+
+# PORT: pl-comp.c an_next_alternative
+"Leave the current alternative and enter the next one (pl-comp.c; b9caf216 af9e2e7e)."
+function an_next_alternative!(ci::compileInfo)::Nothing
+    n = an_node_ptr(ci, ci.an_cur)
+    disj = n.disj
+    an_new_node!(ci, n.parent, disj)
+    an_disj_ptr(ci, disj).second = ci.an_cur                    # f475b538
+    return nothing
+end
+
+# PORT: pl-comp.c an_leave_disjunction
+"Leave the current (last) alternative (pl-comp.c; b9caf216 af9e2e7e)."
+function an_leave_disjunction!(ci::compileInfo)::Nothing
+    ci.an_cur = an_node_ptr(ci, ci.an_cur).parent
+    return nothing
+end
+
+# PORT: pl-comp.c an_record
+# DIVERGES (SYNC3): no MEMORY_OVERFLOW result (a Vector grows).
+"Record that `vd` appears in the current node. Occurrences in the clause node are not needed; recording a variable twice for a node is harmless (pl-comp.c; f475b538 af9e2e7e)."
+function an_record!(ci::compileInfo, vd::VarDef)::Nothing
+    if vd.an_last != ci.an_cur
+        vd.an_last = ci.an_cur
+        if ci.an_cur > 0
+            push!(ci.an_occs, an_occ(ci.an_cur, vd))
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c an_var_occurs
+"A variable occurs in the current node: it cannot share its slot if it was met in another one (pl-comp.c; b9caf216 af9e2e7e)."
+function an_var_occurs!(ci::compileInfo, vd::VarDef)::Nothing
+    if vd.an_node != ci.an_cur
+        vd.flags |= VD_NOSHARE
+    end
+    an_record!(ci, vd)                                          # f475b538
+    return nothing
+end
+
+# PORT: pl-comp.c is_branch_local
+"Whether the variable of record `vd` is local to one alternative of a disjunction (pl-comp.c; b9caf216 af9e2e7e)."
+is_branch_local(vd::VarDef)::Bool = vd.an_node > 0 && (vd.flags & VD_NOSHARE) == 0
+
+# PORT: pl-comp.c assign_shared_slots
+# DIVERGES (SYNC3): the branch-local variables are passed as a Vector of their records `vds`, in slot order (upstream walks
+# `LD->comp.vardefs[n]` for n from the arity: `analyse_variables!` collects them while it walks the slots, voids excluded as `vd->address`).
+"""
+Assign the slots from `base` to the branch-local variables `vds` (in slot order); returns the number of slots used
+(pl-comp.c; b9caf216 af9e2e7e). Node and disjunction records were created in depth-first order: a node has a lower index than the nodes and
+disjunctions inside it and the alternatives of a disjunction are created in order.
+"""
+function assign_shared_slots!(ci::compileInfo, vds::Vector{VarDef}, base::Int)::Int
+    nodes = ci.an_nodes
+    disjs = ci.an_disjs
+    nn = length(nodes)
+    for vd in vds                                               # count branch-local vars
+        nodes[vd.an_node + 1].own += 1
+    end
+    for i in (nn - 1):-1:0                                      # sizes, bottom-up
+        n = nodes[i + 1]
+        n.size = n.own + n.acc
+        if i > 0
+            d = disjs[n.disj + 1]
+            if n.size > d.size
+                d.size = n.size
+            end
+            if d.first == i                                     # all alternatives are done
+                nodes[d.parent + 1].acc += d.size
+            end
+        end
+    end
+    nodes[1].own_next = base                                    # start slots, top-down; the clause has no own variables
+    nodes[1].disj_next = base
+    for i in 1:(nn - 1)
+        n = nodes[i + 1]
+        d = disjs[n.disj + 1]
+        if !d.placed
+            p = nodes[d.parent + 1]
+            d.start = p.disj_next
+            d.placed = true
+            p.disj_next += d.size
+        end
+        n.own_next = d.start
+        n.disj_next = d.start + n.own
+    end
+    for vd in vds
+        n = nodes[vd.an_node + 1]
+        vd.offset = n.own_next
+        n.own_next += 1
+    end
+    return nodes[1].size
+end
+
 # PORT: pl-comp.c analyseVariables2
 # DIVERGES: under `islocal` (a goal clause, V9e-2) the goal is `localGoal`'s: its control skeleton
 # and its sub-goals read off the cells first, each compound or string argument a placeholder the
@@ -949,13 +1164,15 @@ function analyseVariables2!(
                 index = ci.arity + nvars
                 nvars += 1
             end
-            vd = VarDef(index, -1, 1, UInt32(0), 0, nothing)
+            vd = VarDef(index, -1, 1, UInt32(0), 0, nothing, ci.an_cur, -1)   # vd->an_node = ci->an_cur; vd->an_last = -1
             ci.vardefs[var_key(head)] = vd
+            an_record!(ci, vd)                                  # (f475b538; no MEMORY_OVERFLOW path)
             if ci.branch_vars !== nothing
                 pushBranchVar!(ci, vd)
             end
             control && (ci.head_unify = false)                 # variable goal: call/1
         else
+            an_var_occurs!(ci, vd)                              # (b9caf216)
             control && (ci.head_unify = false)                 # variable goal: call/1
             vd.times += 1
             if vd.times == 1 && ci.branch_vars !== nothing      # vd->times++ == 0
@@ -1014,8 +1231,9 @@ function analyseVariables2!(
             # Check for singletons in branches (A;B). These are variables introduced in a
             # branch, used only once in the branch and not used in code after the branches
             # re-unite.
-            if _has_functor(head, cf.semicolon, 2)
+            if _has_functor(head, cf.semicolon, 2) || _has_functor(head, cf.bar, 2)   # (b9caf216: `|` too)
                 ci.head_unify = false
+                an_enter_disjunction!(ci, head)                 # (b9caf216, f475b538: the term; no MEMORY_OVERFLOW path)
                 obv = ci.branch_vars !== nothing
                 bvs = ci.branch_vars
                 if bvs === nothing
@@ -1123,6 +1341,7 @@ function analyseVariables2!(
             AV_SEMI_AFTER_RIGHT, top.base, top.off, 0, top.argn_next, 0, top.control,
             top.obv, top.start_vars, at_branch_vars
         )
+        an_next_alternative!(ci)                                # (b9caf216)
         head = child(top.base, 3)                               # &f->arguments[1]
         argn = top.argn_next
         control = top.control
@@ -1159,6 +1378,7 @@ function analyseVariables2!(
         if !top.obv
             ci.branch_vars = nothing                            # discardBuffer(ci->branch_vars)
         end
+        an_leave_disjunction!(ci)                               # (b9caf216)
         pop!(stack)
         @goto resume
     end
@@ -1231,6 +1451,109 @@ function argMoveUnify!(ci::compileInfo{T}, vd::VarDef)::Union{Nothing, T} where 
     return nothing
 end
 
+# PORT: pl-comp.c an_slot_sets
+# DIVERGES (SYNC3, f475b538 af9e2e7e): no MEMORY_OVERFLOW (Vectors grow; the `tmp_malloc`ed `start`/`cstart`/`own`/`children` are Vectors, `gather` is a
+# Vector reused with `empty!`); upstream's qsort of `an_index` (`an_ref`: term pointer, first, second) is an `IdDict` keyed by the compound: `===` on
+# compounds is O(1) (term_interface.jl header), so the lookup stands in for upstream's bsearch on a sorted pointer array. A hash-consed twin of a
+# disjunction (the same term object met twice) overwrites the entry: its two copies have the same variables, hence the same slot sets (upstream's
+# bsearch also finds an arbitrary one of equal terms). Arrays are 1-based here, upstream's node numbers and the slots 0-based: `start[n]` is `start[n+1]`.
+"""
+Compute the sorted set of slots used by each alternative node from the recorded occurrences (pl-comp.c; f475b538 af9e2e7e). This must run after the
+slots are assigned. Nodes are created depth-first, so a nested alternative has a higher index than the node holding it and the sets are computed
+bottom-up from the sets of the nested alternatives.
+"""
+function an_slot_sets!(ci::compileInfo{T})::Nothing where {T}
+    nodes = ci.an_nodes
+    disjs = ci.an_disjs
+    nn = length(nodes)
+    nd = length(disjs)
+    occs = ci.an_occs
+    no = length(occs)
+    nn <= 1 && return nothing
+    start = zeros(Int, nn + 1)                                  # [nn+1] occurrences per node
+    cstart = zeros(Int, nn + 1)                                 # [nn+1] children per node
+    own = zeros(Int, no + 1)                                    # [no] slots, grouped by node
+    children = zeros(Int, nn)                                   # [nn] children, grouped by node
+    gather = Int[]
+    islocal = ci.islocal
+    for o in occs                                               # bucket the occurrences
+        if !(o.vd.times == 1 && !islocal)                       # vd->address: not a void variable
+            start[o.node + 2] += 1
+        end
+    end
+    for i in 1:(nn - 1)
+        cstart[disjs[nodes[i + 1].disj + 1].parent + 2] += 1
+    end
+    for i in 0:(nn - 1)
+        start[i + 2] += start[i + 1]
+        cstart[i + 2] += cstart[i + 1]
+    end
+    for o in occs                                               # uses start[n] as fill pointer
+        if !(o.vd.times == 1 && !islocal)
+            start[o.node + 1] += 1
+            own[start[o.node + 1]] = o.vd.offset                # own[start[node]++] (1-based store)
+        end
+    end
+    for i in 1:(nn - 1)
+        p = disjs[nodes[i + 1].disj + 1].parent
+        cstart[p + 1] += 1
+        children[cstart[p + 1]] = i
+    end
+    for i in nn:-1:1                                            # restore the start positions
+        start[i + 1] = start[i]
+        cstart[i + 1] = cstart[i]
+    end
+    start[1] = 0
+    cstart[1] = 0
+
+    for i in (nn - 1):-1:1
+        n = nodes[i + 1]
+        empty!(gather)
+        append!(gather, view(own, (start[i + 1] + 1):start[i + 2]))
+        for c in cstart[i + 1]:(cstart[i + 2] - 1)
+            cn = nodes[children[c + 1] + 1]
+            append!(gather, view(ci.an_slots, (cn.slots + 1):(cn.slots + cn.nslots)))
+        end
+        if length(gather) > 1
+            sort!(gather)
+            unique!(gather)
+        end
+        n.slots = length(ci.an_slots)
+        n.nslots = length(gather)
+        append!(ci.an_slots, gather)
+    end
+
+    for i in 0:(nd - 1)
+        d = disjs[i + 1]
+        ci.an_index[d.term::T] = (d.first, d.second)
+    end
+    ci.an_valid = true
+    return nothing
+end
+
+# PORT: pl-comp.c an_find_slot_sets
+# DIVERGES (SYNC3, f475b538 af9e2e7e): returns the two sets (`nothing` where upstream returns false) instead of filling out-parameters.
+"""
+The slot sets of the alternatives of the disjunction `term`, or `nothing` if the analysis did not see the disjunction (pl-comp.c;
+f475b538 af9e2e7e).
+"""
+function an_find_slot_sets(
+    ci::compileInfo{T}, term::T
+)::Union{Nothing, Tuple{slot_set, slot_set}} where {T}
+    if ci.an_valid
+        r = get(ci.an_index, term, nothing)
+        if r !== nothing && r[2] > 0
+            na = an_node_ptr(ci, r[1])
+            nb = an_node_ptr(ci, r[2])
+            return (
+                slot_set(ci.an_slots, na.slots, na.nslots),
+                slot_set(ci.an_slots, nb.slots, nb.nslots)
+            )
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-comp.c analyse_variables
 # DIVERGES: `head` is `nothing` for a goal clause (upstream's NULL head; V9e-2), whose pseudo variables
 # `argvars` counts — slot 0 is the goal, the compound and string arguments of its sub-goals follow,
@@ -1242,6 +1565,14 @@ end
 # clause's `variables` and `prolog_vars` (upstream sets them here, through `ci->clause`); past
 # MAX_VARIABLES it throws `representation_error(max_frame_size)`. The global data `gd` is passed in
 # for the body's control functors (see `analyseVariables2!`).
+# DIVERGES (SYNC3, b9caf216 af9e2e7e): upstream splits the function in `analyse_variables` (the branch tree `an_nodes`/`an_disjs`, both
+# `tmp_buffer`s discarded at `out:`) and `analyse_variables2` (the slot loop); here one function, the tree Vectors of `ci` are replaced at the
+# start and left to the garbage collector (no MEMORY_OVERFLOW). f475b538 af9e2e7e: upstream's `discard_branch_info` (`resetBuffer` of the
+# four buffers, `tmp_free(an_index)`, at `exit_fail`, at the finish of `compileClause`, and on the failure paths of `analyse_variables`) is NOT
+# ported: the Vectors of `ci` die with the compilation (Julia GC); `an_slot_sets!` runs after the slots are assigned, and `an_occs` is dropped on
+# success as upstream's `resetBuffer(&ci->an_occs)`. A clause with a disjunction (`share`: not `islocal`, more than node 0) gives
+# its non-branch-local body variables consecutive slots from the arity and its branch-local ones those of `assign_shared_slots!` above
+# them, sets `CL_SHARED_SLOTS` in `ci.flags` and `ci.shared_base`; the frame size is then `base` plus the shared slots (the returned `nv`).
 """
 Analyse the variables of `head` and `body` (`nothing` for a fact) of a clause of the database
 whose global data is `gd`: a variable that occurs once —
@@ -1256,8 +1587,18 @@ function analyse_variables!(
 )::Int where {T}
     arity = ci.arity
     body_voids = 0
+    nshared = 0                                                # # branch-local variables
+    next_slot = arity                                          # next non-shared body slot
+    shared_vds = VarDef[]                                      # the branch-local variables, in slot order
     ci.branch_vars = nothing
     ci.singletons = 0
+    ci.an_nodes = an_node[]                                    # initBuffer(&ci->an_nodes), (&ci->an_disjs)
+    ci.an_disjs = an_disj[]
+    ci.an_occs = an_occ[]                                      # initBuffer(&ci->an_occs), (&ci->an_slots); an_index = NULL
+    ci.an_slots = Int[]
+    ci.an_index = IdDict{T, Tuple{Int, Int}}()
+    ci.an_valid = false
+    an_new_node!(ci, -1, -1)                                   # node 0: the clause
     nvars = head === nothing ? 0 : analyseVariables2!(gd, ci, head, 0, -1, false)
     nvars == Int(CHECK_INTERRUPT) && return nvars              # (c:1333-1334: `< 0` … `return nvars`, G1-C)
     if body !== nothing
@@ -1268,6 +1609,8 @@ function analyse_variables!(
     if ci.warning_list != 0
         get_variable_names(ci)
     end
+    # b9caf216: a clause with a disjunction (more than the clause's own node) shares the slots of its branch-local variables
+    share = !ci.islocal && length(ci.an_nodes) > 1
     # upstream walks LD->comp.vardefs[n] for n in slot order; here the records are keyed by
     # `var_key`, so index them by slot first (a slot without a variable is `!vd->address`)
     slot_key = zeros(UInt64, arity + nvars)
@@ -1299,12 +1642,37 @@ function analyse_variables!(
             if n >= arity                                      # an argument keeps its slot
                 body_voids += 1
             end
+        elseif share && n >= arity
+            if is_branch_local(vd)
+                nshared += 1                                   # see assign_shared_slots!
+                push!(shared_vds, vd)
+            else
+                vd.offset = next_slot
+                next_slot += 1
+            end
         else
             vd.offset = n + argvars - body_voids
         end
     end
-    nv = nvars + arity + argvars - body_voids
+    if share
+        base = next_slot
+        nv = base
+        if nshared > 0
+            nv += assign_shared_slots!(ci, shared_vds, base)
+            ci.flags |= CL_SHARED_SLOTS                        # ci->clause->flags |= CL_SHARED_SLOTS
+            ci.shared_base = base                              # ci->clause->shared_base = base
+        end
+    else
+        nv = nvars + arity + argvars - body_voids
+    end
     nv > MAX_VARIABLES && _max_frame_size()
+    an_slot_sets!(ci)                                          # rc = analyse_variables2(...); if rc == true && !an_slot_sets(ci) ...
+    ci.an_occs = an_occ[]                                      # resetBuffer(&ci->an_occs) on success
+    # DIVERGES (SYNC3, f2fdb8cf af9e2e7e): upstream's compileClause allocates the clause's var table with `alloca` only when it is small
+    # (`VARTABLE_ALLOCA_MAX` 256 bytes; the `mkCopiedVarTable` alloca macro is gone) and otherwise with `tmp_malloc` into `used_var_heap`
+    # (NOMEM: `resetVars(); discardBuffer(&ci->codes); PL_error(ERR_NOMEM)`), freed with `tmp_free` at the finish and at `exit_fail`, so that
+    # a thread with a small C stack survives a clause with many variables. The kernel's var table is a Julia BitVector owned by the garbage
+    # collector: no C stack, no allocation failure, nothing to free; the three upstream sites (start, finish, `exit_fail`) have no counterpart.
     ci.used_var = ci.islocal ? trues(nv) : falses(nv)          # vartablesize (see above)
     return nv
 end
@@ -1531,6 +1899,18 @@ atom_literal(op::code)::Int = Int(op >> 32)
     return a == 0 ? word(0) : (a << LMASK_BITS) | TAG_ATOM
 end
 
+# DIVERGES (SYNC3, 0bf03c7f + bb4ccf71 af9e2e7e; TAG1, the pointer integers held, comments only): upstream's pointer integers and 8-bit cell kind change pl-comp.c
+# at these sites, none ported (`consPtrInt`/`isPtrInt` are declared in pl-incl.jl, but this file calls neither; the opcodes H_PTRINT, B_PTRINT, T_PTRINT,
+# T_TRY_PTRINT are not declared in pl-vmi.jl):
+#   1. compileArgument `case TAG_INTEGER` (here): `if ( unlikely(isPtrInt(*arg)) ) Output_1(ci, (where & A_BODY) ? B_PTRINT : H_PTRINT, (code)valInt(*arg));`
+#      before the `isInlineInt` branch;
+#   2. `decompile_head!` (`case H_PTRINT: PL_unify_atomic(argp, consPtrInt((uint64_t)*PC++))`); 3. `decompileBodyNoShift!` (`H_PTRINT`/`B_PTRINT`:
+#      `*ARGP++ = consPtrInt(...)`); 4. `skipArgs` (both one-operand lists); 5. `argKey`; 6. `arg1Key` (`*key = consPtrInt((uint64_t)*PC)`).
+#   bb4ccf71 changes pl-comp.c only in `fisInteger` (the `#if O_BIGNUM` GET_LD variant is gone: `isInteger(w)` tests the cell): nothing to do, the kernel's
+#   `type_test` 1 is `isInteger`. TAG1 moved LMASK_BITS 7 -> 8 (pl-incl.jl): the tagged range is now -2^55 .. 2^55-1 (`PLMINTAGGEDINT`..`PLMAXTAGGEDINT`),
+#   so the 2^56 bounds of the swipl 10.1.16 probe quoted below are from before it; see the notes at `is_portable_smallint` and `is_portable_constant`.
+#   A port of the pointer integers declares the four opcodes in pl-vmi.jl (CA1_DATA-like word operand, pl-gcwalk.jl/pl-index.jl/pl-trie.jl walkers)
+#   and edits the six sites above together.
 # From pl-comp.c compileArgument (`TAG_INTEGER`, `TAG_FLOAT`, `TAG_STRING`): the instruction of a
 # grounded value, in a head or a body, each choice keyed as upstream keys it (`A_BODY` for SMALLINT
 # and FLOAT, `A_HEAD` for MPZ, MPQ and STRING). A number by its SEMANTIC kind (Q1); an integer by its
@@ -2526,6 +2906,9 @@ function compileSubClause!(
     else
         ci.module_
     end
+    # DIVERGES (SYNC3, ff01f74d af9e2e7e): upstream `if ( ci->islocal ) proc = lookupBodyProcedure(functor, tm); else { proc = lookupBodyProcedureRef(functor, tm);
+    # addBuffer(&ci->procs, proc, Procedure); }`: a counted reference kept until the clause is registered (procedure GC). NOT PORTED: the kernel
+    # has no procedure GC, `lookupBodyProcedure` stands for both branches (the `compileInfo` header).
     proc = lookupBodyProcedure(gd, arg, tm)
     if ci.at_context.type != TM_NONE                           # (O_CALL_AT_MODULE, MOD3b)
         ctm = tm === ci.module_ ? code(0) : code(tm.index)     # (tm==ci->module) ? (code)0 : ptr2code(tm)
@@ -2725,6 +3108,11 @@ end
 # since MOD3a `:`'s `tmsave`, the LAST field: a frame of another construct gets `TM_NONE` through the
 # eleven-field constructor). The three variable tables are ONE tuple of three (`nothing` where upstream
 # leaves them unset; `\+` and `$` use the first, `vsave`, alone), so a frame is a flat value.
+# DIVERGES (SYNC3, f2fdb8cf af9e2e7e): upstream adds `int ntables` ("# var tables allocated on vtstack": 3 for `;`, 1 for `\+`/`$`, 0 when
+# `ci->islocal`) and the helpers `push_var_table(vtstack, from)` / `pop_var_tables(vtstack, n)`: the tables of a nested control structure are
+# copied onto a `segstack` and released in LIFO order when the structure completes, where they used to be `alloca`ed and kept until the
+# end of the body (C stack growth with the nesting depth). The kernel copies a Julia BitVector (`copy(ci.used_var)`), the frame holds the three
+# in `vars`, and the garbage collector frees them when the frame is popped: no `ntables`, no `vtstack`, no MEMORY_OVERFLOW exit.
 "A pending step of `compileBody` (pl-comp.c): the state to restore and the step to run."
 struct cb_frame{T}
     kind::cb_kind
@@ -2739,23 +3127,113 @@ struct cb_frame{T}
     hard::Bool                                  # -> vs *->
     isnot::Bool                                 # CB_NOT_INNER: \+ (true) vs $ (false)
     tmsave::target_module                       # CB_COLON/CB_ATSIGN: the saved colon/at context (MOD3a/MOD3b)
+    sets::Union{Nothing, Tuple{slot_set, slot_set}}   # (sa, sb) of (A;B), `nothing` when `sets` is false (f475b538)
 end
+# DIVERGES (SYNC3, f475b538 af9e2e7e): upstream adds `slot_set sa, sb` and `bool sets` ("Use sa and sb rather than valt1/2"); here `sets` is the LAST
+# field, the pair `(sa, sb)` or `nothing` (= `sets == false`): `compileBody!` then keeps `(vsave, vsave, vsave)` in `vars` (valt1/valt2 are not read).
 
-"A frame of a construct other than `:` (no saved colon context)."
+"A frame of a construct other than `:` (no saved colon context, no slot sets)."
 cb_frame{T}(
     kind::cb_kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot
 ) where {T} =
     cb_frame{T}(
         kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot,
-        TARGET_MODULE_NONE
+        TARGET_MODULE_NONE, nothing
+    )
+
+"A frame with a saved colon context and no slot sets."
+cb_frame{T}(
+    kind::cb_kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot, tmsave
+) where {T} =
+    cb_frame{T}(
+        kind, call, body, a0, var, tc_or, tc_jmp, vars, cutsave, hard, isnot, tmsave,
+        nothing
     )
 
 "`frame` with another `kind` and forward-jump offset: the next step of the same construct."
 _cb_next(frame::cb_frame{T}, kind::cb_kind, tc_jmp::Int=frame.tc_jmp) where {T} =
     cb_frame{T}(
         kind, frame.call, frame.body, frame.a0, frame.var, frame.tc_or, tc_jmp, frame.vars,
-        frame.cutsave, frame.hard, frame.isnot, frame.tmsave
+        frame.cutsave, frame.hard, frame.isnot, frame.tmsave, frame.sets
     )
+
+# PORT: pl-comp.c balanceSlots
+"""
+`balanceVars` for the slot sets of two alternatives of a disjunction (pl-comp.c; f475b538 af9e2e7e). Emits `C_VAR` for the slots in `need` that
+are not in `have` and not in `entry`, the variables initialised before the disjunction. Both sets are sorted: `have` is walked with a cursor.
+"""
+function balanceSlots!(
+    entry::BitVector, have::slot_set, need::slot_set, ci::compileInfo
+)::Nothing
+    h = 1                                                       # const clsize_t *h = have->slots, *he = h+have->size
+    he = have.size
+    vstate = c_var_state(0, 0)
+    for k in 1:need.size
+        n = need.slots[need.off + k]
+        while h <= he && have.slots[have.off + h] < n
+            h += 1
+        end
+        if (h <= he && have.slots[have.off + h] == n) || !isFirstVar(entry, n)
+            continue
+        end
+        vstate = c_var(vstate, Int(VAROFFSET(n)), ci)
+    end
+    if vstate.count != 0
+        c_var(vstate, 0, ci)
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c setSlots
+"Mark every slot of `set` used in `vt` (pl-comp.c; f475b538 af9e2e7e)."
+function setSlots!(vt::BitVector, set::slot_set)::Nothing
+    for i in 1:set.size
+        isFirstVarSet!(vt, set.slots[set.off + i])
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c balance_after_a
+"After A of `(A;B)`: balance A with B, by the slot sets or by the variable tables (pl-comp.c; f475b538 af9e2e7e)."
+function balance_after_a(frame::cb_frame, ci::compileInfo)::Nothing
+    sets = frame.sets
+    vars = frame.vars::NTuple{3, BitVector}                     # vsave, valt1, valt2
+    if sets !== nothing                                         # frame->sets
+        balanceSlots!(vars[1], sets[1], sets[2], ci)            # vsave, sa, sb
+    else
+        balanceVars(vars[2], vars[3], ci)                       # valt1, valt2
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c balance_after_b
+"After B of `(A;B)`: balance B with A, by the slot sets or by the variable tables (pl-comp.c; f475b538 af9e2e7e)."
+function balance_after_b(frame::cb_frame, ci::compileInfo)::Nothing
+    sets = frame.sets
+    vars = frame.vars::NTuple{3, BitVector}
+    if sets !== nothing
+        balanceSlots!(vars[1], sets[2], sets[1], ci)            # vsave, sb, sa
+    else
+        balanceVars(vars[3], vars[2], ci)                       # valt2, valt1
+    end
+    return nothing
+end
+
+# PORT: pl-comp.c join_vars
+"After `(A;B)` the variables of both alternatives are initialised (pl-comp.c; f475b538 af9e2e7e)."
+function join_vars(frame::cb_frame, ci::compileInfo)::Nothing
+    sets = frame.sets
+    vars = frame.vars::NTuple{3, BitVector}
+    if sets !== nothing
+        copyVarTable(ci.used_var, vars[1])                      # vsave
+        setSlots!(ci.used_var, sets[1])
+        setSlots!(ci.used_var, sets[2])
+    else
+        orVars(vars[2], vars[3])
+        copyVarTable(ci.used_var, vars[2])
+    end
+    return nothing
+end
 
 # PORT: pl-comp.c allocChoiceVar
 # DIVERGES: the frame size is `ci.variables` (see `compileInfo`); the error needs the local data.
@@ -2819,6 +3297,9 @@ function compileBody!(
 )::boolex_t where {T}
     cf = gd.functors_control
     stack = cb_frame{T}[]
+    # f2fdb8cf (DIVERGES, see `cb_frame`): upstream also `initSegStack(&vtstack, ROUND(sizeofVarTable(ci->vartablesize), sizeof(void*)), 0, NULL)`
+    # and `frame.ntables = 0`; `pop_var_tables(&vtstack, frame.ntables)` ends CB_SEMI_B, CB_ITE_ELSE and CB_NOT_INNER (right before their
+    # `goto resume`) and `clearSegStack(&vtstack)` is at `exit`. The three-table tuple dies with its frame here.
     rc = BOOLEX_TRUE
     @label next_body
     if kind(body) === EXPR && _is_control(body, cf)
@@ -2836,11 +3317,23 @@ function compileBody!(
             @goto next_body
         elseif _has_functor(body, cf.semicolon, 2) || _has_functor(body, cf.bar, 2)
             a0 = child(body, 2)                                # A ; B and (A -> B ; C)
+            # f2fdb8cf (DIVERGES, see `cb_frame`): upstream `push_var_table(&vtstack, ci->used_var)` x3 (`frame.ntables = 3`; MEMORY_OVERFLOW
+            # on failure) when `!ci->islocal`, else `vsave = valt1 = valt2 = NULL; frame.ntables = 0`.
+            # f475b538 (DIVERGES, see `cb_frame`): when `!ci->islocal` and `an_find_slot_sets` knows the disjunction `body` upstream pushes ONE table
+            # (`frame.ntables = 1`, `frame.sets = true`, `valt1 = valt2 = NULL`) and does not `setVars` the alternatives: the sets `sa`/`sb` replace
+            # the scan. Here `(vsave, vsave, vsave)` fills `vars` (the destructuring stays; valt1/valt2 are not read when `sets`). The islocal
+            # case keeps copying the three tables as before (upstream: none).
+            sets = ci.islocal ? nothing : an_find_slot_sets(ci, body)
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
-            valt1 = copy(ci.used_var)
-            valt2 = copy(ci.used_var)
-            setVars(ci, child(body, 2), valt1)
-            setVars(ci, child(body, 3), valt2)
+            if sets !== nothing
+                valt1 = vsave
+                valt2 = vsave
+            else
+                valt1 = copy(ci.used_var)
+                valt2 = copy(ci.used_var)
+                setVars(ci, child(body, 2), valt1)
+                setVars(ci, child(body, 3), valt2)
+            end
             if _has_functor(a0, cf.ifthen, 2) ||               # A  -> B ; C
                 _has_functor(a0, cf.softcut, 2)                 # A *-> B ; C
                 hard = _has_functor(a0, cf.ifthen, 2)
@@ -2854,7 +3347,7 @@ function compileBody!(
                     stack,
                     cb_frame{T}(
                         CB_ITE_COND, call, body, a0, var, PC(ci), 0, (vsave, valt1, valt2),
-                        ci.cut, hard, true
+                        ci.cut, hard, true, TARGET_MODULE_NONE, sets
                     )
                 )
                 # Cut locally in the condition
@@ -2868,7 +3361,7 @@ function compileBody!(
                     stack,
                     cb_frame{T}(
                         CB_SEMI_A, call, body, body, 0, PC(ci), 0, (vsave, valt1, valt2),
-                        ci.cut, true, true
+                        ci.cut, true, true, TARGET_MODULE_NONE, sets
                     )
                 )
                 body = child(body, 2)
@@ -2903,6 +3396,7 @@ function compileBody!(
                 rc = BOOLEX_FALSE
                 @goto resume
             end
+            # f2fdb8cf (DIVERGES, see `cb_frame`): upstream `push_var_table(&vtstack, ci->used_var)` (`frame.ntables = 1`, else 0 when islocal).
             vsave = copy(ci.used_var)                          # mkCopiedVarTable(ci->used_var)
             Output_2!(ci, isnot ? C_NOT : C_DET, code(var), code(0))
             push!(
@@ -2972,8 +3466,8 @@ function compileBody!(
         call = frame.call
         @goto next_body
     elseif frame.kind == CB_SEMI_A                             # (A ; B) after A
-        vsave, valt1, valt2 = frame.vars::NTuple{3, BitVector}
-        balanceVars(valt1, valt2, ci)
+        vsave, _, _ = frame.vars::NTuple{3, BitVector}
+        balance_after_a(frame, ci)
         Output_1!(ci, C_JMP, code(0))
         tc_jmp = PC(ci)
         ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
@@ -2983,11 +3477,9 @@ function compileBody!(
         call = frame.call
         @goto next_body
     elseif frame.kind == CB_SEMI_B                             # (A ; B) after B
-        _, valt1, valt2 = frame.vars::NTuple{3, BitVector}
-        balanceVars(valt2, valt1, ci)
+        balance_after_b(frame, ci)
         ci.codes[frame.tc_jmp] = code(PC(ci) - frame.tc_jmp)   # OpCode(ci, tc_jmp-1)
-        orVars(valt1, valt2)
-        copyVarTable(ci.used_var, valt1)
+        join_vars(frame, ci)
         @goto resume
     elseif frame.kind == CB_ITE_COND                           # (A -> B ; C) after A
         fast = false
@@ -3011,8 +3503,8 @@ function compileBody!(
         call = frame.call
         @goto next_body
     elseif frame.kind == CB_ITE_THEN                           # (A -> B ; C) after B
-        vsave, valt1, valt2 = frame.vars::NTuple{3, BitVector}
-        balanceVars(valt1, valt2, ci)
+        vsave, _, _ = frame.vars::NTuple{3, BitVector}
+        balance_after_a(frame, ci)
         Output_1!(ci, C_JMP, code(0))
         tc_jmp = PC(ci)
         ci.codes[frame.tc_or] = code(PC(ci) - frame.tc_or)     # OpCode(ci, tc_or-1)
@@ -3022,11 +3514,9 @@ function compileBody!(
         call = frame.call
         @goto next_body
     elseif frame.kind == CB_ITE_ELSE                           # (A -> B ; C) after C
-        _, valt1, valt2 = frame.vars::NTuple{3, BitVector}
-        balanceVars(valt2, valt1, ci)
+        balance_after_b(frame, ci)
         ci.codes[frame.tc_jmp] = code(PC(ci) - frame.tc_jmp)   # OpCode(ci, tc_jmp-1)
-        orVars(valt1, valt2)
-        copyVarTable(ci.used_var, valt1)
+        join_vars(frame, ci)
         @goto resume
     elseif frame.kind == CB_IT_COND                            # (A -> B) after A
         ci.cut = frame.cutsave
@@ -3120,7 +3610,8 @@ function _compile_clause_head!(
     end
     if ci.arity > 0
         for n in 0:(ci.arity - 1)
-            compileArgument!(ci, child(head, n + 2), A_HEAD)
+            where_ = n == ci.arity - 1 ? A_HEAD | A_RIGHT : A_HEAD  # int where = (n == ci->arity-1 ? A_HEAD|A_RIGHT : A_HEAD) (110adeab)
+            compileArgument!(ci, child(head, n + 2), where_)       # a compound in the last argument is a "right" term: no H_POP
         end
     end
     if _is_rule_body(gd, body)
@@ -3223,6 +3714,8 @@ function compileClause(
         end
         if (def.flags & P_MFCONTEXT) != 0
             flags |= CL_BODY_CONTEXT                           # set(&clause, CL_BODY_CONTEXT)
+            # DIVERGES (SYNC3, 77c3148d): upstream pins the module first, `pinModulePtr(ci->module)` /* see module GC */, because the clause code refers to it
+            # (collectVolatileModules() would otherwise reclaim it); modules are indexes into `gd.modules`, never collected here: no pin.
             Output_1!(ci, I_CONTEXT, code(m.index))            # ptr2code(ci->module)
         end
         bi = PC(ci)
@@ -3256,10 +3749,25 @@ function compileClause(
         return nothing                                         # goto exit_fail
     end
     flags |= ci.flags                                          # CL_HEAD_TERMS, set on ci->clause
+    # DIVERGES (SYNC3, 8783a5bd af9e2e7e): upstream's "Finish up the clause" ends with `memcpy(cl->codes, ...)` and then
+    # `register_clause_symbols(cl, ci->local_atoms)`: one reference for each atom (CA1_DATA argument) and each functor (CA1_FUNC argument) in the
+    # code, taken with `PL_register_atom` (`registerAtomLocally` for a thread-local predicate) and `acquireFunctor`, released by `freeClause()` with
+    # the same walker so both always agree. NOT PORTED, E-tier: `for_atoms_in_codes` (walks the code by `VM_ARGTYPES`), `forAtomsAndFunctorsInClause`
+    # and `register_clause_symbols`, with their callbacks `register_clause_atom`, `register_local_clause_atom`, `acquireFunctor`. The kernel has no
+    # atom or functor GC (a Symbol and a functor table entry live as long as the database), so nothing counts references. A future port (atom GC,
+    # functor GC) needs: the walker over `codeTable` (pl-vmi.jl's `code_info` already carries CA1_DATA and CA1_FUNC per operand, as `VM_ARGTYPES`;
+    # skip the variable-argument instructions), reference counts on atoms and functors, and `freeClause` calling the same walker with the release
+    # callbacks.
+    # DIVERGES (SYNC3, ff01f74d af9e2e7e): the same call also passes `acquireProcedureRef` (`pfunc`), `for_atoms_in_codes` handling the
+    # `CA1_PROC`/`CA1_LPROC` operands (`code2ptr(Procedure, PC[an+1])`): `procedure->references` counts the calls from registered clauses, and
+    # `release_compile_procs(ci)` ("after registering or pushing cl") drops the compiler's references taken by `lookupBodyProcedureRef`, here and at
+    # `exit_fail`: E-tier, NOT PORTED, there is no procedure GC (see the `compileInfo` header). A future port adds `acquireProcedureRef` and
+    # `releaseProcedureRef` and the `procs` buffer, and `freeClause` releases the same walk.
     return Clause{T}(
         def, gen_t(0), gen_t(0), clsize_t(ci.variables), clsize_t(nv), flags, ci.codes,
         ci.literals,
-        ci.procedures, UInt32(0), UInt32(0), UInt32(0)     # line_no, source_no, owner_no
+        ci.procedures, UInt32(0), UInt32(0), UInt32(0),    # line_no, source_no, owner_no
+        clsize_t(ci.shared_base)                           # cl->shared_base (b9caf216 af9e2e7e)
     )
 end
 
@@ -3490,7 +3998,8 @@ function _compileGoalClause!(
     ensureLocalSpace(ld, variables + LOCAL_MARGIN + SIZEOF_CHOICE) || return nothing
     return Clause{T}(
         def, global_generation(gd), GEN_INFINITE, clsize_t(variables), clsize_t(nv), flags,
-        ci.codes, ci.literals, ci.procedures, UInt32(0), UInt32(0), UInt32(0)
+        ci.codes, ci.literals, ci.procedures, UInt32(0), UInt32(0), UInt32(0),
+        clsize_t(0)                                         # a goal clause shares no slots (`share` is false under islocal)
     )
 end
 
@@ -3700,6 +4209,9 @@ function clause_ndet(
             end
             return FFALSE
         end
+        # DIVERGES (SYNC3, ff01f74d af9e2e7e): upstream `get_procedure(head, &proc, 0, GP_FIND|GP_REF)`, and `releaseProcedureRef(proc)` on the
+        # `protected_predicate`/`pushPredicateAccessObj` failure and after `dref` is pushed ("def is now accessed"): a counted reference between
+        # the lookup and the predicate access (procedure GC). NOT PORTED: no `GP_REF` in the kernel (see `get_procedure` in pl-proc.jl).
         proc = get_procedure_find(gd, ld, head)             # get_procedure(head, &proc, 0, GP_FIND)
         proc === nothing && return FFALSE
         def = proc.definition                               # getProcDefinition(proc)
@@ -4040,6 +4552,15 @@ struct sourceloc{T}
 end
 
 # PORT: pl-comp.c assert_term as assert_term!
+# SYNC3 H1 (swipl-devel af9e2e7e): `ref` (93a1afc0, a term reference or 0): assert[az]/2 asserts a dynamic clause and `ref` is unified with a
+# reference to it BEFORE the clause is added (upstream: once visible another thread may retract it and clause GC reclaim it, so the
+# clause must not be touched after adding; the returned clause is only compared against NULL, except for the source case). The
+# work after the predicate is found is `assert_proc!` (upstream's new `assert_proc`). DIVERGES (SYNC3): upstream looks the
+# procedure up with `isCurrentProcedureRef`/`lookupProcedureRef` when not loading (a counted reference, `releaseProcedureRef` after) so
+# abolishing allows procedure GC, and strips the module with `PL_strip_module_ex_ref` (`releaseModuleRef`, module GC), and a clause that
+# is not loaded holds a reference on its definition (`CL_DEF_REF`, `ATOMIC_INC(&def->clause_refs)`): the kernel collects neither
+# procedures nor modules nor definitions, so these counted references are no-ops here and the unreferenced lookups stand (77c3148d: the
+# same for the module, `releaseModuleRef(mref)` at `out:`, and for `clause/2`'s `PL_strip_module_ref(head, ..., &mref, 0)` + `releaseModuleRef(mref)`).
 # DIVERGES: returns the clause or `nothing`, upstream's NULL, the error raised; the database `gd` is
 # an argument (upstream: GD); a module is an index into its table — `module_` 0 is upstream's NULL:
 # the source module (`LD->modules.source`) when loading (`loc`), else `user` (`PL_strip_module_ex`).
@@ -4071,7 +4592,7 @@ defines. `nothing` with the error raised when the clause is not callable, cyclic
 """
 function assert_term!(
     gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, module_::Int, where_::Int,
-    owner::Union{Nothing, T}, loc::Union{Nothing, sourceloc{T}}, flags::Int
+    owner::Union{Nothing, T}, loc::Union{Nothing, sourceloc{T}}, flags::Int, ref::term_t=0
 )::Union{Nothing, Clause{T}} where {T}
     source_module = loc !== nothing ? ld.modules_source : 0
     tmp = PL_new_term_refs(ld, 4)
@@ -4096,12 +4617,53 @@ function assert_term!(
         end
         proc === nothing && return nothing
     end
+    # (upstream: `if ( loc ) isCurrentProcedure/lookupProcedure else isCurrentProcedureRef/lookupProcedureRef`; the second is the
+    # counted reference of procedure GC, see the header: one lookup here, and no `releaseProcedureRef(proc)` after `assert_proc`)
+    return assert_proc!(
+        gd,
+        ld,
+        proc,
+        mhead,
+        module_,
+        head,
+        body,
+        where_,
+        owner,
+        loc,
+        flags,
+        ref,
+        warnings,
+        hflags
+    )
+end
+
+# PORT: pl-comp.c assert_proc as assert_proc!
+# (af9e2e7e: split off `assert_term` by the procedure-GC work, ff01f74d; `proc` is looked up by the caller.) DIVERGES: as `assert_term!`
+# (the module is the index `module_`, `mhead` the head's module, `nothing` is NULL, the cyclic-term check is made here before the export).
+# SYNC3: `overruleImportedProcedure` is called BEFORE the clause is compiled when loading (0451759d: the clause records its definition in
+# `clause->predicate` and `compileClause` decides on `I_CONTEXT` by it, so a local version of an imported predicate must replace the
+# definition first); `assert[az]/1` makes the predicate dynamic with `implicitDynamicProcedure!` (6a038893: no false permission error
+# when the predicate is defined concurrently) and adds the clause with `assertDynamicProcedure!` (840a6d0a; both of sync_p06/p07).
+# NOT PORTED: the `DEBUG(2, ...)` prints of the head (51b05393 only repaired the debug build's variable name: `head`, not `term`).
+function assert_proc!(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, proc::Procedure{T}, mhead::module_t{T},
+    module_::Int,
+    head::term_t, body::term_t, where_::Int, owner::Union{Nothing, T},
+    loc::Union{Nothing, sourceloc{T}},
+    flags::Int, ref::term_t, warnings::term_t, hflags::UInt32
+)::Union{Nothing, Clause{T}} where {T}
     if flags != 0 && !isDefinedProcedure(gd, proc)                 # (pl-comp.c:4915-4920 at 18168e629eab; TAB1 TB6)
         if (flags & PL_CREATE_INCREMENTAL) != 0
             tbl_set_incremental_predicate(gd, proc.definition, true)
         end
         if (flags & PL_CREATE_THREAD_LOCAL) != 0                # setAttrDefinition(..., P_THREAD_LOCAL, true)
-            throw(NotPortedError{T}(name, "assert_term: PL_CREATE_THREAD_LOCAL", "TH1"))
+            throw(
+                NotPortedError{T}(
+                    get_head_functor(ld, head, 0)[1],
+                    "assert_term: PL_CREATE_THREAD_LOCAL",
+                    "TH1"
+                )
+            )
         end
     end
     if !is_acyclic_cells(ld, -(head + 1)) || !is_acyclic_cells(ld, -(body + 1))   # CYCLIC_HEAD, CYCLIC_BODY
@@ -4123,6 +4685,12 @@ function assert_term!(
     #     break;
     #   }
     # The export is redone with each pass, as upstream reads the cells again: a collection moves them.
+    # (*) A clause loaded from a file may define a local version of an imported predicate. This replaces the definition of
+    # `proc`, so we must do so before compiling the clause, which records the definition in clause->predicate and decides
+    # on I_CONTEXT based on it (0451759d).
+    if loc !== nothing && !overruleImportedProcedure(gd, ld, proc, mhead)   # if ( loc && !overruleImportedProcedure(proc, mhead) ) /* See (*) */
+        return nothing
+    end
     local clause::Clause{T}
     while true
         ex = cell_export{T}()                                   # (L1f f3a: off the cells, one map)
@@ -4140,6 +4708,8 @@ function assert_term!(
         break
     end
     def = proc.definition                                       # getProcDefinition(proc)
+    # NOT PORTED (SYNC3, ff01f74d, 77c3148d (`def == clause->predicate`: "freeClause() releases this"), see `assert_term!`): `if ( !loc && !(proc->flags&PROC_PINNED) &&
+    # def == proc->definition && def == clause->predicate && def->clause_refs > 0 ) { ATOMIC_INC(&def->clause_refs); set(clause, CL_DEF_REF); }` (procedure GC).
 
     # If loc is defined, we are called from '$record_clause'/2. This code takes care of
     # reconsult, redefinition, etc.
@@ -4154,9 +4724,6 @@ function assert_term!(
             lookupSourceFile(gd, own, true)::SourceFile{T}
         end
         clause.owner_no = UInt32(of.index)
-
-        overruleImportedProcedure(gd, ld, proc, mhead) || return nothing   # error: freeClause
-        def = proc.definition                                   # may be changed
 
         if proc !== of.current_procedure
             if _impl_any_defined(def)
@@ -4195,21 +4762,23 @@ function assert_term!(
     end
 
     # assert[az]/1
-    if (def.flags & P_DYNAMIC) == 0
-        if isDefinedProcedure(gd, proc)
-            PL_error(ld, ERR_MODIFY_STATIC_PROC, proc)
-            return nothing                                      # derror: freeClause(clause)
-        end
-        setDynamicDefinition!(gd, def, true) || return nothing
+    if (def.flags & P_DYNAMIC) == 0 && !implicitDynamicProcedure!(gd, ld, proc)
+        return nothing                                          # derror: freeClause(clause)
     end
-    cref = assertProcedure!(gd, ld, proc, clause, where_)
+    # (the old branch here raised `ERR_MODIFY_STATIC_PROC` for a defined static predicate and made an undefined one dynamic by
+    # `setDynamicDefinition!`: that is `implicitDynamicProcedure!` now, 6a038893)
+
+    if ref != 0 && !PL_unify_clref(gd, ld, ref, clause)         # the clause reference is made before the clause is visible (93a1afc0)
+        return nothing                                          # derror
+    end
+    cref = assertDynamicProcedure!(gd, ld, proc, clause, where_)
     cref === nothing && return nothing                          # (SSU1: add_ssu_clause refused it)
-    return clause                                               # cref->value.clause
+    return clause                                               # do not access; see above
 end
 
 assert_term!(
-    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, where_::Int
-) where {T} = assert_term!(gd, ld, term, 0, where_, nothing, nothing, 0)
+    gd::PL_global_data{T}, ld::PL_local_data{T}, term::term_t, where_::Int, ref::term_t=0
+) where {T} = assert_term!(gd, ld, term, 0, where_, nothing, nothing, 0, ref)
 
 "The database of the running query (`ld.GD`, set by `PL_open_query`): a built-in's GD."
 function _query_gd(ld::PL_local_data{T})::PL_global_data{T} where {T}
@@ -4256,9 +4825,7 @@ function pl_assertz2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     mustBeVar(ld, A2) || return FFALSE
     gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_END)
-    clause === nothing && return FFALSE
-    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE
+    return assert_term!(gd, ld, A1, CL_END, A2) !== nothing ? FTRUE : FFALSE   # the reference A2 is unified inside (93a1afc0)
 end
 
 # PORT: pl-comp.c asserta2 as pl_asserta2_va
@@ -4270,9 +4837,7 @@ function pl_asserta2_va(
     A1, A2 = PL__t0, PL__t0 + 1
     mustBeVar(ld, A2) || return FFALSE
     gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_START)
-    clause === nothing && return FFALSE
-    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE
+    return assert_term!(gd, ld, A1, CL_START, A2) !== nothing ? FTRUE : FFALSE   # the reference A2 is unified inside (93a1afc0)
 end
 
 # PORT: pl-comp.c record_clause
@@ -4568,39 +5133,6 @@ function set_bvar_argp!(ld::PL_local_data{T}, bv::term_t)::term_t where {T}
     return argp
 end
 
-# PORT: pl-comp.c unifyVar
-# DIVERGES: `var` is a location (a global position, or `-slot`). A term reference holds a global
-# cell's reference (`PL_new_term_refs`) and a frame slot is never an unbound variable (`_bind_const!`),
-# so two unbound sides are two GLOBAL cells, `v < var` their positions: the younger bound to the
-# older, as `unify_simple_cells`. Asserted (audit D-0100): the clause
-# variable's cell is the OLDER — every location bound is a cell this decompilation allocated.
-"""
-Bind the location `var` to the clause variable `i` (a frame offset) of `variables`, re-creating the
-sharing as the decompiler builds a term (pl-comp.c): two unbound cells, the younger to the older;
-an unbound `var`, to the variable's value.
-"""
-function unifyVar(
-    ld::PL_local_data{T}, var::Int, variables::term_t, i::code
-)::Bool where {T}
-    i -= VAROFFSET(0)
-    kv, wv, pv = _deref_loc(ld, -(variables + Int(i) + 1))     # v = valTermRef(vars+i); deRef(v)
-    k, w, p = _deref_loc(ld, var)                               # deRef(var)
-    if kv == DU_CELL && k == DU_CELL
-        @assert pv > 0 && p > 0 "unifyVar: an unbound variable outside the global stack"
-        @assert pv < p "unifyVar: the clause variable's cell younger than the one bound"   # (D-0100)
-        if pv < p                                               # v < var
-            _bind_const!(ld, p, makeRefG(pv))                   # Trail(var, makeRefG(v))
-        else
-            _bind_const!(ld, pv, makeRefG(p))                   # Trail(v, makeRefG(var))
-        end
-    elseif k == DU_CELL                                         # retract called with bounded var
-        _bind_const!(ld, p, _value_word!(ld, wv))               # Trail(var, *v) (a side word: f3-1)
-    else
-        error("unifyVar: the location is bound")                # assert(0)
-    end
-    return true
-end
-
 # PORT: pl-comp.c unifyVarGC
 "Unify the location `var` with the clause variable `i` (a frame offset) of `variables` (pl-comp.c)."
 unifyVarGC(ld::PL_local_data{T}, var::Int, variables::term_t, i::code) where {T} =
@@ -4631,6 +5163,7 @@ function decompile_head!(
     argn = 0
     pushed = 0
     write_bvar = false
+    rlast = false                                               # bool rlast = false: in a last-arg H_R* compound (110adeab)
     def = clause.predicate
     arity = def.arity                                           # di->arity
     if arity > 0
@@ -4668,6 +5201,7 @@ function decompile_head!(
         elseif c == H_ATOM
             PL_unify_atomic(ld, argp, PC.literals[atom_literal(PC.codes[PC.pc + 1])]) ||
                 return false
+            # DIVERGES (SYNC3, 0bf03c7f af9e2e7e; TAG1): upstream adds `case H_PTRINT: TRY(PL_unify_atomic(argp, consPtrInt((uint64_t)*PC++)))` here; held with the pointer integers (see the TAG1 block above `compileArgument!`'s grounded-value rule).
         elseif c == H_SMALLINT
             PL_unify_atomic(ld, argp, mk_gnd(T, valInt(PC.codes[PC.pc + 1]))) ||
                 return false
@@ -4705,6 +5239,10 @@ function decompile_head!(
             continue
         elseif c == H_RFUNCTOR || c == H_RLIST
             f = c == H_RLIST ? ld.functor_dot2 : functor_operand_word(PC.codes[PC.pc + 1])
+            if pushed == 0                                      # last head argument (common_rfunctor: if ( !pushed ), 110adeab)
+                pushed += 1
+                rlast = true
+            end
             a = _head_compound!(ld, argp, f)                    # PL_unify_compound(argp, f)
             a == 0 && return false
             _arg_ref_at!(ld, a, argp)                           # get_arg_ref(argp, argp)
@@ -4721,6 +5259,10 @@ function decompile_head!(
             unifyVarGC(ld, p + 2, variables, PC.codes[PC.pc + 2]) || return false
         elseif c == I_EXITCATCH || c == I_EXITRESET || c == I_EXITFACT || c == I_EXIT ||   # fact
             c == I_ENTER || c == I_SSU_COMMIT || c == I_SSU_CHOICE      # H_VOID, H_VOID, I_ENTER; (SSU1, pl-comp.c:6157-6158)
+            if rlast                                            # ended inside last argument (110adeab)
+                pushed -= 1
+                argn += 1
+            end
             @assert argn <= arity
             @assert pushed == 0
             while argn < arity
@@ -4833,12 +5375,63 @@ mutable struct decompileInfo{T}
     const argp::Vector{word}                    # argp: the decompilation stack (its top level)
     argpos::Int                                 # (argp inside a compound: a global position; 0: none)
     const atop::Vector{Int}                     # (the argument stack: argpos to restore)
+    const shared_base::Int                      # First shared slot (CL_SHARED_SLOTS; b9caf216 af9e2e7e)
+    const shared_count::Int                     # # shared slots (0: none)
+    const touched::Vector{UInt64}               # Last access of shared slots (`shared_count` stamps)
+    clock::UInt64                               # Access counter
 end
 
 decompileInfo{T}(
-    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, variables::term_t
+    ld::PL_local_data{T}, clause::Clause{T}, pc::Int, variables::term_t,
+    shared_base::Int=0, shared_count::Int=0
 ) where {T} =
-    decompileInfo{T}(ld, clause, pc, variables, word[], 0, Int[])
+    decompileInfo{T}(
+        ld, clause, pc, variables, word[], 0, Int[], shared_base, shared_count,
+        zeros(UInt64, shared_count), UInt64(0)
+    )
+
+# PORT: pl-comp.c unifyVar
+# DIVERGES: `var` is a location (a global position, or `-slot`). A term reference holds a global
+# cell's reference (`PL_new_term_refs`) and a frame slot is never an unbound variable (`_bind_const!`),
+# so two unbound sides are two GLOBAL cells, `v < var` their positions: the younger bound to the
+# older, as `unify_simple_cells`. Asserted (audit D-0100): the clause
+# variable's cell is the OLDER — every location bound is a cell this decompilation allocated.
+# DIVERGES (SYNC3, b9caf216 af9e2e7e): upstream's argument is `decompileInfo *di` now (`vars = di->variables`; moved here, after `decompileInfo`, because
+# the method signature names the type), and a variable of a shared slot (`di.shared_base`, `di.shared_count`) is stamped with `++di.clock` in
+# `di.touched`: `renew_shared_vars!` finds the slots an alternative used.
+"""
+Bind the location `var` to the clause variable `i` (a frame offset) of `di.variables`, re-creating the
+sharing as the decompiler builds a term (pl-comp.c): two unbound cells, the younger to the older;
+an unbound `var`, to the variable's value. A shared slot (`CL_SHARED_SLOTS`) is stamped as touched.
+"""
+function unifyVar(
+    di::decompileInfo{T}, var::Int, i::code
+)::Bool where {T}
+    ld = di.ld
+    variables = di.variables
+    i -= VAROFFSET(0)
+    slot = Int(i) - di.shared_base                              # (Int: `i` is unsigned, `shared_base` may exceed it)
+    if slot >= 0 && slot < di.shared_count
+        di.clock += 1
+        di.touched[slot + 1] = di.clock                         # di->touched[i-di->shared_base] = ++di->clock
+    end
+    kv, wv, pv = _deref_loc(ld, -(variables + Int(i) + 1))     # v = valTermRef(vars+i); deRef(v)
+    k, w, p = _deref_loc(ld, var)                               # deRef(var)
+    if kv == DU_CELL && k == DU_CELL
+        @assert pv > 0 && p > 0 "unifyVar: an unbound variable outside the global stack"
+        @assert pv < p "unifyVar: the clause variable's cell younger than the one bound"   # (D-0100)
+        if pv < p                                               # v < var
+            _bind_const!(ld, p, makeRefG(pv))                   # Trail(var, makeRefG(v))
+        else
+            _bind_const!(ld, pv, makeRefG(p))                   # Trail(v, makeRefG(var))
+        end
+    elseif k == DU_CELL                                         # retract called with bounded var
+        _bind_const!(ld, p, _value_word!(ld, wv))               # Trail(var, *v) (a side word: f3-1)
+    else
+        error("unifyVar: the location is bound")                # assert(0)
+    end
+    return true
+end
 
 # PORT: pl-comp.c makeVarRef
 # A reference word of storage `STG_INLINE`: no live reference has it (`makeRefG`, `makeRefLok`).
@@ -4865,7 +5458,7 @@ end
 "Clause variable `index` at ARGP: inside a compound unified at once (`unifyVar`), else its `makeVarRef`."
 function _dvar!(di::decompileInfo{T}, nested::Int, index::code)::Nothing where {T}
     if nested > 0
-        unifyVar(di.ld, di.argpos, di.variables, index) ||
+        unifyVar(di, di.argpos, index) ||
             error("Decompiler: unifyVar failed")
         di.argpos += 1                                          # ARGP++
     else
@@ -4906,7 +5499,7 @@ function build_term!(
         w = di.argp[n - j]
         var = isVarRef(w)
         if var >= 0
-            unifyVar(ld, a, di.variables, code(var)) || error("build_term: unifyVar failed")
+            unifyVar(di, a, code(var)) || error("build_term: unifyVar failed")
         else
             ld.gstack[a] = w                                    # *a = *ARGP
         end
@@ -4914,6 +5507,70 @@ function build_term!(
     end
     resize!(di.argp, n - arity)
     push!(di.argp, term)                                        # *ARGP++ = term
+    return nothing
+end
+
+# PORT: pl-comp.c dc_kind
+# (f2fdb8cf af9e2e7e) What to do after the decompilation of a nested body (`decompileBodyIter!`) is completed.
+@enum dc_kind::UInt8 begin
+    DC_OR_A                 # (A ; B): after A
+    DC_OR_B                 # (A ; B): after B
+    DC_NOT                  # \+ A: after A
+    DC_DET                  # $ A: after A
+    DC_ITE_COND             # (A -> B ; C): after A
+    DC_ITE_THEN             # (A -> B ; C): after B
+    DC_ITE_ELSE             # (A -> B ; C): after C
+    DC_IT_COND              # (A -> B): after A
+    DC_IT_THEN              # (A -> B): after B
+end
+
+# PORT: pl-comp.c dc_frame
+# DIVERGES (SYNC3, f2fdb8cf af9e2e7e): upstream's `f` is a `functor_t` (FUNCTOR_ifthen2 or FUNCTOR_softcut2); here the Symbol of its name
+# (`->` or `*->`, arity 2), as `build_term!` takes it in this file. `until` is an index, 0 for NULL (see `decompileBodyNoShift!`).
+"""
+Control structures are decompiled with an explicit stack of continuation frames rather than recursion (pl-comp.c): a frame saves the state
+of the enclosing level and tells what to do after the decompilation of a nested body is completed.
+"""
+struct dc_frame
+    kind::dc_kind
+    end_::code                                  # end and until of the enclosing level
+    until::Int
+    nested::Int                                 # nested and pushed of the enclosing level
+    pushed::Int
+    adr1::Int                                   # (A -> B ; C): start of C
+    cut::code                                   # cut instruction that ends the condition
+    f::Symbol                                   # name of the (soft) if-then functor
+    clock::UInt64                               # di.clock when entering a disjunction (b9caf216)
+end
+
+"A frame of a construct without the (soft) if-then fields (`adr1`, `cut`, `f` unset)."
+dc_frame(kind::dc_kind, end_::code, until::Int, nested::Int, pushed::Int) =
+    dc_frame(kind, end_, until, nested, pushed, 0, C_END, :_, UInt64(0))
+
+"The frame a `DC_DESCEND` pushes after `frame` was popped: its `adr1`, `cut` and `f` stay (upstream's `frame` struct keeps them)."
+function _dc_next(
+    frame::dc_frame, kind::dc_kind, end_::code, until::Int, nested::Int, pushed::Int
+)::dc_frame
+    return dc_frame(
+        kind, end_, until, nested, pushed, frame.adr1, frame.cut, frame.f, frame.clock
+    )
+end
+
+# PORT: pl-comp.c renew_shared_vars
+# DIVERGES (SYNC3, b9caf216 af9e2e7e): upstream `setVar(*valTermRef(...))` resets the term reference's cell in place, "without allocating
+# global stack"; here a term reference holds a global cell's reference (`PL_new_term_refs`), so `PL_put_variable` allocates ONE global cell
+# per renewed slot. That cell is older than every compound the next alternative builds, so `unifyVar`'s `pv < p` assertion (D-0100) holds.
+"""
+Called when entering the next alternative of a disjunction (pl-comp.c): the slots from `clause.shared_base` accessed since the clock `since`
+(the previous alternative) hold branch-local variables of that alternative; if this alternative uses them they belong to a new variable
+(see `assign_shared_slots!`).
+"""
+function renew_shared_vars!(di::decompileInfo{T}, since::UInt64)::Nothing where {T}
+    for i in 0:(di.shared_count - 1)
+        if di.touched[i + 1] > since
+            PL_put_variable(di.ld, di.variables + di.shared_base + i)
+        end
+    end
     return nothing
 end
 
@@ -4929,19 +5586,34 @@ end
 # (pl-comp.c:6842-6851), since MOD3b `I_CALLATM`/`I_DEPARTATM`/`I_CALLATMV`/`I_DEPARTATMV` to
 # `Goal@M` or `PM:Goal@M` (pl-comp.c:6801-6840), and `I_CONTEXT` here "should never happen" (c:6792-6794;
 # `decompile!` takes it).
+# DIVERGES (SYNC3, f2fdb8cf af9e2e7e): upstream splits it as `decompileBodyNoShift` (the segstack `stack` of `dc_frame`, `double sbuf[64]`
+# in-line, `initSegStack`/`clearSegStack`) around `decompileBodyIter`; the stack is a Julia Vector, so there is no ERR_NOMEM return from
+# `DC_DESCEND` (`pushSegStack` cannot fail) and the wrapper just creates the Vector. Upstream's `rc` is an `int`: `true` or an error code.
 """
 Decompile body code from `di.pc` up to the instruction `end_` or the position `until` (pl-comp.c):
 each goal is built on the decompilation stack from its arguments' instructions, and the goals are
-joined by `,/2`, right-nested — one term is left on the stack.
+joined by `,/2`, right-nested — one term is left on the stack. A nested control structure is
+decompiled by `decompileBodyIter!` on an explicit stack of `dc_frame`s, not by recursion.
 """
 function decompileBodyNoShift!(
     di::decompileInfo{T}, end_::code, until::Int
 )::Nothing where {T}
-    pushed = 0                                                  # Subclauses pushed on the stack
+    stack = dc_frame[]
+    decompileBodyIter!(di, end_, until, stack)
+    return nothing
+end
+
+# PORT: pl-comp.c decompileBodyIter
+"The loop of `decompileBodyNoShift!` over the levels of nested control structures; `stack` holds the frames of the enclosing levels."
+function decompileBodyIter!(
+    di::decompileInfo{T}, end_::code, until::Int, stack::Vector{dc_frame}
+)::Nothing where {T}
     nested = 0                                                  # Nesting level
+    pushed = 0                                                  # Subclauses pushed on the stack
     ld = di.ld
     codes = di.clause.codes
     lits = di.clause.literals
+    @label level_start
     while di.pc != until
         op = codes[di.pc]
         di.pc += 1
@@ -4954,6 +5626,7 @@ function decompileBodyNoShift!(
         elseif op == B_ATOM || op == H_ATOM
             _dpush!(di, _word_of!(ld, lits[atom_literal(codes[di.pc])]))
             di.pc += 1
+            # DIVERGES (SYNC3, 0bf03c7f af9e2e7e; TAG1): upstream adds `case H_PTRINT: case B_PTRINT: *ARGP++ = consPtrInt((uint64_t)*PC++); continue` before H_SMALLINTW; held (TAG1 block above `compileArgument!`'s grounded-value rule).
         elseif op == B_SMALLINT || op == H_SMALLINT
             _dpush!(di, _word_of!(ld, mk_gnd(T, valInt(codes[di.pc]))))  # the tagged word's integer (L1d step 4)
             di.pc += 1
@@ -5042,8 +5715,8 @@ function decompileBodyNoShift!(
             di.pc += 2
             p = _dput_functor!(di, ld.functor_dot2)
             (
-                unifyVar(ld, p + 1, di.variables, v1) &&
-                unifyVar(ld, p + 2, di.variables, v2)
+                unifyVar(di, p + 1, v1) &&
+                unifyVar(di, p + 2, v2)
             ) ||
                 error("Decompiler: unifyVar failed")
         elseif op == B_RFUNCTOR || op == H_RFUNCTOR || op == B_RLIST || op == H_RLIST
@@ -5146,63 +5819,70 @@ function decompileBodyNoShift!(
         elseif op == C_VAR_N
             di.pc += 2
         elseif op == C_OR                                       # A ; B
-            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: A
+            to_jump = Int(codes[di.pc])
             di.pc += 1
-            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
-            di.pc -= 1                                          # get C_JMP argument
-            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: B
-            di.pc += 1
-            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
-            build_term!(di, mk_sym(T, Symbol(";")), 2)
-            pushed += 1
+            push!(
+                stack,
+                dc_frame(DC_OR_A, end_, until, nested, pushed, 0, C_END, :_, di.clock)   # frame.clock = di->clock
+            )
+            end_ = code(typemax(UInt64))                        # DC_DESCEND(DC_OR_A, (code)-1, PC+to_jump)
+            until = di.pc + to_jump
+            nested = 0
+            pushed = 0
+            @goto level_start
         elseif op == C_IFTHENELSE || op == C_FASTCOND || op == C_SOFTIF    # A -> B ; C (ifcommon)
-            icut = if op == C_FASTCOND
-                C_FASTCUT
+            if op == C_FASTCOND
+                cut = C_FASTCUT
+                f = Symbol("->")
             elseif op == C_SOFTIF                               # A *-> B ; C
-                C_SOFTCUT
+                cut = C_SOFTCUT
+                f = Symbol("*->")
             else
-                C_CUT
+                cut = C_CUT
+                f = Symbol("->")
             end
-            arrow = op == C_SOFTIF ? Symbol("*->") : Symbol("->")
             di.pc += 1                                          # skip the 'MARK' variable
             jmp = Int(codes[di.pc])
             di.pc += 1
             adr1 = di.pc + jmp
-            decompileBodyNoShift!(di, icut, 0)                  # A
-            di.pc += 2                                          # skip the cut
-            decompileBodyNoShift!(di, code(typemax(UInt64)), adr1)      # B
-            build_term!(di, mk_sym(T, arrow), 2)
-            di.pc -= 1
-            to_jump = Int(codes[di.pc])                         # DECOMPILETOJUMP: C
-            di.pc += 1
-            decompileBodyNoShift!(di, code(typemax(UInt64)), di.pc + to_jump)
-            build_term!(di, mk_sym(T, Symbol(";")), 2)
-            pushed += 1
+            push!(
+                stack,
+                dc_frame(DC_ITE_COND, end_, until, nested, pushed, adr1, cut, f, di.clock)   # frame.clock = di->clock
+            )
+            end_ = cut                                          # DC_DESCEND(DC_ITE_COND, frame.cut, NULL)
+            until = 0
+            nested = 0
+            pushed = 0
+            @goto level_start
         elseif op == C_NOT                                      # \+ A
             di.pc += 2                                          # skip the two arguments
-            decompileBodyNoShift!(di, C_CUT, 0)                 # A
-            di.pc += 3                                          # skip C_CUT <n> and C_FAIL
-            build_term!(di, mk_sym(T, Symbol("\\+")), 1)
-            pushed += 1
+            push!(stack, dc_frame(DC_NOT, end_, until, nested, pushed))
+            end_ = C_CUT                                        # DC_DESCEND(DC_NOT, C_CUT, NULL)
+            until = 0
+            nested = 0
+            pushed = 0
+            @goto level_start
         elseif op == C_DET                                      # $ A
             di.pc += 2                                          # skip the two arguments
-            decompileBodyNoShift!(di, C_DETTRUE, 0)             # A
-            while true                                          # Skip to after C_DETFALSE
-                op = codes[di.pc]
-                di.pc += 1 + codeTable(op).arguments            # stepPC(PC)
-                op == C_DETFALSE && break
-            end
-            build_term!(di, mk_sym(T, Symbol("\$")), 1)
-            pushed += 1
+            push!(stack, dc_frame(DC_DET, end_, until, nested, pushed))
+            end_ = C_DETTRUE                                    # DC_DESCEND(DC_DET, C_DETTRUE, NULL)
+            until = 0
+            nested = 0
+            pushed = 0
+            @goto level_start
         elseif op == C_IFTHEN || op == C_SOFTIFTHEN             # A -> B, A *-> B (c_ifthen)
             cut = op == C_IFTHEN ? C_CUT : C_SCUT               # C_CUT takes 1 arg, C_SCUT 0
+            f = op == C_IFTHEN ? Symbol("->") : Symbol("*->")
             di.pc += 1
-            decompileBodyNoShift!(di, cut, 0)                   # A
-            di.pc += cut == C_CUT ? 2 : 1                       # skip C_(S)CUT
-            decompileBodyNoShift!(di, C_END, 0)                 # B
-            di.pc += 1
-            build_term!(di, mk_sym(T, op == C_IFTHEN ? Symbol("->") : Symbol("*->")), 2)
-            pushed += 1
+            push!(
+                stack,
+                dc_frame(DC_IT_COND, end_, until, nested, pushed, 0, cut, f, UInt64(0))
+            )
+            end_ = cut                                          # DC_DESCEND(DC_IT_COND, frame.cut, NULL)
+            until = 0
+            nested = 0
+            pushed = 0
+            @goto level_start
         elseif op == I_CATCH                                    # (since V9f)
             push!(di.argp, _atom_word!(ld, mk_sym(T, Symbol("\$catch"))))
             pushed += 1
@@ -5234,7 +5914,84 @@ function decompileBodyNoShift!(
         build_term!(di, mk_sym(T, Symbol(",")), 2)
         pushed -= 1
     end
-    return nothing
+
+    isempty(stack) && return nothing                            # !popSegStack(stack, &frame, dc_frame)
+    frame = pop!(stack)
+    end_ = frame.end_
+    until = frame.until
+    nested = frame.nested
+    pushed = frame.pushed
+
+    # What to do after the decompilation of a nested body is completed (`switch( frame.kind )`); each case
+    # either descends again (DC_DESCEND: push the frame of this level, `nested = pushed = 0`) or builds its term and goes on at this level.
+    if frame.kind == DC_OR_A
+        di.pc -= 1                                              # get C_JMP argument
+        to_jump = Int(codes[di.pc])
+        di.pc += 1
+        renew_shared_vars!(di, frame.clock)
+        push!(stack, _dc_next(frame, DC_OR_B, end_, until, nested, pushed))
+        end_ = code(typemax(UInt64))
+        until = di.pc + to_jump
+        nested = 0
+        pushed = 0
+        @goto level_start
+    elseif frame.kind == DC_OR_B
+        build_term!(di, mk_sym(T, Symbol(";")), 2)
+        pushed += 1
+        @goto level_start
+    elseif frame.kind == DC_NOT
+        di.pc += 3                                              # skip C_CUT <n> and C_FAIL
+        build_term!(di, mk_sym(T, Symbol("\\+")), 1)
+        pushed += 1
+        @goto level_start
+    elseif frame.kind == DC_DET
+        while true                                              # Skip to after C_DETFALSE
+            op = codes[di.pc]
+            di.pc += 1 + codeTable(op).arguments                # stepPC(PC)
+            op == C_DETFALSE && break
+        end
+        build_term!(di, mk_sym(T, Symbol("\$")), 1)
+        pushed += 1
+        @goto level_start
+    elseif frame.kind == DC_ITE_COND
+        di.pc += 2                                              # skip the cut
+        push!(stack, _dc_next(frame, DC_ITE_THEN, end_, until, nested, pushed))
+        end_ = code(typemax(UInt64))
+        until = frame.adr1
+        nested = 0
+        pushed = 0
+        @goto level_start
+    elseif frame.kind == DC_ITE_THEN
+        build_term!(di, mk_sym(T, frame.f), 2)
+        di.pc -= 1
+        to_jump = Int(codes[di.pc])
+        di.pc += 1
+        renew_shared_vars!(di, frame.clock)
+        push!(stack, _dc_next(frame, DC_ITE_ELSE, end_, until, nested, pushed))
+        end_ = code(typemax(UInt64))
+        until = di.pc + to_jump
+        nested = 0
+        pushed = 0
+        @goto level_start
+    elseif frame.kind == DC_ITE_ELSE
+        build_term!(di, mk_sym(T, Symbol(";")), 2)
+        pushed += 1
+        @goto level_start
+    elseif frame.kind == DC_IT_COND
+        di.pc += frame.cut == C_CUT ? 2 : 1                     # skip C_(S)CUT
+        push!(stack, _dc_next(frame, DC_IT_THEN, end_, until, nested, pushed))
+        end_ = C_END
+        until = 0
+        nested = 0
+        pushed = 0
+        @goto level_start
+    elseif frame.kind == DC_IT_THEN
+        di.pc += 1
+        build_term!(di, mk_sym(T, frame.f), 2)
+        pushed += 1
+        @goto level_start
+    end
+    error("decompileBodyIter!: unknown frame kind")             # default: assert(0); return false
 end
 
 "The name of the type test instruction `op` compiles (`type_tests`, and var/1, nonvar/1)."
@@ -5265,7 +6022,7 @@ function decompileBody!(
     _, _, p = _deref_loc(ld, -(vbody + 1))                      # ARGP = valTermRef(vbody)
     var = isVarRef(w)
     if var >= 0
-        unifyVar(ld, p, di.variables, code(var)) || return false
+        unifyVar(di, p, code(var)) || return false
     else
         ld.gstack[p] = w
     end
@@ -5322,6 +6079,12 @@ function decompile!(
     try
         nv = Int(clause.prolog_vars)
         variables = nv == 0 ? 0 : PL_new_term_refs(ld, nv)
+        # shared_base/shared_count of the decompileInfo (C `decompile`): only with CL_SHARED_SLOTS and prolog_vars > shared_base
+        # (DIVERGES (SYNC3): `touched` is a Vector, upstream's tmp_malloc'd array); decompile_body_range! keeps 0, 0 ("the actual frame variables").
+        shared =
+            (clause.flags & CL_SHARED_SLOTS) != 0 && clause.prolog_vars > clause.shared_base
+        sb = shared ? Int(clause.shared_base) : 0
+        sc = shared ? nv - sb : 0
         bindings != 0 &&
             (decompile_bindings!(ld, clause, bindings, variables) || return false)
         bvar_access =
@@ -5339,7 +6102,7 @@ function decompile!(
             end
             moved_unifications!(ld, b, variables, bvar_access, bvar_args, true) ||
                 return false
-            di = decompileInfo{T}(ld, clause, pc, variables)
+            di = decompileInfo{T}(ld, clause, pc, variables, sb, sc)
             return decompileBody!(ld, di, b, I_EXIT, 0)
         end
         if (clause.flags & UNIT_CLAUSE) != 0                    # fact; deal with a :- A
@@ -5354,7 +6117,7 @@ function decompile!(
         if clause.codes[pc] == I_EXIT
             return PL_unify_atom(ld, body, mk_sym(T, Symbol("true")))
         end
-        di = decompileInfo{T}(ld, clause, pc, variables)
+        di = decompileInfo{T}(ld, clause, pc, variables, sb, sc)
         return decompileBody!(ld, di, body, I_EXIT, 0)
     finally
         PL_reset_term_refs(ld, top)
@@ -5443,6 +6206,8 @@ end
 # PORT: pl-comp.c det_goal_error
 # DIVERGES: the flag is read through `determinism_error_flag`, as a symbol; `found` is a symbol;
 # `pc_error` an index into the frame's clause's code. NOT PORTED: the `DEBUG(MSG_DETERMINISM)` line.
+# SYNC3 (6297c4b3, af9e2e7e): upstream re-reads `fr = valTermRef(fr_ref)` after `PL_open_foreign_frame()` ("the stacks may have moved"):
+# a frame here is an index into `ld.frames`, which no stack growth or collection moves, so `fr` stands (no `consTermRef(fr)`).
 """
     det_goal_error(ld, fr, pc_error, found) -> Bool
 
@@ -5620,6 +6385,7 @@ function skipArgs(PC::Code{T}, skip::Int, in_hvoid::Int)::Tuple{Code{T}, Int} wh
             if nested < 0
                 return (PC, in_hvoid)
             end
+            # DIVERGES (SYNC3, 0bf03c7f af9e2e7e; TAG1): upstream lists `H_PTRINT` next to H_SMALLINTW and `B_PTRINT` next to B_SMALLINTW in the one-operand cases here; held (TAG1 block above `compileArgument!`'s grounded-value rule).
         elseif c == H_ATOM || c == H_SMALLINT || c == H_NIL || c == H_FLOAT || c == H_MPZ ||
             c == H_MPQ || c == H_STRING || c == H_FIRSTVAR || c == H_VAR || c == H_VOID ||
             c == H_LIST_FF
@@ -5699,6 +6465,7 @@ function argKey(PC::Code{T}, skip::Int)::word where {T}
             return functor_operand_word(op)                     # the functor word (L1d step 4)
         elseif c == H_ATOM
             return _code_atom_key(PC)                           # code2atom(*PC)
+        # DIVERGES (SYNC3, 0bf03c7f af9e2e7e; TAG1): upstream adds `case H_PTRINT: *key = consPtrInt((uint64_t)*PC); return true` after H_SMALLINT; held (TAG1 block above `compileArgument!`'s grounded-value rule).
         elseif c == H_SMALLINT
             return _code_smallint_key(PC)                       # *key = (word)*PC
         elseif c == H_FLOAT || c == H_MPZ || c == H_MPQ || c == H_STRING
@@ -5743,6 +6510,7 @@ function arg1Key(PC::Code{T})::Tuple{Bool, word} where {T}
             return (true, functor_operand_word(op))             # the functor word (L1d step 4)
         elseif c == H_ATOM
             return (true, _code_atom_key(PC))
+            # DIVERGES (SYNC3, 0bf03c7f af9e2e7e; TAG1): `arg1Key` gets the same `H_PTRINT` case as `argKey`; held (TAG1 block above `compileArgument!`'s grounded-value rule).
         elseif c == H_SMALLINT                              # (L1d step 4: the operand is the word)
             return (true, _code_smallint_key(PC))
         elseif c == H_NIL

@@ -181,6 +181,7 @@ function update_locale(
 end
 
 # PORT: pl-locale.c acquireLocale
+# DIVERGES (SYNC3): upstream counts with `ATOMIC_INC` and no `L_LOCALE` (19fdf17e: creating a stream does not lock); one thread here, a plain increment.
 "Count a new reference to `l` (pl-locale.c)."
 function acquireLocale(l::PL_locale_rec{T})::PL_locale_rec{T} where {T}
     l.references += 1
@@ -188,12 +189,15 @@ function acquireLocale(l::PL_locale_rec{T})::PL_locale_rec{T} where {T}
 end
 
 # PORT: pl-locale.c releaseLocale
+# DIVERGES (SYNC3): upstream decrements with `ATOMIC_DEC` and takes `L_LOCALE` only for the last reference (19fdf17e); a plain decrement here, no lock.
 "Drop a reference to `l`; free it when nothing names it any more (pl-locale.c)."
 function releaseLocale(l::PL_locale_rec{T})::Nothing where {T}
-    @assert l.references > 0
-    l.references -= 1
-    if l.references == 0 && l.symbol === nothing && l.alias === nothing
-        free_locale(l)
+    l.references -= 1                                           # int refs = ATOMIC_DEC(&l->references)
+    @assert l.references >= 0
+    if l.references == 0                                        # if ( refs == 0 )
+        if l.symbol === nothing && l.alias === nothing
+            free_locale(l)
+        end
     end
     return nothing
 end
@@ -230,7 +234,7 @@ function _locale_lookup(
 end
 
 # PORT: pl-locale.c alias_locale as _alias_locale_table!
-# DIVERGES: split in two: this is the success branch (`addNewHTableWP`, `l->alias`, `l->references++`), false when the alias is
+# DIVERGES: split in two: this is the success branch (`addNewHTableWP`, `l->alias`, `acquireLocale(l)`), false when the alias is
 # taken; `alias_locale` raises the error. `PL_register_atom` has no twin (no atom GC).
 "Enter `l` in the table under `alias`; false when the alias is taken, with nothing changed (pl-locale.c)."
 function _alias_locale_table!(
@@ -239,7 +243,7 @@ function _alias_locale_table!(
     _locale_table_index(gd, alias) == 0 || return false
     push!(gd.locale.table, l)                                   # addNewHTableWP(GD->locale.localeTable, alias, l)
     l.alias = alias
-    l.references += 1                                           # acquireLocale(), but that will deadlock
+    acquireLocale(l)                                            # acquireLocale() no longer locks (19fdf17e)
     return true
 end
 
@@ -823,7 +827,7 @@ function pl_locale_destroy1_va(
         if i != 0 && gd.locale.table[i] === l                   # deleteHTableWP(GD->locale.localeTable, alias) == l
             deleteat!(gd.locale.table, i)
             l.alias = nothing
-            l.references -= 1
+            l.references -= 1                                   # ATOMIC_DEC(&l->references)
         end
     end
     releaseLocale(l)

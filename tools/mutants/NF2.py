@@ -32,8 +32,8 @@ MUTANTS = [
         return FTRUE''',
          new='''        return FTRUE'''),
     dict(id="NF2-R2 a redo does not answer a clause erased meanwhile", file=P, targets=TR,
-         old='''               PL_foreign_control(PL__ctx) != FRG_FIRST_CALL''',
-         new='''               false'''),
+         old='            if erased || PL_foreign_control(PL__ctx) != FRG_FIRST_CALL\n',
+         new='            if erased || false\n'),
     dict(id="NF2-R3 the last candidate keeps a state", file=P, targets=TR,
          old='''                if ctx.chp.cref === nothing             # deterministic last one''',
          new='''                if false                                # deterministic last one'''),
@@ -53,16 +53,14 @@ MUTANTS = [
          old='''        PL_exception(ld, 0) != 0 && break''',
          new='''        nothing'''),
     dict(id="NF2-R8 an undefined procedure is not made dynamic", file=P, targets=TR,
-         old='''            setDynamicDefinition!(gd, def, true)        # implicit''',
-         new='''            nothing                                     # implicit'''),
+         old='        elseif !setDynamicDefinition!(gd, def, true)    # setDynamicDefinition_unlocked(def, true)\n',
+         new='        elseif false    # setDynamicDefinition_unlocked(def, true)\n'),
     dict(id="NF2-R9 a retry returns true instead of its context", file=P, targets=TR,
          old='''                return PL_retry_address(k)              # ForeignRedoPtr(ctx)''',
          new='''                return FTRUE                            # ForeignRedoPtr(ctx)'''),
     dict(id="NF2-R10 a static predicate with clauses is retracted from", file=P, targets=TR,
-         old='''            if isDefinedProcedure(gd, proc)
-                return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE''',
-         new='''            if false
-                return PL_error(ld, ERR_MODIFY_STATIC_PROC, proc) ? FTRUE : FFALSE'''),
+         old='        if isDefinedProcedure(gd, proc)\n            rc = false\n',
+         new='        if false\n            rc = false\n'),
     # ---- clause/2 (src/pl-comp.jl clause_ndet, unify_head, unify_atom_compound; src/pl-proc.jl get_procedure_find)
     dict(id="NF2-C1 FRG_CUTTED does not pop the predicate access", file=C, targets=TC,
          old='''        popPredicateAccess!(ld, def)

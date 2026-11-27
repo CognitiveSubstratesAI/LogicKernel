@@ -216,7 +216,8 @@ end
 # code and the index of the instruction the frame resumes at, `pc.pc`, which `put_environment` takes).
 # A frame argument is the term reference at `argFrameP`. The test `onStackArea(local, cl)` and its
 # `PL_representation_error("continuation")` are left out: a clause is a Julia object, it is never
-# a value on the local stack. `PL_new_term_refs(av)` is tested (upstream passes a failed 0 on).
+# a value on the local stack. (6297c4b3: upstream re-reads `fr` from `fr_ref` inside the argument loop because
+# `PL_put_term()` may shift the stacks: nothing moves here.) `PL_new_term_refs(av)` is tested (upstream passes a failed 0 on).
 """
     put_continuation(gd, ld, cont, resetfr, fr, pc, for_copy) -> Bool
 
@@ -380,8 +381,11 @@ end
 # atom, a clause that is not a blob, a PC that is not an integer or an arity below 3 raise the
 # `type_error(continuation, _)` of a non-matching arity. `clause_clref` gives the `Clause` for any
 # serial of the append-only table, erased or not, as upstream's blob keeps the clause. Left out: the
-# blob word upstream stores below the frame (it only protects the blob from atom GC; there is none)
-# and the `DEBUG(MSG_CONTINUE)` output. The room asked for is the frame, its slots and `LOCAL_MARGIN`
+# blob word upstream stores below the frame (it only protects the blob from atom GC; there is none) and the
+# `DEBUG(MSG_CONTINUE)` output.
+# DIVERGES: the clause is found by `clause_clref`; there is one thread here, no test for a clause of another thread's
+# thread-local predicate is made and the test file has no case (held with the thread-local blobs of pl-dbref). The room
+# asked for is the frame, its slots and `LOCAL_MARGIN`
 # (upstream's margin is the stack's own spare); growing the local stack moves nothing, so there is no
 # `retry`. A slot is linked from its global cell (`_slot_from_cell!`, `linkValI`); a choice-point slot
 # keeps the word `consInt(position)` that `put_environment` copied, when that position is still a

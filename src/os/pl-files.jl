@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-files.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-files.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-files.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
 # CLASS: code
@@ -227,8 +227,9 @@ _ascii_lower(s::String)::Vector{UInt8} = _ascii_lower(codeunits(s))
     get_file_name(ld, n, flags) -> String or nothing
 
 The file name the term reference `n` holds — an atom, a string or a code or character list —, or `nothing`
-after raising `type_error` (unless `PL_FILE_NOERRORS`), `domain_error(file_name, N)` for a name with a
-NUL, or `representation_error(max_path_length)` (pl-files.c).
+after raising `type_error` (unless `PL_FILE_NOERRORS`), `representation_error(nul_terminated_string(N))` for a name
+with a NUL (since swipl-devel f22d8c51; before: `domain_error(file_name, N)`), or `representation_error(max_path_length)`
+(pl-files.c).
 """
 function get_file_name(
     ld::PL_local_data{T}, n::term_t, flags::Int
@@ -245,10 +246,11 @@ function get_file_name(
     txt = PL_get_text(ld, n, chflags)                           # PL_get_nchars(n, &len, &name, …)
     txt === nothing && return nothing
     name = text_string(txt)
-    if 0x00 in codeunits(name)                                  # strlen(name) != len
-        PL_error(
-            ld, "", 0, "file name contains a 0-code", ERR_DOMAIN, mk_sym(T, :file_name), n
-        )
+    if 0x00 in codeunits(name)                                  # strlen(name) != len  (code0:)
+        (flags & PL_FILE_NOERRORS) != 0 && return nothing
+        # f22d8c51 (SYNC3): the error of any text with a 0-code, no longer `domain_error(file_name, N)`.
+        # ERR_REPRESENTATION_CULPRIT is packet P02's (src/pl-error.jl): `representation_error(nul_terminated_string(N))`.
+        PL_error(ld, ERR_REPRESENTATION_CULPRIT, mk_sym(T, :nul_terminated_string), n)
         return nothing
     end
     if ncodeunits(name) >= PATH_MAX
@@ -601,6 +603,22 @@ function pl_tmp_file2_va(
     _tmp_file_refused(ld, "tmp_file/2: TemporaryFile with the table GD->os.tmp_files")
 end
 
+# PORT: pl-files.c tmp_directory as pl_tmp_directory2_va
+# (PRED_IMPL("tmp_directory", 2, tmp_directory, 0), swipl-devel 01dbb5e1 "ADDED: tmp_directory/2 to create a temporary directory")
+# DIVERGES (SYNC3): refused by name, as tmp_file/2: `TemporaryDirectory(base)` (pl-os.c) records the directory in the table
+# `GD->os.tmp_files` with its kind (`tmp_kind`), which `ForgetTemporaryDirectory` (delete_directory/1) and the halt read:
+# not kept here (see `_tmp_file_refused`).
+"`tmp_directory(+Base, -Dir)`: refused by name, the registry `GD->os.tmp_files` is not kept (pl-files.c)."
+function pl_tmp_directory2_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    txt = PL_get_text(ld, PL__t0, CVT_ALL | CVT_EXCEPTION)          # PL_get_chars(A1, &n, CVT_ALL|CVT_EXCEPTION)
+    txt === nothing && return FFALSE
+    _tmp_file_refused(
+        ld, "tmp_directory/2: TemporaryDirectory with the table GD->os.tmp_files"
+    )
+end
+
 # PORT: pl-files.c tmp_file_stream as pl_tmp_file_stream4_va
 # (PRED_IMPL("$tmp_file_stream", 4, tmp_file_stream, 0))
 # DIVERGES: refused by name (see `_tmp_file_refused`).
@@ -625,6 +643,8 @@ _mkdir(path::String, mode::Integer)::Int =
 
 # PORT: pl-files.c delete_directory as pl_delete_directory1_va
 # (PRED_IMPL("delete_directory", 1, delete_directory, 0))
+# (swipl-devel 01dbb5e1: after a successful `rmdir` upstream calls `ForgetTemporaryDirectory(aname)` for an atom `A1`: the
+# kernel keeps no registry of temporary directories, see `pl_tmp_directory2_va`, so there is nothing to forget.)
 "`delete_directory(+Dir)`: remove an empty directory (pl-files.c)."
 function pl_delete_directory1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -881,6 +901,7 @@ const PL_predicates_from_files = (
     PL_extension("exists_file", 1, pl_exists_file1_va, PL_FA_VARARGS),
     PL_extension("exists_directory", 1, pl_exists_directory1_va, PL_FA_VARARGS),
     PL_extension("tmp_file", 2, pl_tmp_file2_va, PL_FA_VARARGS),
+    PL_extension("tmp_directory", 2, pl_tmp_directory2_va, PL_FA_VARARGS),
     PL_extension("\$tmp_file_stream", 4, pl_tmp_file_stream4_va, PL_FA_VARARGS),
     PL_extension("delete_file", 1, pl_delete_file1_va, PL_FA_VARARGS),
     PL_extension("delete_directory", 1, pl_delete_directory1_va, PL_FA_VARARGS),

@@ -58,8 +58,8 @@ function trim_stack!(ld::PL_local_data{T})::Nothing where {T}
     if ld.local_spare < ld.local_def_spare
         reduce = ld.local_def_spare - ld.local_spare
         room = ld.lMax - ld.lTop                # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce                        # no room at all reserves nothing
+            reduce = room > 0 ? room : 0
         end
         ld.lMax -= reduce                       # s->max = addPointer(s->max, -reduce)
         ld.local_spare += reduce
@@ -69,16 +69,16 @@ end
 
 # PORT: pl-setup.c trim_stack as trim_stack_global!
 # DIVERGES (since L1f f1b): the global stack's spare is a reserve in the one limit (`_stacks_in_use`), so its
-# free room is what the limit leaves (`stacks_limit - _stacks_in_use`). As upstream, a reserve the room
-# cannot hold is kept whole (`room > 0 && room < reduce`): after an overflow trimStacks(resize) shrinks the
-# local stack first (`growStacks_trim!`, GROW_TRIM), which gives the room back.
+# free room is what the limit leaves (`stacks_limit - _stacks_in_use`). SYNC3: a reserve the room cannot hold is cut
+# to the room, and to 0 if there is none (`room < reduce`): after an overflow trimStacks(resize) shrinks the local
+# stack first (`growStacks_trim!`, GROW_TRIM), which gives the room back.
 "Reserve the global stack's spare again, as far as the room under the limit allows (pl-setup.c)."
 function trim_stack_global!(ld::PL_local_data)::Nothing
     if ld.global_spare < ld.global_def_spare
         reduce = ld.global_def_spare - ld.global_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce
+            reduce = room > 0 ? room : 0
         end
         ld.global_spare += reduce                           # s->max -= reduce; s->spare += reduce
     end
@@ -92,8 +92,8 @@ function trim_stack_trail!(ld::PL_local_data)::Nothing
     if ld.trail_spare < ld.trail_def_spare
         reduce = ld.trail_def_spare - ld.trail_spare
         room = ld.stacks_limit - _stacks_in_use(ld, 0)      # roomStackP(s)
-        if room > 0 && room < reduce
-            reduce = room
+        if room < reduce
+            reduce = room > 0 ? room : 0
         end
         ld.trail_spare += reduce
     end
@@ -129,6 +129,9 @@ function trimStacks!(ld::PL_local_data{T}, resize::Bool)::Nothing where {T}
 end
 
 # PORT: pl-setup.c emptyStacks as emptyStacks!
+# DIVERGES (SYNC3, 25ebf765): upstream now also sets `LD->gen_bar = gTop` (the generational GC's barrier); the kernel has
+# no `gen_bar`: the collector is G1's (src/pl-gc.jl, the 18168e62 pin), whose generational part is not ported (work item "pl-gc delta
+# af9e2e7e", evidence/R2/all_int_handoff.md), so nothing is set here.
 # DIVERGES: the argument stack is emptied.
 # `BFR` and `LD->query` are cleared with the stack they point into; there is no `mark_bar`, and no
 # `lTop && gTop` guard (the stacks always exist). Of the
@@ -229,7 +232,9 @@ end
 # DIVERGES (G1-C, dispatcher decision 1): only the two collector signals have a handler (`PL_signal(SIG_GC|PL_SIGSYNC, gc_handler)` and
 # `SIG_TUNE_GC`'s, pl-setup.c:931-932, both C handlers: `dispatch_signal` calls `sh->handler(sig)` for them). The rest of `dispatch_signal`
 # (Prolog handlers, `PLSIG_THROW`, the frame it opens, the OS signals) is the signal owner's (`on_signal/4`, Q10/TH1); no other bit is raised
-# here, so another number is refused by name.
+# here, so another number is refused by name. `SIG_TRACE_GC` (SYNC3 ef5d47a0, `gc_trace_handler`) is never raised on this stack: its producer, the
+# queue of GC/shift trace events of the flag `trace_gc` that the collector fills (pl-gc.c at af9e2e7e), is not in G1's collector (the 18168e62
+# pin, src/pl-gc.jl): work item "pl-gc delta af9e2e7e" (evidence/R2/all_int_handoff.md), taken with the generational stub by packet H2.
 "Run the handler of the virtual signal `sig` (pl-setup.c `dispatch_signal`, the collector's two)."
 function _dispatch_gc_signal(ld::PL_local_data{T}, sig::Int)::Nothing where {T}
     if sig == SIG_GC
@@ -339,6 +344,11 @@ const SIG_CLAUSE_GC = SIG_PROLOG_OFFSET + 3
 const SIG_PLABORT = SIG_PROLOG_OFFSET + 4
 "Prolog signal: halt (pl-incl.h `SIG_PLHALT`)."
 const SIG_PLHALT = SIG_PROLOG_OFFSET + 5
+# PORT: pl-incl.h virtual_signum as SIG_TRACE_GC
+# (swipl-devel ef5d47a0: VSIG_TRACE_GC after VSIG_TUNE_GC, NUM_VSIGS 8; `SIG_USER_OFFSET`, where the search for a free
+# signal starts, moves up by one; the kernel has no such search yet)
+"Prolog signal: print the queued stack GC / shift trace events of the flag `trace_gc` (pl-incl.h `SIG_TRACE_GC`)."
+const SIG_TRACE_GC = SIG_PROLOG_OFFSET + 7
 
 # PORT: pl-setup.c PLSIG_USERFLAGS
 "The range of the API-visible signal flags (pl-setup.c)."
@@ -393,8 +403,10 @@ const SIGH_ABORT = 10
 const SIGH_HALT = 11
 "The handler function `executeThreadSignals` (pl-thread.c: `SIG_THREAD_SIGNAL`)."
 const SIGH_THREAD_SIGNAL = 12
+"The handler function `gc_trace_handler` (pl-setup.c: `SIG_TRACE_GC`; numbered last so the earlier tokens keep their values)."
+const SIGH_TRACE_GC = 13
 "The highest handler token."
-const SIGH_MAX = 12
+const SIGH_MAX = 13
 
 # PORT: pl-setup.c signames as SIGNAMES_VIRTUAL
 # DIVERGES: the entries of the `signames` table that follow the OS signals (`prolog:atom_gc` …), here a table of their own; the
@@ -403,7 +415,7 @@ const SIGNAMES_VIRTUAL = (
     ("prolog:atom_gc", SIG_ATOM_GC), ("prolog:gc", SIG_GC),
     ("prolog:thread_signal", SIG_THREAD_SIGNAL),
     ("prolog:clause_gc", SIG_CLAUSE_GC), ("prolog:abort", SIG_PLABORT),
-    ("prolog:halt", SIG_PLHALT)
+    ("prolog:halt", SIG_PLHALT), ("prolog:trace_gc", SIG_TRACE_GC)
 )
 
 # PORT: pl-setup.c signames as SIGNAMES_FLAGS
@@ -569,6 +581,7 @@ function initSignals!(::Type{T})::Vector{sig_handler{T}} where {T}
 
     _signal_install!(handlers, SIG_GC, SIGH_GC, PLSIG_SYNC)
     _signal_install!(handlers, SIG_TUNE_GC, SIGH_TUNE_GC, PLSIG_SYNC)
+    _signal_install!(handlers, SIG_TRACE_GC, SIGH_TRACE_GC, PLSIG_SYNC)
     _signal_install!(handlers, SIG_CLAUSE_GC, SIGH_CGC, PLSIG_SYNC)
     _signal_install!(handlers, SIG_PLABORT, SIGH_ABORT, PLSIG_SYNC)
     _signal_install!(handlers, SIG_PLHALT, SIGH_HALT, PLSIG_SYNC)
@@ -697,7 +710,8 @@ function setupProlog(::Type{T})::PL_global_data{T} where {T}
         initSignals!(T),                        # signals_handlers: setup:122 initSignals (Q10)
         initStackParams(),                      # stacks_params: init_stack's small/factor/min_free (Q10)
         locale_state{T}(),                      # locale: empty until initLocale! (below)
-        dc_proc                                 # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
+        dc_proc,                                # procedures_tune_gc3: set by initBuildIns! (pl-ext.c:385-386)
+        zeros(UInt32, OP_NAME_BITS ÷ OP_NAME_WBITS)  # op_names: no operator name yet (pl-op.c; SYNC3 L1)
     )
     initPrologFlags!(gd)                        # setup:136 (src/os/pl-prologflag.jl): before the built-ins (:158), whose boot clauses read the mask
     initTries!(gd)                              # initTries (setup:149), its tail: trie_gen_compiled/2,3 (TR4, src/pl-trie.jl)

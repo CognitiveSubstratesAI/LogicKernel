@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-thread.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-thread.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1999-2026, University of Amsterdam,
 # COPYRIGHT: VU University Amsterdam
@@ -47,17 +47,18 @@ function pushPredicateAccessObj!(
     return dref
 end
 
-# PORT: pl-thread.c popPredicateAccess
-# DIVERGES: removes the vector entry (upstream clears the top entry, or shifts the entries above an
-# out-of-order one down, and decrements `top` — the same stack afterwards).
-"Pop the reference to `def` — normally the top one; out of order is possible (pl-thread.c)."
-function popPredicateAccess!(ld::PL_local_data{T}, def::Definition{T})::Nothing where {T}
+# PORT: pl-thread.c popPredicateAccessOutOfOrder
+# (swipl-devel 0e32701c, src/pl-thread.c:9159-9177 of af9e2e7e)
+# DIVERGES (SYNC3): upstream moves the later access objects down one slot at a time while holding
+# `LD->thread.scan_lock`, because clause GC reads the access objects of another thread under that lock;
+# the kernel has one thread and no concurrent clause GC, so no lock is taken. The Vector entry is
+# removed (`deleteat!` is the same move).
+"Pop the access object of `def` that is not the topmost one: the later ones move down (pl-thread.c)."
+function popPredicateAccessOutOfOrder!(
+    ld::PL_local_data{T}, def::Definition{T}
+)::Nothing where {T}
     refs = ld.predicate_references
     top = length(refs)
-    if refs[top].predicate === def
-        pop!(refs)
-        return nothing
-    end
     while top > 0                                   # Out of order!
         if refs[top].predicate === def
             deleteat!(refs, top)
@@ -66,6 +67,24 @@ function popPredicateAccess!(ld::PL_local_data{T}, def::Definition{T})::Nothing 
         top -= 1
     end
     @assert false "popPredicateAccess!: predicate not referenced"
+    return nothing
+end
+
+# PORT: pl-thread.c popPredicateAccess
+# (swipl-devel 0e32701c: the out-of-order search moved into popPredicateAccessOutOfOrder)
+# DIVERGES: removes the vector entry (upstream clears the top entry, or shifts the entries above an
+# out-of-order one down, and decrements `top` — the same stack afterwards).
+# NOTE (SYNC3): upstream's new `findPredicateAccessObj(def)` (the topmost access object of `def`) is
+# defined once, in src/pl-proc.jl (packet P07, `findPredicateAccessObj(ld, def)`), not here.
+"Pop the reference to `def` — normally the top one; out of order is possible (pl-thread.c)."
+function popPredicateAccess!(ld::PL_local_data{T}, def::Definition{T})::Nothing where {T}
+    refs = ld.predicate_references
+    top = length(refs)
+    if refs[top].predicate === def
+        pop!(refs)
+        return nothing
+    end
+    popPredicateAccessOutOfOrder!(ld, def)
     return nothing
 end
 

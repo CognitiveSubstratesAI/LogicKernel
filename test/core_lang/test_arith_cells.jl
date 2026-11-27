@@ -28,7 +28,7 @@ _ais(x, e) = _rf("is", x, e)
 _aplus(a, b) = _rf("+", a, b)
 _atimes(a, b) = _rf("*", a, b)
 _aminus(a, b) = _rf("-", a, b)
-const _AC_MAXT = Int64(LK.PLMAXTAGGEDINT)       # 72057594037927935: the largest tagged integer
+const _AC_MAXT = Int64(LK.PLMAXTAGGEDINT)       # the largest tagged integer: 2^55-1 = 36028797018963967 since TAG1 (it was 72057594037927935)
 const _AC_MINT = Int64(LK.PLMINTAGGEDINT)
 
 _ac_clauses() = Tuple{_R, Union{Nothing, _R}}[
@@ -193,13 +193,13 @@ _ac_clauses() = Tuple{_R, Union{Nothing, _R}}[
     @test "ev(+(1,2),3) det" in ours
     @test "lnest(2000,2001000) det" in ours && "rnest(2000,2001000) det" in ours
     @test "refs(40) det" in ours && "mixed(1.0) det" in ours
-    @test "edge(72057594037927936,72057594037927935,72057594037927936) det" in ours
+    @test "edge($(_AC_MAXT + 1),$(_AC_MAXT),$(_AC_MAXT + 1)) det" in ours       # 36028797018963968,36028797018963967,36028797018963968 (TAG1)
     @test "chars(294) det" in ours
     @test count(l -> startswith(l, "exception(instantiation_error)"), ours) == 3   # [_]: PL_error's unbound culprit
     @test "exception(type_error(evaluable,/(foo,1))) det" in ours
     @test "exception(type_error(evaluable,/(a,0))) det" in ours
     @test "bt(10) nondet" in ours && "bt(20) det" in ours
-    @test "bt_edge(72057594037927936) nondet" in ours && "bt_edge(2) det" in ours
+    @test "bt_edge($(_AC_MAXT + 1)) nondet" in ours && "bt_edge(2) det" in ours
     @test "bl_ff(V9) det" in ours || "bl_ff(_) det" in ours
     @test !any(l -> startswith(l, "bl_fl(") || startswith(l, "bl_pz("), ours)
     if _R_SWIPL

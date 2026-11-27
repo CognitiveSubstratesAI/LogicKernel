@@ -67,15 +67,11 @@ MUTANTS = [
          old='''    clause.flags |= DBREF_CLAUSE''',
          new='''    clause.flags |= UInt32(0)'''),
     dict(id="D1-6 release_clause_blob does not clear the mark", file=B, targets=T,
-         old='''    clause.flags &= ~DBREF_CLAUSE
-    return true''',
-         new='''    clause.flags &= ~UInt32(0)
-    return true'''),
+         old='cl.flags = flags & ~DBREF_CLAUSE',
+         new='cl.flags = flags & ~UInt32(0)'),
     dict(id="D1-7 release_clause_blob answers false", file=B, targets=T,
-         old='''    clause.flags &= ~DBREF_CLAUSE
-    return true''',
-         new='''    clause.flags &= ~DBREF_CLAUSE
-    return false'''),
+         old="# if ( (flags&DBREF_ERASED_CLAUSE) ) unallocClause(cl)                  (not ported: Julia's GC)\n    return true",
+         new="# if ( (flags&DBREF_ERASED_CLAUSE) ) unallocClause(cl)                  (not ported: Julia's GC)\n    return false"),
     dict(id="D1-8 lookup_clref never acquires", file=B, targets=T,
          old='''    new && acquire_clause_blob(gd, a)''',
          new='''    nothing'''),
@@ -112,18 +108,14 @@ MUTANTS = [
          old='''    PL_put_atom(ld, t, a)                                       # _PL_put_atomic(t, a)''',
          new='''    nothing'''),
     dict(id="D1-18 PL_is_dbref is true for every atom", file=B, targets=T,
-         old='''    return clause_clref(gd, a) !== nothing ||''',
-         new='''    return true ||'''),
+         old='return clause_dbref(gd, a) !== nothing ||',
+         new='return true ||'),
     dict(id="D1-19 PL_get_dbref names another type in its error", file=B, targets=T,
          old='''    PL_error(ld, ERR_TYPE, mk_sym(T, :db_reference), t)         # no blob, or one of another type: goto error''',
          new='''    PL_error(ld, ERR_TYPE, mk_sym(T, :reference), t)         # no blob, or one of another type: goto error'''),
     dict(id="D1-20 PL_get_dbref answers an erased clause", file=B, targets=T,
-         old='''        if (clause.flags & CL_ERASED) == 0
-            return (DB_REF_CLAUSE, clause)
-        end''',
-         new='''        if true
-            return (DB_REF_CLAUSE, clause)
-        end'''),
+         old='        if (clause.flags & CL_ERASED) == 0                      # isoff(cl, CL_ERASED)\n',
+         new='        if true                      # isoff(cl, CL_ERASED)\n'),
     dict(id="D1-21 PL_get_dbref says the reference is a record's", file=B, targets=T,
          old='''        return (DB_REF_CLAUSE, clause)''',
          new='''        return (DB_REF_RECORD, clause)'''),
@@ -152,37 +144,29 @@ MUTANTS = [
          old='''        return PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 2, t)''',
          new='''        return PL_error(ld, "", 0, "", ERR_UNINSTANTIATION, 1, t)'''),
     dict(id="D1-28 assertz/2 adds at the start", file=K, targets=T,
-         old='''    clause = assert_term!(gd, ld, A1, CL_END)''',
-         new='''    clause = assert_term!(gd, ld, A1, CL_START)'''),
+         old='''    return assert_term!(gd, ld, A1, CL_END, A2) !== nothing''',
+         new='''    return assert_term!(gd, ld, A1, CL_START, A2) !== nothing'''),
     dict(id="D1-29 asserta/2 adds at the end", file=K, targets=T,
-         old='''    clause = assert_term!(gd, ld, A1, CL_START)''',
-         new='''    clause = assert_term!(gd, ld, A1, CL_END)'''),
+         old='''    return assert_term!(gd, ld, A1, CL_START, A2) !== nothing''',
+         new='''    return assert_term!(gd, ld, A1, CL_END, A2) !== nothing'''),
     dict(id="D1-30 assertz/2 does not unify the reference", file=K, targets=T,
-         old='''    clause = assert_term!(gd, ld, A1, CL_END)
-    clause === nothing && return FFALSE
-    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE''',
-         new='''    clause = assert_term!(gd, ld, A1, CL_END)
-    clause === nothing && return FFALSE
-    return FTRUE'''),
+         old='''    return assert_term!(gd, ld, A1, CL_END, A2) !== nothing ? FTRUE : FFALSE''',
+         new='''    return assert_term!(gd, ld, A1, CL_END) !== nothing ? FTRUE : FFALSE'''),
     dict(id="D1-31 asserta/2 does not unify the reference", file=K, targets=T,
-         old='''    clause = assert_term!(gd, ld, A1, CL_START)
-    clause === nothing && return FFALSE
-    return PL_unify_clref(gd, ld, A2, clause) ? FTRUE : FFALSE''',
-         new='''    clause = assert_term!(gd, ld, A1, CL_START)
-    clause === nothing && return FFALSE
-    return FTRUE'''),
+         old='''    return assert_term!(gd, ld, A1, CL_START, A2) !== nothing ? FTRUE : FFALSE''',
+         new='''    return assert_term!(gd, ld, A1, CL_START) !== nothing ? FTRUE : FFALSE'''),
     dict(id="D1-32 assertz/2 does not check its second argument", file=K, targets=T,
          old='''    mustBeVar(ld, A2) || return FFALSE
     gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_END)''',
+    return assert_term!(gd, ld, A1, CL_END, A2)''',
          new='''    gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_END)'''),
+    return assert_term!(gd, ld, A1, CL_END, A2)'''),
     dict(id="D1-33 asserta/2 does not check its second argument", file=K, targets=T,
          old='''    mustBeVar(ld, A2) || return FFALSE
     gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_START)''',
+    return assert_term!(gd, ld, A1, CL_START, A2)''',
          new='''    gd = _query_gd(ld)
-    clause = assert_term!(gd, ld, A1, CL_START)'''),
+    return assert_term!(gd, ld, A1, CL_START, A2)'''),
     dict(id="D1-40 assert/2 is not registered", file=K, targets=T,
          old='''    PL_extension("assert", 2, pl_assertz2_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
 ''',

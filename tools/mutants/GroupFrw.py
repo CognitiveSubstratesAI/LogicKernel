@@ -30,8 +30,8 @@ MUTANTS = [
     # killed by "print/1 with a user portray/1, as swipl": print(user_error, g(foo)) writes portray's
     # `bar` on user_output (the current output), not on the write's stream
     dict(id="GF2 portray/1 writes to the current output, not the write's stream", file=W, targets=WF,
-         old='''    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out''',
-         new='''    nothing    # Scurout = options->out'''),
+         old='    wstate === nothing && return -1\n    ld.IO_streams[SNO_CURRENT_OUTPUT + 1] = options.out    # Scurout = options->out',
+         new='    wstate === nothing && return -1\n    nothing    # Scurout = options->out'),
     # killed by "print/1 with a user portray/1, as swipl": ours[7][3] == "ex:oops" (an uncaught raise
     # in portray/1 is the error, not a fall-back write with the exception dropped)
     dict(id="GF3 a raise in portray/1 is a failure, not an error", file=W, targets=WF,

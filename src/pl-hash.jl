@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-hash.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-hash.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-hash.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Author:	Austin Appleby
@@ -58,6 +58,37 @@ function MurmurHashAligned2(key, len::Int, seed::UInt32)::UInt32
     if len >= 1
         h ⊻= _le_byte(key, j)
         h *= m
+    end
+    h ⊻= h >> 13
+    h *= m
+    h ⊻= h >> 15
+    return h
+end
+
+# PORT: pl-hash.c MurmurHashWide
+# DIVERGES (SYNC3, af9e2e7e): takes the code points themselves (an `AbstractVector` of `UInt32`/`Integer` scalar values)
+# instead of a `wchar_t` buffer and its byte length `len`; upstream's `len` is `4*length(cps)` (the `n*4` of its portable
+# branch, which is also what `MurmurHashAligned2()` computes on a little-endian machine with a 4-byte `wchar_t`). The
+# UTF-16 surrogate-pair joining of upstream's `SIZEOF_WCHAR_T == 2` build has no case: Julia's text is code points.
+# Callers upstream: `pl-atom.c` (wide atoms, held behind G1) and `pl-termhash.c` (wide text of term_hash/2 and
+# variant_sha1/2); neither calls it here yet.
+"""
+    MurmurHashWide(cps, seed) -> UInt32
+
+MurmurHash2 of the code points `cps` taken as little-endian 32-bit blocks, so the hash does not depend on the byte order or
+on the size of `wchar_t` (pl-hash.c).
+"""
+function MurmurHashWide(cps::AbstractVector{<:Integer}, seed::UInt32)::UInt32
+    m = 0x5bd1e995
+    r = 24
+    h = seed ⊻ (UInt32(length(cps)) * UInt32(4))        # h = seed ^ (unsigned int)(n*4)
+    for c in cps
+        k = UInt32(c)                                   # unsigned int k = (unsigned int)*s++
+        k *= m                                          # MIX(h,k,m)
+        k ⊻= k >> r
+        k *= m
+        h *= m
+        h ⊻= k
     end
     h ⊻= h >> 13
     h *= m

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/os/pl-file.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/os/pl-file.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/os/pl-file.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-global.h @ 18168e629eab
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
@@ -38,6 +38,13 @@
 "The name of the file `s` reads, or `nothing` (pl-file.c)."
 fileNameStream(gd::PL_global_data{T}, s::IOSTREAM) where {T} =
     get(gd.stream_filenames, s, nothing)::Union{Nothing, T}
+
+# PORT: pl-file.c fileNameStreamLocked
+# (SYNC3, af9e2e7e: new function; its caller is pl-read.c's syntax-error path, src/pl-read.jl)
+# DIVERGES: as `fileNameStream` (no lock, so nothing differs): for a caller that holds the stream's lock, e.g. the reader;
+# a stream without a name has none (`NULL_ATOM` is `nothing`).
+"The name of the file `s` reads, or `nothing`, for a caller that holds the lock of `s` (pl-file.c)."
+fileNameStreamLocked(gd::PL_global_data{T}, s::IOSTREAM) where {T} = fileNameStream(gd, s)
 
 # PORT: pl-file.c setFileNameStream
 # DIVERGES: as `fileNameStream`; `nothing` is upstream's NULL_ATOM — it, or `''`, forgets the
@@ -513,6 +520,11 @@ function PL_unify_stream(ld::PL_local_data, t::term_t, s::IOSTREAM)::Bool
 end
 
 # PORT: pl-file.c reportStreamError
+# DIVERGES (SYNC3, af9e2e7e): upstream has a new branch between the `SIO_FERR` error and the warning, taken when
+# `s->encoding_errors && (s->flags & SIO_INPUT)`: the error is `error(syntax_error(encoding(Message)), stream(S, L, LP, CN))`
+# (`PL_syntax_error_term(culprit, s)`, src/pl-string.jl) unless an exception is pending, and `Sseterr(s, 0, NULL)`; it returns
+# false. NOT PORTED: the stream property `encoding_errors(Mode)` (the field `IOSTREAM.encoding_errors`, src/os/pl-stream.jl,
+# and the decoder that sets `SIO_WARN` in pl-stream.c are not in this packet; the atom `encoding_errors`, pl-atom, is held).
 # DIVERGES: no halt state, no console streams (Windows), no recorded exception (`s->exception`), no
 # timeouts (`SIO_TIMEOUT`); the message of an error without one is "I/O error", where upstream
 # reads `errno` (`MSG_ERRNO`) — a Julia IO's failure carries none.
@@ -567,6 +579,10 @@ function releaseStream(s::IOSTREAM)::Bool
     s.magic == SIO_MAGIC && return Sunlock(s) == 0
     return true
 end
+
+# NOT PORTED: pl-file.c atom_to_encoding_errors_ex (SYNC3, af9e2e7e): a new upstream function, between `reportStreamError` and the TTY modes): sets
+# `s->encoding_errors` to true for the atom `error`, to false for `warning`, else raises `domain_error(encoding_errors, A)`;
+# the caller is `set_stream/2`'s `encoding_errors(Mode)` and `open/4`'s `encoding_errors(Mode)` option (see `reportStreamError`).
 
 # PORT: pl-file.c streamStatus
 "Whether `s` is free of errors and its release succeeds; an error recorded on it is raised (pl-file.c)."
@@ -742,6 +758,14 @@ end
 getStream(s::IOSTREAM)::Union{Nothing, IOSTREAM} = s.magic == SIO_MAGIC ? s : nothing
 
 # PORT: pl-file.c unify_stream_ref
+# DIVERGES (SYNC3, af9e2e7e): upstream's blob data is now the IOSTREAM itself (`PL_unify_blob(t, s, sizeof(*s), &stream_blob)`:
+# `PL_BLOB_UNIQUE|PL_BLOB_NOCOPY|PL_BLOB_LOCAL`, a thread-local blob promoted when another thread may reach it); a pair has a
+# `stream_pair` record found back from its two streams (`SIO_PMAGIC`, `data_stream_ref`, `get_stream_ref`,
+# `compare_stream_ref`, the release hook `release_stream_ref` with `release_stream`, `unlink_stream_pair`, `would_gc_close`,
+# `gc_close_stream` no longer freeing an erased stream), so `get_stream_handle`, `stream_pair/3`, `set_stream/2` and `pl_close`
+# read `ref.read`/`ref.write` of a `stream_ref` BY VALUE. Held: the blob flags and the release/compare hooks are the atom
+# table's (pl-atom, behind G1), the pair is NOT PORTED (see `stream_ref`); the kernel's `stream_ref` is already a value of
+# two table numbers, which is what `get_stream_handle`, `set_stream/2` and `pl_close` read.
 "Unify term reference `t` with the blob of the stream `s` (pl-file.c)."
 function unify_stream_ref(ld::PL_local_data{T}, t::term_t, s::IOSTREAM)::Bool where {T}
     ctx = getStreamContext(_query_gd(ld), s)
@@ -869,6 +893,9 @@ end
 
 # PORT: pl-file.c open4_options
 # DIVERGES: `locale` (`O_LOCALE`) is listed so that a locale is REFUSED (`NotPortedError`), not ignored.
+# DIVERGES (SYNC3, af9e2e7e): upstream appends `{ ATOM_encoding_errors, OPT_ATOM }` after `unicode_atoms`; `openStream` then
+# reads it into `encoding_errors_opt` and, after the `unicode_atoms` handling, `atom_to_encoding_errors_ex(opt, s)` or
+# `Sclose(s)` and NULL. NOT PORTED (see `reportStreamError`: the field `IOSTREAM.encoding_errors` is not in this packet).
 const open4_options = (
     PL_option_t(:type, OPT_ATOM),
     PL_option_t(:reposition, OPT_BOOL),
@@ -1312,39 +1339,49 @@ end
 
 # PORT: pl-file.c push_input_context
 # (swipl-devel cbf4e189, src/os/pl-file.c:1583-1598)
+# (SYNC3, af9e2e7e: the current input is reference counted, so is the stream a context saves)
 # DIVERGES: the context is pushed on `ld.input_context_stack` (a vector; upstream: a heap cell linked to
 # `previous`); no atom reference counts (no atom garbage collection).
 "Save the current input stream and source location as a context of `type` (pl-file.c)."
 function push_input_context(ld::PL_local_data{T}, type::T)::Bool where {T}
+    cur = Scurin(ld)
     c = input_context{T}(
-        Scurin(ld),                                 # c->stream    = Scurin
+        cur,                                        # c->stream    = Scurin
         type,                                       # c->type      = type
         ld.read_source.file,                        # c->term_file = source_file_name
         ld.read_source.position.lineno              # c->term_line = source_line_no
     )
+    cur === nothing || Sacquire(cur)                # if ( c->stream ) Sacquire(c->stream)
     push!(ld.input_context_stack, c)                # c->previous = input_context_stack; input_context_stack = c
     return true
 end
 
 # PORT: pl-file.c pop_input_context
 # (swipl-devel cbf4e189, src/os/pl-file.c:1601-1619)
+# (SYNC3, af9e2e7e: the stream may have been closed meanwhile, then `user_input` is restored; the reference is released)
 # DIVERGES: as `push_input_context`; upstream's `Sinput` is `Suser_input(ld)` (`initIO`, above).
 "Restore the input stream and source location the last `push_input_context` saved; false when none is saved (pl-file.c)."
 function pop_input_context(ld::PL_local_data{T})::Bool where {T}
     if !isempty(ld.input_context_stack)
         c = pop!(ld.input_context_stack)
-        ld.IO_streams[SNO_CURRENT_INPUT + 1] = c.stream    # Scurin           = c->stream
+        s = c.stream                                        # IOSTREAM *s = c->stream
+        setStandardStream(                                  # setStandardStream(SNO_CURRENT_INPUT,
+            ld, SNO_CURRENT_INPUT,                          #   s && s->magic == SIO_MAGIC ? s : Suser_input)
+            s !== nothing && s.magic == SIO_MAGIC ? s : Suser_input(ld)
+        )
+        s === nothing || Srelease(s)                        # if ( s ) Srelease(s)
         ld.read_source.file = c.term_file                   # source_file_name = c->term_file
         ld.read_source.position.lineno = c.term_line        # source_line_no   = c->term_line
         return true
     else
-        ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Sinput
+        setStandardStream(ld, SNO_CURRENT_INPUT, Suser_input(ld))   # setStandardStream(SNO_CURRENT_INPUT, Sinput)
         return false
     end
 end
 
 # PORT: pl-file.c pl_see
 # (swipl-devel cbf4e189, src/os/pl-file.c:4446-4485)
+# (SYNC3, af9e2e7e: `Scurin = s` is `setStandardStream(SNO_CURRENT_INPUT, s)`, the current input being reference counted)
 # DIVERGES: `findStreamFromFile(a, IO_SEE)` finds no stream: the kernel registers no see/1 (see/tell are
 # S1/O1's), so the only `pl_see` caller is `compileFile` (src/pl-qlf.jl), whose `pl_seen` closes the stream
 # it opened before the next file; for the same reason `set(getStreamContext(s), IO_SEE)` records no flag
@@ -1357,11 +1394,11 @@ function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
 
     s = get_stream_handle(ld, a, SH_ALIAS | SH_UNLOCKED)
     if s !== nothing
-        ld.IO_streams[SNO_CURRENT_INPUT + 1] = s    # Scurin = s
+        setStandardStream(ld, SNO_CURRENT_INPUT, s) # setStandardStream(SNO_CURRENT_INPUT, s)
         return true
     end
     if sym_key(a) == sym_key(mk_sym(T, :user))      # a == ATOM_user
-        ld.IO_streams[SNO_CURRENT_INPUT + 1] = Suser_input(ld)   # Scurin = Suser_input
+        setStandardStream(ld, SNO_CURRENT_INPUT, Suser_input(ld))   # setStandardStream(SNO_CURRENT_INPUT, Suser_input)
         return true
     end
     # findStreamFromFile(a, IO_SEE): no stream (see above)
@@ -1373,7 +1410,7 @@ function pl_see(ld::PL_local_data{T}, f::term_t)::Bool where {T}
 
     getStreamContext(gd, s)                         # set(getStreamContext(s), IO_SEE)
     push_input_context(ld, mk_sym(T, :see))         # push_input_context(ATOM_see)
-    ld.IO_streams[SNO_CURRENT_INPUT + 1] = s        # Scurin = s
+    setStandardStream(ld, SNO_CURRENT_INPUT, s)     # setStandardStream(SNO_CURRENT_INPUT, s)
     return true
 end
 
@@ -2270,6 +2307,9 @@ function stream_encoding_prop(
     return false
 end
 
+# NOT PORTED: pl-file.c stream_encoding_errors_prop (SYNC3, af9e2e7e): a new upstream property, registered after `encoding/1` and `unicode_atoms/1`): fails for a
+# non-input stream, else unifies with `error` or `warning` as `s->encoding_errors` is set (see `reportStreamError`).
+
 # PORT: pl-file.c stream_unicode_atoms_prop
 "`unicode_atoms(Mode)` of `s` (pl-file.c)."
 function stream_unicode_atoms_prop(
@@ -2758,6 +2798,8 @@ function set_stream(
         mode === nothing && return false
         s.unicode_atoms = mode
         return true
+        # DIVERGES (SYNC3, af9e2e7e): upstream has `else if ( aname == ATOM_encoding_errors )` here: `PL_get_atom_ex(a, &val)`, then
+        # `atom_to_encoding_errors_ex(val, s)`, else false; entry `SS_INFO(ATOM_encoding_errors, SS_READ)`. NOT PORTED (see `reportStreamError`).
     elseif aname === :locale                        # locale(Locale)
         throw(
             NotPortedError{T}(

@@ -63,8 +63,11 @@ end
 
 # ── the tagged form of an entry (pl-data.h consPtr over the trail) ──────────────────────────────
 # ORIGINAL: pl-gc.c's `ttag(w)` = `w & TAG_TRAILMASK` for the tagged words: a value entry has bit 0 set.
+# PORT (TAG1, swipl-devel af9e2e7e, bb4ccf71): upstream's `ttag(x)` is now `tag(x) & TAG_TRAILMASK` (`tag` strips the extended tag bits first;
+# the value is the same as `x & TAG_TRAILMASK`, as `tag(x) & 1 == x & 1`): the body below spells it out. early_reset_vars' new
+# `ttag(te[-1].as_word) != TAG_TRAILVAL` test (the generational `isOldCell` hunk) is the GEN-GC DIVERGES of pl-gc.jl.
 "Whether the TAGGED trail word `w` is a value entry (`ttag(w) == TAG_TRAILVAL`, pl-gc.c)."
-@inline gc_trail_tagged_isval(w::word)::Bool = (w & TAG_TRAILMASK) == TAG_TRAILVAL
+@inline gc_trail_tagged_isval(w::word)::Bool = (tag(w) & TAG_TRAILMASK) == TAG_TRAILVAL
 
 # ORIGINAL: `valPtr(te->as_word)` of the tagged entry: the cell position the entry names.
 "The position the TAGGED trail word `w` names (`valPtr`, pl-gc.c): an address, or the saved old value."

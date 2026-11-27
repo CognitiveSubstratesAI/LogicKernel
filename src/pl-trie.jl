@@ -18,6 +18,21 @@
 # walk and the statistics (`is_ground_trie_node`, `map_trie_node`, `stat_trie`, `trie_table_size`), and the trie blob
 # (`trie_blob`, `initTries!`, `trie_symbol`, `symbol_trie`, `get_trie`, `trie_error`). The PRED_IMPLs and the value helpers are part B.
 #
+# DIVERGES (SYNC3, swipl-devel af9e2e7e, the commits 0fa79d80, cc3f74fa, 0a87c73c, bb4ccf71, 0bf03c7f, 8783a5bd, 77c3148d; held by
+# SYNC3 behind G1, with the atom and functor collectors and the thread-local blobs): at af9e2e7e (1) a private answer trie (TRIE_LOCAL) has a
+# THREAD-LOCAL blob as its symbol (`trie_blob` flags PL_BLOB_LOCAL|PL_BLOB_OWNED; `local_trie_symbol`, `release_local_trie`,
+# TRIE_ORPHANED, the local branches of `release_trie_ref`, `trie_symbol` and `release_trie_value`, over `newLocalBlob`,
+# `newSharedBlob`, `shareLocalBlob`, `discardBlob`, `disownBlob`); (2) a C pointer handed to Prolog is a POINTER INTEGER
+# (TAGEX_PTRINT keys, `add_int` and the VM codes T_PTRINT and T_TRY_PTRINT), and a rational has its own indirect key
+# (TAGEX_INDIRECT_MPQ), cells reserve 8 low bits for their kind (`isRecord` tests 0x7 and not an atom; `child_hash` is ported, TAG1); (3) a key that is a functor is made permanent in `new_trie_node` (`permanentFunctor`) and `mark_new_key` promotes a
+# local atom; (4) the clause of a trie is a shared reference found by `clause_dbref` (a `Clause`, was `clause_clref`: a `ClauseRef`),
+# the `clause_ref` of a compiled trie clause lies behind the clause (`clauseBytes`, `trie_clause_cref`, `lookup_shared_clref`,
+# `forAtomsAndFunctorsInClause`). This file ports none of it but `child_hash`: the kernel has one thread and no atom or functor GC; a record
+# word is `index << 2` (so `isRecord` tests 0x3, see there); a key is the kernel's own word, in the 8-bit layout of src/pl-incl.jl since TAG1
+# (`LMASK_BITS` 8); and the reference of the compiled clause is a separate `tr.clause_cref`. Declared elsewhere in the kernel and not used
+# by this file: TAGEX_PTRINT, TAGEX_INDIRECT_MPQ and TRIE_ORPHANED (src/pl-incl.jl), `permanentFunctor` (src/pl-funct.jl) and
+# `clause_dbref` (src/pl-dbref.jl). Each site below names its part.
+#
 # REPRESENTATION (DIVERGES, audit D-0453 Q3, owner TR1): a node, a children block and a node chunk are Julia records; a node
 # is named by its id in `trie.nodes` (id 1 is the root; 0 is upstream's NULL), a block by its id in `trie.blocks`, and
 # `trie_node.children` holds 0, `(id<<1)|1` (a single child: upstream's TRIE_SINGLE_CHILD tag) or `bid<<1` (a block).
@@ -190,6 +205,9 @@ end
 # DIVERGES: the trie is an argument (a record is a slot of `tr.records`, see `isRecord`); upstream unregisters an atom (no atom
 # reference counts here: nothing to do), erases a record (`erase_value!`) and releases the answer trie of a variant table node
 # (`isTriePtrValue`, TB1: `release_trie_value`, the trie is found by number in `tr.registry`; no atom-GC, so a trie with a symbol stays).
+# DIVERGES (SYNC3, af9e2e7e): `release_trie_value` also has a local branch (`isTrie(t, TRIE_LOCAL)`: `release_local_trie`, which sets
+# TRIE_ORPHANED and then `disownBlob(symbol)`s a symbol that exists or destroys the trie after a compare-and-swap of `t->symbol` to
+# ATOM_nil): thread-local blobs, HELD (pl-atom); `release_local_trie` is E-tier, not ported (one thread, no sweep of local blobs).
 "Release the value `value` of a node of `tr` (pl-trie.c `release_value`): a record is erased, a trie pointer destroys a symbol-less answer trie, an atom or integer needs nothing."
 function release_value(gd::PL_global_data{T}, tr::trie{T}, value::word)::Nothing where {T}
     if isRecord(value)
@@ -205,7 +223,9 @@ end
 # (swipl-devel 18168e62, src/pl-trie.c:273-291) DIVERGES: the database is an argument (TR4: every caller passes it on); no
 # `COMPARE_AND_SWAP_ATOM` (one thread) and no `PL_unregister_atom` (no atom GC); the reference is the one `compile_trie` kept
 # (`clause_cref`), upstream's `clause_clref(dbref)` (none for `fail`); the retract is the method without `ld`, as upstream's
-# `notify` is false (no update event).
+# `notify` is false (no update event). SYNC3 (af9e2e7e): upstream now reads `Clause cl = clause_dbref(dbref)` (the clause itself, not a
+# `ClauseRef`; `cl->...` for `cref->value.clause->...`): the kernel's `tr.clause_cref` already gives the clause (`cref.clause`), so no
+# code change; the trailing comments below keep the old name `clause_clref` (anchors of TR4-D5, tools/mutants/TRIE4.py, and of the compiled_size mutant of TBP.py).
 "Discard the compiled clause of `tr`, if any: clear `tr.clause` and retract the clause from trie_gen_compiled/2,3 (pl-trie.c)."
 function trie_discard_clause(gd::PL_global_data{T}, tr::trie{T})::Nothing where {T}
     dbref = tr.clause
@@ -225,7 +245,8 @@ function trie_discard_clause(gd::PL_global_data{T}, tr::trie{T})::Nothing where 
 end
 
 # PORT: pl-trie.c trie_clause_refers_to_nodes
-# (pl-trie.c:352-368 at the pin.)
+# (pl-trie.c:352-368 at the pin.) SYNC3 (af9e2e7e): `Clause cl = clause_dbref(trie->clause)` replaces `ClauseRef cref = clause_clref(...)`;
+# as at `trie_discard_clause` the kernel reads the clause from `tr.clause_cref`: no code change.
 "Whether the clause of `tr` refers to its nodes: a `T_DELAY` with a node operand (pl-trie.c)."
 function trie_clause_refers_to_nodes(tr::trie{T})::Bool where {T}
     cref = tr.clause_cref                                       # ClauseRef cref = clause_clref(trie->clause)
@@ -429,9 +450,9 @@ end
 # ---- CHILDREN (get_child, next_child!, is_leaf_trie_node) ----
 
 # PORT: pl-trie.c child_hash
-"The slot a block with `bits` index bits starts the search for `key` at, 0-based (pl-trie.c)."
+"The slot a block with `bits` index bits starts the search for `key` at, 0-based (pl-trie.c): the key without its mask bits (`CELL_VAL_SHIFT`, bb4ccf71)."
 @inline child_hash(key::word, bits::Int)::Int =
-    Int((UInt64(key) * 0x9e3779b97f4a7c15) >> (64 - bits))
+    Int((UInt64(key >> CELL_VAL_SHIFT) * 0x9e3779b97f4a7c15) >> (64 - bits))
 
 # PORT: pl-trie.c block_size
 "The bytes upstream's block of `capacity` entries and `index_bits` index bits takes (pl-trie.c `block_size`)."
@@ -849,6 +870,9 @@ end
 
 # PORT: pl-trie.c new_trie_node
 # DIVERGES: returns the node's id, 0 where upstream's is NULL; `acquire_key` and `mark_new_key` are left out (no atom reference counts).
+# SYNC3 (af9e2e7e, 8783a5bd, 0a87c73c) DIVERGES: upstream now calls `permanentFunctor(key)` when `isFunctor(key)` (the functor GC must not
+# reclaim a functor a node names) and `mark_new_key` becomes `promoteAtomIfLocal(word2atom(key))` plus the marking while atom-GC runs
+# (a local atom must not die with its thread's sweep): functor GC and thread-local atoms are HELD (pl-funct, pl-atom), the kernel has neither.
 "A new node with key `key` in `tr`; its id, or 0 when the pool cannot hold it (pl-trie.c)."
 function new_trie_node(
     tr::trie{T}, key::word, ld::Union{Nothing, PL_local_data{T}}=nothing
@@ -1207,7 +1231,8 @@ end
 
 # PORT: pl-indirect.c extern_indirect
 # DIVERGES: returns the value (upstream builds the indirect on the global stack and returns its word); the caller makes the cell
-# from the value (`_vword!`).
+# from the value (`_vword!`). So `consIndirect(r, indKind(val))` (af9e2e7e: the kind, `tag(val)` before, tells a rational,
+# `KIND_MPQ`, from an integer) has no site here: the table holds values, and the handle's `indirect_tagex` is the integer one for a rational too.
 "The value the handle `w` of an interned indirect names in `tab` (pl-indirect.c `extern_indirect`)."
 function extern_indirect(tab::indirect_table{T}, w::word)::T where {T}
     return tab.values[Int(valTagged(w))]
@@ -1641,7 +1666,10 @@ end
 
 # PORT: pl-trie.c trie_table_size
 # DIVERGES: the clause's size is `sizeofClause` (positions) in bytes, 8 per position; its reference is the one `compile_trie`
-# kept (`clause_cref`), upstream's `clause_clref(dbref)`.
+# kept (`clause_cref`), upstream's `clause_clref(dbref)`. SYNC3 (af9e2e7e): upstream reads `Clause cl = clause_dbref(dbref)` and
+# `sizeofClause(cl->code_size)`: no code change here. The two new functions the diff charges to this one (`local_trie_symbol`, the symbol
+# of a private answer trie: the owner creates a local blob, another thread promotes it to a shared one, a destroyed trie gets a discarded
+# blob; and `release_local_trie`, see `release_value`) are thread-local blobs, HELD (pl-atom): E-tier, not ported.
 "The bytes upstream's answer trie `tr` takes, with its compiled clause, for an estimate of the memory abolishing it frees (pl-trie.c)."
 function trie_table_size(tr::trie{T})::Int where {T}
     size = SIZEOF_TRIE + tr.node_count * SIZEOF_TRIE_NODE
@@ -1657,6 +1685,10 @@ end
 # PORT: pl-trie.c trie_blob
 # DIVERGES: no `release`, `write`, `save` or `load` slots (`PL_blob_t` has none): atom-GC does not exist here, so a trie lives
 # as long as `gd.tries` (`trie_destroy/1` empties it); the written form `<trie>(0x...)` is the term layer's blob form.
+# SYNC3 (af9e2e7e, 0fa79d80/cc3f74fa) DIVERGES: upstream's `trie_blob` has the flags `PL_BLOB_LOCAL|PL_BLOB_OWNED|PL_BLOB_NOCOPY` (a private
+# answer trie's symbol is a thread-local blob; an owned blob releases the trie) and its `release` slot `release_trie_ref` has three
+# cases (a shared trie: `trie_destroy`; TRIE_LOCAL and TRIE_ORPHANED: `t->symbol = ATOM_nil` and `trie_destroy`; TRIE_LOCAL otherwise: a
+# compare-and-swap of `t->symbol` to 0): PL_BLOB_LOCAL, PL_BLOB_OWNED, TRIE_LOCAL and TRIE_ORPHANED do not exist in the kernel (HELD, pl-atom).
 "The blob type of a trie (pl-trie.c `trie_blob`): not unique (one atom per trie, made by `trie_symbol`), non-text, named `trie`."
 const trie_blob = PL_blob_t(PL_BLOB_NOCOPY, "trie")
 
@@ -1706,6 +1738,9 @@ end
 # PORT: pl-trie.c trie_symbol
 # DIVERGES: the database is an argument; the trie gets its number in `gd.tries` with its first symbol; the result is the atom
 # WORD (`unify_trie` makes the blob term of it).
+# SYNC3 (af9e2e7e) DIVERGES: upstream returns `local_trie_symbol(trie)` first when `ison(trie, TRIE_LOCAL)` and makes the shared symbol
+# with `newSharedBlob` (the loser of the race calls `discardBlob`, no longer `PL_blob_gc_released`): thread-local blobs, HELD (pl-atom);
+# every kernel trie is shared, the branch below is the only one.
 "The atom (handle) of `tr`, created on first use (pl-trie.c)."
 function trie_symbol(gd::PL_global_data{T}, tr::trie{T})::word where {T}
     tr.symbol != 0 && return tr.symbol
@@ -1794,6 +1829,9 @@ end
 # DIVERGES: upstream tells a record (a pointer) from an atom or a tagged integer by the low two bits of the word being 0 (an atom
 # and an integer have a nonzero tag there); a record is a slot of `tr.records` here and its word is `index << 2` (index >= 1), so the
 # same test holds. 0 is "no value" and is never asked.
+# SYNC3 (af9e2e7e, bb4ccf71) DIVERGES: upstream's test is now `((w)&0x7) == 0 && !isAtom(w)` (a record is an aligned pointer: 8 low bits
+# are a cell's kind); NOT ported: here a record word is `index << 2` and an odd index has bit 2 set, so the 0x7 form would misclassify the
+# records 1, 3, ... as non-records; an atom has TAG_ATOM in the low bits and is never 0 there, so the `!isAtom` part has nothing to add.
 "Whether the node value word `w` is a record (pl-trie.c `isRecord`)."
 @inline isRecord(w::word)::Bool = (w & word(0x3)) == 0
 
@@ -2015,6 +2053,10 @@ ukey_state(tr::trie{T}, p::Int) where {T} =
 end
 
 # PORT: pl-trie.c unify_key
+# DIVERGES (SYNC3, af9e2e7e, bb4ccf71/0bf03c7f): upstream adds the key TAGEX_INDIRECT_MPQ (a rational) to the indirect cases and
+# TAGEX_PTRINT (a pointer integer) to the integer case, which unify as a number from the key: the kernel's trie makes neither key (the handle
+# of a rational, `NUM_RATIONAL`, gets the integer tag, see `indirect_tagex`, and this file makes no TAGEX_PTRINT key; handles are plain
+# integers, see `trie_node_handle`); `compile_trie_value` below names the rest.
 # DIVERGES: the argument stack is the state's (`astack`); a functor key allocates with `allocGlobalNoShift` and returns
 # GLOBAL_OVERFLOW when the stack limit is reached (the caller raises it: no `Undo` and no retry, the stacks grow on demand); a
 # variable cell is bound with `_bind_const!` (which trails below the mark bar); an attributed variable met where a functor key must
@@ -3209,6 +3251,8 @@ function sizeofTablePP(ht::IdDict)::Int
 end
 
 # PORT: pl-trie.c trie_property as pl_trie_property2_va
+# SYNC3 (af9e2e7e) DIVERGES: the `compiled_size` branch reads `Clause cl = clause_dbref(dbref)` and `sizeofClause(cl->code_size)` (was `clause_clref`);
+# the kernel reads the clause from `tr.clause_cref`: no code change.
 # (PRED_IMPL("$trie_property", 2, trie_property, 0))
 # DIVERGES: the names are compared by `sym_key` (as set_module/3); `size` is `stat_trie(tr).bytes` without the cross-check
 # `Sdprintf("OOPS...")`s of upstream (diagnostics only, for a private pool trie); `discarded` reads `TRIE_DISCARDED`; `compiled_size` is
@@ -3385,6 +3429,10 @@ add_indirect!(st::trie_compile_state{T}, op::code, v::T) where {T} =
     add_vmi_d!(st, op, add_literal!(st, v))
 
 # PORT: pl-trie.c add_smallint
+# DIVERGES (SYNC3, af9e2e7e, 0bf03c7f): upstream's new `add_int(state, w)` emits `T_PTRINT` (operand `valInt(w)`) when `isPtrInt(w)` and
+# else `add_smallint(state, T_SMALLINT, T_SMALLINTW, w)`, and `compile_trie_value`, its `children:` value case and the key case
+# TAGEX_PTRINT (`T_TRY_PTRINT` with `state->try`) call it instead of `add_smallint`: the kernel has no pointer integers and declares no
+# T_PTRINT or T_TRY_PTRINT, so `add_int` is E-tier, not ported: every call keeps `add_smallint!`.
 # DIVERGES: CODES_PER_WORD == 1, so always `c1` (`c2`, the W form, is never emitted: the kernel declares no T_SMALLINTW); the operand
 # is the TAGGED word `w` (as H_SMALLINT's, see the OPERANDS note in src/pl-vmi.jl), where upstream writes `valInt(w)`.
 "Add the small integer `w` with the instruction `c1` (pl-trie.c `add_smallint`)."
@@ -3402,6 +3450,8 @@ function add_vmi_else_i!(st::trie_compile_state, c1::code, c2::code, w::word)::N
 end
 
 # PORT: pl-trie.c compile_trie_value
+# DIVERGES (SYNC3, af9e2e7e): the integer case calls `add_int` (see `add_smallint!`); the key switch of the walk has TAGEX_INDIRECT_MPQ among
+# the indirect keys and a new case TAGEX_PTRINT: not in the kernel, so not ported.
 # DIVERGES: the value is the term reference `t` (upstream: a dereferenced `Word`), walked from its location `-(t+1)` with the cell
 # agenda and `trie_deref` (as `trie_lookup_abstract`); `attvars` is upstream's `attvar_mark` buffer as `(compound depth, location)`
 # pairs; a variable of a slot (position 0) is not written (a slot is never unbound); an indirect is the value
@@ -3672,6 +3722,8 @@ function fixup_last_fail!(st::trie_compile_state)::Bool
 end
 
 # PORT: pl-trie.c create_trie_clause
+# DIVERGES: the kernel's clause has no inline `clause_ref` (`tr.clause_cref` is a separate record), and there is no atom
+# or functor GC, so no atom or functor is registered.
 # DIVERGES: the clause is made from the state's code and literals (no buffer to take over); created at generation 0 and never
 # erased as `initVM`'s clause, the generations are set by `assertDefinition!`; no `forAtomsInClause` registration (no atom GC) and
 # no `GD->statistics.codes/clauses` counts (the kernel keeps no `GD->statistics` struct, src/pl-global.jl:343).
@@ -3690,7 +3742,8 @@ function create_trie_clause(
         st.codes,
         st.literals,
         Procedure{T}[],
-        UInt32(0), UInt32(0), UInt32(0)  # no source
+        UInt32(0), UInt32(0), UInt32(0),  # no source
+        clsize_t(0)                     # cl->shared_base: no CL_SHARED_SLOTS (b9caf216 af9e2e7e)
     )
 end
 

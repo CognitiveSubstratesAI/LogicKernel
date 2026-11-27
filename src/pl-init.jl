@@ -13,7 +13,8 @@
 # LEFT OUT: `script_argv`, the saved states and the resource database, `findHome`/`initPaths` apart from the system
 # init file name, `giveVersionInfo`, `run_on_halt` and the foreign hook lists (`PL_on_halt`, `PL_exit_hook`: the
 # kernel has none), `qlfCleanup`, `RemoveTemporaryFiles`, `cleanupSignals` and the memory reclaim of
-# `cleanupProlog` (the host process's memory is the host's).
+# `cleanupProlog` (the host process's memory is the host's; the reclaim chain gained `cleanupOperators()` before
+# `cleanupProlog`'s `cleanupProcedures()`, af9e2e7e: the operator tables of pl-op.c, no twin here).
 
 # PORT: pl-init.c MAX_HALT_CANCELLED
 "The number of times a halt may be cancelled by `cancel_halt/1`, before it goes ahead regardless (pl-init.c)."

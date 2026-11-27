@@ -172,6 +172,65 @@ translate_message2(message_lines(Lines), L, T) :- % deal with old C-warning()
 translate_message2(format(Fmt, Args)) -->
     [ Fmt-Args ].
 
+%!  translate_exception(+Exception)//
+%
+%   As translate_message//1 for an exception.  Exceptions may be data
+%   from elsewhere, e.g., an error received from a remote pengine, so a
+%   format(Fmt, Args) ball is only formatted if Fmt does not call goals.
+%   Other messages that hold an exception use this as well.
+
+translate_exception(Ex) -->
+    { nonvar(Ex),
+      Ex = format(Fmt, Args)
+    },
+    !,
+    format_message(Fmt, Args).
+translate_exception(Ex) -->
+    translate_message(Ex).
+
+%!  format_message(+Fmt, +Args)//
+%
+%   Format Args using Fmt, unless Fmt calls goals using ~@ or ~W or is
+%   not text.  In that case, print the term.  Used for format(Fmt, Args)
+%   inside exceptions.
+
+format_message(Fmt, Args) -->
+    (   { format_calls_goals(Fmt) }
+    ->  [ '~q'-[format(Fmt, Args)] ]
+    ;   [ Fmt-Args ]
+    ).
+
+format_calls_goals(Fmt) :-
+    (   catch(text_to_string(Fmt, String), _, fail)
+    ->  string_codes(String, Codes),
+        fmt_goal_directive(Codes)
+    ;   true
+    ).
+
+fmt_goal_directive([0'~|T0]) :-
+    !,
+    fmt_skip_argument(T0, T),
+    (   T = [C|_],
+        ( C == 0'@ ; C == 0'W )
+    ->  true
+    ;   T = [_|T1],
+        fmt_goal_directive(T1)
+    ).
+fmt_goal_directive([_|T]) :-
+    fmt_goal_directive(T).
+
+fmt_skip_argument([0'`,_|T0], T) :-
+    !,
+    T = T0.
+fmt_skip_argument([0'*|T0], T) :-
+    !,
+    T = T0.
+fmt_skip_argument([D|T0], T) :-
+    code_type(D, digit),
+    !,
+    fmt_skip_argument(T0, T).
+fmt_skip_argument(T, T).
+
 make_message_lines([], T, T) :- !.
 make_message_lines([Last],  ['~w'-[Last]|T], T) :- !.
 make_message_lines([L0|LT], ['~w'-[L0],nl|T0], T) :-
@@ -228,6 +287,13 @@ iso_message(uninstantiation_error(Var)) -->
 iso_message(representation_error(standard_order(T1, T2))) -->
     [ 'Cyclic terms have no standard order: ~p and ~p'-[T1, T2] ].
 iso_message(representation_error(What)) -->
+    { compound(What),
+      compound_name_arguments(What, Id, [Culprit]),
+      !,
+      culprit_write_options(Options)
+    },
+    [ 'Cannot represent ~W as `~w'''-[Culprit, Options, Id] ].
+iso_message(representation_error(What)) -->
     [ 'Cannot represent due to `~w'''-[What] ].
 iso_message(permission_error(Action, Type, Object)) -->
     permission_error(Action, Type, Object).
@@ -261,6 +327,16 @@ iso_message(syntax_error(Id)) -->
     syntax_error(Id).
 iso_message(occurs_check(Var, In)) -->
     [ 'Cannot unify ~p with ~p: would create an infinite tree'-[Var, In] ].
+
+%!  culprit_write_options(-Options) is det.
+%
+%   Options to print a culprit that may be large.  The defaults limit
+%   the depth and length of text.  The flag `print_write_options` may
+%   override them.
+
+culprit_write_options(Options) :-
+    current_prolog_flag(print_write_options, Options0),
+    Options = [max_depth(10), max_text(100)|Options0].
 
 %!  permission_error(Action, Type, Object)//
 %
@@ -426,6 +502,8 @@ syntax_error(undefined_char_escape(C)) -->
     [ 'Unknown character escape in quoted atom or string: `\\~w\''-[C] ].
 syntax_error(void_not_allowed) -->
     [ 'Empty argument list "()"' ].
+syntax_error(encoding(Message)) -->
+    [ 'Cannot decode input: ~w'-[Message] ].
 syntax_error(Term) -->
     { compound(Term),
       compound_name_arguments(Term, Syntax, [Text])
@@ -482,7 +560,7 @@ swi_message(thread_error(TID, false)) -->
     [ 'Thread ~p died due to failure:'-[TID] ].
 swi_message(thread_error(TID, exception(Error))) -->
     [ 'Thread ~p died abnormally:'-[TID], nl ],
-    translate_message(Error).
+    translate_exception(Error).
 swi_message(dependency_error(Tabled, DependsOn)) -->
     dependency_error(Tabled, DependsOn).
 swi_message(shell(execute, Cmd)) -->
@@ -490,7 +568,7 @@ swi_message(shell(execute, Cmd)) -->
 swi_message(shell(signal(Sig), Cmd)) -->
     [ 'Caught signal ~d on `~w'''-[Sig, Cmd] ].
 swi_message(format(Fmt, Args)) -->
-    [ Fmt-Args ].
+    format_message(Fmt, Args).
 swi_message(signal(Name, Num)) -->
     [ 'Caught signal ~d (~w)'-[Num, Name] ].
 swi_message(limit_exceeded(Limit, MaxVal)) -->
@@ -726,7 +804,7 @@ prolog_message(deprecated(Term)) -->
 prolog_message(unhandled_exception(E)) -->
     { nonvar(E) },
     [ 'Unhandled exception: ' ],
-    (   translate_message(E)
+    (   translate_exception(E)
     ->  []
     ;   [ '~p'-[E] ]
     ).
@@ -738,10 +816,10 @@ prolog_message(initialization_error(_, E, File:Line)) -->
     [ url(File:Line),
       ': Initialization goal raised exception:', nl
     ],
-    translate_message(E).
+    translate_exception(E).
 prolog_message(initialization_error(Goal, E, _)) -->
     [ 'Initialization goal ~p raised exception:'-[Goal], nl ],
-    translate_message(E).
+    translate_exception(E).
 prolog_message(initialization_failure(_Goal, File:Line)) -->
     !,
     [ url(File:Line),
@@ -752,7 +830,7 @@ prolog_message(initialization_failure(Goal, _)) -->
     ].
 prolog_message(initialization_exception(E)) -->
     [ 'Prolog initialisation failed:', nl ],
-    translate_message(E).
+    translate_exception(E).
 prolog_message(initialization(halt(Status), Goal, File:Line)) -->
     [ url(File:Line), ': '], goal(Goal), [nl,
       '  Initialization goal called ', ansi(code, '~p', [halt(Status)]),
@@ -764,21 +842,21 @@ prolog_message(initialization(halt(Status), Goal, File:Line)) -->
 prolog_message(init_goal_syntax(Error, Text)) -->
     !,
     [ '-g ~w: '-[Text] ],
-    translate_message(Error).
+    translate_exception(Error).
 prolog_message(init_goal_failed(failed, @(Goal,File:Line))) -->
     !,
     [ url(File:Line), ': ~p: false'-[Goal] ].
 prolog_message(init_goal_failed(Error, @(Goal,File:Line))) -->
     !,
     [ url(File:Line), ': ~p '-[Goal] ],
-    translate_message(Error).
+    translate_exception(Error).
 prolog_message(init_goal_failed(failed, Text)) -->
     !,
     [ '-g ~w: false'-[Text] ].
 prolog_message(init_goal_failed(Error, Text)) -->
     !,
     [ '-g ~w: '-[Text] ],
-    translate_message(Error).
+    translate_exception(Error).
 prolog_message(goal_failed(Context, Goal)) -->
     [ 'Goal (~w) failed: ~p'-[Context, Goal] ].
 prolog_message(no_current_module(Module)) -->
@@ -993,6 +1071,22 @@ prolog_message(file_search(tried(Spec, Cond), Path)) -->
                  *              GC              *
                  *******************************/
 
+prolog_message(gc(done(GGained, TGained, Time, GUsed, TUsed, GFree, TFree))) -->
+    thread_context,
+    [ 'GC: gained (g+t) ~D+~D in ~3f sec; used ~D+~D; free ~D+~D'-
+      [GGained, TGained, Time, GUsed, TUsed, GFree, TFree]
+    ].
+prolog_message(gc(minor(GGained, TGained, Time, GUsed, TUsed, GFree, TFree))) -->
+    thread_context,
+    [ 'GC (minor): gained (g+t) ~D+~D in ~3f sec; used ~D+~D; free ~D+~D'-
+      [GGained, TGained, Time, GUsed, TUsed, GFree, TFree]
+    ].
+prolog_message(gc(dropped(Count))) -->
+    thread_context,
+    [ 'GC: ~D more GC and stack shift reports were dropped'-[Count] ].
+prolog_message(shift(done(Local, Global, Trail, Time))) -->
+    thread_context,
+    [ 'SHIFT: l+g+t = ~D+~D+~D (~3f sec)'-[Local, Global, Trail, Time] ].
 prolog_message(agc(start)) -->
     thread_context,
     [ 'AGC: ', flush ].
@@ -1941,7 +2035,7 @@ prolog_message(compatibility(renamed(Old, New))) -->
 prolog_message(abnormal_thread_completion(Goal, exception(Ex))) -->
     !,
     [ 'Thread running "~p" died on exception: '-[Goal] ],
-    translate_message(Ex).
+    translate_exception(Ex).
 prolog_message(abnormal_thread_completion(Goal, fail)) -->
     [ 'Thread running "~p" died due to failure'-[Goal] ].
 prolog_message(threads_not_died(Running)) -->

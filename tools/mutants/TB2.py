@@ -34,11 +34,11 @@ WAM = "src/pl-wam.jl"
 CONT = "src/pl-cont.jl"
 MUTANTS = [
     # ── components and worklist sets (pl-tabling.c:2620-3330 at the pin) ──
-    dict(id="TB2-H1 tbl_pointer! hands out a new handle at every unify, no reuse of `obj.ptr` (DEFERRED KILL: no row reads a handle twice)",
+    dict(id="TB2-H1 worklist_handle hands out a new handle at every call, no reuse of `wl.handle` (DEFERRED KILL: no row reads a handle twice)",
          file=TAB, targets=[TW],
-         equivalent="DEFERRED KILL: owner TB3 (white-box row: unify the same worklist twice through `tbl_unify_pointer` and compare the two integers, `length(ld.tabling.pointers)` after the queries); the rows read answers, a second handle to the live object answers the same, and `tbl_pointer_release!` frees only the last",
-         old="    obj.ptr != 0 && return obj.ptr\n",
-         new="    nothing\n"),
+         equivalent="DEFERRED KILL: owner TB3 (white-box row: unify the same worklist twice through `unify_worklist` and compare the two integers, `ld.tabling.handles.live` after the queries); the rows read answers, a second handle to the live object answers the same, and `release_obj_handle` frees only the last (SYNC3 P11: the mutant was `tbl_pointer!`'s `obj.ptr` reuse; now `worklist_handle`'s `wl.handle` reuse)",
+         old="    wl.handle == 0 && (wl.handle = new_tbl_handle(ld, wl, TBL_HANDLE_WORKLIST))\n",
+         new="    wl.handle = new_tbl_handle(ld, wl, TBL_HANDLE_WORKLIST)\n"),
     dict(id="TB2-C1 set_component_status never counts a completed component off (DEFERRED KILL: `active_components` is read only by the sweep of table_complete_all)",
          file=TAB, targets=[TW],
          equivalent="DEFERRED KILL: owner TB3 (white-box row after the queries: `ld.tabling.active_components == 0`); table_complete_all reads it once, to call `sweep_orphan_dynamic_tables` (TB1), which frees only orphaned DYNAMIC tables, none in TW's static program",
@@ -238,11 +238,11 @@ MUTANTS = [
          equivalent="DEFERRED KILL: owner TB4 (a row that reads the Status of `'$tbl_table_complete_all'/3` of a nested SCC, `complete` against `final`, through the WFS completion of boot/tabling.pl's `done_leader`/`completion`); only the top-level status is not `merged` in TW",
          old="        status = scc.parent !== nothing ? :complete : :final\n",
          new="        status = scc.parent !== nothing ? :final : :complete\n"),
-    dict(id="TB2-Q13 get_scc accepts a freed component, no magic test (DEFERRED KILL: no TW row calls the SCC predicates on a freed component)",
+    dict(id="TB2-Q13 get_scc reports the handle of a freed component as a type_error, not an existence_error (DEFERRED KILL: no TW row calls the SCC predicates on a freed component)",
          file=TAB, targets=[TW],
-         equivalent="DEFERRED KILL: owner TB5 (a row: call `'$tbl_free_component'/1` twice on one handle, expect `existence_error(table component, _)`); `free_component` zeroes `c.magic` and TW never reuses a handle",
-         old="    if !(c isa tbl_component{T}) || c.magic != COMPONENT_MAGIC\n",
-         new="    if !(c isa tbl_component{T})\n"),
+         equivalent="DEFERRED KILL: owner TB5 (a row: call `'$tbl_free_component'/1` twice on one handle, expect `existence_error(table_component, _)`; swipl at the pin has no stale-handle error, so the row cannot be derived from it, SYNC3 P11); `free_component` releases the handle (`release_component_handle`) and TW never calls with a freed one",
+         old="    if stale\n        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :table_component), t)\n",
+         new="    if false\n        PL_error(ld, ERR_EXISTENCE, mk_sym(T, :table_component), t)\n"),
     # ── `tbl_reset_add_answer` and the worklist of a frame (pl-tabling.c:4934) ──
     dict(id="TB2-R1 tbl_reset_add_answer answers true when the answer does NOT complete the table, `!=` for `==` (KILL twl01: I_EXITRESET cuts the choice points of the open tabled call; the closure is cut short)",
          file=TAB, targets=[TW],
@@ -259,7 +259,7 @@ MUTANTS = [
     # ── the inspection predicates (pl-tabling.c:6767-6942) ──
     dict(id="TB2-N1 unify_component_status names an active component `merged` (DEFERRED KILL: TW calls none of the inspection predicates)",
          file=TAB, targets=[TW],
-         equivalent="DEFERRED KILL: owner TB5 (rows that call `'$tbl_scc'(L)`, `'$tbl_scc_data'(SCC, D)` and `'$tbl_worklist_data'(WL, D)` in the middle of a tabled call and encode the result, pinned from swipl: one row per unify_* function: unify_wl_set, unify_scc_set, unify_pointer_or_nil, unify_cluster, unify_clusters); the status atom of an active component is read by `$tbl_scc_data/2`",
+         equivalent="DEFERRED KILL: owner TB5 (rows that call `'$tbl_scc'(L)`, `'$tbl_scc_data'(SCC, D)` and `'$tbl_worklist_data'(WL, D)` in the middle of a tabled call and encode the result, pinned from swipl: one row per unify_* function: unify_wl_set, unify_scc_set, unify_component_or_null, unify_cluster, unify_clusters); the status atom of an active component is read by `$tbl_scc_data/2`",
          old="        status = :active\n    elseif scc.status == SCC_MERGED\n",
          new="        status = :merged\n    elseif scc.status == SCC_MERGED\n"),
     # ── the engine hooks (pl-vmi.c:4823-5839, pl-wam.c:873-944, pl-cont.c:586-626) ──

@@ -1,4 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-index.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-index.c @ af9e2e7ed0be
+# UPSTREAM: swipl-devel src/pl-index.h @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2025, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -28,8 +29,12 @@
 # delClauseFromIndex upstream), deleteIndexesDefinition (halt — not
 # ported; deleteIndexes is, since PR1), the memory reports sizeofClauseIndex/sizeofClauseIndexes, the debug checks
 # checkClauseIndexSizes/checkClauseIndexes/listIndexGenerations, and the `$candidate_indexes` and
-# `$set_candidate_indexes` predicates. Threads (index locks, waiting for another thread's index) do
-# not exist in the kernel.
+# `$set_candidate_indexes` predicates; of the UNUSABLECI hunks (af9e2e7e) those in delClauseFromIndex,
+# checkClauseIndexSizes and checkClauseIndexes. Threads (index locks, waiting for another thread's
+# index) do not exist in the kernel.
+#
+# SYNC3 af9e2e7e: the erased-clause (sees_erased/keeps_erased/good_from), index-fill and JIT-assessment
+# changes are ported, see the PORT/DIVERGES (SYNC3) markers. The pin line above stays until the sync lands.
 #
 # REPRESENTATION (each a DIVERGES at the function it touches):
 #   * `argv` — SWI passes a call's arguments as a `Word` vector; here it is a VIEW of them
@@ -93,6 +98,10 @@ const DEAD_INDEX = nothing
 "True for a deleted slot of a clause-index array (pl-index.c)."
 ISDEADCI(ci) = ci === DEAD_INDEX     # no return annotation: inference narrows `ci` through it
 
+# PORT: pl-index.c UNUSABLECI
+"Dead, or invalid and waiting for `retireIndex!` (pl-index.c)."
+UNUSABLECI(ci) = ISDEADCI(ci) || ci.invalid
+
 # PORT: pl-index.c hash_hints
 "What `bestHash!` decided an index should be (pl-index.c `hash_hints`)."
 mutable struct hash_hints
@@ -113,10 +122,40 @@ STATIC_RELOADING(rgen::gen_t, def::definition)::Bool =
 "Same as `!cref->d.key || cref->d.key == k` (pl-index.c)."
 cref_matches(cref::clause_ref, k::word)::Bool = (cref.key == 0) | (cref.key == k)
 
+# PORT: pl-index.h is_clean_definition
+"True if we do not need to check the generation (pl-index.h; pl-index.c `is_clean_predicate` is a macro for it)."
+is_clean_definition(def::definition)::Bool =
+    (def.flags & (P_DYNAMIC | P_DIRTYREG | P_RELOADING)) == 0
+
 # PORT: pl-index.c is_clean_predicate
 "True if we do not need to check the generation (pl-index.c)."
-is_clean_predicate(def::definition)::Bool =
-    (def.flags & (P_DYNAMIC | P_DIRTYREG | P_RELOADING)) == 0
+is_clean_predicate(def::definition)::Bool = is_clean_definition(def)
+
+# PORT: pl-index.h matching_clause
+# DIVERGES: returns the match and the alternative as a tuple, where upstream writes the alternative
+# through `ClauseRef *nextp`.
+"""
+The first clause at or after `start` whose key matches `key`, and a later alternative within
+`MAX_LOOKAHEAD` (or `nothing`). `(nothing, nothing)` if there is no match (pl-index.h).
+"""
+function matching_clause(start::Union{Nothing, ClauseRef}, key::word)
+    cref = start
+    while cref !== nothing
+        if cref_matches(cref, key)
+            maxsearch = MAX_LOOKAHEAD
+            next = cref.next
+            while next !== nothing
+                if cref_matches(next, key) || (maxsearch -= 1) == 0
+                    break
+                end
+                next = next.next
+            end
+            return (cref, next)
+        end
+        cref = cref.next
+    end
+    return (nothing, nothing)
+end
 
 # PORT: pl-index.c hashIndex
 "Map a key to a bucket of `buckets` (a power of two) by Fibonacci hashing (pl-index.c)."
@@ -124,6 +163,7 @@ function hashIndex(key::word, buckets::UInt32)::UInt32
     key_bits = 64
     fib64 = 0x9E3779B97F4A7C15
     shift = key_bits - MSB(buckets)
+    key >>= CELL_VAL_SHIFT                  # consecutive values step by 1 (bb4ccf71: a cell reserves 8 low bits)
     key ⊻= (key >> shift)
     return ((fib64 * key) >> shift) % UInt32
 end
@@ -268,24 +308,11 @@ function next_clause_primary_index!(
     chp = ctx.chp::ClauseChoice{T}
     key = chp.key
     if is_clean_predicate(ctx.predicate)                                # O_INDEX_STATIC
-        cref = chp.cref
-        while cref !== nothing
-            if cref_matches(cref, key)
-                result = cref
-                maxsearch = MAX_LOOKAHEAD
-                cref = cref.next
-                while cref !== nothing
-                    if cref_matches(cref, key) || (maxsearch -= 1) == 0
-                        chp.cref = cref
-                        return result
-                    end
-                    cref = cref.next
-                end
-                chp.cref = nothing
-                return result
-            end
-            cref = cref.next
+        cref, next = matching_clause(chp.cref, key)                     # pl-index.h
+        if cref !== nothing
+            chp.cref = next
         end
+        return cref
     else
         cref = chp.cref
         while cref !== nothing
@@ -461,12 +488,15 @@ consider_better_index(speedup::Float32, nclauses::Integer)::Bool =
     nclauses > MIN_CLAUSES_FOR_INDEX && Float32(nclauses) / speedup > MIN_SPEEDUP_RATIO
 
 # PORT: pl-index.c existing_hash
-# DIVERGES: returns the key with the index instead of writing it through `keyp`.
-"The first index the call `argv` has a key for, and that key (pl-index.c)."
+# DIVERGES: returns the key with the index instead of writing it through `keyp`; `from` is the
+# 1-based position to start at, where upstream's `first_clause_guarded` passes a pointer into the array
+# (`cip = index_after(...)`).
+"The first index from position `from` the call `argv` has a key for, and that key (pl-index.c)."
 function existing_hash(
-    cip::Vector{C}, argv::A
+    cip::Vector{C}, argv::A, from::Int=1
 )::Tuple{C, word} where {C <: Union{Nothing, ClauseIndex}, A}
-    for ci in cip
+    for i in from:length(cip)
+        ci = cip[i]
         ISDEADCI(ci) && continue        # upstream reads the zeroed DEAD_INDEX and skips it
         if ci.entries !== nothing || is_satifies_index(ci, argv)
             k = indexKeyFromArgv(ci, argv)
@@ -501,6 +531,7 @@ function createIndex!(
             while ci.incomplete
                 wait_for_index!(ci, clist, ctx)
             end
+            # (upstream: MEMORY_ACQUIRE(), sync with completed_index(): no threads here)
             if ci.invalid
                 return CI_RETRY
             end
@@ -509,6 +540,220 @@ function createIndex!(
         return CI_RETRY
     end
     return nothing
+end
+
+# ── CLAUSES ERASED UNDER A RUNNING GOAL (pl-index.c; swipl-devel af9e2e7e, fa69b38e, bc07dc37) ──
+# An erased clause that is still in the clause list is visible to goals of an older generation: a
+# goal that started before the clause was erased and all goals of a transaction or snapshot that
+# started before. We call this an old goal. An old goal finds the clause if it scans the clause
+# list or uses an index that was created before the clause was erased. An index that is created
+# later is filled from the clauses that are not erased and thus misses clauses the old goal must
+# see. The same holds for concluding that a predicate has no clauses from the number of clauses
+# that are not erased.
+#
+#   - `sees_erased` tells whether a goal may see an erased clause of the predicate. It compares the
+#     generation of the goal to `def.last_erased`, see setLastErased() in pl-proc.c.
+#   - An index that is created for a goal that does not see erased clauses is filled as before. If
+#     erased clauses are skipped, the index records `def.last_erased` in `ci.skipped_erased`. An old
+#     goal only uses such an index if `index_covers`.
+#   - If the old goal cannot use the index, the index is replaced by one that also holds the erased
+#     clauses (`ci.keeps_erased`). This is the index we would have if it was created before these
+#     clauses were erased. It is assessed and dimensioned for all clauses in the clause list. This is
+#     only done for a plain index at the outermost level of a dynamic predicate, see
+#     `fill_erased_clause`. In all other cases the old goal scans the clause list.
+#   - Old goals keep their assessments of the arguments apart from those of the other goals, see
+#     `erased_arg_info!`. They are reset where the assessments of the other goals are. If they show
+#     that the argument of an index cannot be indexed when the erased clauses are included, the
+#     index is left to the other goals and the old goal tries the next index, or creates one on
+#     another argument.
+#
+# A clause that is both created and erased inside a running transaction has generations that are
+# local to this transaction. It is only visible to goals of this transaction that are older than the
+# erase, i.e., goals that started before the erase and search for their first clause after it.
+# `ci.skipped_tr` tells that such a clause is not in the index. We do not know when it was erased and
+# thus only use the index for goals of the current transaction generation.
+#
+# `ci.good_from` replaces the `good` flag of an index. A goal uses the index without any further test
+# if its generation is not older. It is GOOD_NEVER until the index is complete and if we should look
+# for a better one, GOOD_ALWAYS if no clause was skipped and otherwise the generation from which no
+# goal sees a skipped clause. Generations are compared as signed integers, which makes goals in a
+# transaction older than any generation except for GOOD_ALWAYS.
+#
+# The fields `clause_index.{good_from,keeps_erased,skipped_erased,skipped_tr}` (`good::Bool` went) and
+# `definition.{last_erased,erased_args,filling}` are in src/pl-incl.jl (SYNC3 P05).
+
+# PORT: pl-index.c GOOD_ALWAYS
+"`good_from` of an index no goal finds poor, with no clause skipped (pl-index.c)."
+const GOOD_ALWAYS = typemin(Int64)
+# PORT: pl-index.c GOOD_NEVER
+"`good_from` of an index that is incomplete, or that we should look for a better one for (pl-index.c)."
+const GOOD_NEVER = typemax(Int64)
+
+# PORT: pl-index.c index_good_from
+# DIVERGES: upstream reads `good_from` with acquire semantics, as a goal that takes the fast path does
+# not test `incomplete` and an index is published before it is filled; the kernel has no threads.
+"The generation from which goals use `ci` without further test (pl-index.c)."
+index_good_from(ci::clause_index)::Int64 = ci.good_from
+
+# PORT: pl-index.c set_index_good_from
+# DIVERGES: a plain store (upstream: release semantics), see `index_good_from`.
+"Set `good_from` of `ci`, last, once it is filled (pl-index.c)."
+function set_index_good_from!(ci::clause_index, good_from::Int64)::Nothing
+    ci.good_from = good_from
+    return nothing
+end
+
+# PORT: pl-index.c sees_erased
+"True if the goal of `ctx` may see an erased clause of its predicate (pl-index.c)."
+function sees_erased(ctx::index_context)::Bool
+    gen = ctx.generation
+    if gen >= GEN_TRANSACTION_BASE
+        tr = ctx.transaction::ld_transaction
+        if gen < tr.generation                          # older than our last change
+            return true
+        end
+        gen = tr.gen_start
+    end
+    return gen < ctx.predicate.last_erased
+end
+
+# PORT: pl-index.c index_keeps_erased
+"""
+True if an index that is created for this goal must hold the erased clauses that are still in the
+clause list (pl-index.c).
+"""
+index_keeps_erased(ctx::index_context)::Bool =
+    ctx.depth == 0 && (ctx.predicate.flags & P_DYNAMIC) != 0 && sees_erased(ctx)
+
+# PORT: pl-index.c assessed_clauses
+"The number of clauses arguments are assessed for (pl-index.c)."
+assessed_clauses(clist::ClauseList, keep_erased::Bool)::Int =
+    if keep_erased
+        Int(clist.number_of_clauses) + Int(clist.erased_clauses)
+    else
+        Int(clist.number_of_clauses)
+    end
+
+# PORT: pl-index.c erased_arg_info
+# DIVERGES: upstream allocates the array with a compare-and-swap, as threads may race; no threads here.
+"""
+Old goals that see erased clauses assess arguments for an index that holds all clauses in the clause
+list. They keep these assessments in `def.erased_args`, apart from those of the other goals, so
+neither kind of goal uses or replaces the assessments of the other. The array is allocated when an
+old goal first assesses an argument (pl-index.c).
+"""
+function erased_arg_info!(def::Definition)::Vector{arg_info}
+    if def.erased_args === nothing
+        def.erased_args = [arg_info() for _ in 1:def.arity]
+    end
+    return def.erased_args::Vector{arg_info}
+end
+
+# PORT: pl-index.c clear_erased_assessments
+"Forget the assessments of old goals (pl-index.c)."
+function clear_erased_assessments!(def::Definition)::Nothing
+    ea = def.erased_args
+    if ea !== nothing
+        for i in 1:def.arity
+            ea[i].assessed = false
+        end
+    end
+    return nothing
+end
+
+# PORT: pl-index.c indexed_clauses
+"The number of clauses `ci` was assessed for (pl-index.c)."
+indexed_clauses(ci::clause_index, clist::ClauseList)::Int =
+    if ci.keeps_erased
+        Int(clist.number_of_clauses) + Int(clist.erased_clauses)
+    else
+        Int(clist.number_of_clauses)
+    end
+
+# PORT: pl-index.c no_visible_clause
+# DIVERGES: upstream issues MEMORY_ACQUIRE() first, to sync with setLastErased() (threads).
+"""
+True if the goal sees no clause of a clause list in which all clauses are erased. The functions
+that erase a clause update `def.last_erased` and the number of erased clauses before they decrement
+the number of clauses (pl-index.c).
+"""
+no_visible_clause(clist::ClauseList, ctx::index_context)::Bool =
+    clist.erased_clauses == 0 || !sees_erased(ctx)
+
+# PORT: pl-index.c index_covers
+"True if no clause that was skipped when filling `ci` is visible to the goal (pl-index.c)."
+function index_covers(ci::clause_index, ctx::index_context)::Bool
+    if !(ci.skipped_erased != 0 || ci.skipped_tr)
+        return true
+    else
+        gen = ctx.generation
+        if gen >= GEN_TRANSACTION_BASE
+            tr = ctx.transaction::ld_transaction
+            if ci.skipped_tr && gen < tr.generation
+                return false
+            end
+            gen = tr.gen_start
+        end
+        return gen >= ci.skipped_erased
+    end
+end
+
+# PORT: pl-index.c index_after
+# DIVERGES: upstream returns a pointer into the array of indexes (`cip+1`) or NULL; this returns the
+# 1-based position after `ci` (for `existing_hash`'s `from`), or 0 if `ci` is not in this array.
+"""
+The position after `ci` in the current array of indexes, or 0 if `ci` is not in this array
+(pl-index.c). For a goal that cannot use the index it found, see `index_covers`.
+"""
+function index_after(clist::ClauseList, ci::clause_index)::Int
+    cip = clist.clause_indexes
+    if cip !== nothing
+        for i in eachindex(cip)
+            if cip[i] === ci
+                return i + 1
+            end
+        end
+    end
+    return 0
+end
+
+# PORT: pl-index.c first_clause_scan
+"Scan the clause list, as `first_clause_guarded!` does at its end (pl-index.c)."
+function first_clause_scan!(
+    argv::A, clist::ClauseList{T}, ctx::index_context{T}
+)::Union{Nothing, ClauseRef{T}} where {T, A}
+    chp = ctx.chp::ClauseChoice{T}
+    chp.key = _argv_key(argv, Int(clist.primary_index))
+    chp.cref = clist.first_clause
+    if chp.key != 0
+        return next_clause_primary_index!(ctx)
+    else
+        return next_clause_unindexed!(ctx)
+    end
+end
+
+# PORT: pl-index.c erased_args_unindexable
+"""
+True if the argument of `ci` cannot be indexed if the erased clauses are included, as assessed for
+old goals. Replacing `ci` by an index that holds these clauses would then only remove the index of
+the other goals (pl-index.c).
+"""
+function erased_args_unindexable!(
+    argc::Int, clist::ClauseList{T}, ci::ClauseIndex{T}, ctx::index_context{T}
+)::Bool where {T}
+    if ci.args[2] == 0
+        ea = erased_arg_info!(ctx.predicate)
+        arg = ci.args[1]
+        if !ea[Int(arg)].assessed
+            ac = argc > MAXINDEXARG ? MAXINDEXARG : argc
+            ia = (arg, 0x00, 0x00, 0x00)                    # iarg_t ia[MAX_MULTI_INDEX] = {arg}
+            aset = init_assessment_set()
+            alloc_assessment!(aset, ia)
+            assess_candidate_indexes!(ac, clist, ea, true, aset, ctx)
+        end
+        return ea[Int(arg)].speedup == 0.0f0
+    end
+    return false
 end
 
 # PORT: pl-index.c first_clause_guarded
@@ -529,7 +774,12 @@ function first_clause_guarded!(
     @label retry
     cref = nothing
     if clist.number_of_clauses == 0
-        return nothing
+        if no_visible_clause(clist, ctx)
+            return nothing
+        end
+        # an old goal and only erased clauses: do not scan them all in the fast path
+        pkey = _argv_key(argv, Int(clist.primary_index))
+        @goto hashes
     end
     pindex = Int(clist.primary_index)
     pkey = _argv_key(argv, pindex)
@@ -551,35 +801,60 @@ function first_clause_guarded!(
         end
         # else duplicate primary key: fall through to try hash
     end
+    @label hashes
     # Deal with possible hashes
     cip = clist.clause_indexes
     if cip !== nothing
-        best_index, k = existing_hash(cip, argv)
+        from = 1                        # upstream's `cip` after `index_after()`
+        @label next_index
+        best_index, k = existing_hash(cip, argv, from)
         if best_index !== nothing
             chp.key = k
-            if !best_index.good
-                if !clist.fixed_indexes &&
-                    !STATIC_RELOADING(ctx.reload_generation, ctx.predicate) &&
-                    consider_better_index(best_index.speedup, clist.number_of_clauses)
-                    ci = createIndex!(argv, argc, clist, best_index, ctx)
-                    if ci !== nothing
-                        if ci === CI_RETRY
-                            @goto retry
+            good_from = index_good_from(best_index)
+            if reinterpret(Int64, ctx.generation) < good_from
+                if good_from == GOOD_NEVER
+                    if !clist.fixed_indexes &&
+                        !STATIC_RELOADING(ctx.reload_generation, ctx.predicate) &&
+                        consider_better_index(
+                            best_index.speedup, indexed_clauses(best_index, clist)
+                        )
+                        ci = createIndex!(argv, argc, clist, best_index, ctx)
+                        if ci !== nothing
+                            if ci === CI_RETRY
+                                @goto retry
+                            end
+                            ci = ci::ClauseIndex{T}
+                            chp.key = indexKeyFromArgv(ci, argv)
+                            @assert chp.key != 0
+                            best_index = ci
                         end
-                        ci = ci::ClauseIndex{T}
-                        chp.key = indexKeyFromArgv(ci, argv)
-                        @assert chp.key != 0
-                        best_index = ci
                     end
+                    if best_index.incomplete || best_index.invalid
+                        wait_for_index!(best_index, clist, ctx)         # see retireIndex!
+                        @goto retry
+                    end
+                    # (upstream: MEMORY_ACQUIRE(), sync with completed_index(): no threads here)
                 end
-                if best_index.incomplete
-                    wait_for_index!(best_index, clist, ctx)
-                    @goto retry
+                if !index_covers(best_index, ctx)
+                    if !best_index.keeps_erased &&
+                        !best_index.is_list &&
+                        index_keeps_erased(ctx)
+                        if !erased_args_unindexable!(argc, clist, best_index, ctx)
+                            retireIndex!(ctx.predicate, clist, best_index)
+                            @goto retry             # create one that has them
+                        end
+                        from = index_after(clist, best_index)
+                        if from != 0
+                            @goto next_index        # try the next one
+                        end
+                    end
+                    return first_clause_scan!(argv, clist, ctx)
                 end
             end
             hi = hashIndex(chp.key, best_index.buckets)
             bkt = (best_index.entries::Vector{ClauseBucket{T}})[hi + 1]
-            if bkt.key != 0 && chp.key != bkt.key
+            bkey = bkt.key                  # upstream reads it once: an assert may reset it to 0
+            if bkey != 0 && chp.key != bkey
                 return nothing
             end
             chp.cref = bkt.head
@@ -598,7 +873,7 @@ function first_clause_guarded!(
     if (ctx.predicate.flags & (P_DYNAMIC | P_MULTIFILE | P_THREAD_LOCAL | P_FOREIGN)) ==
        0 &&
         ctx.depth == 0
-        set_candidate_indexes!(ctx.predicate, clist, 10, true)
+        set_candidate_indexes!(ctx.predicate, clist, 10, true, ctx.generation)
         @goto retry
     end
     if !STATIC_RELOADING(ctx.reload_generation, ctx.predicate)
@@ -610,9 +885,12 @@ function first_clause_guarded!(
             ci = ci::ClauseIndex{T}
             chp.key = indexKeyFromArgv(ci, argv)
             @assert chp.key != 0
-            hi = hashIndex(chp.key, ci.buckets)
-            chp.cref = (ci.entries::Vector{ClauseBucket{T}})[hi + 1].head
-            return nextClauseFromBucket!(ci, argv, ctx)
+            if index_covers(ci, ctx)
+                hi = hashIndex(chp.key, ci.buckets)
+                chp.cref = (ci.entries::Vector{ClauseBucket{T}})[hi + 1].head
+                return nextClauseFromBucket!(ci, argv, ctx)
+            end
+            chp.key = pkey                  # filled for another goal
         end
     end
     if cref !== nothing                 # from primary-first fast-path fallthrough
@@ -654,6 +932,10 @@ end
 # the local data `ld` explicitly (its scratch context, see `_index_context!`; untyped only because
 # `PL_local_data` is defined after this file, which defines the context it holds); there is no
 # definition reference counting (acquire_def/release_def) — that serves clause GC.
+# DIVERGES (SYNC3): upstream renamed the body first_clause_search() and put inline firstClause()/
+# first_clause_static() (static_clause_key + matching_clause) in pl-index.h (bb8a1f1b): a fast path for a clean
+# static predicate with small tables, E-tier, not ported: it only skips the general path, same answers
+# (matching_clause IS ported). The kernel keeps this one path.
 """
     firstClause!(ld, argv, generation, def, chp) -> Union{Nothing, ClauseRef}
 
@@ -681,6 +963,8 @@ end
 # PORT: pl-index.c nextClause
 # DIVERGES: as `firstClause!` — a generation instead of a frame, `ld` explicit, no definition
 # reference counting. Allocation-free (AllocCheck gate): every step of an enumeration takes it.
+# DIVERGES (SYNC3): upstream renamed the body next_clause_search(), with an inline next_clause_static() in
+# pl-index.h (bb8a1f1b); same E-tier, not ported as for `firstClause!`.
 """
     nextClause!(ld, chp, argv, generation, def) -> Union{Nothing, ClauseRef}
 
@@ -779,10 +1063,12 @@ end
 function newClauseIndexTable(
     hints::hash_hints, realised::Bool, ctx::index_context{T}
 )::ClauseIndex{T} where {T}
+    # (SYNC3: `good::Bool` is replaced by `good_from`, GOOD_NEVER until complete; the fields follow
+    # upstream's order, see `clause_index` in src/pl-incl.jl)
     ci = ClauseIndex{T}(
         UInt32(2) << hints.ln_buckets, UInt32(0), UInt32(0), UInt32(0), UInt32(0),
-        hints.list, true, false, false, hints.args, copytpos(ctx.position), hints.speedup,
-        nothing
+        hints.list, true, false, false, false, hints.args, copytpos(ctx.position),
+        hints.speedup, gen_t(0), GOOD_NEVER, nothing
     )
     if realised
         realize_clause_index!(ci)
@@ -834,7 +1120,7 @@ function addClauseToListIndexes!(
     if cip !== nothing
         for i in eachindex(cip)
             ci = cip[i]
-            if ISDEADCI(ci) || ci.entries === nothing
+            if UNUSABLECI(ci) || ci.entries === nothing
                 continue
             end
             while ci.incomplete
@@ -853,7 +1139,8 @@ end
 
 # PORT: pl-index.c insertIntoSparseList
 # DIVERGES: takes the list's head and tail and returns them updated, where upstream writes through
-# `ClauseRef *headp, *tailp`.
+# `ClauseRef *headp, *tailp`. Upstream (fa69b38e, 128d85ac) publishes each link with STORE_RELEASE, as
+# readers walk buckets unlocked: weak memory ordering between threads, none here.
 """
 Insert `cref` into the sparse (filtered) clause list `head`…`tail` — at its end, its start, or
 before the clause reference `where_` of the predicate's clause list (pl-index.c).
@@ -994,6 +1281,7 @@ function clearTriedIndexes!(def::Definition{T})::Nothing where {T}
         ainfo = (def.impl_clauses.args::Vector{arg_info})[i + 1]
         ainfo.assessed = false
     end
+    clear_erased_assessments!(def)
     def.impl_clauses.jiti_tried = 0
     return nothing
 end
@@ -1014,6 +1302,7 @@ function reconsiderIndexes!(def::Definition{T})::Nothing where {T}
             (clist.args::Vector{arg_info})[i + 1].assessed = false
         end
     end
+    clear_erased_assessments!(def)
     clist.jiti_tried = 0
     clist.pindex_verified = false
     clist.fixed_indexes = false
@@ -1169,7 +1458,12 @@ function cleanClauseIndex!(
     def::Definition{T}, cl::ClauseList{T}, ci::ClauseIndex{T}, ddi::dirty_def_info{T},
     start::gen_t
 )::Nothing where {T}
-    if cl.number_of_clauses < ci.resize_below
+    if cl.number_of_clauses < ci.resize_below ||
+        (
+        ci.keeps_erased &&              # dimensioned for erased clauses
+        ci.buckets > 64 &&
+        cl.number_of_clauses + cl.erased_clauses < ci.buckets ÷ 8
+    )
         deleteIndex!(def, cl, ci)
     else
         if ci.dirty != 0
@@ -1193,10 +1487,13 @@ end
 function cleanClauseIndexes!(
     def::Definition{T}, cl::ClauseList{T}, ddi::dirty_def_info{T}, start::gen_t
 )::Nothing where {T}
+    if cl === def.impl_clauses              # old goals counted the removed
+        clear_erased_assessments!(def)      # clauses
+    end
     cip = cl.clause_indexes
     if cip !== nothing
         for ci in cip
-            if ISDEADCI(ci)
+            if UNUSABLECI(ci)
                 continue
             end
             cleanClauseIndex!(def, cl, ci, ddi, start)
@@ -1218,6 +1515,7 @@ function deleteActiveClauseFromBucket!(cb::ClauseBucket{T}, key::word)::Nothing 
             if (cl.erased_clauses += 1) - 1 == 0       # cl->erased_clauses++ == 0
                 cb.dirty += 0x00000001
             end
+            # (upstream: MEMORY_RELEASE(), see no_visible_clause(): no threads here)
             cl.number_of_clauses -= 0x00000001
             cref = cref.next
         end
@@ -1229,6 +1527,7 @@ function deleteActiveClauseFromBucket!(cb::ClauseBucket{T}, key::word)::Nothing 
                 if (cl.erased_clauses += 1) - 1 == 0
                     cb.dirty += 0x00000001
                 end
+                # (upstream: MEMORY_RELEASE(), see no_visible_clause(): no threads here)
                 cl.number_of_clauses -= 0x00000001
                 return nothing
             end
@@ -1285,7 +1584,7 @@ function deleteActiveClauseFromIndexes!(
     if cip !== nothing
         for i in eachindex(cip)
             ci = cip[i]
-            if ISDEADCI(ci) || ci.entries === nothing
+            if UNUSABLECI(ci) || ci.entries === nothing
                 continue
             end
             while ci.incomplete
@@ -1387,58 +1686,243 @@ function addClauseToIndexes!(
     return true
 end
 
+# PORT: pl-index.c index_in_clist
+"True if `ci` is in the array of indexes of `clist` (pl-index.c)."
+function index_in_clist(clist::ClauseList, ci::clause_index)::Bool
+    cip = clist.clause_indexes
+    if cip !== nothing
+        for i in eachindex(cip)
+            if cip[i] === ci
+                return true
+            end
+        end
+    end
+    return false
+end
+
 # PORT: pl-index.c wait_for_index
-# DIVERGES: there are no threads, so there is no other thread's index to wait for; what remains
-# realises and fills an index nobody has started.
+# DIVERGES: there are no threads, so there is no other thread's index to wait for (upstream's tail,
+# `pthread_cond_wait` on `GD->thread.index.cond`) and no predicate lock (`LOCKDEF`/`UNLOCKDEF`); what
+# remains decides whether the index is deleted (invalid, completed), realises and fills one nobody has
+# started, and retires it if the fill failed.
 "Realise and fill index `ci` if no one has yet (pl-index.c)."
 function wait_for_index!(
     ci::ClauseIndex{T}, clist::ClauseList{T}, ctx::Union{Nothing, index_context{T}}
 )::Nothing where {T}
-    if ci.entries === nothing && ctx !== nothing && realize_clause_index!(ci)
-        if fill_clause_index!(ci, clist, ctx) === nothing
-            ci.invalid = true
+    if ci.entries === nothing && !ci.invalid && ctx !== nothing
+        def = ctx.predicate
+        mine = false
+
+        # LOCKDEF(def)                  # as hashDefinition()
+        if ci.entries === nothing && !ci.invalid
+            if !index_in_clist(clist, ci)
+                ci.invalid = true       # deleted: nobody will fill it
+                completed_index!(ci)
+            elseif realize_clause_index!(ci)
+                start_index_fill!(def)
+                mine = true
+            end
+        end
+        # UNLOCKDEF(def)
+
+        if mine
+            filled = fill_clause_index!(ci, clist, ctx)
+            done_index_fill!(def)
+            if filled === nothing
+                retireIndex!(def, clist, ci)
+                completed_index!(ci)
+            end
             return nothing
         end
     end
     return nothing
 end
 
+# ORIGINAL (no upstream function; SYNC3 af9e2e7e, fa69b38e): `def->filling` counts the indexes of `def`
+# that are being filled, and the threads that add or erase a clause call waitIndexFills() before they
+# change the clause list or the erased flag (assertDefinition_(), retract_clause(),
+# removeClausesPredicate(), reconsultFinalizePredicate()), so that a clause linked or marked erased
+# while the scan of fill_clause_index() runs is neither added to the index twice nor missed. The kernel
+# has no threads: a fill is never concurrent with an assert or retract, `def.filling` is only kept
+# (0 when no fill runs) and `waitForIndexFills`/`waitIndexFills` return at once.
+
+# PORT: pl-index.c start_index_fill
+"Count one more index of `def` being filled (pl-index.c)."
+function start_index_fill!(def::Definition)::Nothing
+    def.filling += 0x00000001
+    return nothing
+end
+
+# PORT: pl-index.c done_index_fill
+# DIVERGES: upstream takes `GD->thread.index.mutex` around the decrement and broadcasts the condition
+# variable for `waitForIndexFills`.
+"Count one index of `def` less being filled (pl-index.c)."
+function done_index_fill!(def::Definition)::Nothing
+    def.filling -= 0x00000001
+    return nothing
+end
+
+# PORT: pl-index.c waitForIndexFills
+# DIVERGES: no threads: nothing to wait for (upstream waits on `GD->thread.index.cond` while
+# `def->filling`).
+"Wait until no index of `def` is being filled (pl-index.c)."
+function waitForIndexFills(def::Definition)::Nothing
+    return nothing
+end
+
+# PORT: pl-index.h waitIndexFills
+# DIVERGES: see `waitForIndexFills`; upstream reads `def->filling` with acquire semantics first.
+"Wait until no index of `def` is being filled; called before changing its clause list (pl-index.h)."
+function waitIndexFills(def::Definition)::Nothing
+    if def.filling != 0
+        waitForIndexFills(def)
+    end
+    return nothing
+end
+
 # PORT: pl-index.c completed_index
+# DIVERGES: upstream takes `GD->thread.index.mutex`, issues MEMORY_RELEASE() to publish the index and
+# `invalid`, and broadcasts the condition variable; no threads here.
 "Mark index `ci` complete (pl-index.c)."
 function completed_index!(ci::clause_index)::Nothing
     ci.incomplete = false
     return nothing
 end
 
+# PORT: pl-index.c erased_fill
+# DIVERGES: a mutable struct, where upstream passes the address of a stack struct.
+"What `fill_clause_index!` skipped or kept of the erased clauses (pl-index.c `erased_fill`)."
+mutable struct erased_fill
+    skipped::Bool               # skipped an erased clause
+    skipped_tr::Bool            # idem, erased in a transaction
+    kept::UInt32                # # indexable clauses added
+end
+erased_fill() = erased_fill(false, false, UInt32(0))
+
+# PORT: pl-index.c fill_erased_clause
+"""
+Called by `fill_clause_index!` for a clause that is erased.
+
+(*) The goal we fill the index for may see erased clauses. We add the clause and leave the index as if
+the clause was erased after the index was created: the clause is in its bucket and the bucket is dirty.
+A clause without a key is in all buckets. This is only done for a plain index on a dynamic predicate,
+where clause GC cleans the index and all threads that erase a clause wait for us, see waitIndexFills().
+If clause GC removes most of these clauses, cleanClauseIndex() deletes the index.
+
+(**) Otherwise the clause is skipped. It was erased no later than `def.last_erased`: this is set when a
+clause is marked erased and no clause is marked while we fill. See `index_covers`. Goals that do not see
+erased clauses use the index as they use any other index, see `ci.good_from` (pl-index.c).
+"""
+function fill_erased_clause!(
+    ci::ClauseIndex{T}, cl::Clause{T}, keep::Bool, ef::erased_fill
+)::Nothing where {T}
+    if keep                                         # (*)
+        key, _ = indexKeyFromClause(ci, cl)
+        entries = ci.entries::Vector{ClauseBucket{T}}
+        if key != 0
+            cb = entries[hashIndex(key, ci.buckets) + 1]
+            added = addClauseBucket!(cb, cl, key, word(0), CL_END, false)
+            ci.size += added
+            ef.kept += added
+            if (cb.dirty += 0x00000001) - 0x00000001 == 0        # cb->dirty++ == 0
+                ci.dirty += 0x00000001
+            end
+        else
+            for cb in entries
+                addClauseBucket!(cb, cl, key, word(0), CL_END, false)
+                if (cb.dirty += 0x00000001) - 0x00000001 == 0
+                    ci.dirty += 0x00000001
+                end
+            end
+        end
+    elseif cl.generation_erased >= GEN_TRANSACTION_BASE
+        ef.skipped_tr = true                        # (**)
+    else
+        ef.skipped = true
+    end
+    return nothing
+end
+
 # PORT: pl-index.c fill_clause_index
-"Add every live clause of `clist` to the new index `ci` (pl-index.c)."
+# DIVERGES: on failure upstream's caller retires the index (`retireIndex`) and then completes it; no
+# `GET_LD` here, the search context holds what it reads.
+"""
+Add every live clause of `clist` to the new index `ci`; the erased ones as `fill_erased_clause!`
+says. Fails, with `ci.invalid` set, if a clause cannot be added: the caller retires the index, then
+completes it (pl-index.c).
+"""
 function fill_clause_index!(
     ci::ClauseIndex{T}, clist::ClauseList{T}, ctx::index_context{T}
 )::Union{Nothing, ClauseIndex{T}} where {T}
+    erased = erased_fill()
+    keep_erased = !ci.is_list && index_keeps_erased(ctx)
     cref = clist.first_clause
     while cref !== nothing
         cl = cref.clause::Clause{T}
         if (cl.flags & CL_ERASED) == 0
             if !addClauseToIndex!(ci, cl, CL_END)
-                ci.invalid = true
-                completed_index!(ci)
-                deleteIndex!(ctx.predicate, clist, ci)
+                ci.invalid = true               # caller retires, then completes
                 return nothing
             end
+        else
+            fill_erased_clause!(ci, cl, keep_erased, erased)
         end
         cref = cref.next
     end
+    ci.keeps_erased = keep_erased
+    ci.skipped_erased = erased.skipped ? ctx.predicate.last_erased : gen_t(0)
+    ci.skipped_tr = erased.skipped_tr
     ci.resize_above = ci.size * 2
-    ci.resize_below = ci.size ÷ 4
+    ci.resize_below = (ci.size - erased.kept) ÷ 4
     completed_index!(ci)
-    if !consider_better_index(ci.speedup, clist.number_of_clauses)
-        ci.good = true                  # `good` means complete and sufficient
+    if !consider_better_index(ci.speedup, indexed_clauses(ci, clist))
+        if ci.skipped_erased != 0
+            set_index_good_from!(ci, reinterpret(Int64, ci.skipped_erased))
+        elseif erased.skipped_tr
+            set_index_good_from!(ci, Int64(1))  # not for goals in a transaction
+        else
+            set_index_good_from!(ci, GOOD_ALWAYS)
+        end
     end
     return ci
 end
 
+# PORT: pl-index.c retireIndex
+# DIVERGES: no predicate lock (`LOCKDEF`/`UNLOCKDEF`): no other thread changes the array of indexes.
+"""
+fill_clause_index() fails if a clause cannot be added to the index. The index is then `invalid` and must
+be removed from the predicate. As for any change to the array of indexes, this requires the predicate
+lock. The thread that filled the index can only take this lock after it called done_index_fill(), as a
+thread that holds the lock may be waiting for us in waitIndexFills(). The index is marked complete only
+after it is removed. A goal that finds it incomplete waits and looks again. A goal that finds it
+complete and invalid looked at the old array of indexes and looks again. Threads that update the indexes
+hold the predicate lock and skip an invalid index without waiting for it, as completing it needs their
+lock. retireIndex() does nothing if the index was already removed (pl-index.c).
+"""
+function retireIndex!(
+    def::Definition{T}, clist::ClauseList{T}, ci::ClauseIndex{T}
+)::Nothing where {T}
+    cip = clist.clause_indexes
+    if cip !== nothing
+        for i in eachindex(cip)
+            if cip[i] === ci
+                deleteIndexP!(def, clist, cip, i)
+                break
+            end
+        end
+    end
+    return nothing
+end
+
 # PORT: pl-index.c hashDefinition
-"The index `hints` describe: an existing one with the same arguments, or a new filled one."
+# DIVERGES: no predicate lock around the creation (`LOCKDEF`/`UNLOCKDEF`) and no `usleep(1000)` window
+# (debug), as there are no threads; `start_index_fill`/`done_index_fill` still bracket the fill.
+"""
+The index `hints` describe: an existing one with the same arguments, or a new filled one. The fill
+runs without the predicate lock: `def.filling` counts it, and threads that add or erase a clause wait
+for it, see `start_index_fill!` (pl-index.c). A failed fill retires the index, completes it and
+returns `nothing`.
+"""
 function hashDefinition!(
     clist::ClauseList{T}, hints::hash_hints, ctx::index_context{T}
 )::Union{Nothing, ClauseIndex{T}} where {T}
@@ -1456,7 +1940,15 @@ function hashDefinition!(
     end
     ci = newClauseIndexTable(hints, true, ctx)
     insertIndex!(ctx.predicate, clist, ci)
-    return fill_clause_index!(ci, clist, ctx)
+    start_index_fill!(ctx.predicate)
+    if fill_clause_index!(ci, clist, ctx) === nothing
+        done_index_fill!(ctx.predicate)
+        retireIndex!(ctx.predicate, clist, ci)
+        completed_index!(ci)
+        return nothing
+    end
+    done_index_fill!(ctx.predicate)
+    return ci
 end
 
 # PORT: pl-index.c copyIndex
@@ -1565,6 +2057,9 @@ function replaceIndex!(
             if a != 0
                 ai = (cl.args::Vector{arg_info})[a]
                 ai.assessed = false
+                if cl === def.impl_clauses && def.erased_args !== nothing
+                    (def.erased_args::Vector{arg_info})[a].assessed = false
+                end
             end
         end
     end
@@ -1710,8 +2205,7 @@ end
 
 # PORT: pl-index.c best_hash_assessment
 "Order of argument positions by decreasing assessed speedup (pl-index.c)."
-function best_hash_assessment(a1::iarg_t, a2::iarg_t, clist::ClauseList{T})::Int where {T}
-    args = clist.args::Vector{arg_info}
+function best_hash_assessment(a1::iarg_t, a2::iarg_t, args::Vector{arg_info})::Int
     i1 = args[Int(a1) + 1]
     i2 = args[Int(a2) + 1]
     return if i1.speedup - i2.speedup > 0.0f0
@@ -1725,13 +2219,16 @@ end
 
 # PORT: pl-index.c sort_assessments
 # DIVERGES: a stable sort; upstream's sort_r (qsort_r) leaves equal speedups in unspecified order.
-"Sort the first `ninstantiated` argument positions by decreasing speedup — best first."
+"""
+Sort the first `ninstantiated` argument positions, represented by their position in `args`, by
+decreasing speedup — best first. `args` is `clist.args`, or the assessments of old goals (pl-index.c).
+"""
 function sort_assessments!(
-    clist::ClauseList{T}, instantiated::Vector{iarg_t}, ninstantiated::Int
-)::Nothing where {T}
+    args::Vector{arg_info}, instantiated::Vector{iarg_t}, ninstantiated::Int
+)::Nothing
     sort!(
         view(instantiated, 1:ninstantiated);
-        lt=(x, y) -> best_hash_assessment(x, y, clist) < 0
+        lt=(x, y) -> best_hash_assessment(x, y, args) < 0
     )
     return nothing
 end
@@ -1839,7 +2336,11 @@ function assess_remove_duplicates!(a::hash_assessment, clause_count::Int)::Bool
             a.var_count == 0             # See (*)
             a.list = true
         end
-        if Float32(a.var_count) / Float32(a.size) > MAX_VAR_FRAC
+        # Each clause with a variable is added to every bucket. Avoid this if they are too many, unless
+        # the space this takes is at most that of the clauses, e.g., a catch-all clause at the end of a
+        # small table. The speedup computed above includes their cost.
+        if Float32(a.var_count) / Float32(a.size) > MAX_VAR_FRAC &&
+            a.var_count * a.size > clause_count
             a.speedup = 0.0f0
             return false                # not indexable
         end
@@ -1934,8 +2435,15 @@ function indexableCompound(pc::Code{T})::Bool where {T}
                 c2 = decode(pc)
                 if c2 == H_FIRSTVAR || c2 == H_VAR || c2 == H_VOID || c2 == H_VOID_N
                     pc = stepPC(pc)                         # Try next argument
-                elseif c2 == H_POP
-                    return false                            # End of argument list
+                elseif c2 == H_POP ||                       # End of argument list
+                    c2 == I_EXITCATCH ||                 # idem for an H_R* last argument
+                    c2 == I_EXITRESET ||
+                    c2 == I_EXITFACT ||
+                    c2 == I_EXIT ||
+                    c2 == I_ENTER ||
+                    c2 == I_SSU_COMMIT ||
+                    c2 == I_SSU_CHOICE
+                    return false
                 else
                     return true                             # Indexable
                 end
@@ -1948,10 +2456,13 @@ function indexableCompound(pc::Code{T})::Bool where {T}
 end
 
 # PORT: pl-index.c assess_scan_clauses
-"Add the keys of every live clause of `clist` to the first `assess_count` assessments."
+"""
+Add the keys of every live clause of `clist` to the first `assess_count` assessments; with
+`keep_erased` also those of the erased clauses still in the list (pl-index.c).
+"""
 function assess_scan_clauses!(
     clist::ClauseList{T}, ac::Int, assessments::Vector{hash_assessment}, assess_count::Int,
-    ctx::index_context{T}
+    keep_erased::Bool, ctx::index_context{T}
 )::Nothing where {T}
     ai = zeros(Bool, ac)
     # Find the arguments we must check. Assessments may be for multiple arguments.
@@ -1976,7 +2487,7 @@ function assess_scan_clauses!(
     cref = clist.first_clause
     while cref !== nothing
         cl = cref.clause::Clause{T}
-        if (cl.flags & CL_ERASED) == 0
+        if (cl.flags & CL_ERASED) == 0 || keep_erased
             carg = 0
             h_void = 0
             pc, h_void = skipToTerm(cl, ctx.position, h_void)
@@ -2050,14 +2561,21 @@ function best_assessment!(
 end
 
 # PORT: pl-index.c assess_candidate_indexes
-"Record each assessment of `aset` in `clist.args`: speedup, list, bucket count (pl-index.c)."
+"""
+Update `args[i]` for each candidate index in `aset`: the argument's speedup, size and whether a "list"
+index should be created. `args` is `clist.args` or, if `keep_erased`, the assessments of old goals
+(pl-index.c).
+"""
 function assess_candidate_indexes!(
-    ac::Int, clist::ClauseList{T}, aset::assessment_set, ctx::index_context{T}
+    ac::Int, clist::ClauseList{T}, args::Vector{arg_info}, keep_erased::Bool,
+    aset::assessment_set, ctx::index_context{T}
 )::Nothing where {T}
-    assess_scan_clauses!(clist, ac, aset.assessments, length(aset.assessments), ctx)
+    assess_scan_clauses!(
+        clist, ac, aset.assessments, length(aset.assessments), keep_erased, ctx
+    )
     for a in aset.assessments
-        ainfo = (clist.args::Vector{arg_info})[a.args[1]]
-        if assess_remove_duplicates!(a, Int(clist.number_of_clauses))
+        ainfo = args[a.args[1]]
+        if assess_remove_duplicates!(a, assessed_clauses(clist, keep_erased))
             ainfo.speedup = a.speedup
             ainfo.list = a.list
             ainfo.ln_buckets = (perfect_size(a) & 0x1f) % UInt8
@@ -2142,7 +2660,12 @@ function bestHash!(
         return false
     end
     aset = init_assessment_set()        # Prepare for assessment
-    args = ensure_arg_info!(clist, ac)
+    keep_erased = clist.erased_clauses != 0 && index_keeps_erased(ctx)
+    if keep_erased
+        args = erased_arg_info!(ctx.predicate)
+    else
+        args = ensure_arg_info!(clist, ac)
+    end
     # Step 2: find new unassessed args
     for i in 1:ninstantiated
         arg = Int(instantiated[i])
@@ -2152,7 +2675,7 @@ function bestHash!(
         end
     end
     if !isempty(aset.assessments)       # Step 3: assess them
-        assess_candidate_indexes!(ac, clist, aset, ctx)
+        assess_candidate_indexes!(ac, clist, args, keep_erased, aset, ctx)
     end
     # Step 4: find the best (single) arg
     for i in 1:ninstantiated
@@ -2164,10 +2687,11 @@ function bestHash!(
         end
     end
     if best >= 0                        # Found at least one index
-        if consider_better_index(best_speedup, clist.number_of_clauses) &&
+        if consider_better_index(best_speedup, assessed_clauses(clist, keep_erased)) &&
             ninstantiated > 1            # ... but not a real good one ...
             if find_multi_argument_hash!(
-                ac, clist, instantiated, ninstantiated, better_than, hints, ctx
+                ac, clist, args, keep_erased, instantiated, ninstantiated, better_than,
+                hints, ctx
             )
                 return true
             end
@@ -2187,11 +2711,11 @@ Try a two-argument index when every single-argument index is poor; true with the
 `hints` (pl-index.c). `instantiated` is sorted best-first in place.
 """
 function find_multi_argument_hash!(
-    ac::Int, clist::ClauseList{T}, instantiated::Vector{iarg_t}, ninstantiated::Int,
+    ac::Int, clist::ClauseList{T}, args::Vector{arg_info}, keep_erased::Bool,
+    instantiated::Vector{iarg_t}, ninstantiated::Int,
     better_than::Union{Nothing, ClauseIndex{T}}, hints::hash_hints, ctx::index_context{T}
 )::Bool where {T}
-    sort_assessments!(clist, instantiated, ninstantiated)
-    args = clist.args::Vector{arg_info}
+    sort_assessments!(args, instantiated, ninstantiated)
     ok = 0
     while ok < ninstantiated && args[Int(instantiated[ok + 1]) + 1].speedup > MIN_SPEEDUP
         ok += 1
@@ -2207,9 +2731,11 @@ function find_multi_argument_hash!(
                 alloc_assessment!(aset, ia)
             end
         end
-        assess_scan_clauses!(clist, ac, aset.assessments, length(aset.assessments), ctx)
+        assess_scan_clauses!(
+            clist, ac, aset.assessments, length(aset.assessments), keep_erased, ctx
+        )
         nbest = best_assessment!(
-            aset.assessments, length(aset.assessments), Int(clist.number_of_clauses)
+            aset.assessments, length(aset.assessments), assessed_clauses(clist, keep_erased)
         )
         if nbest !== nothing && better_index(better_than, nbest.speedup, MIN_SPEEDUP)
             hints.speedup = 0.0f0       # memset(hints, 0, sizeof(*hints))
@@ -2244,7 +2770,7 @@ function assess_all_arguments!(
             alloc_assessment!(aset, ((i + 1) % iarg_t, 0x00, 0x00, 0x00))
         end
     end
-    assess_candidate_indexes!(ac, clist, aset, ctx)
+    assess_candidate_indexes!(ac, clist, clist.args::Vector{arg_info}, false, aset, ctx)
     return nothing
 end
 
@@ -2327,7 +2853,7 @@ function candidate_indexes!(
     if nassessments == 0
         return (true, 0)
     end
-    sort_assessments!(clist, all_assessments, nassessments)
+    sort_assessments!(args, all_assessments, nassessments)
     # Create the good ones. They are best and need not be combined
     good, nhints = create_good_indexes!(
         clist, all_assessments, nassessments, hints, nhints, max_hints
@@ -2375,7 +2901,9 @@ function candidate_indexes!(
                 alloc_assessment!(aset, ia)
             end
         end
-        assess_scan_clauses!(clist, ac, aset.assessments, length(aset.assessments), ctx)
+        assess_scan_clauses!(
+            clist, ac, aset.assessments, length(aset.assessments), false, ctx
+        )
         for a in aset.assessments
             poor = false
             assess_remove_duplicates!(a, Int(clist.number_of_clauses))
@@ -2435,51 +2963,74 @@ function candidate_indexes!(
 end
 
 # PORT: pl-index.c get_existing_index
-# DIVERGES: returns (index, next slot to search) where upstream advances `*from` through a pointer.
-"The live index of `org`, from slot `from`, over the arguments `hints` name (pl-index.c)."
-function get_existing_index(org, from::Int, hints::hash_hints)
+# DIVERGES: returns `nothing` where upstream returns NULL.
+"The usable index of `org` over the arguments `hints` name, or `nothing` (pl-index.c)."
+function get_existing_index(org, hints::hash_hints)
     if org !== nothing
-        i = from
-        while i <= length(org)
-            ci = org[i]
-            if !ISDEADCI(ci)
+        for ci in org
+            if !UNUSABLECI(ci)
                 if ci.args == hints.args
-                    return (ci, i + 1)
+                    return ci
                 end
             end
-            i += 1
         end
     end
-    return (nothing, from)
+    return nothing
+end
+
+# PORT: pl-index.c sort_indexes
+"""
+Sort the indexes of `set_candidate_indexes!` by decreasing speedup. `candidate_indexes!` returns the
+good ones first, then the deep ones for poor arguments and then combinations, while `existing_hash`
+uses the first index that applies, so the array must be sorted (see `isSortedIndexes`). The sort is
+stable, so equal ones keep the order of `candidate_indexes!` (pl-index.c).
+"""
+function sort_indexes!(
+    cip::Vector{Union{Nothing, ClauseIndex{T}}}, count::Int
+)::Nothing where {T}
+    for i in 2:count
+        ci = cip[i]::ClauseIndex{T}
+        j = i
+        while j > 1 && (cip[j - 1]::ClauseIndex{T}).speedup < ci.speedup
+            cip[j] = cip[j - 1]
+            j -= 1
+        end
+        cip[j] = ci
+    end
+    return nothing
 end
 
 # PORT: pl-index.c set_candidate_indexes
 # DIVERGES: no locking (`lock` is kept for the signature; there are no threads).
+# DIVERGES (SYNC3): upstream builds the context with `.generation = global_generation()`; the kernel has no
+# `gd` here, so the caller hands the generation in. The second caller (update_primary_index!, a static
+# predicate) passes 0: index_keeps_erased() is false for a non-dynamic predicate whatever the generation.
 """
 Set the candidate indexes of a static predicate: every meaningful index, NOT yet realised (each is
 filled the first time a call can use it), and stop searching for others (pl-index.c).
 """
 function set_candidate_indexes!(
-    def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool
+    def::Definition{T}, clist::ClauseList{T}, max::Int, lock::Bool, generation::gen_t
 )::Bool where {T}
     hints = [hash_hints() for _ in 1:max]
     ctx = index_context{T}(
-        gen_t(0), def, nothing, 0, _TOP_POSITION, false, GEN_INVALID, nothing
+        generation, def, nothing, 0, _TOP_POSITION, false, GEN_INVALID, nothing
     )   # (no visibleClause test in candidate_indexes!)
     ac = def.arity > MAXINDEXARG ? MAXINDEXARG : def.arity
     _, max = candidate_indexes!(ac, clist, hints, max, ctx)
     if max > 0
         cip = Vector{Union{Nothing, ClauseIndex{T}}}(undef, max)
         org = clist.clause_indexes
-        from = 1
         for i in 1:max
-            ei, from = get_existing_index(org, from, hints[i])
+            ei = get_existing_index(org, hints[i])
             if ei !== nothing
                 cip[i] = ei
             else
                 cip[i] = newClauseIndexTable(hints[i], false, ctx)
             end
         end
+        sort_indexes!(cip, max)
+        @assert isSortedIndexes(cip)        # DEBUG(0, assert(isSortedIndexes(cip)))
         setIndexes!(def, clist, cip)
         clist.fixed_indexes = true
     else
@@ -2608,7 +3159,7 @@ function update_primary_index!(def::Definition{T}, rgen::gen_t)::Nothing where {
                 end
             else
                 if argn == PINDEX_MAYBEDEEP
-                    set_candidate_indexes!(def, clist, 10, false)
+                    set_candidate_indexes!(def, clist, 10, false, gen_t(0))
                 end
                 clist.unindexed = clist.clause_indexes === nothing
             end
@@ -2687,7 +3238,7 @@ function add_deep_indexes!(out::Vector{index_property}, ci::ClauseIndex{T})::Boo
                 cip = cl.clause_indexes
                 if cip !== nothing
                     for dci in cip
-                        if ISDEADCI(dci)
+                        if UNUSABLECI(dci)
                             continue
                         end
                         push!(out, unify_clause_index(dci))
@@ -2719,7 +3270,7 @@ function unify_index_pattern(
     cip = def.impl_clauses.clause_indexes
     if cip !== nothing
         for ci in cip
-            if ISDEADCI(ci)
+            if UNUSABLECI(ci)
                 continue
             end
             found += 1

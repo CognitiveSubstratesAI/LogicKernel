@@ -155,7 +155,7 @@ MUTANTS = [
     dict(id="LB3-S3 pop_input_context does not restore the line (KILL loadable)", file=F, targets=TQ,
          old="        ld.read_source.position.lineno = c.term_line        # source_line_no   = c->term_line\n", new="        nothing\n"),
     dict(id="LB3-S4 pop_input_context does not restore the input stream (KILL stream: user_error current before the file)", file=F, targets=TQ,
-         old="        ld.IO_streams[SNO_CURRENT_INPUT + 1] = c.stream    # Scurin           = c->stream\n", new="        nothing\n"),
+         old='        setStandardStream(                                  # setStandardStream(SNO_CURRENT_INPUT,\n            ld, SNO_CURRENT_INPUT,                          #   s && s->magic == SIO_MAGIC ? s : Suser_input)\n            s !== nothing && s.magic == SIO_MAGIC ? s : Suser_input(ld)\n        )\n', new='        nothing\n'),
     dict(id="LB3-S5 pop_input_context leaves the context on the stack (KILL loadable)", file=F, targets=TQ,
          old="        c = pop!(ld.input_context_stack)\n", new="        c = last(ld.input_context_stack)\n"),
 ]

@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-copyterm.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-copyterm.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2011-2026, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -108,8 +108,7 @@ function update_ground_cells(ld::PL_local_data, l::Int)::Nothing
 end
 
 # PORT: pl-copyterm.c unshare_attvar as unshare_attvar_cells
-# DIVERGES: positions. As upstream, a compound that is not `att/3` leaves `p` where it is (the loop
-# does not end: an attribute list is `att/3` cells by put_attr/3; put_attrs/2's is the caller's).
+# DIVERGES: positions.
 "Mark the `att/3` cells of the attribute list at global position `p` visited once, so none is shared as ground (pl-copyterm.c)."
 function unshare_attvar_cells(ld::PL_local_data{T}, p::Int)::Nothing where {T}
     fatt3 = _functor_att3(ld)
@@ -124,7 +123,9 @@ function unshare_attvar_cells(ld::PL_local_data{T}, p::Int)::Nothing where {T}
         if fd == fatt3
             ld.gstack[q] = fd | MARK_MASK                   # t->definition = fd | MARK_MASK
             p = q + 3                                       # p = &t->arguments[2]
+            continue                                        # continue
         end
+        return nothing                                      # break: end or invalid attribute list
     end
 end
 
@@ -331,6 +332,9 @@ end
 # DIVERGES: VAR_MARK is the side vector's bit on the copy's cell (the cell itself stays 0); the
 # forwarded cells are on `ld.cp_lstack` (upstream: `LD->cycle.lstack`); an attributed variable's entry is
 # two, `old` (its attribute-list cell) under the attvar cell, told apart by `isRef` as upstream.
+# DIVERGES (SYNC3, 8783a5bd): the cyclic-term branch is `restoreHiddenFunctor(p, *p2 | MARK_MASK)` upstream, and `copy_term` brackets
+# the copy with `startHideFunctors()`/`endHideFunctors()` and `pushVolatileFunctor(ft->definition)` for each forwarded functor
+# (functor GC, volatile functors): held with pl-funct/pl-atom (G1), the plain store stays.
 "Restore every original cell the copy forwarded (pl-copyterm.c `exitCyclicCopy`)."
 function exitCyclicCopy_cells(ld::PL_local_data, flags::Int)::Nothing
     s = ld.cp_lstack
@@ -586,6 +590,17 @@ function term_to_fastheap(
 )::Union{Nothing, fastheap_term{T}} where {T}
     r = compileTermToHeap(ld, t)
     return fastheap_term{T}(r.gsize, r.nvars, r.code, r.values)
+end
+
+# PORT: pl-copyterm.c term_to_fastheap_ex
+# DIVERGES (SYNC3, 0a87c73c): `local` selects `registerAtomLocally` over `PL_register_atom` for the atoms of the copy (thread-local
+# blobs, held with pl-atom); the record keeps no atom registrations, so both give `term_to_fastheap`. Upstream's `term_to_fastheap(t)` is
+# `term_to_fastheap_ex(t, false)`.
+"`term_to_fastheap` for data only this thread uses: `local` keeps local atoms local (pl-copyterm.c)."
+function term_to_fastheap_ex(
+    ld::PL_local_data{T}, t::term_t, ::Bool
+)::Union{Nothing, fastheap_term{T}} where {T}
+    return term_to_fastheap(ld, t)
 end
 
 # PORT: pl-copyterm.c free_fastheap

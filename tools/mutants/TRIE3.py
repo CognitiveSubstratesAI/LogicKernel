@@ -36,7 +36,7 @@ def m(id, old, new, targets=TT, file=F, eq=None):
 
 
 END_INNER = "                    w = consTagged(\n                        valTagged(ld.gstack[attvars[end][2]]), TAGEX_TRIE_ATTVAR_END\n                    )\n                    pop!(attvars)\n"
-END_TOP = "                    w = consTagged(\n                        valTagged(ld.gstack[attvars[end][2]]), TAGEX_TRIE_ATTVAR_END\n                    )\n                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add)\n"
+END_TOP = "                    w = consTagged(\n                        valTagged(ld.gstack[attvars[end][2]]), TAGEX_TRIE_ATTVAR_END\n                    )\n                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add, ld)\n"
 
 MUTANTS = [
     # ---- trie_lookup_abstract (TW _tr_lookup_attvar_rows 1046, _value_rows 1079, _shared_rows 1102, _more_rows 1123; TP t77-t86; TA a1-a17)
@@ -55,20 +55,20 @@ MUTANTS = [
     m("TR3-L6 the attvar's end is not popped from `attvars` (KILL TW:1134: f(Y{a}, g(b), c) gets a second END key at the POP(1) of g)",
       "                    pop!(attvars)\n", "                    nothing\n"),
     m("TR3-L7 the toplevel POP key of an attvar term is omitted (KILL TW:1147)",
-      "                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add)\n                    node == 0 || (node = follow_node(tr, node, w, add))\n",
-      "                    node == 0 || (node = follow_node(tr, node, w, add))\n"),
+      "                    node = follow_node(tr, node, TRIE_KEY_POP(popn), add, ld)\n                    node == 0 || (node = follow_node(tr, node, w, add, ld))\n",
+      "                    node == 0 || (node = follow_node(tr, node, w, add, ld))\n"),
     m("TR3-L8 the toplevel END key of an attvar term is omitted (KILL TW:1147)",
-      "                    node == 0 || (node = follow_node(tr, node, w, add))\n", "                    nothing\n"),
+      "                    node == 0 || (node = follow_node(tr, node, w, add, ld))\n", "                    nothing\n"),
     m("TR3-L9 an attvar takes no number (KILL TW:1062: ATTVAR 1 instead of 2 after V1; TW:1066)",
       "                var_number += 1\n                push!(vl, p)\n", "                push!(vl, p)\n"),
     m("TR3-L10 the attribute list's location is not in vars (KILL TW:1066, 1119: vars == [.., ap]; the restore reads past the pair)",
       "                push!(vl, ap)\n", "                nothing\n"),
     m("TR3-L11 the attvar's cell keeps its word (KILL TW:1114: the second occurrence of f(Y, Y) opens it again; TP t82; TA a5)",
-      "                ld.gstack[p] = w\n                node = follow_node(tr, node, w, add)\n", "                node = follow_node(tr, node, w, add)\n"),
+      "                ld.gstack[p] = w\n                node = follow_node(tr, node, w, add, ld)\n", "                node = follow_node(tr, node, w, add, ld)\n"),
     m("TR3-L12 the attvar is registered at the wrong depth (KILL TW:1062: no END key at all)",
       "                    push!(attvars, (compounds, p))\n", "                    push!(attvars, (compounds + 1, p))\n"),
     m("TR3-L13 a shared attvar's number is not followed (KILL TW:1114: the key after the END is missing; TP t82; TA a5, a15)",
-      "            else                                                # a shared attvar\n                node = follow_node(tr, node, w, add)\n",
+      "            else                                                # a shared attvar\n                node = follow_node(tr, node, w, add, ld)\n",
       "            else                                                # a shared attvar\n                nothing\n"),
     m("TR3-L14 the restore does not give the attvar's cell back (KILL TW:1067, 1075, 1119: ld.gstack[yp] == yw; TP t77 after the first lookup)",
       "            elseif tagex(c) == TAGEX_TRIE_ATTVAR\n                i += 1\n                ld.gstack[vp] = consPtr(vl[i], TAG_ATTVAR",
@@ -76,8 +76,8 @@ MUTANTS = [
     m("TR3-L15 the restore does not skip the attribute list's entry (KILL TW:1067: the attvar cell is rebuilt from the wrong location)",
       "                i += 1\n                ld.gstack[vp] = consPtr(vl[i], TAG_ATTVAR | STG_GLOBAL)", "                ld.gstack[vp] = consPtr(vl[i], TAG_ATTVAR | STG_GLOBAL)"),
     m("TR3-L16 an attvar opens its attribute list only without `add` (KILL TW:1062: the keys after ATTVAR are missing on an adding lookup)",
-      "                node = follow_node(tr, node, w, add)\n                if node != 0\n                    attvars === nothing",
-      "                node = follow_node(tr, node, w, add)\n                if node != 0 && !add\n                    attvars === nothing"),
+      "                node = follow_node(tr, node, w, add, ld)\n                if node != 0\n                    attvars === nothing",
+      "                node = follow_node(tr, node, w, add, ld)\n                if node != 0 && !add\n                    attvars === nothing"),
     # ---- unify_key (TP t77-t86, TA a1-a17; no TW row has an attvar key: the oracle rows are the kill)
     m("TR3-U1 an attvar's first occurrence in read mode stays in read mode (EQUIVALENT)",
       "                st.write = true                                 # wait for the TAGEX_TRIE_ATTVAR_END key\n",

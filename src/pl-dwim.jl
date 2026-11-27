@@ -301,6 +301,10 @@ end
 # (`ld.cur_pred_enums`), its index the `REDO_PTR` context; the procedures are the keys of the module's table at the
 # first call, in its order (upstream's hash order), each looked up again when its turn comes. The cut is answered
 # before the term reference `head` is made (a cut call has all arguments 0).
+# DIVERGES (SYNC3, ff01f74d): upstream now skips `isVolatileProcedure(proc)` and a procedure for which
+# `acquireTableProcedure(module, key, proc)` fails, and calls `releaseProcedureRef(proc)` after the match (procedure GC:
+# a runtime-created procedure may be collected while the enumeration holds it); the kernel has no procedure GC, so every
+# procedure is permanent: the three shims of packet P07 (src/pl-proc.jl: false, true, no-op) are not called here.
 "`'\$dwim_predicate'(+Term, -Dwim)`: the predicates of the module `Term` names that match its name in the DWIM sense (pl-dwim.c)."
 function pl_dwim_predicate(
     ld::PL_local_data{T}, pred::term_t, dwim::term_t, ctx::control_t{T}

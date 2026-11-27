@@ -1,4 +1,5 @@
-# UPSTREAM: swipl-devel src/pl-transaction.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-transaction.c @ af9e2e7ed0be
+# UPSTREAM: swipl-devel src/pl-trie.h @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  2020-2024, University of Amsterdam
 # COPYRIGHT: VU University Amsterdam
@@ -129,8 +130,7 @@ VAL_GEN_FLAGS(ptr::tr_gen_t)::UInt32 = UInt32(ptr & 0x3)
 VAL_ADD_FLAGS(ptr::tr_gen_t, flags::UInt32)::tr_gen_t = ptr | tr_gen_t(flags)
 
 # PORT: pl-transaction.c transaction_last_modified_predicate
-# DIVERGES: the definition has no `last_modified` (src/pl-proc.jl `setLastModifiedPredicate!`): `last_modified` is the one of
-# its module, which the caller passes.
+# DIVERGES: `last_modified` (`def->last_modified`, upstream reads it here) is passed by the caller.
 "The last modification of `def` as seen inside the transaction (pl-transaction.c): `last_modified` is the global one."
 function transaction_last_modified_predicate(
     ld::PL_local_data{T}, def::Definition{T}, last_modified::gen_t
@@ -307,7 +307,8 @@ update_gen(u::tr_update)::gen_t =
 "Order two updates by their generation (pl-transaction.c)."
 cmp_updates(u1::tr_update, u2::tr_update)::Bool = update_gen(u1) < update_gen(u2)
 
-# PORT: pl-transaction.c is_trie_clause
+# PORT: pl-trie.h is_trie_clause
+# (swipl-devel af9e2e7e moved it from pl-transaction.c to pl-trie.h, a static inline; pl-vmi.c uses it too.)
 # DIVERGES: the database is an argument (`GD->procedures`).
 "True when `cl` is a clause that stands for a trie: a clause of `trie_gen_compiled/2,3` (pl-transaction.c)."
 function is_trie_clause(gd::PL_global_data{T}, cl::Clause{T})::Bool where {T}
@@ -355,6 +356,22 @@ end
 
 
 # ── the Prolog connection (TX1b) ────────────────────────────────────────────────────────────────
+
+# PORT: pl-transaction.c setTransactionStart
+# DIVERGES (SYNC3): upstream stores `LD->transaction.gen_start`, executes `MEMORY_BARRIER()` and re-reads the global generation
+# until it is unchanged, which pairs with the barrier clause GC executes after reading the start generation (pl-proc.c, see
+# markPredicatesInEnvironments(); the clause GC is held behind G1). With one thread the loop runs once and there is no
+# barrier to execute: the store is kept in the loop's form so the GC port can add its barrier here.
+"Publish the start generation of the transaction: store it and re-read the global generation until it is unchanged (pl-transaction.c)."
+function setTransactionStart(gd::PL_global_data{T}, ld::PL_local_data{T}) where {T}
+    while true
+        gen = global_generation(gd)
+        ld.transaction.gen_start = gen
+        # MEMORY_BARRIER(): none, one thread (see above)
+        gen == global_generation(gd) && break
+    end
+    return nothing
+end
 
 # PORT: pl-transaction.c transaction
 # DIVERGES: `constraint` is 0 for upstream's NULL and `lock` is not examined (no mutex table, see the header). The tables'
@@ -449,7 +466,7 @@ function transaction(
         tr.flags = parent.flags
     else
         tid = gen_t(1)                                      # int tid = 1: no threads
-        tr.gen_start = global_generation(gd)
+        setTransactionStart(gd, ld)
         tr.gen_base = GEN_TRANSACTION_BASE + tid * GEN_TRANSACTION_SIZE
         tr.gen_max = tr.gen_base + GEN_TRANSACTION_SIZE - gen_t(6)
         tr.generation = tr.gen_base
@@ -457,7 +474,7 @@ function transaction(
         rc = callProlog(gd, ld, 0, goal, PL_Q_PASS_EXCEPTION)
         if rc && (flags & TR_TRANSACTION) != 0
             if constraint != 0
-                tr.gen_start = global_generation(gd)
+                setTransactionStart(gd, ld)
                 rc = callProlog(gd, ld, 0, constraint, PL_Q_PASS_EXCEPTION)
             end
             if rc && (flags & TR_BULK) != 0
@@ -482,6 +499,7 @@ function transaction(
         tr.gen_base = GEN_INFINITE
         tr.gen_start = 0
         tr.flags = 0
+        # `if ( mutex ) put_mutex(mutex)` (O_PLMT): none, no mutex table (see the header)
     end
 
     return rc

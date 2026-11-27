@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-modul.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-modul.c @ af9e2e7ed0be
 # UPSTREAM: swipl-devel src/pl-incl.h @ 18168e629eab
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
@@ -54,6 +54,10 @@ MODULE_parse(ld::PL_local_data{T}) where {T} =
 # upstream's is a hash table by atom. NOT PORTED: the per-thread cache of the 8 most recent lookups,
 # flushed by `GD->modules.generation` (new at cbf4e189): it returns what the table returns, so it is
 # representation only (D-0149 MQ2); re-open if `M:G` metacalls show the lookup above a few percent.
+# DIVERGES (SYNC3, af9e2e7e): upstream's isCurrentModule is now `findModule(name)` (the cache) and, for a
+# module that is not `MG_PINNED`, `pinModule(name, m)`: module GC (pl-modul.c "MODULE GC", commit 77c3148d,
+# Prolog flag `gc_code`). The kernel has no module GC: every module is permanent (the state `MG_PINNED`),
+# so the pin is a no-op and the lookup is the one above. E-tier, not ported (see `_lookupModule!`).
 "The module named `name` (a symbol) in `modules`, or `nothing` (pl-modul.c)."
 function isCurrentModule(
     modules::module_table{T}, name::T
@@ -181,22 +185,42 @@ clearSupersModule(m::module_t{T}) where {T} = clearSupersModule_no_lock(m)
 
 # PORT: pl-modul.c setSuperModule
 # DIVERGES: the super modules are indices into `modules`. A module with ONE super gets the new one in
-# its place, with no cycle check, as upstream's does.
+# its place, with no cycle check, as upstream's does. SYNC3 (af9e2e7e): a module whose one super is
+# already `s` now succeeds at once (upstream: other threads walk `m->supers` without the lock, and each
+# (re)load of a module file calls this with the same super, so the cell is no longer freed and
+# re-added); the kernel has no threads, the result is the same.
 "Make `s` the only super module of `m` (pl-modul.c)."
 function setSuperModule(
     modules::module_table{T}, ld::Union{Nothing, PL_local_data{T}}, m::module_t{T},
     s::module_t{T}
 )::Bool where {T}
     s === m && return cannotSetSuperModule(ld, m, s)
-    if length(m.supers) == 1                        # m->supers && !m->supers->next
+    if length(m.supers) == 1                        # m->supers && !m->supers->next; See (*)
         if m.supers[1] != s.index
             m.supers[1] = s.index
             m.level = s.level + 1
-            return true
         end
+
+        return true                                 # succeed
     end
     clearSupersModule_no_lock(m)
     return addSuperModule_no_lock(modules, ld, m, s, 'A')
+end
+
+# PORT: pl-modul.c hasProceduresModule
+# DIVERGES: new at af9e2e7e (SYNC3), the one caller is `set_module` (class(temporary), P09). The database
+# `gd` is an argument (`isDefinedProcedure`). `isVolatileProcedure(proc)` (`PROC_VOLATILE|PROC_DESTROY`,
+# set by procedure GC: pl-proc.c, "ff01f74d ENHANCED: garbage collection of procedures created at
+# runtime") is P06's shim in src/pl-proc.jl (`isVolatileProcedure(proc) = false`: the kernel has no procedure GC).
+"Whether `m` has defined procedures; an abolished (undefined) one does not count (pl-modul.c)."
+function hasProceduresModule(gd::PL_global_data{T}, m::module_t{T})::Bool where {T}
+    isempty(m.procedures) && return false           # m->procedures->size == 0
+
+    for proc in values(m.procedures)                # FOR_TABLE(m->procedures, name, value)
+        !isVolatileProcedure(proc) && isDefinedProcedure(gd, proc) && return true
+    end
+
+    return false
 end
 
 # PORT: pl-modul.c _lookupModule as _lookupModule!
@@ -205,6 +229,14 @@ end
 # table's vector, its index its place, and into the name index. NOT PORTED: a module's mutex (no
 # threads), `GD->statistics.modules`, `PL_register_atom(name)` (no atom GC). The syntax flags are
 # SWI-7's (`GD->options.traditional` is false: no `--traditional`).
+# DIVERGES (SYNC3, af9e2e7e): upstream split this function: `createModule(name, pinned, how, ref)` (the body
+# above, plus `m->definitions = 0`, the `MG_PINNED`/`MG_CANDIDATE` state, `moduleGCCandidate` cells and
+# `considerModuleGC()`), `_lookupModule(name)` = `lookupHTableWP`, pin by CAS on `gc_flags` (waiting on
+# `waitModuleGC()` for a module being collected), else `createModule(name, MG_PINNED, MP_REF, NULL)`, and the
+# new `_lookupTemporaryModule` (`set_module(M:class(temporary))`: with `gc_code` below `module` it is
+# `_lookupModule`) and `volatileModule`/`resolveVolatileModule`/`lookupModuleRef`/`acquireModuleRef`
+# (hazard pointers, counted references). Module GC is not ported (E-tier): with every module pinned,
+# `createModule(..., MG_PINNED, ...)` is the code below and `_lookupTemporaryModule` is this function.
 """
     _lookupModule!(modules, cd, name) -> module_t
 
@@ -306,6 +338,11 @@ end
 # or `user` outside one (since MOD2; pl-modul.c:834-835: `*module = (environment_frame ?
 # contextModule(environment_frame) : MODULE_user);`). A qualifier names its module, which `lookupModule`
 # creates (since MOD1). NOT PORTED: `SM_NOCREATE` (`flags`): its callers are not ported.
+# DIVERGES (SYNC3): upstream (af9e2e7e) pins the module (`findModule` fast path + `lookupModule`; the context module via
+# `pinModulePtr` when it is not MG_PINNED), and with `flags` containing `SM_VOLATILE` (the meta-call) returns
+# `resolveVolatileModule(mname)`, an unpinned module protected by the thread's hazard pointer. The kernel has no module GC,
+# every module is pinned, so there is nothing to pin and `SM_VOLATILE` is `lookupModule`: not ported (`flags` is not a
+# parameter). New `stripModuleRef` (the not-pinned variant with `*ref`) is E-tier, not ported.
 "The plain term under the qualifiers at location `l` (`(kind, word, position)`) and the module it names (pl-modul.c)."
 function stripModule_cells(
     gd::PL_global_data{T}, ld::PL_local_data{T}, l::Int
@@ -351,6 +388,9 @@ end
 # ── the Prolog connection (pl-modul.c) ──────────────────────────────────────────────────────────
 
 # PORT: pl-modul.c set_module
+# DIVERGES (SYNC3): class(temporary) tests `(class == user || class == temporary) && !hasProceduresModule(m)` (af9e2e7e, 77c3148d:
+# an abolished module, still in the table, can be made temporary; so can a temporary one again); the test was
+# `class == user && procedures->size == 0`.
 # DIVERGES: the database and the local data are arguments. `program_space(N)` with N > 0 raises
 # `NotPortedError`: the kernel does not keep `m->code_size` up to date (bench H1; D-0149 MQ3), so the
 # limit could be neither checked nor enforced — it is never stored silently. `program_space(0)` (no
@@ -386,7 +426,10 @@ function set_module(
                 m.class = class
                 return true
             elseif sym_key(class) == sym_key(mk_sym(T, :temporary))
-                if sym_key(m.class) == sym_key(mk_sym(T, :user)) && isempty(m.procedures)
+                if (
+                    sym_key(m.class) == sym_key(mk_sym(T, :user)) ||
+                    sym_key(m.class) == sym_key(mk_sym(T, :temporary))   # destroyed, not collected
+                ) && !hasProceduresModule(gd, m)
                     m.class = class
                 else
                     return PL_error(
@@ -425,6 +468,10 @@ end
 # PORT: pl-modul.c set_module as pl_set_module1_va
 # (PRED_IMPL("set_module", 1, set_module, PL_FA_TRANSPARENT))
 # (an unqualified `set_module/1` works on `MODULE_parse`, as upstream's: pl-modul.c:739)
+# DIVERGES (SYNC3): upstream (af9e2e7e) picks `_lookupTemporaryModule(mname)` when the property is `class(temporary)`
+# (new `isTemporaryClassProperty`), else `_lookupModule(mname)`: the first pins a new or unpinned module as MG_TEMPORARY
+# for module GC. The kernel has no module GC (`gc_code` != module: upstream's `!moduleGCEnabled()` returns `_lookupModule`),
+# so both are `lookupModule`; neither function is ported (E-tier, P08 handoff).
 "`set_module(:Property)`: set a property of a module (pl-modul.c)."
 function pl_set_module1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -535,7 +582,11 @@ function get_existing_source_file(
 end
 
 # PORT: pl-modul.c current_module as pl_current_module2_va
-# (PRED_IMPL("$current_module", 2, current_module, PL_FA_NONDETERMINISTIC)) — pl-modul.c:983-1075. The state is a record of
+# (PRED_IMPL("$current_module", 2, current_module, PL_FA_NONDETERMINISTIC)) — pl-modul.c:983-1075.
+# DIVERGES (SYNC3): the deterministic module --> file case is `acquireModuleRef(name, &ref)` ... `releaseModuleRef(ref)` upstream
+# (af9e2e7e; it was `isCurrentModule(name)`): a counted reference for a module that is not permanent, held while the file is
+# read. The count is taken and given back inside one call that cannot destroy the module, so the kernel keeps `isCurrentModule`.
+# The state is a record of
 # `ld.module_enums` (`newModuleEnum`), its index the `REDO_PTR` context (`PL_retry_address`); `FRG_CUTTED` frees it.
 # DIVERGES: hash-table order (pl-table.c); the kernel enumerates in creation order — the class of D-0145, D-0149 item 1, D-0157
 # item 2 with current_op/3 (src/pl-op.jl): a multi-answer enumeration gives upstream's answers as a SET in another order, so
@@ -836,6 +887,9 @@ end
 # PORT: pl-modul.c fixExport
 # DIVERGES: the database `gd` is an argument; a destroyed module (`M_DESTROYED`: its name left the table) is not
 # in upstream's table, so it is skipped.
+# DIVERGES (SYNC3): upstream (af9e2e7e) calls `fixExportModule` at once for a permanent module (`isPermanentModule`), but for
+# any other counts a reference, skips it when MG_DESTROY is set and gives the reference back (module GC may be collecting it):
+# the kernel's `M_DESTROYED` skip is that test, and there is no concurrent collector, so the reference is not counted.
 "Patch the definition `old` to `new` in every module (pl-modul.c)."
 function fixExport(
     gd::PL_global_data{T}, old::Definition{T}, new::Definition{T}
@@ -884,9 +938,9 @@ function import_(
         autoImport(gd, name, arity, gd.modules[proc.definition.module_])
     end
 
-    old = isCurrentProcedure(
+    old = pinCurrentProcedure(
         proc.definition.functor_name, proc.definition.arity, destination
-    )
+    )                                                           # pinCurrentProcedure (af9e2e7e; P06: = isCurrentProcedure)
     if old !== nothing
         old.definition === proc.definition && return true       # already done this!
 
@@ -947,6 +1001,9 @@ function import_(
         ) || return false
     end
 
+    # DIVERGES (SYNC3): upstream (af9e2e7e) takes `nproc = allocProcedure()` (procedure GC reuses collected ones) and sets
+    # `nproc->flags = pflags|PROC_PINNED; nproc->references = 0`. The kernel has no procedure GC: every procedure is what
+    # upstream calls pinned, no `PROC_PINNED` flag and no `references` field (P06 shims; pl-incl.jl `procedure`).
     nproc = Procedure{T}(proc.definition, pflags, UInt32(0))    # nproc->flags = pflags; source_no = 0
     shareDefinition(proc.definition)
     destination.procedures[(proc.definition.functor_name, proc.definition.arity)] = nproc
@@ -1067,24 +1124,41 @@ function pl_def_modules2_va(
     return PL_unify_nil(ld, tail) ? FTRUE : FFALSE
 end
 
+# PORT: pl-modul.c isPermanentModule
+# DIVERGES (SYNC3): new at af9e2e7e (77c3148d, module GC): `isPermanentFlags(m->gc_flags)`, `(flags&(MG_PINNED|MG_TEMPORARY)) == MG_PINNED`:
+# pinned and not temporary, references to it are not counted. The kernel has no `gc_flags` (no module GC: P08 handoff): every module
+# is pinned and `class(temporary)` stands for MG_TEMPORARY, so a module is permanent when its class is not `temporary`. A temporary
+# module keeps the kernel's own scheme (`references`, `M_DESTROYED`: `releaseModule_unlocked`, `destroyTemporaryModule`), the one upstream
+# counts references for too (the module GC pins of a temporary module are dropped by '$destroy_module'/1).
+"Whether references to `m` are not counted: `m` is not a temporary module (pl-modul.c)."
+isPermanentModule(m::module_t{T}) where {T} =
+    sym_key(m.class) != sym_key(mk_sym(T, :temporary))
+
 # PORT: pl-modul.c acquireModule
-# DIVERGES: the database `gd` is an argument; no lock (no threads).
-"The module named `name`, or `nothing`; a temporary module gets a reference (pl-modul.c)."
+# DIVERGES: the database `gd` is an argument; no lock (no threads). Upstream (af9e2e7e) is `acquireModuleRef(name, &ref)` ->
+# `protectModule(name, MP_REF, ref)`: no reference for a permanent module, a counted `gc_references` for a module that is not
+# (a temporary one: `references`); `*ref`, the pointer `releaseModuleRef` takes, is the module itself here, as `releaseModule(m)`
+# is called with it. New `acquireModuleRef`, `protectModule`, `releaseModuleRef` are E-tier (module GC), not ported.
+"The module named `name`, or `nothing`; a module that is not permanent gets a reference (pl-modul.c)."
 function acquireModule(
     gd::PL_global_data{T}, name::T
 )::Union{Nothing, module_t{T}} where {T}
     m = isCurrentModule(gd.modules, name)
-    if m !== nothing && sym_key(m.class) == sym_key(mk_sym(T, :temporary))
-        m.references += 1
+    if m !== nothing && !isPermanentModule(m)
+        m.references += 1                           # ATOMIC_INC(&m->gc_references)
     end
     return m
 end
 
 # PORT: pl-modul.c acquireModulePtr
-"Count a reference to `m` when it is a temporary module (pl-modul.c)."
+# DIVERGES (SYNC3): upstream (af9e2e7e) `if ( m && !isPermanentModule(m) ) ATOMIC_INC(&m->gc_references)`; `m` is never NULL here
+# (`nothing` is not accepted), and `gc_references` is `references`. The comment "also used for the modules in the code of clauses,
+# I_CONTEXT and I_CALLM; see register_clause_symbols() and freeClause()" is the compiler/clause interface (not held by the
+# kernel: clauses keep the module index, no count; src/pl-comp.jl is in the union and takes no module reference: `register_clause_symbols` is E-tier, see compileClause).
+"Count a reference to `m` when it is not a permanent module (pl-modul.c)."
 function acquireModulePtr(m::module_t{T})::Nothing where {T}
-    if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
-        m.references += 1
+    if !isPermanentModule(m)
+        m.references += 1                           # ATOMIC_INC(&m->gc_references)
     end
     return nothing
 end
@@ -1093,22 +1167,29 @@ end
 # DIVERGES: the memory (the tables, the super list, the lingering definitions) is Julia's garbage collector's: a destroyed module
 # keeps its record, its procedures and its index, as definitions hold the index (D-0149 M2, H3); what is done is the one
 # visible effect, the source and typein modules go back to `user`.
+# DIVERGES (SYNC3): upstream (af9e2e7e) calls `purgeProcedureCandidates(m)` (pl-proc.c, procedure GC: removes the module's
+# procedures from the collection candidate list) before `destroyHTableWP(m->procedures)`: the call is made, P06's shim is a no-op
+# (src/pl-proc.jl, branch wip/sync-p06: no procedure GC). The new module-GC block after it (`isEmptyModule`, `keepVolatileModule`,
+# `collectVolatileModules`, ...: 277 lines) is E-tier, not ported (no module GC; P08 handoff list).
 "Free a destroyed module: the source and typein modules that are `m` become `user` (pl-modul.c)."
 function unallocModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
 )::Nothing where {T}
     user = MODULE_user(gd)
+    purgeProcedureCandidates(m)                     # if ( m->procedures ) purgeProcedureCandidates(m); destroyHTableWP(m->procedures)
     ld.modules_source == m.index && (ld.modules_source = user.index)
     ld.modules_typein == m.index && (ld.modules_typein = user.index)
     return nothing
 end
 
 # PORT: pl-modul.c markSourceFilesProcedure
-# DIVERGES: the bit vector is a `BitVector` indexed from 0 (element `i + 1`).
+# DIVERGES: the bit vector is a `BitVector` indexed from 0 (element `i + 1`). SYNC3 (af9e2e7e): a `source_no` beyond the vector
+# marks every file (a file may be registered after `high` was computed; upstream's `no < v->size`).
 "Mark the source files `proc` was defined in: its one file, or all when it has several (pl-modul.c)."
 function markSourceFilesProcedure(proc::Procedure{T}, v::BitVector)::Nothing where {T}
-    if (proc.flags & PROC_MULTISOURCE) == 0
-        v[Int(proc.source_no) + 1] = true
+    no = Int(proc.source_no)                        # size_t no = proc->source_no
+    if (proc.flags & PROC_MULTISOURCE) == 0 && no < length(v)
+        v[no + 1] = true
     else
         fill!(v, true)
     end
@@ -1116,17 +1197,30 @@ function markSourceFilesProcedure(proc::Procedure{T}, v::BitVector)::Nothing whe
 end
 
 # PORT: pl-modul.c unlinkSourceFilesModule
+# DIVERGES (SYNC3): upstream (af9e2e7e) enumerates the procedures with `acquireTableProcedure()` (procedure GC reuses `source_no` of a
+# collected procedure) and the files with `acquireIndexSourceFile()`/`releaseSourceFile()`: the procedure calls are P06's shims
+# (src/pl-proc.jl: always true, no count), the file calls count a reference and drop it again. NOT PORTED: the second loop, "files
+# without procedures for m", which runs `while m->source_refs > 0` and calls `unlinkSourceFileModule(sf, m)` for each file whose
+# `sf->modules` is not empty: `source_refs` (module GC: the number of source files that list the module, pl-srcfile.c
+# addModuleSourceFile/delModuleSourceFile) is not kept, and the kernel's `unlinkSourceFileModule` (src/pl-srcfile.jl) does not
+# remove `m` from `sf.modules` either (upstream's does), so the loop would have nothing to do here.
 "Remove the source-file administration's links to `m`, and release the file `m` was declared in (pl-modul.c)."
 function unlinkSourceFilesModule(gd::PL_global_data{T}, m::module_t{T})::Nothing where {T}
     high = highSourceFileIndex(gd)
     vec = falses(high + 1)
-    for proc in values(m.procedures)
-        markSourceFilesProcedure(proc, vec)
+    for (key, proc) in m.procedures                 # newTableEnumWP(m->procedures); advanceTableEnum()
+        if acquireTableProcedure(m, key, proc)
+            markSourceFilesProcedure(proc, vec)
+            releaseProcedureRef(proc)
+        end
     end
     for i in 1:high
         if vec[i + 1]
-            sf = indexToSourceFile(gd, i)
-            sf === nothing || unlinkSourceFileModule(sf, m)
+            sf = acquireIndexSourceFile(gd, i)
+            if sf !== nothing
+                unlinkSourceFileModule(sf, m)
+                releaseSourceFile(sf)
+            end
         end
     end
     if m.file != 0
@@ -1138,6 +1232,9 @@ function unlinkSourceFilesModule(gd::PL_global_data{T}, m::module_t{T})::Nothing
 end
 
 # PORT: pl-modul.c releaseModule_unlocked
+# CLEANUP (SYNC3): removed upstream at af9e2e7e (77c3148d: module GC; `releaseModule` is `ATOMIC_DEC(&m->gc_references)`, the module
+# is freed by the collector, not by the last release). Kept as the kernel's own function for its temporary-module scheme
+# (`references` + `M_DESTROYED`); its marker points at the pre-GC upstream function (pin 18168e62). P10 decides.
 # DIVERGES: `GD->statistics.modules` and `PL_unregister_atom(name)` (no statistics, no atom GC) and the wait area (no threads) are not kept;
 # the local data is an argument (`unallocModule` resets its source and typein modules).
 "Drop a reference to the temporary module `m`; the last one of a destroyed module frees it (pl-modul.c)."
@@ -1153,11 +1250,15 @@ function releaseModule_unlocked(
 end
 
 # PORT: pl-modul.c releaseModule
-"Drop a reference to `m` when it is a temporary module (pl-modul.c)."
+# DIVERGES (SYNC3): upstream (af9e2e7e) is `if ( m && !isPermanentModule(m) ) ATOMIC_DEC(&m->gc_references)`: the module GC frees the
+# module later. Here the decrement is `releaseModule_unlocked`'s (the kernel's deferred destroy, above); `m` is never NULL. New
+# `releaseModuleRef(ref)` (the counted reference of `acquireModuleRef`) and `releaseModuleCodeRef(m)` (`GD->halt.cleaning !=
+# CLN_DATA`: a clause's reference at halt, `freeClause`) are E-tier, not ported (module GC / clause GC).
+"Drop a reference to `m` when it is not a permanent module (pl-modul.c)."
 function releaseModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
 )::Nothing where {T}
-    if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
+    if !isPermanentModule(m)
         releaseModule_unlocked(gd, ld, m)
     end
     return nothing
@@ -1166,6 +1267,7 @@ end
 # PORT: pl-modul.c newModuleEnum
 # DIVERGES: the state is a record of `ld.module_enums` and the result its index (`alloc_foreign_state!`), where upstream `malloc`s
 # it and returns NULL when it cannot (`PL_no_memory()` in the caller: not reachable here); `tenum` starts at the first place.
+# SYNC3 (af9e2e7e): upstream initialises `en->gc_ref = NULL` (was `en->current`): the kernel's field is `current` (pl-incl.jl).
 "A state for an enumeration of the module table, `flags` `MENUM_TEMP` or 0: its index in the pool (pl-modul.c)."
 function newModuleEnum(ld::PL_local_data, flags::Int)::Int
     pool = ld.module_enums
@@ -1179,8 +1281,12 @@ end
 
 # PORT: pl-modul.c advanceModuleEnum
 # DIVERGES: the table is the database's `module_table`, walked in creation order (D-0149 item 1); a record whose name is
-# not mapped back to its index is a DESTROYED module (`destroyModule` took the name out) and is not in the table, as upstream's
+# not mapped back to its index is a DESTROYED module (`destroyTemporaryModule` took the name out) and is not in the table, as upstream's
 # deleted entry is not enumerated. No lock (no threads).
+# DIVERGES (SYNC3): upstream (af9e2e7e) skips a temporary module unless `MENUM_TEMP`, then, for a module that is not permanent, counts
+# a reference (`gc_references`), skips it if module GC marked it `MG_DESTROY` (`M_DESTROYED` here), and releases the previously held
+# one with `releaseModuleRef(en->gc_ref)` (`releaseModule` here); the field is `en->gc_ref` upstream (`en.current`, pl-incl.jl: held
+# with the pl-incl.h owner).
 "The next module of the table, or `nothing`; a temporary one only with `MENUM_TEMP`, then it is referenced (pl-modul.c)."
 function advanceModuleEnum(
     gd::PL_global_data{T}, ld::PL_local_data{T}, en::module_enum
@@ -1197,14 +1303,18 @@ function advanceModuleEnum(
         i == 0 && return nothing                        # m = NULL
         m = table.modules[i]
 
-        if sym_key(m.class) == temporary
-            (en.flags & MENUM_TEMP) == 0 && continue
-            m.references += 1
-            if en.current != 0
-                cur = table.modules[en.current]
-                sym_key(cur.class) == temporary && releaseModule_unlocked(gd, ld, cur)
+        if sym_key(m.class) == temporary && (en.flags & MENUM_TEMP) == 0
+            continue
+        end
+        # see module GC
+        if !isPermanentModule(m)
+            m.references += 1                           # ATOMIC_INC(&m->gc_references)
+            if (m.flags & M_DESTROYED) != 0             # LOAD_SEQ_CST(m->gc_flags)&MG_DESTROY
+                m.references -= 1                       # ATOMIC_DEC(&m->gc_references)
+                continue
             end
-            en.current = m.index
+            en.current != 0 && releaseModule(gd, ld, table.modules[en.current])    # releaseModuleRef(en->gc_ref)
+            en.current = m.index                        # en->gc_ref = m
         end
         return m
     end
@@ -1212,6 +1322,7 @@ end
 
 # PORT: pl-modul.c freeModuleEnum
 # DIVERGES: the state goes back to the pool of `ld` (`free_foreign_state!`), where upstream frees the table enumeration and `en`.
+# SYNC3 (af9e2e7e): upstream calls `releaseModuleRef(en->gc_ref)` (`releaseModule`, a no-op for a permanent module).
 "Release the temporary module an enumeration holds and give its state at index `k` back (pl-modul.c)."
 function freeModuleEnum(
     gd::PL_global_data{T}, ld::PL_local_data{T}, k::Int
@@ -1219,33 +1330,96 @@ function freeModuleEnum(
     pool = ld.module_enums
     en = pool.states[k]
     if en.current != 0
-        cur = gd.modules.modules[en.current]
-        sym_key(cur.class) == sym_key(mk_sym(T, :temporary)) &&
-            releaseModule_unlocked(gd, ld, cur)
+        releaseModule(gd, ld, gd.modules.modules[en.current])      # releaseModuleRef(en->gc_ref)
         en.current = 0
     end
     free_foreign_state!(pool, k)                        # freeTableEnum(en->tenum); free(en)
     return nothing
 end
 
-# PORT: pl-modul.c destroyModule
-# DIVERGES: the invariant check that prints "Module %s: class %s; refs %d" (a debugging line on stderr, when a temporary module is
-# destroyed with no reference) and the bump of `GD->modules.generation` (the per-thread lookup cache is not ported, MOD1 Q2) are not
-# kept.
-"Take the name of `m` out of the module table and mark it destroyed; free it at its last reference (pl-modul.c)."
-function destroyModule(
+# PORT: pl-modul.c destroyTemporaryModule
+# DIVERGES (SYNC3): upstream (af9e2e7e, 534ec274 + 77c3148d) REMOVED `destroyModule` (delete the name from the table, `M_DESTROYED`,
+# `releaseModule`) and `'$destroy_module'/1` now calls `destroyTemporaryModule(m)`: `abolishModule(m, soft)` (below) and, for a
+# module that was new or unpinned when it became temporary (`MG_TEMPORARY`: module GC), drop the pins (`ATOMIC_AND(&m->gc_flags,
+# ~(MG_PINNED|MG_TEMPORARY))`, `moduleGCCandidate(m)`, `destroyedTemporaryModule()`); the module stays in the table, reset to a new module,
+# and module/procedure GC reclaim it; the caller then does `releaseModule(m)`. The kernel has no module GC and keeps its OWN scheme
+# (dispatcher ruling on P09 question 2: behaviour unchanged): this function is the old `destroyModule` without its trailing
+# `releaseModule` (the caller `'$destroy_module'/1` has it, as upstream's): the name leaves the table, the module is marked
+# `M_DESTROYED` and freed at its last reference (`releaseModule_unlocked`). NOT done: `abolishModule(m, false)` first (clauses erased,
+# imports undefined, supers reset, as upstream: it would change what tests pin; open question in the P10 handoff). Also dropped: the
+# invariant check that prints "Module %s: class %s; refs %d" (removed upstream) and the bump of `GD->modules.generation` (removed
+# upstream: lookup caches are checked by `gc_flags`; the kernel has none, MOD1 Q2).
+"Take the name of the temporary module `m` out of the module table and mark it destroyed (pl-modul.c)."
+function destroyTemporaryModule(
     gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}
 )::Bool where {T}
     if get(gd.modules.names, m.name, 0) == m.index       # deleteHTableWP(GD->tables.modules, m->name) == m
         delete!(gd.modules.names, m.name)
         m.flags |= M_DESTROYED
     end
-    releaseModule(gd, ld, m)
     return true
+end
+
+# PORT: pl-modul.c abolishProceduresModule
+# DIVERGES: new at af9e2e7e (SYNC3); the database `gd` and the local data are arguments (`abolishProcedure!`). The table is
+# walked in the order of Julia's `Dict` (as `declareModule`); `isVolatileProcedure`, `acquireTableProcedure`, `releaseProcedureRef` and
+# `unpinProcedure` are P06's shims (src/pl-proc.jl: no procedure GC). The result of `abolishProcedure!` is ignored, as upstream's.
+"Abolish the procedures `m` defines; with `unpin`, drop their pins (pl-modul.c)."
+function abolishProceduresModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}, unpin::Bool
+)::Nothing where {T}
+    for (key, proc) in m.procedures                 # newTableEnumWP(m->procedures); advanceTableEnum()
+        if isVolatileProcedure(proc) || !acquireTableProcedure(m, key, proc)
+            continue
+        end
+        def = proc.definition
+        if !(def.module_ == m.index && (def.flags & P_THREAD_LOCAL) != 0)
+            unpin && unpinProcedure(proc, m)
+            abolishProcedure!(gd, ld, proc, m)
+        end
+        releaseProcedureRef(proc)
+    end
+    return nothing
+end
+
+# PORT: pl-modul.c MODULE_RESET_FLAGS
+# DIVERGES (SYNC3): upstream `(M_WAITED_FOR)`; see `abolishModule`.
+"The module flags `abolishModule` keeps (pl-modul.c)."
+const MODULE_RESET_FLAGS = M_DESTROYED
+
+# PORT: pl-modul.c abolishModule
+# DIVERGES: new at af9e2e7e (SYNC3; 534ec274). `MODULE_RESET_FLAGS` is `M_WAITED_FOR` upstream (a flag of the module's wait area: no
+# threads); here it keeps `M_DESTROYED`, the kernel's own flag (the deferred destroy), which a reset does not touch. `m->hook`
+# (`O_PROLOG_HOOK`) is not kept. The syntax flags are SWI-7's (`GD->options.traditional` is false). No lock (no threads). Whether
+# module GC may collect the module afterwards (`moduleGCCandidate`) is the caller's, E-tier. `global_generation()` is
+# `global_generation(gd)`.
+"Reset `m` to the state of a new module: abolish its procedures, clear exports and local operators, reset its supers, class and flags (pl-modul.c)."
+function abolishModule(
+    gd::PL_global_data{T}, ld::PL_local_data{T}, m::module_t{T}, unpin::Bool
+)::Bool where {T}
+    unlinkSourceFilesModule(gd, m)                  # before procedure GC may
+    abolishProceduresModule(gd, ld, m, unpin)       # collect the procedures
+    empty!(m.public_)                               # clearHTableWP(m->public)
+    empty!(m.public_order)
+    clearOperatorsModule(m)
+
+    m.line_no = 0
+    if sym_key(m.class) != sym_key(mk_sym(T, :temporary))
+        m.class = mk_sym(T, :user)
+    end
+    flags = (m.flags & MODULE_RESET_FLAGS) | M_CHARESCAPE
+    flags |= DBLQ_STRING | BQ_CODES | O_RATIONAL_SYNTAX     # !GD->options.traditional
+    m.flags = flags
+    m.var_prefix = 0
+    rc = setSuperModule(gd.modules, ld, m, MODULE_user(gd))
+    m.last_modified = global_generation(gd)
+    return rc
 end
 
 # PORT: pl-modul.c destroy_module as pl_destroy_module1_va
 # (PRED_IMPL("\$destroy_module", 1, destroy_module, 0))
+# DIVERGES (SYNC3): upstream (af9e2e7e) `rc = destroyTemporaryModule(m); releaseModule(m); return rc`, as here; for the kernel's
+# `destroyTemporaryModule` see its comment (the deferred destroy is kept; `releaseModule` is the one that frees the module).
 "`'\$destroy_module'(+Module)`: destroy a temporary module; no module of that name succeeds (pl-modul.c)."
 function pl_destroy_module1_va(
     ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
@@ -1257,7 +1431,9 @@ function pl_destroy_module1_va(
     m = acquireModule(gd, name)
     if m !== nothing
         if sym_key(m.class) == sym_key(mk_sym(T, :temporary))
-            return destroyModule(gd, ld, m) ? FTRUE : FFALSE
+            rc = destroyTemporaryModule(gd, ld, m)
+            releaseModule(gd, ld, m)
+            return rc ? FTRUE : FFALSE
         else
             releaseModule(gd, ld, m)
             return if PL_error(
@@ -1272,6 +1448,42 @@ function pl_destroy_module1_va(
     end
 
     return FTRUE                                        # non-existing
+end
+
+# PORT: pl-modul.c abolish_module as pl_abolish_module1_va
+# (PRED_IMPL("\$abolish_module", 1, abolish_module, 0))
+# DIVERGES: new at af9e2e7e (SYNC3; 534ec274, used by `abolish_module/1`, boot/syspred.pl). Upstream `acquireModuleRef(name, &ref)` and
+# `releaseModuleRef(ref)` (a counted reference for an unpinned module: module GC); here `acquireModule`/`releaseModule`, which count
+# a reference for a temporary module only. `moduleGCCandidate(m)` (offers the module to module GC) is not kept. A module of
+# the `system` class, a system module or `user`/`system` is refused with `permission_error(abolish, module, Module)`.
+"`'\$abolish_module'(+Module)`: reset `Module` to a new empty module; no module of that name succeeds (pl-modul.c)."
+function pl_abolish_module1_va(
+    ld::PL_local_data{T}, PL__t0::term_t, PL__ac::Int, PL__ctx::control_t{T}
+)::foreign_t where {T}
+    gd = _query_gd(ld)
+    name = PL_get_atom_ex(ld, PL__t0)
+    name === nothing && return FFALSE
+
+    m = acquireModule(gd, name)
+    m === nothing && return FTRUE
+    if sym_key(name) == sym_key(mk_sym(T, :user)) ||
+        sym_key(name) == sym_key(mk_sym(T, :system)) ||
+        (m.flags & M_SYSTEM) != 0 || sym_key(m.class) == sym_key(mk_sym(T, :system))
+        releaseModule(gd, ld, m)
+        return if PL_error(
+            ld, "abolish_module", 1, "system module", ERR_PERMISSION, mk_sym(T, :abolish),
+            mk_sym(T, :module), PL__t0
+        )
+            FTRUE
+        else
+            FFALSE
+        end
+    end
+
+    rc = abolishModule(gd, ld, m, false)
+    releaseModule(gd, ld, m)                            # moduleGCCandidate(m); releaseModuleRef(ref)
+
+    return rc ? FTRUE : FFALSE
 end
 
 # Ported from pl-util.c text_summary and atom_summary (a file this module does not mirror, so no PORT marker).
@@ -1298,6 +1510,8 @@ function _text_summary(s::AbstractString, maxlen::Int)::String
 end
 
 # PORT: pl-modul.c declareModule
+# DIVERGES (SYNC3): upstream (af9e2e7e) skips a volatile procedure or one `acquireTableProcedure()` cannot hold, and releases it with
+# `releaseProcedureRef(proc)` after the abolish (P06's shims here: never skipped, no count).
 # DIVERGES: `class` and `super` are atoms (the one caller, `'$declare_module'/6`, gets them with `PL_get_atom_ex`); the source file has no
 # `reload` (reconsult is not ported: `registerReloadModule` is not reached); the module's file is the source file's INDEX (0: none); the
 # procedures are walked in the order of the module's table (Julia's), where upstream's follows its hash table (D-0149 item 1); the
@@ -1339,7 +1553,10 @@ function declareModule(
     module_.line_no = line
     ld.modules_source = module_.index
 
-    for proc in values(module_.procedures)
+    for (key, proc) in module_.procedures
+        if isVolatileProcedure(proc) || !acquireTableProcedure(module_, key, proc)
+            continue                                    # (SYNC3, af9e2e7e: P06's shims, never true here)
+        end
         def = proc.definition
 
         if (def.flags & (P_DYNAMIC | P_MULTIFILE | P_FOREIGN)) == 0
@@ -1355,6 +1572,7 @@ function declareModule(
             end
             abolishProcedure!(gd, ld, proc, module_)
         end
+        releaseProcedureRef(proc)
     end
     empty!(module_.public_)                             # clearHTableWP(module->public)
     empty!(module_.public_order)
@@ -1416,23 +1634,30 @@ end
 "The bytes the clauses of the predicates module `m` defines take (kernel; see above)."
 function module_code_size(m::module_t{T})::Int where {T}
     bytes = 0
-    for proc in values(m.procedures)
-        def = proc.definition
-        def.module_ == m.index || continue          # def->module == m
-        (def.flags & P_FOREIGN) == 0 || continue
-        c = def.impl_clauses.first_clause
-        while c !== nothing
-            cl = c.clause::Clause{T}
-            if (cl.flags & CL_ERASED) == 0          # retract subtracts the clause's size at once
-                bytes += 8 * (sizeofClause(length(cl.codes)) + SIZEOF_CREF_CLAUSE)
-            end
-            c = c.next
+    for (key, proc) in m.procedures
+        # SYNC3 (af9e2e7e): sizeof_module() skips a volatile procedure, else holds it with acquireTableProcedure() (P06's shims)
+        if isVolatileProcedure(proc) || !acquireTableProcedure(m, key, proc)
+            continue
         end
+        def = proc.definition
+        if def.module_ == m.index && (def.flags & P_FOREIGN) == 0   # def->module == m && isoff(def, P_FOREIGN)
+            c = def.impl_clauses.first_clause
+            while c !== nothing
+                cl = c.clause::Clause{T}
+                if (cl.flags & CL_ERASED) == 0      # retract subtracts the clause's size at once
+                    bytes += 8 * (sizeofClause(length(cl.codes)) + SIZEOF_CREF_CLAUSE)
+                end
+                c = c.next
+            end
+        end
+        releaseProcedureRef(proc)
     end
     return bytes
 end
 
 # PORT: pl-modul.c sizeof_module
+# DIVERGES (SYNC3): upstream (af9e2e7e) counts a procedure's `sizeof` first, then skips a volatile one or one `acquireTableProcedure()`
+# cannot hold before adding its clauses, and releases it with `releaseProcedureRef` (`module_code_size` has those calls, P06's shims).
 # DIVERGES: the kernel's own count, not upstream's byte count (`sizeof` of C structs and hash tables, which
 # no Julia value has; machine-dependent in upstream too): the module's clauses (`module_code_size`) and a
 # procedure record of 16 bytes (upstream's `sizeof(struct procedure)`) for each of its procedures (D-0149 MQ3).
@@ -1530,7 +1755,7 @@ end
 # DIVERGES: the entries of the predicates the kernel has ported, in upstream's order (MOD1: the table, the
 # supers, the source and typein modules, `'$module_property'/2`); `PRED_DEF` ors in `PL_FA_VARARGS`.
 # Since MOD2 `strip_module/3`, since MOD5a `'$def_modules'/2`, `import/1`, `'$import'/2`, `export/1` and
-# `'$undefined_export'/2`, since MOD5b `'$declare_module'/6` and `'$destroy_module'/1`, since MOD6 the non-deterministic
+# `'$undefined_export'/2`, since MOD5b `'$declare_module'/6` and `'$destroy_module'/1`, since SYNC3 `'$abolish_module'/1`, since MOD6 the non-deterministic
 # `import_module/2` and `'$current_module'/2`.
 "pl-modul.c's registration table (`BeginPredDefs(module)`): the ported entries."
 const PL_predicates_from_module = (
@@ -1554,6 +1779,7 @@ const PL_predicates_from_module = (
     PL_extension("export", 1, pl_export1_va, PL_FA_TRANSPARENT | PL_FA_VARARGS),
     PL_extension("\$undefined_export", 2, pl_undefined_export2_va, PL_FA_VARARGS),
     PL_extension("\$destroy_module", 1, pl_destroy_module1_va, PL_FA_VARARGS),
+    PL_extension("\$abolish_module", 1, pl_abolish_module1_va, PL_FA_VARARGS),
     PL_extension(
         "\$current_source_module", 1, pl_current_source_module1_va, PL_FA_VARARGS
     ),

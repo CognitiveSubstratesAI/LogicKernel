@@ -1,4 +1,4 @@
-# UPSTREAM: swipl-devel src/pl-op.c @ 18168e629eab
+# UPSTREAM: swipl-devel src/pl-op.c @ af9e2e7ed0be
 # CLASS: code
 # COPYRIGHT: Copyright (c)  1985-2024, University of Amsterdam
 # COPYRIGHT: CWI, Amsterdam
@@ -25,6 +25,45 @@ const OP_INHERIT = 0x00
 
 "An operator record: its key atom, `type[3]` and `priority[3]` (pl-op.c `struct _operator`)."
 const _operator{T} = Tuple{T, NTuple{3, UInt8}, NTuple{3, Int16}}
+
+# ── operator names (pl-op.c, since SYNC3 L1: ed5a27d6) ──────────────────────────────────────────
+# PORT: pl-op.c OP_NAME_BITS
+"The size of the operator-name bit set (pl-op.c `OP_NAME_BITS`)."
+const OP_NAME_BITS = 4096
+# PORT: pl-op.c OP_NAME_WBITS
+"The bits of one word of the operator-name bit set (pl-op.c `OP_NAME_WBITS`: `sizeof(unsigned int)*8`)."
+const OP_NAME_WBITS = sizeof(UInt32) * 8
+
+# PORT: pl-op.c addOperatorName as addOperatorName!
+# DIVERGES (SYNC3, held with pl-atom): upstream's bit is `indexAtom(name) % OP_NAME_BITS` (the atom's index in the
+# atom array); the atom index function is pl-atom.c's, held, so the bit is `sym_key(name) % OP_NAME_BITS`, the
+# name's own hash key (the key every table of this file uses): the same name always has the same bit, which is all the
+# filter needs. The set is the database's (`PL_global_data.op_names`, src/pl-global.jl), not a process static; no
+# `ATOMIC_OR` (no threads).
+"Set the bit of `name` in the operator-name set of `gd`: `name` is, or has been, an operator in some module (pl-op.c)."
+function addOperatorName!(gd::PL_global_data{T}, name::T)::Nothing where {T}
+    bit = Int(sym_key(name) % UInt64(OP_NAME_BITS))
+    gd.op_names[bit ÷ OP_NAME_WBITS + 1] |= UInt32(1) << (bit % OP_NAME_WBITS)
+    return nothing
+end
+
+# PORT: pl-op.c maybeOperatorName as maybeOperatorName
+# DIVERGES (SYNC3, held with pl-atom): as `addOperatorName!`: the bit is `sym_key(name) % OP_NAME_BITS`.
+"False if `name` is not an operator in any module (a clear bit); true if it may be one (pl-op.c)."
+function maybeOperatorName(gd::PL_global_data{T}, name::T)::Bool where {T}
+    bit = Int(sym_key(name) % UInt64(OP_NAME_BITS))
+    return (gd.op_names[bit ÷ OP_NAME_WBITS + 1] & (UInt32(1) << (bit % OP_NAME_WBITS))) !=
+           0
+end
+
+# PORT: pl-op.c cleanupOperators as cleanupOperators!
+# DIVERGES: the set is the database's; upstream calls it from PL_cleanup (pl-init.c:2033), which this file does not
+# reach: nothing calls it yet (the SYNC3 handoff, since L1).
+"Clear the operator-name set of `gd`; after re-initialisation atoms get new indices (pl-op.c)."
+function cleanupOperators!(gd::PL_global_data{T})::Nothing where {T}
+    fill!(gd.op_names, UInt32(0))
+    return nothing
+end
 
 # ── defining operators (pl-op.c) ────────────────────────────────────────────────────────────────
 # PORT: pl-op.c defOperator as defOperator!
@@ -70,8 +109,35 @@ function defOperator!(
     end
     prios = Base.setindex(prios, priority, t + 1)           # op->priority[t] = priority
     types = Base.setindex(types, priority >= 0 ? type : OP_INHERIT, t + 1)
+    op === nothing && addOperatorName!(gd, name)            # must_reg: PL_register_atom; addOperatorName
     m.operators[key] = (name, types, prios)
     return true
+end
+
+# PORT: pl-op.c clearOperatorsModule
+# DIVERGES: the records are tuples, replaced in the table (as `defOperator!`); no lock (no threads). Upstream's reason
+# holds: the entries stay and inherit, so a reader that does not lock sees a consistent table.
+"Remove the local operators of `m` (`abolish_module/1`): every entry inherits for every kind, none is deleted (pl-op.c)."
+function clearOperatorsModule(m::module_t{T})::Nothing where {T}
+    for key in collect(keys(m.operators))
+        name, _, _ = m.operators[key]
+        m.operators[key] = (
+            name, (OP_INHERIT, OP_INHERIT, OP_INHERIT), (Int16(-1), Int16(-1), Int16(-1))
+        )                                                   # priority[kind] = -1; type[kind] = OP_INHERIT
+    end
+    return nothing
+end
+
+# PORT: pl-op.c hasOperatorsModule
+# DIVERGES: no lock to leave out (no threads); `m.operators` is never NULL (an empty table).
+"True if `m` defines operators: `clearOperatorsModule` leaves the entries, so a kind that is not `OP_INHERIT` is looked for (pl-op.c)."
+function hasOperatorsModule(m::module_t{T})::Bool where {T}
+    for (_, op) in m.operators
+        for kind in OP_PREFIX:OP_POSTFIX
+            op[2][kind + 1] != OP_INHERIT && return true
+        end
+    end
+    return false
 end
 
 # ── querying operators (pl-op.c) ────────────────────────────────────────────────────────────────
@@ -106,6 +172,7 @@ function currentOperator(
     gd::PL_global_data{T}, m::Union{Nothing, module_t{T}}, name::T, kind::Int
 )::Tuple{Bool, UInt8, Int16} where {T}
     @assert OP_PREFIX <= kind <= OP_POSTFIX
+    maybeOperatorName(gd, name) || return (false, 0x00, Int16(0))   # not an operator in any module (ed5a27d6)
     mm = m === nothing ? MODULE_user(gd) : m
     op = visibleOperator(gd, mm, sym_key(name), kind)
     if op !== nothing && op[3][kind + 1] > 0
@@ -154,6 +221,7 @@ end
 function priorityOperator(
     gd::PL_global_data{T}, m::Union{Nothing, module_t{T}}, name::T
 )::Int where {T}
+    maybeOperatorName(gd, name) || return 0                 # not an operator in any module (ed5a27d6)
     mm = m === nothing ? MODULE_user(gd) : m
     return scanPriorityOperator(gd, mm, sym_key(name), 0, 0)[1]
 end
