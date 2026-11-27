@@ -801,7 +801,7 @@ fixed it or a public issue exists.
 | `src/pl-vmi.jl` | the VM instructions clauses compile to — head, body, calls, the LCO block — with upstream's flags (`VIF_*`) and operand kinds (`CA1_*`), in pl-vmi.c's order (declarations only) | `src/pl-vmi.c`, `src/pl-incl.h`, `src/pl-codetable.c` |
 | `src/pl-proc.jl` | the clause database: predicates (`lookupProcedure` in the user module's procedure table, `isCurrentProcedure`, `isDefinedProcedure`, `setDynamicDefinition!`; since V9c `assert_term`'s checks `get_head_functor`, `checkModifySystemProc`, `isStaticSystemProcedure`, and `assertProcedure!`); since V5c `autoImport` and `trapUndefined` (a call from `user` reaches a `system` built-in), assert with generations, retract (the logical update view), clause garbage collection, `retract/1`, `retractall/1`; since R1f `overruleImportedProcedure`, `redefineProcedure` (the `discontiguous` and `redefined_procedure` warnings), `lookupProcedureToDefine`, `get_procedure` (`GP_DEFINE`), `'$set_predicate_attribute'/3` with `attribute_mask` and `setAttrDefinition`, registered as `PL_predicates_from_proc` | `src/pl-proc.c`, `src/pl-proc.h` |
 | `src/pl-srcfile.jl` | source files (R1f): the record of each consulted file (`lookupSourceFile`, numbered as upstream), the procedures it defines (`addProcedureSourceFile`), a clause added on its behalf (`assertProcedureSource`), `startConsult`/`endConsult`, `setAttrProcedureSource` — a FIRST load (a reconsult refused) | `src/pl-srcfile.c` |
-| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/os/pl-locale.h`, `src/pl-variant.c`, `src/os/pl-file.c`, `src/pl-gc.c` |
+| `src/pl-global.jl` | the database state — upstream's GD and LD, as values the caller passes; GD holds the control functors the clause compiler reads and, since V5c, the module table (`system`, `user`), LD the bindings, the trail, the `occurs_check` flag and the local stack (its cells, record pools and registers), since V9c the running query's database (`GD`, which a built-in reads), and since V5d the local stack's spare, `exception.processing`, `outofstack` and the unusable mark; since R1c `source_location`; since R1f the source files (`files.table`, `files.array`), the streams' file names, `LD->read_source`, the style checks, `modules.source`, the messages `printMessage` collects; since R1e's write/1 family the standard streams (`IO.streams`), `stream_type_check`, the numbervars frame, and the flags `unknown_option`, `write_attributes`, `character_escapes_unicode`; since L1d 8a the `=@=` walk's side vector, node buffer and agenda (`vt_node`, `vt_pairs`: pl-variant.c's `node`, `argPairs`); since Y1 the LD statistics (`ld_statistics`: inferences, the cputime/walltime bases); since TH1 the thread state of the engines (`thread`: the handles, the thread records, the alias table, the engine counters) | `src/pl-global.h`, `src/pl-incl.h`, `src/pl-init.h`, `src/os/pl-locale.h`, `src/pl-variant.c`, `src/os/pl-file.c`, `src/pl-gc.c`, `src/pl-thread.h` |
 | `src/pl-inline.jl` | clause visibility, the database generation, key cleaning; the binding primitives `deRef`, `linkValI`, `Trail!`, `Mark`, `DiscardMark`, `NoMark`, `Undo!` (kept at or above the frozen ball's cells: `freezeGlobal!`, L1e e5a); `hasLocalSpace` | `src/pl-inline.h`, `src/pl-incl.h`, `src/pl-data.h`, `src/pl-gvar.c` |
 | `src/pl-thread.jl`, `src/pl-gc.jl` | the predicate references an enumeration registers, so clause GC keeps what it can still see; growing the local stack (`growLocalSpace`, `growStacks`, `ensureLocalSpace` — the only allocating path; since V5d with the spare on top, and the limit stretched by 1 MiB while an exception is processed) | `src/pl-thread.c`, `src/pl-gc.c`, `src/pl-gc.h`, `src/pl-fli.c`, `src/pl-fli.h` |
 | `src/pl-gcmark.jl` | G1 (the stack garbage collector, in pieces): the MARK phase's cell-bit helpers, `mark_variable` (pointer reversal), the term-reference roots and the per-frame marking helpers; cells are addressed by an Int (global position, or a negated local slot index); it moves and frees nothing | `src/pl-gc.c`, `src/pl-data.h`, `src/pl-incl.h`, `src/pl-fli.c` |
@@ -1378,11 +1378,24 @@ graph LR
     pl_thread --> default_term
     pl_thread --> pl_incl
     pl_thread --> SWI_Prolog
+    pl_thread --> pl_atom
     pl_thread --> pl_global
     pl_thread --> pl_inline
+    pl_thread --> pl_prims
+    pl_thread --> pl_comp
+    pl_thread --> pl_alloc
+    pl_thread --> pl_wam
     pl_thread --> pl_fli
+    pl_thread --> pl_error
+    pl_thread --> pl_arith
+    pl_thread --> os_pl_option
+    pl_thread --> os_pl_prologflag
+    pl_thread --> os_pl_text
     pl_thread --> os_pl_os
     pl_thread --> pl_proc
+    pl_thread --> pl_trace
+    pl_thread --> pl_event
+    pl_thread --> pl_qlf
     pl_gc --> term_interface
     pl_gc --> default_term
     pl_gc --> pl_incl
@@ -1828,6 +1841,7 @@ graph LR
     pl_setup --> pl_inline
     pl_setup --> pl_ressymbol
     pl_setup --> pl_comp
+    pl_setup --> pl_thread
     pl_setup --> pl_gc
     pl_setup --> pl_gcdriver
     pl_setup --> pl_alloc
@@ -1979,6 +1993,7 @@ graph LR
     pl_event --> pl_prims
     pl_event --> pl_comp
     pl_event --> pl_copyterm
+    pl_event --> pl_thread
     pl_event --> pl_wam
     pl_event --> pl_fli
     pl_event --> pl_attvar
@@ -2098,6 +2113,7 @@ graph LR
     pl_tabling --> pl_variant
     pl_tabling --> pl_copyterm
     pl_tabling --> pl_termhash
+    pl_tabling --> pl_thread
     pl_tabling --> pl_alloc
     pl_tabling --> pl_wam
     pl_tabling --> pl_fli
@@ -2451,6 +2467,7 @@ graph LR
     gd_template --> default_term
     gd_template --> pl_incl
     gd_template --> pl_global
+    gd_template --> pl_thread
     gd_template --> pl_arith
     gd_template --> os_pl_text
     gd_template --> pl_proc
@@ -2495,11 +2512,11 @@ or **platform** (a Windows or macOS definition: out of the count). **NO OWNER** 
 
 | category | done | refused | missing | platform | NO OWNER |
 |---|---:|---:|---:|---:|---:|
-| predicates (C-defined, reached by the boot) | 384 | 0 | 38 | 3 | 1 |
-| refusal sites | 0 | 85 | 0 | 0 | 5 |
+| predicates (C-defined, reached by the boot) | 392 | 0 | 30 | 3 | 1 |
+| refusal sites | 0 | 84 | 0 | 0 | 5 |
 | Prolog flags | 66 | 13 | 20 | 0 | 33 |
 | VM instructions | 199 | 0 | 34 | 0 | 0 |
-| **total** | 649 | 98 | 92 | 3 | 39 |
+| **total** | 657 | 97 | 84 | 3 | 39 |
 
 #### The boot and library files
 
@@ -2509,13 +2526,13 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 |---|---|---:|---:|---:|
 | `boot/init.pl` | loaded | 156 | 5 | 1 |
 | `boot/load.pl` | loaded | 5 | 0 | 0 |
-| `boot/gc.pl` | loaded | 7 | 2 | 0 |
+| `boot/gc.pl` | loaded | 9 | 0 | 0 |
 | `boot/expand.pl` | loaded | 55 | 0 | 0 |
 | `boot/dcg.pl` | loaded | 20 | 0 | 0 |
 | `boot/license.pl` | loaded | 5 | 0 | 0 |
-| `boot/syspred.pl` | loaded | 102 | 11 | 0 |
-| `boot/messages.pl` | loaded | 81 | 4 | 1 |
-| `boot/toplevel.pl` | loaded | 89 | 10 | 2 |
+| `boot/syspred.pl` | loaded | 103 | 10 | 0 |
+| `boot/messages.pl` | loaded | 82 | 3 | 1 |
+| `boot/toplevel.pl` | loaded | 90 | 9 | 2 |
 | `boot/attvar.pl` | loaded | 29 | 0 | 0 |
 | `boot/bags.pl` | loaded | 22 | 0 | 0 |
 | `boot/apply.pl` | loaded | 4 | 0 | 0 |
@@ -2528,7 +2545,7 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | `boot/predopts.pl` | loaded | 11 | 0 | 0 |
 | `boot/packs.pl` | loaded | 23 | 0 | 0 |
 | `boot/dicts.pl` | loaded | 18 | 4 | 0 |
-| `boot/engines.pl` | loaded | 6 | 4 | 0 |
+| `boot/engines.pl` | loaded | 10 | 0 | 0 |
 | `boot/tabling.pl` | loaded | 138 | 1 | 0 |
 | `boot/topvars.pl` | loaded | 37 | 0 | 0 |
 | `boot/threads.pl` | skipped (conditional) | 0 | 0 | 0 |
@@ -2543,11 +2560,11 @@ Predicate rows each file's calls reach (a predicate several files call counts in
 | owner | rows | missing | refused | which (first 8) |
 |---|---:|---:|---:|---|
 | AR1 | 28 | 27 | 1 | `succ/2`, `A_ADD`, `A_DOUBLE`, `A_ENTER`, `A_EQ`, `A_FIRSTVAR_IS`, `A_FUNC`, `A_FUNC0`, … +20 |
-| TH1 | 22 | 18 | 4 | `$engine_create/3`, `$gc_clear/1`, `$gc_stop/0`, `$gc_wait/1`, `$sig_unblock/0`, `engine_next/2`, `is_engine/1`, `message_queue_create/1`, … +14 |
 | ENC1 | 16 | 0 | 16 | `refusal set_stream/2's unicode_atoms(nfc)`, `refusal open/4's unicode_atoms(Mode) option`, `refusal string("open/4 with the stream encoding …`, `refusal Scanrepresent: encoding $enc`, `refusal Sgetcode: encoding $enc`, `refusal put_code: encoding $enc`, `refusal PL_canonicalise_text of $enc`, `refusal PL_mb_text of $(text.encoding)`, … +8 |
 | LB3 | 14 | 0 | 14 | `refusal QLF predicate $close_wic/0`, `refusal QLF predicate $file_hash/2`, `refusal QLF predicate $map_id/2`, `refusal QLF predicate $open_wic/2`, `refusal QLF predicate $qlf_close/0`, `refusal QLF predicate $qlf_current_source/1`, `refusal QLF predicate $qlf_dependency/1`, `refusal QLF predicate $qlf_is_compatible/1`, … +6 |
+| TH1 | 14 | 11 | 3 | `$sig_unblock/0`, `message_queue_create/1`, `message_queue_destroy/1`, `set_thread/2`, `thread_create/3`, `thread_exit/1`, `thread_get_message/2`, `thread_join/2`, … +6 |
 | ZIP1 | 13 | 0 | 13 | `refusal SopenZIP: a stream on a zip entry (pl-zi…`, `refusal unzClone of a zipper's reader (pl-zip.c:…`, `refusal zipClose and unzClose of a zipper (pl-zi…`, `refusal unzGetCurrentFileInfo64 of a zipper (pl-…`, `refusal zlock: the lock of a zipper (pl-zip.c:12…`, `refusal unzOpen2_64: a zip reader needs minizip …`, `refusal zipOpen2_64: a zip writer needs minizip …`, `refusal zunlock: the lock of a zipper (pl-zip.c:…`, … +5 |
-| DBG1 | 11 | 10 | 1 | `$call_no_catch/1`, `$can_yield/0`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, … +3 |
+| DBG1 | 10 | 9 | 1 | `$call_no_catch/1`, `$leash/2`, `$visible/2`, `notrace/0`, `prolog_choice_attribute/3`, `prolog_frame_attribute/3`, `trace/0`, `tracing/0`, … +2 |
 | REFUSED | 10 | 6 | 4 | `B_SMALLINTW`, `B_THROW`, `H_SMALLINTW`, `L_SMALLINTW`, `T_SMALLINTW`, `T_TRY_SMALLINTW`, `refusal the size and base of the C stack ('getrl…`, `refusal the fatal-signal handler of os/pl-cstack…`, … +2 |
 | RD2 | 8 | 0 | 8 | `refusal raw_read2: reading past the end of a str…`, `refusal raw_read2: the comments(C) read option`, `refusal raw_read2: the comments(C) read option`, `refusal read_clause's $what option`, `refusal read_clause's process_comment(true) or u…`, `refusal read_term's $what option`, `refusal read: a blob <type>(…)`, `refusal read: a quasi-quotation {\|Syntax\|\|Quotat…` |
 | LB5-LB7 | 4 | 2 | 2 | `$activate_static_extension/1`, `$clause_term_position/3`, `refusal iri_hook $what ('\$iri':iri_hook/4 of in…`, `refusal what` |
@@ -2577,8 +2594,8 @@ xychart-beta
     title "R2: missing (bars) and refused (line) rows"
     x-axis ["predicates", "refusal sites", "flags", "VM instructions"]
     y-axis "rows" 0 --> 100
-    bar [38, 0, 20, 34]
-    line [0, 85, 13, 0]
+    bar [30, 0, 20, 34]
+    line [0, 84, 13, 0]
 ```
 
 <!-- END GENERATED R2 status -->
